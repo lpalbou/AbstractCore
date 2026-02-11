@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Event System - AbstractCore</title>
-    <meta name="description" content="AbstractCore emits lightweight events for generation, tool execution, retries, sessions, and compaction. You can subscribe to these events for observability, progress…">
+    <meta name="description" content="AbstractCore emits lightweight events for generation, tool execution, retries, sessions, and compaction. You can subscribe to these events for observability,…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -34,10 +34,11 @@
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore emits lightweight events for generation, tool execution, retries, sessions, and compaction. You can subscribe to these events for observability, progress reporting, or custom telemetry.</p>
             </div>
 
-            
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#global-event-handlers" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Global event handlers</a>
+<a href="#common-event-types" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Common event types</a>
+<a href="#async-handlers" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Async handlers</a></div>
 
             <div class="doc-content">
-
 
 <h2 id="global-event-handlers">Global event handlers</h2>
 <p>Use <code>on_global()</code> to register a process-wide handler:</p>
@@ -49,8 +50,8 @@ def on_event(event):
 
 on_global(EventType.GENERATION_COMPLETED, on_event)
 
-llm = create_llm("ollama", model="qwen3:4b")
-llm.generate("Say 'ok' and nothing else.")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b&quot;)
+llm.generate(&quot;Say 'ok' and nothing else.&quot;)
 </code></pre></div>
 <h2 id="common-event-types">Common event types</h2>
 <ul>
@@ -63,11 +64,13 @@ llm.generate("Say 'ok' and nothing else.")
 <p>For the full list, see <code>abstractcore/events/__init__.py</code> and the <a href="api-reference.html#eventtype">API Reference</a>.</p>
 <h2 id="async-handlers">Async handlers</h2>
 <p>If you need async handlers, use <code>GlobalEventBus.on_async(...)</code> (or per-emitter <code>on_async(...)</code>) and emit events with the async emission methods. Most application code only needs the sync hooks above.</p>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

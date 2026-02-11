@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Chat History Compaction - AbstractCore</title>
+    <meta name="description" content="AbstractCore&#x27;s BasicSession includes SOTA chat history compaction capabilities that intelligently summarize long conversations while preserving essential…">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Chat History Compaction</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore&#x27;s BasicSession includes SOTA chat history compaction capabilities that intelligently summarize long conversations while preserving essential context.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#overview" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Overview</a>
+<a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
+<a href="#sota-best-practices-2025" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">SOTA Best Practices (2025)</a>
+<a href="#advanced-usage" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Advanced Usage</a>
+<a href="#output-structure" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Output Structure</a>
+<a href="#real-world-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Real-World Examples</a>
+<a href="#performance-considerations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance Considerations</a>
+<a href="#error-handling" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Error Handling</a>
+<a href="#integration-with-other-features" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Integration with Other Features</a>
+<a href="#troubleshooting" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Troubleshooting</a>
+<a href="#conclusion" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Conclusion</a></div>
+
+            <div class="doc-content">
+
+<h2 id="overview">Overview</h2>
+<p>The <code>compact()</code> method implements 2025 state-of-the-art practices for conversation summarization:</p>
+<ul>
+<li><strong>Preserves system messages</strong> (always maintained)</li>
+<li><strong>Keeps recent exchanges intact</strong> (configurable sliding window)</li>
+<li><strong>Summarizes older context</strong> (maintains conversational flow)</li>
+<li><strong>Focuses on key information</strong> (decisions, solutions, ongoing topics)</li>
+</ul>
+<h2 id="quick-start">Quick Start</h2>
+<h3 id="auto-compact-mode-recommended">Auto-Compact Mode (Recommended)</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, BasicSession
+
+# Create session with auto-compaction enabled
+llm = create_llm(&quot;ollama&quot;, model=&quot;gemma3:1b&quot;)
+session = BasicSession(
+    llm,
+    system_prompt=&quot;You are a helpful assistant&quot;,
+    auto_compact=True,              # Enable automatic compaction
+    auto_compact_threshold=6000     # Compact when exceeding 6000 tokens
+)
+
+# Conversation continues indefinitely - compacts automatically
+response = session.generate(&quot;Let's have a long conversation...&quot;)
+</code></pre></div>
+<h3 id="manual-compaction">Manual Compaction</h3>
+<div class="code-block"><pre><code class="language-python"># Create regular session
+session = BasicSession(llm, system_prompt=&quot;You are a helpful assistant&quot;)
+
+# ... have a long conversation ...
+
+# Check if compaction is recommended
+if session.should_compact(token_limit=8000):
+    # Option 1: In-place compaction (recommended for ongoing conversations)
+    session.force_compact(preserve_recent=6, focus=&quot;key decisions&quot;)
+
+    # Option 2: Create new compacted session
+    compacted = session.compact(preserve_recent=6, focus=&quot;key decisions&quot;)
+
+# Continue with conversation
+response = session.generate(&quot;Let's continue our discussion...&quot;)
+</code></pre></div>
+<h2 id="sota-best-practices-2025">SOTA Best Practices (2025)</h2>
+<h3 id="1-system-message-preservation">1. System Message Preservation</h3>
+<p>System messages are <strong>always preserved</strong> to maintain essential context:</p>
+<div class="code-block"><pre><code class="language-python">session = BasicSession(llm, system_prompt=&quot;You are a technical expert&quot;)
+# System prompt is preserved in compacted session
+compacted = session.compact()
+</code></pre></div>
+<h3 id="2-sliding-window-approach">2. Sliding Window Approach</h3>
+<p>Recent messages stay intact while older ones get summarized:</p>
+<div class="code-block"><pre><code class="language-python"># Original: 50 messages
+# Result: System + Summary + Last 6 messages = ~8-10 messages
+compacted = session.compact(preserve_recent=6)
+</code></pre></div>
+<h3 id="3-context-aware-summarization">3. Context-Aware Summarization</h3>
+<p>The summarization focuses on conversation continuity:</p>
+<ul>
+<li><strong>Key decisions</strong> and solutions</li>
+<li><strong>Ongoing topics</strong> and user intent</li>
+<li><strong>Important technical details</strong></li>
+<li><strong>Conversational flow</strong> preservation</li>
+</ul>
+<h3 id="4-flexible-focus-control">4. Flexible Focus Control</h3>
+<p>Specify what aspects to emphasize in the summary:</p>
+<div class="code-block"><pre><code class="language-python"># Focus on technical aspects
+compacted = session.compact(focus=&quot;technical solutions and code examples&quot;)
+
+# Focus on decisions made
+compacted = session.compact(focus=&quot;key decisions and next steps&quot;)
+
+# Focus on learning objectives
+compacted = session.compact(focus=&quot;learning progress and concepts covered&quot;)
+</code></pre></div>
+<h2 id="advanced-usage">Advanced Usage</h2>
+<h3 id="auto-compaction-features">Auto-Compaction Features</h3>
+<div class="code-block"><pre><code class="language-python"># Enable auto-compaction on existing session
+session.enable_auto_compact(threshold=8000)
+
+# Disable auto-compaction
+session.disable_auto_compact()
+
+# Force immediate compaction (user-requested)
+session.force_compact(preserve_recent=8, focus=&quot;technical solutions&quot;)
+
+# Check current auto-compact status
+print(f&quot;Auto-compact: {session.auto_compact}&quot;)
+print(f&quot;Threshold: {session.auto_compact_threshold} tokens&quot;)
+</code></pre></div>
+<h3 id="event-monitoring">Event Monitoring</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.events import EventType, on_global
+
+def monitor_compaction(event):
+    if event.type == EventType.COMPACTION_STARTED:
+        print(f&quot;🗜️ Compaction started: {event.data.get('reason')}&quot;)
+        print(f&quot;   Messages: {event.data.get('original_message_count')}&quot;)
+        print(f&quot;   Tokens: ~{event.data.get('original_tokens_estimate')}&quot;)
+    elif event.type == EventType.COMPACTION_COMPLETED:
+        print(f&quot;[OK] Compaction completed in {event.data.get('duration_ms'):.0f}ms&quot;)
+        print(f&quot;   Compression: {event.data.get('compression_ratio', 1):.1f}x&quot;)
+
+# Register event handlers
+on_global(EventType.COMPACTION_STARTED, monitor_compaction)
+on_global(EventType.COMPACTION_COMPLETED, monitor_compaction)
+
+# All compactions will now emit monitored events
+session.force_compact(focus=&quot;key insights&quot;)
+</code></pre></div>
+<h3 id="token-management">Token Management</h3>
+<div class="code-block"><pre><code class="language-python"># Check estimated token count
+tokens = session.get_token_estimate()
+print(f&quot;Current tokens: {tokens}&quot;)
+
+# Check if compaction is recommended
+if session.should_compact(token_limit=4000):
+    compacted = session.compact()
+    print(f&quot;Reduced to: {compacted.get_token_estimate()} tokens&quot;)
+</code></pre></div>
+<h3 id="different-compaction-providers">Different Compaction Providers</h3>
+<div class="code-block"><pre><code class="language-python"># Use a different model for compaction (e.g., faster local model)
+fast_llm = create_llm(&quot;ollama&quot;, model=&quot;gemma3:1b&quot;)
+main_llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o&quot;)
+
+session = BasicSession(main_llm)
+# ... conversation ...
+
+# Use fast model for compaction, continue with main model
+compacted = session.compact(compact_provider=fast_llm)
+</code></pre></div>
+<h3 id="customized-recent-message-count">Customized Recent Message Count</h3>
+<div class="code-block"><pre><code class="language-python"># For detailed technical discussions - preserve more context
+compacted = session.compact(preserve_recent=10)
+
+# For quick summaries - preserve less context
+compacted = session.compact(preserve_recent=4)
+
+# For very long conversations - minimal recent context
+compacted = session.compact(preserve_recent=2)
+</code></pre></div>
+<h2 id="output-structure">Output Structure</h2>
+<p>The compacted session contains:</p>
+<ol>
+<li><strong>System Messages</strong> (preserved exactly)</li>
+<li><strong>Conversation Summary</strong> (as a system message for context)</li>
+<li><strong>Recent Messages</strong> (preserved exactly)</li>
+</ol>
+<div class="code-block"><pre><code class="language-python">compacted = session.compact(preserve_recent=4)
+
+# Example structure:
+# Message 1: [SYSTEM]: Original system prompt
+# Message 2: [SYSTEM]: [CONVERSATION HISTORY]: Summary of older conversation...
+# Message 3: [USER]: Recent user message
+# Message 4: [ASSISTANT]: Recent assistant response
+# Message 5: [USER]: Most recent user message
+# Message 6: [ASSISTANT]: Most recent assistant response
+</code></pre></div>
+<h2 id="real-world-examples">Real-World Examples</h2>
+<h3 id="long-technical-discussion">Long Technical Discussion</h3>
+<div class="code-block"><pre><code class="language-python"># After a long coding discussion
+session = BasicSession(llm, system_prompt=&quot;You are a Python expert&quot;)
+
+# ... 50+ messages about Python, debugging, optimization ...
+
+compacted = session.compact(
+    preserve_recent=6,
+    focus=&quot;code solutions, debugging insights, and optimization techniques&quot;
+)
+
+# Compacted session maintains:
+# - System prompt (Python expert)
+# - Summary of earlier discussion
+# - Last 6 messages of current topic
+</code></pre></div>
+<h3 id="customer-support-session">Customer Support Session</h3>
+<div class="code-block"><pre><code class="language-python">session = BasicSession(llm, system_prompt=&quot;You are a helpful customer service agent&quot;)
+
+# ... long troubleshooting conversation ...
+
+compacted = session.compact(
+    preserve_recent=8,
+    focus=&quot;customer issue, attempted solutions, and current status&quot;
+)
+
+# Suitable for maintaining support context while managing token limits
+</code></pre></div>
+<h3 id="educational-conversation">Educational Conversation</h3>
+<div class="code-block"><pre><code class="language-python">session = BasicSession(llm, system_prompt=&quot;You are a patient tutor&quot;)
+
+# ... extensive learning conversation ...
+
+compacted = session.compact(
+    preserve_recent=6,
+    focus=&quot;student's learning progress, key concepts covered, and current questions&quot;
+)
+
+# Maintains educational context while staying within limits
+</code></pre></div>
+<h2 id="performance-considerations">Performance Considerations</h2>
+<h3 id="when-to-compact">When to Compact</h3>
+<div class="code-block"><pre><code class="language-python"># Check if compaction is beneficial
+if session.should_compact():
+    compacted = session.compact()
+else:
+    # Continue with original session
+    pass
+</code></pre></div>
+<h3 id="token-estimation">Token Estimation</h3>
+<p>The built-in token estimation uses a simple heuristic:
+- <strong>Smart token estimation</strong> using centralized TokenUtils with model-aware counting
+- Useful for quick estimates
+- For precise counts, use provider-specific tokenizers</p>
+<h3 id="compression-results">Compression Results</h3>
+<p>Compaction results vary with conversation length, content, and the compaction prompt. To quantify impact in your app, compare token estimates before/after compaction.</p>
+<h2 id="error-handling">Error Handling</h2>
+<div class="code-block"><pre><code class="language-python">try:
+    compacted = session.compact()
+except ImportError:
+    print(&quot;BasicSummarizer not available - install processing capabilities&quot;)
+except ValueError:
+    print(&quot;No provider available for compaction&quot;)
+except Exception as e:
+    print(f&quot;Compaction failed: {e}&quot;)
+    # Continue with original session
+    compacted = session
+</code></pre></div>
+<h2 id="integration-with-other-features">Integration with Other Features</h2>
+<h3 id="with-session-persistence">With Session Persistence</h3>
+<div class="code-block"><pre><code class="language-python"># Save compacted session
+compacted = session.compact()
+compacted.save(&quot;conversation_compacted.json&quot;)
+
+# Load and continue
+restored = BasicSession.load(&quot;conversation_compacted.json&quot;)
+restored.provider = llm  # Re-attach provider
+</code></pre></div>
+<h3 id="with-tools">With Tools</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.tools import tool
+
+@tool
+def summarize_conversation():
+    &quot;&quot;&quot;Summarize our current conversation&quot;&quot;&quot;
+    return &quot;Conversation has been active for X minutes...&quot;
+
+session = BasicSession(llm, tools=[summarize_conversation])
+compacted = session.compact()  # Tools are preserved in compacted session
+</code></pre></div>
+<h3 id="with-events">With Events</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.events import EventType, on_global
+
+def monitor_compaction(event):
+    if event.type == EventType.COMPACTION_STARTED:
+        print(&quot;Compaction started…&quot;)
+    elif event.type == EventType.COMPACTION_COMPLETED:
+        duration_ms = event.data.get(&quot;duration_ms&quot;)
+        if isinstance(duration_ms, (int, float)):
+            print(f&quot;Compaction completed in {float(duration_ms):.0f}ms&quot;)
+
+on_global(EventType.COMPACTION_STARTED, monitor_compaction)
+on_global(EventType.COMPACTION_COMPLETED, monitor_compaction)
+
+# Compaction operations emit events for monitoring
+compacted = session.compact()
+</code></pre></div>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="common-issues">Common Issues</h3>
+<ol>
+<li><strong>Model Compatibility</strong>: Some local models may struggle with structured output</li>
+<li>
+<p><strong>Solution</strong>: Use a cloud provider for compaction: <code>compact_provider=cloud_llm</code></p>
+</li>
+<li>
+<p><strong>Import Errors</strong>: BasicSummarizer not available</p>
+</li>
+<li>
+<p><strong>Solution</strong>: Ensure processing module is properly installed</p>
+</li>
+<li>
+<p><strong>No Provider</strong>: Session has no provider configured</p>
+</li>
+<li><strong>Solution</strong>: Pass <code>compact_provider</code> parameter or set session provider</li>
+</ol>
+<h3 id="best-practices">Best Practices</h3>
+<ol>
+<li><strong>Test with your model</strong>: Different models have different structured output capabilities</li>
+<li><strong>Monitor compression ratios</strong>: Ensure meaningful reduction without losing context</li>
+<li><strong>Use appropriate focus</strong>: Tailor focus to your conversation type</li>
+<li><strong>Consider token limits</strong>: Balance between context and efficiency</li>
+</ol>
+<h2 id="conclusion">Conclusion</h2>
+<p>Chat history compaction enables unlimited conversation length while maintaining essential context. The implementation follows SOTA 2025 best practices for conversational AI systems, providing intelligent summarization that preserves conversational flow and key information.</p>
+<p>Suitable for:
+- <strong>Long-running conversations</strong> that exceed model context limits
+- <strong>Cost optimization</strong> by reducing token usage
+- <strong>Context preservation</strong> while managing memory constraints
+- <strong>Production applications</strong> requiring conversation continuity</p>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

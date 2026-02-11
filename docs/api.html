@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>API (Python) - AbstractCore</title>
-    <meta name="description" content="This page is a user-facing map of the public Python API . For a complete listing of functions/classes (including events), see API Reference .">
+    <meta name="description" content="This page is a user-facing map of the public Python API exposed from abstractcore (see abstractcore/__init__.py). For a complete listing of functions/classes…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -31,11 +31,12 @@
         <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">API (Python)</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">This page is a user-facing map of the public Python API . For a complete listing of functions/classes (including events), see API Reference .</p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This page is a user-facing map of the public Python API exposed from abstractcore (see abstractcore/__init__.py). For a complete listing of functions/classes (including events), see API Reference.</p>
             </div>
 
             <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#core-entrypoints" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Core entrypoints</a>
-<a href="#responses-generateresponse" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Responses ( GenerateResponse )</a>
+<a href="#responses-generateresponse" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Responses (GenerateResponse)</a>
+<a href="#model-downloads-download_model-optional" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Model downloads (download_model, optional)</a>
 <a href="#tool-calling" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Tool calling</a>
 <a href="#structured-output" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Structured output</a>
 <a href="#media-input" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Media input</a>
@@ -43,21 +44,27 @@
 
             <div class="doc-content">
 
-
+<p>New to AbstractCore? Start with <strong><a href="getting-started.html">Getting Started</a></strong>.</p>
+<p>Implementation pointers (source of truth):
+- <code>create_llm</code>: <code>abstractcore/core/factory.py</code> → <code>abstractcore/providers/registry.py</code>
+- <code>BasicSession</code>: <code>abstractcore/core/session.py</code>
+- Response/types: <code>abstractcore/core/types.py</code>
+- Tool decorator: <code>abstractcore/tools/core.py</code></p>
 <h2 id="core-entrypoints">Core entrypoints</h2>
-<h3 id="createllm"><code>create_llm(...)</code></h3>
+<h3 id="create_llm"><code>create_llm(...)</code></h3>
 <p>Create a provider instance:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini")  # requires: pip install "abstractcore[openai]"
-resp = llm.generate("Hello!")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)  # requires: pip install &quot;abstractcore[openai]&quot;
+resp = llm.generate(&quot;Hello!&quot;)
 print(resp.content)
 </code></pre></div>
+<p>Provider IDs (common): <code>openai</code>, <code>anthropic</code>, <code>openrouter</code>, <code>portkey</code>, <code>ollama</code>, <code>lmstudio</code>, <code>vllm</code>, <code>openai-compatible</code>, <code>huggingface</code>, <code>mlx</code>.</p>
 <h3 id="gateway-providers-openrouter-portkey">Gateway providers (OpenRouter, Portkey)</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-llm_openrouter = create_llm("openrouter", model="openai/gpt-4o-mini")
-llm_portkey = create_llm("portkey", model="gpt-5-mini", api_key="PORTKEY_API_KEY", config_id="pcfg_...")
+llm_openrouter = create_llm(&quot;openrouter&quot;, model=&quot;openai/gpt-4o-mini&quot;)
+llm_portkey = create_llm(&quot;portkey&quot;, model=&quot;gpt-5-mini&quot;, api_key=&quot;PORTKEY_API_KEY&quot;, config_id=&quot;pcfg_...&quot;)
 </code></pre></div>
 <p>Gateway notes:
 - OpenRouter uses <code>OPENROUTER_API_KEY</code> (model names like <code>openai/...</code>).
@@ -67,9 +74,21 @@ llm_portkey = create_llm("portkey", model="gpt-5-mini", api_key="PORTKEY_API_KEY
 <p>Keep conversation state:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import BasicSession, create_llm
 
-session = BasicSession(create_llm("anthropic", model="claude-haiku-4-5"))  # requires: abstractcore[anthropic]
-print(session.generate("Give me 3 name ideas.").content)
-print(session.generate("Pick the best one.").content)
+session = BasicSession(create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;))  # requires: abstractcore[anthropic]
+print(session.generate(&quot;Give me 3 name ideas.&quot;).content)
+print(session.generate(&quot;Pick the best one.&quot;).content)
+</code></pre></div>
+<h3 id="tool-decorator"><code>tool</code> (decorator)</h3>
+<p>Define tools in Python with a decorator, then pass them to <code>generate()</code> / <code>agenerate()</code>:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, tool
+
+@tool
+def get_weather(city: str) -&gt; str:
+    return f&quot;{city}: 22°C and sunny&quot;
+
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+resp = llm.generate(&quot;Use the tool.&quot;, tools=[get_weather])
+print(resp.tool_calls)
 </code></pre></div>
 <h2 id="responses-generateresponse">Responses (<code>GenerateResponse</code>)</h2>
 <p>Most calls return a <code>GenerateResponse</code> object (or an iterator of them for streaming). Common fields:</p>
@@ -79,22 +98,38 @@ print(session.generate("Pick the best one.").content)
 <li><code>usage</code>: token usage (provider-dependent)</li>
 <li><code>metadata</code>: provider/model specific fields (for example extracted reasoning text when configured)</li>
 </ul>
+<h2 id="model-downloads-download_model-optional">Model downloads (<code>download_model</code>, optional)</h2>
+<p><code>download_model(...)</code> is an <strong>async generator</strong> that yields <code>DownloadProgress</code> updates while a model is being fetched.</p>
+<p>Supported providers:
+- <code>ollama</code>: pulls via the Ollama HTTP API (<code>/api/pull</code>)
+- <code>huggingface</code> / <code>mlx</code>: downloads from HuggingFace Hub (requires <code>pip install "abstractcore[huggingface]"</code>; pass <code>token=</code> for gated models)</p>
+<p>Example:</p>
+<div class="code-block"><pre><code class="language-python">import asyncio
+from abstractcore import download_model
+
+async def main():
+    async for p in download_model(&quot;ollama&quot;, &quot;qwen3:4b-instruct-2507-q4_K_M&quot;):
+        print(p.status.value, p.message)
+
+asyncio.run(main())
+</code></pre></div>
+<p>Implementation: <code>abstractcore/download.py</code>. For provider setup and base URLs, see <a href="prerequisites.html">Prerequisites</a>.</p>
 <h2 id="tool-calling">Tool calling</h2>
 <p>Tools are passed explicitly to <code>generate()</code> / <code>agenerate()</code>:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm, tool
 
 @tool
 def get_weather(city: str) -&gt; str:
-    return f"{city}: 22°C and sunny"
+    return f&quot;{city}: 22°C and sunny&quot;
 
-llm = create_llm("openai", model="gpt-4o-mini")
-resp = llm.generate("Use the tool.", tools=[get_weather])
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+resp = llm.generate(&quot;Use the tool.&quot;, tools=[get_weather])
 print(resp.tool_calls)
 </code></pre></div>
 <p>See <strong><a href="tool-calling.html">Tool Calling</a></strong> and <strong><a href="tool-syntax-rewriting.html">Tool Syntax Rewriting</a></strong>.</p>
 <h3 id="built-in-tools-optional">Built-in tools (optional)</h3>
 <p>If you want a ready-made toolset (web + filesystem helpers), install:</p>
-<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[tools]"
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[tools]&quot;
 </code></pre></div>
 <p>Then import from <code>abstractcore.tools.common_tools</code> (for example <code>web_search</code>, <code>skim_websearch</code>, <code>skim_url</code>, <code>fetch_url</code>). See <strong><a href="tool-calling.html">Tool Calling</a></strong> for usage patterns and when to use <code>skim_*</code> vs <code>fetch_*</code>.</p>
 <h2 id="structured-output">Structured output</h2>
@@ -106,14 +141,14 @@ class Answer(BaseModel):
     title: str
     bullets: list[str]
 
-llm = create_llm("openai", model="gpt-4o-mini")
-result = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+result = llm.generate(&quot;Summarize HTTP/3 in 3 bullets.&quot;, response_model=Answer)
 print(result.bullets)
 </code></pre></div>
 <p>See <strong><a href="structured-output.html">Structured Output</a></strong>.</p>
 <h2 id="media-input">Media input</h2>
 <p>Media handling is opt-in:</p>
-<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[media]"
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[media]&quot;
 </code></pre></div>
 <p>Then pass <code>media=[...]</code> to <code>generate()</code> / <code>agenerate()</code> (or use the media pipeline). Media behavior is <strong>policy-driven</strong>:</p>
 <ul>
@@ -124,15 +159,17 @@ print(result.bullets)
 <p>See <strong><a href="media-handling-system.html">Media Handling</a></strong>, <strong><a href="vision-capabilities.html">Vision Capabilities</a></strong>, and <strong><a href="centralized-config.html">Centralized Config</a></strong>.</p>
 <h2 id="http-api-optional">HTTP API (optional)</h2>
 <p>If you want an OpenAI-compatible <code>/v1</code> gateway, install and run the server:</p>
-<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[server]"
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[server]&quot;
 python -m abstractcore.server.app
 </code></pre></div>
 <p>See <strong><a href="server.html">Server</a></strong>.</p>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

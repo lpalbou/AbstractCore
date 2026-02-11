@@ -28,7 +28,7 @@
 
     <!-- Main Content -->
     <main style="padding-top: 5rem;">
-        <div class="container" style="max-width: 1300px;">
+        <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Tool Calling System</h1>
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore provides a universal tool calling system that works across all LLM providers, even those without native tool support.</p>
@@ -52,7 +52,6 @@
 
             <div class="doc-content">
 
-
 <h2 id="table-of-contents">Table of Contents</h2>
 <ul>
 <li><a href="#quick-start">Quick Start</a></li>
@@ -72,13 +71,13 @@
 
 @tool
 def get_weather(city: str) -&gt; str:
-    """Get current weather for a specified city."""
+    &quot;&quot;&quot;Get current weather for a specified city.&quot;&quot;&quot;
     # In a real scenario, you'd call an actual weather API
-    return f"The weather in {city} is sunny, 72°F"
+    return f&quot;The weather in {city} is sunny, 72°F&quot;
 
 @tool
 def calculate(expression: str) -&gt; float:
-    """Perform a mathematical calculation."""
+    &quot;&quot;&quot;Perform a mathematical calculation.&quot;&quot;&quot;
     try:
         result = eval(expression)  # Simplified for demo - don't use eval in production!
         return result
@@ -86,9 +85,9 @@ def calculate(expression: str) -&gt; float:
         return float('nan')
 
 # Works with ANY provider
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 response = llm.generate(
-    "What's the weather in Tokyo and what's 15 * 23?",
+    &quot;What's the weather in Tokyo and what's 15 * 23?&quot;,
     tools=[get_weather, calculate]  # Pass functions directly
 )
 
@@ -97,14 +96,14 @@ print(response.content)
 
 # By default (`execute_tools=False`), AbstractCore does not execute tools.
 # Instead, it returns structured tool calls (if the model chose to call tools).
-print(f"Tool calls requested: {len(response.tool_calls) if response.tool_calls else 0}")
-print(f"Generation time: {response.gen_time}ms")
-print(f"Summary: {response.get_summary()}")  # Includes tool count
+print(f&quot;Tool calls requested: {len(response.tool_calls) if response.tool_calls else 0}&quot;)
+print(f&quot;Generation time: {response.gen_time}ms&quot;)
+print(f&quot;Summary: {response.get_summary()}&quot;)  # Includes tool count
 
 # Inspect tool calls (host/runtime executes them)
 if response.tool_calls:
     for call in response.tool_calls:
-        print(f"Tool: {call.get('name')} args={call.get('arguments')}")
+        print(f&quot;Tool: {call.get('name')} args={call.get('arguments')}&quot;)
 </code></pre></div>
 <h2 id="the-tool-decorator">The @tool Decorator</h2>
 <p>The <code>@tool</code> decorator is the primary way to create tools in AbstractCore. It automatically extracts function metadata and creates proper tool definitions.</p>
@@ -112,65 +111,65 @@ if response.tool_calls:
 <div class="code-block"><pre><code class="language-python">from abstractcore import tool
 
 @tool
-def list_files(directory: str = ".", pattern: str = "*") -&gt; str:
-    """List files in a directory matching a pattern."""
+def list_files(directory: str = &quot;.&quot;, pattern: str = &quot;*&quot;) -&gt; str:
+    &quot;&quot;&quot;List files in a directory matching a pattern.&quot;&quot;&quot;
     import os
     import fnmatch
 
     try:
         files = [f for f in os.listdir(directory) 
                 if fnmatch.fnmatch(f, pattern)]
-        return "\n".join(files) if files else "No files found"
+        return &quot;\n&quot;.join(files) if files else &quot;No files found&quot;
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f&quot;Error: {str(e)}&quot;
 </code></pre></div>
 <h3 id="type-annotations">Type Annotations</h3>
 <p>The decorator automatically infers parameter types from type annotations:</p>
 <div class="code-block"><pre><code class="language-python">@tool
 def create_user(name: str, age: int, is_admin: bool = False) -&gt; str:
-    """Create a new user with the specified details."""
+    &quot;&quot;&quot;Create a new user with the specified details.&quot;&quot;&quot;
     user_data = {
-        "name": name,
-        "age": age,
-        "is_admin": is_admin,
-        "created_at": "2025-01-14"
+        &quot;name&quot;: name,
+        &quot;age&quot;: age,
+        &quot;is_admin&quot;: is_admin,
+        &quot;created_at&quot;: &quot;2025-01-14&quot;
     }
-    return f"Created user: {user_data}"
+    return f&quot;Created user: {user_data}&quot;
 </code></pre></div>
 <h3 id="enhanced-metadata">Enhanced Metadata</h3>
 <p>The <code>@tool</code> decorator supports rich metadata that gets automatically injected into system prompts for prompted models and passed to native APIs:</p>
 <div class="code-block"><pre><code class="language-python">@tool(
-    description="Search the database for records matching the query",
-    tags=["database", "search", "query"],
-    when_to_use="When the user asks for specific data from the database or wants to find records",
+    description=&quot;Search the database for records matching the query&quot;,
+    tags=[&quot;database&quot;, &quot;search&quot;, &quot;query&quot;],
+    when_to_use=&quot;When the user asks for specific data from the database or wants to find records&quot;,
     examples=[
         {
-            "description": "Find all users named John",
-            "arguments": {
-                "query": "name=John",
-                "table": "users"
+            &quot;description&quot;: &quot;Find all users named John&quot;,
+            &quot;arguments&quot;: {
+                &quot;query&quot;: &quot;name=John&quot;,
+                &quot;table&quot;: &quot;users&quot;
             }
         },
         {
-            "description": "Search for products under $50",
-            "arguments": {
-                "query": "price&lt;50", 
-                "table": "products"
+            &quot;description&quot;: &quot;Search for products under $50&quot;,
+            &quot;arguments&quot;: {
+                &quot;query&quot;: &quot;price&lt;50&quot;, 
+                &quot;table&quot;: &quot;products&quot;
             }
         },
         {
-            "description": "Find recent orders",
-            "arguments": {
-                "query": "date&gt;2025-01-01",
-                "table": "orders"
+            &quot;description&quot;: &quot;Find recent orders&quot;,
+            &quot;arguments&quot;: {
+                &quot;query&quot;: &quot;date&gt;2025-01-01&quot;,
+                &quot;table&quot;: &quot;orders&quot;
             }
         }
     ]
 )
-def search_database(query: str, table: str = "users") -&gt; str:
-    """Search the database for records matching the query."""
+def search_database(query: str, table: str = &quot;users&quot;) -&gt; str:
+    &quot;&quot;&quot;Search the database for records matching the query.&quot;&quot;&quot;
     # Implementation here
-    return f"Searching {table} for: {query}"
+    return f&quot;Searching {table} for: {query}&quot;
 </code></pre></div>
 <p><strong>How This Metadata is Used:</strong>
 - <strong>Prompted tool calling</strong>: the tool formatter injects tool name/description/args into the system prompt. To keep prompts small, <code>when_to_use</code> is included only for small tool sets and a few high-impact tools (edit/write/execute + web triage tools), and tool examples are globally capped.
@@ -180,16 +179,16 @@ def search_database(query: str, table: str = "users") -&gt; str:
 <div class="code-block"><pre><code class="language-python">from abstractcore.tools.common_tools import skim_url, fetch_url, search_files, read_file, list_files
 
 # Quick URL preview (fast, small)
-preview = skim_url("https://example.com/article")
+preview = skim_url(&quot;https://example.com/article&quot;)
 
 # Full web content fetching and parsing (HTML→Markdown, JSON/XML/text)
-result = fetch_url("https://api.github.com/repos/python/cpython")
+result = fetch_url(&quot;https://api.github.com/repos/python/cpython&quot;)
 # For PDFs/images/other binaries, fetch_url returns metadata (and optional previews), not full extraction.
 
 # File system operations  
-files = search_files("def.*fetch", ".", file_pattern="*.py")
-content = read_file("config.json")
-directory_listing = list_files(".", pattern="*.py", recursive=True)
+files = search_files(&quot;def.*fetch&quot;, &quot;.&quot;, file_pattern=&quot;*.py&quot;)
+content = read_file(&quot;config.json&quot;)
+directory_listing = list_files(&quot;.&quot;, pattern=&quot;*.py&quot;, recursive=True)
 </code></pre></div>
 <p><strong>Available Built-in Tools:</strong>
 - <code>skim_url</code> - Fast URL skim (title/description/headings + short preview)
@@ -210,68 +209,68 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 <h3 id="real-world-example">Real-World Example</h3>
 <p>Here's an example from AbstractCore's codebase showing the enhanced <code>@tool</code> decorator:</p>
 <div class="code-block"><pre><code class="language-python">@tool(
-    description="Find and list files and directories by their names/paths using glob patterns (case-insensitive, supports multiple patterns)",
-    tags=["file", "directory", "listing", "filesystem"],
-    when_to_use="When you need to find files by their names, paths, or file extensions (NOT for searching file contents)",
+    description=&quot;Find and list files and directories by their names/paths using glob patterns (case-insensitive, supports multiple patterns)&quot;,
+    tags=[&quot;file&quot;, &quot;directory&quot;, &quot;listing&quot;, &quot;filesystem&quot;],
+    when_to_use=&quot;When you need to find files by their names, paths, or file extensions (NOT for searching file contents)&quot;,
     examples=[
         {
-            "description": "List all files in current directory",
-            "arguments": {
-                "directory_path": ".",
-                "pattern": "*"
+            &quot;description&quot;: &quot;List all files in current directory&quot;,
+            &quot;arguments&quot;: {
+                &quot;directory_path&quot;: &quot;.&quot;,
+                &quot;pattern&quot;: &quot;*&quot;
             }
         },
         {
-            "description": "Find all Python files recursively",
-            "arguments": {
-                "directory_path": ".",
-                "pattern": "*.py",
-                "recursive": True
+            &quot;description&quot;: &quot;Find all Python files recursively&quot;,
+            &quot;arguments&quot;: {
+                &quot;directory_path&quot;: &quot;.&quot;,
+                &quot;pattern&quot;: &quot;*.py&quot;,
+                &quot;recursive&quot;: True
             }
         },
         {
-            "description": "Find all files with 'test' in filename (case-insensitive)",
-            "arguments": {
-                "directory_path": ".",
-                "pattern": "*test*",
-                "recursive": True
+            &quot;description&quot;: &quot;Find all files with 'test' in filename (case-insensitive)&quot;,
+            &quot;arguments&quot;: {
+                &quot;directory_path&quot;: &quot;.&quot;,
+                &quot;pattern&quot;: &quot;*test*&quot;,
+                &quot;recursive&quot;: True
             }
         },
         {
-            "description": "Find multiple file types using | separator",
-            "arguments": {
-                "directory_path": ".",
-                "pattern": "*.py|*.js|*.md",
-                "recursive": True
+            &quot;description&quot;: &quot;Find multiple file types using | separator&quot;,
+            &quot;arguments&quot;: {
+                &quot;directory_path&quot;: &quot;.&quot;,
+                &quot;pattern&quot;: &quot;*.py|*.js|*.md&quot;,
+                &quot;recursive&quot;: True
             }
         },
         {
-            "description": "Complex multiple patterns - documentation, tests, and config files",
-            "arguments": {
-                "directory_path": ".",
-                "pattern": "README*|*test*|config.*|*.yml",
-                "recursive": True
+            &quot;description&quot;: &quot;Complex multiple patterns - documentation, tests, and config files&quot;,
+            &quot;arguments&quot;: {
+                &quot;directory_path&quot;: &quot;.&quot;,
+                &quot;pattern&quot;: &quot;README*|*test*|config.*|*.yml&quot;,
+                &quot;recursive&quot;: True
             }
         }
     ]
 )
-def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = False, include_hidden: bool = False, head_limit: Optional[int] = 50) -&gt; str:
-    """
+def list_files(directory_path: str = &quot;.&quot;, pattern: str = &quot;*&quot;, recursive: bool = False, include_hidden: bool = False, head_limit: Optional[int] = 50) -&gt; str:
+    &quot;&quot;&quot;
     List files and directories in a specified directory with pattern matching (case-insensitive).
 
     IMPORTANT: Use 'directory_path' parameter (not 'file_path') to specify the directory to list.
 
     Args:
-        directory_path: Path to the directory to list files from (default: "." for current directory)
-        pattern: Glob pattern(s) to match files. Use "|" to separate multiple patterns (default: "*")
+        directory_path: Path to the directory to list files from (default: &quot;.&quot; for current directory)
+        pattern: Glob pattern(s) to match files. Use &quot;|&quot; to separate multiple patterns (default: &quot;*&quot;)
         recursive: Whether to search recursively in subdirectories (default: False)
         include_hidden: Whether to include hidden files/directories starting with '.' (default: False)
         head_limit: Maximum number of files to return (default: 50, None for unlimited)
 
     Returns:
         Formatted string with file and directory listings or error message.
-        When head_limit is applied, shows "showing X of Y files" in the header.
-    """
+        When head_limit is applied, shows &quot;showing X of Y files&quot; in the header.
+    &quot;&quot;&quot;
     # Implementation here...
 </code></pre></div>
 <p><strong>How This Gets Transformed</strong></p>
@@ -281,11 +280,11 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
 **list_files**: Find and list files and directories by their names/paths using glob patterns (case-insensitive, supports multiple patterns)
 • When to use: When you need to find files by their names, paths, or file extensions (NOT for searching file contents)
 • Tags: file, directory, listing, filesystem
-• Parameters: {"directory_path": {"type": "string", "default": "."}, "pattern": {"type": "string", "default": "*"}, ...}
+• Parameters: {&quot;directory_path&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;default&quot;: &quot;.&quot;}, &quot;pattern&quot;: {&quot;type&quot;: &quot;string&quot;, &quot;default&quot;: &quot;*&quot;}, ...}
 
 To use a tool, respond with this EXACT format:
 &lt;|tool_call|&gt;
-{"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
+{&quot;name&quot;: &quot;tool_name&quot;, &quot;arguments&quot;: {&quot;param1&quot;: &quot;value1&quot;, &quot;param2&quot;: &quot;value2&quot;}}
 &lt;/|tool_call|&gt;
 
 **EXAMPLES:**
@@ -293,12 +292,12 @@ To use a tool, respond with this EXACT format:
 **list_files Examples:**
 1. List all files in current directory:
 &lt;|tool_call|&gt;
-{"name": "list_files", "arguments": {"directory_path": ".", "pattern": "*"}}
+{&quot;name&quot;: &quot;list_files&quot;, &quot;arguments&quot;: {&quot;directory_path&quot;: &quot;.&quot;, &quot;pattern&quot;: &quot;*&quot;}}
 &lt;/|tool_call|&gt;
 
 2. Find all Python files recursively:
 &lt;|tool_call|&gt;
-{"name": "list_files", "arguments": {"directory_path": ".", "pattern": "*.py", "recursive": true}}
+{&quot;name&quot;: &quot;list_files&quot;, &quot;arguments&quot;: {&quot;directory_path&quot;: &quot;.&quot;, &quot;pattern&quot;: &quot;*.py&quot;, &quot;recursive&quot;: true}}
 &lt;/|tool_call|&gt;
 
 ... and 3 more examples with proper formatting ...
@@ -321,14 +320,14 @@ To use a tool, respond with this EXACT format:
 <h3 id="1-native-tool-support">1. Native Tool Support</h3>
 <p>For providers with native tool APIs (OpenAI, Anthropic):</p>
 <div class="code-block"><pre><code class="language-python"># OpenAI with native tool support
-llm = create_llm("openai", model="gpt-4o-mini")
-response = llm.generate("What's the weather?", tools=[get_weather])
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+response = llm.generate(&quot;What's the weather?&quot;, tools=[get_weather])
 </code></pre></div>
 <h3 id="2-intelligent-prompting">2. Intelligent Prompting</h3>
 <p>For providers without native tool support (Ollama, MLX, LMStudio):</p>
 <div class="code-block"><pre><code class="language-python"># Ollama without native tool support - AbstractCore handles this automatically
-llm = create_llm("ollama", model="qwen3:4b-instruct")
-response = llm.generate("What's the weather?", tools=[get_weather])
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
+response = llm.generate(&quot;What's the weather?&quot;, tools=[get_weather])
 # AbstractCore automatically:
 # 1. Detects the model architecture (Qwen3)
 # 2. Formats tools with examples into system prompt
@@ -341,12 +340,12 @@ response = llm.generate("What's the weather?", tools=[get_weather])
 
 # Manual tool definition (rarely needed)
 tool_def = ToolDefinition(
-    name="get_weather",
-    description="Get current weather for a city",
+    name=&quot;get_weather&quot;,
+    description=&quot;Get current weather for a city&quot;,
     parameters={
-        "city": {
-            "type": "string",
-            "description": "The city name"
+        &quot;city&quot;: {
+            &quot;type&quot;: &quot;string&quot;,
+            &quot;description&quot;: &quot;The city name&quot;
         }
     },
     function=get_weather_function
@@ -371,8 +370,8 @@ def complex_tool(
     tags: list,
     config: dict
 ) -&gt; str:
-    """Tool with various parameter types."""
-    return f"Processed: {text} with {count} items"
+    &quot;&quot;&quot;Tool with various parameter types.&quot;&quot;&quot;
+    return f&quot;Processed: {text} with {count} items&quot;
 </code></pre></div>
 <h2 id="tool-execution">Tool Execution</h2>
 <h3 id="execution-modes">Execution Modes</h3>
@@ -430,19 +429,19 @@ def complex_tool(
 <p>Tools can call other tools or return data that triggers additional tool calls:</p>
 <div class="code-block"><pre><code class="language-python">@tool
 def get_user_location(user_id: str) -&gt; str:
-    """Get the location of a user."""
+    &quot;&quot;&quot;Get the location of a user.&quot;&quot;&quot;
     # Simulated implementation
-    locations = {"user123": "Paris", "user456": "Tokyo"}
-    return locations.get(user_id, "Unknown")
+    locations = {&quot;user123&quot;: &quot;Paris&quot;, &quot;user456&quot;: &quot;Tokyo&quot;}
+    return locations.get(user_id, &quot;Unknown&quot;)
 
 @tool
 def get_weather(city: str) -&gt; str:
-    """Get weather for a city."""
-    return f"Weather in {city}: 72°F, sunny"
+    &quot;&quot;&quot;Get weather for a city.&quot;&quot;&quot;
+    return f&quot;Weather in {city}: 72°F, sunny&quot;
 
 # LLM can chain these tools:
 response = llm.generate(
-    "What's the weather like for user123?",
+    &quot;What's the weather like for user123?&quot;,
     tools=[get_user_location, get_weather]
 )
 # In an agent loop, your host/runtime can execute tool calls and feed tool results back into the model for multi-step chaining.
@@ -451,23 +450,23 @@ response = llm.generate(
 <p>In passthrough mode, your host/runtime decides which tool calls to execute:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore.tools import ToolCall, ToolRegistry
 
-dangerous_tools = {"delete_file", "system_command", "send_email"}
+dangerous_tools = {&quot;delete_file&quot;, &quot;system_command&quot;, &quot;send_email&quot;}
 
 registry = ToolRegistry()
 registry.register(get_user_location)
 registry.register(get_weather)
 
-response = llm.generate("What's the weather like for user123?", tools=[get_user_location, get_weather])
+response = llm.generate(&quot;What's the weather like for user123?&quot;, tools=[get_user_location, get_weather])
 
 for call in response.tool_calls or []:
-    name = call.get("name")
+    name = call.get(&quot;name&quot;)
     if name in dangerous_tools:
         continue
     result = registry.execute_tool(
         ToolCall(
             name=name,
-            arguments=call.get("arguments") or {},
-            call_id=call.get("call_id") or call.get("id"),
+            arguments=call.get(&quot;arguments&quot;) or {},
+            call_id=call.get(&quot;call_id&quot;) or call.get(&quot;id&quot;),
         )
     )
     print(result)
@@ -478,11 +477,11 @@ for call in response.tool_calls or []:
 
 @tool
 def fetch_data(url: str) -&gt; str:
-    """Fetch data from a URL."""
+    &quot;&quot;&quot;Fetch data from a URL.&quot;&quot;&quot;
     async def async_fetch():
         # Simulate async HTTP request
         await asyncio.sleep(0.1)
-        return f"Data from {url}"
+        return f&quot;Data from {url}&quot;
 
     # Run async function in sync context
     loop = asyncio.new_event_loop()
@@ -498,48 +497,48 @@ def fetch_data(url: str) -&gt; str:
 <p>Handle errors within tools:</p>
 <div class="code-block"><pre><code class="language-python">@tool
 def safe_division(a: float, b: float) -&gt; str:
-    """Safely divide two numbers."""
+    &quot;&quot;&quot;Safely divide two numbers.&quot;&quot;&quot;
     try:
         if b == 0:
-            return "Error: Division by zero is not allowed"
+            return &quot;Error: Division by zero is not allowed&quot;
         result = a / b
-        return f"{a} ÷ {b} = {result}"
+        return f&quot;{a} ÷ {b} = {result}&quot;
     except Exception as e:
-        return f"Error: {str(e)}"
+        return f&quot;Error: {str(e)}&quot;
 </code></pre></div>
 <h3 id="system-level-error-handling">System-Level Error Handling</h3>
 <p>AbstractCore provides comprehensive error handling:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore.exceptions import ToolExecutionError
 
 try:
-    response = llm.generate("Use the broken tool", tools=[broken_tool])
+    response = llm.generate(&quot;Use the broken tool&quot;, tools=[broken_tool])
 except ToolExecutionError as e:
-    print(f"Tool execution failed: {e}")
-    print(f"Failed tool: {e.tool_name}")
-    print(f"Error details: {e.error_details}")
+    print(f&quot;Tool execution failed: {e}&quot;)
+    print(f&quot;Failed tool: {e.tool_name}&quot;)
+    print(f&quot;Error details: {e.error_details}&quot;)
 </code></pre></div>
 <h3 id="validation-and-sanitization">Validation and Sanitization</h3>
 <p>Validate tool inputs:</p>
 <div class="code-block"><pre><code class="language-python">@tool
 def create_file(filename: str, content: str) -&gt; str:
-    """Create a file with the given content."""
+    &quot;&quot;&quot;Create a file with the given content.&quot;&quot;&quot;
     import os
     import re
 
     # Validate filename
     if not re.match(r'^[a-zA-Z0-9_.-]+$', filename):
-        return "Error: Invalid filename. Use only letters, numbers, dots, dashes, and underscores."
+        return &quot;Error: Invalid filename. Use only letters, numbers, dots, dashes, and underscores.&quot;
 
     # Prevent directory traversal
     if '..' in filename or filename.startswith('/'):
-        return "Error: Invalid filename. No directory traversal allowed."
+        return &quot;Error: Invalid filename. No directory traversal allowed.&quot;
 
     try:
         with open(filename, 'w') as f:
             f.write(content)
-        return f"File '{filename}' created successfully"
+        return f&quot;File '{filename}' created successfully&quot;
     except Exception as e:
-        return f"Error creating file: {str(e)}"
+        return f&quot;Error creating file: {str(e)}&quot;
 </code></pre></div>
 <h2 id="performance-optimization">Performance Optimization</h2>
 <h3 id="tool-registry">Tool Registry</h3>
@@ -556,7 +555,7 @@ registry = ToolRegistry.get_instance()
 available_tools = registry.get_all_tools()
 
 response = llm.generate(
-    "Help me with weather and calculations",
+    &quot;Help me with weather and calculations&quot;,
     tools=available_tools
 )
 </code></pre></div>
@@ -577,12 +576,12 @@ db_tool = DatabaseTool()
 
 @tool
 def query_database(sql: str) -&gt; str:
-    """Execute a SQL query."""
+    &quot;&quot;&quot;Execute a SQL query.&quot;&quot;&quot;
     try:
         result = db_tool.connection.execute(sql)
         return str(result)
     except Exception as e:
-        return f"Database error: {str(e)}"
+        return f&quot;Database error: {str(e)}&quot;
 </code></pre></div>
 <h3 id="caching-results">Caching Results</h3>
 <p>Cache expensive tool results:</p>
@@ -591,10 +590,10 @@ def query_database(sql: str) -&gt; str:
 @tool
 @lru_cache(maxsize=100)
 def expensive_calculation(input_data: str) -&gt; str:
-    """Perform an expensive calculation with caching."""
+    &quot;&quot;&quot;Perform an expensive calculation with caching.&quot;&quot;&quot;
     import time
     time.sleep(1)  # Simulate expensive operation
-    return f"Result for {input_data}"
+    return f&quot;Result for {input_data}&quot;
 </code></pre></div>
 <h2 id="tool-syntax-rewriting">Tool Syntax Rewriting</h2>
 <p>AbstractCore can rewrite tool-call syntax for downstream agents/clients:</p>
@@ -609,29 +608,29 @@ def expensive_calculation(input_data: str) -&gt; str:
 <div class="code-block"><pre><code class="language-python">from abstractcore.events import EventType, on_global
 
 def monitor_tool_costs(event):
-    """Monitor costs of tool executions."""
-    for call in event.data.get("tool_calls", []) or []:
-        if call.get("name") in {"expensive_api_call", "premium_service"}:
-            print(f"Warning: Using expensive tool {call.get('name')}")
+    &quot;&quot;&quot;Monitor costs of tool executions.&quot;&quot;&quot;
+    for call in event.data.get(&quot;tool_calls&quot;, []) or []:
+        if call.get(&quot;name&quot;) in {&quot;expensive_api_call&quot;, &quot;premium_service&quot;}:
+            print(f&quot;Warning: Using expensive tool {call.get('name')}&quot;)
 
 on_global(EventType.TOOL_STARTED, monitor_tool_costs)
 </code></pre></div>
 <h3 id="performance-tracking">Performance Tracking</h3>
 <div class="code-block"><pre><code class="language-python">def track_tool_performance(event):
-    """Track tool execution outcomes (shape varies by emitter)."""
-    for result in event.data.get("tool_results", []) or []:
-        if result.get("success") is False:
-            print(f"Tool failed: {result.get('name')} error={result.get('error')}")
+    &quot;&quot;&quot;Track tool execution outcomes (shape varies by emitter).&quot;&quot;&quot;
+    for result in event.data.get(&quot;tool_results&quot;, []) or []:
+        if result.get(&quot;success&quot;) is False:
+            print(f&quot;Tool failed: {result.get('name')} error={result.get('error')}&quot;)
 
 on_global(EventType.TOOL_COMPLETED, track_tool_performance)
 </code></pre></div>
 <h3 id="security-auditing">Security Auditing</h3>
 <div class="code-block"><pre><code class="language-python">def audit_tool_usage(event):
-    """Audit all tool usage for security."""
-    for call in event.data.get("tool_calls", []) or []:
-        print(f"Tool requested: {call.get('name')} args={call.get('arguments')}")
+    &quot;&quot;&quot;Audit all tool usage for security.&quot;&quot;&quot;
+    for call in event.data.get(&quot;tool_calls&quot;, []) or []:
+        print(f&quot;Tool requested: {call.get('name')} args={call.get('arguments')}&quot;)
         # Log to security audit system
-        security_log(call.get("name"), call.get("arguments"))
+        security_log(call.get(&quot;name&quot;), call.get(&quot;arguments&quot;))
 
 on_global(EventType.TOOL_STARTED, audit_tool_usage)
 </code></pre></div>
@@ -640,7 +639,7 @@ on_global(EventType.TOOL_STARTED, audit_tool_usage)
 <p>Always provide clear docstrings for your tools:</p>
 <div class="code-block"><pre><code class="language-python">@tool
 def send_email(to: str, subject: str, body: str) -&gt; str:
-    """Send an email to the specified recipient.
+    &quot;&quot;&quot;Send an email to the specified recipient.
 
     Args:
         to: Email address of the recipient
@@ -653,60 +652,60 @@ def send_email(to: str, subject: str, body: str) -&gt; str:
     Note:
         This tool requires email configuration to be set up.
         Use with caution as it sends actual emails.
-    """
+    &quot;&quot;&quot;
     # Implementation here
 </code></pre></div>
 <h3 id="2-input-validation">2. Input Validation</h3>
 <p>Always validate and sanitize inputs:</p>
 <div class="code-block"><pre><code class="language-python">@tool
 def process_user_input(user_data: str) -&gt; str:
-    """Process user input safely."""
+    &quot;&quot;&quot;Process user input safely.&quot;&quot;&quot;
     # Validate input length
     if len(user_data) &gt; 1000:
-        return "Error: Input too long (max 1000 characters)"
+        return &quot;Error: Input too long (max 1000 characters)&quot;
 
     # Sanitize input
     import html
     safe_data = html.escape(user_data)
 
     # Process safely
-    return f"Processed: {safe_data}"
+    return f&quot;Processed: {safe_data}&quot;
 </code></pre></div>
 <h3 id="3-error-recovery">3. Error Recovery</h3>
 <p>Provide meaningful error messages and recovery suggestions:</p>
 <div class="code-block"><pre><code class="language-python">@tool
 def connect_to_service(endpoint: str) -&gt; str:
-    """Connect to an external service."""
+    &quot;&quot;&quot;Connect to an external service.&quot;&quot;&quot;
     try:
         # Attempt connection
         result = make_connection(endpoint)
-        return f"Connected successfully: {result}"
+        return f&quot;Connected successfully: {result}&quot;
     except ConnectionError:
-        return "Error: Could not connect to service. Please check the endpoint URL and try again."
+        return &quot;Error: Could not connect to service. Please check the endpoint URL and try again.&quot;
     except TimeoutError:
-        return "Error: Connection timed out. The service may be temporarily unavailable."
+        return &quot;Error: Connection timed out. The service may be temporarily unavailable.&quot;
     except Exception as e:
-        return f"Error: Unexpected error occurred: {str(e)}"
+        return f&quot;Error: Unexpected error occurred: {str(e)}&quot;
 </code></pre></div>
 <h3 id="4-resource-management">4. Resource Management</h3>
 <p>Clean up resources properly:</p>
 <div class="code-block"><pre><code class="language-python">@tool
 def process_large_file(filename: str) -&gt; str:
-    """Process a large file efficiently."""
+    &quot;&quot;&quot;Process a large file efficiently.&quot;&quot;&quot;
     try:
         with open(filename, 'r') as file:
             # Process file in chunks
-            result = ""
+            result = &quot;&quot;
             while True:
                 chunk = file.read(1024)
                 if not chunk:
                     break
                 result += process_chunk(chunk)
-        return f"Processed file: {filename}"
+        return f&quot;Processed file: {filename}&quot;
     except FileNotFoundError:
-        return f"Error: File '{filename}' not found"
+        return f&quot;Error: File '{filename}' not found&quot;
     except MemoryError:
-        return "Error: File too large to process"
+        return &quot;Error: File too large to process&quot;
 </code></pre></div>
 <h2 id="troubleshooting">Troubleshooting</h2>
 <h3 id="common-issues">Common Issues</h3>
@@ -722,17 +721,17 @@ def process_large_file(filename: str) -&gt; str:
 logging.basicConfig(level=logging.DEBUG)
 
 # Tool execution details will be logged
-response = llm.generate("Use tools", tools=[debug_tool])
+response = llm.generate(&quot;Use tools&quot;, tools=[debug_tool])
 </code></pre></div>
 <h3 id="testing-tools">Testing Tools</h3>
 <p>Test tools independently:</p>
 <div class="code-block"><pre><code class="language-python"># Test tool directly
-result = get_weather("Paris")
-print(f"Direct call result: {result}")
+result = get_weather(&quot;Paris&quot;)
+print(f&quot;Direct call result: {result}&quot;)
 
 # Test with LLM
-response = llm.generate("What's the weather in Paris?", tools=[get_weather])
-print(f"LLM result: {response.content}")
+response = llm.generate(&quot;What's the weather in Paris?&quot;, tools=[get_weather])
+print(f&quot;LLM result: {response.content}&quot;)
 </code></pre></div>
 <h2 id="examples">Examples</h2>
 <p>See the <a href="../examples/">examples directory</a> for comprehensive tool usage examples:</p>
@@ -749,11 +748,13 @@ print(f"LLM result: {response.content}")
 <li><a href="server.html">Server Guide</a> - HTTP server and REST API</li>
 <li><a href="getting-started.html">Getting Started</a> - Quick start guide</li>
 </ul>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

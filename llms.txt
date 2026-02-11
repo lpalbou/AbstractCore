@@ -2,48 +2,62 @@
 
 > Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media handling (images/audio/video + documents), embeddings, and an optional OpenAI-compatible HTTP server. Default install stays lightweight; features are enabled via extras.
 
-This is the curated, high-signal index for agents. For the self-contained handbook, read `llms-full.txt`.
+This is the curated, high-signal index for agents. For a self-contained handbook with the important details inlined, read `llms-full.txt`.
+
+Ecosystem note:
+- AbstractCore is part of **AbstractFramework** (umbrella: https://github.com/lpalbou/AbstractFramework).
+- In the ecosystem, **AbstractRuntime** is the recommended runtime for executing `response.tool_calls` durably (policy, retries, persistence): https://github.com/lpalbou/abstractruntime
 
 Quick start:
 - Install: `pip install abstractcore`
-- First steps: `docs/getting-started.html` -> `docs/prerequisites.html`
-- Run the server: `pip install "abstractcore[server]"` then `python -m abstractcore.server.app`
+- First steps: `docs/getting-started.md` -> `docs/prerequisites.md`
+- Run the gateway server: `pip install "abstractcore[server]"` then `python -m abstractcore.server.app`
+- Run the single-model endpoint: `pip install "abstractcore[server]"` then `abstractcore-endpoint --help` (see `docs/endpoint.md`)
+- Repo/dev checks: `pip install -e ".[dev,test]"` ; `pytest -q` ; `black .` ; `ruff check .`
 
 ## Read First
 
-- [Home](index.html): overview + quickstart
-- [Getting Started](docs/getting-started.html): `create_llm(...)`, `generate(...)`, streaming, tools, structured output, media
-- [Prerequisites](docs/prerequisites.html): provider setup (keys/base URLs) + local hardware notes
-- [FAQ](docs/faq.html): common issues + setup gotchas
-- [API (Python)](docs/api.html): public API map and common patterns
-- [API Reference](docs/api-reference.html): full function/class listing
+- [README](README.md): what AbstractCore is + install matrix
+- [Docs index](docs/README.md): recommended reading paths
+- [Getting Started](docs/getting-started.md): `create_llm(...)`, `generate(...)`, streaming, tools, structured output, media
+- [Prerequisites](docs/prerequisites.md): provider setup (keys/base URLs) + local hardware notes
+- [FAQ](docs/faq.md): common issues + setup gotchas
 
-## Key Concepts
+## Core API + Concepts
 
-- [Tool calling](docs/tool-calling.html): `@tool`, passthrough vs execution, built-in tools
-- [Tool syntax rewriting](docs/tool-syntax-rewriting.html): preserve tool-call markup (`tool_call_tags`, server `agent_format`)
-- [Structured output](docs/structured-output.html): `response_model=...`, native vs prompted, validation/retry behavior
-- [Media handling](docs/media-handling-system.html): `media=[...]`, audio/video policies, vision fallback and plugins
-- [Centralized config](docs/centralized-config.html): `abstractcore --config`, defaults, keys, logging, vision/audio/video strategies
-- [Capabilities](docs/capabilities.html): `llm.voice` / `llm.audio` / `llm.vision` plugin model
+- [API (Python)](docs/api.md): public API map and common patterns
+- [API Reference](docs/api-reference.md): full function/class listing
+- [Generation parameters](docs/generation-parameters.md): max tokens / thinking / temperature semantics across providers
+- [Tool calling](docs/tool-calling.md): `@tool`, passthrough vs execution, built-in tools
+- [Tool syntax rewriting](docs/tool-syntax-rewriting.md): preserve tool-call markup (`tool_call_tags`, server `agent_format`)
+- [Structured output](docs/structured-output.md): `response_model=...`, native vs prompted, validation/retry behavior
+- [Media handling](docs/media-handling-system.md): `media=[...]`, audio/video policies, vision fallback and plugins
+- [Centralized config](docs/centralized-config.md): `abstractcore --config`, defaults, keys, logging, vision/audio/video strategies
+
+## Providers (IDs + setup)
+
+- [Provider registry](abstractcore/providers/registry.py): provider IDs, defaults, install extras
+- [Provider setup guide](docs/prerequisites.md): env vars + examples for OpenAI/Anthropic/Ollama/LMStudio/MLX/HuggingFace/vLLM/OpenRouter/Portkey/OpenAI-compatible
 
 ## Server (OpenAI-compatible `/v1`)
 
-- [Server docs](docs/server.html): run + env vars + endpoints and extensions (`api_key`, `base_url`, `agent_format`)
+- [Server docs](docs/server.md): run + env vars + endpoints and extensions (`api_key`, `base_url`, `agent_format`)
+- [Server implementation](abstractcore/server/app.py): FastAPI gateway source
+- [Endpoint docs](docs/endpoint.md): single-model OpenAI-compatible endpoint (`abstractcore-endpoint`)
+- [Endpoint implementation](abstractcore/endpoint/app.py): endpoint server source
 
-## Apps and CLI
+## Contributing
 
-- [Built-in apps](docs/apps.html): summarizer/extractor/judge/intent/deepsearch
-- [Internal CLI](docs/internal-cli.html): CLI reference and flags
+- [Contributing](CONTRIBUTING.md): formatting/lint/test + release checklist
+- [Changelog](CHANGELOG.md): version history + upgrade notes
+- [pyproject.toml](pyproject.toml): extras + console scripts
 
 ## Optional
 
-- [Architecture](docs/architecture.html): core/provider/session/tool/media/capabilities design
-- [Examples](docs/examples.html): end-to-end recipes
-- [Troubleshooting](docs/troubleshooting.html): common errors and fixes
-- [Embeddings](docs/embeddings.html): EmbeddingManager (optional)
-- [MCP](docs/mcp.html): MCP tool servers (HTTP/stdio)
-- [Changelog](docs/changelog.html): version history + upgrade notes
-- [Security](docs/security.html): vulnerability reporting
-- [GitHub repo](https://github.com/lpalbou/abstractcore): source code, issues, PRs
-- [llms-full](llms-full.txt): self-contained agent handbook
+- [Architecture](docs/architecture.md): core/provider/session/tool/media/capabilities design
+- [Examples](docs/examples.md): end-to-end recipes
+- [Troubleshooting](docs/troubleshooting.md): common errors and fixes
+- [Embeddings](docs/embeddings.md): EmbeddingManager (optional)
+- [Capabilities](docs/capabilities.md): `llm.voice` / `llm.audio` / `llm.vision` plugin model
+- [MCP](docs/mcp.md): MCP tool servers (HTTP/stdio)
+- [llms-full](llms-full.txt): self-contained agent handbook (this repo)

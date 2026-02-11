@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Concurrency &amp; Throughput (with MLX) - AbstractCore</title>
+    <meta name="description" content="This guide explains how to think about concurrency in AbstractCore (async vs batching), and how to measure real throughput on Apple Silicon via MLX.">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Concurrency &amp; Throughput (with MLX)</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This guide explains how to think about concurrency in AbstractCore (async vs batching), and how to measure real throughput on Apple Silicon via MLX.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#definitions-important" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Definitions (important)</a>
+<a href="#mlx-in-abstractcore-what-to-expect" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">MLX in AbstractCore (what to expect)</a>
+<a href="#mlx-concurrency-benchmark-recommended" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">MLX concurrency benchmark (recommended)</a>
+<a href="#prompt-caching-separate-concern" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Prompt caching (separate concern)</a></div>
+
+            <div class="doc-content">
+
+<h2 id="definitions-important">Definitions (important)</h2>
+<ul>
+<li><strong>Concurrency</strong>: running <em>multiple requests</em> “at the same time” (e.g. via <code>asyncio.gather</code>).</li>
+<li><strong>Batching / continuous batching</strong>: running <em>multiple requests inside one model execution loop</em> so the backend can schedule work efficiently (often higher throughput than N independent calls).</li>
+</ul>
+<p>For HTTP providers (OpenAI/Anthropic/LMStudio/Ollama), concurrency is mostly <strong>I/O bound</strong> and async yields big wins.
+For local providers (MLX/HuggingFace), concurrency is <strong>compute bound</strong> and naive thread-parallelism can be slower (or unsafe) unless the backend supports a batching scheduler.</p>
+<h2 id="mlx-in-abstractcore-what-to-expect">MLX in AbstractCore (what to expect)</h2>
+<ul>
+<li><code>MLXProvider</code> loads one in-process model per provider instance (<code>abstractcore/providers/mlx_provider.py</code>).</li>
+<li><code>BaseProvider.agenerate()</code> provides async support for all providers, but for MLX it falls back to <code>asyncio.to_thread()</code> (<code>abstractcore/providers/base.py</code>). This keeps the event loop responsive, but it does <strong>not</strong> guarantee higher throughput, and can trigger MLX/Metal thread-safety issues if you truly run multiple generations concurrently in the same process.</li>
+</ul>
+<p>If your goal is <strong>measuring throughput vs concurrency on a single MLX model</strong>, use continuous batching via <code>mlx-lm</code> (next section).</p>
+<h2 id="mlx-concurrency-benchmark-recommended">MLX concurrency benchmark (recommended)</h2>
+<p>Use <code>examples/mlx_concurrency_benchmark.py</code> to run <em>many distinct prompts</em> through a single MLX model and produce:
+- realtime progress logs
+- a summary CSV (TOTAL tok/s)
+- a per-query CSV (per-query tok/s distribution)
+- a PNG plot (TOTAL tok/s curve + AVG per-query tok/s curve)</p>
+<h3 id="install-deps">Install deps</h3>
+<div class="code-block"><pre><code class="language-bash">python -m pip install -e &quot;.[mlx,mlx-bench]&quot;
+</code></pre></div>
+<h3 id="run-a-sweep-custom-concurrency-levels">Run a sweep (custom concurrency levels)</h3>
+<div class="code-block"><pre><code class="language-bash">python examples/mlx_concurrency_benchmark.py \
+  --model lmstudio-community/Qwen3-4B-Instruct-2507-MLX-4bit \
+  --queries 50 \
+  --concurrency-levels 1 2 4 8 16 32 \
+  --max-output-tokens 256 \
+  --progress-interval 15
+</code></pre></div>
+<h3 id="stable-prompt-sets-recommended-for-comparing-models">Stable prompt sets (recommended for comparing models)</h3>
+<p>To compare <em>across runs and across models</em>, use a fixed prompt set file and keep it constant:</p>
+<div class="code-block"><pre><code class="language-bash">python examples/mlx_concurrency_benchmark.py \
+  --model lmstudio-community/Qwen3-4B-Instruct-2507-MLX-4bit \
+  --prompts-file examples/assets/mlx_benchmark_prompts_128.json \
+  --queries 128 \
+  --concurrency-levels 1 2 4 8 16 32 64 128 \
+  --max-output-tokens 512 \
+  --progress-interval 15
+</code></pre></div>
+<p>Artifacts are written under <code>test_results/mlx_concurrency/</code> (untracked). This doc includes copies of a few key plots/CSVs under <code>docs/assets/mlx_concurrency/</code> so the documentation remains portable.</p>
+<h3 id="interpreting-results">Interpreting results</h3>
+<ul>
+<li><strong>TOTAL tok/s</strong> (throughput): <code>sum(output_tokens) / wall_time</code> for the run.</li>
+<li><strong>AVG per-query tok/s</strong>: mean of <code>(output_tokens / query_duration)</code> across queries.</li>
+<li><strong>TTFT (prefill latency)</strong>: time-to-first-token (lower is better for interactivity).</li>
+<li><strong>Decode tok/s</strong>: token generation speed after the first token is observed (higher is better).</li>
+</ul>
+<p>Typical behavior:
+- TOTAL tok/s usually rises with concurrency until you saturate the device.
+- AVG per-query tok/s usually drops with concurrency (each request gets a smaller share of compute).
+- Non-monotonic points can happen (prefill overhead, cache effects, memory pressure).</p>
+<h3 id="realistic-mlx-concurrency-results-mbp-m4-max-128gb">Realistic MLX concurrency results (MBP M4 Max, 128GB)</h3>
+<p>These runs were executed on a <strong>MacBook Pro (M4 Max, 128GB)</strong> with:
+- <code>--queries 128</code>
+- <code>--max-output-tokens 512</code> (so <code>total_out = 128 * 512 = 65536</code> output tokens per sweep point)
+- <code>--concurrency-levels 1 2 4 8 16 32 64 128</code>
+- prompt set: <code>examples/assets/mlx_benchmark_prompts_128.json</code></p>
+<p>Key takeaways:
+- <strong>Throughput scales with concurrency</strong> (continuous batching keeps the device busy).
+- <strong>Interactivity degrades with concurrency</strong>: TTFT rises sharply as concurrency increases (especially for larger models).
+- A good “real-world” concurrency is the one that hits your <strong>TTFT budget</strong> (interactive) or your <strong>throughput goal</strong> (batch/offline).</p>
+<h4 id="mlx-communitygemma-3-1b-it-qat-4bit"><code>mlx-community/gemma-3-1b-it-qat-4bit</code></h4>
+<p>Peak throughput keeps climbing up to 128 concurrent requests on this device (small model).</p>
+<p><img alt="MLX concurrency benchmark — gemma-3-1b-it-qat-4bit (max_out=512)" src="assets/mlx_concurrency/mlx_concurrency_plot_20260128_210057.png" /></p>
+<p>Raw artifacts:
+- <code>docs/assets/mlx_concurrency/mlx_concurrency_summary_20260128_210057.csv</code>
+- <code>docs/assets/mlx_concurrency/mlx_concurrency_plot_20260128_210057.png</code></p>
+<div class="code-block"><pre><code>conc | throughput(tok/s) | avg_ttft(s) | avg_decode(tok/s) | avg_query(tok/s)
+-----+------------------+------------+-------------------+-----------------
+   1 |           204.29 |       0.04 |            212.05 |          208.60
+   2 |           268.39 |       0.10 |            137.73 |          134.42
+   4 |           406.44 |       0.20 |            105.56 |          101.67
+   8 |           490.00 |       0.34 |             63.77 |           61.25
+  16 |           885.04 |       0.62 |             59.18 |           55.32
+  32 |          1594.77 |       1.18 |             56.20 |           49.84
+  64 |          1888.28 |       2.48 |             34.35 |           29.51
+ 128 |          2011.85 |       5.52 |             18.89 |           15.72
+</code></pre></div>
+<h4 id="lmstudio-communityqwen3-4b-instruct-2507-mlx-4bit"><code>lmstudio-community/Qwen3-4B-Instruct-2507-MLX-4bit</code></h4>
+<p>Throughput increases with concurrency, but TTFT becomes large above ~32–64 (batch-friendly, less interactive).</p>
+<p><img alt="MLX concurrency benchmark — Qwen3-4B-Instruct-2507-MLX-4bit (max_out=512)" src="assets/mlx_concurrency/mlx_concurrency_plot_20260128_215056.png" /></p>
+<p>Raw artifacts:
+- <code>docs/assets/mlx_concurrency/mlx_concurrency_summary_20260128_215056.csv</code>
+- <code>docs/assets/mlx_concurrency/mlx_concurrency_plot_20260128_215056.png</code></p>
+<div class="code-block"><pre><code>conc | throughput(tok/s) | avg_ttft(s) | avg_decode(tok/s) | avg_query(tok/s)
+-----+------------------+------------+-------------------+-----------------
+   1 |            90.98 |       0.21 |             98.83 |           95.48
+   2 |           123.96 |       0.40 |             65.08 |           62.02
+   4 |           155.09 |       0.68 |             40.87 |           38.85
+   8 |           175.47 |       1.31 |             23.20 |           21.94
+  16 |           251.45 |       2.50 |             16.99 |           15.72
+  32 |           415.64 |       4.98 |             14.84 |           13.00
+  64 |           470.19 |      10.36 |              8.61 |            7.35
+ 128 |           494.33 |      22.71 |              4.65 |            3.86
+</code></pre></div>
+<h4 id="lmstudio-communityqwen3-next-80b-a3b-instruct-mlx-4bit"><code>lmstudio-community/Qwen3-Next-80B-A3B-Instruct-MLX-4bit</code></h4>
+<p>Large model: throughput improves with concurrency, but TTFT becomes very high at large concurrency (good for throughput-only batch jobs; poor for interactive latency).</p>
+<p><img alt="MLX concurrency benchmark — Qwen3-Next-80B-A3B-Instruct-MLX-4bit (max_out=512)" src="assets/mlx_concurrency/mlx_concurrency_plot_20260128_202930.png" /></p>
+<p>Raw artifacts:
+- <code>docs/assets/mlx_concurrency/mlx_concurrency_summary_20260128_202929.csv</code>
+- <code>docs/assets/mlx_concurrency/mlx_concurrency_plot_20260128_202930.png</code></p>
+<div class="code-block"><pre><code>conc | throughput(tok/s) | avg_ttft(s) | avg_decode(tok/s) | avg_query(tok/s)
+-----+------------------+------------+-------------------+-----------------
+   1 |            56.70 |       0.23 |             58.85 |           57.49
+   2 |            73.39 |       0.64 |             38.38 |           36.71
+   4 |            98.34 |       1.47 |             26.41 |           24.59
+   8 |           121.74 |       2.70 |             16.52 |           15.22
+  16 |           155.01 |       5.11 |             10.70 |            9.69
+  32 |           199.70 |      10.11 |              7.10 |            6.24
+  64 |           229.42 |      20.28 |              4.17 |            3.58
+ 128 |           251.78 |      43.03 |              2.35 |            1.97
+</code></pre></div>
+<h2 id="prompt-caching-separate-concern">Prompt caching (separate concern)</h2>
+<p>The benchmark script does <strong>not</strong> use prompt caching; it intentionally treats each query as an independent request.</p>
+<p><code>MLXProvider</code> does support best-effort in-process prompt caching via <code>prompt_cache_key</code> (KV/prefix caches). This is mainly useful when <em>many calls share a long prefix</em> (system prompt, tool schema, long chat history). It is not “free”: KV caches consume memory, and reusing the same cache key across unrelated requests can contaminate context.</p>
+<p>For deeper research notes, see <code>docs/research/concurrency/</code>.</p>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

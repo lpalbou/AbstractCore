@@ -34,17 +34,18 @@
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore can convert tool-call syntax to help different runtimes/clients consume tool calls consistently.</p>
             </div>
 
-            
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#1-python-api-tool_call_tags-per-call" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">1) Python API: tool_call_tags (per-call)</a>
+<a href="#2-http-server-agent_format" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">2) HTTP Server: agent_format</a>
+<a href="#notes" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Notes</a></div>
 
             <div class="doc-content">
-
 
 <p>There are two related but distinct features:</p>
 <ol>
 <li><strong>Python API (<code>tool_call_tags</code>)</strong>: preserve and rewrite <em>tool-call markup inside assistant content</em> (mostly for prompted-tool models).</li>
 <li><strong>HTTP Server (<code>agent_format</code>)</strong>: convert/synthesize tool-call syntax for HTTP clients (Codex, other agentic CLIs), while keeping <code>tool_calls</code> structured.</li>
 </ol>
-<h2 id="1-python-api-toolcalltags-per-call">1) Python API: <code>tool_call_tags</code> (per-call)</h2>
+<h2 id="1-python-api-tool_call_tags-per-call">1) Python API: <code>tool_call_tags</code> (per-call)</h2>
 <p><code>tool_call_tags</code> is passed to <code>generate()</code> / <code>agenerate()</code> / <code>BasicSession.generate()</code> as a <strong>per-call kwarg</strong>.</p>
 <h3 id="default-behavior-recommended">Default behavior (recommended)</h3>
 <ul>
@@ -52,7 +53,7 @@
 <li><code>response.tool_calls</code> is populated when tool calls are detected (native tools or prompted tags).</li>
 <li>Tool-call markup is stripped from <code>response.content</code> for clean UX/history.</li>
 </ul>
-<h3 id="when-to-set-toolcalltags">When to set <code>tool_call_tags</code></h3>
+<h3 id="when-to-set-tool_call_tags">When to set <code>tool_call_tags</code></h3>
 <p>Set <code>tool_call_tags</code> when you want <strong>tool-call markup kept in <code>content</code></strong> so a downstream consumer can parse it from text.</p>
 <p>This is most useful for <strong>prompted-tool</strong> providers (tool calls are emitted in assistant content), e.g.:
 - <code>ollama</code>
@@ -76,16 +77,16 @@
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
 tool = {
-    "name": "get_weather",
-    "description": "Get weather for a city",
-    "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]},
+    &quot;name&quot;: &quot;get_weather&quot;,
+    &quot;description&quot;: &quot;Get weather for a city&quot;,
+    &quot;parameters&quot;: {&quot;type&quot;: &quot;object&quot;, &quot;properties&quot;: {&quot;city&quot;: {&quot;type&quot;: &quot;string&quot;}}, &quot;required&quot;: [&quot;city&quot;]},
 }
 
-llm = create_llm("ollama", model="qwen3:4b-instruct")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
 response = llm.generate(
-    "Weather in Paris?",
+    &quot;Weather in Paris?&quot;,
     tools=[tool],
-    tool_call_tags="llama3",
+    tool_call_tags=&quot;llama3&quot;,
 )
 
 print(response.content)     # contains &lt;function_call&gt;...&lt;/function_call&gt;
@@ -94,16 +95,16 @@ print(response.tool_calls)  # always structured dicts for host/runtime execution
 <h3 id="example-streaming">Example (streaming)</h3>
 <div class="code-block"><pre><code class="language-python">tool_calls = []
 for chunk in llm.generate(
-    "Weather in Paris?",
+    &quot;Weather in Paris?&quot;,
     tools=[tool],
     stream=True,
-    tool_call_tags="llama3",
+    tool_call_tags=&quot;llama3&quot;,
 ):
-    print(chunk.content, end="", flush=True)
+    print(chunk.content, end=&quot;&quot;, flush=True)
     if chunk.tool_calls:
         tool_calls.extend(chunk.tool_calls)
 </code></pre></div>
-<h2 id="2-http-server-agentformat">2) HTTP Server: <code>agent_format</code></h2>
+<h2 id="2-http-server-agent_format">2) HTTP Server: <code>agent_format</code></h2>
 <p>When using the AbstractCore server (<code>/v1/chat/completions</code>), you can request a target tool-call syntax via <code>agent_format</code>.</p>
 <ul>
 <li><code>agent_format</code> affects how tool calls are represented in the response for a given client.</li>
@@ -122,19 +123,19 @@ for chunk in llm.generate(
 </ul>
 <h3 id="example">Example</h3>
 <div class="code-block"><pre><code class="language-bash">curl -sS http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
+  -H &quot;Content-Type: application/json&quot; \
   -d '{
-    "model": "ollama/qwen3:4b-instruct",
-    "messages": [{"role": "user", "content": "Weather in Paris?"}],
-    "tools": [{
-      "type": "function",
-      "function": {
-        "name": "get_weather",
-        "description": "Get weather for a city",
-        "parameters": {"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}
+    &quot;model&quot;: &quot;ollama/qwen3:4b-instruct&quot;,
+    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Weather in Paris?&quot;}],
+    &quot;tools&quot;: [{
+      &quot;type&quot;: &quot;function&quot;,
+      &quot;function&quot;: {
+        &quot;name&quot;: &quot;get_weather&quot;,
+        &quot;description&quot;: &quot;Get weather for a city&quot;,
+        &quot;parameters&quot;: {&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;city&quot;:{&quot;type&quot;:&quot;string&quot;}},&quot;required&quot;:[&quot;city&quot;]}
       }
     }],
-    "agent_format": "codex"
+    &quot;agent_format&quot;: &quot;codex&quot;
   }'
 </code></pre></div>
 <h2 id="notes">Notes</h2>
@@ -142,11 +143,13 @@ for chunk in llm.generate(
 <li><code>tool_call_tags</code> is <strong>formatting</strong>, not execution: it only changes how tool calls are represented in <code>content</code>.</li>
 <li>The canonical machine-readable representation remains <code>GenerateResponse.tool_calls</code> (Python) or <code>message.tool_calls</code> (server/OpenAI format).</li>
 </ul>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

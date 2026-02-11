@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FAQ - AbstractCore</title>
-    <meta name="description" content="The default install is intentionally lightweight. It includes the core API ( create_llm , BasicSession , tool definitions, structured output plumbing) and uses only small…">
+    <meta name="description" content="What do I get with pip install abstractcore?">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -31,19 +31,19 @@
         <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">FAQ</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">The default install is intentionally lightweight. It includes the core API ( create_llm , BasicSession , tool definitions, structured output plumbing) and uses only small dependencies ( pydantic , httpx ).</p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">What do I get with pip install abstractcore?</p>
             </div>
 
-            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#what-do-i-get-with-pip-install-abstractcore" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What do I get with pip install abstractcore ?</a>
-<a href="#which-extra-do-i-need-for-my-provider" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Which extra do I need for my provider?</a>
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#which-extra-do-i-need-for-my-provider" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Which extra do I need for my provider?</a>
 <a href="#how-do-i-combine-extras" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I combine extras?</a>
 <a href="#why-did-my-install-pull-torch-take-a-long-time" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Why did my install pull torch / take a long time?</a>
 <a href="#whats-the-difference-between-provider-and-model" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What’s the difference between “provider” and “model”?</a>
+<a href="#how-does-abstractcore-relate-to-abstractframework-abstractruntime" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How does AbstractCore relate to AbstractFramework / AbstractRuntime?</a>
 <a href="#how-do-i-connect-to-a-local-server-ollama-lmstudio-vllm-llamacpp-localai" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I connect to a local server (Ollama / LMStudio / vLLM / llama.cpp / LocalAI)?</a>
-<a href="#why-do-gateway-providers-return-unsupported-parameter-errors-temperaturemaxtokens" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Why do gateway providers return “unsupported parameter” errors (temperature/max_tokens)?</a>
+<a href="#why-do-gateway-providers-return-unsupported-parameter-errors-temperaturemax_tokens" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Why do gateway providers return “unsupported parameter” errors (temperature/max_tokens)?</a>
 <a href="#how-do-i-set-api-keys-and-defaults" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I set API keys and defaults?</a>
 <a href="#why-arent-tools-executed-automatically" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Why aren’t tools executed automatically?</a>
-<a href="#whats-the-difference-between-websearch-skimwebsearch-skimurl-and-fetchurl" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What’s the difference between web_search , skim_websearch , skim_url , and fetch_url ?</a>
+<a href="#whats-the-difference-between-web_search-skim_websearch-skim_url-and-fetch_url" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What’s the difference between web_search, skim_websearch, skim_url, and fetch_url?</a>
 <a href="#how-do-i-preserve-tool-call-markup-in-responsecontent-for-agentic-clis" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I preserve tool-call markup in response.content for agentic CLIs?</a>
 <a href="#how-do-i-get-structured-output-typed-objects-instead-of-parsing-json" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I get structured output (typed objects) instead of parsing JSON?</a>
 <a href="#why-does-structured-output-retry-or-fail-validation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Why does structured output retry or fail validation?</a>
@@ -61,8 +61,7 @@
 
             <div class="doc-content">
 
-<h2 id="what-do-i-get-with-pip-install-abstractcore">What do I get with <code>pip install abstractcore</code>?</h2>
-
+<p>The default install is intentionally lightweight. It includes the core API (<code>create_llm</code>, <code>BasicSession</code>, tool definitions, structured output plumbing) and uses only small dependencies (<code>pydantic</code>, <code>httpx</code>).</p>
 <p>Anything heavy (provider SDKs, torch/transformers, PDF parsing, embeddings models, web scraping deps, the HTTP server) is behind install extras. See <a href="getting-started.html">Getting Started</a> and <a href="prerequisites.html">Prerequisites</a>.</p>
 <h2 id="which-extra-do-i-need-for-my-provider">Which extra do I need for my provider?</h2>
 <ul>
@@ -75,7 +74,7 @@
 <p>These providers work with the core install (no provider extra): <code>ollama</code>, <code>lmstudio</code>, <code>openrouter</code>, <code>openai-compatible</code>.</p>
 <h2 id="how-do-i-combine-extras">How do I combine extras?</h2>
 <div class="code-block"><pre><code class="language-bash"># zsh: keep quotes
-pip install "abstractcore[openai,media,tools]"
+pip install &quot;abstractcore[openai,media,tools]&quot;
 </code></pre></div>
 <p>For “turnkey” installs, see <code>README.md</code> (<code>all-apple</code>, <code>all-non-mlx</code>, <code>all-gpu</code>).</p>
 <h2 id="why-did-my-install-pull-torch-take-a-long-time">Why did my install pull <code>torch</code> / take a long time?</h2>
@@ -86,23 +85,34 @@ pip install "abstractcore[openai,media,tools]"
 <li><strong>Model</strong>: a provider-specific model name (for example <code>gpt-4o-mini</code> or <code>qwen3:4b-instruct-2507-q4_K_M</code>)</li>
 </ul>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 </code></pre></div>
+<h2 id="how-does-abstractcore-relate-to-abstractframework-abstractruntime">How does AbstractCore relate to AbstractFramework / AbstractRuntime?</h2>
+<p>AbstractCore is one of the core packages in the <strong>AbstractFramework</strong> ecosystem:</p>
+<ul>
+<li>AbstractFramework (umbrella): https://github.com/lpalbou/AbstractFramework</li>
+<li>AbstractCore (this package): unified LLM interface + cross-provider infrastructure</li>
+<li>AbstractRuntime: durable tool/effect execution, workflows, and state persistence — https://github.com/lpalbou/abstractruntime</li>
+</ul>
+<p>AbstractCore is usable standalone. In the ecosystem, the common pattern is:
+- AbstractCore produces <code>resp.content</code> + <code>resp.tool_calls</code>
+- a runtime (for example AbstractRuntime) decides whether/how to execute tools (policy, sandboxing, retries, persistence)</p>
+<p>See <a href="architecture.html">Architecture</a> and <a href="tool-calling.html">Tool Calling</a>.</p>
 <h2 id="how-do-i-connect-to-a-local-server-ollama-lmstudio-vllm-llamacpp-localai">How do I connect to a local server (Ollama / LMStudio / vLLM / llama.cpp / LocalAI)?</h2>
 <p>Use the matching provider and set <code>base_url</code> (or the provider’s base-url env var).
 We recommend open-source/local providers first; cloud and gateway providers are optional.</p>
 <p>Examples:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M", base_url="http://localhost:11434")
-llm = create_llm("lmstudio", model="qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1")
-llm = create_llm("vllm", model="Qwen/Qwen3-Coder-30B-A3B-Instruct", base_url="http://localhost:8000/v1")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct-2507-q4_K_M&quot;, base_url=&quot;http://localhost:11434&quot;)
+llm = create_llm(&quot;lmstudio&quot;, model=&quot;qwen/qwen3-4b-2507&quot;, base_url=&quot;http://localhost:1234/v1&quot;)
+llm = create_llm(&quot;vllm&quot;, model=&quot;Qwen/Qwen3-Coder-30B-A3B-Instruct&quot;, base_url=&quot;http://localhost:8000/v1&quot;)
 </code></pre></div>
 <p>For a generic OpenAI-compatible endpoint, use <code>openai-compatible</code>:</p>
-<div class="code-block"><pre><code class="language-python">llm = create_llm("openai-compatible", model="my-model", base_url="http://localhost:1234/v1")
+<div class="code-block"><pre><code class="language-python">llm = create_llm(&quot;openai-compatible&quot;, model=&quot;my-model&quot;, base_url=&quot;http://localhost:1234/v1&quot;)
 </code></pre></div>
 <p>See <a href="prerequisites.html">Prerequisites</a> for setup details and env var names.</p>
-<h2 id="why-do-gateway-providers-return-unsupported-parameter-errors-temperaturemaxtokens">Why do gateway providers return “unsupported parameter” errors (temperature/max_tokens)?</h2>
+<h2 id="why-do-gateway-providers-return-unsupported-parameter-errors-temperaturemax_tokens">Why do gateway providers return “unsupported parameter” errors (temperature/max_tokens)?</h2>
 <p>Gateways like Portkey and OpenRouter forward your payload to the routed backend model, and strict families (for example OpenAI reasoning models like gpt-5/o1) reject unsupported parameters.</p>
 <p>In AbstractCore’s gateway providers:
 - Portkey uses <code>PORTKEY_API_KEY</code> and <code>PORTKEY_CONFIG</code> (config id) for routing.
@@ -122,9 +132,9 @@ abstractcore --status
 <h2 id="why-arent-tools-executed-automatically">Why aren’t tools executed automatically?</h2>
 <p>By default, AbstractCore runs in <strong>pass-through</strong> mode (<code>execute_tools=False</code>): it returns tool calls in <code>resp.tool_calls</code>, and your host/runtime decides whether/how to execute them.</p>
 <p>Automatic execution (<code>execute_tools=True</code>) exists but is deprecated for most use cases. See <a href="tool-calling.html">Tool Calling</a>.</p>
-<h2 id="whats-the-difference-between-websearch-skimwebsearch-skimurl-and-fetchurl">What’s the difference between <code>web_search</code>, <code>skim_websearch</code>, <code>skim_url</code>, and <code>fetch_url</code>?</h2>
+<h2 id="whats-the-difference-between-web_search-skim_websearch-skim_url-and-fetch_url">What’s the difference between <code>web_search</code>, <code>skim_websearch</code>, <code>skim_url</code>, and <code>fetch_url</code>?</h2>
 <p>These built-in web tools live in <code>abstractcore.tools.common_tools</code> and require:</p>
-<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[tools]"
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[tools]&quot;
 </code></pre></div>
 <ul>
 <li><code>web_search</code>: fuller DuckDuckGo result set (good when you want breadth or more options).</li>
@@ -149,8 +159,8 @@ class Answer(BaseModel):
     title: str
     bullets: list[str]
 
-llm = create_llm("openai", model="gpt-4o-mini")
-result = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+result = llm.generate(&quot;Summarize HTTP/3 in 3 bullets.&quot;, response_model=Answer)
 </code></pre></div>
 <p>See <a href="structured-output.html">Structured Output</a>.</p>
 <h2 id="why-does-structured-output-retry-or-fail-validation">Why does structured output retry or fail validation?</h2>
@@ -163,7 +173,7 @@ result = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
 <p>See <a href="structured-output.html">Structured Output</a> and <a href="troubleshooting.html">Troubleshooting</a>.</p>
 <h2 id="why-do-pdfs-office-docs-images-not-work">Why do PDFs / Office docs / images not work?</h2>
 <p>Those require the media extra:</p>
-<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[media]"
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[media]&quot;
 </code></pre></div>
 <p>Then pass <code>media=[...]</code> to <code>generate()</code> or use the media pipeline. See <a href="media-handling-system.html">Media Handling</a>.</p>
 <h2 id="how-do-i-attach-audio-or-video">How do I attach audio or video?</h2>
@@ -188,11 +198,11 @@ abstractcore --set-video-max-frames 6
 <p>Then use the deterministic capability surfaces:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini")  # provider/model is only for LLM calls; STT/TTS are deterministic
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)  # provider/model is only for LLM calls; STT/TTS are deterministic
 print(llm.capabilities.status())  # shows which capability backends are available/selected
 
-wav_bytes = llm.voice.tts("Hello", format="wav")
-text = llm.audio.transcribe("speech.wav")
+wav_bytes = llm.voice.tts(&quot;Hello&quot;, format=&quot;wav&quot;)
+text = llm.audio.transcribe(&quot;speech.wav&quot;)
 </code></pre></div>
 <p>If you run the optional HTTP server, you can also use OpenAI-compatible endpoints:
 - <code>POST /v1/audio/transcriptions</code>
@@ -212,10 +222,10 @@ text = llm.audio.transcribe("speech.wav")
 <li><code>pip install "abstractcore[compression]"</code> (renderer)</li>
 <li>plus <code>pip install "abstractcore[media]"</code> if you want PDF extraction support</li>
 </ul>
-<p>See <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/glyphs.md">Glyph Visual-Text Compression</a>.</p>
+<p>See <a href="glyphs.html">Glyph Visual-Text Compression</a>.</p>
 <h2 id="how-do-i-use-embeddings">How do I use embeddings?</h2>
 <p>Embeddings are opt-in:</p>
-<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[embeddings]"
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[embeddings]&quot;
 </code></pre></div>
 <p>Then import from the embeddings module:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
@@ -228,14 +238,14 @@ text = llm.audio.transcribe("speech.wav")
 <li>integrating with OpenAI-compatible clients and agentic CLIs</li>
 </ul>
 <p>Install and run:</p>
-<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[server]"
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[server]&quot;
 python -m abstractcore.server.app
 </code></pre></div>
 <p>See <a href="server.html">Server</a>.</p>
 <h2 id="where-are-logs-and-traces">Where are logs and traces?</h2>
 <ul>
 <li>Logging (console/file) is configured via the config CLI and config file. See <a href="structured-logging.html">Structured Logging</a>.</li>
-<li>Interaction tracing is opt-in (<code>enable_tracing=True</code>). See <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/interaction-tracing.md">Interaction Tracing</a>.</li>
+<li>Interaction tracing is opt-in (<code>enable_tracing=True</code>). See <a href="interaction-tracing.html">Interaction Tracing</a>.</li>
 </ul>
 <h2 id="im-getting-http-timeouts-what-should-i-change">I’m getting HTTP timeouts. What should I change?</h2>
 <ul>
@@ -253,11 +263,13 @@ python -m abstractcore.server.app
 <p>Restart your Python process after changing this (the provider reads these settings at import time).</p>
 <h2 id="is-abstractcore-a-full-agentrag-framework">Is AbstractCore a full agent/RAG framework?</h2>
 <p>AbstractCore focuses on provider abstraction + infrastructure (tools, structured output, media handling, tracing). It does not ship a full RAG pipeline or multi-step agent orchestration. See <a href="capabilities.html">Capabilities</a>.</p>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

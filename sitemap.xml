@@ -2,196 +2,265 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
     <url>
         <loc>https://www.abstractcore.ai/</loc>
-        <lastmod>2026-02-08</lastmod>
+        <lastmod>2026-02-09</lastmod>
         <changefreq>weekly</changefreq>
         <priority>1.0</priority>
     </url>
-
     <url>
-        <loc>https://www.abstractcore.ai/docs/getting-started.html</loc>
-        <lastmod>2026-02-08</lastmod>
+        <loc>https://www.abstractcore.ai/docs/KnowledgeBase.html</loc>
+        <lastmod>2026-02-09</lastmod>
         <changefreq>monthly</changefreq>
-        <priority>0.9</priority>
+        <priority>0.6</priority>
     </url>
     <url>
-        <loc>https://www.abstractcore.ai/docs/prerequisites.html</loc>
-        <lastmod>2026-02-08</lastmod>
+        <loc>https://www.abstractcore.ai/docs/README.html</loc>
+        <lastmod>2026-02-09</lastmod>
         <changefreq>monthly</changefreq>
-        <priority>0.9</priority>
+        <priority>0.7</priority>
     </url>
     <url>
-        <loc>https://www.abstractcore.ai/docs/faq.html</loc>
-        <lastmod>2026-02-08</lastmod>
+        <loc>https://www.abstractcore.ai/docs/acore-cli.html</loc>
+        <lastmod>2026-02-09</lastmod>
         <changefreq>monthly</changefreq>
-        <priority>0.8</priority>
+        <priority>0.6</priority>
     </url>
     <url>
-        <loc>https://www.abstractcore.ai/docs/centralized-config.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.8</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/capabilities.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.8</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/tool-calling.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.8</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/media-handling-system.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.8</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/vision-capabilities.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.8</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/server.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.8</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/apps.html</loc>
-        <lastmod>2026-02-08</lastmod>
+        <loc>https://www.abstractcore.ai/docs/api-reference.html</loc>
+        <lastmod>2026-02-09</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.7</priority>
     </url>
     <url>
         <loc>https://www.abstractcore.ai/docs/api.html</loc>
-        <lastmod>2026-02-08</lastmod>
+        <lastmod>2026-02-09</lastmod>
         <changefreq>monthly</changefreq>
-        <priority>0.7</priority>
+        <priority>0.8</priority>
     </url>
     <url>
-        <loc>https://www.abstractcore.ai/docs/api-reference.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.7</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/async-guide.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.7</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/structured-output.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.7</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/tool-syntax-rewriting.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.6</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/mcp.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.6</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/communication-tools.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.6</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/examples.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.7</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/embeddings.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.7</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/session.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.7</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/token-management.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.7</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/structured-logging.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.6</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/events.html</loc>
-        <lastmod>2026-02-08</lastmod>
+        <loc>https://www.abstractcore.ai/docs/apps.html</loc>
+        <lastmod>2026-02-09</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
     </url>
     <url>
         <loc>https://www.abstractcore.ai/docs/architecture.html</loc>
-        <lastmod>2026-02-08</lastmod>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/async-guide.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/audio.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/capabilities.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/centralized-config.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/changelog.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/chat-compaction.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/communication-tools.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/comparison.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/concurrency.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/embeddings.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/endpoint.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/events.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/examples.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.7</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/faq.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/generation-parameters.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/getting-started.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.9</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/glyphs.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/interaction-tracing.html</loc>
+        <lastmod>2026-02-09</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
     </url>
     <url>
         <loc>https://www.abstractcore.ai/docs/internal-cli.html</loc>
-        <lastmod>2026-02-08</lastmod>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/known_issues.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/mcp.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/media-handling-system.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/prerequisites.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.9</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/security.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/server.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.8</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/session.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/structured-logging.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/structured-output.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/token-management.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/tool-calling.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
+    <url>
+        <loc>https://www.abstractcore.ai/docs/tool-syntax-rewriting.html</loc>
+        <lastmod>2026-02-09</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
     </url>
     <url>
         <loc>https://www.abstractcore.ai/docs/troubleshooting.html</loc>
-        <lastmod>2026-02-08</lastmod>
+        <lastmod>2026-02-09</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
     </url>
-
     <url>
-        <loc>https://www.abstractcore.ai/docs/changelog.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.5</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/security.html</loc>
-        <lastmod>2026-02-08</lastmod>
-        <changefreq>monthly</changefreq>
-        <priority>0.5</priority>
-    </url>
-    <url>
-        <loc>https://www.abstractcore.ai/docs/audio.html</loc>
-        <lastmod>2026-02-08</lastmod>
+        <loc>https://www.abstractcore.ai/docs/vision-capabilities.html</loc>
+        <lastmod>2026-02-09</lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.6</priority>
     </url>
-
+    <url>
+        <loc>https://www.abstractcore.ai/docs/vision-compression.html</loc>
+        <lastmod>2026-02-09</lastmod>
+        <changefreq>monthly</changefreq>
+        <priority>0.6</priority>
+    </url>
     <url>
         <loc>https://www.abstractcore.ai/llms.txt</loc>
-        <lastmod>2026-02-08</lastmod>
+        <lastmod>2026-02-09</lastmod>
         <changefreq>weekly</changefreq>
         <priority>0.7</priority>
     </url>
     <url>
         <loc>https://www.abstractcore.ai/llms-full.txt</loc>
-        <lastmod>2026-02-08</lastmod>
+        <lastmod>2026-02-09</lastmod>
         <changefreq>weekly</changefreq>
         <priority>0.7</priority>
     </url>

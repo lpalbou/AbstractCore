@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Structured Output - AbstractCore</title>
-    <meta name="description" content="AbstractCore implements structured output generation using Pydantic models with automatic schema validation and provider-specific optimizations. The system employs a…">
+    <meta name="description" content="AbstractCore implements structured output generation using Pydantic models with automatic schema validation and provider-specific optimizations. The system…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -50,8 +50,7 @@
 
             <div class="doc-content">
 
-
-<hr/>
+<hr />
 <h2 id="table-of-contents">Table of Contents</h2>
 <ol>
 <li><a href="#overview">Overview</a></li>
@@ -64,7 +63,7 @@
 <li><a href="#production-deployment">Production Deployment</a></li>
 <li><a href="#api-reference">API Reference</a></li>
 </ol>
-<hr/>
+<hr />
 <h2 id="overview">Overview</h2>
 <h3 id="what-is-structured-output">What is Structured Output?</h3>
 <p>Structured output constrains LLM responses to conform to predefined schemas, enabling direct deserialization into typed objects. AbstractCore uses Pydantic BaseModel classes to define schemas and validate responses.</p>
@@ -77,15 +76,15 @@ class Person(BaseModel):
     age: int
     email: str
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 person = llm.generate(
-    "Extract: John Doe, 35 years old, john@example.com",
+    &quot;Extract: John Doe, 35 years old, john@example.com&quot;,
     response_model=Person
 )
 
 # person is a validated Person instance
 assert isinstance(person, Person)
-assert person.name == "John Doe"
+assert person.name == &quot;John Doe&quot;
 assert person.age == 35
 </code></pre></div>
 <h3 id="key-benefits">Key Benefits</h3>
@@ -96,7 +95,7 @@ assert person.age == 35
 <li><strong>Automatic Strategy Selection</strong>: Framework selects optimal implementation based on provider capabilities</li>
 <li><strong>Test Coverage</strong>: Supported strategies are exercised by the repository test suite (see <code>tests/structured/</code>)</li>
 </ul>
-<hr/>
+<hr />
 <h2 id="architecture">Architecture</h2>
 <h3 id="dual-strategy-design">Dual-Strategy Design</h3>
 <p>AbstractCore implements two distinct strategies for structured output generation:</p>
@@ -130,7 +129,7 @@ assert person.age == 35
 <h3 id="automatic-strategy-selection">Automatic Strategy Selection</h3>
 <p>The <code>StructuredOutputHandler</code> selects the appropriate strategy automatically:</p>
 <div class="code-block"><pre><code class="language-python">def _has_native_support(self, provider) -&gt; bool:
-    """Detect native structured output capability"""
+    &quot;&quot;&quot;Detect native structured output capability&quot;&quot;&quot;
     provider_name = provider.__class__.__name__
 
     # Ollama and LMStudio always have native support
@@ -144,19 +143,19 @@ assert person.age == 35
 
     # Check model capabilities for other providers
     capabilities = getattr(provider, 'model_capabilities', {})
-    return capabilities.get("structured_output") == "native"
+    return capabilities.get(&quot;structured_output&quot;) == &quot;native&quot;
 </code></pre></div>
 <p>No configuration required—the framework handles strategy selection transparently.</p>
-<hr/>
+<hr />
 <h2 id="provider-implementation">Provider Implementation</h2>
 <h3 id="openai">OpenAI</h3>
 <p><strong>Implementation</strong>: Native support via <code>response_format</code> parameter</p>
 <div class="code-block"><pre><code class="language-python"># AbstractCore implementation (simplified)
-payload["response_format"] = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": response_model.__name__,
-        "schema": response_model.model_json_schema()
+payload[&quot;response_format&quot;] = {
+    &quot;type&quot;: &quot;json_schema&quot;,
+    &quot;json_schema&quot;: {
+        &quot;name&quot;: response_model.__name__,
+        &quot;schema&quot;: response_model.model_json_schema()
     }
 }
 </code></pre></div>
@@ -165,7 +164,7 @@ payload["response_format"] = {
 - gpt-4-turbo
 - gpt-3.5-turbo</p>
 <p><strong>Reference</strong>: <a href="https://platform.openai.com/docs/guides/structured-outputs">OpenAI Structured Outputs Documentation</a></p>
-<hr/>
+<hr />
 <h3 id="anthropic">Anthropic</h3>
 <p><strong>Implementation</strong>: Native support via tool-calling mechanism</p>
 <p>The provider forces execution of a tool whose input schema matches the desired output structure.</p>
@@ -174,13 +173,13 @@ payload["response_format"] = {
 - claude-sonnet-4-5
 - claude-opus-4-5</p>
 <p><strong>Reference</strong>: <a href="https://docs.anthropic.com/">Anthropic API Documentation</a></p>
-<hr/>
+<hr />
 <h3 id="ollama">Ollama</h3>
 <p><strong>Implementation</strong>: Native support via <code>format</code> parameter</p>
 <div class="code-block"><pre><code class="language-python"># AbstractCore implementation (abstractcore/providers/ollama_provider.py:147-152)
 if response_model and PYDANTIC_AVAILABLE:
     json_schema = response_model.model_json_schema()
-    payload["format"] = json_schema  # Full schema, server-side validation
+    payload[&quot;format&quot;] = json_schema  # Full schema, server-side validation
 </code></pre></div>
 <p><strong>Mechanism</strong>:
 1. Full JSON schema passed to Ollama API
@@ -195,17 +194,17 @@ if response_model and PYDANTIC_AVAILABLE:
 - Gemma 2b, 7b, gemma2, gemma3
 - Mistral, Phi-3, Phi-4, GLM-4, DeepSeek-R1</p>
 <p><strong>Reference</strong>: <a href="https://github.com/ollama/ollama/blob/main/docs/api.md">Ollama API Documentation</a></p>
-<hr/>
+<hr />
 <h3 id="lmstudio">LMStudio</h3>
 <p><strong>Implementation</strong>: Native support via OpenAI-compatible <code>response_format</code> parameter</p>
 <div class="code-block"><pre><code class="language-python"># AbstractCore implementation (abstractcore/providers/lmstudio_provider.py:211-222)
 if response_model and PYDANTIC_AVAILABLE:
     json_schema = response_model.model_json_schema()
-    payload["response_format"] = {
-        "type": "json_schema",
-        "json_schema": {
-            "name": response_model.__name__,
-            "schema": json_schema
+    payload[&quot;response_format&quot;] = {
+        &quot;type&quot;: &quot;json_schema&quot;,
+        &quot;json_schema&quot;: {
+            &quot;name&quot;: response_model.__name__,
+            &quot;schema&quot;: json_schema
         }
     }
 </code></pre></div>
@@ -217,7 +216,7 @@ if response_model and PYDANTIC_AVAILABLE:
 - Behavior depends on the LMStudio server version and underlying model/runtime.
 - For example coverage, see <code>tests/structured/</code>.</p>
 <p><strong>Reference</strong>: <a href="https://lmstudio.ai/docs">LMStudio Documentation</a></p>
-<hr/>
+<hr />
 <h3 id="huggingface">HuggingFace</h3>
 <p><strong>Implementation</strong>: Dual strategy based on model type</p>
 <h4 id="gguf-models-native-support">GGUF Models (Native Support)</h4>
@@ -225,11 +224,11 @@ if response_model and PYDANTIC_AVAILABLE:
 <div class="code-block"><pre><code class="language-python"># AbstractCore implementation (abstractcore/providers/huggingface_provider.py:669-680)
 if response_model and PYDANTIC_AVAILABLE:
     json_schema = response_model.model_json_schema()
-    generation_kwargs["response_format"] = {
-        "type": "json_schema",
-        "json_schema": {
-            "name": response_model.__name__,
-            "schema": json_schema
+    generation_kwargs[&quot;response_format&quot;] = {
+        &quot;type&quot;: &quot;json_schema&quot;,
+        &quot;json_schema&quot;: {
+            &quot;name&quot;: response_model.__name__,
+            &quot;schema&quot;: json_schema
         }
     }
 </code></pre></div>
@@ -265,7 +264,7 @@ if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
 4. Schema compliance is enforced via constrained decoding (provider/model dependent)
 5. Automatic fallback to prompted approach if Outlines unavailable</p>
 <p><strong>Installation</strong>:</p>
-<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[huggingface]"  # Includes Outlines automatically
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[huggingface]&quot;  # Includes Outlines automatically
 </code></pre></div>
 <p><strong>Characteristics</strong>:
 - Schema compliance via constrained decoding (still validated client-side)
@@ -276,7 +275,7 @@ if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
 <p><strong>Fallback behavior</strong>:
 - If Outlines isn't available (or a backend doesn't support constrained decoding), AbstractCore falls back to prompted structured output with validation and retries.
 - Exact success rates and latency depend on provider/model/hardware/schema complexity.</p>
-<hr/>
+<hr />
 <h3 id="mlx-apple-silicon">MLX (Apple Silicon)</h3>
 <p><strong>Implementation</strong>: Native via Outlines</p>
 <p><strong>Backend</strong>: MLX with Outlines constrained generation</p>
@@ -303,7 +302,7 @@ if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
 4. Server-side schema enforcement
 5. Automatic fallback to prompted approach if Outlines unavailable</p>
 <p><strong>Installation</strong>:</p>
-<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[mlx]"  # Includes Outlines automatically
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[mlx]&quot;  # Includes Outlines automatically
 </code></pre></div>
 <p><strong>Models</strong>:
 - mlx-community/Qwen2.5-Coder-7B-Instruct-4bit
@@ -318,7 +317,7 @@ if response_model and PYDANTIC_AVAILABLE and OUTLINES_AVAILABLE:
 <p><strong>Performance notes</strong>:
 - Prompted structured output (validation + retry) is the default fallback and is often the simplest to run.
 - Constrained decoding can be slower or faster depending on backend/model/schema; benchmark on your hardware if it matters.</p>
-<hr/>
+<hr />
 <h2 id="usage-guide">Usage Guide</h2>
 <h3 id="basic-usage">Basic Usage</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
@@ -329,14 +328,14 @@ class ExtractedData(BaseModel):
     age: int
     email: str
 
-llm = create_llm("ollama", model="qwen3:4b")
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b&quot;)
 result = llm.generate(
-    "Extract: Alice Johnson, 28, alice@example.com",
+    &quot;Extract: Alice Johnson, 28, alice@example.com&quot;,
     response_model=ExtractedData,
     temperature=0  # Recommended for deterministic output
 )
 
-print(f"{result.name} ({result.age}): {result.email}")
+print(f&quot;{result.name} ({result.age}): {result.email}&quot;)
 </code></pre></div>
 <h3 id="using-enums">Using Enums</h3>
 <p>Enums provide type-safe categorical values:</p>
@@ -344,24 +343,24 @@ print(f"{result.name} ({result.age}): {result.email}")
 from pydantic import BaseModel
 
 class Priority(str, Enum):
-    LOW = "low"
-    MEDIUM = "medium"
-    HIGH = "high"
-    CRITICAL = "critical"
+    LOW = &quot;low&quot;
+    MEDIUM = &quot;medium&quot;
+    HIGH = &quot;high&quot;
+    CRITICAL = &quot;critical&quot;
 
 class Task(BaseModel):
     title: str
     priority: Priority
     estimated_hours: float
 
-llm = create_llm("lmstudio", model="qwen/qwen3-4b-2507")
+llm = create_llm(&quot;lmstudio&quot;, model=&quot;qwen/qwen3-4b-2507&quot;)
 task = llm.generate(
-    "Create task: Fix authentication bug, critical priority, 8 hours estimated",
+    &quot;Create task: Fix authentication bug, critical priority, 8 hours estimated&quot;,
     response_model=Task
 )
 
 assert isinstance(task.priority, Priority)
-print(f"Priority: {task.priority.value}")  # "critical"
+print(f&quot;Priority: {task.priority.value}&quot;)  # &quot;critical&quot;
 </code></pre></div>
 <p><strong>Notes</strong>: Enums are supported and exercised by tests; exact behavior depends on provider/model.</p>
 <h3 id="nested-objects">Nested Objects</h3>
@@ -378,10 +377,10 @@ class Person(BaseModel):
     email: str
     address: Address
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 person = llm.generate(
-    """Extract: John Smith, john@example.com
-    Address: 123 Main St, Boston, MA 02101""",
+    &quot;&quot;&quot;Extract: John Smith, john@example.com
+    Address: 123 Main St, Boston, MA 02101&quot;&quot;&quot;,
     response_model=Person
 )
 
@@ -394,14 +393,14 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 class Department(str, Enum):
-    ENGINEERING = "engineering"
-    SALES = "sales"
-    MARKETING = "marketing"
+    ENGINEERING = &quot;engineering&quot;
+    SALES = &quot;sales&quot;
+    MARKETING = &quot;marketing&quot;
 
 class EmployeeLevel(str, Enum):
-    JUNIOR = "junior"
-    MID = "mid"
-    SENIOR = "senior"
+    JUNIOR = &quot;junior&quot;
+    MID = &quot;mid&quot;
+    SENIOR = &quot;senior&quot;
 
 class Skill(BaseModel):
     name: str
@@ -428,13 +427,13 @@ class Organization(BaseModel):
     teams: List[Team]
     total_employees: int
 
-llm = create_llm("anthropic", model="claude-haiku-4-5")
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)
 org = llm.generate(
-    """Create organization: TechCorp, founded 2020
+    &quot;&quot;&quot;Create organization: TechCorp, founded 2020
     Team: Platform (engineering)
     Lead: Sarah Chen (sarah@tech.com, senior, Python-9/10-5yrs, AWS-8/10-4yrs)
     Member: Bob Lee (bob@tech.com, mid, JavaScript-7/10-3yrs, manager: sarah@tech.com)
-    Total employees: 2""",
+    Total employees: 2&quot;&quot;&quot;,
     response_model=Organization
 )
 </code></pre></div>
@@ -450,12 +449,12 @@ handler = StructuredOutputHandler(
 
 result = handler.generate_structured(
     provider=llm,
-    prompt="Extract complex data from document...",
+    prompt=&quot;Extract complex data from document...&quot;,
     response_model=ComplexSchema,
     temperature=0
 )
 </code></pre></div>
-<hr/>
+<hr />
 <h2 id="schema-design">Schema Design</h2>
 <h3 id="design-principles">Design Principles</h3>
 <p>Well-designed schemas improve validation success rates and reduce response times.</p>
@@ -479,9 +478,9 @@ class Employee(BaseModel):
 <p>Enums provide validation and type safety:</p>
 <div class="code-block"><pre><code class="language-python"># Recommended
 class Status(str, Enum):
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-    PENDING = "pending"
+    ACTIVE = &quot;active&quot;
+    INACTIVE = &quot;inactive&quot;
+    PENDING = &quot;pending&quot;
 
 class User(BaseModel):
     status: Status  # Only valid enum values accepted
@@ -500,7 +499,7 @@ class Task(BaseModel):
     created_at: str
 
     # Optional with defaults
-    description: str = ""
+    description: str = &quot;&quot;
     tags: List[str] = []
 
     # Truly optional (may be None)
@@ -571,15 +570,15 @@ class Level1(BaseModel):
 <h4 id="2-ambiguous-enum-values">2. Ambiguous Enum Values</h4>
 <div class="code-block"><pre><code class="language-python"># Avoid
 class Status(str, Enum):
-    ONE = "1"
-    TWO = "2"
-    THREE = "3"
+    ONE = &quot;1&quot;
+    TWO = &quot;2&quot;
+    THREE = &quot;3&quot;
 
 # Recommended
 class Status(str, Enum):
-    PENDING = "pending"
-    APPROVED = "approved"
-    REJECTED = "rejected"
+    PENDING = &quot;pending&quot;
+    APPROVED = &quot;approved&quot;
+    REJECTED = &quot;rejected&quot;
 </code></pre></div>
 <h4 id="3-overly-long-field-names">3. Overly Long Field Names</h4>
 <div class="code-block"><pre><code class="language-python"># Avoid
@@ -591,7 +590,7 @@ class Data(BaseModel):
     user_email: str  # Clear but concise
 </code></pre></div>
 <p><strong>Impact</strong>: Increases token count, affecting cost and context window</p>
-<hr/>
+<hr />
 <h2 id="performance-characteristics">Performance Characteristics</h2>
 <p>Structured output performance is highly dependent on:
 - Provider/backend strategy (native constrained decoding vs prompted validation/retry)
@@ -610,7 +609,7 @@ Historical benchmark notes (non-authoritative) may exist under <code>docs/report
 - Creative content generation within schema constraints
 - Diverse response generation for the same prompt
 - Exploratory data generation</p>
-<hr/>
+<hr />
 <h2 id="error-handling">Error Handling</h2>
 <h3 id="error-categories">Error Categories</h3>
 <h4 id="1-infrastructure-errors-retriable">1. Infrastructure Errors (Retriable)</h4>
@@ -619,7 +618,7 @@ Historical benchmark notes (non-authoritative) may exist under <code>docs/report
 from requests.exceptions import ConnectionError, Timeout
 
 def generate_with_retry(llm, prompt, response_model, max_retries=3):
-    """Retry infrastructure errors with exponential backoff"""
+    &quot;&quot;&quot;Retry infrastructure errors with exponential backoff&quot;&quot;&quot;
     for attempt in range(max_retries):
         try:
             return llm.generate(
@@ -634,7 +633,7 @@ def generate_with_retry(llm, prompt, response_model, max_retries=3):
                 continue
             raise
 
-result = generate_with_retry(llm, "Extract data...", DataModel)
+result = generate_with_retry(llm, &quot;Extract data...&quot;, DataModel)
 </code></pre></div>
 <p><strong>Retriable errors</strong>:
 - <code>ConnectionError</code>: Network connectivity issues
@@ -647,15 +646,15 @@ result = generate_with_retry(llm, "Extract data...", DataModel)
 
 try:
     result = llm.generate(
-        "Extract user data...",
+        &quot;Extract user data...&quot;,
         response_model=UserModel
     )
 except ValidationError as e:
     # Log validation errors
-    print("Schema validation failed:")
+    print(&quot;Schema validation failed:&quot;)
     for error in e.errors():
-        field = " -&gt; ".join(str(loc) for loc in error['loc'])
-        print(f"  {field}: {error['msg']}")
+        field = &quot; -&gt; &quot;.join(str(loc) for loc in error['loc'])
+        print(f&quot;  {field}: {error['msg']}&quot;)
 
     # Fix schema or prompt—do not retry
     raise
@@ -670,11 +669,11 @@ except ValidationError as e:
 <div class="code-block"><pre><code class="language-python">try:
     result = llm.generate(prompt, response_model=ComplexModel)
 except Exception as e:
-    if "token" in str(e).lower() or "context" in str(e).lower():
-        print("Token limit exceeded. Options:")
-        print("1. Simplify schema (reduce fields or nesting)")
-        print("2. Split into multiple requests")
-        print("3. Use model with larger context window")
+    if &quot;token&quot; in str(e).lower() or &quot;context&quot; in str(e).lower():
+        print(&quot;Token limit exceeded. Options:&quot;)
+        print(&quot;1. Simplify schema (reduce fields or nesting)&quot;)
+        print(&quot;2. Split into multiple requests&quot;)
+        print(&quot;3. Use model with larger context window&quot;)
         raise
 </code></pre></div>
 <h3 id="retry-strategy-details">Retry Strategy Details</h3>
@@ -698,7 +697,7 @@ handler = StructuredOutputHandler(
     retry_strategy=FeedbackRetry(max_attempts=5)
 )
 </code></pre></div>
-<hr/>
+<hr />
 <h2 id="production-deployment">Production Deployment</h2>
 <h3 id="pre-deployment-checklist">Pre-Deployment Checklist</h3>
 <p>Before deploying structured outputs to production:</p>
@@ -749,10 +748,10 @@ class UserV1(BaseModel):
 class UserV2(BaseModel):
     name: str
     email: str
-    department: str = Field(default="unassigned")  # Backward compatible
+    department: str = Field(default=&quot;unassigned&quot;)  # Backward compatible
 </code></pre></div>
 <p>Use optional fields with defaults for backward-compatible schema evolution.</p>
-<hr/>
+<hr />
 <h2 id="api-reference">API Reference</h2>
 <h3 id="core-function">Core Function</h3>
 <div class="code-block"><pre><code class="language-python">llm.generate(
@@ -775,7 +774,7 @@ class UserV2(BaseModel):
 - <code>TimeoutError</code>: Request timeout</p>
 <p><strong>Example</strong>:</p>
 <div class="code-block"><pre><code class="language-python">person = llm.generate(
-    "Extract: John Doe, age 35",
+    &quot;Extract: John Doe, age 35&quot;,
     response_model=Person,
     temperature=0
 )
@@ -805,16 +804,16 @@ retry = FeedbackRetry(max_attempts=3)
 <p><strong>Methods</strong>:
 - <code>should_retry(attempt, error)</code>: Returns True if retry should occur
 - <code>prepare_retry_prompt(prompt, error, attempt)</code>: Creates retry prompt with validation feedback</p>
-<hr/>
+<hr />
 <h2 id="related-documentation">Related Documentation</h2>
 <ul>
 <li><a href="getting-started.html#structured-output">Getting Started</a> - Quick introduction</li>
 <li><a href="api-reference.html">API Reference</a> - Complete API documentation</li>
 <li><a href="examples.html#structured-output-examples">Examples</a> - Real-world usage patterns</li>
-<li><a href="https://github.com/lpalbou/AbstractCore/blob/main/structured-response-keyword.md">Response Model Parameter Analysis</a> - Why <code>response_model</code></li>
-<li><a href="https://github.com/lpalbou/AbstractCore/blob/main/improved-structured-response.md">Native Implementation Test Results</a> - Detailed test data</li>
+<li><a href="archive/structured-response-keyword.md">Response Model Parameter Analysis</a> - Why <code>response_model</code></li>
+<li><a href="archive/improved-structured-response.md">Native Implementation Test Results</a> - Detailed test data</li>
 </ul>
-<hr/>
+<hr />
 <h2 id="references">References</h2>
 <ul>
 <li><a href="https://platform.openai.com/docs/guides/structured-outputs">OpenAI Structured Outputs</a></li>
@@ -822,13 +821,13 @@ retry = FeedbackRetry(max_attempts=3)
 <li><a href="https://github.com/ollama/ollama/blob/main/docs/api.md">Ollama API Documentation</a></li>
 <li><a href="https://docs.pydantic.dev/">Pydantic Documentation</a></li>
 </ul>
-<hr/>
-<hr/>
+<hr />
+<hr />
 <h2 id="testing-and-validation">Testing and Validation</h2>
 <p>Structured output behavior is exercised by automated tests under <code>tests/structured/</code>.</p>
 <h3 id="running-tests">Running tests</h3>
 <p>From this repository:</p>
-<div class="code-block"><pre><code class="language-bash">pip install -e ".[test]"
+<div class="code-block"><pre><code class="language-bash">pip install -e &quot;.[test]&quot;
 pytest tests/structured -q
 </code></pre></div>
 <p>Some provider-specific tests require additional extras:</p>
@@ -837,7 +836,7 @@ pytest tests/structured -q
 <li>MLX: <code>pip install -e ".[mlx]"</code> (macOS + Apple Silicon only)</li>
 </ul>
 <p>If you're installing from PyPI and just want the test dependencies:</p>
-<div class="code-block"><pre><code class="language-bash">pip install "abstractcore[test]"
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[test]&quot;
 pytest -q
 </code></pre></div>
 <h3 id="notes">Notes</h3>
@@ -845,11 +844,13 @@ pytest -q
 <li>Performance and success rates vary widely by provider/model/schema complexity and are not guaranteed.</li>
 <li>If performance matters, benchmark on your target hardware/provider setup.</li>
 </ul>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

@@ -49,7 +49,6 @@
 
             <div class="doc-content">
 
-
 <h2 id="table-of-contents">Table of Contents</h2>
 <ul>
 <li><a href="#common-mistakes-to-avoid">Common Mistakes to Avoid</a></li>
@@ -62,41 +61,47 @@
 <li><a href="#best-practices">Best Practices</a></li>
 <li><a href="#debug-techniques">Debug Techniques</a></li>
 </ul>
-<hr/>
+<hr />
 <h2 id="common-mistakes-to-avoid">Common Mistakes to Avoid</h2>
 <p>Understanding common pitfalls helps prevent issues before they occur.</p>
-<h3 id="top-3-critical-mistakes">Top 3 Critical Mistakes</h3>
+<h3 id="top-mistakes-fast-fixes">Top mistakes (fast fixes)</h3>
 <ol>
+<li><strong>Incorrect provider configuration</strong></li>
+<li><em>Symptom</em>: Authentication failures, no model response</li>
+<li><em>Quick Fix</em>: Set API keys via environment variables (or persist them with <code>abstractcore --set-api-key ...</code>)</li>
 <li>
-<p><strong>🔑 Incorrect Provider Configuration</strong>
-   - <em>Symptom</em>: Authentication failures, no model response
-   - <em>Quick Fix</em>: Always set API keys as environment variables
-   - See: <a href="#issue-authentication-errors">Authentication Errors</a></p>
+<p>See: <a href="#issue-authentication-errors">Authentication Errors</a></p>
 </li>
 <li>
-<p><strong>🧩 Mishandling Tool Calls</strong>
-   - <em>Symptom</em>: Tools not executing, streaming interruptions
-   - <em>Quick Fix</em>: Use <code>@tool</code> decorator and handle tool calls properly
-   - See: <a href="#issue-tool-calls-not-working">Tool Calls Not Working</a></p>
+<p><strong>Not handling tool calls</strong></p>
+</li>
+<li><em>Symptom</em>: Tools not executing, streaming interruptions</li>
+<li><em>Quick Fix</em>: Use <code>@tool</code> decorator and handle tool calls properly</li>
+<li>
+<p>See: <a href="#issue-tool-calls-not-working">Tool Calls Not Working</a></p>
 </li>
 <li>
-<p><strong>💻 Provider Dependency Confusion</strong>
-   - <em>Symptom</em>: <code>ModuleNotFoundError</code> for providers
-   - <em>Quick Fix</em>: Install provider-specific packages with <code>pip install "abstractcore[provider]"</code>
-   - See: <a href="#issue-modulenotfounderror">ModuleNotFoundError</a></p>
+<p><strong>Missing provider extras</strong></p>
+</li>
+<li><em>Symptom</em>: <code>ModuleNotFoundError</code> for providers</li>
+<li><em>Quick Fix</em>: Install provider-specific packages with <code>pip install "abstractcore[provider]"</code></li>
+<li>
+<p>See: <a href="#issue-modulenotfounderror">ModuleNotFoundError</a></p>
 </li>
 <li>
-<p><strong>🖥️ LM Studio Server Not Enabled</strong>
-   - <em>Symptom</em>: Connection refused, no response from LM Studio
-   - <em>Quick Fix</em>: Enable "Status: Running" toggle in LM Studio GUI
-   - See: <a href="#issue-lm-studio-server-not-enabled">LM Studio Server Not Enabled</a></p>
+<p><strong>LM Studio server not enabled</strong></p>
+</li>
+<li><em>Symptom</em>: Connection refused, no response from LM Studio</li>
+<li><em>Quick Fix</em>: Enable "Status: Running" toggle in LM Studio GUI</li>
+<li>
+<p>See: <a href="#issue-lm-studio-server-not-enabled">LM Studio Server Not Enabled</a></p>
 </li>
 <li>
-<p><strong>📏 Context Length Too Small (LM Studio/Ollama)</strong>
-   - <em>Symptom</em>: 400 Bad Request, truncated responses, errors with long inputs
-   - <em>Quick Fix</em>: Set "Default Context Length" to "Model Maximum" in LM Studio
-   - See: <a href="#issue-context-length-too-small-400-bad-request-truncated-responses">Context Length Too Small</a></p>
+<p><strong>Context length too small (LM Studio/Ollama)</strong></p>
 </li>
+<li><em>Symptom</em>: 400 Bad Request, truncated responses, errors with long inputs</li>
+<li><em>Quick Fix</em>: Set "Default Context Length" to "Model Maximum" in LM Studio</li>
+<li>See: <a href="#issue-context-length-too-small-400-bad-request-truncated-responses">Context Length Too Small</a></li>
 </ol>
 <h3 id="common-mistake-patterns">Common Mistake Patterns</h3>
 <h4 id="mistake-missing-or-incorrect-api-keys">Mistake: Missing or Incorrect API Keys</h4>
@@ -129,12 +134,12 @@
 # Use @tool decorator for automatic tool definition
 @tool
 def get_weather(city: str) -&gt; str:
-    """Get current weather for a city."""
-    return f"Weather in {city}: sunny, 72°F"
+    &quot;&quot;&quot;Get current weather for a city.&quot;&quot;&quot;
+    return f&quot;Weather in {city}: sunny, 72°F&quot;
 
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 response = llm.generate(
-    "What's the weather in Tokyo?",
+    &quot;What's the weather in Tokyo?&quot;,
     tools=[get_weather]  # Pass decorated function directly
 )
 </code></pre></div>
@@ -158,9 +163,9 @@ response = llm.generate(
 from abstractcore.exceptions import ProviderAPIError, RateLimitError
 
 providers = [
-    ("openai", "gpt-4o-mini"),
-    ("anthropic", "claude-haiku-4-5"),
-    ("ollama", "qwen3-coder:30b")
+    (&quot;openai&quot;, &quot;gpt-4o-mini&quot;),
+    (&quot;anthropic&quot;, &quot;claude-haiku-4-5&quot;),
+    (&quot;ollama&quot;, &quot;qwen3-coder:30b&quot;)
 ]
 
 def generate_with_fallback(prompt):
@@ -169,9 +174,9 @@ def generate_with_fallback(prompt):
             llm = create_llm(provider, model=model)
             return llm.generate(prompt)
         except (ProviderAPIError, RateLimitError) as e:
-            print(f"Failed with {provider}: {e}")
+            print(f&quot;Failed with {provider}: {e}&quot;)
             continue
-    raise Exception("All providers failed")
+    raise Exception(&quot;All providers failed&quot;)
 </code></pre></div>
 <p><strong>Prevention:</strong>
 - Always use try/except blocks
@@ -190,7 +195,7 @@ def generate_with_fallback(prompt):
 <p><strong>Solution:</strong></p>
 <div class="code-block"><pre><code class="language-python"># Optimize memory and performance
 response = llm.generate(
-    "Complex task",
+    &quot;Complex task&quot;,
     max_tokens=1000,  # Limit response length
     timeout=30,       # Set reasonable timeout
     temperature=0.7   # Control creativity/randomness
@@ -219,7 +224,7 @@ OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 DEFAULT_MODEL = os.getenv('DEFAULT_LLM_MODEL', 'gpt-4o-mini')
 
 llm = create_llm(
-    "openai",
+    &quot;openai&quot;,
     model=DEFAULT_MODEL,
     api_key=OPENAI_API_KEY
 )
@@ -229,7 +234,7 @@ llm = create_llm(
 - Use environment variables
 - Implement configuration management libraries
 - Follow 12-factor app configuration principles</p>
-<hr/>
+<hr />
 <h2 id="quick-diagnosis">Quick Diagnosis</h2>
 <p>Run these checks first:</p>
 <div class="code-block"><pre><code class="language-bash"># Check Python version
@@ -239,12 +244,12 @@ python --version  # Should be 3.9+
 pip show abstractcore
 
 # Test core library
-python -c "from abstractcore import create_llm; print('✓ Core library OK')"
+python -c &quot;from abstractcore import create_llm; print('✓ Core library OK')&quot;
 
 # Test server (if installed)
-curl http://localhost:8000/health  # Should return {"status":"healthy"}
+curl http://localhost:8000/health  # Should return {&quot;status&quot;:&quot;healthy&quot;}
 </code></pre></div>
-<hr/>
+<hr />
 <h2 id="installation-issues">Installation Issues</h2>
 <h3 id="issue-modulenotfounderror">Issue: ModuleNotFoundError</h3>
 <p><strong>Symptoms:</strong></p>
@@ -256,14 +261,14 @@ ModuleNotFoundError: No module named 'openai'
 pip install abstractcore
 
 # Install with specific provider
-pip install "abstractcore[openai]"
-pip install "abstractcore[anthropic]"
+pip install &quot;abstractcore[openai]&quot;
+pip install &quot;abstractcore[anthropic]&quot;
 # Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, ...) work with the core install.
 
 # Install the full feature set (pick one)
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+pip install &quot;abstractcore[all-apple]&quot;    # macOS/Apple Silicon (includes MLX, excludes vLLM)
+pip install &quot;abstractcore[all-non-mlx]&quot;  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
+pip install &quot;abstractcore[all-gpu]&quot;      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
 
 # Verify installation
 pip list | grep abstract
@@ -281,14 +286,14 @@ source .venv/bin/activate  # Linux/Mac
 
 # Fresh install
 pip install --upgrade pip
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon
-# or: pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac
-# or: pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU
+pip install &quot;abstractcore[all-apple]&quot;    # macOS/Apple Silicon
+# or: pip install &quot;abstractcore[all-non-mlx]&quot;  # Linux/Windows/Intel Mac
+# or: pip install &quot;abstractcore[all-gpu]&quot;      # Linux NVIDIA GPU
 
 # If still failing, try one provider at a time
-pip install "abstractcore[openai]"
+pip install &quot;abstractcore[openai]&quot;
 </code></pre></div>
-<hr/>
+<hr />
 <h2 id="core-library-issues">Core Library Issues</h2>
 <h3 id="issue-authentication-errors">Issue: Authentication Errors</h3>
 <p><strong>Symptoms:</strong></p>
@@ -302,19 +307,19 @@ echo $OPENAI_API_KEY  # Should show your key
 echo $ANTHROPIC_API_KEY
 
 # Set API key
-export OPENAI_API_KEY="sk-..."
-export ANTHROPIC_API_KEY="sk-ant-..."
+export OPENAI_API_KEY=&quot;sk-...&quot;
+export ANTHROPIC_API_KEY=&quot;sk-ant-...&quot;
 
 # Add to shell profile for persistence
-echo 'export OPENAI_API_KEY="sk-..."' &gt;&gt; ~/.bashrc
+echo 'export OPENAI_API_KEY=&quot;sk-...&quot;' &gt;&gt; ~/.bashrc
 source ~/.bashrc
 
 # Verify key format
-# OpenAI: starts with "sk-"
-# Anthropic: starts with "sk-ant-"
+# OpenAI: starts with &quot;sk-&quot;
+# Anthropic: starts with &quot;sk-ant-&quot;
 
 # Test authentication
-python -c "from abstractcore import create_llm; llm = create_llm('openai', model='gpt-4o-mini'); print(llm.generate('test').content)"
+python -c &quot;from abstractcore import create_llm; llm = create_llm('openai', model='gpt-4o-mini'); print(llm.generate('test').content)&quot;
 </code></pre></div>
 <h3 id="issue-model-not-found">Issue: Model Not Found</h3>
 <p><strong>Symptoms:</strong></p>
@@ -337,17 +342,17 @@ ollama serve
 curl http://localhost:1234/v1/models
 
 # In LMStudio GUI:
-# 1. Go to "Local Server" tab
+# 1. Go to &quot;Local Server&quot; tab
 # 2. Select model from dropdown
-# 3. Click "Start Server"
+# 3. Click &quot;Start Server&quot;
 </code></pre></div>
 <p><strong>For OpenAI/Anthropic:</strong></p>
 <div class="code-block"><pre><code class="language-python"># Use correct model names
-llm = create_llm("openai", model="gpt-4o-mini")  # ✓ Correct
-llm = create_llm("openai", model="gpt4")  # ✗ Wrong
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)  # ✓ Correct
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt4&quot;)  # ✗ Wrong
 
-llm = create_llm("anthropic", model="claude-haiku-4-5")  # ✓ Correct
-llm = create_llm("anthropic", model="claude-3")  # ✗ Wrong
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)  # ✓ Correct
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-3&quot;)  # ✗ Wrong
 </code></pre></div>
 <h3 id="issue-connection-errors">Issue: Connection Errors</h3>
 <p><strong>Symptoms:</strong></p>
@@ -364,7 +369,7 @@ ollama serve
 curl http://localhost:11434/api/tags
 
 # If using custom host
-export OLLAMA_HOST="http://localhost:11434"
+export OLLAMA_HOST=&quot;http://localhost:11434&quot;
 </code></pre></div>
 <p><strong>For LMStudio:</strong></p>
 <div class="code-block"><pre><code class="language-bash"># Verify server is running
@@ -396,21 +401,21 @@ unset HTTPS_PROXY
 # Ensure @tool decorator is used
 @tool
 def get_weather(city: str) -&gt; str:
-    """Get weather for a city."""
-    return f"Weather in {city}: sunny, 72°F"
+    &quot;&quot;&quot;Get weather for a city.&quot;&quot;&quot;
+    return f&quot;Weather in {city}: sunny, 72°F&quot;
 
 # Use tool correctly
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 response = llm.generate(
-    "What's the weather in Paris?",
+    &quot;What's the weather in Paris?&quot;,
     tools=[get_weather]  # Pass as list
 )
 
 # Check if tool was called
 if hasattr(response, 'tool_calls') and response.tool_calls:
-    print("Tools were called")
+    print(&quot;Tools were called&quot;)
 </code></pre></div>
-<hr/>
+<hr />
 <h2 id="server-issues">Server Issues</h2>
 <h3 id="issue-server-wont-start">Issue: Server Won't Start</h3>
 <p><strong>Symptoms:</strong></p>
@@ -428,23 +433,17 @@ kill -9 $(lsof -t -i:8000)  # Linux/Mac
 # Use different port
 uvicorn abstractcore.server.app:app --port 3000
 </code></pre></div>
-<h3 id="issue-abstractcoreapikey-error">Issue: ABSTRACTCORE_API_KEY Error</h3>
-<p><strong>Symptoms:</strong></p>
-<div class="code-block"><pre><code>Error: Missing environment variable: ABSTRACTCORE_API_KEY
-</code></pre></div>
+<h3 id="issue-client-complains-about-missing-api-key">Issue: Client complains about missing API key</h3>
+<p><strong>Symptoms:</strong>
+- Your OpenAI-compatible client/CLI refuses to run without an API key (even though your server is local).</p>
 <p><strong>Solutions:</strong></p>
-<div class="code-block"><pre><code class="language-bash"># Set the required variable
-export ABSTRACTCORE_API_KEY="unused"
-
-# For Codex CLI, set ALL three:
-export OPENAI_BASE_URL="http://localhost:8000/v1"
-export OPENAI_API_KEY="unused"
-export ABSTRACTCORE_API_KEY="unused"
+<div class="code-block"><pre><code class="language-bash"># Most OpenAI-compatible clients accept a dummy key for local servers.
+export OPENAI_BASE_URL=&quot;http://localhost:8000/v1&quot;
+export OPENAI_API_KEY=&quot;unused&quot;
 
 # Verify they're set
-echo $OPENAI_BASE_URL
-echo $OPENAI_API_KEY
-echo $ABSTRACTCORE_API_KEY
+echo &quot;$OPENAI_BASE_URL&quot;
+echo &quot;$OPENAI_API_KEY&quot;
 </code></pre></div>
 <h3 id="issue-server-running-but-no-response">Issue: Server Running but No Response</h3>
 <p><strong>Symptoms:</strong>
@@ -464,8 +463,8 @@ uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
 
 # Test with simple request
 curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "openai/gpt-4o-mini", "messages": [{"role": "user", "content": "test"}]}'
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{&quot;model&quot;: &quot;openai/gpt-4o-mini&quot;, &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;test&quot;}]}'
 </code></pre></div>
 <h3 id="issue-models-not-showing">Issue: Models Not Showing</h3>
 <p><strong>Symptoms:</strong></p>
@@ -495,25 +494,22 @@ curl http://localhost:1234/v1/models  # Should return models
 - Codex/Crush/Gemini CLI not detecting tools
 - Tool format errors in streaming</p>
 <p><strong>Solutions:</strong></p>
-<div class="code-block"><pre><code class="language-bash"># Set correct tool format for your CLI
+<div class="code-block"><pre><code class="language-bash"># AbstractCore Server controls tool-call syntax via `agent_format` (request field) or auto-detection.
+# - OpenAI/Codex style: structured tool calls are returned in `tool_calls` fields.
+# - Tag-based formats: tool calls are emitted as tagged content for clients that parse from assistant text.
 
-# For Codex CLI (qwen3 format - default)
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# For Crush CLI (llama3 format)
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# For Gemini CLI (xml format)
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# Restart server after changing environment variables
-pkill -f "abstractcore.server.app"
+# If you control requests (curl/custom client), force a format with `agent_format`:
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;model&quot;: &quot;ollama/qwen3:4b-instruct-2507-q4_K_M&quot;,
+    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Use the tool.&quot;}],
+    &quot;tools&quot;: [{&quot;type&quot;:&quot;function&quot;,&quot;function&quot;:{&quot;name&quot;:&quot;get_weather&quot;,&quot;description&quot;:&quot;...&quot;,&quot;parameters&quot;:{&quot;type&quot;:&quot;object&quot;,&quot;properties&quot;:{&quot;city&quot;:{&quot;type&quot;:&quot;string&quot;}},&quot;required&quot;:[&quot;city&quot;]}}}],
+    &quot;agent_format&quot;: &quot;llama3&quot;
+  }'
 </code></pre></div>
-<hr/>
+<p>See <a href="server.html#agentic-cli-integration">Server</a> for details and supported formats.</p>
+<hr />
 <h2 id="provider-specific-issues">Provider-Specific Issues</h2>
 <h3 id="ollama">Ollama</h3>
 <p><strong>Issue: Ollama not responding</strong></p>
@@ -549,7 +545,7 @@ vm_stat  # macOS
 # Implement backoff in code
 import time
 try:
-    response = llm.generate("prompt")
+    response = llm.generate(&quot;prompt&quot;)
 except RateLimitError:
     time.sleep(20)  # Wait before retry
 </code></pre></div>
@@ -562,7 +558,7 @@ except RateLimitError:
 </code></pre></div>
 <h3 id="anthropic">Anthropic</h3>
 <p><strong>Issue: API key format</strong></p>
-<div class="code-block"><pre><code class="language-bash"># Anthropic keys start with "sk-ant-"
+<div class="code-block"><pre><code class="language-bash"># Anthropic keys start with &quot;sk-ant-&quot;
 echo $ANTHROPIC_API_KEY  # Should start with sk-ant-
 
 # Get key from console
@@ -571,7 +567,7 @@ echo $ANTHROPIC_API_KEY  # Should start with sk-ant-
 <h3 id="lmstudio">LMStudio</h3>
 <h4 id="issue-connection-refused">Issue: Connection refused</h4>
 <div class="code-block"><pre><code class="language-bash"># Verify LMStudio server is running
-# Check LMStudio GUI shows "Server running"
+# Check LMStudio GUI shows &quot;Server running&quot;
 
 # Test connection
 curl http://localhost:1234/v1/models
@@ -581,9 +577,9 @@ curl http://localhost:1234/v1/models
 <h4 id="issue-lm-studio-server-not-enabled">Issue: LM Studio Server Not Enabled</h4>
 <div class="code-block"><pre><code class="language-bash"># CRITICAL: Ensure LM Studio server is enabled in the GUI
 # 1. Open LM Studio application
-# 2. Look for "Status: Running" toggle switch in the interface
-# 3. Make sure the toggle is switched to "ON" (green background, white handle on right)
-# 4. If the toggle shows "OFF", click it to enable the server
+# 2. Look for &quot;Status: Running&quot; toggle switch in the interface
+# 3. Make sure the toggle is switched to &quot;ON&quot; (green background, white handle on right)
+# 4. If the toggle shows &quot;OFF&quot;, click it to enable the server
 # 5. Verify the server is running by checking the status indicator
 
 # Test server availability
@@ -598,17 +594,17 @@ curl http://localhost:1234/v1/models
 # Solution 1: Increase Default Context Length (RECOMMENDED)
 # This is the most robust way to ensure all models use maximum available context
 # 1. Open LM Studio application
-# 2. Go to "App Settings" → "General" tab
-# 3. Find "Model Defaults" → "Default Context Length"
-# 4. Set dropdown to "Model Maximum" (or highest available value like 131072)
+# 2. Go to &quot;App Settings&quot; → &quot;General&quot; tab
+# 3. Find &quot;Model Defaults&quot; → &quot;Default Context Length&quot;
+# 4. Set dropdown to &quot;Model Maximum&quot; (or highest available value like 131072)
 # 5. Restart LM Studio server for changes to take effect
 
 # Solution 2: Increase Context Length per Model (Alternative)
 # This method applies context length setting to a specific model
 # 1. Open LM Studio application
-# 2. Go to "My Models" tab
+# 2. Go to &quot;My Models&quot; tab
 # 3. Select the specific model you are using
-# 4. Look for "Context Length" slider/input (usually under "Load" or "Context" tab)
+# 4. Look for &quot;Context Length&quot; slider/input (usually under &quot;Load&quot; or &quot;Context&quot; tab)
 # 5. Adjust slider to maximum value (e.g., 131072 tokens)
 # 6. Reload the model for changes to take effect
 
@@ -621,10 +617,10 @@ ollama run &lt;model_name&gt; -c &lt;context_length&gt;
 # For LM Studio via API (often handled automatically by AbstractCore):
 # Include in request payload:
 # {
-#   "model": "your-model-name",
-#   "prompt": "Your long prompt here...",
-#   "options": {
-#     "num_ctx": 4096  # Or your desired context length
+#   &quot;model&quot;: &quot;your-model-name&quot;,
+#   &quot;prompt&quot;: &quot;Your long prompt here...&quot;,
+#   &quot;options&quot;: {
+#     &quot;num_ctx&quot;: 4096  # Or your desired context length
 #   }
 # }
 
@@ -632,31 +628,31 @@ ollama run &lt;model_name&gt; -c &lt;context_length&gt;
 # After adjusting, test with a long prompt that previously failed
 # Check server logs for any warnings or errors related to context
 </code></pre></div>
-<hr/>
+<hr />
 <h2 id="performance-issues">Performance Issues</h2>
 <h3 id="issue-slow-responses">Issue: Slow Responses</h3>
 <p><strong>Diagnosis:</strong></p>
 <div class="code-block"><pre><code class="language-bash"># Time a request
-time python -c "from abstractcore import create_llm; llm = create_llm('ollama', model='qwen3:4b-instruct-2507-q4_K_M'); print(llm.generate('test').content)"
+time python -c &quot;from abstractcore import create_llm; llm = create_llm('ollama', model='qwen3:4b-instruct-2507-q4_K_M'); print(llm.generate('test').content)&quot;
 </code></pre></div>
 <p><strong>Solutions:</strong></p>
 <p><strong>Use Faster Models:</strong></p>
 <div class="code-block"><pre><code class="language-python"># Faster cloud models
-llm = create_llm("openai", model="gpt-4o-mini")  # Fast
-llm = create_llm("anthropic", model="claude-haiku-4-5")  # Fast
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)  # Fast
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-haiku-4-5&quot;)  # Fast
 
 # Faster local models
-llm = create_llm("ollama", model="gemma3:1b")  # Very fast
-llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")  # Balanced
+llm = create_llm(&quot;ollama&quot;, model=&quot;gemma3:1b&quot;)  # Very fast
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct-2507-q4_K_M&quot;)  # Balanced
 </code></pre></div>
 <p><strong>Enable Streaming:</strong></p>
 <div class="code-block"><pre><code class="language-python"># Improves perceived speed
-for chunk in llm.generate("Long response", stream=True):
-    print(chunk.content, end="", flush=True)
+for chunk in llm.generate(&quot;Long response&quot;, stream=True):
+    print(chunk.content, end=&quot;&quot;, flush=True)
 </code></pre></div>
 <p><strong>Optimize Parameters:</strong></p>
 <div class="code-block"><pre><code class="language-python">response = llm.generate(
-    "prompt",
+    &quot;prompt&quot;,
     max_tokens=500,      # Limit length
     temperature=0.3      # Lower = faster
 )
@@ -670,9 +666,9 @@ ollama pull gemma3:1b  # 1GB instead of 30GB
 
 # For MLX on Mac
 # Use 4-bit quantized models
-llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Llama-3.2-3B-Instruct-4bit&quot;)
 </code></pre></div>
-<hr/>
+<hr />
 <h2 id="best-practices">Best Practices</h2>
 <p>Follow these best practices to avoid issues:</p>
 <h3 id="configuration-management">Configuration Management</h3>
@@ -715,7 +711,7 @@ llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
 <li>Regular security audits</li>
 <li>Keep dependencies updated</li>
 </ul>
-<hr/>
+<hr />
 <h2 id="debug-techniques">Debug Techniques</h2>
 <h3 id="enable-debug-logging">Enable Debug Logging</h3>
 <p><strong>Core Library:</strong></p>
@@ -723,7 +719,7 @@ llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
 logging.basicConfig(level=logging.DEBUG)
 
 from abstractcore import create_llm
-llm = create_llm("openai", model="gpt-4o-mini")
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 </code></pre></div>
 <p><strong>Server:</strong></p>
 <div class="code-block"><pre><code class="language-bash"># Enable debug mode
@@ -737,48 +733,48 @@ tail -f logs/abstractcore_*.log
 </code></pre></div>
 <h3 id="analyze-logs">Analyze Logs</h3>
 <div class="code-block"><pre><code class="language-bash"># Find errors
-grep '"level": "error"' logs/abstractcore_*.log
+grep '&quot;level&quot;: &quot;error&quot;' logs/abstractcore_*.log
 
 # Track specific request
-grep "req_abc123" logs/abstractcore_*.log
+grep &quot;req_abc123&quot; logs/abstractcore_*.log
 
 # Monitor latency
 cat logs/verbatim_*.jsonl | jq '.metadata.latency_ms'
 
 # Token usage
 cat logs/verbatim_*.jsonl | jq '.metadata.tokens | .input + .output' | \
-  awk '{sum+=$1} END {print "Total:", sum}'
+  awk '{sum+=$1} END {print &quot;Total:&quot;, sum}'
 </code></pre></div>
 <h3 id="test-in-isolation">Test in Isolation</h3>
 <div class="code-block"><pre><code class="language-python"># Test provider directly
 from abstractcore import create_llm
 
 try:
-    llm = create_llm("openai", model="gpt-4o-mini")
-    response = llm.generate("Hello")
-    print(f"✓ Success: {response.content}")
+    llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+    response = llm.generate(&quot;Hello&quot;)
+    print(f&quot;✓ Success: {response.content}&quot;)
 except Exception as e:
-    print(f"✗ Error: {e}")
+    print(f&quot;✗ Error: {e}&quot;)
 </code></pre></div>
 <h3 id="collect-debug-information">Collect Debug Information</h3>
 <div class="code-block"><pre><code class="language-bash"># Create debug report
-echo "=== System ===" &gt; debug_report.txt
+echo &quot;=== System ===&quot; &gt; debug_report.txt
 uname -a &gt;&gt; debug_report.txt
 python --version &gt;&gt; debug_report.txt
 
-echo "=== Packages ===" &gt;&gt; debug_report.txt
-pip freeze | grep -E "abstract|openai|anthropic" &gt;&gt; debug_report.txt
+echo &quot;=== Packages ===&quot; &gt;&gt; debug_report.txt
+pip freeze | grep -E &quot;abstract|openai|anthropic&quot; &gt;&gt; debug_report.txt
 
-echo "=== Environment ===" &gt;&gt; debug_report.txt
-env | grep -E "ABSTRACT|OPENAI|ANTHROPIC|OLLAMA" &gt;&gt; debug_report.txt
+echo &quot;=== Environment ===&quot; &gt;&gt; debug_report.txt
+env | grep -E &quot;ABSTRACT|OPENAI|ANTHROPIC|OLLAMA&quot; &gt;&gt; debug_report.txt
 
-echo "=== Tests ===" &gt;&gt; debug_report.txt
-python -c "from abstractcore import create_llm; print('Core library: OK')" &gt;&gt; debug_report.txt 2&gt;&amp;1
+echo &quot;=== Tests ===&quot; &gt;&gt; debug_report.txt
+python -c &quot;from abstractcore import create_llm; print('Core library: OK')&quot; &gt;&gt; debug_report.txt 2&gt;&amp;1
 curl http://localhost:8000/health &gt;&gt; debug_report.txt 2&gt;&amp;1
 
 cat debug_report.txt
 </code></pre></div>
-<hr/>
+<hr />
 <h2 id="common-error-messages">Common Error Messages</h2>
 <table>
 <thead>
@@ -841,43 +837,47 @@ cat debug_report.txt
 </tr>
 </tbody>
 </table>
-<hr/>
+<hr />
 <h2 id="getting-help">Getting Help</h2>
 <p>If you're still stuck:</p>
 <ol>
+<li><strong>Check Documentation:</strong></li>
+<li><a href="getting-started.html">Getting Started</a> - Core library quick start</li>
+<li><a href="prerequisites.html">Prerequisites</a> - Provider setup</li>
+<li><a href="api-reference.html">Python API Reference</a> - Core library API</li>
+<li><a href="server.html">Server Guide</a> - Server setup</li>
 <li>
-<p><strong>Check Documentation:</strong>
-   - <a href="getting-started.html">Getting Started</a> - Core library quick start
-   - <a href="prerequisites.html">Prerequisites</a> - Provider setup
-   - <a href="api-reference.html">Python API Reference</a> - Core library API
-   - <a href="server.html">Server Guide</a> - Server setup
-   - <a href="server.html">Server API Reference</a> - REST API endpoints</p>
+<p><a href="server.html">Server API Reference</a> - REST API endpoints</p>
 </li>
 <li>
 <p><strong>Enable Debug Mode:</strong>
-<code>bash
+   <code>bash
    export ABSTRACTCORE_DEBUG=true</code></p>
 </li>
 <li>
-<p><strong>Collect Information:</strong>
-   - Error messages
-   - Debug logs
-   - System information
-   - Steps to reproduce</p>
+<p><strong>Collect Information:</strong></p>
+</li>
+<li>Error messages</li>
+<li>Debug logs</li>
+<li>System information</li>
+<li>
+<p>Steps to reproduce</p>
 </li>
 <li>
-<p><strong>Community Support:</strong>
-   - GitHub Issues: <a href="https://github.com/lpalbou/AbstractCore/issues">github.com/lpalbou/AbstractCore/issues</a>
-   - GitHub Discussions: <a href="https://github.com/lpalbou/AbstractCore/discussions">github.com/lpalbou/AbstractCore/discussions</a></p>
+<p><strong>Community Support:</strong></p>
 </li>
+<li>GitHub Issues: <a href="https://github.com/lpalbou/AbstractCore/issues">github.com/lpalbou/AbstractCore/issues</a></li>
+<li>GitHub Discussions: <a href="https://github.com/lpalbou/AbstractCore/discussions">github.com/lpalbou/AbstractCore/discussions</a></li>
 </ol>
-<hr/>
+<hr />
 <p><strong>Remember</strong>: Most issues are configuration-related. Double-check environment variables, API keys, and that services are running before diving deep into debugging.</p>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

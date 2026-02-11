@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Framework Comparison - AbstractCore</title>
+    <meta name="description" content="This guide compares AbstractCore with other popular LLM frameworks to help you choose the right tool for your needs.">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Framework Comparison</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This guide compares AbstractCore with other popular LLM frameworks to help you choose the right tool for your needs.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#quick-comparison-table" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Comparison Table</a>
+<a href="#detailed-comparisons" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Detailed Comparisons</a>
+<a href="#migration-guides" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Migration Guides</a>
+<a href="#performance-comparison" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance Comparison</a>
+<a href="#use-case-recommendations" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Use Case Recommendations</a>
+<a href="#decision-matrix" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Decision Matrix</a>
+<a href="#combination-strategies" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Combination Strategies</a>
+<a href="#summary" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Summary</a></div>
+
+            <div class="doc-content">
+
+<h2 id="quick-comparison-table">Quick Comparison Table</h2>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>AbstractCore</th>
+<th>LiteLLM</th>
+<th>LangChain</th>
+<th>LangGraph</th>
+<th>LlamaIndex</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>Primary Focus</strong></td>
+<td>Clean LLM infrastructure</td>
+<td>API compatibility</td>
+<td>Full LLM framework</td>
+<td>Agent workflows</td>
+<td>RAG/search</td>
+</tr>
+<tr>
+<td><strong>Size</strong></td>
+<td>~8k LOC</td>
+<td>~15k LOC</td>
+<td>100k+ LOC</td>
+<td>~30k LOC</td>
+<td>~80k LOC</td>
+</tr>
+<tr>
+<td><strong>Learning Curve</strong></td>
+<td>Minimal</td>
+<td>Minimal</td>
+<td>Steep</td>
+<td>Medium</td>
+<td>Medium</td>
+</tr>
+<tr>
+<td><strong>Provider Support</strong></td>
+<td>6 providers</td>
+<td>100+ providers</td>
+<td>Many via integrations</td>
+<td>Via LangChain</td>
+<td>Via LlamaHub</td>
+</tr>
+<tr>
+<td><strong>Tool Calling</strong></td>
+<td>✅ Universal execution</td>
+<td>⚠️ Pass-through only</td>
+<td>✅ Via integrations</td>
+<td>✅ Native</td>
+<td>⚠️ Limited</td>
+</tr>
+<tr>
+<td><strong>Streaming</strong></td>
+<td>✅ With tool support</td>
+<td>✅ Basic</td>
+<td>✅ Basic</td>
+<td>❌ Limited</td>
+<td>❌ Limited</td>
+</tr>
+<tr>
+<td><strong>Structured Output</strong></td>
+<td>✅ With retry logic</td>
+<td>❌ None</td>
+<td>⚠️ Via parsers</td>
+<td>⚠️ Basic</td>
+<td>⚠️ Basic</td>
+</tr>
+<tr>
+<td><strong>Production Ready</strong></td>
+<td>✅ Retry + circuit breakers</td>
+<td>⚠️ Basic</td>
+<td>✅ Via LangSmith</td>
+<td>✅ Via LangSmith</td>
+<td>⚠️ Depends</td>
+</tr>
+<tr>
+<td><strong>Memory/Sessions</strong></td>
+<td>✅ Simple sessions</td>
+<td>❌ None</td>
+<td>✅ Advanced</td>
+<td>✅ Advanced</td>
+<td>✅ Advanced</td>
+</tr>
+<tr>
+<td><strong>RAG Support</strong></td>
+<td>⚠️ Embeddings only</td>
+<td>❌ None</td>
+<td>✅ Full pipelines</td>
+<td>⚠️ Basic</td>
+<td>✅ Full pipelines</td>
+</tr>
+<tr>
+<td><strong>Agent Support</strong></td>
+<td>❌ Single calls</td>
+<td>❌ None</td>
+<td>✅ Via chains</td>
+<td>✅ Native</td>
+<td>⚠️ Query engines</td>
+</tr>
+<tr>
+<td><strong>Observability</strong></td>
+<td>✅ Built-in events</td>
+<td>⚠️ Basic logging</td>
+<td>✅ Via LangSmith</td>
+<td>✅ Via LangSmith</td>
+<td>⚠️ Basic</td>
+</tr>
+</tbody>
+</table>
+<h2 id="detailed-comparisons">Detailed Comparisons</h2>
+<h3 id="abstractcore-vs-litellm">AbstractCore vs LiteLLM</h3>
+<p><strong>LiteLLM</strong> provides API compatibility across providers. <strong>AbstractCore</strong> provides production infrastructure.</p>
+<h4 id="when-to-choose-litellm">When to choose LiteLLM:</h4>
+<div class="code-block"><pre><code class="language-python"># LiteLLM is suitable for simple API compatibility
+from litellm import completion
+
+# Same API for all providers - that's it
+response = completion(model=&quot;gpt-4&quot;, messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello&quot;}])
+</code></pre></div>
+<h4 id="when-to-choose-abstractcore">When to choose AbstractCore:</h4>
+<div class="code-block"><pre><code class="language-python"># AbstractCore for production features
+from abstractcore import create_llm
+
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+
+# Tool calling that actually executes functions
+response = llm.generate(&quot;What's the weather?&quot;, tools=weather_tools)
+
+# Structured output with automatic retry
+user = llm.generate(&quot;Extract user info&quot;, response_model=UserModel)
+
+# Production reliability built-in
+# - Automatic retries with circuit breakers
+# - Comprehensive event system
+# - Streaming with tool support
+</code></pre></div>
+<p><strong>Summary</strong>:
+- <strong>LiteLLM</strong> = API compatibility layer
+- <strong>AbstractCore</strong> = Production LLM infrastructure</p>
+<h3 id="abstractcore-vs-langchain">AbstractCore vs LangChain</h3>
+<p><strong>LangChain</strong> is a comprehensive framework with many components. <strong>AbstractCore</strong> is focused infrastructure.</p>
+<h4 id="langchain-strengths">LangChain Strengths:</h4>
+<ul>
+<li><strong>Ecosystem</strong>: Massive ecosystem with pre-built components</li>
+<li><strong>RAG</strong>: Complete RAG pipelines out of the box</li>
+<li><strong>Integrations</strong>: Hundreds of integrations with external services</li>
+<li><strong>Prompt Management</strong>: Advanced prompt templates and few-shot learning</li>
+</ul>
+<h4 id="abstractcore-advantages">AbstractCore Advantages:</h4>
+<ul>
+<li><strong>Simplicity</strong>: Learn in 5 minutes vs days for LangChain</li>
+<li><strong>Reliability</strong>: Production-grade retry and error handling built-in</li>
+<li><strong>Performance</strong>: Lightweight with minimal dependencies</li>
+<li><strong>Tool Execution</strong>: Actually executes tools vs just formatting them</li>
+</ul>
+<h4 id="code-comparison">Code Comparison:</h4>
+<p><strong>LangChain approach:</strong></p>
+<div class="code-block"><pre><code class="language-python">from langchain.llms import OpenAI
+from langchain.agents import initialize_agent, AgentType
+from langchain.tools import BaseTool
+
+# More complex setup
+llm = OpenAI(temperature=0)
+tools = [CustomTool()]
+agent = initialize_agent(tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION)
+response = agent.run(&quot;What's the weather?&quot;)
+</code></pre></div>
+<p><strong>AbstractCore approach:</strong></p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+# Simple and direct
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+response = llm.generate(&quot;What's the weather?&quot;, tools=weather_tools)
+</code></pre></div>
+<p><strong>Summary</strong>:
+- <strong>LangChain</strong> = Full framework with everything included
+- <strong>AbstractCore</strong> = Clean infrastructure you build on</p>
+<h3 id="abstractcore-vs-langgraph">AbstractCore vs LangGraph</h3>
+<p><strong>LangGraph</strong> focuses on agent workflows and state management. <strong>AbstractCore</strong> focuses on reliable LLM calls.</p>
+<h4 id="langgraph-strengths">LangGraph Strengths:</h4>
+<ul>
+<li><strong>Agent Workflows</strong>: Multi-step agent reasoning with state</li>
+<li><strong>Graph Structure</strong>: DAG-based workflow definition</li>
+<li><strong>Human-in-the-loop</strong>: Built-in human approval workflows</li>
+<li><strong>State Persistence</strong>: Automatic state management</li>
+</ul>
+<h4 id="abstractcore-abstractagent">AbstractCore + AbstractAgent:</h4>
+<p>For complex agents, use <a href="https://github.com/lpalbou/AbstractAgent">AbstractAgent</a> which builds on AbstractCore.</p>
+<div class="code-block"><pre><code class="language-python"># LangGraph - workflow definition
+from langgraph import StateGraph
+
+workflow = StateGraph()
+workflow.add_node(&quot;agent&quot;, agent_node)
+workflow.add_node(&quot;tools&quot;, tool_node)
+workflow.set_entry_point(&quot;agent&quot;)
+
+# AbstractAgent - simpler agent creation
+from abstract_agent import Agent
+from abstractcore import create_llm
+
+agent = Agent(
+    llm=create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;),
+    tools=tools,
+    memory=memory_system
+)
+</code></pre></div>
+<p><strong>Summary</strong>:
+- <strong>LangGraph</strong> = Complex workflow orchestration
+- <strong>AbstractCore</strong> = Foundation for building agents</p>
+<h3 id="abstractcore-vs-llamaindex">AbstractCore vs LlamaIndex</h3>
+<p><strong>LlamaIndex</strong> specializes in RAG and document processing. <strong>AbstractCore</strong> provides general LLM infrastructure.</p>
+<h4 id="llamaindex-strengths">LlamaIndex Strengths:</h4>
+<ul>
+<li><strong>RAG Focus</strong>: Built specifically for retrieval-augmented generation</li>
+<li><strong>Document Processing</strong>: Advanced chunking and parsing strategies</li>
+<li><strong>Vector Stores</strong>: Integration with all major vector databases</li>
+<li><strong>Query Engines</strong>: Sophisticated query processing and routing</li>
+</ul>
+<h4 id="abstractcore-approach">AbstractCore Approach:</h4>
+<p>AbstractCore provides the embeddings foundation - you build the RAG pipeline:</p>
+<div class="code-block"><pre><code class="language-python"># LlamaIndex - full RAG out of the box
+from llama_index import SimpleDirectoryReader, VectorStoreIndex
+
+documents = SimpleDirectoryReader('data').load_data()
+index = VectorStoreIndex.from_documents(documents)
+query_engine = index.as_query_engine()
+response = query_engine.query(&quot;What is the main topic?&quot;)
+
+# AbstractCore - you build the pipeline
+from abstractcore import create_llm
+from abstractcore.embeddings import EmbeddingManager
+
+embedder = EmbeddingManager()
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+
+# You implement: document chunking, vector storage, retrieval
+relevant_docs = your_retrieval_system(query, embedder)
+context = &quot;\n&quot;.join(relevant_docs)
+response = llm.generate(f&quot;Context: {context}\nQuestion: {query}&quot;)
+</code></pre></div>
+<p><strong>Summary</strong>:
+- <strong>LlamaIndex</strong> = Full RAG framework
+- <strong>AbstractCore</strong> = RAG building blocks</p>
+<h2 id="migration-guides">Migration Guides</h2>
+<h3 id="from-litellm-to-abstractcore">From LiteLLM to AbstractCore</h3>
+<p><strong>Before (LiteLLM):</strong></p>
+<div class="code-block"><pre><code class="language-python">import litellm
+
+response = litellm.completion(
+    model=&quot;gpt-3.5-turbo&quot;,
+    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello&quot;}]
+)
+print(response.choices[0].message.content)
+</code></pre></div>
+<p><strong>After (AbstractCore):</strong></p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-3.5-turbo&quot;)
+response = llm.generate(&quot;Hello&quot;)
+print(response.content)
+
+# Plus you get: tool calling, structured output, streaming, reliability
+</code></pre></div>
+<h3 id="from-langchain-to-abstractcore">From LangChain to AbstractCore</h3>
+<p><strong>Before (LangChain):</strong></p>
+<div class="code-block"><pre><code class="language-python">from langchain.llms import OpenAI
+from langchain.schema import HumanMessage
+
+llm = OpenAI()
+response = llm([HumanMessage(content=&quot;Hello&quot;)])
+</code></pre></div>
+<p><strong>After (AbstractCore):</strong></p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-3.5-turbo&quot;)
+response = llm.generate(&quot;Hello&quot;)
+
+# Simpler API, same functionality
+</code></pre></div>
+<h3 id="from-openai-sdk-to-abstractcore">From OpenAI SDK to AbstractCore</h3>
+<p><strong>Before (OpenAI SDK):</strong></p>
+<div class="code-block"><pre><code class="language-python">import openai
+
+client = openai.OpenAI()
+response = client.chat.completions.create(
+    model=&quot;gpt-3.5-turbo&quot;,
+    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello&quot;}]
+)
+print(response.choices[0].message.content)
+</code></pre></div>
+<p><strong>After (AbstractCore):</strong></p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-3.5-turbo&quot;)
+response = llm.generate(&quot;Hello&quot;)
+print(response.content)
+
+# Plus: works with any provider, built-in reliability, tool calling
+</code></pre></div>
+<h2 id="performance-comparison">Performance Comparison</h2>
+<h3 id="memory-usage">Memory Usage</h3>
+<table>
+<thead>
+<tr>
+<th>Framework</th>
+<th>Import Time</th>
+<th>Memory (MB)</th>
+<th>Dependencies</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>AbstractCore</strong></td>
+<td>~0.3s</td>
+<td>~15MB</td>
+<td>3 core</td>
+</tr>
+<tr>
+<td><strong>LiteLLM</strong></td>
+<td>~0.5s</td>
+<td>~25MB</td>
+<td>5+</td>
+</tr>
+<tr>
+<td><strong>LangChain</strong></td>
+<td>~2.0s</td>
+<td>~150MB</td>
+<td>50+</td>
+</tr>
+<tr>
+<td><strong>LangGraph</strong></td>
+<td>~1.0s</td>
+<td>~80MB</td>
+<td>20+</td>
+</tr>
+<tr>
+<td><strong>LlamaIndex</strong></td>
+<td>~1.5s</td>
+<td>~120MB</td>
+<td>40+</td>
+</tr>
+</tbody>
+</table>
+<h3 id="feature-completeness-vs-complexity">Feature Completeness vs Complexity</h3>
+<div class="code-block"><pre><code>                    ┌─────────────────────┐
+                 High│  LangChain     ●   │
+ Feature Completeness│                     │
+                     │  LlamaIndex ●      │
+                     │                     │
+                     │  LangGraph     ●   │
+                Medium│                     │
+                     │                     │
+                     │  AbstractCore  ●   │
+                     │                     │
+                  Low│  LiteLLM       ●   │
+                     └─────────────────────┘
+                      Low        Medium   High
+                           Complexity
+
+● = Sweet spot for different use cases
+</code></pre></div>
+<h2 id="use-case-recommendations">Use Case Recommendations</h2>
+<h3 id="simple-llm-integration">Simple LLM Integration</h3>
+<div class="code-block"><pre><code>Your App → AbstractCore → LLM Provider
+</code></pre></div>
+<p><strong>Recommended for</strong>: AbstractCore
+<strong>Why</strong>: Simple, reliable, production-ready</p>
+<h3 id="api-compatibility-only">API Compatibility Only</h3>
+<div class="code-block"><pre><code>Your App → LiteLLM → Multiple Providers
+</code></pre></div>
+<p><strong>Recommended for</strong>: LiteLLM
+<strong>Why</strong>: Massive provider support, minimal overhead</p>
+<h3 id="complex-rag-system">Complex RAG System</h3>
+<div class="code-block"><pre><code>Documents → LlamaIndex → Vector DB → Query Engine
+</code></pre></div>
+<p><strong>Recommended for</strong>: LlamaIndex
+<strong>Why</strong>: Full RAG pipeline with document processing</p>
+<h3 id="agent-workflows">Agent Workflows</h3>
+<div class="code-block"><pre><code>Task → LangGraph → Multi-step Agent → Tools
+</code></pre></div>
+<p><strong>Recommended for</strong>: LangGraph or AbstractAgent
+<strong>Why</strong>: State management and workflow orchestration</p>
+<h3 id="full-application-framework">Full Application Framework</h3>
+<div class="code-block"><pre><code>Complex App → LangChain → Everything
+</code></pre></div>
+<p><strong>Recommended for</strong>: LangChain
+<strong>Why</strong>: Comprehensive ecosystem</p>
+<h2 id="decision-matrix">Decision Matrix</h2>
+<h3 id="choose-abstractcore-if-you-want">Choose AbstractCore if you want:</h3>
+<ul>
+<li>✅ Production-ready LLM infrastructure</li>
+<li>✅ Universal tool calling across all providers</li>
+<li>✅ Structured output with automatic retry</li>
+<li>✅ Streaming with tool support</li>
+<li>✅ Clean, simple API</li>
+<li>✅ Built-in reliability (retry, circuit breakers)</li>
+<li>✅ Comprehensive observability</li>
+</ul>
+<h3 id="choose-litellm-if-you-want">Choose LiteLLM if you want:</h3>
+<ul>
+<li>✅ Simple API compatibility</li>
+<li>✅ Maximum provider coverage (100+)</li>
+<li>✅ Drop-in replacement for OpenAI SDK</li>
+<li>❌ But no: tool execution, structured output, reliability features</li>
+</ul>
+<h3 id="choose-langchain-if-you-want">Choose LangChain if you want:</h3>
+<ul>
+<li>✅ Pre-built components for everything</li>
+<li>✅ Massive ecosystem and integrations</li>
+<li>✅ Complex chain orchestration</li>
+<li>❌ But accept: complexity, learning curve, many dependencies</li>
+</ul>
+<h3 id="choose-langgraph-if-you-want">Choose LangGraph if you want:</h3>
+<ul>
+<li>✅ Multi-step agent workflows</li>
+<li>✅ State management and persistence</li>
+<li>✅ Human-in-the-loop workflows</li>
+<li>❌ But don't need: simple LLM calls, basic tool execution</li>
+</ul>
+<h3 id="choose-llamaindex-if-you-want">Choose LlamaIndex if you want:</h3>
+<ul>
+<li>✅ Full RAG pipelines out of the box</li>
+<li>✅ Advanced document processing</li>
+<li>✅ Vector database integrations</li>
+<li>❌ But don't need: general-purpose LLM calls, other use cases</li>
+</ul>
+<h2 id="combination-strategies">Combination Strategies</h2>
+<p>Many projects benefit from combining tools:</p>
+<h3 id="abstractcore-llamaindex">AbstractCore + LlamaIndex</h3>
+<div class="code-block"><pre><code class="language-python"># Use LlamaIndex for RAG, AbstractCore for LLM calls
+from llama_index import VectorStoreIndex
+from abstractcore import create_llm
+
+index = VectorStoreIndex.from_documents(docs)
+relevant_docs = index.similarity_search(query)
+
+llm = create_llm(&quot;anthropic&quot;, model=&quot;claude-3-5-sonnet-latest&quot;)
+response = llm.generate(f&quot;Context: {relevant_docs}\nQuestion: {query}&quot;)
+</code></pre></div>
+<h3 id="abstractcore-custom-agents">AbstractCore + Custom Agents</h3>
+<div class="code-block"><pre><code class="language-python"># Use AbstractCore for reliable LLM calls in your agent
+from abstractcore import create_llm
+
+class MyAgent:
+    def __init__(self):
+        self.llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+
+    def plan(self, task):
+        return self.llm.generate(f&quot;Plan steps for: {task}&quot;)
+
+    def execute_step(self, step, tools):
+        return self.llm.generate(step, tools=tools)
+</code></pre></div>
+<h3 id="abstractcore-langchain-components">AbstractCore + LangChain Components</h3>
+<div class="code-block"><pre><code class="language-python"># Use LangChain for prompts, AbstractCore for execution
+from langchain.prompts import PromptTemplate
+from abstractcore import create_llm
+
+template = PromptTemplate.from_template(&quot;Translate {text} to {language}&quot;)
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+
+prompt = template.format(text=&quot;Hello&quot;, language=&quot;French&quot;)
+response = llm.generate(prompt)
+</code></pre></div>
+<h2 id="summary">Summary</h2>
+<p><strong>AbstractCore</strong> is designed to be the <strong>reliable foundation</strong> that other tools can build on. It excels at:</p>
+<ol>
+<li><strong>Production reliability</strong> - Built-in retry, circuit breakers, error handling</li>
+<li><strong>Universal tool calling</strong> - Works across all providers</li>
+<li><strong>Structured output</strong> - Type-safe responses with validation</li>
+<li><strong>Clean architecture</strong> - Simple to use and integrate</li>
+</ol>
+<p>For specialized needs, combine AbstractCore with:
+- <strong>LlamaIndex</strong> for RAG pipelines
+- <strong>AbstractAgent</strong> for complex agents
+- <strong>AbstractMemory</strong> for advanced memory
+- <strong>LangChain components</strong> for specific features</p>
+<p>Choose the right tool for your specific needs, and don't hesitate to combine them when it makes sense.</p>
+<hr />
+<p><strong>The key insight</strong>: Every framework has trade-offs. AbstractCore prioritizes reliability and simplicity over feature completeness, making it an strong foundation for production LLM applications.</p>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

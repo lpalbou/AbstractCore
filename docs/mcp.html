@@ -41,7 +41,6 @@
 
             <div class="doc-content">
 
-
 <p>The <code>abstractcore.mcp</code> module provides:
 - a minimal MCP JSON-RPC client (Streamable HTTP) → <code>abstractcore.mcp.McpClient</code>
 - a minimal MCP stdio client (spawn a subprocess) → <code>abstractcore.mcp.McpStdioClient</code>
@@ -50,8 +49,8 @@
 <h3 id="1-discover-tools-from-an-mcp-server">1) Discover tools from an MCP server</h3>
 <div class="code-block"><pre><code class="language-python">from abstractcore.mcp import McpClient, McpToolSource
 
-client = McpClient(url="http://localhost:3000")  # MCP streamable HTTP endpoint
-source = McpToolSource(server_id="local", client=client)
+client = McpClient(url=&quot;http://localhost:3000&quot;)  # MCP streamable HTTP endpoint
+source = McpToolSource(server_id=&quot;local&quot;, client=client)
 tools = source.list_tool_specs()
 </code></pre></div>
 <p>Each returned tool spec is an AbstractCore-compatible dict you can pass to <code>tools=[...]</code> in
@@ -66,14 +65,14 @@ the (deprecated) global registry; it does <strong>not</strong> automatically rou
 host/runtime should detect names starting with <code>mcp::</code> and dispatch them to an MCP client.</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore.mcp import McpClient, parse_namespaced_tool_name
 
-client = McpClient(url="http://localhost:3000")
+client = McpClient(url=&quot;http://localhost:3000&quot;)
 
 def execute_mcp_tool_call(call: dict) -&gt; dict:
-    parsed = parse_namespaced_tool_name(call.get("name", ""))
+    parsed = parse_namespaced_tool_name(call.get(&quot;name&quot;, &quot;&quot;))
     if not parsed:
-        raise ValueError("Not an MCP tool call")
+        raise ValueError(&quot;Not an MCP tool call&quot;)
     server_id, tool_name = parsed
-    return client.call_tool(name=tool_name, arguments=call.get("arguments") or {})
+    return client.call_tool(name=tool_name, arguments=call.get(&quot;arguments&quot;) or {})
 </code></pre></div>
 <h2 id="transports-supported">Transports supported</h2>
 <h3 id="streamable-http">Streamable HTTP</h3>
@@ -89,8 +88,8 @@ including a best-effort initialization handshake.</p>
 <p><code>create_mcp_client(config=...)</code> supports both HTTP and stdio config shapes:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore.mcp import create_mcp_client
 
-client = create_mcp_client(config={"url": "http://localhost:3000"})
-client = create_mcp_client(config={"transport": "stdio", "command": ["my-mcp-server", "--stdio"]})
+client = create_mcp_client(config={&quot;url&quot;: &quot;http://localhost:3000&quot;})
+client = create_mcp_client(config={&quot;transport&quot;: &quot;stdio&quot;, &quot;command&quot;: [&quot;my-mcp-server&quot;, &quot;--stdio&quot;]})
 </code></pre></div>
 <p>See <code>abstractcore/abstractcore/mcp/factory.py</code>.</p>
 <h2 id="current-limitations">Current limitations</h2>
@@ -99,11 +98,13 @@ client = create_mcp_client(config={"transport": "stdio", "command": ["my-mcp-ser
   server does not expose MCP management endpoints.</li>
 <li>Tool execution routing for <code>mcp::...</code> names is host/runtime responsibility.</li>
 </ul>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

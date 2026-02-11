@@ -1,0 +1,587 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glyph Visual-Text Compression - AbstractCore</title>
+    <meta name="description" content="Glyph is a visual-text compression system integrated into AbstractCore. It renders long text into optimized images and processes them with Vision-Language…">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Glyph Visual-Text Compression</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">Glyph is a visual-text compression system integrated into AbstractCore. It renders long text into optimized images and processes them with Vision-Language Models (VLMs) to reduce effective token usage for long-document workflows.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#what-is-glyph" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What is Glyph?</a>
+<a href="#how-glyph-works" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How Glyph Works</a>
+<a href="#integration-with-abstractcore" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Integration with AbstractCore</a>
+<a href="#practical-examples" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Practical Examples</a>
+<a href="#configuration-options" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configuration Options</a>
+<a href="#available-models-for-testing" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Available Models for Testing</a>
+<a href="#performance-monitoring" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance Monitoring</a>
+<a href="#troubleshooting" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Troubleshooting</a>
+<a href="#performance-and-quality" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Performance and quality</a>
+<a href="#best-practices" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Best Practices</a>
+<a href="#complete-working-example" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Complete Working Example</a>
+<a href="#next-steps" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Next Steps</a>
+<a href="#technical-details" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Technical Details</a></div>
+
+            <div class="doc-content">
+
+<p>Requires <code>pip install "abstractcore[compression]"</code> (and <code>pip install "abstractcore[media]"</code> if you want PDF/Office text extraction).</p>
+<h2 id="what-is-glyph">What is Glyph?</h2>
+<p>Glyph transforms the traditional text-processing paradigm by:</p>
+<ol>
+<li><strong>Converting text to optimized images</strong> using precise typography and layout</li>
+<li><strong>Processing images with VLMs</strong> instead of processing raw text tokens</li>
+<li><strong>Achieving significant compression</strong> while preserving semantic information</li>
+<li><strong>Reducing computational overhead</strong> for large documents</li>
+</ol>
+<h3 id="key-benefits">Key Benefits</h3>
+<ul>
+<li><strong>Lower effective token usage</strong> for long text (often 3–4x compression; depends on content/model)</li>
+<li><strong>Fewer context overflows</strong> for long-document analysis</li>
+<li><strong>Preserved analytical quality</strong> via vision-capable models (best-effort; validate for your domain)</li>
+<li><strong>Transparent integration</strong> - works seamlessly with existing code</li>
+</ul>
+<h2 id="how-glyph-works">How Glyph Works</h2>
+<h3 id="the-compression-pipeline">The Compression Pipeline</h3>
+<div class="code-block"><pre><code>Traditional Approach:
+Long Text (1M tokens) → Tokenization → Sequential Processing → Context Overflow
+
+Glyph Approach:  
+Long Text (1M tokens) → Visual Rendering → Image Processing (250K tokens) → VLM Interpretation
+</code></pre></div>
+<p>The Glyph pipeline transforms text through these stages:</p>
+<ol>
+<li><strong>Content Analysis</strong>: Determines compression suitability and optimal parameters</li>
+<li><strong>Text Extraction</strong> (optional): For PDFs/Office docs, extract text via the Media system when installed</li>
+<li><strong>Visual Rendering</strong>: Render text into images via a Pillow-based renderer</li>
+<li><strong>Quality Validation</strong>: Best-effort checks + fallback to standard processing when needed</li>
+<li><strong>VLM Processing</strong>: Vision models process the compressed visual content</li>
+<li><strong>Caching</strong>: Store artifacts for repeated content processing</li>
+</ol>
+<p><strong>Optional (experimental)</strong>: For PDFs, the media pipeline can try a direct PDF→image conversion path (requires <code>pdf2image</code> + system dependencies). When unavailable, it falls back to text extraction.</p>
+<h3 id="provider-optimization">Provider Optimization</h3>
+<p>Glyph automatically optimizes rendering for each provider:</p>
+<table>
+<thead>
+<tr>
+<th>Provider</th>
+<th>DPI</th>
+<th>Font Size</th>
+<th>Quality Focus</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><strong>OpenAI</strong></td>
+<td>72</td>
+<td>9pt</td>
+<td>Dense text, aggressive compression</td>
+</tr>
+<tr>
+<td><strong>Anthropic</strong></td>
+<td>96</td>
+<td>10pt</td>
+<td>Font clarity, conservative settings</td>
+</tr>
+<tr>
+<td><strong>Ollama</strong></td>
+<td>72</td>
+<td>9pt</td>
+<td>Balanced approach, auto-cropping</td>
+</tr>
+<tr>
+<td><strong>LMStudio</strong></td>
+<td>96</td>
+<td>10pt</td>
+<td>Quality-focused rendering</td>
+</tr>
+</tbody>
+</table>
+<h3 id="when-glyph-activates">When Glyph Activates</h3>
+<p>Glyph compression is applied automatically when:
+- Document size exceeds configured thresholds
+- Provider supports vision capabilities
+- Content type is suitable for compression (text-heavy documents)
+- Quality requirements can be met</p>
+<h2 id="integration-with-abstractcore">Integration with AbstractCore</h2>
+<p>Glyph is seamlessly integrated into AbstractCore's architecture:</p>
+<h3 id="media-processing-pipeline">Media Processing Pipeline</h3>
+<div class="code-block"><pre><code class="language-python"># Glyph works transparently through existing media handling
+llm = create_llm(&quot;ollama&quot;, model=&quot;llama3.2-vision:11b&quot;)
+response = llm.generate(
+    &quot;Analyze this document&quot;,
+    media=[&quot;large_document.pdf&quot;]  # Automatically compressed if beneficial
+)
+</code></pre></div>
+<h3 id="provider-support">Provider Support</h3>
+<ul>
+<li><strong>Ollama</strong>: Vision models (llama3.2-vision, qwen2.5vl, granite3.2-vision)</li>
+<li><strong>LMStudio</strong>: Local vision models with OpenAI-compatible API</li>
+<li><strong>HuggingFace</strong>: Vision-language models via transformers</li>
+<li><strong>OpenAI</strong>: GPT-4 Vision models</li>
+<li><strong>Anthropic</strong>: Claude 3 Vision models</li>
+</ul>
+<h3 id="configuration-system">Configuration System</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.compression import GlyphConfig
+
+# Configure compression behavior
+glyph_config = GlyphConfig(
+    enabled=True,
+    global_default=&quot;auto&quot;,  # &quot;auto&quot;, &quot;always&quot;, &quot;never&quot;
+    quality_threshold=0.95,
+    target_compression_ratio=3.0
+)
+
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen2.5vl:7b&quot;, glyph_config=glyph_config)
+</code></pre></div>
+<h2 id="practical-examples">Practical Examples</h2>
+<h3 id="example-1-document-analysis-with-ollama">Example 1: Document Analysis with Ollama</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+# Using Ollama with a vision model
+llm = create_llm(&quot;ollama&quot;, model=&quot;llama3.2-vision:11b&quot;)
+
+# Analyze a research paper - Glyph compression applied automatically
+response = llm.generate(
+    &quot;What are the key findings and methodology in this research paper?&quot;,
+    media=[&quot;research_paper.pdf&quot;]
+)
+
+print(f&quot;Analysis: {response.content}&quot;)
+print(f&quot;Processing time: {response.gen_time}ms&quot;)
+</code></pre></div>
+<h3 id="example-2-explicit-compression-control">Example 2: Explicit Compression Control</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+# Force compression for testing
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen2.5vl:7b&quot;)
+
+response = llm.generate(
+    &quot;Summarize the main points of this document&quot;,
+    media=[&quot;long_document.pdf&quot;],
+    glyph_compression=&quot;always&quot;  # Force Glyph compression
+)
+
+# Check if compression was used
+if response.metadata and response.metadata.get('compression_used'):
+    stats = response.metadata.get('compression_stats', {})
+    print(f&quot;Compression ratio: {stats.get('compression_ratio', 'N/A')}&quot;)
+    print(f&quot;Original tokens: {stats.get('original_tokens', 'N/A')}&quot;)
+    print(f&quot;Compressed tokens: {stats.get('compressed_tokens', 'N/A')}&quot;)
+</code></pre></div>
+<h3 id="example-3-lmstudio-integration">Example 3: LMStudio Integration</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+from abstractcore.compression import GlyphConfig
+
+# Configure for LMStudio with custom settings
+glyph_config = GlyphConfig(
+    enabled=True,
+    provider_profiles={
+        &quot;lmstudio&quot;: {
+            &quot;dpi&quot;: 96,
+            &quot;font_size&quot;: 10,
+            &quot;quality_threshold&quot;: 0.90
+        }
+    }
+)
+
+# Connect to LMStudio
+llm = create_llm(
+    &quot;lmstudio&quot;,
+    model=&quot;qwen/qwen3-next-80b&quot;,  # Your LMStudio model
+    base_url=&quot;http://localhost:1234/v1&quot;,
+    glyph_config=glyph_config
+)
+
+# Process complex document
+response = llm.generate(
+    &quot;Provide a detailed analysis of the figures and tables in this paper&quot;,
+    media=[&quot;academic_paper.pdf&quot;]
+)
+</code></pre></div>
+<h3 id="example-4-huggingface-vision-models">Example 4: HuggingFace Vision Models</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+# Using HuggingFace vision models
+llm = create_llm(
+    &quot;huggingface&quot;,
+    model=&quot;microsoft/Phi-3.5-vision-instruct&quot;,  # Example vision model
+    device=&quot;auto&quot;
+)
+
+# Batch processing with compression
+documents = [&quot;doc1.pdf&quot;, &quot;doc2.pdf&quot;, &quot;doc3.pdf&quot;]
+
+for doc in documents:
+    response = llm.generate(
+        &quot;Extract key insights and recommendations&quot;,
+        media=[doc],
+        glyph_compression=&quot;auto&quot;  # Let Glyph decide
+    )
+
+    print(f&quot;Document: {doc}&quot;)
+    print(f&quot;Insights: {response.content[:200]}...&quot;)
+    print(&quot;---&quot;)
+</code></pre></div>
+<h2 id="configuration-options">Configuration Options</h2>
+<h3 id="global-configuration">Global Configuration</h3>
+<div class="code-block"><pre><code class="language-python">from abstractcore.compression import GlyphConfig
+
+config = GlyphConfig(
+    enabled=True,                    # Enable/disable Glyph
+    global_default=&quot;auto&quot;,           # &quot;auto&quot;, &quot;always&quot;, &quot;never&quot;
+    quality_threshold=0.95,          # Minimum quality score (0-1)
+    min_token_threshold=10000,       # Minimum size to consider compression
+    target_compression_ratio=3.0,    # Target compression ratio
+    provider_optimization=True,      # Enable provider-specific optimization
+    cache_directory=&quot;~/.abstractcore/glyph_cache&quot;,
+    cache_size_gb=1.0,
+    cache_ttl_days=7,
+)
+</code></pre></div>
+<h3 id="provider-specific-optimization">Provider-Specific Optimization</h3>
+<div class="code-block"><pre><code class="language-python">config = GlyphConfig(
+    provider_profiles={
+        &quot;ollama&quot;: {
+            &quot;dpi&quot;: 150,              # Higher DPI for better quality
+            &quot;font_size&quot;: 9,          # Smaller font for more content
+            &quot;quality_threshold&quot;: 0.95
+        },
+        &quot;lmstudio&quot;: {
+            &quot;dpi&quot;: 96,               # Standard DPI for speed
+            &quot;font_size&quot;: 10,
+            &quot;quality_threshold&quot;: 0.90
+        },
+        &quot;huggingface&quot;: {
+            &quot;dpi&quot;: 120,
+            &quot;font_size&quot;: 8,
+            &quot;quality_threshold&quot;: 0.92
+        }
+    }
+)
+</code></pre></div>
+<h3 id="runtime-control">Runtime Control</h3>
+<div class="code-block"><pre><code class="language-python"># Per-request compression control
+response = llm.generate(
+    prompt=&quot;Analyze this document&quot;,
+    media=[&quot;document.pdf&quot;],
+    glyph_compression=&quot;always&quot;    # &quot;always&quot;, &quot;never&quot;, &quot;auto&quot;
+)
+
+# Check compression usage
+if hasattr(response, 'metadata') and response.metadata:
+    compression_used = response.metadata.get('compression_used', False)
+    print(f&quot;Glyph compression used: {compression_used}&quot;)
+</code></pre></div>
+<h2 id="available-models-for-testing">Available Models for Testing</h2>
+<p>Based on your system, here are vision-capable models you can test with:</p>
+<h3 id="ollama-models-recommended">Ollama Models (Recommended)</h3>
+<div class="code-block"><pre><code class="language-python"># Large, high-quality model
+llm = create_llm(&quot;ollama&quot;, model=&quot;llama3.2-vision:11b&quot;)
+
+# Efficient model for faster processing
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen2.5vl:7b&quot;)
+
+# Lightweight model for testing
+llm = create_llm(&quot;ollama&quot;, model=&quot;granite3.2-vision:latest&quot;)
+</code></pre></div>
+<h3 id="lmstudio-if-running">LMStudio (if running)</h3>
+<div class="code-block"><pre><code class="language-python"># Connect to your LMStudio instance
+llm = create_llm(
+    &quot;lmstudio&quot;,
+    model=&quot;your-vision-model&quot;,  # Replace with your loaded model
+    base_url=&quot;http://localhost:1234/v1&quot;
+)
+</code></pre></div>
+<h2 id="performance-monitoring">Performance Monitoring</h2>
+<h3 id="built-in-metrics">Built-in Metrics</h3>
+<div class="code-block"><pre><code class="language-python">response = llm.generate(&quot;Analyze document&quot;, media=[&quot;doc.pdf&quot;])
+
+# Check performance metrics
+print(f&quot;Generation time: {response.gen_time}ms&quot;)
+print(f&quot;Token usage: {response.usage}&quot;)
+
+# Compression-specific metrics
+if response.metadata:
+    stats = response.metadata.get('compression_stats', {})
+    print(f&quot;Compression ratio: {stats.get('compression_ratio')}&quot;)
+    print(f&quot;Quality score: {stats.get('quality_score')}&quot;)
+</code></pre></div>
+<h3 id="benchmarking">Benchmarking</h3>
+<div class="code-block"><pre><code class="language-python">import time
+from abstractcore import create_llm
+
+def benchmark_compression(document_path, model_name):
+    &quot;&quot;&quot;Compare processing with and without Glyph compression&quot;&quot;&quot;
+
+    llm = create_llm(&quot;ollama&quot;, model=model_name)
+
+    # Without compression
+    start = time.time()
+    response_no_glyph = llm.generate(
+        &quot;Summarize this document&quot;,
+        media=[document_path],
+        glyph_compression=&quot;never&quot;
+    )
+    time_no_glyph = time.time() - start
+
+    # With compression
+    start = time.time()
+    response_glyph = llm.generate(
+        &quot;Summarize this document&quot;,
+        media=[document_path],
+        glyph_compression=&quot;always&quot;
+    )
+    time_glyph = time.time() - start
+
+    print(f&quot;Without Glyph: {time_no_glyph:.2f}s&quot;)
+    print(f&quot;With Glyph: {time_glyph:.2f}s&quot;)
+    print(f&quot;Speedup: {time_no_glyph/time_glyph:.2f}x&quot;)
+
+# Test with your documents
+benchmark_compression(&quot;large_document.pdf&quot;, &quot;llama3.2-vision:11b&quot;)
+</code></pre></div>
+<h2 id="troubleshooting">Troubleshooting</h2>
+<h3 id="common-issues">Common Issues</h3>
+<ol>
+<li><strong>Compression not activating</strong></li>
+<li>Ensure you're using a vision-capable model</li>
+<li>Check that document size exceeds minimum threshold</li>
+<li>
+<p>Verify <code>glyph_compression</code> parameter is not set to "never"</p>
+</li>
+<li>
+<p><strong>Quality concerns</strong></p>
+</li>
+<li>Adjust <code>quality_threshold</code> in configuration</li>
+<li>Use higher DPI settings for better image quality</li>
+<li>
+<p>Test with different font sizes</p>
+</li>
+<li>
+<p><strong>Performance issues</strong></p>
+</li>
+<li>Lower DPI for faster processing</li>
+<li>Reduce <code>target_compression_ratio</code></li>
+<li>Enable caching for repeated documents</li>
+</ol>
+<h3 id="debug-mode">Debug Mode</h3>
+<p>Enable verbose logging via AbstractCore’s centralized config:</p>
+<div class="code-block"><pre><code class="language-bash">abstractcore --set-console-log-level DEBUG
+# or:
+abstractcore --enable-debug-logging
+</code></pre></div>
+<p>Then inspect response metadata for compression decisions:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm(&quot;ollama&quot;, model=&quot;qwen2.5vl:7b&quot;)
+resp = llm.generate(&quot;Analyze&quot;, media=[&quot;doc.pdf&quot;])
+print(resp.metadata)
+</code></pre></div>
+<h2 id="performance-and-quality">Performance and quality</h2>
+<p>Glyph is a best-effort optimization. Compression ratio and accuracy depend on the vision model, rendering settings (DPI/font size), and the content type (prose vs code vs tables).</p>
+<p>Treat it as an optional acceleration technique:
+- validate outputs on your workload
+- keep <code>glyph_compression="auto"</code> unless you have a strong reason to force it
+- prefer higher DPI / lower compression ratios for quality-critical tasks</p>
+<h2 id="best-practices">Best Practices</h2>
+<h3 id="when-to-use-compression">When to Use Compression</h3>
+<p>✅ <strong>Recommended for:</strong>
+- Documents &gt; 10,000 tokens
+- Prose and natural language content
+- Technical documentation
+- Research papers and reports
+- Large configuration files</p>
+<p>❌ <strong>Not recommended for:</strong>
+- Mathematical notation (OCR challenges)
+- Very dense special characters
+- Content &lt; 5,000 tokens
+- Real-time chat applications</p>
+<h3 id="provider-selection">Provider Selection</h3>
+<ul>
+<li><strong>OpenAI GPT-4o</strong>: Excellent OCR, handles dense text well</li>
+<li><strong>Anthropic Claude</strong>: Good OCR, font-sensitive, quality-focused</li>
+<li><strong>Ollama qwen2.5vl</strong>: Balanced performance, good for local deployment</li>
+<li><strong>LMStudio</strong>: Variable quality, depends on specific model</li>
+</ul>
+<h3 id="quality-optimization">Quality Optimization</h3>
+<div class="code-block"><pre><code class="language-python"># High-quality compression for critical applications
+config = GlyphConfig(
+    quality_threshold=0.98,        # Higher quality requirement
+    target_compression_ratio=2.5,  # Conservative compression
+    provider_optimization=True     # Use provider-specific settings
+)
+
+# Performance-focused compression
+config = GlyphConfig(
+    quality_threshold=0.90,        # Lower quality for speed
+    target_compression_ratio=4.0,  # Aggressive compression
+    cache_ttl_days=30,             # Keep artifacts longer for repeated runs
+    cache_size_gb=5.0,             # Increase cache size for many documents
+)
+</code></pre></div>
+<h2 id="complete-working-example">Complete Working Example</h2>
+<p>For a comprehensive, runnable example that demonstrates all Glyph features, see:</p>
+<p><strong><a href="../examples/glyph_complete_example.py"><code>examples/glyph_complete_example.py</code></a></strong></p>
+<p>This complete example includes:</p>
+<div class="code-block"><pre><code class="language-python">#!/usr/bin/env python3
+&quot;&quot;&quot;
+Complete Glyph Visual-Text Compression Example
+Demonstrates all aspects of Glyph compression with AbstractCore
+&quot;&quot;&quot;
+
+from abstractcore import create_llm
+from abstractcore.compression import GlyphConfig
+import time
+
+def basic_glyph_example():
+    &quot;&quot;&quot;Basic usage with automatic compression detection&quot;&quot;&quot;
+    # Create LLM with vision model
+    llm = create_llm(&quot;ollama&quot;, model=&quot;llama3.2-vision:11b&quot;)
+
+    # Process document - Glyph decides automatically
+    response = llm.generate(
+        &quot;Analyze this research paper and summarize key findings.&quot;,
+        media=[&quot;research_paper.pdf&quot;]  # Auto-compressed if beneficial
+    )
+
+    # Check if compression was used
+    if response.metadata and response.metadata.get('compression_used'):
+        stats = response.metadata.get('compression_stats', {})
+        print(f&quot;🎨 Glyph compression used!&quot;)
+        print(f&quot;Compression ratio: {stats.get('compression_ratio')}&quot;)
+        print(f&quot;Quality score: {stats.get('quality_score')}&quot;)
+
+    return response
+
+def benchmark_comparison():
+    &quot;&quot;&quot;Compare performance with and without compression&quot;&quot;&quot;
+    llm = create_llm(&quot;ollama&quot;, model=&quot;qwen2.5vl:7b&quot;)
+
+    # Test without compression
+    start = time.time()
+    response_no_glyph = llm.generate(
+        &quot;Analyze this document&quot;,
+        media=[&quot;large_document.pdf&quot;],
+        glyph_compression=&quot;never&quot;
+    )
+    time_no_glyph = time.time() - start
+
+    # Test with compression
+    start = time.time()
+    response_glyph = llm.generate(
+        &quot;Analyze this document&quot;, 
+        media=[&quot;large_document.pdf&quot;],
+        glyph_compression=&quot;always&quot;
+    )
+    time_glyph = time.time() - start
+
+    print(f&quot;Without Glyph: {time_no_glyph:.2f}s&quot;)
+    print(f&quot;With Glyph: {time_glyph:.2f}s&quot;)
+    print(f&quot;Speedup: {time_no_glyph/time_glyph:.2f}x&quot;)
+
+def custom_configuration():
+    &quot;&quot;&quot;Advanced configuration for specific use cases&quot;&quot;&quot;
+    # High-quality configuration
+    config = GlyphConfig(
+        enabled=True,
+        quality_threshold=0.98,        # Very high quality
+        target_compression_ratio=2.5,  # Conservative compression
+        provider_profiles={
+            &quot;ollama&quot;: {
+                &quot;dpi&quot;: 150,            # High DPI for quality
+                &quot;font_size&quot;: 9,        # Optimal font size
+                &quot;quality_threshold&quot;: 0.98
+            }
+        }
+    )
+
+    llm = create_llm(&quot;ollama&quot;, model=&quot;granite3.2-vision:latest&quot;, glyph_config=config)
+
+    response = llm.generate(
+        &quot;Provide detailed analysis with high accuracy requirements&quot;,
+        media=[&quot;critical_document.pdf&quot;]
+    )
+
+    return response
+
+# Run the complete example
+if __name__ == &quot;__main__&quot;:
+    print(&quot;🎨 Glyph Compression Complete Example&quot;)
+
+    # Basic usage
+    basic_response = basic_glyph_example()
+
+    # Performance benchmark  
+    benchmark_comparison()
+
+    # Custom configuration
+    custom_response = custom_configuration()
+
+    print(&quot;✅ All examples completed successfully!&quot;)
+</code></pre></div>
+<h3 id="running-the-complete-example">Running the Complete Example</h3>
+<div class="code-block"><pre><code class="language-bash"># Make sure you have a vision model available
+ollama pull llama3.2-vision:11b
+
+# Run the complete example
+cd examples
+python glyph_complete_example.py
+</code></pre></div>
+<p>The complete example demonstrates:
+- <strong>Basic automatic compression</strong> with intelligent decision-making
+- <strong>Performance benchmarking</strong> comparing compressed vs uncompressed processing
+- <strong>Custom configuration</strong> for different quality/speed requirements
+- <strong>Multi-provider testing</strong> across different vision models
+- <strong>Error handling and debugging</strong> techniques
+- <strong>Real-world usage patterns</strong> with sample documents</p>
+<h2 id="next-steps">Next Steps</h2>
+<ul>
+<li>Explore the <a href="vision-capabilities.html">Vision Capabilities</a> documentation</li>
+<li>Learn about <a href="media-handling-system.html">Media Handling System</a></li>
+<li>Check out <a href="examples.html">Examples</a> for more use cases</li>
+<li>Review <a href="centralized-config.html">Configuration</a> for advanced settings</li>
+</ul>
+<h2 id="technical-details">Technical Details</h2>
+<p>For implementation details, API specifications, and research background, see:
+- <a href="reports/glyph-compression-technical-report.md">Glyph Technical Report</a> - Detailed technical specifications
+- <a href="https://arxiv.org/abs/2510.17800">Glyph Research Paper</a> - Original research by Z.ai/THU-COAI</p>
+<hr />
+<p><em>Glyph compression represents a paradigm shift in document processing, making large-scale text analysis more efficient while maintaining the quality and accuracy you expect from AbstractCore.</em></p>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

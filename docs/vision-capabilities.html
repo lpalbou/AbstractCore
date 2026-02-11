@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vision in AbstractCore (Image/Video Input) - AbstractCore</title>
-    <meta name="description" content="This document describes vision as an input modality in AbstractCore (images and video-understanding), and clarifies how it relates to: - vision fallback (caption → inject short…">
+    <meta name="description" content="This document describes vision as an input modality in AbstractCore (images and video-understanding), and clarifies how it relates to: - vision fallback…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -31,7 +31,7 @@
         <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Vision in AbstractCore (Image/Video Input)</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">This document describes vision as an input modality in AbstractCore (images and video-understanding), and clarifies how it relates to: - vision fallback (caption → inject short observations), and - generative vision (image/video creation), which lives in abstractvision .</p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This document describes vision as an input modality in AbstractCore (images and video-understanding), and clarifies how it relates to: - vision fallback (caption → inject short observations), and - generative vision (image/video creation), which lives in abstractvision.</p>
             </div>
 
             <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#quick-requirements" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick requirements</a>
@@ -42,7 +42,6 @@
 <a href="#related" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Related</a></div>
 
             <div class="doc-content">
-
 
 <h2 id="quick-requirements">Quick requirements</h2>
 <ul>
@@ -57,17 +56,17 @@
 <p>Attach media to an LLM call using <code>media=[...]</code>:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-llm = create_llm("openai", model="gpt-4o-mini")  # example; pick a vision-capable model you have access to
-resp = llm.generate("What is in this image?", media=["photo.jpg"])
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)  # example; pick a vision-capable model you have access to
+resp = llm.generate(&quot;What is in this image?&quot;, media=[&quot;photo.jpg&quot;])
 print(resp.content)
 </code></pre></div>
 <p>Support depends on the selected provider/model and is normalized via:
 - <code>abstractcore/assets/model_capabilities.json</code></p>
 <p>Video attachments use the same <code>media=[...]</code> surface and are controlled by <code>video_policy</code> (see <code>abstractcore/providers/base.py</code>):</p>
 <div class="code-block"><pre><code class="language-python">resp = llm.generate(
-    "Summarize what happens in this clip.",
-    media=["clip.mp4"],
-    video_policy="auto",  # native when supported; otherwise sample frames
+    &quot;Summarize what happens in this clip.&quot;,
+    media=[&quot;clip.mp4&quot;],
+    video_policy=&quot;auto&quot;,  # native when supported; otherwise sample frames
 )
 </code></pre></div>
 <p>You can tune frame sampling defaults via the config CLI:</p>
@@ -91,11 +90,11 @@ abstractcore --add-vision-fallback huggingface Salesforce/blip-image-captioning-
 </code></pre></div>
 <h2 id="3-generative-vision-output-is-not-part-of-abstractcores-default-install">3) Generative vision output is not part of AbstractCore’s default install</h2>
 <p>Creating/editing images and videos is a <strong>deterministic capability</strong> that lives in <code>abstractvision</code> and can be integrated in two ways:</p>
-<p>1) <strong>Capability plugin (library mode)</strong>: install <code>abstractvision</code> and use <code>llm.vision.*</code> (e.g. <code>t2i</code>, <code>i2i</code>).<br/>
+<p>1) <strong>Capability plugin (library mode)</strong>: install <code>abstractvision</code> and use <code>llm.vision.*</code> (e.g. <code>t2i</code>, <code>i2i</code>).<br />
    See: <code>abstractvision/docs/reference/abstractcore-integration.md</code></p>
-<p>2) <strong>AbstractCore Server (HTTP interop)</strong>: run the optional server and enable <code>/v1/images/*</code> endpoints delegated to <code>abstractvision</code>.<br/>
+<p>2) <strong>AbstractCore Server (HTTP interop)</strong>: run the optional server and enable <code>/v1/images/*</code> endpoints delegated to <code>abstractvision</code>.<br />
    See: <code>docs/server.md</code></p>
-<p>This separation keeps <code>abstractcore</code> dependency-light (ADR-0001 / ADR-0028).</p>
+<p>This separation keeps the default <code>abstractcore</code> install dependency-light: input handling lives in AbstractCore, and generative vision outputs live in <code>abstractvision</code>.</p>
 <h2 id="troubleshooting-common">Troubleshooting (common)</h2>
 <ul>
 <li><strong>“Image input is not supported by model …”</strong>: choose a vision-capable model, or configure vision fallback.</li>
@@ -106,13 +105,16 @@ abstractcore --add-vision-fallback huggingface Salesforce/blip-image-captioning-
 <ul>
 <li>Media pipeline overview: <code>docs/media-handling-system.md</code></li>
 <li>Server endpoints: <code>docs/server.md</code></li>
-<li>Framework-level guide (input vs capabilities): <code>docs/guide/capabilities.md</code> (monorepo)</li>
+<li>Capability plugins (voice/audio/vision): <code>docs/capabilities.md</code></li>
+<li>Architecture overview: <code>docs/architecture.md</code></li>
 </ul>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

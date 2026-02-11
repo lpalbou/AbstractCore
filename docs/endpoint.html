@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Endpoint (single-model `/v1` server) - AbstractCore</title>
+    <meta name="description" content="abstractcore-endpoint runs a single-model OpenAI-compatible server.">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Endpoint (single-model `/v1` server)</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">abstractcore-endpoint runs a single-model OpenAI-compatible server.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#when-to-use-this-vs-the-gateway" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">When to use this vs the gateway</a>
+<a href="#install" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Install</a>
+<a href="#run" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Run</a>
+<a href="#use-with-an-openai-compatible-client" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Use with an OpenAI-compatible client</a>
+<a href="#prompt-cache-control-plane-optional" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Prompt cache control plane (optional)</a></div>
+
+            <div class="doc-content">
+
+<p>Unlike the multi-provider gateway (<a href="server.html">Server</a>), this endpoint loads <strong>one</strong> <code>provider+model</code> once per worker process and reuses it across requests. It’s useful when you want to host a local backend (for example HF GGUF or MLX) as a stable <code>/v1</code> endpoint.</p>
+<p>Source: <code>abstractcore/endpoint/app.py</code> (entrypoint: <code>abstractcore-endpoint</code>).</p>
+<h2 id="when-to-use-this-vs-the-gateway">When to use this vs the gateway</h2>
+<ul>
+<li>Use <strong><a href="server.html">Server</a></strong> when you want <code>model="provider/model"</code> routing across many providers/models from one gateway process.</li>
+<li>Use <strong>Endpoint</strong> when you want a dedicated “one worker = one model” process (simpler performance characteristics; fewer per-request initialization costs).</li>
+</ul>
+<h2 id="install">Install</h2>
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[server]&quot;
+</code></pre></div>
+<p>Then install the provider extra you need:</p>
+<div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[mlx]&quot;         # Apple Silicon local inference
+pip install &quot;abstractcore[huggingface]&quot; # Transformers / torch / llama-cpp-python (heavy)
+</code></pre></div>
+<h2 id="run">Run</h2>
+<div class="code-block"><pre><code class="language-bash"># CLI flags
+abstractcore-endpoint --provider mlx --model mlx-community/Qwen3-4B --host 0.0.0.0 --port 8001
+
+# Or via env vars
+export ABSTRACTENDPOINT_PROVIDER=mlx
+export ABSTRACTENDPOINT_MODEL=mlx-community/Qwen3-4B
+export ABSTRACTENDPOINT_HOST=0.0.0.0
+export ABSTRACTENDPOINT_PORT=8001
+abstractcore-endpoint
+</code></pre></div>
+<p>Health check:</p>
+<div class="code-block"><pre><code class="language-bash">curl http://localhost:8001/health
+</code></pre></div>
+<h2 id="use-with-an-openai-compatible-client">Use with an OpenAI-compatible client</h2>
+<div class="code-block"><pre><code class="language-python">from openai import OpenAI
+
+client = OpenAI(base_url=&quot;http://localhost:8001/v1&quot;, api_key=&quot;unused&quot;)
+resp = client.chat.completions.create(
+    model=&quot;anything&quot;,  # ignored/validated in single-model mode
+    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello!&quot;}],
+)
+print(resp.choices[0].message.content)
+</code></pre></div>
+<h2 id="prompt-cache-control-plane-optional">Prompt cache control plane (optional)</h2>
+<p>If the underlying provider exposes prompt-cache controls, the endpoint also exposes a small control plane under <code>/acore/prompt_cache/*</code> (see <code>abstractcore/endpoint/app.py</code>):</p>
+<ul>
+<li><code>GET /acore/prompt_cache/stats</code></li>
+<li><code>POST /acore/prompt_cache/set</code></li>
+<li><code>POST /acore/prompt_cache/update</code></li>
+<li><code>POST /acore/prompt_cache/fork</code></li>
+<li><code>POST /acore/prompt_cache/clear</code></li>
+<li><code>POST /acore/prompt_cache/prepare_modules</code></li>
+</ul>
+<p>For caching concepts, see <a href="session.html">Session Management</a> and <a href="architecture.html">Architecture</a>.</p>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

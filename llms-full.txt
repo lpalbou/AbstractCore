@@ -2,7 +2,7 @@
 
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
-Last updated: 2026-02-08  
+Last updated: 2026-02-09  
 Package version: 2.11.8
 
 ## How to use this file (agents)
@@ -11,7 +11,9 @@ Package version: 2.11.8
 - Prefer the public docs in this repo as the source of truth; keep behavior claims consistent with `docs/`.
 - Keep the default install lightweight: heavy/optional dependencies must stay behind extras and be imported lazily.
 - Default tool execution is **pass-through**: AbstractCore returns tool calls; the host/runtime executes them.
+- In the AbstractFramework ecosystem, **AbstractRuntime** is the recommended runtime for executing tool calls durably (policy, retries, persistence): https://github.com/lpalbou/abstractruntime
 - Media handling is **policy-driven** by design (no silent semantic changes). If audio/video/images "don't work", check policy + configured fallbacks.
+- `llms.txt` is the short index; this file is intentionally large. Prefer pulling only the sections you need.
 
 ## Table of contents
 
@@ -25,7 +27,7 @@ Package version: 2.11.8
 8. Media handling (images/audio/video + documents)
 9. Embeddings
 10. CLI + centralized config (`abstractcore --config`)
-11. Server (OpenAI-compatible `/v1`)
+11. Server + endpoint (OpenAI-compatible `/v1`)
 12. Repo map + contribution workflow
 13. Troubleshooting checklist
 
@@ -431,8 +433,8 @@ from abstractcore import tool
 
 @tool
 def get_weather(city: str) -> str:
-    \"\"\"Return a short weather string for a city.\"\"\"
-    return f\"{city}: 22C and sunny\"
+    """Return a short weather string for a city."""
+    return f"{city}: 22C and sunny"
 ```
 
 ### Pass-through is the default
@@ -481,13 +483,13 @@ Some agent runtimes want tool calls preserved in `response.content` using custom
 - Python: pass `tool_call_tags=...` to `generate()` / `agenerate()`
 - Server: set `agent_format` in requests
 
-This is documented as \"tool syntax rewriting\" and is designed to keep tool-call markup stable across providers.
+This is documented as `tool syntax rewriting` and is designed to keep tool-call markup stable across providers.
 
 ---
 
 ## 7) Structured output (`response_model=...`)
 
-Structured output turns \"return JSON\" prompts into typed objects.
+Structured output turns `return JSON` prompts into typed objects.
 
 ```python
 from pydantic import BaseModel
@@ -590,7 +592,7 @@ Server note:
 
 ### Glyph visual-text compression (optional, experimental)
 
-If you need to squeeze long text into smaller \"vision-friendly\" inputs, AbstractCore supports glyph compression.
+If you need to squeeze long text into smaller vision-friendly inputs, AbstractCore supports glyph compression.
 
 ```bash
 pip install "abstractcore[compression]"
@@ -673,7 +675,7 @@ summarizer ./document.txt --provider ollama --model gemma3:1b-it-qat
 
 ---
 
-## 11) Server (OpenAI-compatible `/v1`)
+## 11) Server + endpoint (OpenAI-compatible `/v1`)
 
 The server turns AbstractCore into an OpenAI-compatible API gateway.
 
@@ -741,6 +743,23 @@ curl -X POST http://localhost:8000/v1/chat/completions \\
 
 If a required plugin/backend is missing, the server returns `501` with actionable messaging.
 
+### Single-model endpoint (one provider/model per worker)
+
+If you want to host **one** provider+model as a dedicated OpenAI-compatible `/v1` endpoint (no `provider/model` routing), use `abstractcore-endpoint`:
+
+```bash
+pip install "abstractcore[server]"
+abstractcore-endpoint --provider mlx --model mlx-community/Qwen3-4B --host 0.0.0.0 --port 8001
+```
+
+Config via env vars (alternative):
+- `ABSTRACTENDPOINT_PROVIDER`
+- `ABSTRACTENDPOINT_MODEL`
+- `ABSTRACTENDPOINT_HOST`
+- `ABSTRACTENDPOINT_PORT`
+
+See `docs/endpoint.md` and `abstractcore/endpoint/app.py`.
+
 ---
 
 ## 12) Repo map + contribution workflow
@@ -777,7 +796,7 @@ Tests:
 ### Dev commands
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,test]"
 pytest -q
 black .
 ruff check .
@@ -950,6 +969,8 @@ AbstractCore supports native tool calling (when the provider supports it) and pr
 
 By default, tool execution is pass-through (`execute_tools=False`): you get tool calls in `resp.tool_calls`, and your host/runtime decides how to execute them.
 
+In the AbstractFramework ecosystem, **AbstractRuntime** is the recommended runtime for executing tool calls durably (policy, retries, persistence). See Architecture and Tool Calling.
+
 ```python
 from abstractcore import create_llm, tool
 
@@ -1063,6 +1084,7 @@ abstractcore-chat --provider openai --model gpt-4o-mini
 - API Reference — complete function/class listing
 - Troubleshooting — common errors and fixes
 - Server — OpenAI-compatible HTTP gateway
+- Endpoint — single-model OpenAI-compatible endpoint (one provider/model per worker)
 
 ---
 
@@ -1851,7 +1873,15 @@ This setup guide should get you running with any AbstractCore provider. Choose w
 
 # API (Python)
 
-This page is a user-facing map of the **public Python API**. For a complete listing of functions/classes (including events), see **API Reference**.
+This page is a user-facing map of the **public Python API** exposed from `abstractcore` (see `abstractcore/__init__.py`). For a complete listing of functions/classes (including events), see **API Reference**.
+
+New to AbstractCore? Start with **Getting Started**.
+
+Implementation pointers (source of truth):
+- `create_llm`: `abstractcore/core/factory.py` → `abstractcore/providers/registry.py`
+- `BasicSession`: `abstractcore/core/session.py`
+- Response/types: `abstractcore/core/types.py`
+- Tool decorator: `abstractcore/tools/core.py`
 
 ## Core entrypoints
 
@@ -1866,6 +1896,8 @@ llm = create_llm("openai", model="gpt-4o-mini")  # requires: pip install "abstra
 resp = llm.generate("Hello!")
 print(resp.content)
 ```
+
+Provider IDs (common): `openai`, `anthropic`, `openrouter`, `portkey`, `ollama`, `lmstudio`, `vllm`, `openai-compatible`, `huggingface`, `mlx`.
 
 ### Gateway providers (OpenRouter, Portkey)
 
@@ -1893,6 +1925,22 @@ print(session.generate("Give me 3 name ideas.").content)
 print(session.generate("Pick the best one.").content)
 ```
 
+### `tool` (decorator)
+
+Define tools in Python with a decorator, then pass them to `generate()` / `agenerate()`:
+
+```python
+from abstractcore import create_llm, tool
+
+@tool
+def get_weather(city: str) -> str:
+    return f"{city}: 22°C and sunny"
+
+llm = create_llm("openai", model="gpt-4o-mini")
+resp = llm.generate("Use the tool.", tools=[get_weather])
+print(resp.tool_calls)
+```
+
 ## Responses (`GenerateResponse`)
 
 Most calls return a `GenerateResponse` object (or an iterator of them for streaming). Common fields:
@@ -1901,6 +1949,29 @@ Most calls return a `GenerateResponse` object (or an iterator of them for stream
 - `tool_calls`: structured tool calls (pass-through by default)
 - `usage`: token usage (provider-dependent)
 - `metadata`: provider/model specific fields (for example extracted reasoning text when configured)
+
+## Model downloads (`download_model`, optional)
+
+`download_model(...)` is an **async generator** that yields `DownloadProgress` updates while a model is being fetched.
+
+Supported providers:
+- `ollama`: pulls via the Ollama HTTP API (`/api/pull`)
+- `huggingface` / `mlx`: downloads from HuggingFace Hub (requires `pip install "abstractcore[huggingface]"`; pass `token=` for gated models)
+
+Example:
+
+```python
+import asyncio
+from abstractcore import download_model
+
+async def main():
+    async for p in download_model("ollama", "qwen3:4b-instruct-2507-q4_K_M"):
+        print(p.status.value, p.message)
+
+asyncio.run(main())
+```
+
+Implementation: `abstractcore/download.py`. For provider setup and base URLs, see Prerequisites.
 
 ## Tool calling
 
@@ -5247,7 +5318,7 @@ response = llm.generate(
 
 ### CLI Usage
 
-**All these examples work correctly in AbstractCore CLI:**
+These examples work in AbstractCore CLI when `abstractcore[media]` is installed and your selected provider/model supports the requested media (or you configured fallbacks):
 
 ```bash
 # PDF Analysis - Working
@@ -5269,40 +5340,41 @@ python -m abstractcore.utils.cli --prompt "What's in this image? @screenshot.png
 python -m abstractcore.utils.cli --prompt "Compare @chart.png and @data.csv and explain trends"
 ```
 
-### Cross-Provider Consistency Verified
+### Cross-provider semantics (what’s consistent)
 
 ```python
-# Same media processing works identically across all providers
-media_files = ["report.pdf", "chart.png", "data.xlsx"]
-prompt = "Analyze these business documents and provide insights"
+# AbstractCore exposes a single `media=[...]` parameter across providers, but behavior
+# depends on provider/model capabilities and your media policies.
 
-# OpenAI - Verified
+# Documents (PDF/Office/text/CSV/TSV/...) are extracted to text/metadata and injected into the request.
+# This generally works across providers because the final payload is text.
+media_files = ["report.pdf", "data.xlsx"]
+prompt = "Analyze these documents and provide insights"
+
+# OpenAI
 openai_llm = create_llm("openai", model="gpt-4o")
 openai_response = openai_llm.generate(prompt, media=media_files)
 
-# Anthropic - Verified
-anthropic_llm = create_llm("anthropic", model="claude-3.5-sonnet")
+# Anthropic
+anthropic_llm = create_llm("anthropic", model="claude-haiku-4-5")
 anthropic_response = anthropic_llm.generate(prompt, media=media_files)
 
-# Local models - Verified
-lmstudio_llm = create_llm("lmstudio", model="qwen/qwen3-next-80b")
-lmstudio_response = lmstudio_llm.generate(prompt, media=media_files)
-
-# Result: All providers work identically with the same strong results!
+# Image/audio/video inputs are policy-driven and require native support or explicit fallbacks.
+# See: docs/vision-capabilities.md and docs/media-handling-system.md (policies + fallbacks).
 ```
 
 ### Streaming with Media
 
 ```python
 # Real-time streaming responses with media
-llm = create_llm("anthropic", model="claude-3.5-sonnet")
+llm = create_llm("openai", model="gpt-4o")  # requires: pip install "abstractcore[openai]"
 
 for chunk in llm.generate(
     "Describe this image in detail",
     media=["complex_diagram.png"],
     stream=True
 ):
-    print(chunk.content, end="", flush=True)
+    print(chunk.content or "", end="", flush=True)
 ```
 
 ## Advanced Features
@@ -5612,7 +5684,7 @@ try:
     response = llm.generate("Test", media=["test.jpg"])
 except ImportError as e:
     print(f"Missing dependency: {e}")
-    print("Install with: pip install \"abstractcore[media]\"")
+    print('Install with: pip install "abstractcore[media]"')
 ```
 
 **Vision model not detecting images:**
@@ -6782,7 +6854,8 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 - **openai**: OpenAI API key
 - **anthropic**: Anthropic API key
 - **openrouter**: OpenRouter API key
-- **google**: Google API key
+- **portkey**: Portkey API key
+- **google**: Google API key (reserved for future integrations; not required for current built-in providers)
 
 ### Cache Section
 - **default_cache_dir**: General cache directory for AbstractCore (`~/.cache/abstractcore`)
@@ -6809,8 +6882,7 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 ### Offline Section
 - **offline_first**: Default to offline-first behavior
 - **allow_network**: Allow network access when offline-first is enabled (for API providers)
-  - **force_local_files_only**: Force HuggingFace `local_files_only` mode
-  - **provider_preferences**: Additional provider-specific settings (key-value pairs)
+- **force_local_files_only**: Force HuggingFace `local_files_only` mode
 
 ## Common Configuration Tasks
 
@@ -6941,6 +7013,8 @@ This shows:
 
 Transform AbstractCore into an OpenAI-compatible API server. One server, all models, any client.
 
+If you want a dedicated **single-model** `/v1` server (one provider/model per worker), see Endpoint.
+
 ## Interactive API docs (start here)
 
 Visit while the server is running:
@@ -7002,15 +7076,17 @@ print(response.choices[0].message.content)
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 export OPENROUTER_API_KEY="sk-or-..."
+export PORTKEY_API_KEY="pk_..."         # optional (Portkey)
+export PORTKEY_CONFIG="pcfg_..."        # required for Portkey routing
 
 # Local providers
 export OLLAMA_BASE_URL="http://localhost:11434"          # (or legacy: OLLAMA_HOST)
 export LMSTUDIO_BASE_URL="http://localhost:1234/v1"
 export VLLM_BASE_URL="http://localhost:8000/v1"
 
-# Default settings
-export ABSTRACTCORE_DEFAULT_PROVIDER=openai
-export ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
+# Server bind (only used by `python -m abstractcore.server.app`)
+export HOST="0.0.0.0"
+export PORT="8000"
 
 # Debug mode
 export ABSTRACTCORE_DEBUG=true
@@ -7059,11 +7135,12 @@ Standard OpenAI-compatible endpoint. Works with all providers.
 ```
 
 **Key Parameters:**
-- `model` (required): Format `"provider/model-name"` (e.g., `"openai/gpt-4o-mini"`)
+- `model` (required): Prefer `"provider/model-name"` (e.g., `"openai/gpt-4o-mini"`). If you pass a bare model name (no `/`), the server will best-effort auto-detect a provider.
 - `messages` (required): Array of message objects
 - `stream` (optional): Enable streaming responses
 - `tools` (optional): Tools for function calling
-- `api_key` (optional, AbstractCore extension): Provider API key for per-request authentication. Falls back to environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`)
+- `agent_format` (optional, AbstractCore extension): Tool-call syntax output format for agentic clients (`"auto"|"openai"|"codex"|"qwen3"|"llama3"|"gemma"|"xml"|"passthrough"`). When omitted, the server auto-detects from user-agent + model heuristics.
+- `api_key` (optional, AbstractCore extension): Provider API key for per-request authentication. Falls back to environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `PORTKEY_API_KEY`)
 - `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
 - `unload_after` (optional, AbstractCore extension): If `true`, calls `llm.unload_model(model)` after the request completes. Disabled for `ollama/*` unless `ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1`.
 - `thinking` (optional, AbstractCore extension): Unified thinking/reasoning control (`null|"auto"|"on"|"off"` or `"low"|"medium"|"high"` when supported)
@@ -7683,65 +7760,54 @@ Server health check for monitoring.
 
 ---
 
-## Agentic CLI Integration
+## Agentic CLI integration
 
-Use AbstractCore server with agentic CLI tools like Codex, Crush, and Gemini CLI.
+AbstractCore Server is **OpenAI-compatible**. Most OpenAI-compatible CLIs/SDKs can be pointed at it by setting:
 
-### Codex CLI
+- `OPENAI_BASE_URL="http://localhost:8000/v1"` (or an equivalent flag)
+- `OPENAI_API_KEY="unused"` (many clients require a non-empty key even for local servers)
+
+### Tool calling interoperability
+
+- The server **does not execute tools** (it always returns tool calls; your host/runtime executes them).
+- It can emit tool calls either as structured `tool_calls` (OpenAI/Codex style) **or** as tagged content for clients that parse tool calls from assistant text.
+- Control the output format with `agent_format` (request body, AbstractCore extension), or rely on auto-detection (user-agent + model heuristics).
+
+Supported `agent_format` values: `auto`, `openai`, `codex`, `qwen3`, `llama3`, `gemma`, `xml`, `passthrough`.
+
+### Codex CLI (example)
 
 ```bash
-# Setup
 export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
-export ABSTRACTCORE_API_KEY="unused"
 
-# Use with any model
 codex --model "ollama/qwen3-coder:30b" "Write a factorial function"
 ```
 
-### Crush CLI (LLaMA3 format)
+### Forcing a format (curl)
 
 ```bash
-# Configure server
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# Configure CLI
-export OPENAI_BASE_URL="http://localhost:8000/v1"
-export OPENAI_API_KEY="unused"
-
-# Use
-crush --model "anthropic/claude-haiku-4-5" "Explain this code"
-```
-
-### Gemini CLI (XML format)
-
-```bash
-# Configure server
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# Configure CLI
-export OPENAI_BASE_URL="http://localhost:8000/v1"
-export OPENAI_API_KEY="unused"
-
-# Use
-gemini-cli --model "ollama/qwen3-coder:30b" "Review this project"
-```
-
-### Tool Call Format Configuration
-
-```bash
-# Set format for your CLI
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=qwen3    # Codex CLI
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3   # Crush CLI
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml      # Gemini CLI
-
-# Control tool execution
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=true   # Server executes
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false  # Return to client
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3:4b-instruct-2507-q4_K_M",
+    "messages": [{"role": "user", "content": "Use the tool."}],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "get_weather",
+          "description": "Get weather by city",
+          "parameters": {
+            "type": "object",
+            "properties": {"city": {"type": "string"}},
+            "required": ["city"]
+          }
+        }
+      }
+    ],
+    "agent_format": "llama3"
+  }'
 ```
 
 ---
@@ -7754,9 +7820,6 @@ export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false  # Return to client
 FROM python:3.9-slim
 
 RUN pip install "abstractcore[server]"
-
-ENV ABSTRACTCORE_DEFAULT_PROVIDER=openai
-ENV ABSTRACTCORE_DEFAULT_MODEL=gpt-4o-mini
 
 EXPOSE 8000
 
@@ -7966,6 +8029,82 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ---
 
+### Inlined: `docs/endpoint.md`
+
+# Endpoint (single-model `/v1` server)
+
+`abstractcore-endpoint` runs a **single-model** OpenAI-compatible server.
+
+Unlike the multi-provider gateway (Server), this endpoint loads **one** `provider+model` once per worker process and reuses it across requests. It’s useful when you want to host a local backend (for example HF GGUF or MLX) as a stable `/v1` endpoint.
+
+Source: `abstractcore/endpoint/app.py` (entrypoint: `abstractcore-endpoint`).
+
+## When to use this vs the gateway
+
+- Use **Server** when you want `model="provider/model"` routing across many providers/models from one gateway process.
+- Use **Endpoint** when you want a dedicated “one worker = one model” process (simpler performance characteristics; fewer per-request initialization costs).
+
+## Install
+
+```bash
+pip install "abstractcore[server]"
+```
+
+Then install the provider extra you need:
+
+```bash
+pip install "abstractcore[mlx]"         # Apple Silicon local inference
+pip install "abstractcore[huggingface]" # Transformers / torch / llama-cpp-python (heavy)
+```
+
+## Run
+
+```bash
+# CLI flags
+abstractcore-endpoint --provider mlx --model mlx-community/Qwen3-4B --host 0.0.0.0 --port 8001
+
+# Or via env vars
+export ABSTRACTENDPOINT_PROVIDER=mlx
+export ABSTRACTENDPOINT_MODEL=mlx-community/Qwen3-4B
+export ABSTRACTENDPOINT_HOST=0.0.0.0
+export ABSTRACTENDPOINT_PORT=8001
+abstractcore-endpoint
+```
+
+Health check:
+
+```bash
+curl http://localhost:8001/health
+```
+
+## Use with an OpenAI-compatible client
+
+```python
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8001/v1", api_key="unused")
+resp = client.chat.completions.create(
+    model="anything",  # ignored/validated in single-model mode
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+print(resp.choices[0].message.content)
+```
+
+## Prompt cache control plane (optional)
+
+If the underlying provider exposes prompt-cache controls, the endpoint also exposes a small control plane under `/acore/prompt_cache/*` (see `abstractcore/endpoint/app.py`):
+
+- `GET /acore/prompt_cache/stats`
+- `POST /acore/prompt_cache/set`
+- `POST /acore/prompt_cache/update`
+- `POST /acore/prompt_cache/fork`
+- `POST /acore/prompt_cache/clear`
+- `POST /acore/prompt_cache/prepare_modules`
+
+For caching concepts, see Session Management and Architecture.
+
+---
+
 ### Inlined: `docs/troubleshooting.md`
 
 # AbstractCore Troubleshooting Guide
@@ -7990,29 +8129,29 @@ Complete troubleshooting guide for AbstractCore core library and server, includi
 
 Understanding common pitfalls helps prevent issues before they occur.
 
-### Top 3 Critical Mistakes
+### Top mistakes (fast fixes)
 
-1. **🔑 Incorrect Provider Configuration**
+1. **Incorrect provider configuration**
    - *Symptom*: Authentication failures, no model response
-   - *Quick Fix*: Always set API keys as environment variables
+   - *Quick Fix*: Set API keys via environment variables (or persist them with `abstractcore --set-api-key ...`)
    - See: Authentication Errors
 
-2. **🧩 Mishandling Tool Calls**
+2. **Not handling tool calls**
    - *Symptom*: Tools not executing, streaming interruptions
    - *Quick Fix*: Use `@tool` decorator and handle tool calls properly
    - See: Tool Calls Not Working
 
-3. **💻 Provider Dependency Confusion**
+3. **Missing provider extras**
    - *Symptom*: `ModuleNotFoundError` for providers
    - *Quick Fix*: Install provider-specific packages with `pip install "abstractcore[provider]"`
    - See: ModuleNotFoundError
 
-4. **🖥️ LM Studio Server Not Enabled**
+4. **LM Studio server not enabled**
    - *Symptom*: Connection refused, no response from LM Studio
    - *Quick Fix*: Enable "Status: Running" toggle in LM Studio GUI
    - See: LM Studio Server Not Enabled
 
-5. **📏 Context Length Too Small (LM Studio/Ollama)**
+5. **Context length too small (LM Studio/Ollama)**
    - *Symptom*: 400 Bad Request, truncated responses, errors with long inputs
    - *Quick Fix*: Set "Default Context Length" to "Model Maximum" in LM Studio
    - See: Context Length Too Small
@@ -8435,28 +8574,21 @@ kill -9 $(lsof -t -i:8000)  # Linux/Mac
 uvicorn abstractcore.server.app:app --port 3000
 ```
 
-### Issue: ABSTRACTCORE_API_KEY Error
+### Issue: Client complains about missing API key
 
 **Symptoms:**
-```
-Error: Missing environment variable: ABSTRACTCORE_API_KEY
-```
+- Your OpenAI-compatible client/CLI refuses to run without an API key (even though your server is local).
 
 **Solutions:**
 
 ```bash
-# Set the required variable
-export ABSTRACTCORE_API_KEY="unused"
-
-# For Codex CLI, set ALL three:
+# Most OpenAI-compatible clients accept a dummy key for local servers.
 export OPENAI_BASE_URL="http://localhost:8000/v1"
 export OPENAI_API_KEY="unused"
-export ABSTRACTCORE_API_KEY="unused"
 
 # Verify they're set
-echo $OPENAI_BASE_URL
-echo $OPENAI_API_KEY
-echo $ABSTRACTCORE_API_KEY
+echo "$OPENAI_BASE_URL"
+echo "$OPENAI_API_KEY"
 ```
 
 ### Issue: Server Running but No Response
@@ -8523,24 +8655,22 @@ curl http://localhost:1234/v1/models  # Should return models
 **Solutions:**
 
 ```bash
-# Set correct tool format for your CLI
+# AbstractCore Server controls tool-call syntax via `agent_format` (request field) or auto-detection.
+# - OpenAI/Codex style: structured tool calls are returned in `tool_calls` fields.
+# - Tag-based formats: tool calls are emitted as tagged content for clients that parse from assistant text.
 
-# For Codex CLI (qwen3 format - default)
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# For Crush CLI (llama3 format)
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=llama3
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# For Gemini CLI (xml format)
-export ABSTRACTCORE_DEFAULT_TOOL_CALL_TAGS=xml
-export ABSTRACTCORE_DEFAULT_EXECUTE_TOOLS=false
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# Restart server after changing environment variables
-pkill -f "abstractcore.server.app"
+# If you control requests (curl/custom client), force a format with `agent_format`:
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "ollama/qwen3:4b-instruct-2507-q4_K_M",
+    "messages": [{"role": "user", "content": "Use the tool."}],
+    "tools": [{"type":"function","function":{"name":"get_weather","description":"...","parameters":{"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}}],
+    "agent_format": "llama3"
+  }'
 ```
+
+See Server (agentic CLI integration) for details and supported formats.
 
 ---
 
@@ -8953,6 +9083,20 @@ from abstractcore import create_llm
 llm = create_llm("openai", model="gpt-4o-mini")
 ```
 
+## How does AbstractCore relate to AbstractFramework / AbstractRuntime?
+
+AbstractCore is one of the core packages in the **AbstractFramework** ecosystem:
+
+- AbstractFramework (umbrella): https://github.com/lpalbou/AbstractFramework
+- AbstractCore (this package): unified LLM interface + cross-provider infrastructure
+- AbstractRuntime: durable tool/effect execution, workflows, and state persistence — https://github.com/lpalbou/abstractruntime
+
+AbstractCore is usable standalone. In the ecosystem, the common pattern is:
+- AbstractCore produces `resp.content` + `resp.tool_calls`
+- a runtime (for example AbstractRuntime) decides whether/how to execute tools (policy, sandboxing, retries, persistence)
+
+See Architecture and Tool Calling.
+
 ## How do I connect to a local server (Ollama / LMStudio / vLLM / llama.cpp / LocalAI)?
 
 Use the matching provider and set `base_url` (or the provider’s base-url env var).
@@ -9206,15 +9350,24 @@ AbstractCore focuses on provider abstraction + infrastructure (tools, structured
 
 AbstractCore provides a unified interface to major LLM providers with production-oriented reliability features. This document explains how it works internally and why it's designed this way.
 
+If you're new to AbstractCore and want to start building quickly, read:
+- `docs/getting-started.md`
+- `docs/api.md`
+
 Related docs (user-facing):
 - Media inputs (images/audio/video + documents): `docs/media-handling-system.md`
 - Vision input + fallback: `docs/vision-capabilities.md`
 - Capability plugins (voice/audio/vision): `docs/capabilities.md`
-- OpenAI-compatible server endpoints: `docs/server.md`
+- OpenAI-compatible gateway server: `docs/server.md`
+- Single-model OpenAI-compatible endpoint: `docs/endpoint.md`
+- Tool calling semantics (passthrough vs execution): `docs/tool-calling.md`
 
 ## System Overview
 
-AbstractCore operates as both a Python library and an optional HTTP server:
+AbstractCore operates as a Python library and can also be exposed via **optional OpenAI-compatible HTTP servers**:
+
+- **Gateway server (multi-provider)**: `abstractcore.server.app` (docs: `docs/server.md`)
+- **Endpoint server (single-model)**: `abstractcore.endpoint.app` (docs: `docs/endpoint.md`)
 
 ```mermaid
 graph TD
@@ -9317,20 +9470,31 @@ Gateway providers (OpenRouter/Portkey) route to external backends; AbstractCore 
 
 ### 2. Provider Interface
 
-All providers implement `AbstractCoreInterface`:
+All providers implement `AbstractCoreInterface` (see `abstractcore/core/interface.py`):
 
 ```python
 class AbstractCoreInterface(ABC):
     @abstractmethod
-    def generate(self, prompt: str, **kwargs) -> GenerateResponse:
-        """Generate response from LLM"""
+    def generate(
+        self,
+        prompt: str,
+        messages: Optional[List[Dict[str, str]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        media: Optional[List[Union[str, Dict[str, Any], "MediaContent"]]] = None,
+        stream: bool = False,
+        thinking: Optional[Union[bool, str]] = None,
+        **kwargs,
+    ) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
+        """Generate a response (or a stream of chunks)."""
 
     @abstractmethod
     def get_capabilities(self) -> List[str]:
         """Get provider capabilities"""
 
+    @abstractmethod
     def unload_model(self, model_name: str) -> None:
-        """Unload/cleanup resources for a specific model (best-effort)"""
+        """Unload/cleanup resources for a specific model (best-effort)."""
 ```
 
 This ensures:
@@ -9457,7 +9621,7 @@ graph TD
 2. **Basic Processing**: Simple text extraction
 3. **Metadata Fallback**: File information and properties
 4. **Degrades gracefully for documents**: PDFs/Office/text aim to return best-effort extracted text/metadata rather than crashing.
-5. **Policy-driven for true multimodal inputs**: for image/audio/video message parts, behavior is policy-driven; unsupported requests fail loudly unless an explicit enrichment fallback is configured (see ADR-0028).
+5. **Policy-driven for true multimodal inputs**: for image/audio/video message parts, behavior is policy-driven; unsupported requests fail loudly unless an explicit enrichment fallback is configured (see `docs/media-handling-system.md` and `docs/vision-capabilities.md`).
 
 #### Unified Media API
 
@@ -9479,7 +9643,7 @@ python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jp
 ```
 
 #### Capability plugins (voice/audio/vision)
-To keep `abstractcore` dependency-light (ADR-0001) while still enabling “must work” deterministic modality APIs, AbstractCore supports optional **capability plugins** (ADR-0028):
+To keep the default `abstractcore` install dependency-light while still enabling deterministic modality APIs, AbstractCore supports optional **capability plugins**:
 - `abstractvoice` provides `core.voice` + `core.audio` (TTS/STT).
 - `abstractvision` provides `core.vision` (T2I/I2I/T2V/I2V; backend-pluggable).
 
@@ -9526,9 +9690,11 @@ sequenceDiagram
     Core->>App: GenerateResponse
 ```
 
-### 4. Tool System Architecture
+Note: in the Python API, `execute_tools` defaults to `False` (**pass-through**). Tool calls are returned in `GenerateResponse.tool_calls` for your host/runtime to execute. `execute_tools=True` exists for simple demos but is deprecated for most production use cases. The optional HTTP gateway server runs in pass-through mode.
 
-The tool system provides universal tool execution across all providers:
+### 5. Tool System Architecture
+
+The tool system provides universal tool-call detection (and optional local execution) across all providers:
 
 ```mermaid
 graph TD
@@ -9553,7 +9719,7 @@ graph TD
 
 1. **Tool Detection**: Parse tool calls from LLM response
 2. **Event Emission**: Emit `TOOL_STARTED` (preventable)
-3. **Local Execution**: Execute tools in AbstractCore (not by provider)
+3. **Optional local execution (deprecated)**: execute tools inside AbstractCore when `execute_tools=True` (providers never execute arbitrary local tools)
 4. **Result Collection**: Gather results and error information
 5. **Event Emission**: Emit `TOOL_COMPLETED` with results
 6. **Response Integration**: Append tool results to original response
@@ -9625,7 +9791,7 @@ graph TD
 - **Universal Detection**: Automatically detects source format from any model
 - **Graceful Fallback**: Returns original content if rewriting fails
 
-### 5. Retry and Reliability System
+### 6. Retry and Reliability System
 
 Production-grade error handling with multiple layers:
 
@@ -9673,7 +9839,7 @@ config = RetryConfig(
 llm = create_llm("openai", model="gpt-4o-mini", retry_config=config)
 ```
 
-### 6. Event System
+### 7. Event System
 
 Observability hooks through events:
 
@@ -9731,7 +9897,7 @@ on_global(EventType.TOOL_COMPLETED, log_tools)
 on_global(EventType.GENERATION_COMPLETED, track_performance)
 ```
 
-### 7. Structured Output System with Streaming Integration
+### 8. Structured Output System with Streaming Integration
 
 Type-safe responses with automatic validation, retry, and unified streaming:
 
@@ -9768,7 +9934,7 @@ graph TD
 
 #### Unified Streaming Architecture
 
-AbstractCore's streaming system provides high-performance, character-by-character streaming with real-time tool detection:
+AbstractCore’s streaming system provides character-by-character streaming with incremental tool detection and optional tool-call syntax rewriting.
 
 **Architecture Components**:
 
@@ -9777,7 +9943,7 @@ graph TD
     A[Stream Input] --> B[UnifiedStreamProcessor]
     B --> C[IncrementalToolDetector]
     C --> D[Tag Rewriter]
-    D --> E[Tool Execution]
+    D --> E[Tool Execution (optional)]
     E --> F[Stream Output]
 
     B --> G[Character-by-Character Handling]
@@ -9794,8 +9960,8 @@ graph TD
 
 1. **Unified Streaming Strategy**
    - Single consistent approach across all providers
-   - First chunk delivery in <10ms
-   - Minimal code complexity
+   - Best-effort time-to-first-token (TTFT) telemetry for debugging
+   - Minimal buffering (incremental parsing)
 
 2. **Incremental Tool Detection**
    - Real-time tool call detection during streaming
@@ -9803,40 +9969,41 @@ graph TD
    - Handles partial tool calls across chunk boundaries
 
 3. **Character-by-Character Streaming**
-   - Handles micro-chunking from providers (22+ tiny chunks per tool call)
+   - Handles micro-chunking from providers (very small deltas)
    - Intelligent buffering for partial tool calls
    - Robust parsing with auto-repair for malformed JSON
 
 4. **Tool Call Tag Rewriting Integration**
    - Real-time format conversion during streaming
    - Support for multiple formats (Qwen3, LLaMA3, Gemma, XML, custom)
-   - Zero buffering overhead for tag conversion
+   - Designed to avoid large buffering while keeping tool calls structured
 
 **Streaming with Tag Rewriting Example**:
 ```python
-# Real-time streaming with automatic tool call format conversion
-for chunk in llm.generate(
-    "Create a Python function and analyze it",
-    stream=True,
-    tools=[code_analysis_tool],
-    tool_call_tags="llama3"  # Convert to Crush CLI format
-):
-    # Immediate character-by-character output
-    print(chunk.content, end="", flush=True)
+from abstractcore import create_llm, tool
 
-    # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
+@tool
+def analyze_code(code: str) -> str:
+    """Return a small, deterministic analysis."""
+    return f"chars={len(code)}"
+
+llm = create_llm("ollama", model="qwen3:4b-instruct")  # requires Ollama running (default: http://localhost:11434)
+for chunk in llm.generate(
+    "Write a Python function, then call analyze_code on it.",
+    stream=True,
+    tools=[analyze_code],
+    tool_call_tags="llama3",  # Emit <function_call>...</function_call> style tags
+):
+    print(chunk.content or "", end="", flush=True)
     if chunk.tool_calls:
         print(f"\nTool calls: {chunk.tool_calls}")
 
 # Output format: <function_call>{"name": "analyze_code"}...</function_call>
 ```
 
-**Performance Characteristics**:
-- **First Chunk Latency**: <10ms across all providers
-- **Tool Detection Overhead**: <1ms per chunk
-- **Memory Efficiency**: Linear, bounded growth
-- **Character-by-Character Support**: Handles extreme micro-chunking
-- **Tag Rewriting**: Zero additional latency
+Implementation pointers (source of truth):
+- Unified streaming + tool detection: `abstractcore/providers/streaming.py`
+- Streaming wrapper + TTFT metadata: `abstractcore/providers/base.py`
 
 #### Automatic Error Feedback
 
@@ -9853,7 +10020,7 @@ Please correct these errors and provide valid JSON.
 """
 ```
 
-### 8. Session Management
+### 9. Session Management
 
 Simple conversation memory without complexity:
 
@@ -9877,7 +10044,7 @@ graph LR
     style B fill:#4caf50
 ```
 
-### 9. Server Architecture (Optional Component)
+### 10. Server Architecture (Optional Component)
 
 The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top of the core library:
 
@@ -9964,7 +10131,7 @@ sequenceDiagram
 ### 1. Provider Agnostic
 - **Same code works everywhere**: Switch providers by changing one line
 - **No vendor lock-in**: Easy migration between cloud and local providers
-- **Consistent behavior**: Tools, streaming, structured output work identically
+- **Consistent semantics**: tools, streaming, and structured output follow the same API surface (provider/model differences still apply)
 
 ### 2. Production Ready
 - **Automatic reliability**: Built-in retry logic and circuit breakers
@@ -10024,40 +10191,40 @@ Common levers:
 ## Security Considerations
 
 ### 1. Tool Execution Safety
-- **Local execution**: Tools run in AbstractCore, not by providers
+- **Local execution (optional)**: tool execution is local (never executed by the provider); by default tool calls are returned for your host/runtime to execute
 - **Event prevention**: Stop dangerous tools before execution
 - **Input validation**: Validate tool parameters
 
 ### 2. API Key Management
 - **Environment variables**: Secure key storage
-- **No logging**: Keys never appear in logs
+- **Avoid logging**: treat logs as sensitive; do not log secrets (AbstractCore tries to avoid printing keys in logs)
 - **Provider isolation**: Keys scoped to specific providers
 
 ### 3. Data Privacy
 - **Local options**: Support for local providers (Ollama, MLX)
-- **No data retention**: AbstractCore doesn't store conversation data
+- **No persistent storage by default**: conversation state lives in memory (for example `BasicSession`) unless you explicitly save it or enable tracing/logging
 - **Transparent processing**: All operations are observable through events
 
 ## Testing Strategy
 
-### 1. No Mocking Philosophy
-- **Real implementations**: Test against actual providers
-- **Real models**: Use actual LLM models in tests
-- **Real scenarios**: Test real-world usage patterns
+The repo uses a mix of unit tests and integration tests. Some tests are provider-/network-/hardware-dependent and are opt-in.
 
-### 2. Provider Coverage
-- **All providers tested**: Every provider has comprehensive tests
-- **Cross-provider consistency**: Same tests run across all providers
-- **Feature parity**: Ensure consistent behavior
+Quick pointers:
+- Run: `pytest -q`
+- Vision tests: `tests/README_VISION_TESTING.md`
+- Seed tests: `tests/README_SEED_TESTING.md`
+- Streaming/tool parsing tests: `tests/streaming/` and `tests/test_agentic_cli_compatibility.py`
+- Server/endpoint tests: `tests/server/` and `tests/test_abstractendpoint_singleton_provider.py`
 
-### 3. Reliability Testing
-- **Failure scenarios**: Test retry logic and error handling
-- **Performance tests**: Measure latency and throughput
-- **Integration tests**: Test with real external dependencies
+## Integration with AbstractFramework
 
-## Integration with Abstract Framework
+AbstractCore is a core package in the **AbstractFramework** ecosystem:
 
-AbstractCore is the foundation layer for the Abstract Framework stack:
+- AbstractFramework (umbrella): https://github.com/lpalbou/AbstractFramework
+- AbstractCore (this repo): https://github.com/lpalbou/AbstractCore
+- AbstractRuntime: https://github.com/lpalbou/abstractruntime
+
+In this ecosystem, AbstractCore focuses on **LLM I/O + provider abstraction**, while AbstractRuntime focuses on **durable execution** (effects/tools/workflows/state). AbstractCore remains usable standalone; when you need durability/policy/sandboxing around tools, plug it into a runtime (for example AbstractRuntime).
 
 ```mermaid
 graph TD
@@ -10946,7 +11113,7 @@ for rec in review.recommendations:
 ### Basic Streaming (Unified 2025)
 
 ```python
-# Real-time streaming works identically across ALL providers
+# Streaming uses a unified processor across providers (exact chunking depends on the backend)
 from abstractcore import create_llm
 
 llm = create_llm("anthropic", model="claude-haiku-4-5")
@@ -10956,7 +11123,7 @@ for chunk in llm.generate(
     "Write a short story about a programmer who discovers their code is alive",
     stream=True
 ):
-    print(chunk.content, end="", flush=True)
+    print(chunk.content or "", end="", flush=True)
 print("\n")
 ```
 
@@ -10978,17 +11145,17 @@ def streaming_with_insights(prompt):
     print("Response: ", end="", flush=True)
     for chunk in llm.generate(prompt, stream=True):
         chunks.append(chunk)
-        print(chunk.content, end="", flush=True)
+        print(chunk.content or "", end="", flush=True)
 
         # Optional real-time performance insights
         if len(chunks) % 10 == 0:
             current_time = time.time() - start_time
-            chars_generated = sum(len(c.content) for c in chunks)
+            chars_generated = sum(len(c.content or "") for c in chunks)
             print(f"\n[PROGRESS] {len(chunks)} chunks, {chars_generated} chars, {current_time:.1f}s")
 
     # Final performance summary
     total_time = time.time() - start_time
-    total_chars = sum(len(chunk.content) for chunk in chunks)
+    total_chars = sum(len(chunk.content or "") for chunk in chunks)
 
     print(f"\n\n[STATS] Streaming Performance:")
     print(f"- Total Chunks: {len(chunks)}")
@@ -11036,7 +11203,7 @@ weather_tool = {
     }
 }
 
-# Works identically across providers
+# Works similarly across providers (exact chunking depends on the backend)
 llm = create_llm("ollama", model="qwen3:4b-instruct")
 
 print("AI Assistant: ", end="", flush=True)
@@ -11046,7 +11213,7 @@ for chunk in llm.generate(
     stream=True
 ):
     # Real-time chunk processing and tool call detection
-    print(chunk.content, end="", flush=True)
+    print(chunk.content or "", end="", flush=True)
 
     # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
     if chunk.tool_calls:
@@ -11054,11 +11221,10 @@ for chunk in llm.generate(
 
 print("\n")  # Newline after streaming
 
-# Features:
+# Notes:
 # - Real-time tool call detection
-# - Zero buffering overhead
-# - Works with OpenAI, Anthropic, Ollama, MLX
-# - Consistent behavior across all providers
+# - Streams chunks as they arrive (minimal buffering)
+# - Works with OpenAI, Anthropic, Ollama, MLX (provider-dependent details)
 ```
 
 ### Performance-Optimized Streaming
@@ -11085,10 +11251,10 @@ def compare_providers(prompt):
             chunks = []
             for chunk in llm.generate(prompt, stream=True):
                 chunks.append(chunk)
-                print(chunk.content, end="", flush=True)
+                print(chunk.content or "", end="", flush=True)
 
             total_time = time.time() - start_time
-            total_chars = sum(len(chunk.content) for chunk in chunks)
+            total_chars = sum(len(chunk.content or "") for chunk in chunks)
 
             print(f"\n\n[PERF] {provider.upper()} Performance:")
             print(f"- Chunks: {len(chunks)}")
@@ -12184,30 +12350,27 @@ tools = [{
 response = llm.generate("What's the weather in Paris?", tools=tools)
 ```
 
-**Streaming (Unified 2025 Implementation):**
+**Streaming:**
 ```python
-# Streaming works identically across ALL providers
 print("AI: ", end="")
 for chunk in llm.generate(
     "Create a Python function with a tool",
     stream=True,
-    tools=[code_analysis_tool]
+    tools=tools
 ):
     # Real-time chunk processing
-    print(chunk.content, end="", flush=True)
+    print(chunk.content or "", end="", flush=True)
 
     # Tool calls are surfaced as structured dicts; execute them in your host/runtime.
     if chunk.tool_calls:
         print(f"\nTool calls: {chunk.tool_calls}")
 ```
 
-**Streaming Features**:
-- First chunk in <10ms
-- 🔧 Unified strategy across providers
-- 🛠️ Real-time tool call detection
-- 💨 Zero buffering overhead
-- Supports: OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
-- 🔒 Robust error handling for malformed responses
+**Streaming notes**:
+- Streaming uses a unified processor across providers; exact chunking behavior depends on the backend.
+- Tool calls are surfaced as structured dicts in `chunk.tool_calls`; execute them in your host/runtime (pass-through by default).
+- If you need tool-call markup preserved/re-written in `chunk.content`, pass `tool_call_tags=...` (see Tool Call Syntax Rewriting).
+- In streaming mode, AbstractCore records a best-effort TTFT metric in `chunk.metadata["_timing"]["ttft_ms"]` when available (for debugging/observability).
 
 #### agenerate()
 
@@ -12390,11 +12553,11 @@ class GenerateResponse:
 ```python
 response = llm.generate("Explain quantum computing")
 
-# Consistent access across ALL providers
-print(f"Input tokens: {response.input_tokens}")      # Always available
-print(f"Output tokens: {response.output_tokens}")    # Always available  
-print(f"Total tokens: {response.total_tokens}")      # Always available
-print(f"Generation time: {response.gen_time}ms")  # Always available
+# Best-effort access across supported providers (may be None depending on backend/config)
+print(f"Input tokens: {response.input_tokens}")      # None if usage isn't reported/estimated
+print(f"Output tokens: {response.output_tokens}")    # None if usage isn't reported/estimated
+print(f"Total tokens: {response.total_tokens}")      # None if usage isn't reported/estimated
+print(f"Generation time: {response.gen_time}ms")     # None if timing wasn't captured
 
 # Comprehensive summary
 print(f"Summary: {response.get_summary()}")  # Model | Tokens | Time | Tools
@@ -12941,4 +13104,3 @@ For more examples and use cases, see:
 - Examples - Practical use cases
 - Prerequisites - Provider setup and configuration
 - Capabilities - What AbstractCore can do
-
