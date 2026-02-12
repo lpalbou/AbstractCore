@@ -1,6 +1,6 @@
 # Vector Embeddings Guide
 
-AbstractCore includes built-in support for vector embeddings with **multiple providers** (HuggingFace, Ollama, LMStudio). This guide shows you how to use embeddings for semantic search, RAG applications, and similarity analysis.
+AbstractCore includes built-in support for vector embeddings with **7 providers**: HuggingFace (local), Ollama, LMStudio, OpenAI, OpenRouter, Portkey, and any OpenAI-compatible endpoint. This guide shows you how to use embeddings for semantic search, RAG applications, and similarity analysis.
 
 **Two ways to use embeddings:**
 1. **Python Library** (this guide) - Direct programmatic usage via `EmbeddingManager`
@@ -109,6 +109,48 @@ embedder = EmbeddingManager(
 )
 ```
 
+### OpenAI Provider
+
+Cloud embedding models via the OpenAI API. Requires `OPENAI_API_KEY`.
+
+```python
+# Use OpenAI text-embedding-3-small (1536 dimensions)
+embedder = EmbeddingManager(
+    provider="openai",
+    model="text-embedding-3-small"
+)
+
+# Or text-embedding-3-large (3072 dimensions, higher quality)
+embedder = EmbeddingManager(
+    provider="openai",
+    model="text-embedding-3-large"
+)
+```
+
+### Gateway Providers (OpenRouter, Portkey, OpenAI-compatible)
+
+Route embedding requests through gateway/proxy providers. Useful for cost tracking, rate limiting, or unified billing.
+
+```python
+# Via OpenRouter gateway (requires OPENROUTER_API_KEY)
+embedder = EmbeddingManager(
+    provider="openrouter",
+    model="openai/text-embedding-3-small"
+)
+
+# Via Portkey AI gateway (requires PORTKEY_API_KEY)
+embedder = EmbeddingManager(
+    provider="portkey",
+    model="text-embedding-3-small"
+)
+
+# Via any OpenAI-compatible endpoint
+embedder = EmbeddingManager(
+    provider="openai-compatible",
+    model="my-embedding-model"
+)
+```
+
 ### Provider Comparison
 
 | Provider | Speed | Setup | Privacy | Cost | Primary Use Cases |
@@ -116,6 +158,10 @@ embedder = EmbeddingManager(
 | **HuggingFace** | Fast | Easy | Full | Free | Development, production |
 | **Ollama** | Medium | Medium | Full | Free | Privacy, custom models |
 | **LMStudio** | Medium | Easy (GUI) | Full | Free | GUI management, testing |
+| **OpenAI** | Fast | API key | Cloud | Paid | High-quality cloud embeddings |
+| **OpenRouter** | Fast | API key | Cloud | Paid | Gateway routing, cost tracking |
+| **Portkey** | Fast | API key | Cloud | Paid | Gateway routing, unified billing |
+| **OpenAI-compatible** | Varies | URL | Varies | Varies | Custom endpoints, self-hosted |
 
 ## Core Features
 

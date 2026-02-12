@@ -144,6 +144,10 @@ class AbstractCoreInterface(ABC):
     def vision(self):
         return self.capabilities.vision
 
+    @property
+    def music(self):
+        return self.capabilities.music
+
     def generate_with_outputs(
         self,
         prompt: str,
@@ -160,6 +164,8 @@ class AbstractCoreInterface(ABC):
         - {"tts": {...}}: calls `core.voice.tts(...)` after text generation.
           - default text source is the LLM response content.
         - {"t2i": {...}}: calls `core.vision.t2i(...)` after text generation.
+          - default prompt source is the LLM response content.
+        - {"t2m": {...}}: calls `core.music.t2m(...)` after text generation.
           - default prompt source is the LLM response content.
 
         If `artifact_store` is provided, it is passed through to capability calls.
@@ -203,6 +209,27 @@ class AbstractCoreInterface(ABC):
                 tags=t2i_cfg.get("tags"),
                 metadata=t2i_cfg.get("metadata"),
                 **{k: v for k, v in t2i_cfg.items() if k not in {"prompt", "run_id", "tags", "metadata"}},
+            )
+
+        if cfg.get("t2m"):
+            t2m_cfg = cfg.get("t2m")
+            t2m_cfg = t2m_cfg if isinstance(t2m_cfg, dict) else {}
+            music_prompt = t2m_cfg.get("prompt")
+            if music_prompt is None:
+                music_prompt = getattr(resp, "content", "") or ""
+            out["t2m"] = self.music.t2m(
+                str(music_prompt),
+                lyrics=t2m_cfg.get("lyrics"),
+                format=str(t2m_cfg.get("format") or "mp3"),
+                artifact_store=artifact_store,
+                run_id=t2m_cfg.get("run_id"),
+                tags=t2m_cfg.get("tags"),
+                metadata=t2m_cfg.get("metadata"),
+                **{
+                    k: v
+                    for k, v in t2m_cfg.items()
+                    if k not in {"prompt", "lyrics", "format", "run_id", "tags", "metadata"}
+                },
             )
 
         return GenerateWithOutputsResult(response=resp, outputs=out)

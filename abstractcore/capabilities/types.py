@@ -125,6 +125,30 @@ class VisionCapability(Protocol):
     ) -> BytesOrArtifactRef: ...
 
 
+class MusicCapability(Protocol):
+    """Deterministic music generation capability (text-to-music).
+
+    This is intentionally modeled like `VisionCapability` / `VoiceCapability`:
+    - returns either raw bytes (library mode) or an ArtifactRef (framework mode)
+    - backend selection/resolution happens via `abstractcore.capabilities.registry`
+    """
+
+    backend_id: str
+
+    def t2m(
+        self,
+        prompt: str,
+        *,
+        lyrics: Optional[str] = None,
+        format: str = "mp3",
+        artifact_store: Optional[ArtifactStoreLike] = None,
+        run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> BytesOrArtifactRef: ...
+
+
 @dataclass(frozen=True)
 class GenerateWithOutputsResult:
     response: "GenerateResponse"

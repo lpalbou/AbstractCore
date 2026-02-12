@@ -5,7 +5,7 @@ import importlib
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
 from .errors import CapabilityUnavailableError
-from .types import AudioCapability, VisionCapability, VoiceCapability
+from .types import AudioCapability, MusicCapability, VisionCapability, VoiceCapability
 
 
 _PLUGIN_ENTRYPOINT_GROUP = "abstractcore.capabilities_plugins"
@@ -56,6 +56,7 @@ class CapabilityRegistry:
         self.voice = _VoiceFacade(self)
         self.audio = _AudioFacade(self)
         self.vision = _VisionFacade(self)
+        self.music = _MusicFacade(self)
 
     def set_preferred_backend(self, capability: str, backend_id: str) -> None:
         cap = str(capability or "").strip()
@@ -206,12 +207,34 @@ class CapabilityRegistry:
             config_hint=config_hint,
         )
 
+    def register_music_backend(
+        self,
+        *,
+        backend_id: str,
+        factory: Callable[[Any], MusicCapability],
+        priority: int = 0,
+        description: Optional[str] = None,
+        install_hint: Optional[str] = None,
+        config_hint: Optional[str] = None,
+    ) -> None:
+        self.register_backend(
+            capability="music",
+            backend_id=backend_id,
+            factory=factory,
+            priority=priority,
+            description=description,
+            install_hint=install_hint,
+            config_hint=config_hint,
+        )
+
     def _default_install_hint(self, capability: str) -> Optional[str]:
         cap = str(capability or "").strip().lower()
         if cap == "voice" or cap == "audio":
             return "pip install abstractvoice"
         if cap == "vision":
             return "pip install abstractvision"
+        if cap == "music":
+            return "pip install abstractmusic"
         return None
 
     def _select_backend_id(self, capability: str) -> str:
@@ -282,6 +305,10 @@ class CapabilityRegistry:
         out = self._get_instance("vision")
         return out  # type: ignore[return-value]
 
+    def get_music(self) -> MusicCapability:
+        out = self._get_instance("music")
+        return out  # type: ignore[return-value]
+
     def status(self) -> Dict[str, Any]:
         """Return a JSON-safe capability availability snapshot."""
         self._ensure_plugins_loaded()
@@ -294,7 +321,7 @@ class CapabilityRegistry:
             "capabilities": {},
         }
 
-        for cap in ["voice", "audio", "vision"]:
+        for cap in ["voice", "audio", "vision", "music"]:
             regs = self._registrations.get(cap) or {}
             backends = sorted(
                 [
@@ -359,4 +386,12 @@ class _VisionFacade:
 
     def i2v(self, image: Any, **kwargs: Any) -> Any:
         return self._registry.get_vision().i2v(image, **kwargs)
+
+
+class _MusicFacade:
+    def __init__(self, registry: CapabilityRegistry) -> None:
+        self._registry = registry
+
+    def t2m(self, prompt: str, **kwargs: Any) -> Any:
+        return self._registry.get_music().t2m(prompt, **kwargs)
 

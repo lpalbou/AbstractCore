@@ -63,6 +63,17 @@ def test_missing_capability_raises_actionable_error(monkeypatch):
 
 
 @pytest.mark.basic
+def test_missing_music_capability_raises_actionable_error(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([]))
+
+    llm = _DummyProvider(model="dummy")
+    with pytest.raises(CapabilityUnavailableError) as e:
+        llm.music.t2m("hello")
+    assert "music:" in str(e.value)
+    assert "pip install abstractmusic" in str(e.value)
+
+
+@pytest.mark.basic
 def test_plugin_registration_and_backend_resolution(monkeypatch):
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_fake_plugin_ep()]))
 
@@ -70,6 +81,7 @@ def test_plugin_registration_and_backend_resolution(monkeypatch):
     assert llm.capabilities.status()["capabilities"]["voice"]["available"] is True
     assert llm.voice.tts("hello") == b"wav-bytes"
     assert llm.audio.transcribe(b"123") == "transcript"
+    assert llm.music.t2m("hello") == b"mp3-bytes"
 
 
 @pytest.mark.basic
@@ -101,6 +113,12 @@ def _make_fake_plugin_ep():
             def transcribe(self, audio, **kwargs):
                 return "transcript"
 
+        class _Music:
+            backend_id = "fake-music"
+
+            def t2m(self, prompt: str, **kwargs):
+                return b"mp3-bytes"
+
         registry.register_voice_backend(
             backend_id="fake-voice",
             factory=lambda _owner: _Voice(),
@@ -112,6 +130,12 @@ def _make_fake_plugin_ep():
             factory=lambda _owner: _Audio(),
             priority=0,
             description="Fake audio backend for tests",
+        )
+        registry.register_music_backend(
+            backend_id="fake-music",
+            factory=lambda _owner: _Music(),
+            priority=0,
+            description="Fake music backend for tests",
         )
 
     return _FakeEntryPoint(name="fake", value="tests.fake_plugin:register", obj=register)
