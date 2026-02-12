@@ -57,6 +57,15 @@ def test_generate_with_outputs_t2i(monkeypatch):
 
 
 @pytest.mark.basic
+def test_generate_with_outputs_t2m(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_plugin_ep()]))
+
+    llm = _DummyProvider(model="dummy")
+    res = llm.generate_with_outputs("hi", outputs={"t2m": {"format": "mp3"}})
+    assert res.outputs["t2m"] == b"mp3"
+
+
+@pytest.mark.basic
 def test_generate_with_outputs_stream_not_supported(monkeypatch):
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_plugin_ep()]))
 
@@ -91,8 +100,15 @@ def _make_plugin_ep():
             def i2v(self, image, **kwargs):
                 return b"mp4"
 
+        class _Music:
+            backend_id = "music"
+
+            def t2m(self, prompt: str, **kwargs):
+                return b"mp3"
+
         registry.register_voice_backend(backend_id="voice", factory=lambda _owner: _Voice())
         registry.register_vision_backend(backend_id="vision", factory=lambda _owner: _Vision())
+        registry.register_music_backend(backend_id="music", factory=lambda _owner: _Music())
 
     return _FakeEntryPoint(obj=register)
 

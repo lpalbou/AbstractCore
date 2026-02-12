@@ -971,3 +971,53 @@ class OpenAIProvider(BaseProvider):
 
         except Exception:
             return []
+
+    # ------------------------------------------------------------------
+    # Embeddings (OpenAI embeddings API)
+    # ------------------------------------------------------------------
+
+    def embed(self, input_text: Union[str, List[str]], **kwargs) -> Dict[str, Any]:
+        """Generate embeddings using the OpenAI embeddings API.
+
+        Args:
+            input_text: Single string or list of strings to embed.
+            **kwargs: Extra parameters forwarded to ``client.embeddings.create``
+                      (e.g. ``dimensions``, ``encoding_format``).
+
+        Returns:
+            Dict in OpenAI-compatible format (same shape as Ollama/LMStudio):
+            {
+                "object": "list",
+                "data": [{"object": "embedding", "embedding": [...], "index": 0}, ...],
+                "model": "text-embedding-3-small",
+                "usage": {"prompt_tokens": N, "total_tokens": N}
+            }
+        """
+        try:
+            texts = [input_text] if isinstance(input_text, str) else input_text
+
+            response = self.client.embeddings.create(
+                model=self.model,
+                input=texts,
+                **kwargs,
+            )
+
+            # The OpenAI SDK already returns the right shape; normalise to plain dicts.
+            return {
+                "object": "list",
+                "data": [
+                    {
+                        "object": "embedding",
+                        "embedding": item.embedding,
+                        "index": item.index,
+                    }
+                    for item in response.data
+                ],
+                "model": response.model,
+                "usage": {
+                    "prompt_tokens": response.usage.prompt_tokens,
+                    "total_tokens": response.usage.total_tokens,
+                },
+            }
+        except Exception as e:
+            raise ProviderAPIError(f"OpenAI embedding error: {str(e)}")

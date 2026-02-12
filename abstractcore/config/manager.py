@@ -29,11 +29,10 @@ class VisionConfig:
 @dataclass
 class AudioConfig:
     """Audio configuration settings (input policy + optional fallback)."""
-    # Default (smart):
-    # - If `abstractvoice` is installed, treat the implicit default as "auto" so audio attachments
-    #   work seamlessly with text-only models (STT fallback).
-    # - Otherwise default to "native_only" (error on text-only models unless caller opts in).
-    strategy: str = "native_only"  # native_only|speech_to_text|caption|auto
+    # Default: "auto" — use native audio when supported, otherwise fall back to STT via
+    # abstractvoice (if installed).  If abstractvoice is not installed, "auto" degrades
+    # gracefully to native-only behavior at runtime (no silent failure).
+    strategy: str = "auto"  # native_only|speech_to_text|caption|auto
     # Optional preferred STT backend (capabilities plugin backend_id).
     stt_backend_id: Optional[str] = None
     stt_language: Optional[str] = None
@@ -243,6 +242,7 @@ class ConfigurationManager:
         self.config_file = self.config_dir / "abstractcore.json"
         self.config = self._load_config()
         self._apply_smart_defaults()
+        self._apply_api_keys_to_env()
         self._provider_config: Dict[str, Dict[str, Any]] = {}  # Runtime config (not persisted)
 
     def _filter_dataclass_kwargs(self, cls, data: Any) -> Dict[str, Any]:
@@ -281,6 +281,35 @@ class ConfigurationManager:
         except Exception:
             # Never fail config initialization due to smart defaults.
             return
+
+    def _apply_api_keys_to_env(self) -> None:
+        """Inject config-persisted API keys into os.environ (if not already set).
+
+        Providers read API keys from environment variables (e.g. OPENAI_API_KEY).
+        This bridges the gap: keys saved via ``abstractcore --set-api-key`` are
+        written to the config JSON but must appear in os.environ for providers
+        to find them.
+
+        Rule: environment variables **always win** — we never overwrite a key
+        that is already set in the environment.  #FALLBACK: config-persisted
+        keys are injected only when the env var is absent.
+        """
+        _KEY_MAP = {
+            "openai": "OPENAI_API_KEY",
+            "anthropic": "ANTHROPIC_API_KEY",
+            "openrouter": "OPENROUTER_API_KEY",
+            "portkey": "PORTKEY_API_KEY",
+            "google": "GOOGLE_API_KEY",
+        }
+        try:
+            api_keys = self.config.api_keys
+            for attr, env_var in _KEY_MAP.items():
+                key = getattr(api_keys, attr, None)
+                if key and not os.environ.get(env_var):
+                    os.environ[env_var] = key
+        except Exception:
+            # Never fail config initialization.
+            pass
 
     def _load_config(self) -> AbstractCoreConfig:
         """Load configuration from file or create default."""

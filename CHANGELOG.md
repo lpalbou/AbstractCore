@@ -5,6 +5,33 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.0] - 2026-02-12
+
+### Added
+- **`--install` readiness check**: comprehensive check of all subsystems (default model, provider connectivity, embeddings model, vision fallback, STT/TTS models, ffmpeg, abstractvision, API keys). Reports ✅/⚠️/❌ for each area and offers to download/install missing models interactively. Use `--yes` (`-y`) to auto-accept all downloads for non-interactive environments (e.g. `abstractcore --install --yes`).
+- **Embeddings: 7 providers supported** (was 3). `EmbeddingManager` now accepts `openai`, `openrouter`, `portkey`, and `openai-compatible` in addition to the existing `huggingface`, `ollama`, and `lmstudio`. Added `OpenAIProvider.embed()` method; gateway providers (`OpenRouterProvider`, `PortkeyProvider`) already inherit `embed()` from `OpenAICompatibleProvider`. All server/cloud providers return embeddings in OpenAI-compatible format.
+- **Interactive config wizard (`--config`) — expanded to 7 steps**:
+  - Step 1: now asks for **base URL** when the selected provider is a local server (ollama, lmstudio, vllm, openai-compatible). Shows the env var name, current value if set, default URL, and prints the `export` command for shell persistence.
+  - Step 4 (NEW): **Audio strategy** — defaults to `auto` on Enter. Asks about `native_only` / `auto` / `speech_to_text` for audio attachment handling. Mentions `abstractvoice` dependency when needed.
+  - Step 5 (NEW): **Video strategy** — defaults to `auto` on Enter. Asks about `native_only` / `auto` / `frames_caption` for video attachment handling. Mentions `ffmpeg` dependency when needed.
+  - Step 6 (NEW): **Embeddings provider/model** — asks for embeddings configuration with examples across all 7 supported providers. Validates provider before saving.
+  - Step 7: Console logging verbosity (renumbered from step 4).
+
+### Changed
+- Interactive config wizard now covers all major configuration areas (model, base URL, vision, API keys, audio, video, embeddings, logging). Previously only covered model, vision, API keys, and logging.
+- **`--install` embeddings check**: now provider-aware — server-based providers (ollama, lmstudio, openai, openrouter, portkey, openai-compatible) check reachability or API key instead of trying to download via `sentence-transformers`. When `sentence-transformers` is missing, `--install` offers to `pip install "abstractcore[embeddings]"` and then download the model.
+
+### Fixed
+- **Audio strategy default changed from `native_only` to `auto`**: the `AudioConfig.strategy` default was `native_only`, which caused audio attachments to fail on text-only models unless the user explicitly configured it. Changed to `auto` (matching `VideoConfig.strategy` which was already `auto`). With `auto`, audio works seamlessly when `abstractvoice` is installed (STT fallback) and raises a clear error with install hints when it is not.
+- **Config-persisted API keys now injected into environment**: API keys saved via `abstractcore --set-api-key` (or `--config`) were stored in `~/.abstractcore/config/abstractcore.json` but providers only read from `os.environ` (e.g. `OPENAI_API_KEY`). Added `_apply_api_keys_to_env()` to bridge config-persisted keys into the environment at config load time. Environment variables always take precedence (config keys are injected only when the env var is absent).
+- **`--install` TTS/STT severity**: failed model downloads are now reported as `⚠️` (warning) instead of `❌` (critical) since TTS/STT are optional subsystems.
+- **`--install` TTS/STT verification**: download results are now verified by re-checking the filesystem instead of trusting the subprocess exit code (some prefetch commands exit 0 even on failure).
+
+## [2.11.9] - 2026-02-09
+
+### Changed
+- Documentation and internal improvements.
+
 ## [2.11.8] - 2026-02-08
 
 ### Added

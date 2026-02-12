@@ -36,9 +36,12 @@ Usage:
     abstractcore --set-api-key portkey pk_...
 """
 
+import os
 import sys
 import argparse
 import logging
+import shutil
+import subprocess
 from pathlib import Path
 from typing import List, Optional
 
@@ -190,6 +193,16 @@ def add_arguments(parser: argparse.ArgumentParser):
     )
     general_group.add_argument("--reset", action="store_true",
                               help="Reset all configuration to built-in defaults")
+    general_group.add_argument(
+        "--install",
+        action="store_true",
+        help="Check all subsystems and download/install missing models and dependencies",
+    )
+    general_group.add_argument(
+        "--yes", "-y",
+        action="store_true",
+        help="Auto-accept all downloads during --install (non-interactive)",
+    )
 
     # Model configuration group
     model_group = parser.add_argument_group('Model Configuration')
@@ -634,6 +647,36 @@ def interactive_configure():
             config_manager.set_default_model(model)
             print(f"✅ Set default model to: {model}")
 
+            # Determine the provider from the model string.
+            if "/" in model:
+                selected_provider = model.split("/", 1)[0].lower()
+            else:
+                selected_provider = "ollama"
+
+            # For local providers, the base URL matters — ask about it.
+            # These are the providers where the server address is user-configurable.
+            _LOCAL_PROVIDER_ENV_VARS = {
+                "ollama": ("OLLAMA_BASE_URL", "http://localhost:11434"),
+                "lmstudio": ("LMSTUDIO_BASE_URL", "http://localhost:1234/v1"),
+                "vllm": ("VLLM_BASE_URL", "http://localhost:8000/v1"),
+                "openai-compatible": ("OPENAI_COMPATIBLE_BASE_URL", "http://localhost:1234/v1"),
+            }
+            if selected_provider in _LOCAL_PROVIDER_ENV_VARS:
+                env_var, default_url = _LOCAL_PROVIDER_ENV_VARS[selected_provider]
+                current_url = os.environ.get(env_var, "")
+                if current_url:
+                    print(f"   ℹ️  {env_var} is already set to: {current_url}")
+                else:
+                    print(f"   ℹ️  {selected_provider} uses env var {env_var} (default: {default_url})")
+                    base_url = input(f"   Enter base URL for {selected_provider} (or press Enter for default): ").strip()
+                    if base_url:
+                        os.environ[env_var] = base_url
+                        print(f"   ✅ Set {env_var}={base_url} (current session)")
+                        print(f"   💡 To make this permanent, add to your shell profile:")
+                        print(f'      export {env_var}="{base_url}"')
+                    else:
+                        print(f"   ✅ Using default: {default_url}")
+
     # Ask about vision
     print("\n2. Vision Fallback Setup")
     vision_choice = input("Configure vision fallback for text-only models? [y/N]: ").lower().strip()
@@ -668,8 +711,76 @@ def interactive_configure():
                 config_manager.set_api_key(provider, key)
                 print(f"✅ Set {provider} API key")
 
+    # Ask about audio strategy (voice/STT fallback for audio attachments)
+    print("\n4. Audio Strategy (voice/STT fallback)")
+    print("How should AbstractCore handle audio attachments with text-only models?")
+    print("  auto           — native when supported, otherwise STT via abstractvoice (recommended)")
+    print("  speech_to_text — always transcribe via abstractvoice")
+    print("  native_only    — only models with native audio support (no fallback)")
+    audio_choice = input("Audio strategy [auto]: ").strip().lower()
+    if not audio_choice:
+        audio_choice = "auto"
+    if audio_choice in ("native_only", "auto", "speech_to_text"):
+        config_manager.set_audio_strategy(audio_choice)
+        print(f"✅ Set audio strategy to: {audio_choice}")
+        if audio_choice in ("auto", "speech_to_text"):
+            print("   💡 Requires: pip install abstractvoice")
+    else:
+        print("⚠️  Invalid choice; keeping existing audio strategy.")
+
+    # Ask about video strategy (frame fallback for video attachments)
+    print("\n5. Video Strategy (frame fallback)")
+    print("How should AbstractCore handle video attachments?")
+    print("  auto           — native when supported, otherwise sample frames via ffmpeg (recommended)")
+    print("  frames_caption — always sample frames via ffmpeg")
+    print("  native_only    — only models with native video support (no fallback)")
+    video_choice = input("Video strategy [auto]: ").strip().lower()
+    if not video_choice:
+        video_choice = "auto"
+    if video_choice in ("native_only", "auto", "frames_caption"):
+        config_manager.set_video_strategy(video_choice)
+        print(f"✅ Set video strategy to: {video_choice}")
+        if video_choice in ("auto", "frames_caption"):
+            print("   💡 Requires: ffmpeg/ffprobe on PATH + a vision-capable model or vision fallback")
+    else:
+        print("⚠️  Invalid choice; keeping existing video strategy.")
+
+    # Ask about embeddings provider/model
+    print("\n6. Embeddings Setup")
+    print("Embeddings are used for semantic search, RAG pipelines, and knowledge graph retrieval.")
+    print("Supported: huggingface (local), ollama, lmstudio, openai, openrouter, portkey, openai-compatible.")
+    emb_choice = input("Configure embeddings provider/model? [y/N]: ").lower().strip()
+    if emb_choice == 'y':
+        print("Examples:")
+        print("  huggingface/all-minilm-l6-v2          (local, lightweight, default)")
+        print("  huggingface/BAAI/bge-small-en-v1.5    (local, good quality)")
+        print("  ollama/nomic-embed-text               (local, via Ollama server)")
+        print("  lmstudio/<embedding-model>            (local, via LMStudio server)")
+        print("  openai/text-embedding-3-small         (cloud, requires API key)")
+        print("  openrouter/<embedding-model>          (cloud, via OpenRouter gateway)")
+        print("  portkey/<embedding-model>             (cloud, via Portkey gateway)")
+        print("  openai-compatible/<model>             (any OpenAI-compatible endpoint)")
+        emb_model = input("Enter embeddings model (provider/model format, or press Enter to keep default): ").strip()
+        if emb_model:
+            # Validate the provider before saving
+            if "/" in emb_model:
+                emb_prov = emb_model.split("/", 1)[0].lower()
+            else:
+                emb_prov = "huggingface"
+            _valid_emb_provs = ("huggingface", "ollama", "lmstudio", "openai",
+                                "openrouter", "portkey", "openai-compatible")
+            if emb_prov not in _valid_emb_provs:
+                print(f"⚠️  Provider '{emb_prov}' is not supported for embeddings.")
+                print(f"   Supported: {', '.join(_valid_emb_provs)}")
+                print(f"   Keeping current config.")
+            else:
+                config_manager.set_embeddings_model(emb_model)
+                print(f"✅ Set embeddings model to: {emb_model}")
+        else:
+            print("   ✅ Keeping default: huggingface/all-minilm-l6-v2")
+
     # Ask about console log verbosity
-    print("\n4. Console Logging Verbosity")
+    print("\n7. Console Logging Verbosity")
     print("Choose console verbosity level:")
     print("  none | error | warning | info | debug")
     level = input("Console log level [error]: ").strip().lower()
@@ -690,6 +801,408 @@ def interactive_configure():
 
     print("\n✅ Configuration complete! Run 'abstractcore --status' to see current settings.")
 
+
+# ---------------------------------------------------------------------------
+# Preflight: comprehensive readiness check
+# ---------------------------------------------------------------------------
+
+def _ask_yes(prompt: str, auto_accept: bool) -> bool:
+    """Ask a yes/no question. If *auto_accept*, return True without prompting."""
+    if auto_accept:
+        print(f"{prompt} → auto-accepted (--yes)")
+        return True
+    answer = input(f"{prompt} [y/N]: ").strip().lower()
+    return answer in ("y", "yes")
+
+
+def install_check(auto_accept: bool = False) -> None:
+    """Check all subsystems and download/install missing models and dependencies.
+
+    For each area, report ✅ (ready), ⚠️ (degraded but functional),
+    or ❌ (missing / broken).  When a gap is fixable (download, prefetch),
+    offer to fix it — or auto-fix if *auto_accept* is True.
+    """
+    if not CONFIG_AVAILABLE or get_config_manager is None:
+        print("❌ Configuration system not available — cannot run preflight.")
+        return
+
+    config_manager = get_config_manager()
+    status = config_manager.get_status()
+
+    print("📦 AbstractCore Install Check")
+    print("=" * 60)
+
+    total = 0
+    passed = 0
+    warnings = 0
+    failed = 0
+    actions: list[str] = []  # summary of actions taken
+
+    def _pass(label: str, detail: str = ""):
+        nonlocal total, passed
+        total += 1
+        passed += 1
+        suffix = f" — {detail}" if detail else ""
+        print(f"  ✅ {label}{suffix}")
+
+    def _warn(label: str, detail: str = ""):
+        nonlocal total, warnings
+        total += 1
+        warnings += 1
+        suffix = f" — {detail}" if detail else ""
+        print(f"  ⚠️  {label}{suffix}")
+
+    def _fail(label: str, detail: str = ""):
+        nonlocal total, failed
+        total += 1
+        failed += 1
+        suffix = f" — {detail}" if detail else ""
+        print(f"  ❌ {label}{suffix}")
+
+    # ------------------------------------------------------------------
+    # 1. Default model configured
+    # ------------------------------------------------------------------
+    print("\n┌─ 1. Default Model")
+    defaults = status["global_defaults"]
+    if defaults["provider"] and defaults["model"]:
+        _pass("Default model", f"{defaults['provider']}/{defaults['model']}")
+    else:
+        _fail("Default model", "not configured")
+        print("     💡 Fix: abstractcore --config  (step 1)")
+
+    # ------------------------------------------------------------------
+    # 2. Provider reachable (for local providers, quick HTTP probe)
+    # ------------------------------------------------------------------
+    print("\n┌─ 2. Provider Connectivity")
+    provider = (defaults.get("provider") or "").lower()
+    _PROVIDER_HEALTH_URLS = {
+        "ollama": (os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"), "/"),
+        "lmstudio": (os.environ.get("LMSTUDIO_BASE_URL", "http://localhost:1234/v1"), "/models"),
+        "vllm": (os.environ.get("VLLM_BASE_URL", "http://localhost:8000/v1"), "/models"),
+    }
+    if provider in _PROVIDER_HEALTH_URLS:
+        base, path = _PROVIDER_HEALTH_URLS[provider]
+        url = f"{base.rstrip('/')}{path}"
+        try:
+            import httpx
+            resp = httpx.get(url, timeout=3.0)
+            if resp.status_code < 500:
+                _pass(f"{provider} reachable", url)
+            else:
+                _warn(f"{provider} responded {resp.status_code}", url)
+        except Exception as exc:
+            _fail(f"{provider} unreachable", f"{url} ({type(exc).__name__})")
+            print(f"     💡 Ensure your {provider} server is running.")
+    elif provider in ("openai", "anthropic", "openrouter", "portkey", "google"):
+        # Cloud providers — check API key instead of connectivity
+        api_keys = status.get("api_keys", {})
+        key_status = api_keys.get(provider, "")
+        if "✅" in key_status:
+            _pass(f"{provider} API key", "configured")
+        else:
+            _fail(f"{provider} API key", "missing")
+            print(f"     💡 Fix: abstractcore --set-api-key {provider} <YOUR_KEY>")
+    elif provider:
+        _warn(f"{provider}", "connectivity check not implemented for this provider")
+    else:
+        _warn("Provider", "no default provider configured")
+
+    # ------------------------------------------------------------------
+    # 3. Embeddings model
+    # ------------------------------------------------------------------
+    print("\n┌─ 3. Embeddings")
+    emb_cfg = status.get("embeddings", {})
+    emb_model = emb_cfg.get("model", "all-minilm-l6-v2")
+    emb_provider = (emb_cfg.get("provider") or "huggingface").lower()
+
+    # Supported embeddings providers (source of truth: EmbeddingManager.__init__ in
+    # abstractcore/embeddings/manager.py).
+    # Server-based providers: the model is served remotely — no local download needed.
+    _SERVER_EMB_PROVIDERS = {"lmstudio", "ollama", "openai", "openrouter", "portkey", "openai-compatible"}
+
+    _SUPPORTED_EMB_PROVIDERS = {"huggingface", "ollama", "lmstudio", "openai",
+                                "openrouter", "portkey", "openai-compatible"}
+
+    if emb_provider not in _SUPPORTED_EMB_PROVIDERS:
+        _fail("Embeddings provider", f"'{emb_provider}' is not supported for embeddings")
+        print(f"     💡 Supported providers: {', '.join(sorted(_SUPPORTED_EMB_PROVIDERS))}")
+        print(f"     💡 Fix: abstractcore --set-embeddings-model <provider>/<model>")
+        print(f"     💡 Examples: huggingface/all-minilm-l6-v2, ollama/nomic-embed-text, openai/text-embedding-3-small")
+    elif emb_provider in _SERVER_EMB_PROVIDERS:
+        _pass("Embeddings provider", f"{emb_provider}/{emb_model} (served by {emb_provider})")
+        # Quick reachability probe for local servers
+        _EMB_SERVER_URLS = {
+            "ollama": os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+            "lmstudio": os.environ.get("LMSTUDIO_BASE_URL", "http://localhost:1234/v1"),
+        }
+        if emb_provider in _EMB_SERVER_URLS:
+            base = _EMB_SERVER_URLS[emb_provider]
+            try:
+                import httpx
+                resp = httpx.get(f"{base.rstrip('/')}/models", timeout=3.0)
+                if resp.status_code < 500:
+                    _pass(f"Embeddings server ({emb_provider})", f"reachable at {base}")
+                else:
+                    _warn(f"Embeddings server ({emb_provider})", f"responded {resp.status_code} at {base}")
+            except Exception:
+                _warn(f"Embeddings server ({emb_provider})", f"unreachable at {base} — ensure it is running")
+        elif emb_provider in ("openai", "openrouter", "portkey"):
+            # Cloud provider — check API key
+            api_keys = status.get("api_keys", {})
+            key_status = api_keys.get(emb_provider, "")
+            if "✅" in key_status:
+                _pass(f"{emb_provider} API key (for embeddings)", "configured")
+            else:
+                _warn(f"{emb_provider} API key (for embeddings)", f"not set — required for {emb_provider} embeddings")
+                print(f"     💡 Fix: abstractcore --set-api-key {emb_provider} <YOUR_KEY>")
+    else:
+        # HuggingFace / local provider: needs sentence-transformers + a downloaded model.
+        try:
+            import importlib.util
+            st_available = importlib.util.find_spec("sentence_transformers") is not None
+        except Exception:
+            st_available = False
+
+        if st_available:
+            # Check if the model is cached locally
+            model_cached = False
+            try:
+                cache_dir = Path(os.environ.get(
+                    "SENTENCE_TRANSFORMERS_HOME",
+                    os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface"),
+                ))
+                hub_dir = cache_dir / "hub"
+                model_slug = emb_model.replace("/", "--")
+                if hub_dir.exists():
+                    candidates = list(hub_dir.glob(f"models--*{model_slug}*"))
+                    model_cached = len(candidates) > 0
+            except Exception:
+                pass
+
+            if model_cached:
+                _pass("Embeddings model", f"{emb_provider}/{emb_model} (cached)")
+            else:
+                _warn("Embeddings model", f"{emb_provider}/{emb_model} (not cached — will download on first use)")
+                if _ask_yes("     Download embeddings model now?", auto_accept):
+                    try:
+                        print(f"     ⏳ Downloading {emb_model}...")
+                        from sentence_transformers import SentenceTransformer
+                        SentenceTransformer(emb_model)
+                        _pass("Embeddings model", f"{emb_model} downloaded ✅")
+                        actions.append(f"Downloaded embeddings model: {emb_model}")
+                    except Exception as exc:
+                        _warn("Embeddings download", str(exc))
+        else:
+            _warn("Embeddings", f"sentence-transformers not installed ({emb_provider}/{emb_model} configured)")
+            if _ask_yes('     Install embeddings dependencies now? (pip install "abstractcore[embeddings]")', auto_accept):
+                try:
+                    print('     ⏳ Running: pip install "abstractcore[embeddings]"')
+                    subprocess.run(
+                        [sys.executable, "-m", "pip", "install", "abstractcore[embeddings]"],
+                        check=True,
+                    )
+                    _pass("Embeddings deps", "installed ✅")
+                    actions.append("Installed abstractcore[embeddings]")
+                    # Now try to download the model too
+                    if _ask_yes(f"     Download embeddings model ({emb_model}) now?", auto_accept):
+                        try:
+                            print(f"     ⏳ Downloading {emb_model}...")
+                            from sentence_transformers import SentenceTransformer
+                            SentenceTransformer(emb_model)
+                            _pass("Embeddings model", f"{emb_model} downloaded ✅")
+                            actions.append(f"Downloaded embeddings model: {emb_model}")
+                        except Exception as exc:
+                            _warn("Embeddings download", str(exc))
+                except Exception as exc:
+                    _warn("Embeddings install", str(exc))
+
+    # ------------------------------------------------------------------
+    # 4. Vision fallback
+    # ------------------------------------------------------------------
+    print("\n┌─ 4. Vision Fallback")
+    vision = status.get("vision", {})
+    vision_strategy = vision.get("strategy", "disabled")
+    if vision_strategy != "disabled" and vision.get("caption_provider") and vision.get("caption_model"):
+        _pass("Vision fallback", f"{vision['caption_provider']}/{vision['caption_model']}")
+    elif vision_strategy == "disabled":
+        _warn("Vision fallback", "disabled (image input on text-only models will fail)")
+        print("     💡 Fix: abstractcore --set-vision-provider <PROVIDER> <MODEL>")
+        print("     💡  Or: abstractcore --download-vision-model  (local offline model)")
+        if _ask_yes("     Download a local vision model (blip-base-caption, ~1GB)?", auto_accept):
+            success = download_vision_model("blip-base-caption")
+            if success:
+                actions.append("Downloaded local vision model: blip-base-caption")
+    else:
+        _warn("Vision fallback", f"strategy={vision_strategy} but model not fully configured")
+
+    # ------------------------------------------------------------------
+    # 5. Audio / Voice (STT + TTS via abstractvoice)
+    # ------------------------------------------------------------------
+    print("\n┌─ 5. Voice & Audio")
+    try:
+        import importlib.util
+        av_available = importlib.util.find_spec("abstractvoice") is not None
+    except Exception:
+        av_available = False
+
+    if av_available:
+        _pass("abstractvoice", "installed")
+
+        # Check STT model (faster-whisper)
+        stt_ready = False
+        try:
+            # faster-whisper caches under HF cache; check for a small model
+            hf_cache = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface"))
+            hub = hf_cache / "hub"
+            if hub.exists():
+                stt_candidates = list(hub.glob("models--Systran--faster-whisper-*"))
+                stt_ready = len(stt_candidates) > 0
+        except Exception:
+            pass
+
+        if stt_ready:
+            _pass("STT model (faster-whisper)", "cached")
+        else:
+            _warn("STT model (faster-whisper)", "not prefetched")
+            if _ask_yes("     Prefetch STT model (small, ~500MB)?", auto_accept):
+                try:
+                    print("     ⏳ Running: abstractvoice-prefetch --stt small")
+                    subprocess.run(
+                        [sys.executable, "-m", "abstractvoice", "download", "--stt", "small"],
+                        check=False,  # command may exit 0 even on failure
+                    )
+                    # Re-check filesystem — don't trust exit code alone
+                    stt_rechecked = False
+                    try:
+                        if hub.exists():
+                            stt_rechecked = len(list(hub.glob("models--Systran--faster-whisper-*"))) > 0
+                    except Exception:
+                        pass
+                    if stt_rechecked:
+                        _pass("STT model", "prefetched ✅")
+                        actions.append("Prefetched STT model: small")
+                    else:
+                        _warn("STT prefetch", "download failed — model not found in HF cache (network issue?)")
+                except Exception as exc:
+                    _warn("STT prefetch", f"download failed ({exc})")
+
+        # Check TTS model (Piper)
+        piper_dir = Path.home() / ".piper" / "models"
+        piper_has_models = piper_dir.exists() and any(piper_dir.glob("*.onnx"))
+        if piper_has_models:
+            _pass("TTS model (Piper)", "voice models found")
+        else:
+            _warn("TTS model (Piper)", "no voice models prefetched")
+            if _ask_yes("     Prefetch Piper English voice (~50MB)?", auto_accept):
+                try:
+                    print("     ⏳ Running: abstractvoice-prefetch --piper en")
+                    subprocess.run(
+                        [sys.executable, "-m", "abstractvoice", "download", "--piper", "en"],
+                        check=False,  # command may exit 0 even on failure
+                    )
+                    # Re-check filesystem — don't trust exit code alone
+                    piper_has_models = piper_dir.exists() and any(piper_dir.glob("*.onnx"))
+                    if piper_has_models:
+                        _pass("TTS model", "prefetched ✅")
+                        actions.append("Prefetched TTS voice: en")
+                    else:
+                        _warn("TTS prefetch", "download failed — no .onnx model found in ~/.piper/models/ (network issue?)")
+                except Exception as exc:
+                    _warn("TTS prefetch", f"download failed ({exc})")
+    else:
+        _warn("abstractvoice", "not installed (TTS/STT unavailable)")
+        print('     💡 Fix: pip install abstractvoice')
+        print('     💡 Then: abstractvoice-prefetch --stt small --piper en')
+
+    # Audio strategy
+    audio = status.get("audio", {})
+    audio_strategy = (audio.get("strategy") or "native_only").strip().lower()
+    if audio_strategy in ("auto", "speech_to_text") and av_available:
+        _pass("Audio strategy", audio_strategy)
+    elif audio_strategy in ("auto", "speech_to_text") and not av_available:
+        _fail("Audio strategy", f"{audio_strategy} configured but abstractvoice not installed")
+    else:
+        _warn("Audio strategy", f"{audio_strategy} (audio attachments limited to native-capable models)")
+
+    # ------------------------------------------------------------------
+    # 6. Video (ffmpeg)
+    # ------------------------------------------------------------------
+    print("\n┌─ 6. Video Processing")
+    ffmpeg_path = shutil.which("ffmpeg")
+    ffprobe_path = shutil.which("ffprobe")
+    if ffmpeg_path and ffprobe_path:
+        _pass("ffmpeg + ffprobe", "found on PATH")
+    elif ffmpeg_path:
+        _warn("ffprobe", "not found on PATH (video frame extraction may fail)")
+    else:
+        _warn("ffmpeg", "not found on PATH (video frame fallback unavailable)")
+        print("     💡 Install ffmpeg: https://ffmpeg.org/download.html")
+        print("     💡 macOS: brew install ffmpeg")
+        print("     💡 Ubuntu: sudo apt install ffmpeg")
+
+    video = status.get("video", {})
+    video_strategy = (video.get("strategy") or "auto").strip().lower()
+    if video_strategy in ("auto", "frames_caption"):
+        if ffmpeg_path:
+            _pass("Video strategy", video_strategy)
+        else:
+            _warn("Video strategy", f"{video_strategy} but ffmpeg not available")
+    else:
+        _warn("Video strategy", f"{video_strategy} (video input limited to native-capable models)")
+
+    # ------------------------------------------------------------------
+    # 7. Image generation (abstractvision — optional)
+    # ------------------------------------------------------------------
+    print("\n┌─ 7. Image Generation (optional)")
+    try:
+        import importlib.util
+        avis_available = importlib.util.find_spec("abstractvision") is not None
+    except Exception:
+        avis_available = False
+
+    if avis_available:
+        _pass("abstractvision", "installed")
+    else:
+        _warn("abstractvision", "not installed (image generation unavailable)")
+        print('     💡 Fix: pip install abstractvision')
+
+    # ------------------------------------------------------------------
+    # 8. API keys summary
+    # ------------------------------------------------------------------
+    print("\n┌─ 8. API Keys")
+    api_keys = status.get("api_keys", {})
+    has_any_key = False
+    for prov, key_status in api_keys.items():
+        if "✅" in key_status:
+            _pass(f"{prov} key", "configured")
+            has_any_key = True
+        else:
+            _warn(f"{prov} key", "not set")
+    if not has_any_key:
+        print("     ℹ️  No cloud API keys configured (local-only usage is fine)")
+        print("     💡 Fix: abstractcore --set-api-key <provider> <key>")
+
+    # ------------------------------------------------------------------
+    # Summary
+    # ------------------------------------------------------------------
+    print("\n" + "=" * 60)
+    print(f"📦 Install Summary: {passed} passed, {warnings} warnings, {failed} failed  (total: {total})")
+
+    if actions:
+        print("\n📋 Actions taken:")
+        for action in actions:
+            print(f"   • {action}")
+
+    if failed == 0 and warnings == 0:
+        print("\n🟢 All systems ready!")
+    elif failed == 0:
+        print(f"\n🟡 Functional with {warnings} warning(s). Run 'abstractcore --status' for details.")
+    else:
+        print(f"\n🔴 {failed} critical issue(s). Fix them and re-run 'abstractcore --install'.")
+
+    print()
+
+
 def handle_commands(args) -> bool:
     """Handle AbstractCore configuration commands."""
     if not CONFIG_AVAILABLE or get_config_manager is None:
@@ -708,6 +1221,10 @@ def handle_commands(args) -> bool:
 
     if args.configure:
         interactive_configure()
+        handled = True
+
+    if args.install:
+        install_check(auto_accept=args.yes)
         handled = True
 
     if args.reset:
@@ -1029,7 +1546,9 @@ def main(argv: List[str] = None):
         epilog="""
 QUICK START:
   abstractcore --status                           # Show current configuration
-  abstractcore --configure                       # Interactive guided setup
+  abstractcore --configure                       # Interactive guided setup (7 steps)
+  abstractcore --install                          # Check & install missing models/deps
+  abstractcore --install --yes                   # Auto-download everything that's missing
 
 COMMON TASKS:
   # Set default model for all apps

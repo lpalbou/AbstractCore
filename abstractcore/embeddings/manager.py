@@ -106,9 +106,13 @@ class EmbeddingManager:
     - HuggingFace (default): Local sentence-transformers models with ONNX acceleration
     - Ollama: Local embedding models via Ollama API
     - LMStudio: Local embedding models via LMStudio API
+    - OpenAI: Cloud embedding models via OpenAI API (text-embedding-3-small, etc.)
+    - OpenRouter: Cloud embedding models via OpenRouter gateway
+    - Portkey: Cloud embedding models via Portkey AI gateway
+    - OpenAI-compatible: Any OpenAI-compatible embedding endpoint
 
     Features:
-    - Multi-provider support (HuggingFace, Ollama, LMStudio)
+    - Multi-provider support (HuggingFace, Ollama, LMStudio, OpenAI, OpenRouter, Portkey, OpenAI-compatible)
     - Smart two-layer caching (memory + disk) across all providers
     - ONNX backend for 2-3x faster inference (HuggingFace)
     - Matryoshka dimension truncation (when supported)
@@ -133,7 +137,8 @@ class EmbeddingManager:
         Args:
             model: Model identifier (HuggingFace model ID for HF provider, model name for others).
                   If None, uses configured default from AbstractCore config system.
-            provider: Embedding provider ('huggingface', 'ollama', 'lmstudio').
+            provider: Embedding provider ('huggingface', 'ollama', 'lmstudio', 'openai',
+                     'openrouter', 'portkey', 'openai-compatible').
                      If None, uses configured default from AbstractCore config system.
             backend: Inference backend for HuggingFace ('auto', 'pytorch', 'onnx', 'openvino')
             cache_dir: Directory for persistent cache. Defaults to ~/.abstractcore/embeddings
@@ -154,8 +159,15 @@ class EmbeddingManager:
         self.provider = self._resolved_provider.lower()
         
         # Validate provider
-        if self.provider not in ["huggingface", "ollama", "lmstudio"]:
-            raise ValueError(f"Unsupported provider: {provider}. Supported: huggingface, ollama, lmstudio")
+        _SUPPORTED_EMB_PROVIDERS = [
+            "huggingface", "ollama", "lmstudio", "openai",
+            "openrouter", "portkey", "openai-compatible",
+        ]
+        if self.provider not in _SUPPORTED_EMB_PROVIDERS:
+            raise ValueError(
+                f"Unsupported provider: {provider}. "
+                f"Supported: {', '.join(_SUPPORTED_EMB_PROVIDERS)}"
+            )
         
         # Initialize provider-specific attributes
         self.model_config = None
@@ -187,7 +199,7 @@ class EmbeddingManager:
                 elif output_dims not in self.model_config.matryoshka_dims:
                     logger.warning(f"Dimension {output_dims} not in supported dims {self.model_config.matryoshka_dims}")
         else:
-            # Ollama or LMStudio provider
+            # Server-based provider (Ollama, LMStudio, OpenAI)
             if self._resolved_model is None:
                 raise ValueError(f"Model name is required for {self.provider} provider")
 
@@ -204,6 +216,22 @@ class EmbeddingManager:
                 from ..providers.lmstudio_provider import LMStudioProvider
                 self._provider_instance = LMStudioProvider(model=self._resolved_model)
                 logger.info(f"Initialized LMStudio embedding provider with model: {self._resolved_model}")
+            elif self.provider == "openai":
+                from ..providers.openai_provider import OpenAIProvider
+                self._provider_instance = OpenAIProvider(model=self._resolved_model)
+                logger.info(f"Initialized OpenAI embedding provider with model: {self._resolved_model}")
+            elif self.provider == "openrouter":
+                from ..providers.openrouter_provider import OpenRouterProvider
+                self._provider_instance = OpenRouterProvider(model=self._resolved_model)
+                logger.info(f"Initialized OpenRouter embedding provider with model: {self._resolved_model}")
+            elif self.provider == "portkey":
+                from ..providers.portkey_provider import PortkeyProvider
+                self._provider_instance = PortkeyProvider(model=self._resolved_model)
+                logger.info(f"Initialized Portkey embedding provider with model: {self._resolved_model}")
+            elif self.provider == "openai-compatible":
+                from ..providers.openai_compatible_provider import OpenAICompatibleProvider
+                self._provider_instance = OpenAICompatibleProvider(model=self._resolved_model)
+                logger.info(f"Initialized OpenAI-compatible embedding provider with model: {self._resolved_model}")
 
         # Common setup for all providers
         self.cache_dir = Path(cache_dir) if cache_dir else Path.home() / ".abstractcore" / "embeddings"
