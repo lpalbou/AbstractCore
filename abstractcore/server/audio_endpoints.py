@@ -7,7 +7,9 @@ These endpoints are intentionally dependency-light:
 
 Endpoints:
 - POST /v1/audio/transcriptions (multipart; STT)
+- POST /v1/audio/translations (multipart; not yet supported)
 - POST /v1/audio/speech (json; TTS)
+- POST /v1/audio/music (json; text-to-music via capability plugins)
 """
 
 from __future__ import annotations
@@ -98,6 +100,20 @@ async def audio_transcriptions(request: Request):
     return {"text": str(text or "").strip()}
 
 
+@router.post("/audio/translations")
+async def audio_translations(_: Request):
+    """OpenAI-compatible audio translations endpoint.
+
+    AbstractCore's capability contract currently does not expose a translation operation.
+    Return 501 with actionable messaging instead of silently falling back to transcription.
+    """
+
+    raise HTTPException(
+        status_code=501,
+        detail="audio/translations is not supported by AbstractCore Server (v1). Use /v1/audio/transcriptions instead.",
+    )
+
+
 @router.post("/audio/speech")
 async def audio_speech(request: Request):
     """OpenAI-compatible TTS endpoint (json with input text)."""
@@ -137,3 +153,53 @@ async def audio_speech(request: Request):
         )
 
     return Response(content=bytes(audio), media_type=f"audio/{fmt}")
+
+
+@router.post("/audio/music")
+async def audio_music(request: Request):
+    """Text-to-music endpoint (extension; no official OpenAI equivalent).
+
+    Delegates to the `music` capability plugin (typically `abstractmusic`).
+    Returns raw audio bytes (WAV baseline).
+    """
+
+    try:
+        payload = await request.json()
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid JSON body: {e}") from e
+
+    data = _require_dict(payload, where="/v1/audio/music")
+
+    prompt = data.get("prompt")
+    if prompt is None:
+        prompt = data.get("input")
+    if prompt is None:
+        prompt = data.get("text")
+    if not isinstance(prompt, str) or not prompt.strip():
+        raise HTTPException(status_code=422, detail="Missing required field: prompt (string)")
+
+    lyrics = data.get("lyrics")
+    lyrics = str(lyrics) if isinstance(lyrics, str) else None
+
+    fmt = data.get("format")
+    if fmt is None:
+        fmt = data.get("response_format")
+    fmt = str(fmt).strip().lower() if isinstance(fmt, str) and fmt.strip() else "wav"
+    if fmt != "wav":
+        raise HTTPException(status_code=422, detail="Only format='wav' is supported for /v1/audio/music (v1).")
+
+    # Forward extra knobs (best-effort).
+    kwargs = {k: v for k, v in data.items() if k not in {"prompt", "input", "text", "lyrics", "format", "response_format"}}
+
+    core = _get_capability_core()
+    try:
+        audio = core.music.t2m(str(prompt), lyrics=lyrics, format=fmt, **kwargs)
+    except CapabilityUnavailableError as e:
+        raise HTTPException(status_code=501, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Music generation failed: {e}") from e
+
+    if not isinstance(audio, (bytes, bytearray)):
+        raise HTTPException(status_code=500, detail="Music backend returned an unexpected type (expected raw bytes).")
+
+    return Response(content=bytes(audio), media_type="audio/wav")

@@ -119,6 +119,23 @@ class AbstractCoreInterface(ABC):
             if isinstance(stt_backend_id, str) and stt_backend_id.strip():
                 merged_prefs["audio"] = stt_backend_id.strip()
 
+            # Convenience per-instance config (e.g. create_llm(..., music_backend="diffusers")).
+            # This maps human-friendly aliases to concrete backend_ids registered by plugins.
+            try:
+                mb = self.config.get("music_backend")
+            except Exception:
+                mb = None
+            if isinstance(mb, str) and mb.strip():
+                mbs = mb.strip()
+                mbs_l = mbs.lower()
+                if mbs_l in {"diffusers"}:
+                    merged_prefs["music"] = "abstractmusic:diffusers"
+                elif mbs_l in {"acestep", "ace-step", "acestep_v15", "acestep-v15"}:
+                    merged_prefs["music"] = "abstractmusic:acestep-v15"
+                else:
+                    # If caller already provided a concrete backend_id, accept as-is.
+                    merged_prefs["music"] = mbs
+
             # Per-instance explicit preferences — highest precedence.
             if isinstance(explicit_prefs, dict):
                 for k, v in explicit_prefs.items():
@@ -220,7 +237,7 @@ class AbstractCoreInterface(ABC):
             out["t2m"] = self.music.t2m(
                 str(music_prompt),
                 lyrics=t2m_cfg.get("lyrics"),
-                format=str(t2m_cfg.get("format") or "mp3"),
+                format=str(t2m_cfg.get("format") or "wav"),
                 artifact_store=artifact_store,
                 run_id=t2m_cfg.get("run_id"),
                 tags=t2m_cfg.get("tags"),

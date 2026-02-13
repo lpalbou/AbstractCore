@@ -21,7 +21,9 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/v1/images/generations` | POST | Image generation (optional) | `prompt`, `model` |
 | `/v1/images/edits` | POST | Image editing (optional) | `prompt`, `image`, `mask` |
 | `/v1/audio/transcriptions` | POST | Speech-to-text (optional) | `file` (multipart) |
+| `/v1/audio/translations` | POST | Audio translations (not yet supported) | - |
 | `/v1/audio/speech` | POST | Text-to-speech (optional) | `input`, `voice`, `format` |
+| `/v1/audio/music` | POST | Text-to-music (optional) | `prompt`, `format` |
 | `/{provider}/v1/chat/completions` | POST | Provider-specific endpoint | `model` (no prefix) |
 
 ### Common Request Patterns
@@ -34,7 +36,9 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | **Image Generation** | `/v1/images/generations` | `prompt` | Create images (optional) |
 | **Image Editing** | `/v1/images/edits` | `prompt`, `image` | Edit images (optional) |
 | **Speech-to-Text** | `/v1/audio/transcriptions` | `file` | Transcribe audio (optional) |
+| **Audio Translations** | `/v1/audio/translations` | `file` | Translate audio (not yet supported) |
 | **Text-to-Speech** | `/v1/audio/speech` | `input` | Generate audio (optional) |
+| **Text-to-Music** | `/v1/audio/music` | `prompt` | Generate music/audio (optional) |
 | **Documents** | `/v1/chat/completions` | `content: [text, file_url]` | PDF/CSV processing |
 | **Tools** | `/v1/chat/completions` | `tools`, `tool_choice` | Function calling |
 | **Embeddings** | `/v1/embeddings` | `model`, `input` | Text embeddings |
