@@ -140,7 +140,7 @@ class MusicCapability(Protocol):
         prompt: str,
         *,
         lyrics: Optional[str] = None,
-        format: str = "mp3",
+        format: str = "wav",
         artifact_store: Optional[ArtifactStoreLike] = None,
         run_id: Optional[str] = None,
         tags: Optional[Dict[str, str]] = None,

@@ -90,6 +90,10 @@ def test_audio_endpoints_happy_path_with_stubbed_plugin(client, monkeypatch):
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_fake_voice_audio_plugin_ep()]))
     _reset_audio_core(monkeypatch)
 
+    resp_tr = client.post("/v1/audio/translations", files={"file": ("audio.wav", b"abc", "audio/wav")})
+    assert resp_tr.status_code == 501
+    assert "audio/translations" in resp_tr.json()["error"]["message"]
+
     resp_tts = client.post("/v1/audio/speech", json={"input": "hello", "format": "wav"})
     assert resp_tts.status_code == 200
     assert resp_tts.headers.get("content-type", "").startswith("audio/wav")

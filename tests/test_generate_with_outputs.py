@@ -61,8 +61,8 @@ def test_generate_with_outputs_t2m(monkeypatch):
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_plugin_ep()]))
 
     llm = _DummyProvider(model="dummy")
-    res = llm.generate_with_outputs("hi", outputs={"t2m": {"format": "mp3"}})
-    assert res.outputs["t2m"] == b"mp3"
+    res = llm.generate_with_outputs("hi", outputs={"t2m": {"format": "wav"}})
+    assert res.outputs["t2m"] == b"wav"
 
 
 @pytest.mark.basic
@@ -104,7 +104,7 @@ def _make_plugin_ep():
             backend_id = "music"
 
             def t2m(self, prompt: str, **kwargs):
-                return b"mp3"
+                return b"wav"
 
         registry.register_voice_backend(backend_id="voice", factory=lambda _owner: _Voice())
         registry.register_vision_backend(backend_id="vision", factory=lambda _owner: _Vision())
