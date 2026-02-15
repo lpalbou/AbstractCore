@@ -7185,6 +7185,59 @@ def execute_command(
         Structured command execution result (JSON-safe).
     """
     try:
+        # Defensive argument coercion:
+        # - Some providers / runtimes pass tool arguments as strings (e.g. "true"/"false", "120000").
+        # - In Python, non-empty strings are truthy, which is dangerous for flags like allow_dangerous.
+        def _coerce_bool(value: Any, *, default: bool) -> bool:
+            if value is None:
+                return bool(default)
+            if isinstance(value, bool):
+                return bool(value)
+            if isinstance(value, (int, float)):
+                return bool(value)
+            if isinstance(value, str):
+                s = value.strip().lower()
+                if s in {"1", "true", "t", "yes", "y", "on"}:
+                    return True
+                if s in {"0", "false", "f", "no", "n", "off", ""}:
+                    return False
+                return bool(default)
+            return bool(default)
+
+        def _coerce_timeout_seconds(value: Any, *, default_s: int) -> float:
+            if value is None:
+                return float(default_s)
+            if isinstance(value, (int, float)):
+                try:
+                    x = float(value)
+                except Exception:
+                    return float(default_s)
+                return float(default_s) if x <= 0 else x
+            if isinstance(value, str):
+                s = value.strip()
+                if not s:
+                    return float(default_s)
+                # int-like string
+                if s.isdigit():
+                    n = int(s)
+                    return float(default_s) if n <= 0 else float(n)
+                # float-like string
+                try:
+                    x = float(s)
+                except Exception:
+                    return float(default_s)
+                return float(default_s) if x <= 0 else x
+            return float(default_s)
+
+        command = str(command)
+        working_directory = str(working_directory).strip() if isinstance(working_directory, str) else working_directory
+        if isinstance(working_directory, str) and not working_directory:
+            working_directory = None
+        timeout = _coerce_timeout_seconds(timeout, default_s=300)
+        capture_output = _coerce_bool(capture_output, default=True)
+        require_confirmation = _coerce_bool(require_confirmation, default=False)
+        allow_dangerous = _coerce_bool(allow_dangerous, default=False)
+
         # Platform detection
         current_platform = platform.system()
 
