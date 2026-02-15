@@ -100,11 +100,34 @@ class OpenAIProvider(BaseProvider):
         if messages:
             for msg in messages:
                 # Skip system messages as they're handled separately
-                if msg.get("role") != "system":
-                    api_messages.append({
-                        "role": msg["role"],
-                        "content": msg["content"]
-                    })
+                if not isinstance(msg, dict):
+                    continue
+                role = msg.get("role")
+                if role == "system":
+                    continue
+                if not isinstance(role, str) or not role.strip():
+                    continue
+                content = msg.get("content")
+                if content is None:
+                    content = ""
+                entry: Dict[str, Any] = {"role": role, "content": content}
+                if role == "assistant":
+                    tool_calls = msg.get("tool_calls")
+                    if isinstance(tool_calls, list) and tool_calls:
+                        entry["tool_calls"] = tool_calls
+                elif role == "tool":
+                    tool_call_id = msg.get("tool_call_id")
+                    tool_call_id_s = str(tool_call_id).strip() if tool_call_id is not None else ""
+                    if tool_call_id_s:
+                        entry["tool_call_id"] = tool_call_id_s
+                    else:
+                        # OpenAI requires tool messages to reference a preceding assistant tool call.
+                        entry = {"role": "user", "content": f"[TOOL RESULT unknown]: {content}"}
+                elif role == "function":
+                    name = msg.get("name")
+                    if isinstance(name, str) and name.strip():
+                        entry["name"] = name.strip()
+                api_messages.append(entry)
 
         media_enrichment = None
 
@@ -294,11 +317,33 @@ class OpenAIProvider(BaseProvider):
         if messages:
             for msg in messages:
                 # Skip system messages as they're handled separately
-                if msg.get("role") != "system":
-                    api_messages.append({
-                        "role": msg["role"],
-                        "content": msg["content"]
-                    })
+                if not isinstance(msg, dict):
+                    continue
+                role = msg.get("role")
+                if role == "system":
+                    continue
+                if not isinstance(role, str) or not role.strip():
+                    continue
+                content = msg.get("content")
+                if content is None:
+                    content = ""
+                entry: Dict[str, Any] = {"role": role, "content": content}
+                if role == "assistant":
+                    tool_calls = msg.get("tool_calls")
+                    if isinstance(tool_calls, list) and tool_calls:
+                        entry["tool_calls"] = tool_calls
+                elif role == "tool":
+                    tool_call_id = msg.get("tool_call_id")
+                    tool_call_id_s = str(tool_call_id).strip() if tool_call_id is not None else ""
+                    if tool_call_id_s:
+                        entry["tool_call_id"] = tool_call_id_s
+                    else:
+                        entry = {"role": "user", "content": f"[TOOL RESULT unknown]: {content}"}
+                elif role == "function":
+                    name = msg.get("name")
+                    if isinstance(name, str) and name.strip():
+                        entry["name"] = name.strip()
+                api_messages.append(entry)
 
         media_enrichment = None
 
