@@ -26,6 +26,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 - **[Structured Output](structured-output.md)** — `response_model=...` strategies and limitations
 - **[Session Management](session.md)** — conversation state, persistence, compaction
 - **[Generation Parameters](generation-parameters.md)** — unified parameter vocabulary + provider quirks
+- **Model/architecture registries (source of truth)** — `abstractcore/assets/model_capabilities.json` + `abstractcore/assets/architecture_formats.json` (see `abstractcore/assets/README.md`)
 - **[Centralized Config](centralized-config.md)** — config file + config CLI (`abstractcore --config`)
 - **[Events](events.md)** and **[Structured Logging](structured-logging.md)** — observability hooks
 - **[Interaction Tracing](interaction-tracing.md)** — record prompts/responses/usage for debugging
