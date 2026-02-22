@@ -327,8 +327,17 @@ class ProviderRegistry:
             # Handle providers that need instance for model listing
             if provider_name in ["anthropic", "ollama", "lmstudio", "openai-compatible", "portkey"]:
                 provider_info = self.get_provider_info(provider_name)
+                model_for_listing = provider_info.default_model
+                try:
+                    from .openai_compatible_provider import OpenAICompatibleProvider
+
+                    if isinstance(provider_class, type) and issubclass(provider_class, OpenAICompatibleProvider):
+                        # Skip model validation for discovery; list_available_models does not require a live model.
+                        model_for_listing = "default"
+                except Exception:
+                    pass
                 # Create minimal instance for API access
-                instance = provider_class(model=provider_info.default_model, **kwargs)
+                instance = provider_class(model=model_for_listing, **kwargs)
                 return instance.list_available_models(**kwargs)
             else:
                 # Handle providers with static method or class method
