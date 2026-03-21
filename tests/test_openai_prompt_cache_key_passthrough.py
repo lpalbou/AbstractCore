@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from pydantic import BaseModel
+
 from abstractcore.core.types import GenerateResponse
 from abstractcore.providers import openai_provider as openai_provider_module
 from abstractcore.providers.openai_provider import OpenAIProvider
@@ -75,3 +77,49 @@ def test_openai_prompt_cache_key_explicit_overrides_default(monkeypatch):
     llm.generate("hello", prompt_cache_key="cache-xyz")
     assert capture[-1].get("prompt_cache_key") == "cache-xyz"
 
+
+def test_openai_prompt_cache_retention_is_forwarded(monkeypatch):
+    capture: List[Dict[str, Any]] = []
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(OpenAIProvider, "_validate_model_exists", lambda self: None)
+    monkeypatch.setattr(
+        openai_provider_module.openai,
+        "OpenAI",
+        lambda **kwargs: _DummyOpenAIClient(capture, **kwargs),
+    )
+    monkeypatch.setattr(
+        OpenAIProvider,
+        "_format_response",
+        lambda self, _response: GenerateResponse(content="ok", model=self.model, finish_reason="stop"),
+    )
+
+    llm = OpenAIProvider(model="gpt-5-mini")
+    llm.generate("hello", prompt_cache_retention="24h")
+    assert capture[-1].get("prompt_cache_retention") == "24h"
+
+
+def test_openai_native_structured_output_sets_response_format(monkeypatch):
+    capture: List[Dict[str, Any]] = []
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(OpenAIProvider, "_validate_model_exists", lambda self: None)
+    monkeypatch.setattr(
+        openai_provider_module.openai,
+        "OpenAI",
+        lambda **kwargs: _DummyOpenAIClient(capture, **kwargs),
+    )
+    monkeypatch.setattr(
+        OpenAIProvider,
+        "_format_response",
+        lambda self, _response: GenerateResponse(content='{"a": 1}', model=self.model, finish_reason="stop"),
+    )
+
+    class _Result(BaseModel):
+        a: int
+
+    llm = OpenAIProvider(model="gpt-5.4")
+    out = llm.generate("hello", response_model=_Result)
+    assert isinstance(out, _Result)
+    assert capture, "expected OpenAI SDK call to be captured"
+    assert isinstance(capture[-1].get("response_format"), dict)

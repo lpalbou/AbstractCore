@@ -102,7 +102,7 @@ class OpenAIProvider(BaseProvider):
             if "none" in reasoning_levels:
                 effort = "none"
             else:
-                fallback = next((x for x in ("low", "medium", "high", "xhigh") if x in reasoning_levels), None)
+                fallback = next((x for x in ("minimal", "low", "medium", "high", "xhigh") if x in reasoning_levels), None)
                 if not fallback:
                     return kwargs, False
                 warnings.warn(
@@ -264,6 +264,11 @@ class OpenAIProvider(BaseProvider):
         prompt_cache_key = kwargs.get("prompt_cache_key")
         if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
             call_params["prompt_cache_key"] = prompt_cache_key.strip()
+        prompt_cache_retention = kwargs.get("prompt_cache_retention")
+        if isinstance(prompt_cache_retention, str) and prompt_cache_retention.strip():
+            # Docs sometimes format this as `in-memory`; the API expects `in_memory`.
+            retention = prompt_cache_retention.strip().lower().replace("-", "_")
+            call_params["prompt_cache_retention"] = retention
 
         # Add generation parameters supported by this model (driven by model_capabilities.json).
         # Unsupported parameters are silently dropped — upstream callers (runtime, gateway)
@@ -499,6 +504,10 @@ class OpenAIProvider(BaseProvider):
         prompt_cache_key = kwargs.get("prompt_cache_key")
         if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
             call_params["prompt_cache_key"] = prompt_cache_key.strip()
+        prompt_cache_retention = kwargs.get("prompt_cache_retention")
+        if isinstance(prompt_cache_retention, str) and prompt_cache_retention.strip():
+            retention = prompt_cache_retention.strip().lower().replace("-", "_")
+            call_params["prompt_cache_retention"] = retention
 
         # Add generation parameters supported by this model (driven by model_capabilities.json).
         # Unsupported parameters are silently dropped (same rationale as sync path).
@@ -982,15 +991,16 @@ class OpenAIProvider(BaseProvider):
         return kwargs.get("max_output_tokens", self.max_output_tokens)
 
     def _supports_structured_output(self) -> bool:
-        """Check if this model supports native structured output"""
-        # Only specific OpenAI models support structured outputs
+        """Return True when the registry says this model supports native structured outputs."""
+        caps = getattr(self, "model_capabilities", None)
+        if isinstance(caps, dict):
+            level = caps.get("structured_output")
+            if isinstance(level, str) and level.strip().lower() == "native":
+                return True
+
+        # Backward-compatible fallback for older registries.
         model_lower = self.model.lower()
-        return (
-            "gpt-4o-2024-08-06" in model_lower or
-            "gpt-4o-mini-2024-07-18" in model_lower or
-            "gpt-4o-mini" in model_lower or
-            "gpt-4o" in model_lower
-        )
+        return "gpt-4o" in model_lower
 
     def _ensure_strict_schema(self, schema: Dict[str, Any]) -> None:
         """

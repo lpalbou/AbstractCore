@@ -60,6 +60,7 @@ class ChatCompletionRequest(BaseModel):
 
     # OpenAI prompt caching (2025+): supported by OpenAI and forwarded by AbstractCore providers.
     prompt_cache_key: Optional[str] = None
+    prompt_cache_retention: Optional[str] = None
 
 
 class PromptCacheSetRequest(BaseModel):
@@ -334,6 +335,8 @@ def create_app(
             gen_kwargs["stop"] = request.stop
         if isinstance(request.prompt_cache_key, str) and request.prompt_cache_key.strip():
             gen_kwargs["prompt_cache_key"] = request.prompt_cache_key.strip()
+        if isinstance(request.prompt_cache_retention, str) and request.prompt_cache_retention.strip():
+            gen_kwargs["prompt_cache_retention"] = request.prompt_cache_retention.strip()
 
         completion_id = f"chatcmpl-{uuid.uuid4().hex}"
         response_created = int(time.time())

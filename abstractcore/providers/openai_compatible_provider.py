@@ -1107,6 +1107,7 @@ class OpenAICompatibleProvider(BaseProvider):
 
             # Use provided base_url or fall back to instance base_url
             base_url = kwargs.get('base_url', self.base_url)
+            raise_on_error = bool(kwargs.get("raise_on_error", False))
 
             response = self.client.get(f"{base_url}/models", headers=self._get_headers(), timeout=5.0)
             if response.status_code == 200:
@@ -1127,11 +1128,16 @@ class OpenAICompatibleProvider(BaseProvider):
 
                 return models
             else:
+                if raise_on_error:
+                    self._raise_for_status(response, request_url=f"{base_url}/models")
+
                 detail = self._extract_error_detail(response)
                 suffix = f": {detail}" if detail else ""
                 self.logger.warning(f"{self.PROVIDER_DISPLAY_NAME} /models returned {response.status_code}{suffix}")
                 return []
         except Exception as e:
+            if bool(kwargs.get("raise_on_error", False)):
+                raise
             self.logger.warning(f"Failed to list models from {self.PROVIDER_DISPLAY_NAME}: {e}")
             return []
 

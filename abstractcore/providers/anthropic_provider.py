@@ -98,7 +98,6 @@ class AnthropicProvider(BaseProvider):
 
         if enabled is False:
             new_kwargs["thinking"] = {"type": "disabled"}
-            new_kwargs.pop("output_config", None)
             return new_kwargs, True
 
         if adaptive_supported:
@@ -128,7 +127,6 @@ class AnthropicProvider(BaseProvider):
             budget_tokens = max(0, min(int(budget_tokens), int(max_out_i)))
 
         new_kwargs["thinking"] = {"type": "enabled", "budget_tokens": int(budget_tokens)}
-        new_kwargs.pop("output_config", None)
         return new_kwargs, True
 
     @property
@@ -272,6 +270,16 @@ class AnthropicProvider(BaseProvider):
             "temperature": generation_kwargs.get("temperature", self.temperature),
             "stream": stream
         }
+
+        # Prompt caching (Anthropic): enable server-side caching when a cache key is provided.
+        # Anthropic does not use our cache key value; it's treated as a unified toggle.
+        prompt_cache_key = kwargs.get("prompt_cache_key")
+        if isinstance(prompt_cache_key, str) and prompt_cache_key.strip() and self.supports_prompt_cache():
+            cache_control: Dict[str, Any] = {"type": "ephemeral"}
+            ttl = kwargs.get("prompt_cache_ttl")
+            if isinstance(ttl, str) and ttl.strip():
+                cache_control["ttl"] = ttl.strip()
+            call_params["cache_control"] = cache_control
 
         thinking_cfg = kwargs.get("thinking")
         if isinstance(thinking_cfg, dict) and thinking_cfg:
@@ -512,6 +520,14 @@ class AnthropicProvider(BaseProvider):
             "temperature": generation_kwargs.get("temperature", self.temperature),
             "stream": stream
         }
+
+        prompt_cache_key = kwargs.get("prompt_cache_key")
+        if isinstance(prompt_cache_key, str) and prompt_cache_key.strip() and self.supports_prompt_cache():
+            cache_control: Dict[str, Any] = {"type": "ephemeral"}
+            ttl = kwargs.get("prompt_cache_ttl")
+            if isinstance(ttl, str) and ttl.strip():
+                cache_control["ttl"] = ttl.strip()
+            call_params["cache_control"] = cache_control
 
         thinking_cfg = kwargs.get("thinking")
         if isinstance(thinking_cfg, dict) and thinking_cfg:
@@ -915,6 +931,30 @@ class AnthropicProvider(BaseProvider):
         """Update Anthropic client timeout when timeout is changed."""
         # Create new client with updated timeout
         self.client = anthropic.Anthropic(api_key=self.api_key, timeout=self._timeout)
+
+    def supports_prompt_cache(self) -> bool:
+        """Anthropic supports prompt caching via `cache_control` (server-managed) on modern Claude models."""
+        model_s = str(getattr(self, "model", "") or "").strip().lower()
+        if not model_s:
+            return False
+        return any(
+            token in model_s
+            for token in (
+                # Opus/Sonnet 4.x and Haiku 4.5+
+                "opus-4",
+                "sonnet-4",
+                "haiku-4",
+                # Sonnet 3.7 + Haiku 3.x
+                "sonnet-3-7",
+                "3.7-sonnet",
+                "haiku-3",
+                "3-haiku",
+                "haiku-3-5",
+                "3-5-haiku",
+                "3.5-haiku",
+            )
+        )
+
     def list_available_models(self, **kwargs) -> List[str]:
         """
         List available models from Anthropic API.

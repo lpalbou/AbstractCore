@@ -133,6 +133,7 @@ Standard OpenAI-compatible endpoint. Works with all providers.
 - `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
 - `unload_after` (optional, AbstractCore extension): If `true`, calls `llm.unload_model(model)` after the request completes. Disabled for `ollama/*` unless `ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1`.
 - `prompt_cache_key` (optional, AbstractCore extension): Best-effort prompt caching key (semantics depend on provider/backend). See `docs/prompt-caching.md`.
+- `prompt_cache_retention` (optional, AbstractCore extension): Prompt cache retention policy (OpenAI: `"in_memory"` or `"24h"`; ignored by other providers). See `docs/prompt-caching.md`.
 - `thinking` (optional, AbstractCore extension): Unified thinking/reasoning control (`null|"auto"|"on"|"off"|"none"` or `"low"|"medium"|"high"|"xhigh"` when supported). Note: `"none"` is treated as an alias for `"off"`.
 - `temperature`, `max_tokens`, `top_p`: Standard LLM parameters
 

@@ -158,6 +158,36 @@ class TestProviderRegistry:
             # API calls may fail without proper credentials, which is expected
             pass
 
+    def test_get_available_models_openrouter_skips_model_validation(self, monkeypatch):
+        """OpenRouter discovery should not fail when the default model is unavailable.
+
+        When listing models, the registry should instantiate OpenAI-compatible providers with
+        a placeholder model ("default") to avoid eager model validation blocking discovery.
+        """
+        registry = ProviderRegistry()
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-test-openrouter")
+
+        from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
+
+        # Return a list that intentionally does NOT include the registry's default model
+        # ("openai/gpt-4o-mini") to ensure validation would fail if it ran.
+        with patch.object(OpenAICompatibleProvider, "list_available_models", return_value=["some-other-model"]):
+            models = registry.get_available_models("openrouter")
+
+        assert models == ["some-other-model"]
+
+    def test_get_available_models_vllm_skips_model_validation(self, monkeypatch):
+        """vLLM discovery should not fail when the default model is unavailable."""
+        registry = ProviderRegistry()
+        monkeypatch.setenv("VLLM_BASE_URL", "http://127.0.0.1:8000/v1")
+
+        from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
+
+        with patch.object(OpenAICompatibleProvider, "list_available_models", return_value=["my-vllm-model"]):
+            models = registry.get_available_models("vllm")
+
+        assert models == ["my-vllm-model"]
+
     def test_get_provider_status_success(self):
         """Test getting provider status when provider is working."""
         registry = ProviderRegistry()

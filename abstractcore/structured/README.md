@@ -316,6 +316,7 @@ def _preprocess_enum_response(self, data: Dict[str, Any], enum_mappings: Dict[st
 **When Used**:
 - **Ollama**: All models (uses `format` parameter with JSON schema)
 - **LMStudio**: All models (uses `response_format` with OpenAI-compatible schema)
+- **OpenAI**: Models with native structured outputs (uses `response_format` with JSON schema)
 - **HuggingFace GGUF**: Models loaded via llama-cpp-python
 - **HuggingFace Transformers**: When Outlines library is installed
 - **MLX**: When Outlines library is installed
@@ -338,8 +339,8 @@ def _preprocess_enum_response(self, data: Dict[str, Any], enum_mappings: Dict[st
 ### Prompted Approach (Schema-Enhanced Prompts)
 
 **When Used**:
-- **OpenAI**: All models (native support not yet implemented)
-- **Anthropic**: All models (native support not yet implemented)
+- **OpenAI**: Models without native structured outputs (per `assets/model_capabilities.json`)
+- **Anthropic**: All models (native structured-output API not integrated yet)
 - **Google**: All models (native support not yet implemented)
 - **HuggingFace Transformers**: When Outlines not installed
 - **MLX**: When Outlines not installed

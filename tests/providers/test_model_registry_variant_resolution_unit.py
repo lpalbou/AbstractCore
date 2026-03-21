@@ -29,8 +29,8 @@ def test_variant_suffix_normalization_resolves_qwen_liquid_and_gpt_families() ->
 
     gpt = get_model_capabilities("openai/gpt-5.4-pro-fp16")
     assert gpt.get("architecture") == "gpt"
-    assert gpt.get("max_tokens") == 1048576
-    assert gpt.get("structured_output") == "native"
+    assert gpt.get("max_tokens") == 1050000
+    assert gpt.get("structured_output") == "prompted"
 
 
 def test_new_family_entries_are_resolved_with_expected_architectures() -> None:

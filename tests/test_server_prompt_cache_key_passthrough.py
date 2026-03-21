@@ -46,9 +46,10 @@ def test_server_forwards_prompt_cache_key(monkeypatch) -> None:
             "model": "openai/gpt-5-mini",
             "messages": [{"role": "user", "content": "Hello"}],
             "prompt_cache_key": "cache-abc",
+            "prompt_cache_retention": "24h",
         },
     )
     assert resp.status_code == 200
     assert created, "expected server to create an LLM instance"
     assert created[-1].last_kwargs.get("prompt_cache_key") == "cache-abc"
-
+    assert created[-1].last_kwargs.get("prompt_cache_retention") == "24h"

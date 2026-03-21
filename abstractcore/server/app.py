@@ -319,7 +319,8 @@ from ..providers.model_capabilities import ModelInputCapability, ModelOutputCapa
 def get_models_from_provider(
     provider_name: str, 
     input_capabilities=None, 
-    output_capabilities=None
+    output_capabilities=None,
+    **kwargs,
 ) -> List[str]:
     """
     Get available models from a specific provider using the centralized provider registry.
@@ -337,9 +338,12 @@ def get_models_from_provider(
         return get_available_models_for_provider(
             provider_name, 
             input_capabilities=input_capabilities,
-            output_capabilities=output_capabilities
+            output_capabilities=output_capabilities,
+            **kwargs,
         )
     except Exception as e:
+        if bool(kwargs.get("raise_on_error", False)):
+            raise
         logger.debug(f"Failed to get models from provider {provider_name}: {e}")
         return []
 
@@ -559,6 +563,11 @@ class ChatCompletionRequest(BaseModel):
         default=None,
         description="Provider-specific prompt cache key for prefix caching (best-effort).",
         example="tenantA:session123"
+    )
+    prompt_cache_retention: Optional[str] = Field(
+        default=None,
+        description="Prompt cache retention policy (provider-specific; OpenAI: 'in_memory' or '24h').",
+        example="24h",
     )
 
     # Agent format control (AppV2 feature)
@@ -1364,6 +1373,7 @@ def acore_prompt_cache_prepare_modules(req: PromptCachePrepareModulesProxyReques
 
 @app.get("/v1/models")
 async def list_models(
+    http_request: Request,
     provider: Optional[str] = Query(
         None,
         description="Filter by provider (e.g., 'ollama', 'openai', 'anthropic', 'lmstudio')",
@@ -1375,6 +1385,17 @@ async def list_models(
     output_type: Optional[ModelOutputCapability] = Query(
         None,
         description="Filter by output capability: 'text', 'embeddings'"
+    ),
+    api_key: Optional[str] = Query(
+        None,
+        description=(
+            "Optional upstream provider API key. Not recommended for production because it appears in URLs; "
+            "prefer the standard 'Authorization: Bearer ...' header."
+        ),
+    ),
+    base_url: Optional[str] = Query(
+        None,
+        description="Optional upstream base URL override (useful for OpenAI-compatible providers).",
     ),
 ):
     """
@@ -1402,18 +1423,52 @@ async def list_models(
         
 
         if provider:
+            provider_norm = provider.lower().strip()
+            from ..providers.registry import is_provider_available
+
+            # Match prior behavior: unknown providers return an empty list (200 OK).
+            if not is_provider_available(provider_norm):
+                return {"object": "list", "data": []}
+
+            provider_kwargs: Dict[str, Any] = {}
+
+            # Allow per-request API keys for model discovery.
+            # Priority: explicit query param > Authorization header.
+            candidate_key = str(api_key).strip() if isinstance(api_key, str) else ""
+            if not candidate_key:
+                auth = http_request.headers.get("authorization")
+                auth_s = str(auth or "").strip()
+                if auth_s.lower().startswith("bearer "):
+                    token = auth_s[7:].strip()
+                    placeholder = token.lower()
+                    if token and placeholder not in {"not-needed", "not_needed", "notneeded", "empty", "none"}:
+                        candidate_key = token
+
+            if candidate_key:
+                provider_kwargs["api_key"] = candidate_key
+            if isinstance(base_url, str) and base_url.strip():
+                provider_kwargs["base_url"] = base_url.strip()
+
             # Get models from specific provider with optional filtering
-            models = get_models_from_provider(
-                provider.lower(), 
-                input_capabilities=input_capabilities,
-                output_capabilities=output_capabilities
-            )
+            try:
+                models = get_models_from_provider(
+                    provider_norm,
+                    input_capabilities=input_capabilities,
+                    output_capabilities=output_capabilities,
+                    raise_on_error=True,
+                    **provider_kwargs,
+                )
+            except Exception as e:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Failed to list models for provider '{provider_norm}': {e}",
+                ) from e
             for model in models:
-                model_id = f"{provider.lower()}/{model}"
+                model_id = f"{provider_norm}/{model}"
                 models_data.append({
                     "id": model_id,
                     "object": "model",
-                    "owned_by": provider.lower(),
+                    "owned_by": provider_norm,
                     "created": int(time.time()),
                     "permission": [{"allow_create_engine": False, "allow_sampling": True}]
                 })
@@ -1460,6 +1515,8 @@ async def list_models(
             "data": sorted(models_data, key=lambda x: x["id"])
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to list models: {e}")
         return {
@@ -2525,6 +2582,8 @@ async def process_chat_completion(
             gen_kwargs["presence_penalty"] = request.presence_penalty
         if isinstance(request.prompt_cache_key, str) and request.prompt_cache_key.strip():
             gen_kwargs["prompt_cache_key"] = request.prompt_cache_key.strip()
+        if isinstance(request.prompt_cache_retention, str) and request.prompt_cache_retention.strip():
+            gen_kwargs["prompt_cache_retention"] = request.prompt_cache_retention.strip()
 
         # Generate response
         # Only cleanup files created by this request (with our specific prefixes)

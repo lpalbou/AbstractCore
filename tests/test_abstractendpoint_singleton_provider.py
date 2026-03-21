@@ -50,6 +50,7 @@ def test_abstractendpoint_constructs_provider_once_and_forwards_prompt_cache_key
         "model": "fake-model",
         "messages": [{"role": "system", "content": "You are helpful"}, {"role": "user", "content": "Hi"}],
         "prompt_cache_key": "cache-abc",
+        "prompt_cache_retention": "24h",
     }
 
     r1 = client.post("/v1/chat/completions", json=payload)
@@ -66,4 +67,4 @@ def test_abstractendpoint_constructs_provider_once_and_forwards_prompt_cache_key
 
     provider = provider_holder["provider"]
     assert provider.calls[-1].get("prompt_cache_key") == "cache-abc"
-
+    assert provider.calls[-1].get("prompt_cache_retention") == "24h"

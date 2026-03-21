@@ -308,8 +308,22 @@ class ProviderRegistry:
             List of available model names, optionally filtered by capabilities
         """
         try:
+            raise_on_error = bool(kwargs.get("raise_on_error", False))
             provider_name_norm = str(provider_name or "").strip().lower()
-            base_url_override = kwargs.get("base_url")
+
+            # Merge in runtime provider configuration (configured via `configure_provider`).
+            # Explicit kwargs always win.
+            merged_kwargs = dict(kwargs)
+            try:
+                from ..config import get_provider_config
+
+                runtime_config = get_provider_config(provider_name_norm)
+                if isinstance(runtime_config, dict) and runtime_config:
+                    merged_kwargs = {**runtime_config, **merged_kwargs}
+            except Exception:
+                pass
+
+            base_url_override = merged_kwargs.get("base_url")
 
             # Avoid probing generic OpenAI-compatible endpoints unless explicitly configured.
             # (Default ports like :8080/:8000 are often wrong in real setups.)
@@ -317,16 +331,25 @@ class ProviderRegistry:
                 isinstance(base_url_override, str) and base_url_override.strip()
             ):
                 if not self._has_configured_base_url(provider_name_norm, env_var="OPENAI_COMPATIBLE_BASE_URL"):
+                    if raise_on_error:
+                        raise ValueError(
+                            "openai-compatible base_url is not configured. Set OPENAI_COMPATIBLE_BASE_URL "
+                            "or pass base_url=... for model discovery."
+                        )
                     return []
             if provider_name_norm == "vllm" and not (isinstance(base_url_override, str) and base_url_override.strip()):
                 if not self._has_configured_base_url(provider_name_norm, env_var="VLLM_BASE_URL"):
+                    if raise_on_error:
+                        raise ValueError(
+                            "vllm base_url is not configured. Set VLLM_BASE_URL or pass base_url=... for model discovery."
+                        )
                     return []
 
-            provider_class = self.get_provider_class(provider_name)
+            provider_class = self.get_provider_class(provider_name_norm)
 
             # Handle providers that need instance for model listing
-            if provider_name in ["anthropic", "ollama", "lmstudio", "openai-compatible", "portkey"]:
-                provider_info = self.get_provider_info(provider_name)
+            if provider_name_norm in ["anthropic", "ollama", "lmstudio", "openai-compatible", "openrouter", "portkey", "vllm"]:
+                provider_info = self.get_provider_info(provider_name_norm)
                 model_for_listing = provider_info.default_model
                 try:
                     from .openai_compatible_provider import OpenAICompatibleProvider
@@ -337,20 +360,22 @@ class ProviderRegistry:
                 except Exception:
                     pass
                 # Create minimal instance for API access
-                instance = provider_class(model=model_for_listing, **kwargs)
-                return instance.list_available_models(**kwargs)
+                instance = provider_class(model=model_for_listing, **merged_kwargs)
+                return instance.list_available_models(**merged_kwargs)
             else:
                 # Handle providers with static method or class method
                 try:
                     # First try as static/class method
-                    return provider_class.list_available_models(**kwargs)
+                    return provider_class.list_available_models(**merged_kwargs)
                 except TypeError:
                     # If that fails (method needs 'self'), create temporary instance
-                    provider_info = self.get_provider_info(provider_name)
-                    instance = provider_class(model=provider_info.default_model, **kwargs)
-                    return instance.list_available_models(**kwargs)
+                    provider_info = self.get_provider_info(provider_name_norm)
+                    instance = provider_class(model=provider_info.default_model, **merged_kwargs)
+                    return instance.list_available_models(**merged_kwargs)
 
         except Exception as e:
+            if bool(kwargs.get("raise_on_error", False)):
+                raise
             self._logger.debug(f"Failed to get models from provider {provider_name}: {e}")
             return []
 
