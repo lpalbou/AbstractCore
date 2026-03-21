@@ -291,7 +291,7 @@ class SimpleCLI:
             print("  /max-tokens <n|auto>     Set context token budget")
             print("  /max-output-tokens <n|auto> Set max output tokens per response")
             print("  /thinking <mode>         Set thinking/reasoning mode (best-effort)")
-            print("                           • /thinking auto|on|off|low|medium|high")
+            print("                           • /thinking auto|on|off|none|low|medium|high|xhigh")
             print("  /show-reasoning <mode>   Display reasoning separately (auto/on/off)")
             print("                           • /show-reasoning auto|on|off")
             print("  /stream                  Toggle streaming mode on/off")
@@ -360,20 +360,20 @@ class SimpleCLI:
             if len(parts) == 1:
                 current = "auto" if self.thinking is None else ("on" if self.thinking is True else "off" if self.thinking is False else str(self.thinking))
                 print(f"🧠 thinking: {current}")
-                print("❓ Usage: /thinking <auto|on|off|low|medium|high>")
+                print("❓ Usage: /thinking <auto|on|off|none|low|medium|high|xhigh>")
                 return True
 
             raw = parts[1].strip().lower()
-            if raw in {"auto", "none", "null"}:
+            if raw in {"auto", "null"}:
                 self.thinking = None
             elif raw in {"on", "true", "1", "yes"}:
                 self.thinking = True
-            elif raw in {"off", "false", "0", "no"}:
+            elif raw in {"off", "false", "0", "no", "none"}:
                 self.thinking = False
-            elif raw in {"low", "medium", "high"}:
+            elif raw in {"low", "medium", "high", "xhigh"}:
                 self.thinking = raw
             else:
-                print("❓ Usage: /thinking <auto|on|off|low|medium|high>")
+                print("❓ Usage: /thinking <auto|on|off|none|low|medium|high|xhigh>")
                 return True
 
             current = "auto" if self.thinking is None else ("on" if self.thinking is True else "off" if self.thinking is False else str(self.thinking))

@@ -122,14 +122,32 @@ Toggle unified thinking/reasoning mode (best-effort across providers/models):
 /thinking auto
 /thinking on
 /thinking off
+/thinking none
 /thinking low
 /thinking medium
 /thinking high
+/thinking xhigh
 ```
 
 Notes:
 - Not every provider/model supports request-side control; unsupported requests may warn and be ignored.
 - Some models expose reasoning in `response.metadata["reasoning"]` (and AbstractCore normalizes/strips it from visible content when configured).
+
+### Prompt / KV Cache (`/cache`)
+
+Persist or clear the local prompt/KV cache (currently **MLX only**; caches are **model-locked**):
+
+```bash
+/cache save chat_cache
+/cache save chat_cache --q8
+/cache load chat_cache
+/cache clear
+```
+
+Notes:
+- `save`/`load` read/write a `.safetensors` file (stored under the CLI cache directory).
+- Loading a cache resets the visible transcript; the KV cache becomes the source of truth for context.
+- `--q8` quantizes the cache before saving (smaller, lossy).
 
 ### Reasoning Display (`/show-reasoning`)
 

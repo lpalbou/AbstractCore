@@ -501,7 +501,8 @@ class ChatCompletionRequest(BaseModel):
     thinking: Optional[Union[bool, str]] = Field(
         default=None,
         description="Unified thinking/reasoning control (best-effort across providers/models). "
-                    "Accepted values: null/'auto'/'on'/'off' or 'low'/'medium'/'high' when supported.",
+                    "Accepted values: null/'auto'/'on'/'off'/'none' or 'low'/'medium'/'high'/'xhigh' when supported. "
+                    "Note: 'none' is treated as an alias for 'off'.",
         example="off",
     )
 

@@ -102,7 +102,7 @@ def generate(
 - `response_model` (BaseModel, optional): Pydantic model for structured output
 - `retry_strategy` (Retry, optional): Custom retry strategy for structured output
 - `stream` (bool): Enable streaming response
-- `thinking` (bool | str, optional): Unified thinking/reasoning control (`"auto"|"on"|"off"` or `"low"|"medium"|"high"` when supported)
+- `thinking` (bool | str, optional): Unified thinking/reasoning control (`"auto"|"on"|"off"|"none"` or `"low"|"medium"|"high"|"xhigh"` when supported). Note: `"none"` is treated as an alias for `"off"`.
 - `**kwargs`: Additional generation parameters
 
 **Returns:**

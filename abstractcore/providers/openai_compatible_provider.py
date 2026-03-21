@@ -189,8 +189,69 @@ class OpenAICompatibleProvider(BaseProvider):
         return headers
 
     def _mutate_payload(self, payload: Dict[str, Any], **kwargs) -> Dict[str, Any]:
-        """Provider-specific payload hook (default: no-op)."""
+        """Provider-specific payload hook.
+
+        This provider supports best-effort passthrough of common OpenAI-compatible
+        server extensions when present:
+
+        - `extra_body`: vLLM and other servers
+        - `chat_template_kwargs`: llama.cpp/LM Studio style servers
+        """
+        extra_body = kwargs.get("extra_body")
+        if isinstance(extra_body, dict) and extra_body:
+            existing = payload.get("extra_body")
+            if isinstance(existing, dict) and existing:
+                payload["extra_body"] = {**existing, **extra_body}
+            else:
+                payload["extra_body"] = dict(extra_body)
+
+        chat_template_kwargs = kwargs.get("chat_template_kwargs")
+        if isinstance(chat_template_kwargs, dict) and chat_template_kwargs:
+            existing_ctk = payload.get("chat_template_kwargs")
+            if isinstance(existing_ctk, dict) and existing_ctk:
+                payload["chat_template_kwargs"] = {**existing_ctk, **chat_template_kwargs}
+            else:
+                payload["chat_template_kwargs"] = dict(chat_template_kwargs)
+
         return payload
+
+    def _apply_provider_thinking_kwargs(
+        self,
+        *,
+        enabled: Optional[bool],
+        level: Optional[str],
+        kwargs: Dict[str, Any],
+    ) -> tuple[Dict[str, Any], bool]:
+        # Seed-OSS: control reasoning via chat-template kwargs (`thinking_budget`).
+        #
+        # NOTE: This is currently best-effort and only enabled for local OpenAI-compatible
+        # servers (LM Studio / generic OpenAI-compatible) to avoid breaking strict
+        # third-party gateways that may reject unknown payload fields.
+        if enabled is None and level is None:
+            return kwargs, False
+
+        provider_id = str(getattr(self, "provider", "") or "").strip().lower()
+        if provider_id not in {"lmstudio", "openai-compatible"}:
+            return kwargs, False
+
+        if str(getattr(self, "architecture", "") or "").strip().lower() != "seed_oss":
+            return kwargs, False
+
+        budget_map = {"low": 512, "medium": 1024, "high": 4096, "xhigh": 8192}
+        if enabled is False:
+            budget = 0
+        elif isinstance(level, str) and level in budget_map:
+            budget = budget_map[level]
+        else:
+            # Default when explicitly enabled without a level.
+            budget = 1024
+
+        new_kwargs = dict(kwargs)
+        ctk = new_kwargs.get("chat_template_kwargs")
+        ctk_dict: Dict[str, Any] = dict(ctk) if isinstance(ctk, dict) else {}
+        ctk_dict["thinking_budget"] = int(budget)
+        new_kwargs["chat_template_kwargs"] = ctk_dict
+        return new_kwargs, True
 
     def _resolve_base_url(self, base_url: Optional[str]) -> str:
         """Resolve base URL with parameter > env var > default precedence."""
@@ -463,6 +524,15 @@ class OpenAICompatibleProvider(BaseProvider):
                 "role": "user",
                 "content": prompt
             })
+
+        # Some OpenAI-compatible servers (including common LM Studio templates) require at
+        # least one user message. If upstream callers accidentally route the entire prompt
+        # into `system_prompt` (or omit the prompt), the server may fail during template
+        # rendering ("No user query found in messages."). Add a minimal user message as a
+        # best-effort fallback rather than hard-failing.
+        if not any(isinstance(m, dict) and m.get("role") == "user" for m in chat_messages):
+            fallback = str(prompt or "").strip() or "Continue."
+            chat_messages.append({"role": "user", "content": fallback})
 
         # Build request payload using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)

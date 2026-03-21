@@ -5,6 +5,33 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.13.0] - 2026-02-22
+
+### Added
+- **`unsupported_parameters` field in `model_capabilities.json`**: declares which generation parameters (temperature, top_p, etc.) a model's API rejects. Providers now use this data-driven list to strip unsupported parameters instead of hardcoded model-name heuristics. Absent field = all parameters supported (backward-compatible default).
+- **`token_param_name` field in `model_capabilities.json`**: declares the API parameter name for output token limit (`max_tokens` or `max_completion_tokens`). Replaces the hardcoded `_uses_max_completion_tokens()` heuristic in OpenAI and Portkey providers.
+- **`_is_reasoning_model()` in `BaseProvider`**: capability-driven method that reads `thinking_support` from `model_capabilities.json`. Available to all providers for reasoning-related logic (thinking budget control, output parsing).
+- **`_is_parameter_supported(param)` in `BaseProvider`**: reads `unsupported_parameters` from capabilities to determine if a generation parameter should be forwarded to the API.
+- **`_get_token_param_name()` in `BaseProvider`**: reads `token_param_name` from capabilities to determine the correct output token parameter name.
+- **New model entries**: GPT-5.1, GPT-5.2, GPT-5.2-pro, GPT-5.2-codex, GPT-5.1-codex, GPT-5-codex, GPT-5-nano, o4-mini, GPT-4.1, GPT-4.1-mini, GPT-4.1-nano, Claude Opus 4.6, Claude Sonnet 4.6.
+- **`thinking_support: true`** added to o1, o1-mini, o3, o3-mini, o4-mini, DeepSeek-R1, all GPT-5 family models, Claude 4/4.1/4.5/4.6 Opus and Sonnet models, and Claude Haiku 4.5.
+
+### Changed
+- **Parameter filtering is now data-driven**: `OpenAIProvider` and `PortkeyProvider` use `unsupported_parameters` from `model_capabilities.json` instead of hardcoded `_is_reasoning_model()` name-matching heuristics for parameter stripping. Unsupported sampling parameters are silently dropped — upstream callers (runtime, gateway) always pass standard params as defaults, so the `unsupported_parameters` list is the authoritative enforcement, not log warnings.
+- **Token parameter naming is data-driven**: `_uses_max_completion_tokens()` replaced by `_get_token_param_name()` reading from `model_capabilities.json`.
+- **GPT-5 family models updated**: context windows corrected to 400K tokens, max output to 128K, audio_support corrected to false (text/image only per OpenAI docs), reasoning_levels added.
+
+### Removed
+- **`_is_reasoning_model()` from `OpenAIProvider`**: replaced by the `BaseProvider` version that reads from capabilities.
+- **`_uses_max_completion_tokens()` from `OpenAIProvider`**: replaced by `_get_token_param_name()`.
+- **`_is_reasoning_model()` from `PortkeyProvider`**: uses `BaseProvider` version.
+- **`_uses_max_completion_tokens()` from `PortkeyProvider`**: uses `_get_token_param_name()`.
+
+### Fixed
+- **GPT-5 temperature handling**: the warning "Temperature parameter requested but not supported by OpenAI reasoning models (gpt-5-mini)" no longer fires on every call. Temperature is now correctly stripped via `unsupported_parameters` for GPT-5/5-mini/5-nano (which reject it, empirically verified via live API), and correctly forwarded for GPT-5.1/5.2 (which accept it, empirically verified).
+- **Missing o3/o3-mini/o4-mini parameter restrictions**: these reasoning models were not matched by the old `_is_reasoning_model()` heuristic and would incorrectly receive temperature/top_p parameters. Now correctly handled via `unsupported_parameters` in their capability entries (empirically verified).
+- **max_tokens vs max_completion_tokens**: all reasoning models (o-series + GPT-5 family) reject `max_tokens` and require `max_completion_tokens` (empirically verified). `token_param_name` field ensures the correct parameter name is used.
+
 ## [2.12.0] - 2026-02-12
 
 ### Added

@@ -158,4 +158,6 @@ The benchmark script does **not** use prompt caching; it intentionally treats ea
 
 `MLXProvider` does support best-effort in-process prompt caching via `prompt_cache_key` (KV/prefix caches). This is mainly useful when *many calls share a long prefix* (system prompt, tool schema, long chat history). It is not “free”: KV caches consume memory, and reusing the same cache key across unrelated requests can contaminate context.
 
+The `abstractcore-chat` CLI can also persist MLX KV caches to disk via `/cache save|load` for fast multi-turn workflows on large contexts.
+
 For deeper research notes, see `docs/research/concurrency/`.

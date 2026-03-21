@@ -132,7 +132,8 @@ Standard OpenAI-compatible endpoint. Works with all providers.
 - `api_key` (optional, AbstractCore extension): Provider API key for per-request authentication. Falls back to environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `PORTKEY_API_KEY`)
 - `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
 - `unload_after` (optional, AbstractCore extension): If `true`, calls `llm.unload_model(model)` after the request completes. Disabled for `ollama/*` unless `ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1`.
-- `thinking` (optional, AbstractCore extension): Unified thinking/reasoning control (`null|"auto"|"on"|"off"` or `"low"|"medium"|"high"` when supported)
+- `prompt_cache_key` (optional, AbstractCore extension): Best-effort prompt caching key (semantics depend on provider/backend). See `docs/prompt-caching.md`.
+- `thinking` (optional, AbstractCore extension): Unified thinking/reasoning control (`null|"auto"|"on"|"off"|"none"` or `"low"|"medium"|"high"|"xhigh"` when supported). Note: `"none"` is treated as an alias for `"off"`.
 - `temperature`, `max_tokens`, `top_p`: Standard LLM parameters
 
 **Example with streaming:**

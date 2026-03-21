@@ -88,7 +88,7 @@ Optional (used by tool parsing and response cleanup; only include when needed):
 - `thinking_output_field` (string)
 - `thinking_control` (string)
 - `reasoning_support` (boolean)
-- `reasoning_levels` (list; typically `["low","medium","high"]`)
+- `reasoning_levels` (list; typically `["low","medium","high"]`, but may include `"none"` and/or `"xhigh"` when a model supports those effort levels)
 
 **Usage**:
 ```python
@@ -194,6 +194,10 @@ imply “the framework can always make it work” via optional enrichment plugin
 - `short_side_resize_target` - Target for short side resizing
 - `detail_levels` - Available detail levels (["low", "high", "auto"])
 - `low_detail_tokens` - Token cost for low detail
+
+#### Generation Parameter Support
+- `unsupported_parameters` - List of generation parameter names (strings) that this model's API rejects (e.g. `["temperature", "top_p", "frequency_penalty", "presence_penalty"]`). Used by providers to silently strip unsupported params before API calls. Absent field means all standard parameters are supported (backward-compatible default for all models that predate this field).
+- `token_param_name` - The API parameter name for output token limit: `"max_tokens"` or `"max_completion_tokens"`. Default when absent: `"max_tokens"`. Newer OpenAI models (o-series, GPT-5 family, GPT-4.1 family) use `"max_completion_tokens"`.
 
 #### Metadata
 - `notes` - Additional notes about the model

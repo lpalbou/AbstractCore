@@ -5,6 +5,7 @@ Anthropic provider implementation.
 import os
 import json
 import time
+import warnings
 from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type
 
 try:
@@ -62,6 +63,73 @@ class AnthropicProvider(BaseProvider):
     def generate(self, *args, **kwargs):
         """Public generate method that includes telemetry"""
         return self.generate_with_telemetry(*args, **kwargs)
+
+    def _apply_provider_thinking_kwargs(
+        self,
+        *,
+        enabled: Optional[bool],
+        level: Optional[str],
+        kwargs: Dict[str, Any],
+    ) -> tuple[Dict[str, Any], bool]:
+        # Anthropic Messages API exposes thinking controls via a `thinking` object.
+        #
+        # As of early 2026, newer Claude models recommend "adaptive" thinking with a separate
+        # `output_config.effort` knob, while manual `budget_tokens` is deprecated but still
+        # accepted for extended thinking on some models.
+        if enabled is None and level is None:
+            return kwargs, False
+
+        model_s = str(getattr(self, "model", "") or "").strip().lower()
+        adaptive_supported = ("opus-4-6" in model_s) or ("sonnet-4-6" in model_s) or ("4.6" in model_s)
+        max_effort_supported = ("opus-4-6" in model_s) or ("4.6" in model_s and "opus" in model_s)
+
+        def _level_to_effort(lvl: Optional[str]) -> str:
+            if lvl in {"low", "medium", "high"}:
+                return lvl
+            if lvl == "xhigh":
+                return "max" if max_effort_supported else "high"
+            return "medium"
+
+        def _level_to_budget_tokens(lvl: Optional[str]) -> int:
+            budget_map = {"low": 1024, "medium": 4096, "high": 8192, "xhigh": 16384}
+            return int(budget_map.get(str(lvl or "").strip().lower(), 4096))
+
+        new_kwargs = dict(kwargs)
+
+        if enabled is False:
+            new_kwargs["thinking"] = {"type": "disabled"}
+            new_kwargs.pop("output_config", None)
+            return new_kwargs, True
+
+        if adaptive_supported:
+            new_kwargs["thinking"] = {"type": "adaptive"}
+            effort = _level_to_effort(level)
+            if level == "xhigh" and effort != "max":
+                warnings.warn(
+                    f"thinking='xhigh' requested for Anthropic model '{self.model}', but effort='max' is not "
+                    "supported; using effort='high'.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+            output_config = new_kwargs.get("output_config")
+            output_config_dict: Dict[str, Any] = dict(output_config) if isinstance(output_config, dict) else {}
+            output_config_dict["effort"] = effort
+            new_kwargs["output_config"] = output_config_dict
+            return new_kwargs, True
+
+        # Manual budget fallback (deprecated on newest models but still best-effort for older ones).
+        budget_tokens = _level_to_budget_tokens(level)
+        max_out = new_kwargs.get("max_output_tokens")
+        try:
+            max_out_i = int(max_out) if max_out is not None else None
+        except Exception:
+            max_out_i = None
+        if isinstance(max_out_i, int) and max_out_i > 0:
+            budget_tokens = max(0, min(int(budget_tokens), int(max_out_i)))
+
+        new_kwargs["thinking"] = {"type": "enabled", "budget_tokens": int(budget_tokens)}
+        new_kwargs.pop("output_config", None)
+        return new_kwargs, True
 
     @property
     def async_client(self):
@@ -204,6 +272,14 @@ class AnthropicProvider(BaseProvider):
             "temperature": generation_kwargs.get("temperature", self.temperature),
             "stream": stream
         }
+
+        thinking_cfg = kwargs.get("thinking")
+        if isinstance(thinking_cfg, dict) and thinking_cfg:
+            call_params["thinking"] = thinking_cfg
+
+        output_config = kwargs.get("output_config")
+        if isinstance(output_config, dict) and output_config:
+            call_params["output_config"] = output_config
 
         # Add system prompt if provided
         if system_prompt:
@@ -437,6 +513,14 @@ class AnthropicProvider(BaseProvider):
             "stream": stream
         }
 
+        thinking_cfg = kwargs.get("thinking")
+        if isinstance(thinking_cfg, dict) and thinking_cfg:
+            call_params["thinking"] = thinking_cfg
+
+        output_config = kwargs.get("output_config")
+        if isinstance(output_config, dict) and output_config:
+            call_params["output_config"] = output_config
+
         # Add system prompt if provided (Anthropic-specific: separate parameter)
         if system_prompt:
             call_params["system"] = system_prompt
@@ -604,11 +688,20 @@ class AnthropicProvider(BaseProvider):
         # Extract content from response
         content = ""
         tool_calls = None
+        reasoning_parts: List[str] = []
 
         # Handle different content types
         for content_block in response.content:
             if content_block.type == "text":
                 content += content_block.text
+            elif content_block.type in {"thinking", "redacted_thinking"}:
+                thinking_text = getattr(content_block, "thinking", None)
+                if thinking_text is None:
+                    thinking_text = getattr(content_block, "text", None)
+                if thinking_text is None:
+                    thinking_text = getattr(content_block, "content", None)
+                if thinking_text is not None:
+                    reasoning_parts.append(str(thinking_text))
             elif content_block.type == "tool_use":
                 if tool_calls is None:
                     tool_calls = []
@@ -628,13 +721,19 @@ class AnthropicProvider(BaseProvider):
                 "total_tokens": response.usage.input_tokens + response.usage.output_tokens
             }
 
+        metadata: Optional[Dict[str, Any]] = None
+        reasoning = "\n".join([p for p in reasoning_parts if isinstance(p, str) and p.strip()]).strip()
+        if reasoning:
+            metadata = {"reasoning": reasoning}
+
         return GenerateResponse(
             content=content,
             raw_response=response,
             model=response.model,
             finish_reason=response.stop_reason,
             usage=usage,
-            tool_calls=tool_calls
+            tool_calls=tool_calls,
+            metadata=metadata,
         )
 
     def _handle_tool_execution(self, response: GenerateResponse, tools: List[Dict[str, Any]]) -> GenerateResponse:

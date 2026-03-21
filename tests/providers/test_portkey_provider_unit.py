@@ -356,18 +356,18 @@ def test_mutate_payload_keeps_explicit_constructor_kwargs(monkeypatch: pytest.Mo
 
 
 def test_mutate_payload_reasoning_model_strips_params(monkeypatch: pytest.MonkeyPatch):
-    """Reasoning models (gpt-5/o1) must not receive temperature/top_p/etc."""
+    """Models with unsupported_parameters in capabilities must not receive those params."""
     _clean_portkey_env(monkeypatch)
     _disable_model_validation(monkeypatch)
 
     provider = PortkeyProvider(
-        model="gpt-5-mini",
+        model="o3-mini",
         api_key="pk-test",
         config_id="pcfg_test",
     )
 
     payload = {
-        "model": "gpt-5-mini",
+        "model": "o3-mini",
         "messages": [{"role": "user", "content": "Hello"}],
         "temperature": 0.5,
         "top_p": 0.9,
@@ -391,8 +391,10 @@ def test_mutate_payload_reasoning_model_strips_params(monkeypatch: pytest.Monkey
     assert "top_p" not in result
     assert "frequency_penalty" not in result
     assert "presence_penalty" not in result
-    assert "repetition_penalty" not in result
-    # Reasoning models use max_completion_tokens
+    # repetition_penalty is not in the o3-mini unsupported_parameters list,
+    # but it is stripped as an unsolicited default when not explicitly set
+    # via constructor. Since it IS passed in kwargs here it stays.
+    # Models with unsupported_parameters use max_completion_tokens
     assert "max_tokens" not in result
     assert result["max_completion_tokens"] == 1234
 

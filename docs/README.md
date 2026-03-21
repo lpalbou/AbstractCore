@@ -25,6 +25,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 - **[Tool Syntax Rewriting](tool-syntax-rewriting.md)** — normalize tool-call markup for different runtimes/clients
 - **[Structured Output](structured-output.md)** — `response_model=...` strategies and limitations
 - **[Session Management](session.md)** — conversation state, persistence, compaction
+- **[Prompt Caching](prompt-caching.md)** — `prompt_cache_key`, KV/prefix caches, and persistence (MLX)
 - **[Generation Parameters](generation-parameters.md)** — unified parameter vocabulary + provider quirks
 - **Model/architecture registries (source of truth)** — `abstractcore/assets/model_capabilities.json` + `abstractcore/assets/architecture_formats.json` (see `abstractcore/assets/README.md`)
 - **[Centralized Config](centralized-config.md)** — config file + config CLI (`abstractcore --config`)

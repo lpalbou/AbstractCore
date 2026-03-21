@@ -271,8 +271,13 @@ The CLI provides convenient commands for session management:
 
 # Optional: persist local prompt/KV cache (MLX only)
 /cache save chat_cache
+/cache save chat_cache --q8
 /cache load chat_cache
 ```
+
+Notes:
+- Prompt/KV cache save/load is currently supported only for `MLXProvider` and writes a `.safetensors` file.
+- Caches are model-locked; loading a cache resets the transcript and treats the KV cache as the context source of truth.
 
 ## Best Practices
 

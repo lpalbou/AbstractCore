@@ -99,18 +99,26 @@ AbstractCore exposes a single best-effort parameter:
 ```python
 response = llm.generate("Solve this", thinking=None)      # auto (provider/model default)
 response = llm.generate("Solve this", thinking="off")     # try to reduce/disable thinking
+response = llm.generate("Solve this", thinking="none")    # alias for "off"
 response = llm.generate("Solve this", thinking="on")      # enable thinking
 response = llm.generate("Solve this", thinking="high")    # set reasoning effort (when supported)
+response = llm.generate("Solve this", thinking="xhigh")   # extra-high effort (when supported)
 print(response.metadata.get("reasoning"))
 ```
 
-**Accepted values**: `None|"auto"|"on"|"off"|True|False|"low"|"medium"|"high"`.
+**Accepted values**: `None|"auto"|"on"|"off"|"none"|True|False|"low"|"medium"|"high"|"xhigh"`.
 
-**Best-effort mappings (as of Jan 2026):**
+**Best-effort mappings (as of Mar 2026):**
+- **OpenAI** (`OpenAIProvider`): Chat Completions `reasoning_effort` (values come from `reasoning_levels` in `model_capabilities.json`). `thinking="off"` maps to `reasoning_effort="none"` when supported; otherwise it falls back to the minimum supported effort with a warning (e.g., `gpt-5.2-pro` → `"medium"`).
+- **Anthropic** (`AnthropicProvider`): Messages API `thinking` + (for Claude 4.6 adaptive thinking) `output_config.effort`.
+  - Unified levels map to effort: `low|medium|high|xhigh` → `low|medium|high|max` (when supported); `xhigh` falls back to `high` with a warning when `max` is unavailable.
+  - For older models, AbstractCore falls back to manual thinking budgets via `thinking: {type:\"enabled\", budget_tokens: ...}` (best-effort; newer models deprecate this).
+- **LM Studio / OpenAI-compatible local servers** (`LMStudioProvider`, `OpenAICompatibleProvider`):
+  - **Qwen3 / Qwen3.5**: prompt-level `/no_think` token appended when `thinking="off"` (asset-driven via `architecture_formats.json` `thinking_control`).
+  - **Seed‑OSS**: `chat_template_kwargs.thinking_budget` (levels map to budgets: low=512, medium=1024, high=4096, xhigh=8192; `off` → 0).
 - **vLLM**: `extra_body.chat_template_kwargs.enable_thinking` (commonly used by Qwen3 templates)
 - **Ollama**: request field `think` (bool for most models; `"low"|"medium"|"high"` for GPT‑OSS)
 - **GPT‑OSS (Harmony)**: inject system line `Reasoning: low|medium|high` (traces can’t be fully disabled; `"off"` maps to `"low"` with a warning)
-- **LMStudio**: reasoning is typically exposed as response fields (e.g., `message.reasoning` for GPT‑OSS) but LM Studio’s OpenAI-style **chat completions** API does not consistently expose request-side “reasoning effort” knobs; use `/v1/responses` or model-level prompt controls when available.
 
 **Output semantics**: when a provider/model exposes reasoning, AbstractCore normalizes it into `GenerateResponse.metadata["reasoning"]` and keeps `GenerateResponse.content` clean using `abstractcore/architectures/response_postprocessing.py` (asset-driven via `assets/model_capabilities.json` + `assets/architecture_formats.json`).
 

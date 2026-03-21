@@ -35,6 +35,14 @@ class OpenAIProvider(BaseProvider):
         super().__init__(model, **kwargs)
         self.provider = "openai"
 
+        # Track which generation params were explicitly provided at init so we can warn
+        # only when callers intentionally requested unsupported behaviour.
+        self._explicit_init_params = frozenset(
+            key
+            for key, value in kwargs.items()
+            if key in {"temperature", "top_p", "frequency_penalty", "presence_penalty", "seed"} and value is not None
+        )
+
         if not OPENAI_AVAILABLE:
             raise ImportError("OpenAI package not installed. Install with: pip install openai")
 
@@ -67,6 +75,60 @@ class OpenAIProvider(BaseProvider):
     def generate(self, *args, **kwargs):
         """Public generate method that includes telemetry"""
         return self.generate_with_telemetry(*args, **kwargs)
+
+    def _apply_provider_thinking_kwargs(
+        self,
+        *,
+        enabled: Optional[bool],
+        level: Optional[str],
+        kwargs: Dict[str, Any],
+    ) -> tuple[Dict[str, Any], bool]:
+        # OpenAI Chat Completions exposes reasoning controls via `reasoning_effort`.
+        #
+        # Keep this mapping provider-local (BaseProvider normalizes thinking="none" -> enabled=False).
+        reasoning_levels = self._model_reasoning_levels()
+        if not reasoning_levels:
+            return kwargs, False
+        if enabled is None and level is None:
+            return kwargs, False
+
+        effort: Optional[str] = None
+
+        # Explicit level wins.
+        if level is not None:
+            effort = level
+        elif enabled is False:
+            # Prefer true disable when supported; otherwise best-effort minimum.
+            if "none" in reasoning_levels:
+                effort = "none"
+            else:
+                fallback = next((x for x in ("low", "medium", "high", "xhigh") if x in reasoning_levels), None)
+                if not fallback:
+                    return kwargs, False
+                warnings.warn(
+                    f"thinking='off' requested for model '{self.model}', but reasoning_effort cannot be fully "
+                    f"disabled (supported: {reasoning_levels}); using reasoning_effort={fallback!r}.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+                effort = fallback
+        elif enabled is True:
+            # Make the default explicit when the caller opts-in.
+            if "medium" in reasoning_levels:
+                effort = "medium"
+            elif "high" in reasoning_levels:
+                effort = "high"
+            elif "low" in reasoning_levels:
+                effort = "low"
+            else:
+                return kwargs, False
+
+        if not effort:
+            return kwargs, False
+
+        new_kwargs = dict(kwargs)
+        new_kwargs["reasoning_effort"] = effort
+        return new_kwargs, True
 
     @property
     def async_client(self):
@@ -203,39 +265,66 @@ class OpenAIProvider(BaseProvider):
         if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
             call_params["prompt_cache_key"] = prompt_cache_key.strip()
 
-        # Add parameters that are supported by this model
-        if not self._is_reasoning_model():
-            # Reasoning models (o1, gpt-5) don't support many parameters
-            call_params["temperature"] = generation_kwargs.get("temperature", self.temperature)
-            call_params["top_p"] = kwargs.get("top_p", self.top_p)
-            call_params["frequency_penalty"] = kwargs.get("frequency_penalty", self.frequency_penalty)
-            call_params["presence_penalty"] = kwargs.get("presence_penalty", self.presence_penalty)
-            
-            # Add seed if provided (OpenAI supports seed for deterministic outputs)
-            seed_value = generation_kwargs.get("seed")
-            if seed_value is not None:
-                call_params["seed"] = seed_value
-        else:
-            # Best-effort: expose a warning when a caller requests params that are ignored.
-            seed_value = generation_kwargs.get("seed")
-            if seed_value is not None:
-                warnings.warn(
-                    f"Seed parameter ({seed_value}) requested but not supported by OpenAI reasoning models ({self.model}).",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-            if ("temperature" in kwargs) or (getattr(self, "temperature", 0.7) != 0.7):
-                warnings.warn(
-                    f"Temperature parameter requested but not supported by OpenAI reasoning models ({self.model}).",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
+        # Add generation parameters supported by this model (driven by model_capabilities.json).
+        # Unsupported parameters are silently dropped — upstream callers (runtime, gateway)
+        # always pass standard sampling params as defaults; warning on every call is noise.
+        reasoning_effort = kwargs.get("reasoning_effort")
+        reasoning_effort_s = (
+            reasoning_effort.strip().lower() if isinstance(reasoning_effort, str) and reasoning_effort.strip() else None
+        )
+        reasoning_mode = bool(reasoning_effort_s and reasoning_effort_s != "none")
 
-        # Handle different token parameter names for different model families
-        if self._uses_max_completion_tokens():
-            call_params["max_completion_tokens"] = max_output_tokens
-        else:
-            call_params["max_tokens"] = max_output_tokens
+        explicit_sampling = self._explicit_init_params | {
+            k for k, v in kwargs.items() if k in {"temperature", "top_p", "frequency_penalty", "presence_penalty", "seed"} and v is not None
+        }
+
+        sampling_params = {
+            "temperature": generation_kwargs.get("temperature", self.temperature),
+            "top_p": kwargs.get("top_p", self.top_p),
+            "frequency_penalty": kwargs.get("frequency_penalty", self.frequency_penalty),
+            "presence_penalty": kwargs.get("presence_penalty", self.presence_penalty),
+        }
+        seed_value = generation_kwargs.get("seed")
+        if seed_value is not None:
+            sampling_params["seed"] = seed_value
+
+        for param, value in sampling_params.items():
+            if self._is_parameter_supported(param):
+                if reasoning_mode and param in {"temperature", "top_p", "frequency_penalty", "presence_penalty"}:
+                    allowed_defaults = {
+                        "temperature": 1.0,
+                        "top_p": 1.0,
+                        "frequency_penalty": 0.0,
+                        "presence_penalty": 0.0,
+                    }
+                    try:
+                        allowed = allowed_defaults[param]
+                        v = float(value)
+                        if abs(v - float(allowed)) > 1e-9:
+                            if param in explicit_sampling:
+                                warnings.warn(
+                                    f"OpenAI model '{self.model}' does not support setting {param} when "
+                                    f"reasoning_effort={reasoning_effort_s!r}; dropping {param}={value!r}.",
+                                    RuntimeWarning,
+                                    stacklevel=3,
+                                )
+                            continue
+                    except Exception:
+                        if param in explicit_sampling:
+                            warnings.warn(
+                                f"OpenAI model '{self.model}' does not support setting {param} when "
+                                f"reasoning_effort={reasoning_effort_s!r}; dropping {param}={value!r}.",
+                                RuntimeWarning,
+                                stacklevel=3,
+                            )
+                        continue
+                call_params[param] = value
+
+        if reasoning_effort_s:
+            call_params["reasoning_effort"] = reasoning_effort_s
+
+        # Output token parameter name (driven by model_capabilities.json)
+        call_params[self._get_token_param_name()] = max_output_tokens
 
         # Add tools if provided (convert to native format)
         if tools:
@@ -411,38 +500,65 @@ class OpenAIProvider(BaseProvider):
         if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
             call_params["prompt_cache_key"] = prompt_cache_key.strip()
 
-        # Add parameters that are supported by this model
-        if not self._is_reasoning_model():
-            # Reasoning models (o1, gpt-5) don't support many parameters
-            call_params["temperature"] = generation_kwargs.get("temperature", self.temperature)
-            call_params["top_p"] = kwargs.get("top_p", self.top_p)
-            call_params["frequency_penalty"] = kwargs.get("frequency_penalty", self.frequency_penalty)
-            call_params["presence_penalty"] = kwargs.get("presence_penalty", self.presence_penalty)
+        # Add generation parameters supported by this model (driven by model_capabilities.json).
+        # Unsupported parameters are silently dropped (same rationale as sync path).
+        reasoning_effort = kwargs.get("reasoning_effort")
+        reasoning_effort_s = (
+            reasoning_effort.strip().lower() if isinstance(reasoning_effort, str) and reasoning_effort.strip() else None
+        )
+        reasoning_mode = bool(reasoning_effort_s and reasoning_effort_s != "none")
 
-            # Add seed if provided (OpenAI supports seed for deterministic outputs)
-            seed_value = generation_kwargs.get("seed")
-            if seed_value is not None:
-                call_params["seed"] = seed_value
-        else:
-            seed_value = generation_kwargs.get("seed")
-            if seed_value is not None:
-                warnings.warn(
-                    f"Seed parameter ({seed_value}) requested but not supported by OpenAI reasoning models ({self.model}).",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-            if ("temperature" in kwargs) or (getattr(self, "temperature", 0.7) != 0.7):
-                warnings.warn(
-                    f"Temperature parameter requested but not supported by OpenAI reasoning models ({self.model}).",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
+        explicit_sampling = self._explicit_init_params | {
+            k for k, v in kwargs.items() if k in {"temperature", "top_p", "frequency_penalty", "presence_penalty", "seed"} and v is not None
+        }
 
-        # Handle different token parameter names for different model families
-        if self._uses_max_completion_tokens():
-            call_params["max_completion_tokens"] = max_output_tokens
-        else:
-            call_params["max_tokens"] = max_output_tokens
+        sampling_params = {
+            "temperature": generation_kwargs.get("temperature", self.temperature),
+            "top_p": kwargs.get("top_p", self.top_p),
+            "frequency_penalty": kwargs.get("frequency_penalty", self.frequency_penalty),
+            "presence_penalty": kwargs.get("presence_penalty", self.presence_penalty),
+        }
+        seed_value = generation_kwargs.get("seed")
+        if seed_value is not None:
+            sampling_params["seed"] = seed_value
+
+        for param, value in sampling_params.items():
+            if self._is_parameter_supported(param):
+                if reasoning_mode and param in {"temperature", "top_p", "frequency_penalty", "presence_penalty"}:
+                    allowed_defaults = {
+                        "temperature": 1.0,
+                        "top_p": 1.0,
+                        "frequency_penalty": 0.0,
+                        "presence_penalty": 0.0,
+                    }
+                    try:
+                        allowed = allowed_defaults[param]
+                        v = float(value)
+                        if abs(v - float(allowed)) > 1e-9:
+                            if param in explicit_sampling:
+                                warnings.warn(
+                                    f"OpenAI model '{self.model}' does not support setting {param} when "
+                                    f"reasoning_effort={reasoning_effort_s!r}; dropping {param}={value!r}.",
+                                    RuntimeWarning,
+                                    stacklevel=3,
+                                )
+                            continue
+                    except Exception:
+                        if param in explicit_sampling:
+                            warnings.warn(
+                                f"OpenAI model '{self.model}' does not support setting {param} when "
+                                f"reasoning_effort={reasoning_effort_s!r}; dropping {param}={value!r}.",
+                                RuntimeWarning,
+                                stacklevel=3,
+                            )
+                        continue
+                call_params[param] = value
+
+        if reasoning_effort_s:
+            call_params["reasoning_effort"] = reasoning_effort_s
+
+        # Output token parameter name (driven by model_capabilities.json)
+        call_params[self._get_token_param_name()] = max_output_tokens
 
         # Add tools if provided (convert to native format)
         if tools:
@@ -864,26 +980,6 @@ class OpenAIProvider(BaseProvider):
         """Get max tokens parameter for OpenAI API"""
         # For OpenAI, max_tokens in the API is the max output tokens
         return kwargs.get("max_output_tokens", self.max_output_tokens)
-
-    def _uses_max_completion_tokens(self) -> bool:
-        """Check if this model uses max_completion_tokens instead of max_tokens"""
-        # OpenAI o1 series and newer models use max_completion_tokens
-        model_lower = self.model.lower()
-        return (
-            model_lower.startswith("o1") or
-            "gpt-5" in model_lower or
-            model_lower.startswith("gpt-o1")
-        )
-
-    def _is_reasoning_model(self) -> bool:
-        """Check if this is a reasoning model with limited parameter support"""
-        # Reasoning models (o1, gpt-5) have restricted parameter support
-        model_lower = self.model.lower()
-        return (
-            model_lower.startswith("o1") or
-            "gpt-5" in model_lower or
-            model_lower.startswith("gpt-o1")
-        )
 
     def _supports_structured_output(self) -> bool:
         """Check if this model supports native structured output"""

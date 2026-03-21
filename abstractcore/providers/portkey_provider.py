@@ -172,28 +172,6 @@ class PortkeyProvider(OpenAICompatibleProvider):
             if key in cls._OPTIONAL_GEN_PARAMS and value is not None
         )
 
-    def _uses_max_completion_tokens(self) -> bool:
-        """Check if this model uses max_completion_tokens instead of max_tokens.
-
-        Mirrors OpenAI provider heuristics to stay consistent with the core
-        abstraction layer (o1 + gpt-5 family).
-        """
-        model_lower = self.model.lower()
-        return (
-            model_lower.startswith("o1") or
-            "gpt-5" in model_lower or
-            model_lower.startswith("gpt-o1")
-        )
-
-    def _is_reasoning_model(self) -> bool:
-        """Check if this is a reasoning model with limited parameter support."""
-        model_lower = self.model.lower()
-        return (
-            model_lower.startswith("o1") or
-            "gpt-5" in model_lower or
-            model_lower.startswith("gpt-o1")
-        )
-
     def _handle_api_error(self, error: Exception) -> Exception:
         """Add Portkey-specific diagnostics for connection errors."""
         err = super()._handle_api_error(error)
@@ -285,53 +263,48 @@ class PortkeyProvider(OpenAICompatibleProvider):
            set them (in the constructor or in the ``generate()`` call).
            This matches the behaviour of the OpenAI Python SDK: if you don't
            pass ``temperature``, it's omitted from the request and the backend
-           uses its own default.  Critical because GPT-5 / o-series reasoning
-           models reject ``temperature ≠ 1`` and similar constraints.
+           uses its own default.  Models with unsupported_parameters in
+           model_capabilities.json will have those parameters stripped.
 
-        2. **Rename** ``max_tokens`` → ``max_completion_tokens`` for OpenAI
-           reasoning families (o1, gpt-5) or when the user explicitly asks for
-           ``max_completion_tokens``. Other models keep the legacy name.
+        2. **Rename** ``max_tokens`` → ``max_completion_tokens`` when
+           token_param_name in model_capabilities.json indicates it, or when
+           the user explicitly asks for ``max_completion_tokens``.
         """
         # ── Determine which params the user explicitly asked for ───────
         # _explicit_init_params: set in __init__ from constructor kwargs
         # kwargs here: the original kwargs from the generate() call
         explicit = self._explicit_init_params | self._explicit_param_keys(kwargs)
 
-        # ── Reasoning models: strip unsupported params even if explicit ─
-        if self._is_reasoning_model():
-            blocked = (
-                "temperature",
-                "top_p",
-                "frequency_penalty",
-                "presence_penalty",
-                "repetition_penalty",
-            )
-            explicit_blocked = [p for p in blocked if p in explicit]
-            if explicit_blocked:
-                logger.warning(
-                    "PortkeyProvider dropped unsupported parameters for reasoning model.",
-                    model=self.model,
-                    dropped_params=explicit_blocked,
-                )
-            for param in blocked:
+        # Strip unsupported parameters (driven by model_capabilities.json).
+        sampling_params = ("temperature", "top_p", "frequency_penalty", "presence_penalty", "repetition_penalty", "seed")
+        dropped_explicit = []
+        for param in sampling_params:
+            if not self._is_parameter_supported(param):
+                if param in explicit:
+                    dropped_explicit.append(param)
                 payload.pop(param, None)
 
-        # ── Strip unsolicited generation defaults ──────────────────────
+        if dropped_explicit:
+            logger.warning(
+                "PortkeyProvider dropped unsupported parameters for model.",
+                model=self.model,
+                dropped_params=dropped_explicit,
+            )
+
+        # Strip unsolicited generation defaults (params not explicitly requested).
         for param in ("temperature", "top_p"):
             if param in payload and param not in explicit:
                 del payload[param]
 
-        # max_tokens → max_completion_tokens (modern OpenAI API standard)
+        # max_tokens → max_completion_tokens (driven by model_capabilities.json).
         if "max_tokens" in payload:
             explicit_token_limit = bool(
                 explicit.intersection({"max_tokens", "max_output_tokens", "max_completion_tokens"})
             )
             if explicit_token_limit:
-                if "max_completion_tokens" in explicit or self._uses_max_completion_tokens():
+                if "max_completion_tokens" in explicit or self._get_token_param_name() == "max_completion_tokens":
                     payload["max_completion_tokens"] = payload.pop("max_tokens")
-                # Otherwise keep legacy max_tokens for non-OpenAI backends.
             else:
-                # Unsolicited default — remove entirely, let the backend decide.
                 del payload["max_tokens"]
 
         return payload

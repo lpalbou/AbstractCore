@@ -69,4 +69,4 @@ If the underlying provider exposes prompt-cache controls, the endpoint also expo
 - `POST /acore/prompt_cache/prepare_modules`
 
 For caching concepts, see [Session Management](session.md) and [Architecture](architecture.md).
-
+For a dedicated overview, see [Prompt Caching](prompt-caching.md).

@@ -141,16 +141,15 @@ class MLXProvider(BaseProvider):
     ) -> str:
         """Build a prompt fragment intended to be appended to an existing prompt_cache."""
 
-        final_system_prompt = system_prompt
+        base_system_prompt = system_prompt
+        tool_system_prompt = None
         if tools and self.tool_handler.supports_prompted:
             include_tool_list = True
-            if final_system_prompt and "## Tools (session)" in final_system_prompt:
+            if base_system_prompt and "## Tools (session)" in base_system_prompt:
                 include_tool_list = False
             tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
-            if final_system_prompt:
-                final_system_prompt += f"\n\n{tool_prompt}"
-            else:
-                final_system_prompt = tool_prompt
+            if tool_prompt:
+                tool_system_prompt = tool_prompt
 
         def _as_text(val: Any) -> str:
             if val is None:
@@ -165,11 +164,17 @@ class MLXProvider(BaseProvider):
         is_qwen = "qwen" in self.model.lower()
         parts: List[str] = []
 
-        if final_system_prompt:
+        if base_system_prompt:
             if is_qwen:
-                parts.append(f"<|im_start|>system\n{final_system_prompt}<|im_end|>\n")
+                parts.append(f"<|im_start|>system\n{base_system_prompt}<|im_end|>\n")
             else:
-                parts.append(f"{final_system_prompt.strip()}\n\n")
+                parts.append(f"{base_system_prompt.strip()}\n\n")
+
+        if tool_system_prompt:
+            if is_qwen:
+                parts.append(f"<|im_start|>system\n{tool_system_prompt}<|im_end|>\n")
+            else:
+                parts.append(f"{tool_system_prompt.strip()}\n\n")
 
         if messages:
             for msg in messages:
@@ -589,51 +594,14 @@ class MLXProvider(BaseProvider):
 
     def _build_prompt(self, prompt: str, messages: Optional[List[Dict[str, str]]],
                      system_prompt: Optional[str], tools: Optional[List[Dict[str, Any]]] = None) -> str:
-        """Build prompt for MLX model with tool support"""
-
-        # Add tools to system prompt if provided
-        final_system_prompt = system_prompt
-        if tools and self.tool_handler.supports_prompted:
-            include_tool_list = True
-            if final_system_prompt and "## Tools (session)" in final_system_prompt:
-                include_tool_list = False
-            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
-            if final_system_prompt:
-                final_system_prompt += f"\n\n{tool_prompt}"
-            else:
-                final_system_prompt = tool_prompt
-
-        # For Qwen models, use chat template format
-        if "qwen" in self.model.lower():
-            full_prompt = ""
-
-            # Add system prompt
-            if final_system_prompt:
-                full_prompt += f"<|im_start|>system\n{final_system_prompt}<|im_end|>\n"
-
-            # Add conversation history
-            if messages:
-                for msg in messages:
-                    role = msg["role"]
-                    content = msg["content"]
-                    full_prompt += f"<|im_start|>{role}\n{content}<|im_end|>\n"
-
-            # Add current prompt
-            full_prompt += f"<|im_start|>user\n{prompt}<|im_end|>\n"
-            full_prompt += "<|im_start|>assistant\n"
-
-        else:
-            # Generic format for other models
-            full_prompt = prompt
-            if final_system_prompt:
-                full_prompt = f"{final_system_prompt}\n\n{prompt}"
-
-            # Add conversation context if provided
-            if messages:
-                context = "\n".join([f"{msg['role']}: {msg['content']}" for msg in messages])
-                full_prompt = f"{context}\nuser: {prompt}\nassistant:"
-
-        return full_prompt
+        """Build prompt for MLX model with tool support."""
+        return self._build_prompt_fragment(
+            prompt=str(prompt or ""),
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            add_generation_prompt=True,
+        )
 
     def _single_generate(
         self,

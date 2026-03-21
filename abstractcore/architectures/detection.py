@@ -7,6 +7,7 @@ to determine how to communicate with different models.
 
 import json
 import os
+import re
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 from ..utils.structured_logging import get_logger
@@ -48,6 +49,14 @@ _KNOWN_PROVIDER_PREFIXES = {
     "vllm",
 }
 
+_VARIANT_EXTENSION_RE = re.compile(r"(?i)\.(?:gguf|safetensors|bin)$")
+_VARIANT_SUFFIX_RE = re.compile(
+    r"(?i)(?:[-_.@](?:"
+    r"gguf|mlx|awq|gptq|fp4|fp8|fp16|fp32|bf16|f16|f32|int4|int8|"
+    r"4bit|8bit|q[2-8](?:_[a-z0-9]+)*|bnb|mxfp4|mxfp8|quant|quantized"
+    r"))$"
+)
+
 
 def _strip_provider_prefix(model_name: str) -> str:
     s = str(model_name or "").strip()
@@ -57,6 +66,29 @@ def _strip_provider_prefix(model_name: str) -> str:
     if head.strip().lower() in _KNOWN_PROVIDER_PREFIXES and rest.strip():
         return rest.strip()
     return s
+
+
+def _variant_normalizations(name: str) -> List[str]:
+    """Return a small set of normalized names with trailing backend/quantization tags removed."""
+    s = str(name or "").strip()
+    if not s:
+        return []
+
+    out: List[str] = []
+    seen: set[str] = set()
+    current = s
+
+    while current and current not in seen:
+        seen.add(current)
+        out.append(current)
+
+        stripped = _VARIANT_EXTENSION_RE.sub("", current).rstrip(".-_")
+        stripped = _VARIANT_SUFFIX_RE.sub("", stripped).rstrip(".-_")
+        if not stripped or stripped == current:
+            break
+        current = stripped
+
+    return out
 
 
 def _load_json_assets():
@@ -113,7 +145,6 @@ def detect_architecture(model_name: str) -> str:
     # - HuggingFace cache names use `--` as `/` separators (models--org--name).
     # - Claude versions sometimes appear as `claude-3-5-sonnet` (normalize to `claude-3.5-sonnet`).
     model_lower = model_name.lower().replace("--", "/")
-    import re
     model_lower = re.sub(r'(claude-\d+)-(\d+)(?=-|$)', r'\1.\2', model_lower)
 
     # Choose the most specific matching architecture.
@@ -198,7 +229,6 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     #   "claude-3-5-sonnet" -> "claude-3.5-sonnet"
     #   "claude-4-1-opus" -> "claude-4.1-opus"
     #   "claude-3-5-sonnet-20241022" -> "claude-3.5-sonnet-20241022"
-    import re
     normalized_model_name = re.sub(r'(claude-\d+)-(\d+)(?=-|$)', r'\1.\2', normalized_model_name)
 
     if normalized_model_name != model_name:
@@ -244,12 +274,14 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
             s = str(n or "").strip()
             if not s:
                 continue
-            out.append(s)
-            out.extend(_colon_variants(s))
-            t = _tail(s)
-            if t and t != s:
-                out.append(t)
-                out.extend(_colon_variants(t))
+            for normalized in _variant_normalizations(s):
+                out.append(normalized)
+                out.extend(_colon_variants(normalized))
+                t = _tail(normalized)
+                if t:
+                    for tail_normalized in _variant_normalizations(t):
+                        out.append(tail_normalized)
+                        out.extend(_colon_variants(tail_normalized))
         # Deduplicate while preserving order
         uniq: List[str] = []
         seen: set[str] = set()

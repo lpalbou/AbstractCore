@@ -633,7 +633,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """Normalize `thinking=` into (enabled, level).
 
         - enabled: True/False/None (None == "auto")
-        - level: Optional[str] in {"low","medium","high"} when requested
+        - level: Optional[str] in {"low","medium","high","xhigh"} when requested
+
+        Notes:
+        - thinking="none" is accepted as an alias for thinking="off".
         """
         if thinking is None:
             return None, None
@@ -647,12 +650,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 return None, None
             if s in {"on", "true", "yes"}:
                 return True, None
-            if s in {"off", "false", "no"}:
+            if s in {"off", "false", "no", "none"}:
                 return False, None
-            if s in {"low", "medium", "high"}:
+            if s in {"low", "medium", "high", "xhigh"}:
                 return True, s
 
-        raise ValueError('thinking must be one of: None, bool, "auto", "on", "off", "low", "medium", "high"')
+        raise ValueError(
+            'thinking must be one of: None, bool, "auto", "on", "off", "none", "low", "medium", "high", "xhigh"'
+        )
 
     def _model_reasoning_levels(self) -> List[str]:
         levels = None
@@ -678,6 +683,41 @@ class BaseProvider(AbstractCoreInterface, ABC):
             seen.add(x)
             uniq.append(x)
         return uniq
+
+    def _is_reasoning_model(self) -> bool:
+        """Check if this model has reasoning/thinking capabilities.
+
+        Uses thinking_support from model_capabilities.json as the source of truth.
+        Falls back to architecture-level indicators when model capabilities are absent.
+        """
+        caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
+        if caps.get("thinking_support") is True:
+            return True
+        arch = self.architecture_config if isinstance(self.architecture_config, dict) else {}
+        if arch.get("reasoning_support") is True:
+            return True
+        return False
+
+    def _is_parameter_supported(self, param: str) -> bool:
+        """Check if a generation parameter is supported by this model.
+
+        Uses unsupported_parameters from model_capabilities.json.
+        Absent field means all standard parameters are supported (backward-compatible default).
+        """
+        caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
+        blocked = caps.get("unsupported_parameters")
+        if blocked is None:
+            return True
+        return param not in blocked
+
+    def _get_token_param_name(self) -> str:
+        """Return the API parameter name for output token limit.
+
+        Uses token_param_name from model_capabilities.json.
+        Default when absent: 'max_tokens'.
+        """
+        caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
+        return caps.get("token_param_name", "max_tokens")
 
     def _model_supports_thinking_control(self) -> bool:
         caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
@@ -885,7 +925,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             tool_call_tags: Optional tool call tag format for rewriting
             execute_tools: Whether to execute tools automatically (True) or let agent handle execution (False)
             glyph_compression: Glyph compression preference ("auto", "always", "never")
-            thinking: Unified reasoning/thinking control (auto/on/off or low/medium/high when supported)
+            thinking: Unified reasoning/thinking control (auto/on/off/none or low/medium/high/xhigh when supported)
         """
         # Normalize token limit naming at the provider boundary.
         #

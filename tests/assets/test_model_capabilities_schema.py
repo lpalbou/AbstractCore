@@ -43,7 +43,7 @@ def _validate_thinking_tags(label: str, tags: Any) -> None:
 
 def _validate_reasoning_levels(label: str, levels: Any) -> None:
     assert isinstance(levels, list) and levels, f"{label}.reasoning_levels must be a non-empty list when set"
-    allowed = {"low", "medium", "high"}
+    allowed = {"none", "low", "medium", "high", "xhigh"}
     for level in levels:
         assert _non_empty_str(level), f"{label}.reasoning_levels contains invalid: {level!r}"
         assert level in allowed, f"{label}.reasoning_levels must be subset of {sorted(allowed)}"
@@ -166,6 +166,7 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
         "token_cap",
         "token_formula",
         "tokens_per_tile",
+        "token_param_name",
         "tool_calling_format",
         "tool_calling_parser",
         "total_parameters",
@@ -173,6 +174,7 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
         "transformers_version_min",
         "trust_remote_code",
         "ui_generation",
+        "unsupported_parameters",
         "video_support",
         "vision_encoder",
         "visual_agent",
@@ -285,6 +287,23 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
     response_format = cfg.get("response_format")
     if response_format is not None:
         assert response_format in {"harmony"}, f"{label}.response_format must be one of: harmony"
+
+    unsupported_parameters = cfg.get("unsupported_parameters")
+    if unsupported_parameters is not None:
+        assert isinstance(unsupported_parameters, list), f"{label}.unsupported_parameters must be a list"
+        allowed_params = {"temperature", "top_p", "frequency_penalty", "presence_penalty", "seed", "stop"}
+        for p in unsupported_parameters:
+            assert _non_empty_str(p), f"{label}.unsupported_parameters entries must be non-empty strings: {p!r}"
+            assert p in allowed_params, f"{label}.unsupported_parameters entry {p!r} not in allowed set {sorted(allowed_params)}"
+        assert len(unsupported_parameters) == len(set(unsupported_parameters)), (
+            f"{label}.unsupported_parameters must not contain duplicates"
+        )
+
+    token_param_name = cfg.get("token_param_name")
+    if token_param_name is not None:
+        assert token_param_name in {"max_tokens", "max_completion_tokens"}, (
+            f"{label}.token_param_name must be one of: max_tokens, max_completion_tokens"
+        )
 
 
 @pytest.mark.basic
