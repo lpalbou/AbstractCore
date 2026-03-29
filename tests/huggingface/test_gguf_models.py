@@ -96,7 +96,7 @@ class TestGGUFBasicFunctionality:
 
         error_message = str(exc_info.value)
         assert "GGUF model" in error_message
-        assert "not found in HuggingFace cache" in error_message
+        assert "not found in local caches" in error_message
 
 
 class TestGGUFUnifiedTokens:

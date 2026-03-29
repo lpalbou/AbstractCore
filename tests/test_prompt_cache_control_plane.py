@@ -89,6 +89,38 @@ class _StubModularCacheProvider(BaseProvider):
         return ["stub"]
 
 
+class _KeyOnlyPromptCacheProvider(BaseProvider):
+    def __init__(self, model: str = "stub", **kwargs: Any):
+        super().__init__(model, **kwargs)
+
+    def supports_prompt_cache(self) -> bool:
+        return True
+
+    def _generate_internal(
+        self,
+        prompt: str,
+        messages: Optional[List[Dict[str, str]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        media: Optional[List[Any]] = None,
+        stream: bool = False,
+        **kwargs: Any,
+    ) -> GenerateResponse | Iterator[GenerateResponse]:
+        _ = (prompt, messages, system_prompt, tools, media, stream, kwargs)
+        return GenerateResponse(content="ok", model=self.model, finish_reason="stop")
+
+    def get_capabilities(self) -> List[str]:
+        return ["chat"]
+
+    def unload_model(self, model_name: str) -> None:
+        _ = model_name
+
+    @classmethod
+    def list_available_models(cls, **kwargs: Any) -> List[str]:
+        _ = kwargs
+        return ["stub"]
+
+
 def test_prompt_cache_update_fork_and_prepare_modules():
     llm = _StubModularCacheProvider()
 
@@ -142,6 +174,13 @@ def test_abstractendpoint_prompt_cache_control_plane_endpoints():
     app = create_app(provider_instance=llm)
     client = TestClient(app)
 
+    r = client.get("/acore/prompt_cache/capabilities")
+    assert r.status_code == 200
+    caps = r.json()
+    assert caps["supported"] is True
+    assert caps["operation"] == "capabilities"
+    assert caps["capabilities"]["mode"] == "local_control_plane"
+
     r = client.post("/acore/prompt_cache/set", json={"key": "k1", "make_default": True})
     assert r.status_code == 200
     assert r.json()["supported"] is True
@@ -173,6 +212,7 @@ def test_abstractendpoint_prompt_cache_control_plane_endpoints():
     assert r.status_code == 200
     stats = r.json()
     assert stats["supported"] is True
+    assert stats["capabilities"]["mode"] == "local_control_plane"
     assert stats["stats"]["entries"] >= 1
 
     r = client.post("/acore/prompt_cache/clear", json={"key": "k1"})
@@ -180,3 +220,22 @@ def test_abstractendpoint_prompt_cache_control_plane_endpoints():
     assert r.json()["supported"] is True
     assert r.json()["ok"] is True
 
+
+def test_abstractendpoint_prompt_cache_reports_structured_unsupported_operation():
+    llm = _KeyOnlyPromptCacheProvider(model="stub-model")
+    app = create_app(provider_instance=llm)
+    client = TestClient(app)
+
+    r = client.post(
+        "/acore/prompt_cache/prepare_modules",
+        json={
+            "namespace": "tenantA:stub-model",
+            "modules": [{"module_id": "system", "system_prompt": "You are helpful"}],
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["supported"] is False
+    assert body["operation"] == "prepare_modules"
+    assert body["code"] == "prompt_cache_unsupported"
+    assert body["capabilities"]["mode"] == "keyed"

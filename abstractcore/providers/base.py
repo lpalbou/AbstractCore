@@ -222,6 +222,150 @@ class PromptCacheModule:
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+_PROMPT_CACHE_OPERATION_ALIASES: Dict[str, str] = {
+    "set": "set",
+    "clear": "clear",
+    "update": "update",
+    "fork": "fork",
+    "prepare": "prepare_modules",
+    "prepare_modules": "prepare_modules",
+    "modules": "prepare_modules",
+    "stats": "stats",
+    "get_stats": "stats",
+}
+
+
+@dataclass(frozen=True)
+class PromptCacheCapabilities:
+    """Provider prompt-cache capability profile.
+
+    `mode` is an intentionally small abstraction:
+    - `none`: provider does not support prompt caching
+    - `keyed`: provider accepts cache keys and local default-key control, but does not expose
+      local module/update/fork control-plane semantics
+    - `local_control_plane`: provider supports the full local prompt-cache control plane
+    """
+
+    supported: bool = False
+    mode: str = "none"
+    supports_set: bool = False
+    supports_clear: bool = False
+    supports_update: bool = False
+    supports_fork: bool = False
+    supports_prepare_modules: bool = False
+    supports_stats: bool = False
+    supports_ttl: bool = False
+    notes: Tuple[str, ...] = ()
+
+    def supports_operation(self, operation: str) -> bool:
+        op = _PROMPT_CACHE_OPERATION_ALIASES.get(str(operation or "").strip().lower(), "")
+        if op == "set":
+            return bool(self.supports_set)
+        if op == "clear":
+            return bool(self.supports_clear)
+        if op == "update":
+            return bool(self.supports_update)
+        if op == "fork":
+            return bool(self.supports_fork)
+        if op == "prepare_modules":
+            return bool(self.supports_prepare_modules)
+        if op == "stats":
+            return bool(self.supports_stats)
+        return False
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "supported": bool(self.supported),
+            "mode": str(self.mode or "none"),
+            "supports_set": bool(self.supports_set),
+            "supports_clear": bool(self.supports_clear),
+            "supports_update": bool(self.supports_update),
+            "supports_fork": bool(self.supports_fork),
+            "supports_prepare_modules": bool(self.supports_prepare_modules),
+            "supports_stats": bool(self.supports_stats),
+            "supports_ttl": bool(self.supports_ttl),
+            "notes": list(self.notes or ()),
+        }
+
+
+class PromptCacheError(RuntimeError):
+    """Structured prompt-cache error that higher layers can catch and inspect."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        operation: str,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        code: str = "prompt_cache_error",
+        capabilities: Optional[PromptCacheCapabilities] = None,
+    ) -> None:
+        super().__init__(message)
+        self.operation = _PROMPT_CACHE_OPERATION_ALIASES.get(str(operation or "").strip().lower(), str(operation or ""))
+        self.provider = str(provider or "").strip() or None
+        self.model = str(model or "").strip() or None
+        self.code = str(code or "prompt_cache_error").strip() or "prompt_cache_error"
+        self.capabilities = capabilities
+
+    def to_dict(self) -> Dict[str, Any]:
+        payload: Dict[str, Any] = {
+            "code": self.code,
+            "operation": self.operation,
+            "message": str(self),
+        }
+        if self.provider:
+            payload["provider"] = self.provider
+        if self.model:
+            payload["model"] = self.model
+        if isinstance(self.capabilities, PromptCacheCapabilities):
+            payload["capabilities"] = self.capabilities.to_dict()
+        return payload
+
+
+class PromptCacheUnsupportedError(PromptCacheError):
+    def __init__(
+        self,
+        *,
+        operation: str,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        capabilities: Optional[PromptCacheCapabilities] = None,
+        detail: Optional[str] = None,
+    ) -> None:
+        op = _PROMPT_CACHE_OPERATION_ALIASES.get(str(operation or "").strip().lower(), str(operation or "prompt_cache"))
+        msg = detail or f"Prompt cache operation '{op}' is not supported by this provider."
+        super().__init__(
+            msg,
+            operation=op,
+            provider=provider,
+            model=model,
+            code="prompt_cache_unsupported",
+            capabilities=capabilities,
+        )
+
+
+class PromptCacheOperationError(PromptCacheError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        operation: str,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        code: str = "prompt_cache_operation_failed",
+        capabilities: Optional[PromptCacheCapabilities] = None,
+    ) -> None:
+        super().__init__(
+            message,
+            operation=operation,
+            provider=provider,
+            model=model,
+            code=code,
+            capabilities=capabilities,
+        )
+
+
 class BaseProvider(AbstractCoreInterface, ABC):
     """
     Base provider class with integrated telemetry and events.
@@ -2370,6 +2514,67 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """
         return False
 
+    def get_prompt_cache_capabilities(self) -> PromptCacheCapabilities:
+        """Return the provider prompt-cache capability profile.
+
+        Providers may override this for richer capability reporting. The default implementation keeps
+        backward compatibility with existing providers that only override `supports_prompt_cache()`
+        and the optional backend hooks.
+        """
+        supported = bool(self.supports_prompt_cache())
+        if not supported:
+            return PromptCacheCapabilities()
+
+        create_overridden = type(self)._prompt_cache_backend_create is not BaseProvider._prompt_cache_backend_create
+        clone_overridden = type(self)._prompt_cache_backend_clone is not BaseProvider._prompt_cache_backend_clone
+        append_overridden = type(self)._prompt_cache_backend_append is not BaseProvider._prompt_cache_backend_append
+        set_overridden = type(self).prompt_cache_set is not BaseProvider.prompt_cache_set
+
+        supports_update = bool(create_overridden and append_overridden)
+        supports_fork = bool(create_overridden and clone_overridden)
+        supports_prepare_modules = bool(create_overridden and clone_overridden and append_overridden)
+        supports_ttl = bool(supports_prepare_modules or supports_update or supports_fork or set_overridden)
+        mode = "local_control_plane" if supports_prepare_modules else "keyed"
+
+        notes: List[str] = []
+        if mode == "keyed":
+            notes.append(
+                "Provider accepts prompt cache keys but does not expose the full local prompt-cache control plane."
+            )
+
+        return PromptCacheCapabilities(
+            supported=True,
+            mode=mode,
+            supports_set=True,
+            supports_clear=True,
+            supports_update=supports_update,
+            supports_fork=supports_fork,
+            supports_prepare_modules=supports_prepare_modules,
+            supports_stats=True,
+            supports_ttl=supports_ttl,
+            notes=tuple(notes),
+        )
+
+    def prompt_cache_supports_operation(self, operation: str) -> bool:
+        return self.get_prompt_cache_capabilities().supports_operation(operation)
+
+    def _prompt_cache_error_context(self) -> Tuple[Optional[str], Optional[str]]:
+        provider = str(getattr(self, "provider", "") or "").strip() or self.__class__.__name__
+        model = str(getattr(self, "model", "") or "").strip() or None
+        return provider, model
+
+    def _require_prompt_cache_operation(self, operation: str) -> PromptCacheCapabilities:
+        caps = self.get_prompt_cache_capabilities()
+        if not caps.supports_operation(operation):
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheUnsupportedError(
+                operation=operation,
+                provider=provider,
+                model=model,
+                capabilities=caps,
+            )
+        return caps
+
     # Provider-specific prompt cache backend hooks (optional)
     #
     # Providers that implement in-process KV caching (MLX, llama.cpp, etc.) can override these to enable
@@ -2416,8 +2621,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
     def get_prompt_cache_stats(self) -> Dict[str, Any]:
         """Return basic prompt cache stats (in-process store only)."""
+        caps = self._require_prompt_cache_operation("stats")
         stats = self._prompt_cache_store.stats()
         stats["default_key"] = self._default_prompt_cache_key
+        stats["capabilities"] = caps.to_dict()
         try:
             keys = self._prompt_cache_store.keys()
             if isinstance(keys, list):
@@ -2438,11 +2645,18 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         Provider-specific cache allocation/warming is implemented by subclasses when applicable.
         """
+        caps = self._require_prompt_cache_operation("set")
         normalized = self._normalize_prompt_cache_key(key)
         if normalized is None:
-            return False
-        if not self.supports_prompt_cache():
-            return False
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                "Prompt cache key must be a non-empty string.",
+                operation="set",
+                provider=provider,
+                model=model,
+                code="prompt_cache_invalid_key",
+                capabilities=caps,
+            )
         _ = kwargs
         # Best-effort: allocate backend cache if the provider supports it.
         if self._prompt_cache_store.get(normalized) is None:
@@ -2477,20 +2691,34 @@ class BaseProvider(AbstractCoreInterface, ABC):
         Arguments are intentionally similar to `generate()` so higher-level code can reuse its own
         prompt/module construction logic.
         """
+        caps = self._require_prompt_cache_operation("update")
         normalized = self._normalize_prompt_cache_key(key)
         if normalized is None:
-            return False
-        if not self.supports_prompt_cache():
-            return False
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                "Prompt cache key must be a non-empty string.",
+                operation="update",
+                provider=provider,
+                model=model,
+                code="prompt_cache_invalid_key",
+                capabilities=caps,
+            )
 
         # Ensure the cache exists if the provider can allocate a backend cache object.
         cache_value = self._prompt_cache_store.get(normalized)
         if cache_value is None:
-            if not self.prompt_cache_set(normalized, make_default=False):
-                return False
+            self.prompt_cache_set(normalized, make_default=False)
             cache_value = self._prompt_cache_store.get(normalized)
             if cache_value is None:
-                return False
+                provider, model = self._prompt_cache_error_context()
+                raise PromptCacheOperationError(
+                    f"Provider did not create prompt cache state for key '{normalized}'.",
+                    operation="update",
+                    provider=provider,
+                    model=model,
+                    code="prompt_cache_missing_backend_state",
+                    capabilities=caps,
+                )
 
         ok = self._prompt_cache_backend_append(
             cache_value,
@@ -2502,15 +2730,27 @@ class BaseProvider(AbstractCoreInterface, ABC):
             **kwargs,
         )
         if not ok:
-            return False
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                f"Provider failed to append prompt context into cache key '{normalized}'.",
+                operation="update",
+                provider=provider,
+                model=model,
+                code="prompt_cache_append_failed",
+                capabilities=caps,
+            )
 
         # Update TTL/metadata best-effort.
-        if ttl_s is not None:
-            try:
-                meta = self._prompt_cache_store.meta(normalized) or {}
+        try:
+            meta = self._prompt_cache_store.meta(normalized) or {}
+            meta = dict(meta)
+            tok = self._prompt_cache_backend_token_count(cache_value)
+            if isinstance(tok, int) and tok >= 0:
+                meta["token_count"] = tok
+            if ttl_s is not None or meta:
                 self._prompt_cache_store.set(normalized, cache_value, ttl_s=ttl_s, meta=meta)
-            except Exception:
-                pass
+        except Exception:
+            pass
         return True
 
     def prompt_cache_fork(
@@ -2528,29 +2768,63 @@ class BaseProvider(AbstractCoreInterface, ABC):
         - build stable shared prefixes (persona, memory blueprints, tool schemas)
         - fork them into per-session caches that can be appended/mutated safely.
         """
+        caps = self._require_prompt_cache_operation("fork")
         _ = kwargs
         src = self._normalize_prompt_cache_key(from_key)
         dst = self._normalize_prompt_cache_key(to_key)
         if src is None or dst is None:
-            return False
-        if not self.supports_prompt_cache():
-            return False
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                "Source and destination prompt cache keys must be non-empty strings.",
+                operation="fork",
+                provider=provider,
+                model=model,
+                code="prompt_cache_invalid_key",
+                capabilities=caps,
+            )
 
         src_value = self._prompt_cache_store.get(src)
         if src_value is None:
-            return False
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                f"Source prompt cache key '{src}' does not exist.",
+                operation="fork",
+                provider=provider,
+                model=model,
+                code="prompt_cache_missing_source_key",
+                capabilities=caps,
+            )
 
         cloned = self._prompt_cache_backend_clone(src_value)
         if cloned is None:
-            return False
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                f"Provider failed to clone prompt cache key '{src}'.",
+                operation="fork",
+                provider=provider,
+                model=model,
+                code="prompt_cache_clone_failed",
+                capabilities=caps,
+            )
 
         try:
             meta = self._prompt_cache_store.meta(src) or {}
             meta = dict(meta)
             meta.setdefault("forked_from", src)
+            tok = self._prompt_cache_backend_token_count(cloned)
+            if isinstance(tok, int) and tok >= 0:
+                meta["token_count"] = tok
             self._prompt_cache_store.set(dst, cloned, ttl_s=ttl_s, meta=meta)
         except Exception:
-            return False
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                f"Provider failed to persist forked prompt cache key '{dst}'.",
+                operation="fork",
+                provider=provider,
+                model=model,
+                code="prompt_cache_store_failed",
+                capabilities=caps,
+            )
 
         if make_default:
             self._default_prompt_cache_key = dst
@@ -2573,11 +2847,18 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         Returns a JSON-serializable dict containing per-module derived keys.
         """
+        caps = self._require_prompt_cache_operation("prepare_modules")
         ns = str(namespace or "").strip()
         if not ns:
-            return {"supported": False, "error": "namespace required"}
-        if not self.supports_prompt_cache():
-            return {"supported": False, "error": "provider does not support prompt caching"}
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                "Prompt cache module preparation requires a non-empty namespace.",
+                operation="prepare_modules",
+                provider=provider,
+                model=model,
+                code="prompt_cache_invalid_namespace",
+                capabilities=caps,
+            )
 
         normalized_modules: List[PromptCacheModule] = []
         for m in modules or []:
@@ -2590,7 +2871,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     continue
 
         if not normalized_modules:
-            return {"supported": False, "error": "no modules provided"}
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                "Prompt cache module preparation requires at least one valid module.",
+                operation="prepare_modules",
+                provider=provider,
+                model=model,
+                code="prompt_cache_no_modules",
+                capabilities=caps,
+            )
 
         # Derive deterministic prefix keys per module boundary.
         prefix_hash = hashlib.sha256(f"acore-prompt-cache:{int(version)}".encode("utf-8")).hexdigest()
@@ -2620,7 +2909,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if current_cache is None:
             current_cache = self._prompt_cache_backend_create()
             if current_cache is None:
-                return {"supported": False, "error": "provider does not implement in-process cache backend"}
+                provider, model = self._prompt_cache_error_context()
+                raise PromptCacheOperationError(
+                    "Provider does not implement an in-process prompt-cache backend.",
+                    operation="prepare_modules",
+                    provider=provider,
+                    model=model,
+                    code="prompt_cache_backend_unavailable",
+                    capabilities=caps,
+                )
 
         # Build missing caches.
         for j in range(start_idx + 1, len(keys)):
@@ -2634,11 +2931,27 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 add_generation_prompt=bool(mod.add_generation_prompt),
             )
             if not ok:
-                return {"supported": False, "error": f"failed to append module '{mod.module_id}'"}
+                provider, model = self._prompt_cache_error_context()
+                raise PromptCacheOperationError(
+                    f"Provider failed to append prompt cache module '{mod.module_id}'.",
+                    operation="prepare_modules",
+                    provider=provider,
+                    model=model,
+                    code="prompt_cache_append_failed",
+                    capabilities=caps,
+                )
 
             snapshot = self._prompt_cache_backend_clone(current_cache) or None
             if snapshot is None:
-                return {"supported": False, "error": "provider does not support cache cloning"}
+                provider, model = self._prompt_cache_error_context()
+                raise PromptCacheOperationError(
+                    "Provider does not support prompt-cache cloning for module preparation.",
+                    operation="prepare_modules",
+                    provider=provider,
+                    model=model,
+                    code="prompt_cache_clone_failed",
+                    capabilities=caps,
+                )
 
             meta = {
                 "namespace": ns,
@@ -2658,6 +2971,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         return {
             "supported": True,
+            "capabilities": caps.to_dict(),
             "namespace": ns,
             "version": int(version),
             "modules": derived,
@@ -2666,9 +2980,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
     def prompt_cache_clear(self, key: Optional[str] = None) -> bool:
         """Clear prompt caches for this provider instance (best-effort)."""
+        caps = self._require_prompt_cache_operation("clear")
         normalized = self._normalize_prompt_cache_key(key) if key is not None else None
-        if not self.supports_prompt_cache():
-            return False
 
         if normalized is None:
             self._default_prompt_cache_key = None
@@ -2678,7 +2991,17 @@ class BaseProvider(AbstractCoreInterface, ABC):
         cleared = self._prompt_cache_store.delete(normalized)
         if self._default_prompt_cache_key == normalized:
             self._default_prompt_cache_key = None
-        return cleared
+        if not cleared:
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                f"Prompt cache key '{normalized}' does not exist.",
+                operation="clear",
+                provider=provider,
+                model=model,
+                code="prompt_cache_missing_key",
+                capabilities=caps,
+            )
+        return True
 
     # Memory management methods
     @abstractmethod

@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 
 from ..core.factory import create_llm
 from ..core.types import GenerateResponse
+from ..providers.base import PromptCacheCapabilities, PromptCacheError
 
 
 @dataclass(frozen=True)
@@ -197,8 +198,50 @@ def create_app(
     created_at = int(time.time())
     model_id = getattr(provider, "model", model or "unknown")
 
-    def _has_cache_api() -> bool:
-        return bool(getattr(provider, "supports_prompt_cache", lambda: False)())
+    def _prompt_cache_capabilities() -> PromptCacheCapabilities:
+        getter = getattr(provider, "get_prompt_cache_capabilities", None)
+        if callable(getter):
+            try:
+                caps = getter()
+                if isinstance(caps, PromptCacheCapabilities):
+                    return caps
+            except Exception:
+                pass
+
+        try:
+            supported = bool(getattr(provider, "supports_prompt_cache", lambda: False)())
+        except Exception:
+            supported = False
+        if supported:
+            return PromptCacheCapabilities(
+                supported=True,
+                mode="keyed",
+                supports_set=True,
+                supports_clear=True,
+                supports_stats=True,
+                notes=("Provider only exposed legacy prompt-cache detection.",),
+            )
+        return PromptCacheCapabilities()
+
+    def _prompt_cache_error_payload(error: Exception, *, operation: str) -> Dict[str, Any]:
+        caps = _prompt_cache_capabilities()
+        if isinstance(error, PromptCacheError):
+            payload = error.to_dict()
+            payload.setdefault("capabilities", caps.to_dict())
+            return {
+                "supported": False,
+                "operation": payload.get("operation") or operation,
+                "code": payload.get("code") or "prompt_cache_error",
+                "error": payload.get("message") or str(error),
+                "capabilities": payload.get("capabilities") or caps.to_dict(),
+            }
+        return {
+            "supported": False,
+            "operation": operation,
+            "code": "prompt_cache_error",
+            "error": str(error),
+            "capabilities": caps.to_dict(),
+        }
 
     @app.get("/health")
     def health():
@@ -220,29 +263,69 @@ def create_app(
 
     @app.get("/acore/prompt_cache/stats")
     def prompt_cache_stats():
-        if not _has_cache_api() or not hasattr(provider, "get_prompt_cache_stats"):
-            return {"supported": False, "error": "provider does not expose prompt cache stats"}
+        caps = _prompt_cache_capabilities()
+        if not caps.supports_operation("stats") or not hasattr(provider, "get_prompt_cache_stats"):
+            return {
+                "supported": False,
+                "operation": "stats",
+                "code": "prompt_cache_unsupported",
+                "error": "provider does not expose prompt cache stats",
+                "capabilities": caps.to_dict(),
+            }
         with lock:
             try:
-                return {"supported": True, "stats": provider.get_prompt_cache_stats()}  # type: ignore[no-any-return]
+                return {
+                    "supported": True,
+                    "operation": "stats",
+                    "capabilities": caps.to_dict(),
+                    "stats": provider.get_prompt_cache_stats(),
+                }  # type: ignore[no-any-return]
             except Exception as e:
-                return {"supported": False, "error": str(e)}
+                return _prompt_cache_error_payload(e, operation="stats")
+
+    @app.get("/acore/prompt_cache/capabilities")
+    def prompt_cache_capabilities():
+        caps = _prompt_cache_capabilities()
+        return {
+            "supported": bool(caps.supported),
+            "operation": "capabilities",
+            "capabilities": caps.to_dict(),
+        }
 
     @app.post("/acore/prompt_cache/set")
     def prompt_cache_set(req: PromptCacheSetRequest):
-        if not _has_cache_api() or not hasattr(provider, "prompt_cache_set"):
-            return {"supported": False, "error": "provider does not support prompt cache control plane"}
+        caps = _prompt_cache_capabilities()
+        if not caps.supports_operation("set") or not hasattr(provider, "prompt_cache_set"):
+            return {
+                "supported": False,
+                "operation": "set",
+                "code": "prompt_cache_unsupported",
+                "error": "provider does not support prompt cache control plane",
+                "capabilities": caps.to_dict(),
+            }
         with lock:
             try:
                 ok = provider.prompt_cache_set(req.key, make_default=req.make_default, ttl_s=req.ttl_s)  # type: ignore[arg-type]
-                return {"supported": True, "ok": bool(ok)}
+                return {
+                    "supported": True,
+                    "operation": "set",
+                    "ok": bool(ok),
+                    "capabilities": caps.to_dict(),
+                }
             except Exception as e:
-                return {"supported": False, "error": str(e)}
+                return _prompt_cache_error_payload(e, operation="set")
 
     @app.post("/acore/prompt_cache/update")
     def prompt_cache_update(req: PromptCacheUpdateRequest):
-        if not _has_cache_api() or not hasattr(provider, "prompt_cache_update"):
-            return {"supported": False, "error": "provider does not support prompt cache control plane"}
+        caps = _prompt_cache_capabilities()
+        if not caps.supports_operation("update") or not hasattr(provider, "prompt_cache_update"):
+            return {
+                "supported": False,
+                "operation": "update",
+                "code": "prompt_cache_unsupported",
+                "error": "provider does not support prompt cache control plane",
+                "capabilities": caps.to_dict(),
+            }
         with lock:
             try:
                 ok = provider.prompt_cache_update(  # type: ignore[arg-type]
@@ -254,14 +337,26 @@ def create_app(
                     add_generation_prompt=bool(req.add_generation_prompt),
                     ttl_s=req.ttl_s,
                 )
-                return {"supported": True, "ok": bool(ok)}
+                return {
+                    "supported": True,
+                    "operation": "update",
+                    "ok": bool(ok),
+                    "capabilities": caps.to_dict(),
+                }
             except Exception as e:
-                return {"supported": False, "error": str(e)}
+                return _prompt_cache_error_payload(e, operation="update")
 
     @app.post("/acore/prompt_cache/fork")
     def prompt_cache_fork(req: PromptCacheForkRequest):
-        if not _has_cache_api() or not hasattr(provider, "prompt_cache_fork"):
-            return {"supported": False, "error": "provider does not support prompt cache control plane"}
+        caps = _prompt_cache_capabilities()
+        if not caps.supports_operation("fork") or not hasattr(provider, "prompt_cache_fork"):
+            return {
+                "supported": False,
+                "operation": "fork",
+                "code": "prompt_cache_unsupported",
+                "error": "provider does not support prompt cache control plane",
+                "capabilities": caps.to_dict(),
+            }
         with lock:
             try:
                 ok = provider.prompt_cache_fork(  # type: ignore[arg-type]
@@ -270,25 +365,49 @@ def create_app(
                     make_default=bool(req.make_default),
                     ttl_s=req.ttl_s,
                 )
-                return {"supported": True, "ok": bool(ok)}
+                return {
+                    "supported": True,
+                    "operation": "fork",
+                    "ok": bool(ok),
+                    "capabilities": caps.to_dict(),
+                }
             except Exception as e:
-                return {"supported": False, "error": str(e)}
+                return _prompt_cache_error_payload(e, operation="fork")
 
     @app.post("/acore/prompt_cache/clear")
     def prompt_cache_clear(req: PromptCacheClearRequest):
-        if not _has_cache_api() or not hasattr(provider, "prompt_cache_clear"):
-            return {"supported": False, "error": "provider does not support prompt cache control plane"}
+        caps = _prompt_cache_capabilities()
+        if not caps.supports_operation("clear") or not hasattr(provider, "prompt_cache_clear"):
+            return {
+                "supported": False,
+                "operation": "clear",
+                "code": "prompt_cache_unsupported",
+                "error": "provider does not support prompt cache control plane",
+                "capabilities": caps.to_dict(),
+            }
         with lock:
             try:
                 ok = provider.prompt_cache_clear(req.key)  # type: ignore[arg-type]
-                return {"supported": True, "ok": bool(ok)}
+                return {
+                    "supported": True,
+                    "operation": "clear",
+                    "ok": bool(ok),
+                    "capabilities": caps.to_dict(),
+                }
             except Exception as e:
-                return {"supported": False, "error": str(e)}
+                return _prompt_cache_error_payload(e, operation="clear")
 
     @app.post("/acore/prompt_cache/prepare_modules")
     def prompt_cache_prepare_modules(req: PromptCachePrepareModulesRequest):
-        if not _has_cache_api() or not hasattr(provider, "prompt_cache_prepare_modules"):
-            return {"supported": False, "error": "provider does not support prompt cache module preparation"}
+        caps = _prompt_cache_capabilities()
+        if not caps.supports_operation("prepare_modules") or not hasattr(provider, "prompt_cache_prepare_modules"):
+            return {
+                "supported": False,
+                "operation": "prepare_modules",
+                "code": "prompt_cache_unsupported",
+                "error": "provider does not support prompt cache module preparation",
+                "capabilities": caps.to_dict(),
+            }
         with lock:
             try:
                 result = provider.prompt_cache_prepare_modules(  # type: ignore[arg-type]
@@ -300,7 +419,7 @@ def create_app(
                 )
                 return result
             except Exception as e:
-                return {"supported": False, "error": str(e)}
+                return _prompt_cache_error_payload(e, operation="prepare_modules")
 
     @app.post("/v1/chat/completions")
     def chat_completions(request: ChatCompletionRequest):

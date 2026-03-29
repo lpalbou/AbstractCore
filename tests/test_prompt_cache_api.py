@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterator, List, Optional
 
+import pytest
+
 from abstractcore.core.types import GenerateResponse
-from abstractcore.providers.base import BaseProvider
+from abstractcore.providers.base import BaseProvider, PromptCacheUnsupportedError
 
 
 class DummyPromptCacheProvider(BaseProvider):
@@ -71,3 +73,31 @@ def test_prompt_cache_clear_resets_default():
 
     llm.generate("hello")
     assert "prompt_cache_key" not in llm.last_kwargs
+
+
+def test_prompt_cache_capabilities_for_keyed_provider() -> None:
+    llm = DummyPromptCacheProvider()
+
+    caps = llm.get_prompt_cache_capabilities()
+
+    assert caps.supported is True
+    assert caps.mode == "keyed"
+    assert caps.supports_set is True
+    assert caps.supports_clear is True
+    assert caps.supports_stats is True
+    assert caps.supports_update is False
+    assert caps.supports_fork is False
+    assert caps.supports_prepare_modules is False
+
+
+def test_prompt_cache_prepare_modules_raises_clear_error_for_keyed_provider() -> None:
+    llm = DummyPromptCacheProvider()
+
+    with pytest.raises(PromptCacheUnsupportedError) as exc:
+        llm.prompt_cache_prepare_modules(
+            namespace="tenant:model",
+            modules=[{"module_id": "system", "system_prompt": "hello"}],
+        )
+
+    assert exc.value.operation == "prepare_modules"
+    assert exc.value.code == "prompt_cache_unsupported"

@@ -62,11 +62,22 @@ print(resp.choices[0].message.content)
 If the underlying provider exposes prompt-cache controls, the endpoint also exposes a small control plane under `/acore/prompt_cache/*` (see `abstractcore/endpoint/app.py`):
 
 - `GET /acore/prompt_cache/stats`
+- `GET /acore/prompt_cache/capabilities`
 - `POST /acore/prompt_cache/set`
 - `POST /acore/prompt_cache/update`
 - `POST /acore/prompt_cache/fork`
 - `POST /acore/prompt_cache/clear`
 - `POST /acore/prompt_cache/prepare_modules`
+
+Response contract:
+
+- `GET /acore/prompt_cache/capabilities` always returns the provider capability profile (`supported`, `operation="capabilities"`, `capabilities`).
+- Other prompt-cache routes return structured payloads instead of ambiguous booleans:
+  - success: `supported=true`
+  - unsupported operation: `supported=false`, `code="prompt_cache_unsupported"`
+  - runtime/provider failure: `supported=false`, `code="prompt_cache_error"`
+
+The `capabilities` object is always included on prompt-cache control-plane responses so callers can branch on `mode` / `supports_*` flags without re-probing the provider.
 
 For caching concepts, see [Session Management](session.md) and [Architecture](architecture.md).
 For a dedicated overview, see [Prompt Caching](prompt-caching.md).

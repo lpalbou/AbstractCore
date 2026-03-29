@@ -322,6 +322,26 @@ class MLXProvider(BaseProvider):
             from contextlib import redirect_stdout, redirect_stderr
             from pathlib import Path
 
+            # Respect AbstractCore's offline-first defaults: never download model files on-demand.
+            try:
+                from ..config.manager import get_config_manager
+
+                _cfg = get_config_manager()
+                if _cfg.is_offline_first():
+                    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+                    os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
+                    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+            except Exception:
+                pass
+
+            from ..utils.model_cache import (
+                default_hf_hub_cache_dirs,
+                default_lmstudio_model_dirs,
+                resolve_hf_snapshot_dir,
+                resolve_lmstudio_hub_manifest,
+                resolve_lmstudio_model_dir,
+            )
+
             # Upstream compatibility: mlx-lm may call `mx.metal.device_info()` which is deprecated in recent MLX.
             # Patch the deprecated entrypoint to the supported API so the warning is fixed (not silenced).
             try:
@@ -331,23 +351,128 @@ class MLXProvider(BaseProvider):
                 pass
 
             # Clean model name - remove trailing slashes that cause HuggingFace validation errors
-            clean_model_name = self.model.rstrip('/')
+            clean_model_name = self.model.rstrip("/")
 
-            # Prefer an existing local directory (including LM Studio's cache) over a remote HF repo id.
-            load_target: str = clean_model_name
+            def _has_weights(d: Path) -> bool:
+                """Best-effort check to avoid triggering downloads on missing weights."""
+                try:
+                    if not d.is_dir():
+                        return False
+                except Exception:
+                    return False
+                patterns = ("*.safetensors", "*.npz", "*.bin", "*.pt", "*.pth")
+                for pat in patterns:
+                    try:
+                        if any(d.glob(pat)):
+                            return True
+                    except Exception:
+                        continue
+                return False
+
+            def _looks_like_gguf_dir(d: Path) -> bool:
+                try:
+                    if not d.is_dir():
+                        return False
+                except Exception:
+                    return False
+                try:
+                    return any(p.suffix.lower() == ".gguf" for p in d.iterdir())
+                except Exception:
+                    return False
+
+            # Resolve to a local directory (cache-only). Do not pass a repo id into mlx-lm,
+            # as it can trigger Hub network requests even when cached.
+            load_dir: Optional[Path] = None
             explicit_path = Path(clean_model_name).expanduser()
             if explicit_path.is_dir():
-                load_target = str(explicit_path)
+                load_dir = explicit_path
             else:
-                lmstudio_path = Path.home() / ".lmstudio" / "models" / clean_model_name
-                if lmstudio_path.is_dir():
-                    load_target = str(lmstudio_path)
+                load_dir = resolve_lmstudio_model_dir(clean_model_name, base_dirs=default_lmstudio_model_dirs())
+                if load_dir is None:
+                    snap = resolve_hf_snapshot_dir(clean_model_name, cache_dirs=default_hf_hub_cache_dirs())
+                    if snap is not None and _has_weights(snap):
+                        load_dir = snap
+
+            if load_dir is None or _looks_like_gguf_dir(load_dir):
+                hint_lines: list[str] = []
+                if load_dir is not None and _looks_like_gguf_dir(load_dir):
+                    hint_lines.append(
+                        f"Found GGUF files under '{load_dir}', but the MLX provider cannot load GGUF."
+                    )
+                    hint_lines.append(
+                        "Use `--provider huggingface` (GGUF) or `--provider lmstudio` for GGUF-backed models."
+                    )
+                else:
+                    manifest_path = resolve_lmstudio_hub_manifest(clean_model_name)
+                    if manifest_path is not None:
+                        try:
+                            raw = manifest_path.read_text(encoding="utf-8")
+                            manifest = json.loads(raw) if raw.strip() else {}
+                            deps = manifest.get("dependencies") if isinstance(manifest, dict) else None
+                            if isinstance(deps, list) and deps:
+                                for dep in deps:
+                                    if not isinstance(dep, dict):
+                                        continue
+                                    for src in dep.get("sources") or []:
+                                        if not isinstance(src, dict):
+                                            continue
+                                        if str(src.get("type") or "").strip().lower() != "huggingface":
+                                            continue
+                                        user = str(src.get("user") or "").strip()
+                                        repo = str(src.get("repo") or "").strip()
+                                        if not user or not repo:
+                                            continue
+                                        repo_id = f"{user}/{repo}"
+                                        lm_dir = resolve_lmstudio_model_dir(
+                                            repo_id, base_dirs=default_lmstudio_model_dirs()
+                                        )
+                                        if lm_dir is None:
+                                            continue
+                                        try:
+                                            ggufs = sorted([p for p in lm_dir.glob("*.gguf") if p.is_file()])
+                                        except Exception:
+                                            ggufs = []
+                                        if ggufs:
+                                            hint_lines.append(
+                                                f"LM Studio hub entry found for '{clean_model_name}', but it resolves to GGUF files (e.g. '{ggufs[0].name}')."
+                                            )
+                                            hint_lines.append(
+                                                "MLX provider cannot load GGUF; use `--provider huggingface` (GGUF) or `--provider lmstudio`."
+                                            )
+                                            break
+                                    if hint_lines:
+                                        break
+                        except Exception:
+                            pass
+
+                searched_lms = [str(p) for p in default_lmstudio_model_dirs()]
+                searched_hf = [str(p) for p in default_hf_hub_cache_dirs()]
+                headline = (
+                    f"❌ MLX model '{clean_model_name}' not found locally (downloads are disabled)."
+                    if load_dir is None
+                    else f"❌ MLX provider cannot load '{clean_model_name}' (GGUF detected; downloads are disabled)."
+                )
+                msg = (
+                    f"{headline}\n\n"
+                    f"Searched LM Studio caches:\n  - "
+                    + "\n  - ".join(searched_lms or ["(none found)"])
+                    + "\n\n"
+                    f"Searched HuggingFace hub caches:\n  - "
+                    + "\n  - ".join(searched_hf or ["(none found)"])
+                    + "\n"
+                )
+                if hint_lines:
+                    msg += "\n" + "\n".join(hint_lines) + "\n"
+                msg += "\nTip: download explicitly (e.g. with `huggingface-cli download ...`) or pass a local model directory path."
+                raise ModelNotFoundError(msg)
+
+            load_target = str(load_dir)
 
             # Silence the "Fetching" progress bar by redirecting stdout/stderr
-            with open(os.devnull, 'w') as devnull:
+            with open(os.devnull, "w") as devnull:
                 with redirect_stdout(devnull), redirect_stderr(devnull):
                     self.llm, self.tokenizer = load(load_target)
-            
+
             self.generate_fn = generate
             self.stream_generate_fn = stream_generate
         except ImportError:
@@ -355,12 +480,11 @@ class MLXProvider(BaseProvider):
         except Exception as e:
             # Check if it's a model not found error
             error_str = str(e).lower()
-            if 'not found' in error_str or 'does not exist' in error_str or 'failed to load' in error_str:
+            if "not found" in error_str or "does not exist" in error_str or "failed to load" in error_str:
                 available_models = self.list_available_models()
                 error_message = format_model_error("MLX", self.model, available_models)
                 raise ModelNotFoundError(error_message)
-            else:
-                raise Exception(f"Failed to load MLX model {self.model}: {str(e)}")
+            raise Exception(f"Failed to load MLX model {self.model}: {str(e)}")
 
     def unload_model(self, model_name: str) -> None:
         """

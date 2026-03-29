@@ -4,8 +4,10 @@ Supports both transformers models and GGUF models via llama-cpp-python.
 """
 
 import os
+import copy
 import json
 import threading
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, Iterator, Type
 
@@ -34,7 +36,7 @@ try:
 except ImportError:
     PYDANTIC_AVAILABLE = False
     BaseModel = None
-from .base import BaseProvider
+from .base import BaseProvider, PromptCacheCapabilities
 from ..core.types import GenerateResponse
 from ..exceptions import ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
@@ -83,6 +85,18 @@ def _get_local_model_path(model_name: str) -> Optional[str]:
         if snapshot_dirs:
             return str(snapshot_dirs[0])  # Return first snapshot
     return None
+
+
+@dataclass
+class _GGUFPromptCacheValue:
+    cache: Any
+    capacity_bytes: int
+    system_prompt_parts: List[str] = field(default_factory=list)
+    messages: List[Dict[str, Any]] = field(default_factory=list)
+    tools: Optional[List[Dict[str, Any]]] = None
+    add_generation_prompt: bool = False
+    prompt_text: str = ""
+    prompt_tokens: tuple[int, ...] = field(default_factory=tuple)
 
 
 class HuggingFaceProvider(BaseProvider):
@@ -159,9 +173,28 @@ class HuggingFaceProvider(BaseProvider):
         self.model_instance = None
         self.pipeline = None
         self.llm = None  # For GGUF models
+        self._gguf_prompt_cache_lock = threading.Lock()
+        self._gguf_prompt_cache_default_capacity_bytes = self._coerce_gguf_prompt_cache_capacity_bytes(
+            kwargs.get("prompt_cache_capacity_bytes", None)
+        )
+        self._gguf_prompt_cache_pending_capacity_bytes: Optional[int] = None
 
         # Detect model type and load accordingly
-        if self._is_gguf_model(model):
+        is_gguf = self._is_gguf_model(model)
+
+        # LM Studio Hub aliases (e.g. "qwen/qwen3.5-35b-a3b") may not contain "gguf" in the name,
+        # but resolve to a GGUF dependency stored in LM Studio's cache. If a local Hub manifest
+        # exists and we can resolve a GGUF file from caches, treat this as a GGUF model.
+        if not is_gguf:
+            try:
+                from ..utils.model_cache import resolve_lmstudio_hub_manifest
+
+                if resolve_lmstudio_hub_manifest(model) is not None and self._find_gguf_in_cache(model):
+                    is_gguf = True
+            except Exception:
+                pass
+
+        if is_gguf:
             if not LLAMACPP_AVAILABLE:
                 raise ImportError("llama-cpp-python not installed. Install with: pip install llama-cpp-python")
             self.model_type = "gguf"
@@ -207,9 +240,538 @@ class HuggingFaceProvider(BaseProvider):
             if hasattr(self, 'logger'):
                 self.logger.warning(f"Error during unload: {e}")
 
+    def _coerce_gguf_prompt_cache_capacity_bytes(self, value: Any) -> int:
+        try:
+            cap = int(value)
+        except Exception:
+            cap = 0
+        return cap if cap > 0 else (512 << 20)
+
+    def _gguf_prompt_cache_chat_format(self) -> str:
+        llm = getattr(self, "llm", None)
+        chat_format = str(getattr(llm, "chat_format", "") or "").strip().lower()
+        if chat_format:
+            return chat_format
+        model_lower = str(getattr(self, "model", "") or "").lower()
+        if "qwen" in model_lower or "coder" in model_lower:
+            return "chatml-function-calling"
+        if "llama-3" in model_lower or "llama3" in model_lower:
+            return "llama-3"
+        return ""
+
+    def _gguf_prompt_cache_control_plane_chat_format(self) -> str:
+        chat_format = self._gguf_prompt_cache_chat_format()
+        aliases = {
+            "chatml-function-calling": "chatml-function-calling",
+            "llama-3": "llama-3",
+            "llama3": "llama-3",
+        }
+        return aliases.get(chat_format, "")
+
+    def _gguf_prompt_cache_supports_local_control_plane(self) -> bool:
+        if getattr(self, "model_type", None) != "gguf":
+            return False
+        return bool(self._gguf_prompt_cache_control_plane_chat_format())
+
     def supports_prompt_cache(self) -> bool:
         """GGUF backends can use llama.cpp prompt caching (prefix state cache)."""
         return getattr(self, "model_type", None) == "gguf"
+
+    def get_prompt_cache_capabilities(self) -> PromptCacheCapabilities:
+        if not self.supports_prompt_cache():
+            return PromptCacheCapabilities()
+
+        if self._gguf_prompt_cache_supports_local_control_plane():
+            chat_format = self._gguf_prompt_cache_control_plane_chat_format()
+            return PromptCacheCapabilities(
+                supported=True,
+                mode="local_control_plane",
+                supports_set=True,
+                supports_clear=True,
+                supports_update=True,
+                supports_fork=True,
+                supports_prepare_modules=True,
+                supports_stats=True,
+                supports_ttl=True,
+                notes=(
+                    "GGUF prompt caching uses llama.cpp state snapshots plus keyed prefix reuse.",
+                    f"exact_prompt_renderer={chat_format}",
+                ),
+            )
+
+        chat_format = self._gguf_prompt_cache_chat_format() or "unknown"
+        return PromptCacheCapabilities(
+            supported=True,
+            mode="keyed",
+            supports_set=True,
+            supports_clear=True,
+            supports_update=False,
+            supports_fork=False,
+            supports_prepare_modules=False,
+            supports_stats=True,
+            supports_ttl=True,
+            notes=(
+                "GGUF prompt caching supports keyed cache selection for this model.",
+                "Local control-plane parity currently requires an exact cached prompt renderer.",
+                f"supported_renderers=chatml-function-calling,llama-3 current_chat_format={chat_format}",
+            ),
+        )
+
+    def _gguf_prompt_cache_export_state(self, cache_value: Any) -> Dict[str, Any]:
+        state = self._gguf_prompt_cache_state(cache_value)
+        if state is None:
+            return {}
+        return {
+            "capacity_bytes": int(state.capacity_bytes),
+            "system_prompt_parts": copy.deepcopy(state.system_prompt_parts),
+            "messages": copy.deepcopy(state.messages),
+            "tools": copy.deepcopy(state.tools),
+            "add_generation_prompt": bool(state.add_generation_prompt),
+            "prompt_text": str(state.prompt_text or ""),
+            "prompt_tokens": [int(tok) for tok in state.prompt_tokens],
+        }
+
+    def _gguf_prompt_cache_import_state(self, cache_obj: Any, meta: Optional[Dict[str, Any]] = None) -> _GGUFPromptCacheValue:
+        cap = getattr(cache_obj, "capacity_bytes", None)
+        state = _GGUFPromptCacheValue(
+            cache=cache_obj,
+            capacity_bytes=self._coerce_gguf_prompt_cache_capacity_bytes(cap),
+        )
+        payload = dict(meta or {})
+        raw_parts = payload.get("system_prompt_parts")
+        if isinstance(raw_parts, list):
+            state.system_prompt_parts = [str(part) for part in raw_parts if isinstance(part, str) and part]
+        raw_messages = payload.get("messages")
+        if isinstance(raw_messages, list):
+            state.messages = [copy.deepcopy(msg) for msg in raw_messages if isinstance(msg, dict)]
+        raw_tools = payload.get("tools")
+        if isinstance(raw_tools, list):
+            state.tools = [copy.deepcopy(tool) for tool in raw_tools if isinstance(tool, dict)]
+        state.add_generation_prompt = bool(payload.get("add_generation_prompt"))
+        if isinstance(payload.get("prompt_text"), str):
+            state.prompt_text = str(payload.get("prompt_text") or "")
+        raw_tokens = payload.get("prompt_tokens")
+        if isinstance(raw_tokens, list):
+            toks: List[int] = []
+            for tok in raw_tokens:
+                try:
+                    toks.append(int(tok))
+                except Exception:
+                    continue
+            state.prompt_tokens = tuple(toks)
+        if not state.prompt_tokens:
+            state.prompt_tokens = self._gguf_prompt_cache_longest_prefix_tokens(cache_obj)
+        return state
+
+    def _gguf_prompt_cache_state(self, cache_value: Any) -> Optional[_GGUFPromptCacheValue]:
+        if isinstance(cache_value, _GGUFPromptCacheValue):
+            return cache_value
+        cache_obj = self._gguf_prompt_cache_unwrap(cache_value)
+        if cache_obj is None:
+            return None
+        return self._gguf_prompt_cache_import_state(cache_obj, None)
+
+    def _gguf_prompt_cache_unwrap(self, cache_value: Any) -> Optional[Any]:
+        if isinstance(cache_value, _GGUFPromptCacheValue):
+            return cache_value.cache
+        if cache_value is None:
+            return None
+        try:
+            from llama_cpp.llama_cache import LlamaRAMCache
+        except Exception:
+            return None
+        return cache_value if isinstance(cache_value, LlamaRAMCache) else None
+
+    def _gguf_prompt_cache_longest_prefix_tokens(self, cache_obj: Any) -> tuple[int, ...]:
+        state_map = getattr(cache_obj, "cache_state", None)
+        if not hasattr(state_map, "keys"):
+            return ()
+        best: tuple[int, ...] = ()
+        for key in state_map.keys():
+            try:
+                normalized = tuple(int(tok) for tok in key)
+            except Exception:
+                continue
+            if len(normalized) > len(best):
+                best = normalized
+        return best
+
+    def _gguf_clone_llama_state(self, state: Any) -> Optional[Any]:
+        try:
+            import numpy as np
+            from llama_cpp.llama import LlamaState
+        except Exception:
+            return None
+        try:
+            return LlamaState(
+                input_ids=np.asarray(getattr(state, "input_ids"), dtype=np.intc).copy(),
+                scores=np.asarray(getattr(state, "scores"), dtype=np.single).copy(),
+                n_tokens=int(getattr(state, "n_tokens", 0) or 0),
+                llama_state=bytes(getattr(state, "llama_state", b"")),
+                llama_state_size=int(getattr(state, "llama_state_size", 0) or 0),
+                seed=int(getattr(state, "seed", 0) or 0),
+            )
+        except Exception:
+            return None
+
+    def _gguf_clone_llama_cache(self, cache_obj: Any, *, capacity_bytes: int) -> Optional[Any]:
+        try:
+            from llama_cpp.llama_cache import LlamaRAMCache
+        except Exception:
+            return None
+
+        cloned = LlamaRAMCache(capacity_bytes=int(capacity_bytes))
+        state_map = getattr(cache_obj, "cache_state", None)
+        if not hasattr(state_map, "items"):
+            return cloned
+        for key, state in state_map.items():
+            cloned_state = self._gguf_clone_llama_state(state)
+            if cloned_state is None:
+                return None
+            try:
+                cloned[tuple(int(tok) for tok in key)] = cloned_state
+            except Exception:
+                return None
+        return cloned
+
+    def _gguf_build_chat_messages(
+        self,
+        *,
+        system_prompt: Optional[str] = None,
+        messages: Optional[List[Dict[str, Any]]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        user_message_content: Any = None,
+    ) -> List[Dict[str, Any]]:
+        chat_messages: List[Dict[str, Any]] = []
+
+        if isinstance(system_prompt, str) and system_prompt:
+            chat_messages.append({"role": "system", "content": system_prompt})
+
+        if isinstance(messages, list) and messages:
+            chat_messages.extend(copy.deepcopy(messages))
+
+        if user_message_content is not None:
+            chat_messages.append({"role": "user", "content": user_message_content})
+
+        if tools and self.tool_handler.supports_prompted:
+            system_text = (
+                chat_messages[0].get("content", "")
+                if chat_messages and chat_messages[0].get("role") == "system"
+                else ""
+            )
+            include_tool_list = "## Tools (session)" not in str(system_text)
+            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
+            if tool_prompt:
+                if self._gguf_prompt_cache_supports_local_control_plane():
+                    chat_messages.append({"role": "system", "content": tool_prompt})
+                elif chat_messages and chat_messages[0].get("role") == "system":
+                    chat_messages[0]["content"] = f"{chat_messages[0].get('content', '')}\n\n{tool_prompt}"
+                else:
+                    chat_messages.insert(0, {"role": "system", "content": tool_prompt})
+
+        return chat_messages
+
+    def _gguf_prompt_cache_message_text(self, content: Any) -> str:
+        if isinstance(content, str):
+            return content
+        if isinstance(content, (dict, list)):
+            try:
+                return json.dumps(content, ensure_ascii=False)
+            except Exception:
+                return str(content)
+        if content is None:
+            return ""
+        return str(content)
+
+    def _gguf_prompt_cache_tool_call_text(self, tool_call: Any) -> str:
+        if not isinstance(tool_call, dict):
+            return ""
+        fn = tool_call.get("function") if isinstance(tool_call.get("function"), dict) else {}
+        name = str(fn.get("name") or tool_call.get("name") or "").strip()
+        if not name:
+            return ""
+        raw_args = fn.get("arguments")
+        if isinstance(raw_args, (dict, list)):
+            try:
+                args_text = json.dumps(raw_args, ensure_ascii=False)
+            except Exception:
+                args_text = str(raw_args)
+        elif raw_args is None:
+            args_text = ""
+        else:
+            args_text = str(raw_args)
+        return f"functions.{name}:\n{args_text}"
+
+    def _gguf_render_chatml_prompt(
+        self,
+        *,
+        messages: List[Dict[str, Any]],
+        add_generation_prompt: bool,
+    ) -> str:
+        parts: List[str] = []
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            role = str(message.get("role") or "").strip().lower()
+            if role not in {"system", "user", "assistant"}:
+                continue
+            parts.append(f"<|im_start|>{role}\n")
+            if role in {"system", "user"}:
+                parts.append(self._gguf_prompt_cache_message_text(message.get("content")))
+                parts.append("<|im_end|>\n")
+                continue
+
+            content = self._gguf_prompt_cache_message_text(message.get("content"))
+            if content:
+                parts.append(content)
+                parts.append("<|im_end|>\n")
+
+            tool_calls = message.get("tool_calls")
+            if isinstance(tool_calls, list) and tool_calls:
+                for tool_call in tool_calls:
+                    rendered = self._gguf_prompt_cache_tool_call_text(tool_call)
+                    if rendered:
+                        parts.append(rendered)
+                parts.append("<|im_end|>\n")
+        if add_generation_prompt:
+            parts.append("<|im_start|>assistant\n")
+        return "".join(parts)
+
+    def _gguf_render_llama3_prompt(
+        self,
+        *,
+        messages: List[Dict[str, Any]],
+        add_generation_prompt: bool,
+    ) -> str:
+        role_map = {
+            "system": "<|start_header_id|>system<|end_header_id|>\n\n",
+            "user": "<|start_header_id|>user<|end_header_id|>\n\n",
+            "assistant": "<|start_header_id|>assistant<|end_header_id|>\n\n",
+        }
+        sep = "<|eot_id|>"
+        parts: List[str] = []
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            role = str(message.get("role") or "").strip().lower()
+            prefix = role_map.get(role)
+            if not prefix:
+                continue
+            content = self._gguf_prompt_cache_message_text(message.get("content"))
+            if content:
+                parts.append(prefix)
+                parts.append(content)
+                parts.append(sep)
+            else:
+                parts.append(prefix)
+        if add_generation_prompt:
+            parts.append(role_map["assistant"])
+        return "".join(parts)
+
+    def _gguf_tokenize_completion_prompt(self, prompt_text: str) -> List[int]:
+        if getattr(self, "llm", None) is None:
+            return []
+        bos_token_id = int(self.llm.token_bos())
+        cls_token_id = int(self.llm._model.token_cls())
+        bos_tokens: List[int] = [cls_token_id if cls_token_id != -1 else bos_token_id]
+
+        if not self.llm._model.add_bos_token() or bos_tokens[:1] == [-1]:
+            bos_tokens = []
+
+        prefix_tokens = (
+            self.llm.tokenize(
+                prompt_text.encode("utf-8"),
+                add_bos=False,
+                special=True,
+            )
+            if prompt_text != ""
+            else []
+        )
+        # For modular prompt-cache prefixes we intentionally omit the terminal EOS that
+        # llama.cpp adds for string prompts. Keeping EOS in the stored prefix would make
+        # the key non-extendable (`prefix + eos` is not a prefix of `prefix + delta + eos`).
+        return list(bos_tokens + prefix_tokens)
+
+    def _gguf_render_prompt_tokens(
+        self,
+        *,
+        messages: List[Dict[str, Any]],
+        add_generation_prompt: bool,
+    ) -> tuple[str, tuple[int, ...]]:
+        chat_format = self._gguf_prompt_cache_control_plane_chat_format() or self._gguf_prompt_cache_chat_format()
+        if chat_format == "llama-3":
+            prompt_text = self._gguf_render_llama3_prompt(
+                messages=messages,
+                add_generation_prompt=bool(add_generation_prompt),
+            )
+        else:
+            prompt_text = self._gguf_render_chatml_prompt(
+                messages=messages,
+                add_generation_prompt=bool(add_generation_prompt),
+            )
+        if chat_format == "chatml":
+            prompt_tokens = tuple(
+                int(tok)
+                for tok in self.llm.tokenize(
+                    prompt_text.encode("utf-8"),
+                    add_bos=True,
+                    special=True,
+                )
+            )
+        else:
+            prompt_tokens = tuple(int(tok) for tok in self._gguf_tokenize_completion_prompt(prompt_text))
+        return prompt_text, prompt_tokens
+
+    def _gguf_prompt_cache_prefix_state(self, cache_obj: Any, prompt_tokens: tuple[int, ...]) -> tuple[int, Optional[Any]]:
+        state_map = getattr(cache_obj, "cache_state", None)
+        if not hasattr(state_map, "items") or not prompt_tokens:
+            return 0, None
+
+        best_len = 0
+        best_state = None
+        for key, state in state_map.items():
+            try:
+                normalized = tuple(int(tok) for tok in key)
+            except Exception:
+                continue
+            prefix_len = int(Llama.longest_token_prefix(normalized, prompt_tokens))
+            if prefix_len != len(normalized):
+                continue
+            if len(normalized) > best_len:
+                best_len = len(normalized)
+                best_state = state
+        return best_len, best_state
+
+    def _gguf_prefill_prompt_cache(self, cache_obj: Any, prompt_tokens: tuple[int, ...]) -> bool:
+        llm = getattr(self, "llm", None)
+        if llm is None:
+            return False
+        try:
+            llm.reset()
+        except Exception:
+            return False
+
+        prefix_len, prefix_state = self._gguf_prompt_cache_prefix_state(cache_obj, prompt_tokens)
+        if prefix_state is not None and prefix_len > 0:
+            try:
+                llm.load_state(prefix_state)
+            except Exception:
+                try:
+                    llm.reset()
+                except Exception:
+                    pass
+                prefix_len = 0
+
+        remaining = list(prompt_tokens[prefix_len:])
+        try:
+            if remaining:
+                llm.eval(remaining)
+            if prompt_tokens:
+                saved_state = llm.save_state()
+                cloned_state = self._gguf_clone_llama_state(saved_state)
+                cache_obj[prompt_tokens] = cloned_state if cloned_state is not None else saved_state
+            if hasattr(llm, "set_cache"):
+                llm.set_cache(cache_obj)
+        except Exception:
+            return False
+        return True
+
+    def _prompt_cache_backend_create(self) -> Optional[Any]:
+        if not self.supports_prompt_cache():
+            return None
+        try:
+            from llama_cpp.llama_cache import LlamaRAMCache
+        except Exception:
+            return None
+
+        cap = getattr(self, "_gguf_prompt_cache_pending_capacity_bytes", None)
+        cap = self._coerce_gguf_prompt_cache_capacity_bytes(
+            cap if cap is not None else getattr(self, "_gguf_prompt_cache_default_capacity_bytes", None)
+        )
+        return _GGUFPromptCacheValue(
+            cache=LlamaRAMCache(capacity_bytes=cap),
+            capacity_bytes=cap,
+        )
+
+    def _prompt_cache_backend_clone(self, cache_value: Any) -> Optional[Any]:
+        state = self._gguf_prompt_cache_state(cache_value)
+        if state is None:
+            return None
+        cloned_cache = self._gguf_clone_llama_cache(state.cache, capacity_bytes=state.capacity_bytes)
+        if cloned_cache is None:
+            return None
+        return _GGUFPromptCacheValue(
+            cache=cloned_cache,
+            capacity_bytes=int(state.capacity_bytes),
+            system_prompt_parts=copy.deepcopy(state.system_prompt_parts),
+            messages=copy.deepcopy(state.messages),
+            tools=copy.deepcopy(state.tools),
+            add_generation_prompt=bool(state.add_generation_prompt),
+            prompt_text=str(state.prompt_text or ""),
+            prompt_tokens=tuple(int(tok) for tok in state.prompt_tokens),
+        )
+
+    def _prompt_cache_backend_append(
+        self,
+        cache_value: Any,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        add_generation_prompt: bool = False,
+        **kwargs,
+    ) -> bool:
+        _ = kwargs
+        state = self._gguf_prompt_cache_state(cache_value)
+        if state is None or getattr(self, "llm", None) is None:
+            return False
+
+        if system_prompt is not None:
+            text = str(system_prompt or "").strip()
+            if text:
+                state.system_prompt_parts.append(text)
+        if tools is not None:
+            state.tools = [copy.deepcopy(tool) for tool in tools if isinstance(tool, dict)] or None
+        if isinstance(messages, list) and messages:
+            state.messages.extend(copy.deepcopy(msg) for msg in messages if isinstance(msg, dict))
+        if isinstance(prompt, str) and prompt:
+            state.messages.append({"role": "user", "content": prompt})
+        state.add_generation_prompt = bool(add_generation_prompt)
+
+        if not self._gguf_prompt_cache_supports_local_control_plane():
+            # Keyed-only GGUF caches still keep the in-process cache object, but they do not
+            # advertise modular update/fork support to higher layers.
+            return False
+
+        system_text = "\n\n".join(part for part in state.system_prompt_parts if isinstance(part, str) and part)
+        chat_messages = self._gguf_build_chat_messages(
+            system_prompt=system_text or None,
+            messages=state.messages,
+            tools=state.tools,
+            user_message_content=None,
+        )
+        prompt_text, prompt_tokens = self._gguf_render_prompt_tokens(
+            messages=chat_messages,
+            add_generation_prompt=state.add_generation_prompt,
+        )
+
+        with getattr(self, "_gguf_prompt_cache_lock", _MPS_GENERATION_LOCK):
+            ok = self._gguf_prefill_prompt_cache(state.cache, prompt_tokens)
+        if not ok:
+            return False
+
+        state.prompt_text = prompt_text
+        state.prompt_tokens = tuple(int(tok) for tok in prompt_tokens)
+        return True
+
+    def _prompt_cache_backend_token_count(self, cache_value: Any) -> Optional[int]:
+        state = self._gguf_prompt_cache_state(cache_value)
+        if state is None:
+            return None
+        if state.prompt_tokens:
+            return len(state.prompt_tokens)
+        return len(self._gguf_prompt_cache_longest_prefix_tokens(state.cache))
 
     def prompt_cache_set(
         self,
@@ -222,31 +784,40 @@ class HuggingFaceProvider(BaseProvider):
     ) -> bool:
         """Create/reset a llama.cpp prompt cache for the given key (GGUF only)."""
         _ = kwargs
+        if not self.supports_prompt_cache():
+            return False
+
+        self._gguf_prompt_cache_pending_capacity_bytes = self._coerce_gguf_prompt_cache_capacity_bytes(capacity_bytes)
+        try:
+            ok = super().prompt_cache_set(key, make_default=make_default)
+        finally:
+            self._gguf_prompt_cache_pending_capacity_bytes = None
+        if not ok:
+            return False
+
         normalized = self._normalize_prompt_cache_key(key)
         if normalized is None:
             return False
-        if not self.supports_prompt_cache():
+        cache_value = self._prompt_cache_store.get(normalized)
+        state = self._gguf_prompt_cache_state(cache_value)
+        if state is None:
             return False
-        if not super().prompt_cache_set(normalized, make_default=make_default):
-            return False
-
         try:
-            from llama_cpp.llama_cache import LlamaRAMCache
+            self._prompt_cache_store.set(
+                normalized,
+                state,
+                ttl_s=ttl_s,
+                meta={
+                    "backend": "llama_cpp",
+                    "capacity_bytes": int(state.capacity_bytes),
+                },
+            )
         except Exception:
             return False
 
-        cap = int(capacity_bytes) if isinstance(capacity_bytes, int) and capacity_bytes > 0 else (512 << 20)
-        cache_obj = LlamaRAMCache(capacity_bytes=cap)
-
-        try:
-            self._prompt_cache_store.set(normalized, cache_obj, ttl_s=ttl_s, meta={"backend": "llama_cpp"})
-        except Exception:
-            return False
-
-        # Best-effort: activate this cache on the shared llama instance.
         try:
             if getattr(self, "llm", None) is not None and hasattr(self.llm, "set_cache"):
-                self.llm.set_cache(cache_obj)
+                self.llm.set_cache(state.cache)
         except Exception:
             pass
 
@@ -397,11 +968,23 @@ class HuggingFaceProvider(BaseProvider):
             return False
 
     def _has_metal(self) -> bool:
-        """Check if Metal (Apple Silicon) is available"""
+        """Check if Metal (Apple Silicon) is available (best-effort)."""
+        # Prefer PyTorch's MPS availability when present; it reflects whether Metal is usable
+        # for the current process (important in sandboxed/headless environments).
+        try:
+            import torch  # type: ignore
+
+            if hasattr(torch.backends, "mps"):
+                return bool(torch.backends.mps.is_available())
+        except Exception:
+            pass
+
+        # Fallback: assume Metal-capable on Apple Silicon.
         try:
             import platform
-            return platform.system() == "Darwin" and platform.processor() == "arm"
-        except:
+
+            return platform.system().lower() == "darwin" and platform.machine().lower() == "arm64"
+        except Exception:
             return False
 
     def _load_transformers_model(self):
@@ -581,8 +1164,45 @@ class HuggingFaceProvider(BaseProvider):
             else:
                 raise RuntimeError(f"Failed to load HuggingFace vision model {self.model}: {str(e)}")
 
-    def _find_gguf_in_cache(self, model_name: str) -> Optional[str]:
-        """Find GGUF model in HuggingFace cache (cache-only, no downloading)"""
+    def _find_gguf_in_cache(self, model_name: str, *, _seen: Optional[set[str]] = None) -> Optional[str]:
+        """Find GGUF model in local caches (HuggingFace hub / LM Studio; cache-only, no downloading)."""
+
+        if _seen is None:
+            _seen = set()
+        key = str(model_name or "").strip()
+        if not key or key in _seen:
+            return None
+        _seen.add(key)
+
+        def _pick_preferred_gguf(gguf_files: list[Path]) -> Optional[str]:
+            if not gguf_files:
+                return None
+            preferred_quants = ['Q4_K_M', 'Q5_K_M', 'Q4_0', 'Q4_1', 'Q5_0', 'Q8_0']
+            for quant in preferred_quants:
+                for gguf_file in gguf_files:
+                    if quant in gguf_file.name:
+                        return str(gguf_file)
+            return str(gguf_files[0])
+
+        def _to_repo_id(raw: str) -> Optional[str]:
+            s = str(raw or "").strip()
+            if not s:
+                return None
+            if ":" in s:
+                s = s.split(":", 1)[0].strip()
+            if not s:
+                return None
+            if s.startswith("models--"):
+                parts = s.replace("models--", "").split("--", 1)
+                if len(parts) == 2 and parts[0] and parts[1]:
+                    return f"{parts[0]}/{parts[1]}"
+            if "--" in s and "/" not in s:
+                parts = s.split("--", 1)
+                if len(parts) == 2 and parts[0] and parts[1]:
+                    return f"{parts[0]}/{parts[1]}"
+            if "/" in s:
+                return s.strip().strip("/")
+            return None
 
         # Normalize model name to cache format
         # Convert "unsloth/model" or "unsloth--model" to "models--unsloth--model"
@@ -592,37 +1212,89 @@ class HuggingFaceProvider(BaseProvider):
         model_cache_dir = cache_base / cache_name
 
         if not model_cache_dir.exists():
-            return None
+            model_cache_dir = None
 
-        # Look for GGUF files in snapshots
-        snapshots_dir = model_cache_dir / "snapshots"
-        if not snapshots_dir.exists():
-            return None
+        # Look for GGUF files in HuggingFace snapshots
+        if model_cache_dir is not None:
+            snapshots_dir = model_cache_dir / "snapshots"
+            if snapshots_dir.exists():
+                # Find the latest snapshot (most recent directory)
+                try:
+                    snapshot_dirs = [d for d in snapshots_dir.iterdir() if d.is_dir()]
+                    if snapshot_dirs:
+                        # Use the most recent snapshot
+                        latest_snapshot = max(snapshot_dirs, key=lambda x: x.stat().st_mtime)
 
-        # Find the latest snapshot (most recent directory)
+                        # Look for GGUF files in the snapshot
+                        gguf_files = list(latest_snapshot.glob("*.gguf"))
+                        picked = _pick_preferred_gguf(gguf_files)
+                        if picked:
+                            return picked
+
+                except Exception:
+                    pass
+
+        # Fallback: LM Studio model cache (~/.lmstudio/models) often stores GGUF files directly.
         try:
-            snapshot_dirs = [d for d in snapshots_dir.iterdir() if d.is_dir()]
-            if not snapshot_dirs:
-                return None
+            from ..utils.model_cache import default_lmstudio_model_dirs, resolve_lmstudio_model_dir
 
-            # Use the most recent snapshot
-            latest_snapshot = max(snapshot_dirs, key=lambda x: x.stat().st_mtime)
+            repo_id = _to_repo_id(model_name)
+            lm_dir = resolve_lmstudio_model_dir(repo_id, base_dirs=default_lmstudio_model_dirs()) if repo_id else None
+            if lm_dir is not None and lm_dir.is_dir():
+                gguf_files = list(lm_dir.glob("*.gguf"))
+                picked = _pick_preferred_gguf(gguf_files)
+                if picked:
+                    return picked
+        except Exception:
+            pass
 
-            # Look for GGUF files in the snapshot
-            gguf_files = list(latest_snapshot.glob("*.gguf"))
+        # LM Studio Hub alias support: resolve org/model manifest to its GGUF dependency.
+        try:
+            from ..utils.model_cache import resolve_lmstudio_hub_manifest
 
-            if gguf_files:
-                # Prefer certain quantizations
-                preferred_quants = ['Q4_K_M', 'Q5_K_M', 'Q4_0', 'Q4_1', 'Q5_0', 'Q8_0']
+            repo_id = _to_repo_id(model_name)
+            if repo_id:
+                manifest_path = resolve_lmstudio_hub_manifest(repo_id)
+            else:
+                manifest_path = None
+            if manifest_path is not None:
+                try:
+                    raw = manifest_path.read_text(encoding="utf-8", errors="ignore")
+                except Exception:
+                    raw = ""
+                manifest = json.loads(raw) if raw.strip() else {}
+                deps = manifest.get("dependencies") if isinstance(manifest, dict) else None
+                if isinstance(deps, list):
+                    candidates: list[str] = []
+                    for dep in deps:
+                        if not isinstance(dep, dict):
+                            continue
+                        for src in dep.get("sources") or []:
+                            if not isinstance(src, dict):
+                                continue
+                            if str(src.get("type") or "").strip().lower() != "huggingface":
+                                continue
+                            user = str(src.get("user") or "").strip()
+                            repo = str(src.get("repo") or "").strip()
+                            if user and repo:
+                                candidates.append(f"{user}/{repo}")
+                        for mk in dep.get("modelKeys") or []:
+                            if isinstance(mk, str) and mk.strip():
+                                candidates.append(mk.strip())
 
-                for quant in preferred_quants:
-                    for gguf_file in gguf_files:
-                        if quant in gguf_file.name:
-                            return str(gguf_file)
+                    seen: set[str] = set()
+                    ordered: list[str] = []
+                    for c in candidates:
+                        c2 = str(c or "").strip().strip("/")
+                        if not c2 or c2 in seen:
+                            continue
+                        seen.add(c2)
+                        ordered.append(c2)
 
-                # Return first available GGUF file
-                return str(gguf_files[0])
-
+                    for cand in ordered:
+                        resolved = self._find_gguf_in_cache(cand, _seen=_seen)
+                        if resolved:
+                            return resolved
         except Exception:
             pass
 
@@ -652,6 +1324,17 @@ class HuggingFaceProvider(BaseProvider):
         """Load GGUF model using llama-cpp-python (cache-only, no downloading)"""
         import os
         try:
+            # llama-cpp-python 0.3.x can throw an "Exception ignored in: __del__" when model
+            # initialization fails early (missing `sampler` attribute). Patch defensively to
+            # keep failures clean and actionable.
+            try:  # pragma: no cover
+                import llama_cpp._internals as _llama_internals  # type: ignore
+
+                if hasattr(_llama_internals, "LlamaModel") and not hasattr(_llama_internals.LlamaModel, "sampler"):
+                    setattr(_llama_internals.LlamaModel, "sampler", None)
+            except Exception:
+                pass
+
             model_path = None
 
             # First, try as a direct file path
@@ -670,6 +1353,14 @@ class HuggingFaceProvider(BaseProvider):
             if not Path(model_path).exists():
                 raise FileNotFoundError(f"GGUF model file not found: {model_path}")
 
+            gguf_arch: str | None = None
+            try:
+                from ..utils.model_cache import read_gguf_architecture
+
+                gguf_arch = read_gguf_architecture(Path(model_path))
+            except Exception:
+                gguf_arch = None
+
             # Determine chat format for function calling
             chat_format = None
             model_lower = self.model.lower()
@@ -678,6 +1369,34 @@ class HuggingFaceProvider(BaseProvider):
                 chat_format = "chatml-function-calling"
             elif 'functionary' in model_lower:
                 chat_format = "functionary-v2"
+
+            # IMPORTANT (macOS): when loading GGUFs from LM Studio's cache, llama-cpp-python can
+            # segfault with `use_mmap=True` (even on supported architectures). Disable mmap for
+            # LM Studio paths to keep loads stable.
+            use_mmap = True
+            try:
+                import platform
+
+                if platform.system().lower() == "darwin":
+                    from ..utils.model_cache import default_lmstudio_model_dirs
+
+                    model_real = Path(model_path).resolve()
+                    for base in default_lmstudio_model_dirs():
+                        try:
+                            base_real = base.resolve()
+                        except Exception:
+                            base_real = base
+                        try:
+                            if model_real.is_relative_to(base_real):
+                                use_mmap = False
+                                break
+                        except Exception:
+                            # Python <3.9 fallback (or odd path types).
+                            if str(model_real).startswith(str(base_real) + os.sep):
+                                use_mmap = False
+                                break
+            except Exception:
+                pass
 
             # Initialize llama-cpp-python with stderr redirected to our logger
             llama_kwargs = {
@@ -689,21 +1408,40 @@ class HuggingFaceProvider(BaseProvider):
                 "n_threads": os.cpu_count() // 2 if os.cpu_count() else 4,
                 # Additional performance settings
                 "n_batch": 512,
-                "use_mmap": True,
+                "use_mmap": use_mmap,
                 "use_mlock": False
             }
 
-            # Redirect stderr during initialization to avoid GGUF loading noise
-            from contextlib import redirect_stderr
-
-            if self.debug:
-                # In debug mode, keep stderr visible
+            try:
                 self.llm = Llama(**llama_kwargs)
-            else:
-                # In non-debug mode, silence stderr during model loading
-                with open(os.devnull, 'w') as devnull:
-                    with redirect_stderr(devnull):
-                        self.llm = Llama(**llama_kwargs)
+            except Exception as e:
+                # Common on macOS: Metal backend unavailable for the current process. Retry on CPU.
+                if isinstance(self.n_gpu_layers, int) and self.n_gpu_layers != 0:
+                    self.logger.warning(
+                        "GGUF load failed with n_gpu_layers=%s; retrying with CPU (n_gpu_layers=0). Error: %s",
+                        self.n_gpu_layers,
+                        e,
+                    )
+                    llama_kwargs_cpu = llama_kwargs.copy()
+                    llama_kwargs_cpu["n_gpu_layers"] = 0
+                    # Avoid any GPU KV offload in the retry.
+                    llama_kwargs_cpu["offload_kqv"] = False
+                    self.llm = Llama(**llama_kwargs_cpu)
+                    self.n_gpu_layers = 0
+                else:
+                    if gguf_arch == "qwen35moe":
+                        raise RuntimeError(
+                            "This GGUF uses architecture 'qwen35moe', which is not supported by the "
+                            "llama.cpp version bundled with your installed llama-cpp-python. "
+                            "LM Studio's Metal llama.cpp backend can load it; use `--provider lmstudio` "
+                            "for this model, or upgrade to a llama-cpp-python build that includes "
+                            "qwen35moe support."
+                        ) from e
+                    if gguf_arch:
+                        raise RuntimeError(
+                            f"Failed to load GGUF model (architecture: {gguf_arch}): {e}"
+                        ) from e
+                    raise
 
         except Exception as e:
             raise RuntimeError(f"Failed to load GGUF model {self.model}: {str(e)}")
@@ -717,7 +1455,7 @@ class HuggingFaceProvider(BaseProvider):
         similar_models = self._find_similar_gguf_models()
 
         error_parts = [
-            f"❌ GGUF model '{self.model}' not found in HuggingFace cache.",
+            f"❌ GGUF model '{self.model}' not found in local caches (HuggingFace hub / LM Studio).",
             "",
             "💡 To download this model, run:",
             f"   huggingface-cli download {suggested_repo}",
@@ -764,24 +1502,42 @@ class HuggingFaceProvider(BaseProvider):
 
     def _find_similar_gguf_models(self) -> List[str]:
         """Find similar GGUF models in cache"""
+        similar: set[str] = set()
+
         cache_base = Path.home() / ".cache" / "huggingface" / "hub"
+        if cache_base.exists():
+            try:
+                for cache_dir in cache_base.iterdir():
+                    if cache_dir.is_dir() and 'gguf' in cache_dir.name.lower():
+                        if cache_dir.name.startswith('models--'):
+                            repo_name = cache_dir.name.replace('models--', '').replace('--', '/', 1)
+                            similar.add(repo_name)
+            except Exception:
+                pass
 
-        if not cache_base.exists():
-            return []
-
-        similar_models = []
+        # Also include GGUF models stored in LM Studio's model cache.
         try:
-            for cache_dir in cache_base.iterdir():
-                if cache_dir.is_dir() and 'gguf' in cache_dir.name.lower():
-                    # Convert cache format back to standard format
-                    if cache_dir.name.startswith('models--'):
-                        repo_name = cache_dir.name.replace('models--', '').replace('--', '/', 1)
-                        similar_models.append(repo_name)
+            from ..utils.model_cache import default_lmstudio_model_dirs
 
+            for base in default_lmstudio_model_dirs():
+                try:
+                    for org_dir in base.iterdir():
+                        if not org_dir.is_dir():
+                            continue
+                        for model_dir in org_dir.iterdir():
+                            if not model_dir.is_dir():
+                                continue
+                            try:
+                                if any(p.suffix.lower() == ".gguf" for p in model_dir.iterdir()):
+                                    similar.add(f"{org_dir.name}/{model_dir.name}")
+                            except Exception:
+                                continue
+                except Exception:
+                    continue
         except Exception:
             pass
 
-        return sorted(similar_models)
+        return sorted(similar)
 
     def _handle_timeout_parameter(self, kwargs: Dict[str, Any]) -> None:
         """
@@ -1617,15 +2373,6 @@ class HuggingFaceProvider(BaseProvider):
                 finish_reason="error"
             )
 
-        # Build messages for chat completion
-        chat_messages = []
-
-        if system_prompt:
-            chat_messages.append({"role": "system", "content": system_prompt})
-
-        if messages:
-            chat_messages.extend(messages)
-
         # Handle media content for the user message - use proper vision format for GGUF models
         media_enrichment = None
         if media:
@@ -1685,16 +2432,22 @@ class HuggingFaceProvider(BaseProvider):
         else:
             user_message_content = prompt
 
-        chat_messages.append({"role": "user", "content": user_message_content})
+        chat_messages = self._gguf_build_chat_messages(
+            system_prompt=system_prompt,
+            messages=messages,
+            tools=tools,
+            user_message_content=user_message_content,
+        )
 
         # Prompt caching (GGUF/llama.cpp): best-effort per-key cache selection.
         prompt_cache_key = kwargs.get("prompt_cache_key")
         if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
             key = prompt_cache_key.strip()
-            cache_obj = self._prompt_cache_store.get(key)
-            if cache_obj is None:
+            cache_value = self._prompt_cache_store.get(key)
+            if cache_value is None:
                 self.prompt_cache_set(key, make_default=False)
-                cache_obj = self._prompt_cache_store.get(key)
+                cache_value = self._prompt_cache_store.get(key)
+            cache_obj = self._gguf_prompt_cache_unwrap(cache_value)
             try:
                 if cache_obj is not None and hasattr(self.llm, "set_cache"):
                     self.llm.set_cache(cache_obj)
@@ -1757,21 +2510,6 @@ class HuggingFaceProvider(BaseProvider):
                 if not stream:
                     generation_kwargs["tool_choice"] = "auto"
                 has_native_tools = True
-
-            elif self.tool_handler.supports_prompted:
-                # Add tools as system prompt for prompted models
-                system_text = (
-                    chat_messages[0].get("content", "")
-                    if chat_messages and chat_messages[0].get("role") == "system"
-                    else ""
-                )
-                include_tool_list = "## Tools (session)" not in str(system_text)
-                tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
-                if chat_messages and chat_messages[0]["role"] == "system":
-                    chat_messages[0]["content"] += f"\n\n{tool_prompt}"
-                else:
-                    chat_messages.insert(0, {"role": "system", "content": tool_prompt})
-                generation_kwargs["messages"] = chat_messages
 
         try:
             if stream:

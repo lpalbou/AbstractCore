@@ -1301,6 +1301,20 @@ def acore_prompt_cache_stats(
     )
 
 
+@app.get("/acore/prompt_cache/capabilities")
+def acore_prompt_cache_capabilities(
+    base_url: Optional[str] = Query(None, description="Upstream AbstractEndpoint base_url (optionally including /v1)"),
+    api_key: Optional[str] = Query(None, description="Optional upstream API key"),
+):
+    return _proxy_prompt_cache_request(
+        base_url=base_url,
+        api_key=api_key,
+        method="GET",
+        path="/acore/prompt_cache/capabilities",
+        json_body=None,
+    )
+
+
 @app.post("/acore/prompt_cache/set")
 def acore_prompt_cache_set(req: PromptCacheSetProxyRequest):
     body = req.model_dump(exclude_none=True)

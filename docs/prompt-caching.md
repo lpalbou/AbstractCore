@@ -11,12 +11,18 @@ Prompt caching is most useful when many calls share a long, stable prefix (syste
 
 - `prompt_cache_key` (generation kwarg): forwarded to the provider when supported.
 - `prompt_cache_retention` (OpenAI only): optional retention control (`"in_memory"` or `"24h"` when supported).
-- `BaseProvider` control plane (best-effort):
+- `BaseProvider.get_prompt_cache_capabilities()`: returns a capability profile with a stable mode:
+  - `none`: no prompt-cache support
+  - `keyed`: accepts `prompt_cache_key` but does not expose a local control plane
+  - `local_control_plane`: supports local key management / module preparation
+- `BaseProvider.prompt_cache_supports_operation(operation)`: one place to query whether a specific control-plane operation is supported.
+- `BaseProvider` control plane (best-effort, capability-gated):
   - `prompt_cache_set(key)`
   - `prompt_cache_update(key, ...)`
   - `prompt_cache_fork(from_key, to_key)`
   - `prompt_cache_clear(key=None)`
   - `prompt_cache_prepare_modules(...)` (hierarchical/prefix module caches)
+- Unsupported control-plane calls raise structured prompt-cache errors (for example `PromptCacheUnsupportedError`) with `operation`, `code`, and `capabilities` so higher layers can catch and downgrade cleanly.
 
 ## Provider status (Mar 2026)
 
@@ -25,7 +31,9 @@ Prompt caching is most useful when many calls share a long, stable prefix (syste
 - **OpenAI-compatible** (`OpenAICompatibleProvider`, `LMStudioProvider`, `VLLMProvider`, …): forwards `prompt_cache_key` when provided (server-managed if the backend implements it).
 - **MLX** (`MLXProvider`): supports in-process KV caches via `prompt_cache_key` and AbstractCore’s cache control plane.
   - CLI persistence: `abstractcore-chat` supports `/cache save|load` (writes/reads a `.safetensors` cache; model-locked).
-- **HuggingFace GGUF** (`HuggingFaceProvider` with llama.cpp): supports an in-process RAM cache (`LlamaRAMCache`). No save/load yet.
+- **HuggingFace GGUF** (`HuggingFaceProvider` with llama.cpp): always supports keyed in-process RAM caches (`LlamaRAMCache`), and reports `mode=local_control_plane` when AbstractCore can render the model's llama.cpp chat format exactly for cache composition.
+  - Current exact renderers: `chatml-function-calling`, `llama-3`
+  - Other GGUF chat formats remain `mode=keyed` until an exact cached prompt renderer is implemented.
 - **Ollama** (`OllamaProvider`): no prompt-cache integration currently (Ollama manages context internally per request).
 
 ## OpenAI notes
@@ -61,6 +69,19 @@ Notes:
 
 `abstractcore-endpoint` can expose prompt-cache controls under `/acore/prompt_cache/*` when the underlying provider supports them (see `docs/endpoint.md`).
 
+Endpoint responses use a stable JSON shape:
+
+- success: `{"supported": true, "operation": "...", ...}`
+- unsupported: `{"supported": false, "operation": "...", "code": "prompt_cache_unsupported", "capabilities": {...}}`
+- other errors: `{"supported": false, "operation": "...", "code": "prompt_cache_error", "capabilities": {...}}`
+
+This makes the same capability contract available over HTTP, not only in-process.
+
+Gateway/operator note:
+
+- `abstractgateway` can save/load MLX and GGUF in-process prompt caches.
+- For GGUF, gateway save/load persists both the raw `LlamaRAMCache` state and the provider-side module metadata needed to keep cache keys/module branches meaningful after reload.
+
 ## Safety / limitations
 
 - KV caches consume memory; large caches can be expensive.
@@ -69,6 +90,6 @@ Notes:
 
 ## Next steps (unification ideas)
 
-- Standardize save/load semantics beyond MLX (e.g., GGUF backends where the runtime supports serialization).
+- Standardize save/load semantics beyond MLX/GGUF once more backends expose a serializable local KV state.
 - Add retry-based fallbacks for OpenAI-compatible servers that reject cache-related fields.
-- Extend docs and capability registry fields to make prompt-cache support and limitations explicit per backend.
+- Extend exact cached-prompt renderers to additional GGUF chat formats without weakening the control-plane contract.
