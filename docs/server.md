@@ -137,6 +137,28 @@ Standard OpenAI-compatible endpoint. Works with all providers.
 - `thinking` (optional, AbstractCore extension): Unified thinking/reasoning control (`null|"auto"|"on"|"off"|"none"` or `"low"|"medium"|"high"|"xhigh"` when supported). Note: `"none"` is treated as an alias for `"off"`.
 - `temperature`, `max_tokens`, `top_p`: Standard LLM parameters
 
+#### Thinking (AbstractCore extension)
+
+The server forwards `thinking` to the underlying provider using AbstractCore’s unified thinking mapping (see [Generation Parameters](generation-parameters.md)).
+
+Example (route to LM Studio + Qwen3.5, disable thinking):
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "lmstudio/qwen3.5-27b@q4_k_m",
+    "base_url": "http://localhost:1234/v1",
+    "messages": [{"role": "user", "content": "Compute 17*23 - 19*11. Reply with the integer only."}],
+    "thinking": "none",
+    "max_tokens": 64
+  }'
+```
+
+Notes:
+- For **Qwen3 / Qwen3.5 on LM Studio**, `thinking="none"` maps to LM Studio’s template variables (`enable_thinking` / `enableThinking`) plus a Qwen template “hard switch” fallback (empty `<think></think>`) when needed. This avoids injecting “reasoning effort” instructions into the system prompt.
+- Not every backend supports per-effort budgets for `low|medium|high`; when unavailable, levels degrade to “thinking enabled”.
+
 **Example with streaming:**
 
 ```python

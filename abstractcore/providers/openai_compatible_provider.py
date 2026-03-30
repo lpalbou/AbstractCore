@@ -213,6 +213,18 @@ class OpenAICompatibleProvider(BaseProvider):
             else:
                 payload["chat_template_kwargs"] = dict(chat_template_kwargs)
 
+        # LM Studio sometimes exposes model-specific "custom fields" (e.g., Qwen3.5's "Enable Thinking")
+        # that can affect chat-template variables. There's no stable, public OpenAI-compatible surface
+        # for these, so we support a small best-effort passthrough:
+        # - callers/providers may pass `lmstudio_template_vars` to be copied to the top-level request.
+        provider_id = str(getattr(self, "provider", "") or "").strip().lower()
+        if provider_id == "lmstudio":
+            template_vars = kwargs.get("lmstudio_template_vars")
+            if isinstance(template_vars, dict) and template_vars:
+                for k, v in template_vars.items():
+                    if isinstance(k, str) and k.strip():
+                        payload[k.strip()] = v
+
         return payload
 
     def _apply_provider_thinking_kwargs(
@@ -222,11 +234,6 @@ class OpenAICompatibleProvider(BaseProvider):
         level: Optional[str],
         kwargs: Dict[str, Any],
     ) -> tuple[Dict[str, Any], bool]:
-        # Seed-OSS: control reasoning via chat-template kwargs (`thinking_budget`).
-        #
-        # NOTE: This is currently best-effort and only enabled for local OpenAI-compatible
-        # servers (LM Studio / generic OpenAI-compatible) to avoid breaking strict
-        # third-party gateways that may reject unknown payload fields.
         if enabled is None and level is None:
             return kwargs, False
 
@@ -234,7 +241,66 @@ class OpenAICompatibleProvider(BaseProvider):
         if provider_id not in {"lmstudio", "openai-compatible"}:
             return kwargs, False
 
-        if str(getattr(self, "architecture", "") or "").strip().lower() != "seed_oss":
+        architecture = str(getattr(self, "architecture", "") or "").strip().lower()
+
+        # Qwen3 / Nemotron: disable thinking via chat-template kwargs (`enable_thinking`).
+        #
+        # Some backends do not interpret prompt-level control tokens (e.g. "/no_think") as
+        # actual switches for these templates; a backend-native knob is more reliable when
+        # supported.
+        if architecture in {"qwen3", "qwen3_5", "nemotron_hybrid_moe"}:
+            requested = enabled if enabled is not None else (level is not None)
+            new_kwargs = dict(kwargs)
+            ctk = new_kwargs.get("chat_template_kwargs")
+            ctk_dict: Dict[str, Any] = dict(ctk) if isinstance(ctk, dict) else {}
+            # Common Jinja variable name (used by Qwen docs, llama.cpp, vLLM recipes).
+            ctk_dict["enable_thinking"] = bool(requested)
+            # LM Studio model.yaml customFields often use camelCase keys like `enableThinking`
+            # which may be forwarded to templates by some runtimes. Keep both for compatibility.
+            ctk_dict["enableThinking"] = bool(requested)
+
+            # Nemotron v3 models additionally expose a template-side "low_effort" switch that
+            # reduces reasoning tokens while keeping thinking enabled. Map our unified "low"
+            # (and "minimal") levels to this knob when available.
+            #
+            # This is intentionally best-effort: if a backend/template ignores the kwarg, it
+            # should not break the request.
+            if architecture == "nemotron_hybrid_moe" and enabled is not False:
+                if level in {"minimal", "low"}:
+                    ctk_dict["low_effort"] = True
+            new_kwargs["chat_template_kwargs"] = ctk_dict
+
+            # LM Studio's OpenAI-compatible endpoint does not document `chat_template_kwargs`,
+            # and some builds historically ignored it. Replicate the same payload under the
+            # common "extra_body" extension used by other OpenAI-compatible stacks (vLLM, etc.)
+            # as a best-effort compatibility shim.
+            if provider_id == "lmstudio":
+                eb = new_kwargs.get("extra_body")
+                eb_dict: Dict[str, Any] = dict(eb) if isinstance(eb, dict) else {}
+                eb_ctk = eb_dict.get("chat_template_kwargs")
+                eb_ctk_dict: Dict[str, Any] = dict(eb_ctk) if isinstance(eb_ctk, dict) else {}
+                eb_ctk_dict.update(ctk_dict)
+                eb_dict["chat_template_kwargs"] = eb_ctk_dict
+                new_kwargs["extra_body"] = eb_dict
+
+                # Best-effort LM Studio template-variable passthrough.
+                #
+                # Some LM Studio runtimes/models do not honor `chat_template_kwargs`, but do expose
+                # a model-specific custom field (often camelCase) which ultimately sets a Jinja
+                # variable. Send both snake_case and camelCase to maximize compatibility.
+                tv = new_kwargs.get("lmstudio_template_vars")
+                tv_dict: Dict[str, Any] = dict(tv) if isinstance(tv, dict) else {}
+                tv_dict.setdefault("enable_thinking", bool(requested))
+                tv_dict.setdefault("enableThinking", bool(requested))
+                new_kwargs["lmstudio_template_vars"] = tv_dict
+            return new_kwargs, True
+
+        # Seed-OSS: control reasoning via chat-template kwargs (`thinking_budget`).
+        #
+        # NOTE: This is currently best-effort and only enabled for local OpenAI-compatible
+        # servers (LM Studio / generic OpenAI-compatible) to avoid breaking strict
+        # third-party gateways that may reject unknown payload fields.
+        if architecture != "seed_oss":
             return kwargs, False
 
         budget_map = {"low": 512, "medium": 1024, "high": 4096, "xhigh": 8192}

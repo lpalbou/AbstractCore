@@ -137,8 +137,11 @@ class HuggingFaceProvider(BaseProvider):
             if "max_tokens" not in kwargs:
                 kwargs["max_tokens"] = context_size
 
+        user_provided_max_tokens = "max_tokens" in kwargs and kwargs.get("max_tokens") is not None
+
         super().__init__(model, **kwargs)
         self.provider = "huggingface"
+        self._user_provided_max_tokens = bool(user_provided_max_tokens)
 
         # Handle timeout parameter for local models
         self._handle_timeout_parameter(kwargs)
@@ -206,6 +209,29 @@ class HuggingFaceProvider(BaseProvider):
             self.model_type = "transformers"
             self._setup_device_transformers()
             self._load_transformers_model()
+
+    def _apply_provider_thinking_kwargs(
+        self,
+        *,
+        enabled: Optional[bool],
+        level: Optional[str],
+        kwargs: Dict[str, Any],
+    ) -> tuple[Dict[str, Any], bool]:
+        # llama-cpp-python (GGUF) does not currently expose chat-template kwargs such as
+        # `enable_thinking` / `thinking_budget`. For Qwen3/Qwen3.5 GGUF models, we treat
+        # thinking levels as a best-effort "enable thinking" request and rely on BaseProvider's
+        # Qwen hard-switch marker for disabling thinking.
+        #
+        # TODO(upstream): Add an explicit `chat_template_kwargs` (or at least `enable_thinking`)
+        # parameter to llama-cpp-python's `Llama.create_chat_completion()` and forward it into the
+        # chat handler / Jinja template renderer. Once available, map our unified `thinking=...`
+        # directly to `enable_thinking` instead of relying on the `<think>\n\n</think>\n\n` marker.
+        # See: `docs/backlog/planned/2026-03-30_llama-cpp-python_expose_chat_template_kwargs.md`.
+        model_type = str(getattr(self, "model_type", "") or "").strip().lower()
+        if model_type == "gguf" and self.architecture in {"qwen3", "qwen3_5"}:
+            if enabled is True or level is not None:
+                return kwargs, True
+        return kwargs, False
 
     def unload_model(self, model_name: str) -> None:
         """
@@ -451,7 +477,12 @@ class HuggingFaceProvider(BaseProvider):
             chat_messages.extend(copy.deepcopy(messages))
 
         if user_message_content is not None:
-            chat_messages.append({"role": "user", "content": user_message_content})
+            # Allow "messages-only" calls (prompt="") without appending an empty user turn.
+            if isinstance(user_message_content, str):
+                if user_message_content.strip():
+                    chat_messages.append({"role": "user", "content": user_message_content})
+            else:
+                chat_messages.append({"role": "user", "content": user_message_content})
 
         if tools and self.tool_handler.supports_prompted:
             system_text = (
@@ -1399,9 +1430,30 @@ class HuggingFaceProvider(BaseProvider):
                 pass
 
             # Initialize llama-cpp-python with stderr redirected to our logger
+            n_ctx = self.max_tokens  # Unified context window knob (input+output budget)
+            if not getattr(self, "_user_provided_max_tokens", False):
+                # Many model cards advertise very large context windows (e.g. 262k for Qwen3.5),
+                # but allocating a KV cache for the full window is often infeasible locally.
+                # Use a conservative default for llama.cpp unless the caller explicitly opts in.
+                try:
+                    default_n_ctx = int(os.environ.get("ABSTRACTCORE_GGUF_DEFAULT_N_CTX", "8192"))
+                except Exception:
+                    default_n_ctx = 8192
+                if default_n_ctx <= 0:
+                    default_n_ctx = 8192
+                if n_ctx is None or int(n_ctx) > int(default_n_ctx):
+                    self.logger.warning(
+                        (
+                            f"Clamping llama.cpp n_ctx for {self.model}: requested max_tokens={n_ctx} "
+                            f"but using n_ctx={default_n_ctx}. Pass max_tokens=... to HuggingFaceProvider() "
+                            "(or set ABSTRACTCORE_GGUF_DEFAULT_N_CTX) to override."
+                        )
+                    )
+                    n_ctx = int(default_n_ctx)
+
             llama_kwargs = {
                 "model_path": model_path,
-                "n_ctx": self.max_tokens,  # Use unified max_tokens for context window
+                "n_ctx": int(n_ctx) if n_ctx is not None else 8192,
                 "n_gpu_layers": self.n_gpu_layers,
                 "chat_format": chat_format,
                 "verbose": self.debug,  # Use debug flag for verbose output
@@ -2581,6 +2633,7 @@ class HuggingFaceProvider(BaseProvider):
 
         return GenerateResponse(
             content=content,
+            raw_response=response,
             model=self.model,
             finish_reason=choice.get('finish_reason', 'stop'),
             usage=usage,

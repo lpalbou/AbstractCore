@@ -80,10 +80,15 @@ class VLLMProvider(OpenAICompatibleProvider):
         level: Optional[str],
         kwargs: Dict[str, Any],
     ) -> tuple[Dict[str, Any], bool]:
-        # vLLM exposes reasoning controls via `extra_body.chat_template_kwargs`.
-        # For Qwen3 templates specifically, the variable is commonly named `enable_thinking`.
-        _ = level
-        if enabled is None:
+        # vLLM exposes reasoning controls via request extensions under `payload["extra_body"]`.
+        #
+        # - Template switch: `extra_body.chat_template_kwargs.enable_thinking` (commonly used by Qwen3/Qwen3.5,
+        #   Nemotron and other reasoning templates).
+        # - Token budget (when server has a reasoning parser enabled): `extra_body.thinking_token_budget`
+        #
+        # References:
+        # - https://docs.vllm.ai/en/latest/features/reasoning_outputs/
+        if enabled is None and level is None:
             return kwargs, False
 
         new_kwargs = dict(kwargs)
@@ -91,8 +96,26 @@ class VLLMProvider(OpenAICompatibleProvider):
         extra_body_dict: Dict[str, Any] = dict(extra_body) if isinstance(extra_body, dict) else {}
         ctk = extra_body_dict.get("chat_template_kwargs")
         ctk_dict: Dict[str, Any] = dict(ctk) if isinstance(ctk, dict) else {}
-        ctk_dict["enable_thinking"] = bool(enabled)
+        if enabled is not None:
+            ctk_dict["enable_thinking"] = bool(enabled)
         extra_body_dict["chat_template_kwargs"] = ctk_dict
+
+        # Best-effort per-request reasoning token budget.
+        #
+        # vLLM applies this budget inside the reasoning block (as defined by the selected reasoning parser),
+        # which is a clean way to get "low/medium/high" reasoning *without* prompt hacks.
+        if enabled is not False and isinstance(level, str) and level:
+            budget_map = {
+                "minimal": 256,
+                "low": 512,
+                "medium": 1024,
+                "high": 4096,
+                "xhigh": 8192,
+            }
+            budget = budget_map.get(level)
+            if budget is not None:
+                extra_body_dict["thinking_token_budget"] = int(budget)
+
         new_kwargs["extra_body"] = extra_body_dict
         return new_kwargs, True
 

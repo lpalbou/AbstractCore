@@ -84,6 +84,32 @@ resp = llm.generate("What is the capital of France?")
 print(resp.content)
 ```
 
+## Thinking / reasoning (best-effort)
+
+Many modern models can optionally emit a reasoning/thinking trace (sometimes in a separate channel, sometimes inline). AbstractCore exposes a single unified control:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("lmstudio", model="qwen3.5-27b@q4_k_m", base_url="http://localhost:1234/v1")
+
+# Disable thinking (tries to suppress any reasoning trace)
+resp = llm.generate("Compute 17*23 - 19*11. Reply with the integer only.", thinking="none")
+print(resp.content)
+
+# Enable thinking (levels are best-effort; not all backends support budgets)
+resp = llm.generate("Solve a hard logic puzzle.", thinking="high")
+print(resp.content)
+print(resp.metadata.get("reasoning"))  # when the backend exposes it
+```
+
+Notes:
+- For **Qwen3 / Qwen3.5 on LM Studio**, AbstractCore uses LM Studio’s model template variables (`enable_thinking` / `enableThinking`) and a Qwen template “hard switch” for `thinking="none"` (empty `<think></think>`), rather than injecting “Reasoning effort …” text into the system prompt.
+- For **Qwen3 / Qwen3.5 GGUF via HuggingFaceProvider (llama-cpp-python)**, there is no template-kwargs knob exposed by llama-cpp-python today, so `thinking="none"` also uses the Qwen hard-switch marker. If you hit GGUF load failures due to huge advertised context windows, set `ABSTRACTCORE_GGUF_DEFAULT_N_CTX` (or pass `max_tokens=...`) to control llama.cpp `n_ctx`.
+- For **Ollama**, enabling thinking may consume a lot of output tokens in the thinking channel; consider using a larger `max_output_tokens` when `thinking` is enabled.
+
+For server usage (OpenAI-compatible HTTP), see [Server](server.md) and [Generation Parameters](generation-parameters.md).
+
 ## Streaming
 
 ```python

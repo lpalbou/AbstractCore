@@ -1775,12 +1775,13 @@
       "source": "Hugging Face model card (Qwen/Qwen3.5-9B, accessed 2026-03-11)",
       "canonical_name": "qwen3.5-9b",
       "aliases": [
-        "qwen/qwen3.5-9b"
+        "qwen/qwen3.5-9b",
+        "qwen3.5:9b"
       ],
       "max_tokens": 262144,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "frames"
     },
     "qwen3.5-0.8b": {
       "max_output_tokens": 81920,
@@ -1795,12 +1796,13 @@
       "source": "Hugging Face model card (Qwen/Qwen3.5-0.8B, accessed 2026-03-11)",
       "canonical_name": "qwen3.5-0.8b",
       "aliases": [
-        "qwen/qwen3.5-0.8b"
+        "qwen/qwen3.5-0.8b",
+        "qwen3.5:0.8b"
       ],
       "max_tokens": 262144,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "frames"
     },
     "qwen3.5-2b": {
       "max_output_tokens": 81920,
@@ -1815,12 +1817,13 @@
       "source": "Hugging Face model card (Qwen/Qwen3.5-2B, accessed 2026-03-11)",
       "canonical_name": "qwen3.5-2b",
       "aliases": [
-        "qwen/qwen3.5-2b"
+        "qwen/qwen3.5-2b",
+        "qwen3.5:2b"
       ],
       "max_tokens": 262144,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "frames"
     },
     "qwen3.5-4b": {
       "max_output_tokens": 81920,
@@ -1835,12 +1838,13 @@
       "source": "Hugging Face model card (Qwen/Qwen3.5-4B, accessed 2026-03-11)",
       "canonical_name": "qwen3.5-4b",
       "aliases": [
-        "qwen/qwen3.5-4b"
+        "qwen/qwen3.5-4b",
+        "qwen3.5:4b"
       ],
       "max_tokens": 262144,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "frames"
     },
     "qwen3.5-27b": {
       "max_output_tokens": 81920,
@@ -1855,12 +1859,13 @@
       "source": "Hugging Face model card (Qwen/Qwen3.5-27B, accessed 2026-03-11)",
       "canonical_name": "qwen3.5-27b",
       "aliases": [
-        "qwen/qwen3.5-27b"
+        "qwen/qwen3.5-27b",
+        "qwen3.5:27b"
       ],
       "max_tokens": 262144,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "frames"
     },
     "qwen3.5-35b-a3b": {
       "max_output_tokens": 81920,
@@ -1879,12 +1884,13 @@
       "source": "Hugging Face model card + config metadata (Qwen/Qwen3.5-35B-A3B, accessed 2026-03-11)",
       "canonical_name": "qwen3.5-35b-a3b",
       "aliases": [
-        "qwen/qwen3.5-35b-a3b"
+        "qwen/qwen3.5-35b-a3b",
+        "qwen3.5:35b"
       ],
       "max_tokens": 262144,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "frames"
     },
     "qwen3.5-397b-a17b": {
       "max_output_tokens": 81920,
@@ -1908,7 +1914,7 @@
       "max_tokens": 262144,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "frames"
     },
     "qwen3.5-122b-a10b": {
       "max_output_tokens": 81920,
@@ -1927,12 +1933,13 @@
       "source": "Hugging Face model card (Qwen/Qwen3.5-122B-A10B, accessed 2026-03-11)",
       "canonical_name": "qwen3.5-122b-a10b",
       "aliases": [
-        "qwen/qwen3.5-122b-a10b"
+        "qwen/qwen3.5-122b-a10b",
+        "qwen3.5:122b"
       ],
       "max_tokens": 262144,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "frames"
     },
     "qwen3-14b": {
       "max_output_tokens": 8192,
@@ -3101,6 +3108,30 @@
       "max_tools": -1,
       "video_input_mode": "frames"
     },
+    "mistral-small-4-119b-2603": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "reasoning_levels": [
+        "none",
+        "high"
+      ],
+      "total_parameters": "119B",
+      "notes": "Mistral Small 4 119B (2603) with 256K/262,144-token context. Model card advertises native tool calling + JSON output and exposes a reasoning_effort control (none/high).",
+      "source": "Hugging Face model card (mistralai/Mistral-Small-4-119B-2603)",
+      "canonical_name": "mistral-small-4-119b-2603",
+      "aliases": [
+        "mistralai/Mistral-Small-4-119B-2603"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "frames"
+    },
     "llama-4-scout": {
       "max_output_tokens": 8192,
       "tool_support": "native",
@@ -3195,12 +3226,12 @@
     },
     "lfm2.5-1.2b-instruct": {
       "max_output_tokens": 8192,
-      "tool_support": "native",
-      "structured_output": "native",
+      "tool_support": "prompted",
+      "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
-      "notes": "Liquid AI LFM2.5 1.2B Instruct checkpoint with 32,768-token context. Official docs describe native function calling and structured outputs using special tool tokens (<|tool_list_start|>, <|tool_call_start|>, <|tool_response_start|>, etc.).",
+      "notes": "Liquid AI LFM2.5 1.2B Instruct checkpoint with 32,768-token context. Official docs describe tool calling and structured outputs via special tool tokens (<|tool_list_start|>, <|tool_call_start|>, <|tool_response_start|>, etc.), not an OpenAI-native tool/JSON API.",
       "source": "Hugging Face model card (LiquidAI/LFM2.5-1.2B-Instruct, accessed 2026-03-11)",
       "canonical_name": "lfm2.5-1.2b-instruct",
       "aliases": [
@@ -3211,10 +3242,101 @@
       "max_tools": -1,
       "video_input_mode": "none"
     },
+	    "lfm2.5-1.2b": {
+	      "max_output_tokens": 8192,
+	      "tool_support": "none",
+	      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "notes": "Liquid AI LFM2.5 1.2B base checkpoint with 32,768-token context (non-instruct). Treat as a text-only base model; tool calling and structured outputs are not documented as first-class behaviors for this base checkpoint.",
+      "source": "Hugging Face model card (LiquidAI/LFM2.5-1.2B, accessed 2026-03-11)",
+      "canonical_name": "lfm2.5-1.2b",
+	      "aliases": [
+	        "liquidai/lfm2.5-1.2b"
+	      ],
+	      "max_tokens": 32768,
+	      "max_tools": 0,
+	      "video_input_mode": "none"
+	    },
+    "lfm2.5-1.2b-thinking": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "notes": "Liquid AI LFM2.5 1.2B Thinking checkpoint with 32,768-token context. Designed for deeper reasoning; any tool/structured output behavior is prompt/template-driven (special tokens), not an OpenAI-native tool/JSON API.",
+      "source": "Hugging Face model card (LiquidAI/LFM2.5-1.2B-Thinking, accessed 2026-03-11)",
+      "canonical_name": "lfm2.5-1.2b-thinking",
+      "aliases": [
+        "liquidai/lfm2.5-1.2b-thinking"
+      ],
+      "max_tokens": 32768,
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
+	    "lfm2.5-1.2b-jp": {
+	      "max_output_tokens": 8192,
+	      "tool_support": "none",
+	      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "notes": "Liquid AI LFM2.5 1.2B JP checkpoint with 32,768-token context. Japanese-focused variant; tool calling and structured outputs are not documented as first-class behaviors for this checkpoint.",
+      "source": "Hugging Face model card (LiquidAI/LFM2.5-1.2B-JP, accessed 2026-03-11)",
+      "canonical_name": "lfm2.5-1.2b-jp",
+	      "aliases": [
+	        "liquidai/lfm2.5-1.2b-jp"
+	      ],
+	      "max_tokens": 32768,
+	      "max_tools": 0,
+	      "video_input_mode": "none"
+	    },
+    "lfm2.5-vl-1.6b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "notes": "Liquid AI LFM2.5 VL 1.6B multimodal checkpoint. Vision-language model for image+text understanding; any tool/structured output behavior is prompt/template-driven (special tokens), not an OpenAI-native tool/JSON API.",
+      "source": "Hugging Face model card (LiquidAI/LFM2.5-VL-1.6B, accessed 2026-03-11)",
+      "canonical_name": "lfm2.5-vl-1.6b",
+      "aliases": [
+        "liquidai/lfm2.5-vl-1.6b"
+      ],
+      "max_tokens": 32768,
+      "max_tools": -1,
+      "video_input_mode": "frames"
+    },
+	    "lfm2.5-audio-1.5b": {
+	      "max_output_tokens": 8192,
+	      "tool_support": "none",
+	      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": true,
+      "video_support": false,
+      "notes": "Liquid AI LFM2.5 Audio 1.5B checkpoint. Audio-specialized variant; audio input requires a provider path that can send audio content to the model (capability flag marks audio as supported at the model/provider I/O layer). The model card does not document tool calling or a native structured-output/JSON-mode interface for this checkpoint, so registry treats those as unsupported.",
+      "source": "Hugging Face model card (LiquidAI/LFM2.5-Audio-1.5B, accessed 2026-03-11)",
+      "canonical_name": "lfm2.5-audio-1.5b",
+	      "aliases": [
+	        "liquidai/lfm2.5-audio-1.5b"
+	      ],
+	      "max_tokens": 32768,
+	      "max_tools": 0,
+	      "video_input_mode": "none"
+	    },
     "lfm2-24b-a2b": {
       "max_output_tokens": 8192,
-      "tool_support": "native",
-      "structured_output": "native",
+      "tool_support": "prompted",
+      "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -3222,7 +3344,7 @@
       "active_parameters": "2B",
       "experts": 64,
       "experts_activated": 6,
-      "notes": "Liquid AI LFM2 24B-A2B multilingual MoE model with 32,768-token context. Official docs describe native function calling and structured outputs using special tool tokens (<|tool_list_start|>, <|tool_call_start|>, <|tool_response_start|>, etc.).",
+      "notes": "Liquid AI LFM2 24B-A2B multilingual MoE model with 32,768-token context. Official docs describe tool calling and structured outputs via special tool tokens (<|tool_list_start|>, <|tool_call_start|>, <|tool_response_start|>, etc.), not an OpenAI-native tool/JSON API.",
       "source": "Hugging Face model card + config metadata (LiquidAI/LFM2-24B-A2B, accessed 2026-03-11)",
       "canonical_name": "lfm2-24b-a2b",
       "aliases": [
@@ -3236,8 +3358,8 @@
     },
     "lfm2-8b-a1b": {
       "max_output_tokens": 8192,
-      "tool_support": "native",
-      "structured_output": "native",
+      "tool_support": "prompted",
+      "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -3245,7 +3367,7 @@
       "active_parameters": "1B",
       "experts": 32,
       "experts_activated": 6,
-      "notes": "Liquid AI LFM2 8B-A1B multilingual MoE model with 32,768-token context. Official docs describe native function calling and structured outputs using special tool tokens (<|tool_list_start|>, <|tool_call_start|>, <|tool_response_start|>, etc.).",
+      "notes": "Liquid AI LFM2 8B-A1B multilingual MoE model with 32,768-token context. Official docs describe tool calling and structured outputs via special tool tokens (<|tool_list_start|>, <|tool_call_start|>, <|tool_response_start|>, etc.), not an OpenAI-native tool/JSON API.",
       "source": "Hugging Face model card + config metadata (LiquidAI/LFM2-8B-A1B, accessed 2026-03-11)",
       "canonical_name": "lfm2-8b-a1b",
       "aliases": [
@@ -3258,14 +3380,14 @@
     },
     "lfm2-2.6b": {
       "max_output_tokens": 8192,
-      "tool_support": "native",
-      "structured_output": "native",
+      "tool_support": "prompted",
+      "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
       "total_parameters": "2.6B",
-      "notes": "Liquid AI LFM2 2.6B multilingual dense model with 32,768-token context. Official docs describe native function calling and structured outputs using special tool tokens (<|tool_list_start|>, <|tool_call_start|>, <|tool_response_start|>, etc.).",
+      "notes": "Liquid AI LFM2 2.6B multilingual dense model with 32,768-token context. Official docs describe tool calling and structured outputs via special tool tokens (<|tool_list_start|>, <|tool_call_start|>, <|tool_response_start|>, etc.), not an OpenAI-native tool/JSON API.",
       "source": "Hugging Face model card + tokenizer metadata (LiquidAI/LFM2-2.6B, accessed 2026-03-11)",
       "canonical_name": "lfm2-2.6b",
       "aliases": [
@@ -3278,13 +3400,13 @@
     },
     "lfm2-1.2b": {
       "max_output_tokens": 8192,
-      "tool_support": "native",
-      "structured_output": "native",
+      "tool_support": "prompted",
+      "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
       "total_parameters": "1.2B",
-      "notes": "Liquid AI LFM2 1.2B multilingual dense model with 32,768-token context. Official docs describe native function calling and structured outputs using special tool tokens (<|tool_list_start|>, <|tool_call_start|>, <|tool_response_start|>, etc.).",
+      "notes": "Liquid AI LFM2 1.2B multilingual dense model with 32,768-token context. Official docs describe tool calling and structured outputs via special tool tokens (<|tool_list_start|>, <|tool_call_start|>, <|tool_response_start|>, etc.), not an OpenAI-native tool/JSON API.",
       "source": "Hugging Face model card + tokenizer metadata (LiquidAI/LFM2-1.2B, accessed 2026-03-11)",
       "canonical_name": "lfm2-1.2b",
       "aliases": [
@@ -3401,8 +3523,8 @@
       "video_input_mode": "none"
     },
     "minimax-m2.5": {
-      "max_output_tokens": 80000,
-      "tool_support": "prompted",
+      "max_output_tokens": 8192,
+      "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
       "vision_support": false,
@@ -3411,14 +3533,32 @@
       "thinking_support": true,
       "active_parameters": "40B",
       "total_parameters": "480B",
-      "notes": "MiniMax M2.5 open-weight MoE reasoning model with 480B total parameters, 40B active parameters, 184,000-token context, and 80,000 output tokens. Official docs state tool invocation is supported, but native function calling is not.",
-      "source": "Hugging Face model card (MiniMaxAI/MiniMax-M2.5, accessed 2026-03-11)",
+      "notes": "MiniMax M2.5 open-weight MoE reasoning model with 480B total parameters, 40B active parameters and 196,608-token context. Official docs include OpenAI-style `tools` / `tool_choice` examples; no primary-source max-output-token cap or generic JSON-schema structured-output API is documented in the model card, so max_output_tokens remains a conservative default and structured outputs are treated as prompted.",
+      "source": "Hugging Face model card + tool calling guide (MiniMaxAI/MiniMax-M2.5, accessed 2026-03-30)",
       "canonical_name": "minimax-m2.5",
       "aliases": [
         "minimaxai/minimax-m2.5",
         "minimax/minimax-m2.5"
       ],
-      "max_tokens": 184000,
+      "max_tokens": 196608,
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
+    "omnicoder-9b-gguf": {
+      "max_output_tokens": 4096,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "notes": "OmniCoder 9B GGUF checkpoint for llama.cpp-style runtimes. Model card examples use an 8,192-token context window; treat this as the conservative default when running locally.",
+      "source": "Hugging Face model card (Tesslate/OmniCoder-9B-GGUF)",
+      "canonical_name": "omnicoder-9b-gguf",
+      "aliases": [
+        "tesslate/omnicoder-9b-gguf"
+      ],
+      "max_tokens": 8192,
       "max_tools": -1,
       "video_input_mode": "none"
     },
@@ -3819,6 +3959,32 @@
       "max_tools": -1,
       "video_input_mode": "none"
     },
+    "gpt-oss-puzzle-88b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "response_format": "harmony",
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "notes": "NVIDIA GPT-OSS Puzzle 88B checkpoint with 128K context (commonly implemented as 131,072 tokens). Model card documents reasoning_effort modes (low/medium/high); tool calling and native structured-output/JSON-mode support are not explicitly documented on this specific card, so registry treats them as prompted/best-effort.",
+      "source": "Hugging Face model card (nvidia/gpt-oss-puzzle-88B)",
+      "canonical_name": "gpt-oss-puzzle-88b",
+      "aliases": [
+        "nvidia/gpt-oss-puzzle-88B"
+      ],
+      "max_tokens": 131072,
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
     "qwen3-vl-2b": {
       "max_output_tokens": 8192,
       "tool_support": "native",
@@ -4055,13 +4221,13 @@
     "nemotron-3-nano-30b-a3b": {
       "max_output_tokens": 8192,
       "tool_support": "native",
-      "structured_output": "native",
+      "structured_output": "prompted",
       "parallel_tools": true,
       "vision_support": false,
       "audio_support": false,
       "video_support": false,
       "thinking_support": true,
-      "thinking_budget": false,
+      "thinking_budget": true,
       "architecture": "nemotron_hybrid_moe",
       "total_parameters": "30B",
       "active_parameters": "3.5B",
@@ -4084,7 +4250,7 @@
         "Italian",
         "Japanese"
       ],
-      "notes": "NVIDIA Nemotron-3-Nano hybrid MoE model (30B total/3.5B active, 128 experts/6 activated + 1 shared). Combines 23 Mamba-2 layers with 6 Attention layers. Unified model for reasoning and non-reasoning tasks with configurable reasoning mode. Generates reasoning trace before final response. 256K context extendable to 1M with YaRN. Strong performance on AIME25 (99.2% with tools), SWE-Bench (38.8%), MiniF2F (50.0% pass@1). Native tool calling via chatml-function-calling format. Commercial use ready.",
+      "notes": "NVIDIA Nemotron-3-Nano hybrid MoE model (30B total/3.5B active, 128 experts/6 activated + 1 shared). Combines 23 Mamba-2 layers with 6 Attention layers. Unified model for reasoning and non-reasoning tasks with configurable reasoning mode. Generates reasoning trace before final response. Serving examples commonly use 256K context; vLLM can be configured up to 1M. Tool calling is supported when served with parser-enabled OpenAI-compatible stacks (vLLM/SGLang/TRT-LLM). Model card documents configurable thinking enable/disable; reasoning-budget style controls may be available via serving-stack parameters (e.g., vLLM thinking token budget). Generic native JSON-schema structured outputs are not explicitly documented, so registry treats structured outputs as prompted.",
       "source": "NVIDIA Nemotron HuggingFace and technical report",
       "canonical_name": "nemotron-3-nano-30b-a3b",
       "aliases": [
@@ -4094,7 +4260,7 @@
         "nemotron-3-nano",
         "nemotron-nano-30b"
       ],
-      "max_tokens": 262144,
+      "max_tokens": 1000000,
       "release_date": "2025-12",
       "license": "nvidia-open-model-license",
       "benchmarks": {
@@ -4118,6 +4284,52 @@
         "Arena-Hard-V2 (Hard Prompt)": 72.1,
         "Arena-Hard-V2 (Average)": 67.7
       },
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
+    "nemotron-cascade-2-30b-a3b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_budget": false,
+      "architecture": "nemotron_hybrid_moe",
+      "total_parameters": "30B",
+      "notes": "NVIDIA Nemotron-Cascade-2-30B-A3B post-trained checkpoint derived from Nemotron-3-Nano-30B-A3B. 256K context window; thinking enable/disable via chat template kwargs is documented. Tool calling is documented as prompt/template-driven (tool responses wrapped in user content) unless served behind a parser-enabled stack.",
+      "source": "Hugging Face model card (nvidia/Nemotron-Cascade-2-30B-A3B)",
+      "canonical_name": "nemotron-cascade-2-30b-a3b",
+      "aliases": [
+        "nvidia/Nemotron-Cascade-2-30B-A3B"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
+    "nemotron-3-super-120b-a12b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "architecture": "nemotron_hybrid_moe",
+      "total_parameters": "120B",
+      "notes": "NVIDIA Nemotron-3-Super-120B-A12B hybrid MoE checkpoint with up to 1,000,000-token context (serving defaults often 262,144). Tool calling is supported when served with parser-enabled OpenAI-compatible stacks (vLLM/SGLang/TRT-LLM). Generic native JSON-schema structured outputs are not explicitly documented, so registry treats structured outputs as prompted.",
+      "source": "Hugging Face model card (nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16)",
+      "canonical_name": "nemotron-3-super-120b-a12b",
+      "aliases": [
+        "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-BF16",
+        "NVIDIA-Nemotron-3-Super-120B-A12B-BF16",
+        "nvidia/Nemotron-3-Super-120B-A12B"
+      ],
+      "max_tokens": 1000000,
       "max_tools": -1,
       "video_input_mode": "none"
     }

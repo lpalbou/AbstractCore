@@ -169,7 +169,7 @@ def test_harmony_thinking_injects_reasoning_system_prompt(monkeypatch):
     assert payload["messages"][0]["content"].strip() == "Reasoning: high"
 
 
-def test_lmstudio_qwen3_5_thinking_off_appends_no_think_token(monkeypatch) -> None:
+def test_lmstudio_qwen3_5_thinking_off_sets_chat_template_enable_thinking_false(monkeypatch) -> None:
     monkeypatch.setattr(LMStudioProvider, "_validate_model", lambda self: None)
     provider = LMStudioProvider(model="qwen/qwen3.5-9b", base_url="http://localhost:1234/v1")
 
@@ -184,9 +184,7 @@ def test_lmstudio_qwen3_5_thinking_off_appends_no_think_token(monkeypatch) -> No
     provider.generate("hi", thinking="off", temperature=0)
 
     payload = captured["payload"]
-    user_messages = [m for m in payload["messages"] if isinstance(m, dict) and m.get("role") == "user"]
-    assert user_messages, "expected at least one user message"
-    assert "/no_think" in str(user_messages[-1].get("content") or "")
+    assert payload["chat_template_kwargs"]["enable_thinking"] is False
 
 
 def test_lmstudio_seed_oss_thinking_high_sets_chat_template_thinking_budget(monkeypatch) -> None:

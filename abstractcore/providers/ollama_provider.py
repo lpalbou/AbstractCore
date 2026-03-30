@@ -6,6 +6,7 @@ import json
 import os
 import httpx
 import time
+import warnings
 from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type
 
 try:
@@ -107,17 +108,26 @@ class OllamaProvider(BaseProvider):
         kwargs: Dict[str, Any],
     ) -> tuple[Dict[str, Any], bool]:
         # Ollama exposes "thinking" via the request field `think`.
-        # Most models accept a boolean; GPT-OSS uses "low|medium|high" and cannot fully disable traces.
+        #
+        # Observed semantics:
+        # - Many models accept a boolean (`think: true|false`).
+        # - Some models/serving stacks also accept effort strings (`think: "low"|"medium"|"high"`).
+        #
+        # IMPORTANT: `thinking="off"` should translate to a *real disable* (`think: false`) whenever
+        # possible. Only models that cannot disable traces (e.g. GPT-OSS/Harmony) should degrade to
+        # a low-effort mode.
         if enabled is None and level is None:
             return kwargs, False
 
         new_kwargs = dict(kwargs)
 
-        reasoning_levels = self._model_reasoning_levels()
-        wants_levels = bool(reasoning_levels)
+        def _is_harmony_model() -> bool:
+            msg_fmt = str((self.architecture_config or {}).get("message_format") or "").strip().lower()
+            resp_fmt = str((self.model_capabilities or {}).get("response_format") or "").strip().lower()
+            return msg_fmt == "harmony" or resp_fmt == "harmony"
 
-        if wants_levels:
-            # Prefer explicit level; otherwise map off->low, on->medium.
+        if _is_harmony_model():
+            # Harmony (GPT-OSS): supports string effort levels, but cannot fully disable traces.
             if level is not None:
                 new_kwargs["think"] = level
                 return new_kwargs, True
@@ -129,13 +139,21 @@ class OllamaProvider(BaseProvider):
                 return new_kwargs, True
             return kwargs, False
 
-        # Boolean mode.
-        if level is not None:
-            # Best-effort fallback.
-            new_kwargs["think"] = True
+        if enabled is False:
+            new_kwargs["think"] = False
+            new_kwargs.pop("think_level", None)
             return new_kwargs, True
-        if enabled is not None:
-            new_kwargs["think"] = bool(enabled)
+
+        # Default mode (most models): boolean thinking enable/disable.
+        #
+        # Ollama's official "thinking" docs document boolean control for most models, and reserve
+        # effort strings for GPT-OSS. Preserve our unified `thinking="low|medium|high"` API by:
+        # - enabling thinking (think=true)
+        # - carrying the requested level in a private kwarg for output-budget heuristics
+        if enabled is True or level is not None:
+            new_kwargs["think"] = True
+            if level is not None:
+                new_kwargs["think_level"] = level
             return new_kwargs, True
 
         return kwargs, False
@@ -206,12 +224,46 @@ class OllamaProvider(BaseProvider):
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
         max_output_tokens = self._get_provider_max_tokens_param(generation_kwargs)
 
+        # Some reasoning templates (notably Qwen3.x on Ollama) can emit substantial "thinking"
+        # output before producing any final answer tokens. When the caller enables thinking but
+        # also sets a very small `max_output_tokens`, the model may exhaust the token budget in
+        # the reasoning channel and return an empty final `content`.
+        #
+        # To keep `thinking=` usable out-of-the-box, enforce a small minimum `num_predict` when
+        # thinking is enabled. This is best-effort and only triggers for *very* small budgets.
+        think_value = generation_kwargs.get("think")
+        think_level = generation_kwargs.get("think_level")
+        num_predict = int(max_output_tokens)
+        if think_value not in (None, False):
+            # NOTE: Qwen3.5 (and similar hybrid reasoning templates) can spend a lot of tokens in the
+            # reasoning channel before producing any final answer tokens. Empirically, some sizes
+            # (notably 4B) can exhaust a 1024-token budget entirely in thinking for "low", yielding
+            # empty final content.
+            #
+            # Keep `thinking=` usable with small `max_output_tokens` by enforcing a slightly larger
+            # minimum `num_predict` when thinking is enabled.
+            min_map = {"minimal": 1024, "low": 2048, "medium": 4096, "high": 8192}
+            requested_level = None
+            if isinstance(think_level, str) and think_level.strip():
+                requested_level = think_level.strip().lower()
+            elif isinstance(think_value, str) and think_value.strip():
+                requested_level = think_value.strip().lower()
+            min_predict = min_map.get(requested_level, 2048)
+            if num_predict < int(min_predict):
+                warnings.warn(
+                    f"max_output_tokens={num_predict} is likely too small when thinking is enabled for Ollama; "
+                    f"bumping options.num_predict to {min_predict} to avoid empty final content.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+                num_predict = int(min_predict)
+
         payload = {
             "model": self.model,
             "stream": stream,
             "options": {
                 "temperature": generation_kwargs.get("temperature", self.temperature),
-                "num_predict": max_output_tokens,  # Ollama uses num_predict for max output tokens
+                "num_predict": num_predict,  # Ollama uses num_predict for max output tokens
             }
         }
 
@@ -221,7 +273,6 @@ class OllamaProvider(BaseProvider):
             payload["options"]["seed"] = seed_value
 
         # Unified thinking/reasoning control (Ollama-native).
-        think_value = generation_kwargs.get("think")
         if think_value is not None:
             payload["think"] = think_value
 
@@ -232,9 +283,19 @@ class OllamaProvider(BaseProvider):
             json_schema = response_model.model_json_schema()
             payload["format"] = json_schema  # Pass the full schema, not just "json"
 
-        # Use chat format by default (recommended by Ollama docs), especially when tools are present
-        # Only use generate format for very simple cases without tools or messages
-        use_chat_format = tools is not None or messages is not None or True  # Default to chat
+        # Use chat format by default (recommended by Ollama docs), especially when tools are present.
+        #
+        # Qwen3.x reasoning templates also behave more predictably on `/api/chat` when thinking is enabled
+        # (some Ollama versions will emit a populated `thinking` field but an empty `response`/`content`
+        # in `/api/generate` for the same request).
+        use_chat_format = (
+            tools is not None
+            or messages is not None
+            or think_value is not None
+        )
+
+        # Media enrichment metadata (populated only when we route media through LocalMediaHandler).
+        media_enrichment = None
 
         if use_chat_format:
             payload["messages"] = []
@@ -252,7 +313,6 @@ class OllamaProvider(BaseProvider):
                 payload["messages"].extend(converted_messages)
 
             # Handle media content regardless of prompt (media can be used with messages too)
-            media_enrichment = None
             if media:
                 # Get the text to combine with media
                 user_message_text = prompt.strip() if prompt else ""
@@ -547,7 +607,7 @@ class OllamaProvider(BaseProvider):
             payload["format"] = json_schema
 
         # Use chat format
-        use_chat_format = tools is not None or messages is not None or True
+        use_chat_format = tools is not None or messages is not None
 
         if use_chat_format:
             payload["messages"] = []

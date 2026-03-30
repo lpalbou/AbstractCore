@@ -43,7 +43,7 @@ def _validate_thinking_tags(label: str, tags: Any) -> None:
 
 def _validate_reasoning_levels(label: str, levels: Any) -> None:
     assert isinstance(levels, list) and levels, f"{label}.reasoning_levels must be a non-empty list when set"
-    allowed = {"none", "low", "medium", "high", "xhigh"}
+    allowed = {"none", "minimal", "low", "medium", "high", "xhigh"}
     for level in levels:
         assert _non_empty_str(level), f"{label}.reasoning_levels contains invalid: {level!r}"
         assert level in allowed, f"{label}.reasoning_levels must be subset of {sorted(allowed)}"

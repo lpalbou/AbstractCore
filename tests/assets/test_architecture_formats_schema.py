@@ -196,7 +196,7 @@ def test_architecture_entries_conform_to_v0_template():
             assert isinstance(reasoning_levels, list) and reasoning_levels, (
                 f"architectures[{arch_name}].reasoning_levels must be a non-empty list when set"
             )
-            allowed = {"none", "low", "medium", "high", "xhigh"}
+            allowed = {"none", "minimal", "low", "medium", "high", "xhigh"}
             for level in reasoning_levels:
                 assert _non_empty_str(level), f"architectures[{arch_name}].reasoning_levels contains invalid: {level!r}"
                 assert level in allowed, (

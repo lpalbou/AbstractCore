@@ -88,7 +88,7 @@ Optional (used by tool parsing and response cleanup; only include when needed):
 - `thinking_output_field` (string)
 - `thinking_control` (string)
 - `reasoning_support` (boolean)
-- `reasoning_levels` (list; typically `["low","medium","high"]`, but may include `"none"` and/or `"xhigh"` when a model supports those effort levels)
+- `reasoning_levels` (list; typically `["low","medium","high"]`, but may include `"none"`, `"minimal"`, and/or `"xhigh"` when a model supports those effort levels)
 
 **Usage**:
 ```python

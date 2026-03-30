@@ -5,54 +5,45 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.13.0] - 2026-02-22
+
+## [2.12.0] - 2026-03-30
 
 ### Added
-- **`unsupported_parameters` field in `model_capabilities.json`**: declares which generation parameters (temperature, top_p, etc.) a model's API rejects. Providers now use this data-driven list to strip unsupported parameters instead of hardcoded model-name heuristics. Absent field = all parameters supported (backward-compatible default).
-- **`token_param_name` field in `model_capabilities.json`**: declares the API parameter name for output token limit (`max_tokens` or `max_completion_tokens`). Replaces the hardcoded `_uses_max_completion_tokens()` heuristic in OpenAI and Portkey providers.
-- **`_is_reasoning_model()` in `BaseProvider`**: capability-driven method that reads `thinking_support` from `model_capabilities.json`. Available to all providers for reasoning-related logic (thinking budget control, output parsing).
-- **`_is_parameter_supported(param)` in `BaseProvider`**: reads `unsupported_parameters` from capabilities to determine if a generation parameter should be forwarded to the API.
-- **`_get_token_param_name()` in `BaseProvider`**: reads `token_param_name` from capabilities to determine the correct output token parameter name.
-- **New model entries**: GPT-5.1, GPT-5.2, GPT-5.2-pro, GPT-5.2-codex, GPT-5.1-codex, GPT-5-codex, GPT-5-nano, o4-mini, GPT-4.1, GPT-4.1-mini, GPT-4.1-nano, Claude Opus 4.6, Claude Sonnet 4.6.
+- **Capability-driven parameter filtering**: new `unsupported_parameters` field in `model_capabilities.json` declares which generation parameters (temperature, top_p, etc.) a model's API rejects. Providers use this data-driven list instead of hardcoded model-name heuristics. Absent field = all parameters supported (backward-compatible default).
+- **Capability-driven token parameter naming**: new `token_param_name` field in `model_capabilities.json` declares the API parameter name for output token limit (`max_tokens` or `max_completion_tokens`). Replaces hardcoded `_uses_max_completion_tokens()` heuristics in OpenAI and Portkey providers.
+- **BaseProvider capability methods**: `_is_reasoning_model()` (reads `thinking_support`), `_is_parameter_supported(param)` (reads `unsupported_parameters`), `_get_token_param_name()` (reads `token_param_name`) — available to all providers.
+- **New model entries**: GPT-5.1, GPT-5.2, GPT-5.2-pro, GPT-5.2-codex, GPT-5.1-codex, GPT-5-codex, GPT-5-nano, o4-mini, GPT-4.1, GPT-4.1-mini, GPT-4.1-nano, Claude Opus 4.6, Claude Sonnet 4.6, Qwen3.5, LFM2.5, Nemotron.
 - **`thinking_support: true`** added to o1, o1-mini, o3, o3-mini, o4-mini, DeepSeek-R1, all GPT-5 family models, Claude 4/4.1/4.5/4.6 Opus and Sonnet models, and Claude Haiku 4.5.
+- **LM Studio Qwen3/Qwen3.5 thinking control**: forwards `thinking=` via backend-native template variables (`chat_template_kwargs.enable_thinking` + `enableThinking`) instead of system-prompt injection. Adds a Qwen hard-switch fallback (empty `<think></think>` assistant marker) when disabling thinking for runtimes that ignore `chat_template_kwargs`.
+- **HuggingFace GGUF Qwen3/Qwen3.5 "thinking=off" support**: for llama-cpp-python GGUF loads, `thinking="off"/"none"` uses the Qwen hard-switch marker to suppress reasoning without system-prompt hacks.
+- **`--install` readiness check**: comprehensive check of all subsystems (default model, provider connectivity, embeddings model, vision fallback, STT/TTS models, ffmpeg, abstractvision, API keys). Reports pass/warn/fail for each area and offers to download/install missing models interactively. Use `--yes` (`-y`) to auto-accept all downloads.
+- **Embeddings: 7 providers supported** (was 3). `EmbeddingManager` now accepts `openai`, `openrouter`, `portkey`, and `openai-compatible` in addition to the existing `huggingface`, `ollama`, and `lmstudio`.
+- **Interactive config wizard (`--config`) — expanded to 7 steps**: base URL for local servers, audio strategy, video strategy, embeddings provider/model, and console logging verbosity.
+- **Local probe tooling**: `examples/local_qwen3_5_thinking_probe.py` records the provider payload and supports unloading LM Studio models after probes via native REST.
 
 ### Changed
-- **Parameter filtering is now data-driven**: `OpenAIProvider` and `PortkeyProvider` use `unsupported_parameters` from `model_capabilities.json` instead of hardcoded `_is_reasoning_model()` name-matching heuristics for parameter stripping. Unsupported sampling parameters are silently dropped — upstream callers (runtime, gateway) always pass standard params as defaults, so the `unsupported_parameters` list is the authoritative enforcement, not log warnings.
+- **Parameter filtering is now data-driven**: `OpenAIProvider` and `PortkeyProvider` use `unsupported_parameters` from `model_capabilities.json` instead of hardcoded `_is_reasoning_model()` name-matching heuristics. Unsupported sampling parameters are silently dropped — the `unsupported_parameters` list is the authoritative enforcement.
 - **Token parameter naming is data-driven**: `_uses_max_completion_tokens()` replaced by `_get_token_param_name()` reading from `model_capabilities.json`.
 - **GPT-5 family models updated**: context windows corrected to 400K tokens, max output to 128K, audio_support corrected to false (text/image only per OpenAI docs), reasoning_levels added.
+- **`--install` embeddings check**: now provider-aware — server-based providers check reachability or API key instead of trying to download via `sentence-transformers`.
+- Interactive config wizard now covers all major configuration areas (model, base URL, vision, API keys, audio, video, embeddings, logging).
+- Documentation updated to clarify how to use `thinking=` with `generate()` and the AbstractCore server, with special notes for LM Studio + Qwen3.5.
 
 ### Removed
-- **`_is_reasoning_model()` from `OpenAIProvider`**: replaced by the `BaseProvider` version that reads from capabilities.
-- **`_uses_max_completion_tokens()` from `OpenAIProvider`**: replaced by `_get_token_param_name()`.
-- **`_is_reasoning_model()` from `PortkeyProvider`**: uses `BaseProvider` version.
-- **`_uses_max_completion_tokens()` from `PortkeyProvider`**: uses `_get_token_param_name()`.
+- **`_is_reasoning_model()` from `OpenAIProvider` and `PortkeyProvider`**: replaced by the `BaseProvider` version that reads from capabilities.
+- **`_uses_max_completion_tokens()` from `OpenAIProvider` and `PortkeyProvider`**: replaced by `_get_token_param_name()`.
 
 ### Fixed
-- **GPT-5 temperature handling**: the warning "Temperature parameter requested but not supported by OpenAI reasoning models (gpt-5-mini)" no longer fires on every call. Temperature is now correctly stripped via `unsupported_parameters` for GPT-5/5-mini/5-nano (which reject it, empirically verified via live API), and correctly forwarded for GPT-5.1/5.2 (which accept it, empirically verified).
-- **Missing o3/o3-mini/o4-mini parameter restrictions**: these reasoning models were not matched by the old `_is_reasoning_model()` heuristic and would incorrectly receive temperature/top_p parameters. Now correctly handled via `unsupported_parameters` in their capability entries (empirically verified).
-- **max_tokens vs max_completion_tokens**: all reasoning models (o-series + GPT-5 family) reject `max_tokens` and require `max_completion_tokens` (empirically verified). `token_param_name` field ensures the correct parameter name is used.
-
-## [2.12.0] - 2026-02-12
-
-### Added
-- **`--install` readiness check**: comprehensive check of all subsystems (default model, provider connectivity, embeddings model, vision fallback, STT/TTS models, ffmpeg, abstractvision, API keys). Reports ✅/⚠️/❌ for each area and offers to download/install missing models interactively. Use `--yes` (`-y`) to auto-accept all downloads for non-interactive environments (e.g. `abstractcore --install --yes`).
-- **Embeddings: 7 providers supported** (was 3). `EmbeddingManager` now accepts `openai`, `openrouter`, `portkey`, and `openai-compatible` in addition to the existing `huggingface`, `ollama`, and `lmstudio`. Added `OpenAIProvider.embed()` method; gateway providers (`OpenRouterProvider`, `PortkeyProvider`) already inherit `embed()` from `OpenAICompatibleProvider`. All server/cloud providers return embeddings in OpenAI-compatible format.
-- **Interactive config wizard (`--config`) — expanded to 7 steps**:
-  - Step 1: now asks for **base URL** when the selected provider is a local server (ollama, lmstudio, vllm, openai-compatible). Shows the env var name, current value if set, default URL, and prints the `export` command for shell persistence.
-  - Step 4 (NEW): **Audio strategy** — defaults to `auto` on Enter. Asks about `native_only` / `auto` / `speech_to_text` for audio attachment handling. Mentions `abstractvoice` dependency when needed.
-  - Step 5 (NEW): **Video strategy** — defaults to `auto` on Enter. Asks about `native_only` / `auto` / `frames_caption` for video attachment handling. Mentions `ffmpeg` dependency when needed.
-  - Step 6 (NEW): **Embeddings provider/model** — asks for embeddings configuration with examples across all 7 supported providers. Validates provider before saving.
-  - Step 7: Console logging verbosity (renumbered from step 4).
-
-### Changed
-- Interactive config wizard now covers all major configuration areas (model, base URL, vision, API keys, audio, video, embeddings, logging). Previously only covered model, vision, API keys, and logging.
-- **`--install` embeddings check**: now provider-aware — server-based providers (ollama, lmstudio, openai, openrouter, portkey, openai-compatible) check reachability or API key instead of trying to download via `sentence-transformers`. When `sentence-transformers` is missing, `--install` offers to `pip install "abstractcore[embeddings]"` and then download the model.
-
-### Fixed
-- **Audio strategy default changed from `native_only` to `auto`**: the `AudioConfig.strategy` default was `native_only`, which caused audio attachments to fail on text-only models unless the user explicitly configured it. Changed to `auto` (matching `VideoConfig.strategy` which was already `auto`). With `auto`, audio works seamlessly when `abstractvoice` is installed (STT fallback) and raises a clear error with install hints when it is not.
-- **Config-persisted API keys now injected into environment**: API keys saved via `abstractcore --set-api-key` (or `--config`) were stored in `~/.abstractcore/config/abstractcore.json` but providers only read from `os.environ` (e.g. `OPENAI_API_KEY`). Added `_apply_api_keys_to_env()` to bridge config-persisted keys into the environment at config load time. Environment variables always take precedence (config keys are injected only when the env var is absent).
-- **`--install` TTS/STT severity**: failed model downloads are now reported as `⚠️` (warning) instead of `❌` (critical) since TTS/STT are optional subsystems.
-- **`--install` TTS/STT verification**: download results are now verified by re-checking the filesystem instead of trusting the subprocess exit code (some prefetch commands exit 0 even on failure).
+- **GPT-5 temperature handling**: temperature is now correctly stripped via `unsupported_parameters` for GPT-5/5-mini/5-nano (which reject it) and correctly forwarded for GPT-5.1/5.2 (which accept it). All empirically verified via live API.
+- **Missing o3/o3-mini/o4-mini parameter restrictions**: these reasoning models were not matched by the old `_is_reasoning_model()` heuristic and would incorrectly receive temperature/top_p parameters. Now correctly handled via `unsupported_parameters`.
+- **max_tokens vs max_completion_tokens**: all reasoning models (o-series + GPT-5 family) reject `max_tokens` and require `max_completion_tokens`. `token_param_name` field ensures the correct parameter name.
+- **Ollama + Qwen3.x thinking edge case**: small `max_output_tokens` with thinking enabled could exhaust the budget in the reasoning channel and return empty final content; Ollama provider now enforces a minimum `options.num_predict` when `thinking` is enabled.
+- **Model capability schema**: `tool_support="none"` models now correctly use `max_tools: 0` (fixes LFM2.5 base variants).
+- **HuggingFace GGUF stability**: large advertised context windows (e.g. 262k) are now clamped to a conservative llama.cpp `n_ctx` by default (configurable via `ABSTRACTCORE_GGUF_DEFAULT_N_CTX`) to reduce local load failures.
+- **Audio strategy default changed from `native_only` to `auto`**: the `AudioConfig.strategy` default was `native_only`, which caused audio attachments to fail on text-only models unless the user explicitly configured it.
+- **Config-persisted API keys now injected into environment**: API keys saved via `abstractcore --set-api-key` were stored in config but providers only read from `os.environ`. Added `_apply_api_keys_to_env()` to bridge config-persisted keys into the environment at config load time.
+- **`--install` TTS/STT severity**: failed model downloads are now reported as warnings instead of critical errors since TTS/STT are optional subsystems.
+- **`--install` TTS/STT verification**: download results are now verified by re-checking the filesystem instead of trusting the subprocess exit code.
 
 ## [2.11.9] - 2026-02-09
 

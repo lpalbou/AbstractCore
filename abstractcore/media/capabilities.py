@@ -127,9 +127,13 @@ class MediaCapabilities:
                 self.max_images_per_message = 5  # Qwen-VL supports multiple images
 
         # Multimodal model patterns
-        if any(pattern in model_lower for pattern in ['4o', 'multimodal', 'omni']):
+        #
+        # NOTE: Prefer the explicit `*_support` flags from `model_capabilities.json`.
+        # These heuristics are intended only as a best-effort hint for models that
+        # are missing/under-specified in the registry.
+        if any(pattern in model_lower for pattern in ["4o", "multimodal"]):
             self.vision_support = True
-            if 'audio' not in caps or caps.get('audio_support'):
+            if "audio_support" not in caps or caps.get("audio_support"):
                 self.audio_support = True
 
         # Local model adjustments

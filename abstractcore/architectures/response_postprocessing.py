@@ -247,13 +247,14 @@ def extract_reasoning_from_message(
 
     Supported keys:
     - `reasoning` (OpenAI-compatible reasoning outputs)
+    - `reasoning_content` (some OpenAI-compatible servers)
     - `thinking`  (Ollama thinking outputs)
     - `thinking_output_field` from assets (e.g., `reasoning_content` for some GLM models)
     """
     if not isinstance(message, Mapping):
         return None
 
-    for key in ("reasoning", "thinking"):
+    for key in ("reasoning", "reasoning_content", "thinking"):
         v = message.get(key)
         if isinstance(v, str) and v.strip():
             return v.strip()

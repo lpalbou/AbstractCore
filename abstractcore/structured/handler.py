@@ -196,10 +196,17 @@ class StructuredOutputHandler:
         Returns:
             True if provider supports native structured outputs
         """
-        # Ollama and LMStudio always support native structured outputs
-        # via the format and response_format parameters respectively
+        # Ollama and LMStudio can support native structured outputs via provider/server
+        # parameters (`format` / `response_format`). However, this is not universally
+        # reliable across all model templates and deployments, so we allow explicit
+        # per-model opt-out via `model_capabilities.json.structured_output`.
         provider_name = provider.__class__.__name__
         if provider_name in ['OllamaProvider', 'LMStudioProvider']:
+            capabilities = getattr(provider, 'model_capabilities', {})
+            if isinstance(capabilities, dict):
+                explicit = capabilities.get("structured_output")
+                if explicit in {"prompted", "none"}:
+                    return False
             return True
 
         # HuggingFaceProvider supports native via GGUF or Transformers+Outlines

@@ -777,10 +777,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """Normalize `thinking=` into (enabled, level).
 
         - enabled: True/False/None (None == "auto")
-        - level: Optional[str] in {"low","medium","high","xhigh"} when requested
+        - level: Optional[str] in {"minimal","low","medium","high","xhigh"} when requested
 
         Notes:
         - thinking="none" is accepted as an alias for thinking="off".
+        - "extra high" / "extra_high" / "extra-high" are accepted as aliases for "xhigh".
         """
         if thinking is None:
             return None, None
@@ -796,11 +797,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 return True, None
             if s in {"off", "false", "no", "none"}:
                 return False, None
-            if s in {"low", "medium", "high", "xhigh"}:
-                return True, s
+            # Normalize common separator variants for user ergonomics.
+            s_norm = re.sub(r"[\\s\\-]+", "_", s).strip("_")
+            if s_norm in {"extra_high", "x_high"}:
+                return True, "xhigh"
+            if s_norm in {"minimal", "low", "medium", "high", "xhigh"}:
+                return True, s_norm
 
         raise ValueError(
-            'thinking must be one of: None, bool, "auto", "on", "off", "none", "low", "medium", "high", "xhigh"'
+            'thinking must be one of: None, bool, "auto", "on", "off", "none", '
+            '"minimal", "low", "medium", "high", "xhigh" (aliases: "extra high" -> "xhigh")'
         )
 
     def _model_reasoning_levels(self) -> List[str]:
@@ -914,14 +920,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
             level = None
             enabled = True
 
+        # When a specific thinking level is requested but the model does not advertise supported
+        # reasoning levels, treat the level as a *best-effort hint* for provider-side token budgets.
+        # We still enable thinking, but do not warn: many open-weight stacks expose the knob via
+        # template kwargs (enable_thinking) and/or server-side budgets without a stable upstream
+        # "effort enum" to record in assets.
         if level is not None and not reasoning_levels:
-            warnings.warn(
-                f"thinking level '{level}' requested but model '{self.model}' has no configured reasoning_levels; "
-                "falling back to thinking='on'.",
-                RuntimeWarning,
-                stacklevel=3,
-            )
-            level = None
             enabled = True
 
         handled_by_model_prompt = False
@@ -963,7 +967,68 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     system_prompt = line
                 handled_by_model_prompt = True
 
+        kwargs, handled_by_provider = self._apply_provider_thinking_kwargs(
+            enabled=enabled,
+            level=level,
+            kwargs=kwargs,
+        )
+        # IMPORTANT: Avoid prompt-injection based "reasoning effort" toggles here.
+        #
+        # Thinking controls should be mapped to backend-native request fields whenever possible
+        # (e.g., vLLM `extra_body.chat_template_kwargs.enable_thinking`, LM Studio
+        # `chat_template_kwargs.enable_thinking`, Ollama `think`). This keeps requests clean and
+        # avoids polluting system prompts (and provider logs) with framework-specific directives.
+
+        # Qwen3 / Qwen3.5 hard-switch (LM Studio + llama.cpp/GGUF): disable thinking without system-prompt hacks.
+        #
+        # Qwen's official guidance (and common Qwen chat templates) support a strict, stateless
+        # "no-thinking" mode by inserting an empty think block in the *assistant generation prompt*
+        # (i.e. right after the assistant start token) before generation:
+        #   <think>\n\n</think>\n\n
+        #
+        # Some LM Studio runtimes do not reliably honor `chat_template_kwargs.enable_thinking`
+        # for all model formats. As a robust fallback for `thinking="off"/"none"`, we append a
+        # final assistant message containing only the empty think block and clear `prompt` so
+        # OpenAI-compatible providers don't append an extra user turn after it.
+        provider_id = str(getattr(self, "provider", "") or "").strip().lower()
+        is_hf_gguf = provider_id == "huggingface" and str(getattr(self, "model_type", "") or "").strip().lower() == "gguf"
+        if (
+            enabled is False
+            and (provider_id == "lmstudio" or is_hf_gguf)
+            and self.architecture in {"qwen3", "qwen3_5"}
+        ):
+            marker = "<think>\n\n</think>\n\n"
+            new_messages: List[Dict[str, str]] = []
+            if isinstance(messages, list) and messages:
+                for m in messages:
+                    if isinstance(m, dict):
+                        # Only keep string roles/contents for compatibility with OpenAI chat.
+                        r = m.get("role")
+                        c = m.get("content")
+                        if isinstance(r, str) and r.strip() and isinstance(c, str):
+                            new_messages.append({"role": r.strip(), "content": c})
+
+            if isinstance(prompt, str) and prompt.strip():
+                new_messages.append({"role": "user", "content": prompt.strip()})
+                prompt = ""
+
+            if new_messages:
+                last = new_messages[-1]
+                if not (
+                    isinstance(last, dict)
+                    and last.get("role") == "assistant"
+                    and isinstance(last.get("content"), str)
+                    and last.get("content") == marker
+                ):
+                    new_messages.append({"role": "assistant", "content": marker})
+                messages = new_messages
+                handled_by_model_prompt = True
+
         # Model-level control token for disabling thinking (e.g., GLM `/nothink`).
+        #
+        # Apply prompt-level control *only* when the provider did not already handle the request
+        # with a backend-native knob (e.g., vLLM/LM Studio `enable_thinking`). This avoids injecting
+        # tokens that some templates do not interpret as controls.
         thinking_control = None
         for src in (self.model_capabilities, self.architecture_config):
             if not isinstance(src, dict):
@@ -972,7 +1037,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if isinstance(token, str) and token.strip():
                 thinking_control = token.strip()
 
-        if enabled is False and thinking_control:
+        if enabled is False and thinking_control and not handled_by_provider:
             handled_by_model_prompt = True
 
             def _append_control(text: str) -> str:
@@ -1003,12 +1068,6 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         RuntimeWarning,
                         stacklevel=3,
                     )
-
-        kwargs, handled_by_provider = self._apply_provider_thinking_kwargs(
-            enabled=enabled,
-            level=level,
-            kwargs=kwargs,
-        )
 
         if not supports_control and thinking is not None:
             warnings.warn(
