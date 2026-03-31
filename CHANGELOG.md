@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Embeddings: 7 providers supported** (was 3). `EmbeddingManager` now accepts `openai`, `openrouter`, `portkey`, and `openai-compatible` in addition to the existing `huggingface`, `ollama`, and `lmstudio`.
 - **Interactive config wizard (`--config`) — expanded to 7 steps**: base URL for local servers, audio strategy, video strategy, embeddings provider/model, and console logging verbosity.
 - **Local probe tooling**: `examples/local_qwen3_5_thinking_probe.py` records the provider payload and supports unloading LM Studio models after probes via native REST.
+- **`GenerateResponse.reasoning` property**: unified getter/setter for reasoning text. Getter checks `metadata["reasoning"]`, `metadata["reasoning_content"]`, and `metadata["thinking"]` in priority order; setter writes to the canonical `reasoning` key.
+- **`output_wrappers` in `architecture_formats.json`**: Qwen3 architecture now declares `<|im_end|>` as an output wrapper so BaseProvider can strip template artifacts from visible content.
 
 ### Changed
 - **Parameter filtering is now data-driven**: `OpenAIProvider` and `PortkeyProvider` use `unsupported_parameters` from `model_capabilities.json` instead of hardcoded `_is_reasoning_model()` name-matching heuristics. Unsupported sampling parameters are silently dropped — the `unsupported_parameters` list is the authoritative enforcement.
@@ -28,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`--install` embeddings check**: now provider-aware — server-based providers check reachability or API key instead of trying to download via `sentence-transformers`.
 - Interactive config wizard now covers all major configuration areas (model, base URL, vision, API keys, audio, video, embeddings, logging).
 - Documentation updated to clarify how to use `thinking=` with `generate()` and the AbstractCore server, with special notes for LM Studio + Qwen3.5.
+- **Thinking warnings refined**: `thinking="off"/"none"` on non-thinking models no longer emits a spurious RuntimeWarning (the model is already in the desired state). Warnings only fire when enabling thinking on a model that does not support it.
+- CLI reasoning capture now uses the `GenerateResponse.reasoning` property instead of raw metadata dict access.
 
 ### Removed
 - **`_is_reasoning_model()` from `OpenAIProvider` and `PortkeyProvider`**: replaced by the `BaseProvider` version that reads from capabilities.
