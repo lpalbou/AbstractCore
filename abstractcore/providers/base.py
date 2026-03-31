@@ -1069,7 +1069,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         stacklevel=3,
                     )
 
-        if not supports_control and thinking is not None:
+        requesting_enable = enabled is True or level is not None
+        requesting_disable = enabled is False
+
+        # Warn about unsupported thinking capability only when the caller is *enabling* thinking.
+        # When thinking="off"/"none", a non-thinking model is already in the desired mode.
+        if requesting_enable and not supports_control:
             warnings.warn(
                 f"thinking={thinking!r} requested but model '{self.model}' is not marked as thinking-capable "
                 "in model_capabilities.json; the request may be ignored.",
@@ -1077,7 +1082,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 stacklevel=3,
             )
 
-        if not handled_by_model_prompt and not handled_by_provider and (enabled is False or level is not None):
+        # Warn about missing provider-level mapping only when the request is expected to take effect:
+        # - enabling thinking always needs a mapping/hint;
+        # - disabling thinking only matters when the model is known to support thinking controls.
+        should_warn_unhandled = requesting_enable or (requesting_disable and supports_control)
+        if should_warn_unhandled and not handled_by_model_prompt and not handled_by_provider:
             warnings.warn(
                 f"thinking={thinking!r} requested but provider '{self.provider or self.__class__.__name__}' "
                 "does not implement a thinking control mapping for this model; the request may be ignored.",

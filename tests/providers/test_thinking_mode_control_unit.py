@@ -243,3 +243,37 @@ def test_thinking_output_field_and_think_tags_are_normalized_in_base_provider(mo
     assert resp.content == "final"
     assert isinstance(resp.metadata, dict)
     assert resp.metadata.get("reasoning") == "r"
+
+
+def test_thinking_off_does_not_warn_for_non_reasoning_model(monkeypatch):
+    import warnings
+
+    monkeypatch.setattr(LMStudioProvider, "_validate_model", lambda self: None)
+    provider = LMStudioProvider(model="google/gemma-3-4b", base_url="http://localhost:1234/v1")
+
+    def _fake_single_generate(payload):
+        _ = payload
+        return GenerateResponse(content="ok", model=provider.model, finish_reason="stop")
+
+    monkeypatch.setattr(provider, "_single_generate", _fake_single_generate)
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        provider.generate("hi", thinking="none", temperature=0)
+
+    runtime_warnings = [w for w in caught if issubclass(w.category, RuntimeWarning)]
+    assert not runtime_warnings
+
+
+def test_qwen3_5_im_end_wrapper_is_stripped_from_visible_content(monkeypatch):
+    monkeypatch.setattr(OpenAICompatibleProvider, "_validate_model", lambda self: None, raising=False)
+    provider = OpenAICompatibleProvider(model="qwen3.5-4b-mlx@4bit", base_url="http://127.0.0.1:1234/v1")
+
+    def _fake_single_generate(payload):
+        _ = payload
+        return GenerateResponse(content="Hello<|im_end|>\n", model=provider.model, finish_reason="stop")
+
+    monkeypatch.setattr(provider, "_single_generate", _fake_single_generate)
+
+    resp = provider.generate("hi", temperature=0)
+    assert resp.content == "Hello"

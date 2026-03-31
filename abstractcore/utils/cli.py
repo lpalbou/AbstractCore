@@ -2167,10 +2167,9 @@ class SimpleCLI:
                                 display_buffer += chunk_text
 
                     # Best-effort: capture streamed reasoning metadata (OpenAI-compatible deltas, etc.).
-                    if hasattr(chunk, "metadata") and isinstance(getattr(chunk, "metadata"), dict):
-                        r = chunk.metadata.get("reasoning")
-                        if isinstance(r, str) and r.strip():
-                            reasoning_parts.append(r.strip())
+                    r = getattr(chunk, "reasoning", None)
+                    if isinstance(r, str) and r.strip():
+                        reasoning_parts.append(r.strip())
                 
                 if not buffer_for_reasoning_first:
                     print()  # New line after streaming

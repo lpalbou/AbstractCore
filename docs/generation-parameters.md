@@ -104,7 +104,7 @@ response = llm.generate("Solve this", thinking="on")      # enable thinking
 response = llm.generate("Solve this", thinking="low")     # lower effort / smaller budgets (when supported)
 response = llm.generate("Solve this", thinking="medium")  # balanced (when supported)
 response = llm.generate("Solve this", thinking="high")    # higher effort / larger budgets (when supported)
-print(response.metadata.get("reasoning"))
+print(response.reasoning)
 ```
 
 **Accepted values**: `None|"auto"|"on"|"off"|"none"|True|False|"low"|"medium"|"high"` (legacy aliases: `"minimal"`, `"xhigh"`, `"extra high"`).

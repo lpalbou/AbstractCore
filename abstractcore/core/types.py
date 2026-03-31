@@ -115,6 +115,36 @@ class GenerateResponse:
         if self.tool_calls:
             parts.append(f"Tools: {len(self.tool_calls)} executed")
         return " | ".join(parts)
+
+    @property
+    def reasoning(self) -> Optional[str]:
+        """Return extracted reasoning/thinking text when available.
+
+        AbstractCore's canonical location is `metadata["reasoning"]`, but some providers
+        (or upstream OpenAI-compatible servers) may surface alternative keys such as
+        `reasoning_content` or `thinking`. This accessor treats them as aliases.
+        """
+        if not isinstance(self.metadata, dict) or not self.metadata:
+            return None
+        for key in ("reasoning", "reasoning_content", "thinking"):
+            v = self.metadata.get(key)
+            if isinstance(v, str) and v.strip():
+                # Return verbatim value (do not strip), only check emptiness via .strip().
+                return v
+        return None
+
+    @reasoning.setter
+    def reasoning(self, value: Optional[str]) -> None:
+        if self.metadata is None or not isinstance(self.metadata, dict):
+            self.metadata = {}
+        if value is None or (isinstance(value, str) and not value.strip()):
+            # Clear canonical key only; keep any provider-specific fields intact.
+            self.metadata.pop("reasoning", None)
+            return
+        if not isinstance(value, str):
+            raise TypeError("reasoning must be a string or None")
+        # Canonical storage key.
+        self.metadata["reasoning"] = value
     
     @property
     def input_tokens(self) -> Optional[int]:

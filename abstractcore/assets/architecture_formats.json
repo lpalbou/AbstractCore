@@ -173,6 +173,9 @@
       "user_suffix": "<|im_end|>\n",
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
+      "output_wrappers": {
+        "end": "<|im_end|>"
+      },
       "tool_format": "special_token",
       "tool_prefix": "<|tool_call|>",
       "thinking_tags": ["<think>", "</think>"],

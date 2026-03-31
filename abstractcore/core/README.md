@@ -204,6 +204,14 @@ output_tokens = response.output_tokens  # completion_tokens OR output_tokens
 total_tokens = response.total_tokens    # total_tokens
 ```
 
+**Reasoning Property** (when available):
+
+```python
+# Canonical extracted reasoning/thinking (may come from provider fields like
+# `reasoning` / `reasoning_content` or from parsing inline `<think>...</think>` blocks).
+reasoning = response.reasoning
+```
+
 **Usage Example**:
 
 ```python
