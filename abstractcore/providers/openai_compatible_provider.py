@@ -75,7 +75,7 @@ def _inline_json_schema_refs(schema: Dict[str, Any]) -> Dict[str, Any]:
         return inlined if isinstance(inlined, dict) and inlined else schema
     except Exception:
         return schema
-from .base import BaseProvider
+from .base import BaseProvider, ThinkingControlHandling
 from ..architectures.response_postprocessing import extract_reasoning_from_message
 from ..core.types import GenerateResponse
 from ..exceptions import (
@@ -233,13 +233,13 @@ class OpenAICompatibleProvider(BaseProvider):
         enabled: Optional[bool],
         level: Optional[str],
         kwargs: Dict[str, Any],
-    ) -> tuple[Dict[str, Any], bool]:
+    ) -> tuple[Dict[str, Any], ThinkingControlHandling]:
         if enabled is None and level is None:
-            return kwargs, False
+            return kwargs, ThinkingControlHandling()
 
         provider_id = str(getattr(self, "provider", "") or "").strip().lower()
         if provider_id not in {"lmstudio", "openai-compatible"}:
-            return kwargs, False
+            return kwargs, ThinkingControlHandling()
 
         architecture = str(getattr(self, "architecture", "") or "").strip().lower()
 
@@ -293,7 +293,8 @@ class OpenAICompatibleProvider(BaseProvider):
                 tv_dict.setdefault("enable_thinking", bool(requested))
                 tv_dict.setdefault("enableThinking", bool(requested))
                 new_kwargs["lmstudio_template_vars"] = tv_dict
-            return new_kwargs, True
+            handled_level = bool(architecture == "nemotron_hybrid_moe" and enabled is not False and level in {"minimal", "low"})
+            return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=handled_level)
 
         # Seed-OSS: control reasoning via chat-template kwargs (`thinking_budget`).
         #
@@ -301,7 +302,7 @@ class OpenAICompatibleProvider(BaseProvider):
         # servers (LM Studio / generic OpenAI-compatible) to avoid breaking strict
         # third-party gateways that may reject unknown payload fields.
         if architecture != "seed_oss":
-            return kwargs, False
+            return kwargs, ThinkingControlHandling()
 
         budget_map = {"low": 512, "medium": 1024, "high": 4096, "xhigh": 8192}
         if enabled is False:
@@ -317,7 +318,7 @@ class OpenAICompatibleProvider(BaseProvider):
         ctk_dict: Dict[str, Any] = dict(ctk) if isinstance(ctk, dict) else {}
         ctk_dict["thinking_budget"] = int(budget)
         new_kwargs["chat_template_kwargs"] = ctk_dict
-        return new_kwargs, True
+        return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=True)
 
     def _resolve_base_url(self, base_url: Optional[str]) -> str:
         """Resolve base URL with parameter > env var > default precedence."""

@@ -10,6 +10,7 @@ This module provides the fundamental building blocks for AbstractCore:
 
 from .factory import create_llm
 from .session import BasicSession
+from .cached_session import CachedSession
 from .types import GenerateResponse, Message
 from .enums import ModelParameter, ModelCapability, MessageRole
 from .interface import AbstractCoreInterface
@@ -17,6 +18,7 @@ from .interface import AbstractCoreInterface
 __all__ = [
     'create_llm',
     'BasicSession',
+    'CachedSession',
     'GenerateResponse',
     'Message',
     'ModelParameter',

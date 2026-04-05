@@ -996,48 +996,24 @@ class SimpleCLI:
             self._print_error("❌ No active prompt cache key; start chatting first or /clear to re-init caching")
             return
 
-        try:
-            cache_obj = getattr(self.provider, "_prompt_cache_store").get(key)
-        except Exception:
-            cache_obj = None
-
-        if cache_obj is None:
-            self._print_error("❌ Prompt cache is empty; nothing to save yet")
-            return
-
-        try:
-            from mlx_lm.models.cache import save_prompt_cache
-        except Exception:
-            self._print_error("❌ MLX cache saving requires mlx-lm (install: `pip install \"abstractcore[mlx]\"`)")
-            return
-
         meta: Dict[str, str] = {
             "format": "abstractcore-cli-prompt-cache/v1",
             "provider": str(self.provider_name),
             "model": str(getattr(self.provider, "model", self.model_name)),
             "saved_at": datetime.now().isoformat(),
         }
-        try:
-            tok = getattr(self.provider, "_prompt_cache_backend_token_count")(cache_obj)
-            if isinstance(tok, int) and tok >= 0:
-                meta["token_count"] = str(tok)
-        except Exception:
-            pass
-
-        cache_to_save = cache_obj
-        if q8:
-            try:
-                cache_to_save = [layer.to_quantized(group_size=64, bits=8) for layer in cache_obj]
-                meta["quantized"] = "q8"
-            except Exception as e:
-                self._print_warn(f"⚠️ q8 quantization failed; saving full-precision cache: {e}")
 
         try:
-            save_prompt_cache(filename, cache_to_save, metadata=meta)
+            result = getattr(self.provider, "prompt_cache_save")(key, filename, q8=bool(q8), meta=meta)
             self.prompt_cache_file = filename
             extra = ""
-            if "token_count" in meta:
-                extra = f" ({meta['token_count']} tokens)"
+            if isinstance(result, dict):
+                out_meta = result.get("meta") if isinstance(result.get("meta"), dict) else {}
+                tok = out_meta.get("token_count")
+                if isinstance(tok, str) and tok.strip().isdigit():
+                    tok = int(tok.strip())
+                if isinstance(tok, int) and tok > 0:
+                    extra = f" ({tok} tokens)"
             print(f"💾 Cache saved to {filename}{extra}")
         except Exception as e:
             self._print_error(f"❌ Failed to save prompt cache: {e}")
@@ -1055,82 +1031,42 @@ class SimpleCLI:
             self._print_error(f"❌ File not found: {self._force_extension(filename, '.safetensors')}")
             return
 
-        try:
-            from mlx_lm.models.cache import load_prompt_cache
-        except Exception:
-            self._print_error("❌ MLX cache loading requires mlx-lm (install: `pip install \"abstractcore[mlx]\"`)")
-            return
-
-        try:
-            loaded_cache, meta = load_prompt_cache(resolved, return_metadata=True)
-        except Exception as e:
-            self._print_error(f"❌ Failed to load prompt cache: {e}")
-            return
-
-        required_model = None
-        if isinstance(meta, dict):
-            required_model = meta.get("model") or meta.get("model_id")
-        current_model = str(getattr(self.provider, "model", self.model_name))
-
-        if isinstance(required_model, str) and required_model.strip() and required_model.strip() != current_model:
-            self._print_error(
-                "❌ Prompt cache model mismatch:\n"
-                f"   cache expects: {required_model}\n"
-                f"   current model: {current_model}\n"
-                f"   hint: run `/model mlx:{required_model}` then `/cache load {self._force_extension(filename, '.safetensors')}`"
-            )
-            return
-        if not isinstance(required_model, str) or not required_model.strip():
-            # Best-effort structural check: layer count mismatch is a strong signal of wrong model.
-            try:
-                expected = getattr(self.provider, "_prompt_cache_backend_create")()
-                if isinstance(expected, (list, tuple)) and isinstance(loaded_cache, (list, tuple)):
-                    if len(expected) != len(loaded_cache):
-                        self._print_error(
-                            "❌ Prompt cache appears incompatible with the current model (layer count mismatch).\n"
-                            f"   cache layers:   {len(loaded_cache)}\n"
-                            f"   model layers:   {len(expected)}\n"
-                            f"   hint: regenerate the cache with this model, or switch model and retry"
-                        )
-                        return
-            except Exception:
-                pass
-            self._print_warn("⚠️ Cache metadata has no model id; cannot fully verify compatibility (proceeding best-effort)")
-
         # Clear existing caches and install the loaded cache under a fresh key.
         try:
             getattr(self.provider, "prompt_cache_clear")(None)
         except Exception:
             pass
 
-        new_key = f"cli:{uuid.uuid4().hex[:12]}"
         try:
-            getattr(self.provider, "prompt_cache_set")(new_key, make_default=True)
-        except Exception:
-            pass
-
-        try:
-            getattr(self.provider, "_prompt_cache_store").set(
-                new_key,
-                loaded_cache,
-                meta={"backend": "mlx", "loaded_from": resolved, **(meta if isinstance(meta, dict) else {})},
-            )
+            result = getattr(self.provider, "prompt_cache_load")(resolved, make_default=True)
         except Exception as e:
-            self._print_error(f"❌ Failed to install loaded cache into provider store: {e}")
+            msg = str(e)
+            if "Prompt cache model mismatch" in msg:
+                current_model = str(getattr(self.provider, "model", self.model_name))
+                self._print_error(
+                    "❌ Prompt cache model mismatch:\n"
+                    f"   current model: {current_model}\n"
+                    f"   detail: {msg}\n"
+                    f"   hint: run `/model mlx:<model>` then `/cache load {self._force_extension(filename, '.safetensors')}`"
+                )
+            else:
+                self._print_error(f"❌ Failed to load prompt cache: {e}")
             return
 
         self.prompt_cache_mode = "kv"
-        self.prompt_cache_key = new_key
+        self.prompt_cache_key = result.get("key") if isinstance(result, dict) else None
         self.prompt_cache_file = resolved
 
         # Reset transcript; the cache becomes the source of truth for context.
         self.session.clear_history(keep_system=False)
-        token_note = ""
-        if isinstance(meta, dict) and isinstance(meta.get("token_count"), str) and meta.get("token_count"):
-            token_note = f" ({meta.get('token_count')} tokens)"
-        print(f"📂 Cache loaded from {resolved}{token_note} (key={new_key})")
+        out_meta = result.get("meta") if isinstance(result, dict) and isinstance(result.get("meta"), dict) else {}
+        token_count = out_meta.get("token_count")
+        if isinstance(token_count, str) and token_count.strip().isdigit():
+            token_count = int(token_count.strip())
+        token_note = f" ({token_count} tokens)" if isinstance(token_count, int) and token_count > 0 else ""
+        print(f"📂 Cache loaded from {resolved}{token_note} (key={self.prompt_cache_key})")
 
-        cache_format = meta.get("format") if isinstance(meta, dict) else None
+        cache_format = out_meta.get("format") if isinstance(out_meta, dict) else None
         force_refresh = cache_format != "abstractcore-cli-prompt-cache/v1"
         if force_refresh and not self.single_prompt_mode:
             self._print_warn(

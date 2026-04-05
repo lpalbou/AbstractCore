@@ -4,6 +4,9 @@ MLX provider implementation for Apple Silicon.
 
 import json
 import time
+import uuid
+import inspect
+from datetime import datetime
 from typing import List, Dict, Any, Optional, Union, Iterator, Type
 
 try:
@@ -55,6 +58,10 @@ class MLXProvider(BaseProvider):
         """MLX supports KV prompt caches via `mlx_lm.models.cache`."""
         return True
 
+    def prompt_cache_supports_kv_source_of_truth(self) -> bool:
+        """MLX KV caches are mutable and can serve as the context source-of-truth."""
+        return True
+
     def _prompt_cache_backend_create(self) -> Optional[Any]:
         try:
             from mlx_lm.models.cache import make_prompt_cache
@@ -71,9 +78,46 @@ class MLXProvider(BaseProvider):
             return None
 
         def _clone_layer(layer: Any) -> Any:
-            if hasattr(layer, "state") and hasattr(layer.__class__, "from_state"):
+            from_state = getattr(layer.__class__, "from_state", None)
+            state_attr: Any = None
+            if callable(from_state):
                 try:
-                    return layer.__class__.from_state(layer.state())
+                    state_attr = getattr(layer, "state", None)
+                except Exception:
+                    state_attr = None
+            if callable(from_state):
+                try:
+                    state_val = state_attr() if callable(state_attr) else state_attr
+                    meta_attr = getattr(layer, "meta_state", None)
+                    meta_val = meta_attr() if callable(meta_attr) else meta_attr
+                    if state_val is not None:
+                        try:
+                            sig = inspect.signature(from_state)
+                            if len(sig.parameters) == 2:
+                                return from_state(state_val, meta_val)
+                            if len(sig.parameters) == 1:
+                                return from_state(state_val)
+                        except Exception:
+                            pass
+
+                        # Fallback: try the common 2-arg then 1-arg patterns.
+                        try:
+                            return from_state(state_val, meta_val)
+                        except TypeError:
+                            return from_state(state_val)
+
+                    # Some MLX-LM cache layers (notably KVCache) cannot serialize an "empty" state.
+                    # Fall back to constructing a new empty instance when state is unavailable.
+                    try:
+                        empty = layer.__class__()  # type: ignore[call-arg]
+                        try:
+                            if meta_val is not None and hasattr(empty, "meta_state"):
+                                empty.meta_state = meta_val  # type: ignore[attr-defined]
+                        except Exception:
+                            pass
+                        return empty
+                    except Exception:
+                        return None
                 except Exception:
                     return None
             if hasattr(layer, "copy"):
@@ -138,12 +182,23 @@ class MLXProvider(BaseProvider):
         system_prompt: Optional[str] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         add_generation_prompt: bool = False,
+        prefilled_modules: Optional[List[str]] = None,
     ) -> str:
         """Build a prompt fragment intended to be appended to an existing prompt_cache."""
 
+        prefilled = set()
+        if prefilled_modules:
+            for item in prefilled_modules:
+                try:
+                    norm = str(item or "").strip().lower()
+                except Exception:
+                    norm = ""
+                if norm:
+                    prefilled.add(norm)
+
         base_system_prompt = system_prompt
         tool_system_prompt = None
-        if tools and self.tool_handler.supports_prompted:
+        if tools and self.tool_handler.supports_prompted and "tools" not in prefilled:
             include_tool_list = True
             if base_system_prompt and "## Tools (session)" in base_system_prompt:
                 include_tool_list = False
@@ -164,7 +219,7 @@ class MLXProvider(BaseProvider):
         is_qwen = "qwen" in self.model.lower()
         parts: List[str] = []
 
-        if base_system_prompt:
+        if base_system_prompt and "system" not in prefilled:
             if is_qwen:
                 parts.append(f"<|im_start|>system\n{base_system_prompt}<|im_end|>\n")
             else:
@@ -312,6 +367,157 @@ class MLXProvider(BaseProvider):
         except Exception:
             return False
         return True
+
+    def prompt_cache_save(
+        self,
+        key: str,
+        filename: str,
+        *,
+        q8: bool = False,
+        meta: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Save an MLX KV prompt cache to a `.safetensors` file (model-locked; best-effort)."""
+        _ = kwargs
+        if not self.supports_prompt_cache():
+            raise ValueError("Prompt caching is not supported for this provider/model.")
+
+        normalized = self._normalize_prompt_cache_key(key)
+        if normalized is None:
+            raise ValueError("prompt cache key must be a non-empty string")
+
+        cache_obj = self._prompt_cache_store.get(normalized)
+        if cache_obj is None:
+            raise ValueError(f"prompt cache key '{normalized}' does not exist")
+
+        try:
+            from mlx_lm.models.cache import save_prompt_cache
+        except Exception as e:
+            raise ImportError(
+                "MLX prompt cache saving requires mlx-lm (install: `pip install \"abstractcore[mlx]\"`)."
+            ) from e
+
+        out_meta: Dict[str, Any] = dict(meta or {})
+        out_meta.setdefault("format", "abstractcore-prompt-cache/v1")
+        out_meta.setdefault("provider", str(getattr(self, "provider", "mlx")))
+        out_meta.setdefault("model", str(getattr(self, "model", "")))
+        out_meta.setdefault("saved_at", datetime.now().isoformat())
+
+        try:
+            tok = self._prompt_cache_backend_token_count(cache_obj)
+            if isinstance(tok, int) and tok >= 0:
+                out_meta.setdefault("token_count", tok)
+        except Exception:
+            pass
+
+        cache_to_save = cache_obj
+        if q8:
+            try:
+                cache_to_save = [layer.to_quantized(group_size=64, bits=8) for layer in cache_obj]
+                out_meta["quantized"] = "q8"
+            except Exception:
+                # Best-effort: fall back to full precision.
+                cache_to_save = cache_obj
+
+        # mlx_lm saves KV caches via safetensors metadata, which requires string keys + values.
+        def _meta_value(value: Any) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, str):
+                return value
+            try:
+                if isinstance(value, (dict, list, tuple)):
+                    return json.dumps(value, ensure_ascii=False)
+            except Exception:
+                pass
+            return str(value)
+
+        out_meta_str: Dict[str, str] = {str(k): _meta_value(v) for k, v in out_meta.items() if isinstance(k, str) and k}
+
+        save_prompt_cache(str(filename), cache_to_save, metadata=out_meta_str)
+
+        return {
+            "supported": True,
+            "operation": "save",
+            "provider": str(getattr(self, "provider", "mlx")),
+            "model": str(getattr(self, "model", "")),
+            "key": normalized,
+            "filename": str(filename),
+            "meta": out_meta_str,
+        }
+
+    def prompt_cache_load(
+        self,
+        filename: str,
+        *,
+        key: Optional[str] = None,
+        make_default: bool = True,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Load an MLX KV prompt cache from a `.safetensors` file (model-locked; best-effort)."""
+        _ = kwargs
+        if not self.supports_prompt_cache():
+            raise ValueError("Prompt caching is not supported for this provider/model.")
+
+        try:
+            from mlx_lm.models.cache import load_prompt_cache
+        except Exception as e:
+            raise ImportError(
+                "MLX prompt cache loading requires mlx-lm (install: `pip install \"abstractcore[mlx]\"`)."
+            ) from e
+
+        loaded_cache, meta = load_prompt_cache(str(filename), return_metadata=True)
+        meta_dict: Dict[str, Any] = dict(meta or {}) if isinstance(meta, dict) else {}
+
+        required_model = meta_dict.get("model") or meta_dict.get("model_id")
+        current_model = str(getattr(self, "model", ""))
+        if isinstance(required_model, str) and required_model.strip() and required_model.strip() != current_model:
+            raise ValueError(
+                f"Prompt cache model mismatch: cache expects '{required_model.strip()}', current model is '{current_model}'."
+            )
+
+        if not isinstance(required_model, str) or not required_model.strip():
+            # Best-effort structural check: layer count mismatch is a strong signal of wrong model.
+            try:
+                expected = self._prompt_cache_backend_create()
+                if isinstance(expected, (list, tuple)) and isinstance(loaded_cache, (list, tuple)):
+                    if len(expected) != len(loaded_cache):
+                        raise ValueError(
+                            "Prompt cache appears incompatible with the current model (layer count mismatch)."
+                        )
+            except Exception:
+                pass
+
+        new_key = key
+        normalized = self._normalize_prompt_cache_key(new_key) if new_key is not None else None
+        if normalized is None:
+            normalized = f"cache:{uuid.uuid4().hex[:12]}"
+
+        store_meta: Dict[str, Any] = {
+            "backend": "mlx",
+            "loaded_from": str(filename),
+        }
+        store_meta.update(meta_dict)
+        try:
+            tok = self._prompt_cache_backend_token_count(loaded_cache)
+            if isinstance(tok, int) and tok >= 0:
+                store_meta.setdefault("token_count", tok)
+        except Exception:
+            pass
+
+        self._prompt_cache_store.set(normalized, loaded_cache, meta=store_meta)
+        if make_default:
+            self._default_prompt_cache_key = normalized
+
+        return {
+            "supported": True,
+            "operation": "load",
+            "provider": str(getattr(self, "provider", "mlx")),
+            "model": str(getattr(self, "model", "")),
+            "key": normalized,
+            "filename": str(filename),
+            "meta": store_meta,
+        }
 
     def _load_model(self):
         """Load MLX model and tokenizer"""
@@ -574,6 +780,14 @@ class MLXProvider(BaseProvider):
                 finish_reason="error"
             )
 
+        prompt_cache_prefilled_modules = kwargs.pop("prompt_cache_prefilled_modules", None)
+        if isinstance(prompt_cache_prefilled_modules, tuple):
+            prompt_cache_prefilled_modules = list(prompt_cache_prefilled_modules)
+        if isinstance(prompt_cache_prefilled_modules, str):
+            prompt_cache_prefilled_modules = [prompt_cache_prefilled_modules]
+        if not isinstance(prompt_cache_prefilled_modules, list):
+            prompt_cache_prefilled_modules = None
+
         # Native structured output via Outlines (if configured and available)
         should_use_outlines = (
             response_model and
@@ -666,7 +880,13 @@ class MLXProvider(BaseProvider):
                 self.logger.warning(f"Failed to process media content: {e}")
 
         # Build full prompt with tool support
-        full_prompt = self._build_prompt(processed_prompt, messages, system_prompt, tools)
+        full_prompt = self._build_prompt(
+            processed_prompt,
+            messages,
+            system_prompt,
+            tools,
+            prefilled_modules=prompt_cache_prefilled_modules,
+        )
 
         # MLX generation parameters using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
@@ -717,7 +937,7 @@ class MLXProvider(BaseProvider):
             )
 
     def _build_prompt(self, prompt: str, messages: Optional[List[Dict[str, str]]],
-                     system_prompt: Optional[str], tools: Optional[List[Dict[str, Any]]] = None) -> str:
+                     system_prompt: Optional[str], tools: Optional[List[Dict[str, Any]]] = None, *, prefilled_modules: Optional[List[str]] = None) -> str:
         """Build prompt for MLX model with tool support."""
         return self._build_prompt_fragment(
             prompt=str(prompt or ""),
@@ -725,6 +945,7 @@ class MLXProvider(BaseProvider):
             system_prompt=system_prompt,
             tools=tools,
             add_generation_prompt=True,
+            prefilled_modules=prefilled_modules,
         )
 
     def _single_generate(

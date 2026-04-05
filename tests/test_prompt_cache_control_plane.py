@@ -3,11 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterator, List, Optional
 
+import pytest
 from fastapi.testclient import TestClient
 
 from abstractcore.core.types import GenerateResponse
 from abstractcore.endpoint.app import create_app
-from abstractcore.providers.base import BaseProvider
+from abstractcore.providers.base import BaseProvider, PromptCacheOperationError
 
 
 @dataclass
@@ -167,6 +168,39 @@ def test_prompt_cache_update_fork_and_prepare_modules():
     assert result2["supported"] is True
     assert result2["final_cache_key"] == result["final_cache_key"]
     assert llm.append_calls == 0
+
+
+def test_prompt_cache_token_count_reports_live_backend_value() -> None:
+    llm = _StubModularCacheProvider()
+
+    assert llm.prompt_cache_token_count("missing") is None
+
+    llm.prompt_cache_set("k1", make_default=True)
+    assert llm.prompt_cache_token_count("k1") == 0
+
+    llm.prompt_cache_update("k1", prompt="a")
+    assert llm.prompt_cache_token_count("k1") == 1
+
+    llm.prompt_cache_update("k1", prompt="b")
+    assert llm.prompt_cache_token_count("k1") == 2
+
+
+def test_prompt_cache_prepare_modules_errors_on_non_json_modules() -> None:
+    llm = _StubModularCacheProvider()
+
+    with pytest.raises(PromptCacheOperationError) as exc:
+        llm.prompt_cache_prepare_modules(
+            namespace="tenantA:modelX",
+            modules=[
+                {
+                    "module_id": "tools",
+                    "tools": [{"name": "t", "description": "d", "parameters": {}, "bad": object()}],
+                }
+            ],
+        )
+
+    assert exc.value.operation == "prepare_modules"
+    assert exc.value.code == "prompt_cache_invalid_module"
 
 
 def test_abstractendpoint_prompt_cache_control_plane_endpoints():

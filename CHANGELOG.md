@@ -6,36 +6,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [2.12.0] - 2026-03-30
+## [2.12.0] - Unreleased
 
 ### Added
-- **Capability-driven parameter filtering**: new `unsupported_parameters` field in `model_capabilities.json` declares which generation parameters (temperature, top_p, etc.) a model's API rejects. Providers use this data-driven list instead of hardcoded model-name heuristics. Absent field = all parameters supported (backward-compatible default).
-- **Capability-driven token parameter naming**: new `token_param_name` field in `model_capabilities.json` declares the API parameter name for output token limit (`max_tokens` or `max_completion_tokens`). Replaces hardcoded `_uses_max_completion_tokens()` heuristics in OpenAI and Portkey providers.
-- **BaseProvider capability methods**: `_is_reasoning_model()` (reads `thinking_support`), `_is_parameter_supported(param)` (reads `unsupported_parameters`), `_get_token_param_name()` (reads `token_param_name`) — available to all providers.
+- **Prompt caching sessions**: `CachedSession` selects the best prompt-cache strategy automatically (KV mode for MLX + HuggingFace transformers; otherwise stable `prompt_cache_key`).
+- **Box caching for large contexts**: `CachedSession.attach_files()` extracts text from attached files and adds one immutable transcript “box” per file (reused via KV/prefix caches).
+- **Prompt cache persistence APIs**: providers expose `prompt_cache_save()` / `prompt_cache_load()` when supported (capability-gated); CLIs use these APIs instead of accessing provider internals.
+- **Prompt cache observability + demo REPL**: `BaseProvider.prompt_cache_token_count()` and `examples/prompt_cache_repl_demo.py` (`/boxes`, `/cache`, `/stream`, TTFT).
+- **HuggingFace transformers KV reuse**: true cross-call KV caching (`past_key_values` / `DynamicCache`) keyed by `prompt_cache_key`, including the local prompt-cache control plane (`prepare_modules`/`fork`/`update`) and `.safetensors` save/load.
+- **Capability-driven parameter filtering**: `model_capabilities.json` can declare per-model unsupported generation parameters via `unsupported_parameters` (so providers don’t need brittle model-name heuristics).
+- **Capability-driven token parameter naming**: `model_capabilities.json.token_param_name` selects the correct output-token parameter (`max_tokens` vs `max_completion_tokens`) per model.
+- **BaseProvider capability helpers**: `_is_parameter_supported()`, `_get_token_param_name()`, and `_is_reasoning_model()` read from `model_capabilities.json` for consistent enforcement across providers.
+- **Output wrapper stripping**: `architecture_formats.json` can declare `output_wrappers` so providers strip template artifacts from visible content (e.g., Qwen3 `<|im_end|>`).
+- **Thinking observability**: responses include `metadata.thinking_requested` / `metadata.thinking_effective` (and level/capability details) when `thinking=` is used.
+- **Reasoning-capability assets**: expanded `thinking_support` / `reasoning_levels` coverage for reasoning models (OpenAI o-series + GPT-5 family, Claude 4.x, DeepSeek-R1, …).
+- **`GenerateResponse.reasoning` property**: unified accessor for extracted reasoning (`metadata["reasoning"]` / `reasoning_content` / `thinking`).
+- **Qwen3/Qwen3.5 thinking control (local)**: LM Studio forwards `thinking=` via `chat_template_kwargs` when supported (with a hard-switch fallback for runtimes that ignore it); HuggingFace GGUF supports `thinking="off"` via the Qwen hard-switch marker.
+- **Gemma 4 support**: adds `gemma4` architecture patterns plus capability entries (context windows, thinking/tool tokens, and vision/audio/video flags).
+- **Setup UX**: `--install` readiness check; `--config` wizard expanded; embeddings now support 7 providers (`openai`, `openrouter`, `portkey`, `openai-compatible`, `huggingface`, `ollama`, `lmstudio`).
 - **New model entries**: GPT-5.1, GPT-5.2, GPT-5.2-pro, GPT-5.2-codex, GPT-5.1-codex, GPT-5-codex, GPT-5-nano, o4-mini, GPT-4.1, GPT-4.1-mini, GPT-4.1-nano, Claude Opus 4.6, Claude Sonnet 4.6, Qwen3.5, LFM2.5, Nemotron.
-- **`thinking_support: true`** added to o1, o1-mini, o3, o3-mini, o4-mini, DeepSeek-R1, all GPT-5 family models, Claude 4/4.1/4.5/4.6 Opus and Sonnet models, and Claude Haiku 4.5.
-- **LM Studio Qwen3/Qwen3.5 thinking control**: forwards `thinking=` via backend-native template variables (`chat_template_kwargs.enable_thinking` + `enableThinking`) instead of system-prompt injection. Adds a Qwen hard-switch fallback (empty `<think></think>` assistant marker) when disabling thinking for runtimes that ignore `chat_template_kwargs`.
-- **HuggingFace GGUF Qwen3/Qwen3.5 "thinking=off" support**: for llama-cpp-python GGUF loads, `thinking="off"/"none"` uses the Qwen hard-switch marker to suppress reasoning without system-prompt hacks.
-- **`--install` readiness check**: comprehensive check of all subsystems (default model, provider connectivity, embeddings model, vision fallback, STT/TTS models, ffmpeg, abstractvision, API keys). Reports pass/warn/fail for each area and offers to download/install missing models interactively. Use `--yes` (`-y`) to auto-accept all downloads.
-- **Embeddings: 7 providers supported** (was 3). `EmbeddingManager` now accepts `openai`, `openrouter`, `portkey`, and `openai-compatible` in addition to the existing `huggingface`, `ollama`, and `lmstudio`.
-- **Interactive config wizard (`--config`) — expanded to 7 steps**: base URL for local servers, audio strategy, video strategy, embeddings provider/model, and console logging verbosity.
-- **Local probe tooling**: `examples/local_qwen3_5_thinking_probe.py` records the provider payload and supports unloading LM Studio models after probes via native REST.
-- **`GenerateResponse.reasoning` property**: unified getter/setter for reasoning text. Getter checks `metadata["reasoning"]`, `metadata["reasoning_content"]`, and `metadata["thinking"]` in priority order; setter writes to the canonical `reasoning` key.
-- **`output_wrappers` in `architecture_formats.json`**: Qwen3 architecture now declares `<|im_end|>` as an output wrapper so BaseProvider can strip template artifacts from visible content.
+- **Local thinking probes**: `examples/local_qwen3_5_thinking_probe.py` records provider payloads for debugging.
 
 ### Changed
-- **Parameter filtering is now data-driven**: `OpenAIProvider` and `PortkeyProvider` use `unsupported_parameters` from `model_capabilities.json` instead of hardcoded `_is_reasoning_model()` name-matching heuristics. Unsupported sampling parameters are silently dropped — the `unsupported_parameters` list is the authoritative enforcement.
-- **Token parameter naming is data-driven**: `_uses_max_completion_tokens()` replaced by `_get_token_param_name()` reading from `model_capabilities.json`.
-- **GPT-5 family models updated**: context windows corrected to 400K tokens, max output to 128K, audio_support corrected to false (text/image only per OpenAI docs), reasoning_levels added.
-- **`--install` embeddings check**: now provider-aware — server-based providers check reachability or API key instead of trying to download via `sentence-transformers`.
-- Interactive config wizard now covers all major configuration areas (model, base URL, vision, API keys, audio, video, embeddings, logging).
-- Documentation updated to clarify how to use `thinking=` with `generate()` and the AbstractCore server, with special notes for LM Studio + Qwen3.5.
-- **Thinking warnings refined**: `thinking="off"/"none"` on non-thinking models no longer emits a spurious RuntimeWarning (the model is already in the desired state). Warnings only fire when enabling thinking on a model that does not support it.
-- CLI reasoning capture now uses the `GenerateResponse.reasoning` property instead of raw metadata dict access.
-
-### Removed
-- **`_is_reasoning_model()` from `OpenAIProvider` and `PortkeyProvider`**: replaced by the `BaseProvider` version that reads from capabilities.
-- **`_uses_max_completion_tokens()` from `OpenAIProvider` and `PortkeyProvider`**: replaced by `_get_token_param_name()`.
+- **Thinking control enforcement**: preserves requested vs effective effort levels, maps unsupported levels to the nearest supported level, and makes partial/no-op effort handling explicit (on/off handled vs level handled).
+- **Reasoning capability clarity**: split “model emits reasoning” vs “model supports thinking control” to avoid misleading warnings and improve enforcement decisions.
+- **OpenAI/Portkey parameter hygiene**: capability-driven filtering via `unsupported_parameters` and `token_param_name` (replacing model-name heuristics and provider-specific helpers like `_is_reasoning_model()` / `_uses_max_completion_tokens()`).
+- **GPT-5 family models updated**: context windows corrected to `max_tokens=400000` total; max output corrected to `max_output_tokens=128000` (so max prompt ≈ 272000 at full output); `audio_support=false` (text+image only per OpenAI docs); `reasoning_levels` declared in `model_capabilities.json`.
+- **`--install` embeddings checks**: now provider-aware (server/API-key providers validate reachability/auth instead of attempting local `sentence-transformers` downloads).
+- **Thinking warnings refined**: `thinking="off"/"none"` on non-thinking models no longer emits a spurious RuntimeWarning (the model is already in the desired state).
+- **GGUF prompt caching**: tools are kept in a stable prefix position for more effective prefix caching.
+  Local control-plane append-only updates render/tokenize only the delta segment for faster large-chat iteration.
+- **GGUF cache-aware generation**: when local control plane caching is available, GGUF generates from prefetched KV via `llm.generate(reset=False)` (avoids `create_chat_completion()` resets) and cuts TTFT on long cached prompts. Disable via `ABSTRACTCORE_GGUF_CONTROL_PLANE=0`.
+- **Prompt cache module keys**: derived module cache keys use a longer hash suffix; module fingerprints canonicalize tool ordering and message shapes for more stable cache invalidation.
+- **Prompt cache store thread-safety**: `PromptCacheStore` is protected by an internal `RLock` for safer concurrent access.
+- **CachedSession KV mode**: improved parity with `BasicSession` (tracing metadata, streaming collection), warns on per-call `system_prompt`/`tools`/`messages` overrides, and `rebuild_prompt_cache()` replays the transcript when possible.
+- **File-box attachments**: `CachedSession.attach_files()` returns a `timing` breakdown (`extract_ms`, `cache_update_ms`, `total_ms`). In `prompt_cache_mode="key"`, cache prefill is opt-in via `prefill_key_mode_cache=True` (default: defer until the next `generate()`).
+- **Anthropic thinking control metadata**: Claude models with extended thinking declare `thinking_control_mode` in `model_capabilities.json` so providers avoid model-name heuristics for “adaptive” vs “budget” behavior.
 
 ### Fixed
 - **GPT-5 temperature handling**: temperature is now correctly stripped via `unsupported_parameters` for GPT-5/5-mini/5-nano (which reject it) and correctly forwarded for GPT-5.1/5.2 (which accept it). All empirically verified via live API.
@@ -43,11 +49,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **max_tokens vs max_completion_tokens**: all reasoning models (o-series + GPT-5 family) reject `max_tokens` and require `max_completion_tokens`. `token_param_name` field ensures the correct parameter name.
 - **Ollama + Qwen3.x thinking edge case**: small `max_output_tokens` with thinking enabled could exhaust the budget in the reasoning channel and return empty final content; Ollama provider now enforces a minimum `options.num_predict` when `thinking` is enabled.
 - **Model capability schema**: `tool_support="none"` models now correctly use `max_tools: 0` (fixes LFM2.5 base variants).
-- **HuggingFace GGUF stability**: large advertised context windows (e.g. 262k) are now clamped to a conservative llama.cpp `n_ctx` by default (configurable via `ABSTRACTCORE_GGUF_DEFAULT_N_CTX`) to reduce local load failures.
+- **HuggingFace GGUF stability**: GGUF loads now attempt to honor `max_tokens` from `model_capabilities.json`. If the advertised context window is too large to allocate locally, AbstractCore retries with smaller llama.cpp `n_ctx` values (best-effort). Override by passing `max_tokens=...` when constructing `HuggingFaceProvider()`.
+- **HuggingFace GGUF Metal stability (macOS)**: AbstractCore pre-imports `llama_cpp` (best-effort) before PyTorch/transformers when creating providers so GGUF Metal offload remains usable even if you later use MLX / HuggingFace transformers in the same process. If PyTorch/transformers is imported first, GGUF Metal offload is disabled for safety; override with `ABSTRACTCORE_GGUF_METAL_UNSAFE=1` (unsafe).
 - **Audio strategy default changed from `native_only` to `auto`**: the `AudioConfig.strategy` default was `native_only`, which caused audio attachments to fail on text-only models unless the user explicitly configured it.
 - **Config-persisted API keys now injected into environment**: API keys saved via `abstractcore --set-api-key` were stored in config but providers only read from `os.environ`. Added `_apply_api_keys_to_env()` to bridge config-persisted keys into the environment at config load time.
 - **`--install` TTS/STT severity**: failed model downloads are now reported as warnings instead of critical errors since TTS/STT are optional subsystems.
 - **`--install` TTS/STT verification**: download results are now verified by re-checking the filesystem instead of trusting the subprocess exit code.
+- **GGUF prompt cache persistence**: `HuggingFaceProvider.prompt_cache_save()` is compatible with NumPy 2.x (`np.str_` instead of removed `np.unicode_`).
+- **MLX prompt cache persistence**: `MLXProvider.prompt_cache_save()` stringifies safetensors metadata values to satisfy `mlx-lm` requirements.
+- **MLX prompt cache module prep**: `MLXProvider._prompt_cache_backend_clone()` supports current `mlx-lm` cache layer variants (including empty `KVCache` layers), so `prompt_cache_prepare_modules()` works reliably.
+- **Non-streaming tag rewriting metadata**: `BaseProvider._apply_non_streaming_tag_rewriting()` preserves `GenerateResponse.metadata` instead of dropping it.
+- **Streaming thinking-tag extraction**: `stream=True` strips inline thinking tags and surfaces extracted reasoning in `metadata["reasoning"]` (matching non-streaming behavior).
+- **Prompt-cache REPL stats clarity**: `examples/prompt_cache_repl_demo.py` reports TTFT/TIFT and prefill+decode throughput (no floats), shows GGUF offload (`n_gpu_layers`) and context limits, reports file-box attach timing (extract vs cache work), and prints a brief `…` indicator when early stream chunks are non-visible (e.g., stripped `<think>` blocks).
+- **Architecture assets schema**: `gemma4.thinking_tags` no longer includes trailing whitespace so asset schema validation and thinking-tag parsing remain stable.
+
+### Documentation
+- Updated docs for `thinking=` and prompt caching (including the prompt-cache REPL demo and cache modes).
 
 ## [2.11.9] - 2026-02-09
 

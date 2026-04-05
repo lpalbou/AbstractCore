@@ -6,6 +6,8 @@ from abstractcore.providers.lmstudio_provider import LMStudioProvider
 from abstractcore.providers.openai_provider import OpenAIProvider
 from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
 from abstractcore.providers.vllm_provider import VLLMProvider
+from abstractcore.providers.huggingface_provider import HuggingFaceProvider
+from abstractcore.providers.base import BaseProvider
 
 
 def test_vllm_thinking_sets_chat_template_kwargs_enable_thinking(monkeypatch):
@@ -21,7 +23,11 @@ def test_vllm_thinking_sets_chat_template_kwargs_enable_thinking(monkeypatch):
 
     monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
 
-    provider.generate("hi", thinking="off", temperature=0)
+    resp = provider.generate("hi", thinking="off", temperature=0)
+    assert isinstance(resp, GenerateResponse)
+    assert isinstance(resp.metadata, dict)
+    assert resp.metadata.get("thinking_requested") == "off"
+    assert resp.metadata.get("thinking_effective") == "off"
 
     payload = captured["payload"]
     assert payload["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
@@ -39,7 +45,10 @@ def test_thinking_none_is_alias_for_off(monkeypatch):
 
     monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
 
-    provider.generate("hi", thinking="none", temperature=0)
+    resp = provider.generate("hi", thinking="none", temperature=0)
+    assert isinstance(resp, GenerateResponse)
+    assert isinstance(resp.metadata, dict)
+    assert resp.metadata.get("thinking_effective") == "off"
 
     payload = captured["payload"]
     assert payload["extra_body"]["chat_template_kwargs"]["enable_thinking"] is False
@@ -83,6 +92,9 @@ def test_openai_thinking_maps_to_reasoning_effort_without_network(monkeypatch):
 
     resp = provider.generate("hi", thinking="xhigh", max_output_tokens=8, temperature=0)
     assert resp.content == "ok"
+    assert isinstance(resp.metadata, dict)
+    assert resp.metadata.get("thinking_requested") == "xhigh"
+    assert resp.metadata.get("thinking_effective") == "xhigh"
 
     call_params = captured["call_params"]
     assert call_params.get("reasoning_effort") == "xhigh"
@@ -108,11 +120,15 @@ def test_openai_pro_thinking_off_maps_to_min_supported_effort(monkeypatch):
     )
 
     with pytest.warns(RuntimeWarning):
-        provider.generate("hi", thinking="off", max_output_tokens=8, temperature=0)
+        resp = provider.generate("hi", thinking="off", max_output_tokens=8, temperature=0)
 
     call_params = captured["call_params"]
     assert call_params.get("reasoning_effort") == "medium"
     assert call_params.get("max_completion_tokens") == 8
+    assert isinstance(resp, GenerateResponse)
+    assert isinstance(resp.metadata, dict)
+    assert resp.metadata.get("thinking_requested") == "off"
+    assert resp.metadata.get("thinking_effective") == "medium"
 
 
 def test_ollama_thinking_sets_payload_think_boolean(monkeypatch):
@@ -127,7 +143,10 @@ def test_ollama_thinking_sets_payload_think_boolean(monkeypatch):
 
     monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
 
-    provider.generate("hi", thinking=False, temperature=0)
+    resp = provider.generate("hi", thinking=False, temperature=0)
+    assert isinstance(resp, GenerateResponse)
+    assert isinstance(resp.metadata, dict)
+    assert resp.metadata.get("thinking_effective") == "off"
 
     payload = captured["payload"]
     assert payload.get("think") is False
@@ -144,7 +163,10 @@ def test_ollama_gpt_oss_thinking_level_sets_payload_think_string(monkeypatch):
 
     monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
 
-    provider.generate("hi", thinking="high", temperature=0)
+    resp = provider.generate("hi", thinking="high", temperature=0)
+    assert isinstance(resp, GenerateResponse)
+    assert isinstance(resp.metadata, dict)
+    assert resp.metadata.get("thinking_effective") == "high"
 
     payload = captured["payload"]
     assert payload.get("think") == "high"
@@ -162,11 +184,84 @@ def test_harmony_thinking_injects_reasoning_system_prompt(monkeypatch):
 
     monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
 
-    provider.generate("hi", thinking="high", temperature=0)
+    resp = provider.generate("hi", thinking="high", temperature=0)
+    assert isinstance(resp, GenerateResponse)
+    assert isinstance(resp.metadata, dict)
+    assert resp.metadata.get("thinking_effective") == "high"
 
     payload = captured["payload"]
     assert payload["messages"][0]["role"] == "system"
     assert payload["messages"][0]["content"].strip() == "Reasoning: high"
+
+
+def test_harmony_unsupported_thinking_level_maps_to_nearest(monkeypatch):
+    monkeypatch.setattr(OpenAICompatibleProvider, "_validate_model", lambda self: None, raising=False)
+    provider = OpenAICompatibleProvider(model="openai/gpt-oss-20b", base_url="http://127.0.0.1:1234/v1")
+
+    captured = {}
+
+    def _capture_single_generate(payload):
+        captured["payload"] = payload
+        return GenerateResponse(content="ok", model=provider.model, finish_reason="stop")
+
+    monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
+
+    with pytest.warns(RuntimeWarning):
+        resp = provider.generate("hi", thinking="minimal", temperature=0)
+
+    payload = captured["payload"]
+    assert payload["messages"][0]["role"] == "system"
+    assert payload["messages"][0]["content"].strip() == "Reasoning: low"
+    assert isinstance(resp, GenerateResponse)
+    assert isinstance(resp.metadata, dict)
+    assert resp.metadata.get("thinking_requested") == "minimal"
+    assert resp.metadata.get("thinking_effective") == "low"
+
+
+def test_openai_unsupported_thinking_level_maps_to_nearest(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+    monkeypatch.setattr(OpenAIProvider, "_validate_model_exists", lambda self: None, raising=False)
+    provider = OpenAIProvider(model="gpt-5")
+
+    captured = {}
+
+    def _capture_create(**call_params):
+        captured["call_params"] = call_params
+        return object()
+
+    monkeypatch.setattr(provider.client.chat.completions, "create", _capture_create)
+    monkeypatch.setattr(
+        provider,
+        "_format_response",
+        lambda _resp: GenerateResponse(content="ok", model=provider.model, finish_reason="stop"),
+    )
+
+    with pytest.warns(RuntimeWarning):
+        resp = provider.generate("hi", thinking="xhigh", max_output_tokens=8, temperature=0)
+
+    call_params = captured["call_params"]
+    assert call_params.get("reasoning_effort") == "high"
+    assert call_params.get("max_completion_tokens") == 8
+    assert isinstance(resp, GenerateResponse)
+    assert isinstance(resp.metadata, dict)
+    assert resp.metadata.get("thinking_requested") == "xhigh"
+    assert resp.metadata.get("thinking_effective") == "high"
+
+
+def test_huggingface_gguf_qwen_thinking_level_warns_about_effort_scaling() -> None:
+    provider = HuggingFaceProvider.__new__(HuggingFaceProvider)
+    BaseProvider.__init__(provider, "unsloth/Qwen3.5-2B-GGUF")
+    provider.provider = "huggingface"
+    provider.model_type = "gguf"
+
+    with pytest.warns(RuntimeWarning):
+        provider._apply_thinking_request(
+            thinking="high",
+            prompt="hi",
+            messages=None,
+            system_prompt=None,
+            kwargs={},
+        )
 
 
 def test_lmstudio_qwen3_5_thinking_off_sets_chat_template_enable_thinking_false(monkeypatch) -> None:

@@ -207,7 +207,8 @@ class TestPDFProcessor:
         assert not result.success
         assert ("Invalid PDF" in result.error_message or
                 "not a PDF" in result.error_message or
-                "only handles document types" in result.error_message)
+                "only handles document types" in result.error_message or
+                "not supported" in result.error_message.lower())
 
 
 @pytest.mark.skipif(

@@ -11,6 +11,9 @@ class StubConfigManager:
         self.default_model = None
         self.vision_calls = []
         self.api_keys = {}
+        self.audio_strategies = []
+        self.video_strategies = []
+        self.embeddings_models = []
         self.console_levels = []
 
     def set_default_model(self, model: str) -> None:
@@ -25,6 +28,15 @@ class StubConfigManager:
     def set_console_log_level(self, level: str) -> None:
         self.console_levels.append(level)
 
+    def set_audio_strategy(self, strategy: str) -> None:
+        self.audio_strategies.append(strategy)
+
+    def set_video_strategy(self, strategy: str) -> None:
+        self.video_strategies.append(strategy)
+
+    def set_embeddings_model(self, model: str) -> None:
+        self.embeddings_models.append(model)
+
 
 def test_interactive_configure_accepts_any_vision_provider(monkeypatch) -> None:
     """Interactive config should accept any provider/model pair for vision fallback."""
@@ -38,6 +50,9 @@ def test_interactive_configure_accepts_any_vision_provider(monkeypatch) -> None:
             "openai-compatible",
             "my-vision-model",
             "n",  # api keys
+            "",   # audio strategy (default)
+            "",   # video strategy (default)
+            "n",  # embeddings
             "",   # console logging (default)
         ]
     )
@@ -60,6 +75,9 @@ def test_interactive_configure_accepts_provider_model_combo(monkeypatch) -> None
             "lmstudio/qwen/qwen2.5-vl-7b",
             "",   # model prompt (provider/model already provided)
             "n",  # api keys
+            "",   # audio strategy (default)
+            "",   # video strategy (default)
+            "n",  # embeddings
             "",   # console logging (default)
         ]
     )
@@ -80,6 +98,9 @@ def test_interactive_configure_defaults_console_level_to_error(monkeypatch) -> N
             "n",  # default model
             "n",  # vision fallback
             "n",  # api keys
+            "",   # audio strategy (default)
+            "",   # video strategy (default)
+            "n",  # embeddings
             "",   # console logging (default)
         ]
     )

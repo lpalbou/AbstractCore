@@ -43,14 +43,14 @@ class TestJSONCapabilitiesIntegration:
         json_caps = get_model_capabilities('gpt-5')
 
         # Verify JSON has the expected values
-        assert json_caps['max_tokens'] == 200000
-        assert json_caps['max_output_tokens'] == 8192
+        assert json_caps['max_tokens'] == 400000
+        assert json_caps['max_output_tokens'] == 128000
         assert json_caps['tool_support'] == 'native'
 
         # Verify provider uses these values
         provider = OpenAIProvider('gpt-5')
-        assert provider.max_tokens == 200000
-        assert provider.max_output_tokens == 8192
+        assert provider.max_tokens == 400000
+        assert provider.max_output_tokens == 128000
 
     def test_unknown_model_fallback(self):
         """Test that unknown models get default capabilities."""

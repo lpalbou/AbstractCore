@@ -292,8 +292,26 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
             uniq.append(s)
         return uniq
 
-    # Check if any normalized/stripped name is a canonical name.
-    for candidate in _candidates(normalized_model_name, stripped_normalized_name, stripped_model_name):
+    # Fast-path: check canonical keys without applying variant stripping.
+    direct_candidates: List[str] = []
+    for base in (normalized_model_name, stripped_normalized_name, stripped_model_name):
+        s = str(base or "").strip()
+        if not s:
+            continue
+        direct_candidates.append(s)
+        direct_candidates.extend(_colon_variants(s))
+        t = _tail(s)
+        if t and t != s:
+            direct_candidates.append(t)
+            direct_candidates.extend(_colon_variants(t))
+    seen_direct: set[str] = set()
+    uniq_direct: List[str] = []
+    for c in direct_candidates:
+        if c in seen_direct:
+            continue
+        seen_direct.add(c)
+        uniq_direct.append(c)
+    for candidate in uniq_direct:
         if candidate in models:
             _resolved_aliases_cache[model_name] = candidate
             return candidate
@@ -301,14 +319,14 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     # Check if it's an alias of any model (try both original and normalized).
     # Some JSON entries intentionally share aliases (e.g. base + variant). Prefer the
     # most specific canonical model name deterministically.
+    candidates = _candidates(model_name, normalized_model_name, stripped_model_name, stripped_normalized_name)
+    cand_set = {str(c).strip().lower() for c in candidates if isinstance(c, str) and str(c).strip()}
     alias_matches: List[str] = []
     for canonical_name, model_info in models.items():
         aliases = model_info.get("aliases", [])
         if not isinstance(aliases, list) or not aliases:
             continue
-        candidates = _candidates(model_name, normalized_model_name, stripped_model_name, stripped_normalized_name)
         alias_set = {str(a).strip().lower() for a in aliases if isinstance(a, str) and str(a).strip()}
-        cand_set = {str(c).strip().lower() for c in candidates if isinstance(c, str) and str(c).strip()}
         if alias_set and cand_set and alias_set.intersection(cand_set):
             alias_matches.append(canonical_name)
 
@@ -317,6 +335,12 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
         logger.debug(f"Resolved alias '{model_name}' to canonical name '{best}'")
         _resolved_aliases_cache[model_name] = best
         return best
+
+    # Fall back to canonical key resolution with variant stripping.
+    for candidate in candidates:
+        if candidate in models:
+            _resolved_aliases_cache[model_name] = candidate
+            return candidate
 
     # Return normalized name if no alias found
     fallback = stripped_normalized_name or normalized_model_name

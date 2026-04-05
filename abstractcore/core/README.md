@@ -557,6 +557,26 @@ class BasicSession:
                  auto_compact_threshold=6000, temperature=None, seed=None):
 ```
 
+#### CachedSession
+
+`CachedSession` is a small extension of `BasicSession` that enables best-effort prompt caching across providers:
+
+- Prefills stable prefix “boxes” (system prompt, tools) when the provider supports a local prompt-cache control plane.
+- Uses **delta-only KV mode** (`mode=kv`) when the provider can treat the in-process cache as the context source-of-truth (MLX).
+- Otherwise falls back to **stable cache key** mode (`mode=key`) by keeping a consistent `prompt_cache_key`.
+
+```python
+from abstractcore import create_llm, CachedSession
+
+llm = create_llm("mlx", model="mlx-community/Mistral-7B-Instruct-v0.1-4bit")
+session = CachedSession(
+    provider=llm,
+    system_prompt="You are a helpful assistant.",
+    tools=[],
+    prompt_cache_strategy="auto",
+)
+```
+
 #### Key Features
 
 **Core Methods**: `generate()`, `add_message()`, `get_history()`, `clear_history()`, `save()`, `load()`

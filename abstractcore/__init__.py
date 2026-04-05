@@ -31,6 +31,7 @@ from .utils.version import __version__
 
 from .core.factory import create_llm
 from .core.session import BasicSession
+from .core.cached_session import CachedSession
 from .core.types import GenerateResponse, Message
 from .core.enums import ModelParameter, ModelCapability, MessageRole
 from .exceptions import ModelNotFoundError, ProviderAPIError, AuthenticationError
@@ -48,6 +49,7 @@ from .download import download_model, DownloadProgress, DownloadStatus
 __all__ = [
     'create_llm',
     'BasicSession',
+    'CachedSession',
     'GenerateResponse',
     'Message',
     'ModelParameter',

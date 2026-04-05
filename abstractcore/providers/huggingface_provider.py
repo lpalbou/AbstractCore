@@ -3,10 +3,18 @@ HuggingFace provider implementation with GGUF support.
 Supports both transformers models and GGUF models via llama-cpp-python.
 """
 
+from __future__ import annotations
+
+import importlib.util
 import os
 import copy
 import json
+import platform
+import sys
 import threading
+import time
+import uuid
+from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, Iterator, Type
@@ -21,14 +29,16 @@ if _config.is_offline_first():
     os.environ["HF_DATASETS_OFFLINE"] = "1"
     os.environ["HF_HUB_OFFLINE"] = "1"
 
-# Enable MPS fallback for Apple Silicon to handle unsupported operations
-# This prevents "MPS: Unsupported Border padding mode" errors in vision models
-try:
-    import torch
-    if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
-        os.environ["PYTORCH_ENABLE_MPS_FALLBACK"] = "1"
-except ImportError:
-    pass  # torch not available, skip MPS setup
+def _module_available(name: str) -> bool:
+    try:
+        return importlib.util.find_spec(name) is not None
+    except Exception:
+        return False
+
+
+TRANSFORMERS_AVAILABLE = _module_available("transformers")
+LLAMACPP_AVAILABLE = _module_available("llama_cpp")
+OUTLINES_AVAILABLE = _module_available("outlines")
 
 try:
     from pydantic import BaseModel
@@ -36,7 +46,7 @@ try:
 except ImportError:
     PYDANTIC_AVAILABLE = False
     BaseModel = None
-from .base import BaseProvider, PromptCacheCapabilities
+from .base import BaseProvider, PromptCacheCapabilities, ThinkingControlHandling
 from ..core.types import GenerateResponse
 from ..exceptions import ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
@@ -44,28 +54,7 @@ from ..events import EventType
 
 
 _MPS_GENERATION_LOCK = threading.Lock()
-
-# Try to import transformers (standard HuggingFace support)
-try:
-    from transformers import AutoModelForCausalLM, AutoModel, AutoTokenizer, AutoProcessor, AutoModelForImageTextToText, pipeline
-    import torch
-    TRANSFORMERS_AVAILABLE = True
-except ImportError:
-    TRANSFORMERS_AVAILABLE = False
-
-# Try to import llama-cpp-python (GGUF support)
-try:
-    from llama_cpp import Llama
-    LLAMACPP_AVAILABLE = True
-except ImportError:
-    LLAMACPP_AVAILABLE = False
-
-# Try to import Outlines (native structured output for transformers models)
-try:
-    import outlines
-    OUTLINES_AVAILABLE = True
-except ImportError:
-    OUTLINES_AVAILABLE = False
+_AUTO_GROWING_LLAMA_RAM_CACHE_CLS = None
 
 # We no longer download models - cache-only approach
 # huggingface_hub not required for basic operation
@@ -99,6 +88,23 @@ class _GGUFPromptCacheValue:
     prompt_tokens: tuple[int, ...] = field(default_factory=tuple)
 
 
+@dataclass
+class _TransformersPromptCacheValue:
+    """Best-effort cache state for HuggingFace transformers KV reuse.
+
+    `cache` is expected to be a `transformers.cache_utils.Cache` (typically `DynamicCache`).
+    `prompt_tokens` tracks the token ids that have been prefetched into `cache` so the provider
+    can build attention masks and compute delta lengths.
+    """
+
+    cache: Any
+    prompt_tokens: tuple[int, ...] = field(default_factory=tuple)
+    system_prompt_parts: List[str] = field(default_factory=list)
+    messages: List[Dict[str, Any]] = field(default_factory=list)
+    tools: Optional[List[Dict[str, Any]]] = None
+    add_generation_prompt: bool = False
+
+
 class HuggingFaceProvider(BaseProvider):
     """HuggingFace provider with dual support for transformers and GGUF models"""
 
@@ -109,13 +115,14 @@ class HuggingFaceProvider(BaseProvider):
         Supported env var: ABSTRACTCORE_HF_DEVICE=cpu|mps|cuda|auto
         """
         if isinstance(device, str) and device.strip():
-            return device.strip().lower()
+            val = device.strip().lower()
+            return None if val == "auto" else val
 
         env_device = os.environ.get("ABSTRACTCORE_HF_DEVICE")
         if isinstance(env_device, str) and env_device.strip():
             val = env_device.strip().lower()
             if val in {"auto", "cpu", "mps", "cuda"}:
-                return val
+                return None if val == "auto" else val
         return None
 
     def __init__(self, model: str = "unsloth/Qwen3-4B-Instruct-2507-GGUF",
@@ -216,7 +223,7 @@ class HuggingFaceProvider(BaseProvider):
         enabled: Optional[bool],
         level: Optional[str],
         kwargs: Dict[str, Any],
-    ) -> tuple[Dict[str, Any], bool]:
+    ) -> tuple[Dict[str, Any], ThinkingControlHandling]:
         # llama-cpp-python (GGUF) does not currently expose chat-template kwargs such as
         # `enable_thinking` / `thinking_budget`. For Qwen3/Qwen3.5 GGUF models, we treat
         # thinking levels as a best-effort "enable thinking" request and rely on BaseProvider's
@@ -230,8 +237,8 @@ class HuggingFaceProvider(BaseProvider):
         model_type = str(getattr(self, "model_type", "") or "").strip().lower()
         if model_type == "gguf" and self.architecture in {"qwen3", "qwen3_5"}:
             if enabled is True or level is not None:
-                return kwargs, True
-        return kwargs, False
+                return kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
+        return kwargs, ThinkingControlHandling()
 
     def unload_model(self, model_name: str) -> None:
         """
@@ -271,7 +278,8 @@ class HuggingFaceProvider(BaseProvider):
             cap = int(value)
         except Exception:
             cap = 0
-        return cap if cap > 0 else (512 << 20)
+        # `0` means "auto": the cache backend may resize to fit large prompts.
+        return cap if cap > 0 else 0
 
     def _gguf_prompt_cache_chat_format(self) -> str:
         llm = getattr(self, "llm", None)
@@ -299,13 +307,55 @@ class HuggingFaceProvider(BaseProvider):
             return False
         return bool(self._gguf_prompt_cache_control_plane_chat_format())
 
+    def _transformers_prompt_cache_supported(self) -> bool:
+        if getattr(self, "model_type", None) != "transformers":
+            return False
+        if not TRANSFORMERS_AVAILABLE:
+            return False
+        if getattr(self, "tokenizer", None) is None or getattr(self, "model_instance", None) is None:
+            return False
+        if not hasattr(self.model_instance, "generate"):
+            return False
+        # Avoid claiming prompt-cache support for vision/custom models that do not follow the
+        # decoder-only chat caching semantics.
+        if getattr(self, "pipeline", None) is None:
+            return False
+        return True
+
     def supports_prompt_cache(self) -> bool:
-        """GGUF backends can use llama.cpp prompt caching (prefix state cache)."""
-        return getattr(self, "model_type", None) == "gguf"
+        """Return True if this provider can retain an in-process prompt cache keyed by `prompt_cache_key`."""
+        model_type = getattr(self, "model_type", None)
+        if model_type == "gguf":
+            return True
+        return self._transformers_prompt_cache_supported()
+
+    def prompt_cache_supports_kv_source_of_truth(self) -> bool:
+        """Return True when this provider can treat the prompt cache as the context source-of-truth."""
+        return self._transformers_prompt_cache_supported()
 
     def get_prompt_cache_capabilities(self) -> PromptCacheCapabilities:
         if not self.supports_prompt_cache():
             return PromptCacheCapabilities()
+
+        if getattr(self, "model_type", None) == "transformers":
+            return PromptCacheCapabilities(
+                supported=True,
+                mode="local_control_plane",
+                supports_set=True,
+                supports_clear=True,
+                supports_update=True,
+                supports_fork=True,
+                supports_prepare_modules=True,
+                supports_stats=True,
+                supports_save=True,
+                supports_load=True,
+                supports_ttl=True,
+                notes=(
+                    "Transformers prompt caching uses cross-call KV reuse (past_key_values / Cache).",
+                    "Supports KV source-of-truth mode (delta-only prompts) via CachedSession.",
+                    "cache_implementation=dynamic",
+                ),
+            )
 
         if self._gguf_prompt_cache_supports_local_control_plane():
             chat_format = self._gguf_prompt_cache_control_plane_chat_format()
@@ -318,6 +368,8 @@ class HuggingFaceProvider(BaseProvider):
                 supports_fork=True,
                 supports_prepare_modules=True,
                 supports_stats=True,
+                supports_save=True,
+                supports_load=True,
                 supports_ttl=True,
                 notes=(
                     "GGUF prompt caching uses llama.cpp state snapshots plus keyed prefix reuse.",
@@ -335,6 +387,8 @@ class HuggingFaceProvider(BaseProvider):
             supports_fork=False,
             supports_prepare_modules=False,
             supports_stats=True,
+            supports_save=True,
+            supports_load=True,
             supports_ttl=True,
             notes=(
                 "GGUF prompt caching supports keyed cache selection for this model.",
@@ -343,12 +397,97 @@ class HuggingFaceProvider(BaseProvider):
             ),
         )
 
+    def get_prompt_cache_stats(self) -> Dict[str, Any]:
+        """Return prompt cache stats, including GGUF cache sizing (best-effort)."""
+        stats = super().get_prompt_cache_stats()
+
+        if str(getattr(self, "model_type", "") or "").strip().lower() != "gguf":
+            return stats
+
+        keys = stats.get("keys") if isinstance(stats, dict) else None
+        if not isinstance(keys, list):
+            return stats
+
+        per_key: Dict[str, Any] = {}
+        for key in keys:
+            key_s = str(key)
+            try:
+                cache_value = self._prompt_cache_store.get(key_s)
+            except Exception:
+                continue
+
+            state = self._gguf_prompt_cache_state(cache_value)
+            if state is None:
+                continue
+
+            cache_obj = self._gguf_prompt_cache_unwrap(state)
+            if cache_obj is None:
+                continue
+
+            cap_bytes = None
+            try:
+                cap_bytes = int(getattr(cache_obj, "capacity_bytes", None) or state.capacity_bytes)
+            except Exception:
+                try:
+                    cap_bytes = int(state.capacity_bytes)
+                except Exception:
+                    cap_bytes = None
+
+            cache_state = getattr(cache_obj, "cache_state", None)
+            cache_entries: Optional[int] = None
+            total_state_bytes: Optional[int] = None
+            max_state_bytes: Optional[int] = None
+            if hasattr(cache_state, "items"):
+                total = 0
+                max_b = 0
+                count = 0
+                try:
+                    for _k, llama_state in cache_state.items():
+                        count += 1
+                        try:
+                            size = int(getattr(llama_state, "llama_state_size", 0) or 0)
+                        except Exception:
+                            size = 0
+                        if size > 0:
+                            total += size
+                            if size > max_b:
+                                max_b = size
+                except Exception:
+                    count = 0
+                    total = 0
+                    max_b = 0
+                cache_entries = int(count)
+                total_state_bytes = int(total) if total > 0 else None
+                max_state_bytes = int(max_b) if max_b > 0 else None
+
+            per_key[key_s] = {
+                "capacity_bytes": cap_bytes,
+                "cache_state_entries": cache_entries,
+                "cache_state_total_bytes": total_state_bytes,
+                "cache_state_max_bytes": max_state_bytes,
+                "prompt_tokens": int(len(state.prompt_tokens or ())),
+                "prompt_text_chars": int(len(state.prompt_text or "")),
+            }
+
+        stats["gguf"] = {
+            "control_plane_chat_format": (
+                self._gguf_prompt_cache_control_plane_chat_format() or self._gguf_prompt_cache_chat_format()
+            ),
+            "keys": per_key,
+        }
+        return stats
+
     def _gguf_prompt_cache_export_state(self, cache_value: Any) -> Dict[str, Any]:
         state = self._gguf_prompt_cache_state(cache_value)
         if state is None:
             return {}
+        cap_val = getattr(state.cache, "capacity_bytes", state.capacity_bytes)
+        try:
+            cap_i = int(cap_val)
+        except Exception:
+            cap_i = int(state.capacity_bytes)
         return {
-            "capacity_bytes": int(state.capacity_bytes),
+            "capacity_bytes": cap_i,
             "system_prompt_parts": copy.deepcopy(state.system_prompt_parts),
             "messages": copy.deepcopy(state.messages),
             "tools": copy.deepcopy(state.tools),
@@ -446,7 +585,19 @@ class HuggingFaceProvider(BaseProvider):
         except Exception:
             return None
 
-        cloned = LlamaRAMCache(capacity_bytes=int(capacity_bytes))
+        try:
+            cap_i = int(capacity_bytes)
+        except Exception:
+            cap_i = 0
+        if cap_i < 0:
+            cap_i = 0
+
+        # Preserve the concrete cache implementation (auto-growing vs fixed-capacity).
+        cache_cls = cache_obj.__class__ if isinstance(cache_obj, LlamaRAMCache) else LlamaRAMCache
+        try:
+            cloned = cache_cls(capacity_bytes=int(cap_i))
+        except Exception:
+            cloned = LlamaRAMCache(capacity_bytes=int(cap_i))
         state_map = getattr(cache_obj, "cache_state", None)
         if not hasattr(state_map, "items"):
             return cloned
@@ -473,17 +624,6 @@ class HuggingFaceProvider(BaseProvider):
         if isinstance(system_prompt, str) and system_prompt:
             chat_messages.append({"role": "system", "content": system_prompt})
 
-        if isinstance(messages, list) and messages:
-            chat_messages.extend(copy.deepcopy(messages))
-
-        if user_message_content is not None:
-            # Allow "messages-only" calls (prompt="") without appending an empty user turn.
-            if isinstance(user_message_content, str):
-                if user_message_content.strip():
-                    chat_messages.append({"role": "user", "content": user_message_content})
-            else:
-                chat_messages.append({"role": "user", "content": user_message_content})
-
         if tools and self.tool_handler.supports_prompted:
             system_text = (
                 chat_messages[0].get("content", "")
@@ -494,11 +634,24 @@ class HuggingFaceProvider(BaseProvider):
             tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
             if tool_prompt:
                 if self._gguf_prompt_cache_supports_local_control_plane():
-                    chat_messages.append({"role": "system", "content": tool_prompt})
+                    # Keep tools in a stable prefix position so prefix/KV caches remain effective.
+                    insert_at = 1 if chat_messages and chat_messages[0].get("role") == "system" else 0
+                    chat_messages.insert(insert_at, {"role": "system", "content": tool_prompt})
                 elif chat_messages and chat_messages[0].get("role") == "system":
                     chat_messages[0]["content"] = f"{chat_messages[0].get('content', '')}\n\n{tool_prompt}"
                 else:
                     chat_messages.insert(0, {"role": "system", "content": tool_prompt})
+
+        if isinstance(messages, list) and messages:
+            chat_messages.extend(copy.deepcopy(messages))
+
+        if user_message_content is not None:
+            # Allow "messages-only" calls (prompt="") without appending an empty user turn.
+            if isinstance(user_message_content, str):
+                if user_message_content.strip():
+                    chat_messages.append({"role": "user", "content": user_message_content})
+            else:
+                chat_messages.append({"role": "user", "content": user_message_content})
 
         return chat_messages
 
@@ -658,6 +811,18 @@ class HuggingFaceProvider(BaseProvider):
         if not hasattr(state_map, "items") or not prompt_tokens:
             return 0, None
 
+        llm = getattr(self, "llm", None)
+        longest_prefix_fn = getattr(llm, "longest_token_prefix", None)
+        if not callable(longest_prefix_fn):
+            longest_prefix_fn = getattr(getattr(llm, "__class__", None), "longest_token_prefix", None)
+        if not callable(longest_prefix_fn):
+            try:
+                from llama_cpp.llama import Llama as _Llama  # type: ignore
+
+                longest_prefix_fn = getattr(_Llama, "longest_token_prefix", None)
+            except Exception:
+                longest_prefix_fn = None
+
         best_len = 0
         best_state = None
         for key, state in state_map.items():
@@ -665,7 +830,10 @@ class HuggingFaceProvider(BaseProvider):
                 normalized = tuple(int(tok) for tok in key)
             except Exception:
                 continue
-            prefix_len = int(Llama.longest_token_prefix(normalized, prompt_tokens))
+            try:
+                prefix_len = int(longest_prefix_fn(normalized, prompt_tokens)) if callable(longest_prefix_fn) else 0
+            except Exception:
+                prefix_len = 0
             if prefix_len != len(normalized):
                 continue
             if len(normalized) > best_len:
@@ -673,7 +841,14 @@ class HuggingFaceProvider(BaseProvider):
                 best_state = state
         return best_len, best_state
 
-    def _gguf_prefill_prompt_cache(self, cache_obj: Any, prompt_tokens: tuple[int, ...]) -> bool:
+    def _gguf_prefill_prompt_cache(
+        self,
+        cache_obj: Any,
+        prompt_tokens: tuple[int, ...],
+        *,
+        save_state: bool = True,
+        set_cache: bool = True,
+    ) -> bool:
         llm = getattr(self, "llm", None)
         if llm is None:
             return False
@@ -697,19 +872,226 @@ class HuggingFaceProvider(BaseProvider):
         try:
             if remaining:
                 llm.eval(remaining)
-            if prompt_tokens:
+            if save_state and prompt_tokens:
                 saved_state = llm.save_state()
                 cloned_state = self._gguf_clone_llama_state(saved_state)
                 cache_obj[prompt_tokens] = cloned_state if cloned_state is not None else saved_state
-            if hasattr(llm, "set_cache"):
+            if set_cache and hasattr(llm, "set_cache"):
                 llm.set_cache(cache_obj)
         except Exception:
             return False
         return True
 
+    def _transformers_prompt_cache_state(self, cache_value: Any) -> Optional[_TransformersPromptCacheValue]:
+        return cache_value if isinstance(cache_value, _TransformersPromptCacheValue) else None
+
+    def _transformers_cache_device(self) -> Optional["torch.device"]:
+        try:
+            import torch  # type: ignore
+        except Exception:
+            return None
+
+        model = getattr(self, "model_instance", None)
+        if model is not None:
+            try:
+                param = next(model.parameters(), None)
+                if param is not None:
+                    return param.device
+            except Exception:
+                pass
+        dev = str(getattr(self, "device", "") or "").strip().lower()
+        if dev in {"cuda", "mps", "cpu"}:
+            try:
+                return torch.device(dev)
+            except Exception:
+                return torch.device("cpu")
+        return torch.device("cpu")
+
+    def _transformers_cache_device_str(self) -> str:
+        dev = self._transformers_cache_device()
+        if dev is None:
+            return "cpu"
+        s = str(dev)
+        if s.startswith("cuda"):
+            return "cuda"
+        if s.startswith("mps"):
+            return "mps"
+        return "cpu"
+
+    def _transformers_arch_prefix_suffix(self, role: str) -> tuple[str, str]:
+        cfg = getattr(self, "architecture_config", None)
+        if not isinstance(cfg, dict):
+            cfg = {}
+        r = str(role or "").strip().lower()
+        if r == "system":
+            return str(cfg.get("system_prefix") or ""), str(cfg.get("system_suffix") or "")
+        if r == "user":
+            return str(cfg.get("user_prefix") or ""), str(cfg.get("user_suffix") or "")
+        if r == "assistant":
+            return str(cfg.get("assistant_prefix") or ""), str(cfg.get("assistant_suffix") or "")
+        # Fallback: simple conversational format.
+        return "", "\n"
+
+    def _transformers_render_message(self, role: str, content: str, *, close: bool = True) -> str:
+        prefix, suffix = self._transformers_arch_prefix_suffix(role)
+        if prefix or suffix:
+            out = f"{prefix}{content}"
+            if close:
+                out += suffix
+            return out
+        label = str(role or "user").strip().capitalize() or "User"
+        out = f"{label}: {content}\n"
+        return out if close else out.rstrip("\n")
+
+    def _transformers_build_prompt_fragment(
+        self,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Any]] = None,
+        add_generation_prompt: bool = False,
+        prefilled_modules: Optional[Union[List[str], tuple[str, ...]]] = None,
+    ) -> str:
+        """Build a prompt fragment that can be appended to an existing KV cache."""
+
+        prefilled: set[str] = set()
+        if prefilled_modules:
+            for item in prefilled_modules:
+                try:
+                    norm = str(item or "").strip().lower()
+                except Exception:
+                    norm = ""
+                if norm:
+                    prefilled.add(norm)
+
+        def _as_text(val: Any) -> str:
+            if val is None:
+                return ""
+            if isinstance(val, str):
+                return val
+            try:
+                return json.dumps(val, ensure_ascii=False)
+            except Exception:
+                return str(val)
+
+        parts: List[str] = []
+
+        base_system_prompt = str(system_prompt or "").strip() if system_prompt is not None else ""
+        if base_system_prompt and "system" not in prefilled:
+            parts.append(self._transformers_render_message("system", base_system_prompt, close=True))
+
+        if tools is not None and getattr(self, "tool_handler", None) is not None:
+            if getattr(self.tool_handler, "supports_prompted", False) and "tools" not in prefilled:
+                include_tool_list = True
+                if base_system_prompt and "## Tools (session)" in base_system_prompt:
+                    include_tool_list = False
+                try:
+                    tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
+                except Exception:
+                    tool_prompt = ""
+                tool_prompt = str(tool_prompt or "").strip()
+                if tool_prompt:
+                    parts.append(self._transformers_render_message("system", tool_prompt, close=True))
+
+        if messages:
+            for msg in messages:
+                if not isinstance(msg, dict):
+                    continue
+                role = str(msg.get("role") or "user").strip().lower() or "user"
+                if role in {"tool", "function"}:
+                    role = "assistant"
+                content = _as_text(msg.get("content"))
+                parts.append(self._transformers_render_message(role, content, close=True))
+
+        if isinstance(prompt, str) and prompt:
+            parts.append(self._transformers_render_message("user", str(prompt), close=True))
+
+        if add_generation_prompt:
+            parts.append(self._transformers_render_message("assistant", "", close=False))
+
+        return "".join(parts)
+
+    def _transformers_tokenize_fragment(self, fragment: str, *, add_bos_if_empty: bool) -> List[int]:
+        tok = getattr(self, "tokenizer", None)
+        if tok is None:
+            return []
+
+        text = str(fragment or "")
+        try:
+            ids = tok.encode(text, add_special_tokens=False)
+        except Exception:
+            try:
+                ids = list(tok(text, add_special_tokens=False)["input_ids"])
+            except Exception:
+                return []
+
+        out = [int(i) for i in ids] if ids else []
+        if add_bos_if_empty:
+            bos = getattr(tok, "bos_token_id", None)
+            add_bos = getattr(tok, "add_bos_token", None)
+            if isinstance(add_bos, bool) and not add_bos:
+                return out
+            try:
+                bos_i = int(bos) if bos is not None else None
+            except Exception:
+                bos_i = None
+            if bos_i is not None and bos_i >= 0:
+                if not out or out[0] != bos_i:
+                    out.insert(0, bos_i)
+        return out
+
+    def _transformers_prefill_cache(self, state: _TransformersPromptCacheValue, token_ids: List[int]) -> bool:
+        if not token_ids:
+            return True
+        if getattr(self, "model_instance", None) is None:
+            return False
+        try:
+            import torch  # type: ignore
+        except Exception:
+            return False
+
+        device = self._transformers_cache_device() or torch.device("cpu")
+        input_ids = torch.tensor([token_ids], dtype=torch.long, device=device)
+        past_len = len(state.prompt_tokens)
+        attention_mask = torch.ones((1, past_len + len(token_ids)), dtype=torch.long, device=device)
+
+        kwargs: Dict[str, Any] = {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "use_cache": True,
+            "past_key_values": state.cache,
+        }
+
+        try:
+            with torch.inference_mode():
+                use_mps_lock = str(device).startswith("mps") or str(getattr(self, "device", "") or "").strip().lower() == "mps"
+                if use_mps_lock:
+                    with _MPS_GENERATION_LOCK:
+                        outputs = self.model_instance(**kwargs)
+                else:
+                    outputs = self.model_instance(**kwargs)
+        except Exception:
+            return False
+
+        new_cache = getattr(outputs, "past_key_values", None)
+        if new_cache is not None:
+            state.cache = new_cache
+        state.prompt_tokens = tuple(int(tok) for tok in (state.prompt_tokens + tuple(token_ids)))
+        return True
+
     def _prompt_cache_backend_create(self) -> Optional[Any]:
         if not self.supports_prompt_cache():
             return None
+
+        model_type = getattr(self, "model_type", None)
+        if model_type == "transformers":
+            try:
+                from transformers.cache_utils import DynamicCache  # type: ignore
+            except Exception:
+                return None
+            return _TransformersPromptCacheValue(cache=DynamicCache())
+
         try:
             from llama_cpp.llama_cache import LlamaRAMCache
         except Exception:
@@ -719,12 +1101,78 @@ class HuggingFaceProvider(BaseProvider):
         cap = self._coerce_gguf_prompt_cache_capacity_bytes(
             cap if cap is not None else getattr(self, "_gguf_prompt_cache_default_capacity_bytes", None)
         )
+        if cap > 0:
+            cache_obj = LlamaRAMCache(capacity_bytes=int(cap))
+            cap_effective = int(getattr(cache_obj, "capacity_bytes", cap) or cap)
+        else:
+            # Default is "auto": do not silently disable caching for large prompts.
+            # When a single LlamaState exceeds a fixed capacity, llama-cpp-python evicts it
+            # immediately (the cache stays empty). Auto-grow ensures at least the most recent
+            # prefix KV snapshot can be retained for subsequent turns.
+            global _AUTO_GROWING_LLAMA_RAM_CACHE_CLS
+            cache_cls = _AUTO_GROWING_LLAMA_RAM_CACHE_CLS
+            if cache_cls is None:
+                class _AutoGrowingLlamaRAMCache(LlamaRAMCache):  # type: ignore[misc]
+                    def __setitem__(self, key, value):  # type: ignore[override]
+                        try:
+                            state_size = int(getattr(value, "llama_state_size", 0) or 0)
+                        except Exception:
+                            state_size = 0
+                        if state_size > 0:
+                            try:
+                                cap_now = int(getattr(self, "capacity_bytes", 0) or 0)
+                            except Exception:
+                                cap_now = 0
+                            if state_size > cap_now:
+                                # Grow just enough to retain this state (the base class eviction policy
+                                # will still drop older entries as needed).
+                                self.capacity_bytes = int(state_size)
+                        return super().__setitem__(key, value)
+
+                cache_cls = _AutoGrowingLlamaRAMCache
+                _AUTO_GROWING_LLAMA_RAM_CACHE_CLS = cache_cls
+
+            cache_obj = cache_cls(capacity_bytes=0)
+            cap_effective = int(getattr(cache_obj, "capacity_bytes", 0) or 0)
+
         return _GGUFPromptCacheValue(
-            cache=LlamaRAMCache(capacity_bytes=cap),
-            capacity_bytes=cap,
+            cache=cache_obj,
+            capacity_bytes=cap_effective,
         )
 
     def _prompt_cache_backend_clone(self, cache_value: Any) -> Optional[Any]:
+        transformers_state = self._transformers_prompt_cache_state(cache_value)
+        if transformers_state is not None:
+            try:
+                from transformers.cache_utils import DynamicCache  # type: ignore
+            except Exception:
+                return None
+            src_cache = transformers_state.cache
+            if not isinstance(src_cache, DynamicCache):
+                return None
+
+            cloned_cache = DynamicCache()
+            for idx, layer in enumerate(getattr(src_cache, "layers", []) or []):
+                try:
+                    if not bool(getattr(layer, "is_initialized", False)):
+                        continue
+                    keys = getattr(layer, "keys", None)
+                    values = getattr(layer, "values", None)
+                    if keys is None or values is None:
+                        continue
+                    cloned_cache.update(keys, values, layer_idx=int(idx))
+                except Exception:
+                    return None
+
+            return _TransformersPromptCacheValue(
+                cache=cloned_cache,
+                prompt_tokens=tuple(int(tok) for tok in transformers_state.prompt_tokens),
+                system_prompt_parts=copy.deepcopy(transformers_state.system_prompt_parts),
+                messages=copy.deepcopy(transformers_state.messages),
+                tools=copy.deepcopy(transformers_state.tools),
+                add_generation_prompt=bool(transformers_state.add_generation_prompt),
+            )
+
         state = self._gguf_prompt_cache_state(cache_value)
         if state is None:
             return None
@@ -754,9 +1202,83 @@ class HuggingFaceProvider(BaseProvider):
         **kwargs,
     ) -> bool:
         _ = kwargs
+
+        transformers_state = self._transformers_prompt_cache_state(cache_value)
+        if transformers_state is not None:
+            prev_add_generation_prompt = bool(transformers_state.add_generation_prompt)
+            prev_prompt_tokens = tuple(int(tok) for tok in (transformers_state.prompt_tokens or ()))
+
+            # Mutate state first; we may rebuild or append depending on what changed.
+            if system_prompt is not None:
+                text = str(system_prompt or "").strip()
+                if text:
+                    transformers_state.system_prompt_parts.append(text)
+            if tools is not None:
+                transformers_state.tools = [copy.deepcopy(tool) for tool in tools if isinstance(tool, dict)] or None
+
+            delta_messages: List[Dict[str, Any]] = []
+            if isinstance(messages, list) and messages:
+                for msg in messages:
+                    if isinstance(msg, dict):
+                        copied = copy.deepcopy(msg)
+                        delta_messages.append(copied)
+                        transformers_state.messages.append(copied)
+            if isinstance(prompt, str) and prompt:
+                user_msg = {"role": "user", "content": prompt}
+                delta_messages.append(copy.deepcopy(user_msg))
+                transformers_state.messages.append(user_msg)
+
+            new_add_generation_prompt = bool(add_generation_prompt)
+            transformers_state.add_generation_prompt = new_add_generation_prompt
+
+            needs_rebuild = bool(system_prompt is not None or tools is not None or not prev_prompt_tokens)
+            # Changing add_generation_prompt from True -> False is a structural edit; rebuild.
+            if prev_add_generation_prompt and not new_add_generation_prompt:
+                needs_rebuild = True
+            # Appending after a generation prompt is ambiguous; rebuild for safety.
+            if prev_add_generation_prompt and (delta_messages or system_prompt is not None or tools is not None):
+                needs_rebuild = True
+
+            if needs_rebuild:
+                system_text = "\n\n".join(
+                    part for part in transformers_state.system_prompt_parts if isinstance(part, str) and part
+                )
+                full_text = self._transformers_build_prompt_fragment(
+                    prompt="",
+                    messages=transformers_state.messages,
+                    system_prompt=system_text or None,
+                    tools=transformers_state.tools,
+                    add_generation_prompt=transformers_state.add_generation_prompt,
+                )
+
+                token_ids = self._transformers_tokenize_fragment(full_text, add_bos_if_empty=True)
+                try:
+                    from transformers.cache_utils import DynamicCache  # type: ignore
+                except Exception:
+                    return False
+                transformers_state.cache = DynamicCache()
+                transformers_state.prompt_tokens = ()
+                return self._transformers_prefill_cache(transformers_state, token_ids)
+
+            # Incremental: append-only messages or toggling add_generation_prompt to True.
+            delta_add_gen = bool(new_add_generation_prompt and not prev_add_generation_prompt)
+            delta_text = self._transformers_build_prompt_fragment(
+                prompt="",
+                messages=delta_messages,
+                system_prompt=None,
+                tools=None,
+                add_generation_prompt=delta_add_gen,
+            )
+            token_ids = self._transformers_tokenize_fragment(delta_text, add_bos_if_empty=False)
+            return self._transformers_prefill_cache(transformers_state, token_ids)
+
         state = self._gguf_prompt_cache_state(cache_value)
         if state is None or getattr(self, "llm", None) is None:
             return False
+
+        prev_add_generation_prompt = bool(state.add_generation_prompt)
+        prev_prompt_text = str(state.prompt_text or "")
+        prev_prompt_tokens = tuple(int(tok) for tok in (state.prompt_tokens or ()))
 
         if system_prompt is not None:
             text = str(system_prompt or "").strip()
@@ -764,16 +1286,70 @@ class HuggingFaceProvider(BaseProvider):
                 state.system_prompt_parts.append(text)
         if tools is not None:
             state.tools = [copy.deepcopy(tool) for tool in tools if isinstance(tool, dict)] or None
+        delta_messages: List[Dict[str, Any]] = []
         if isinstance(messages, list) and messages:
-            state.messages.extend(copy.deepcopy(msg) for msg in messages if isinstance(msg, dict))
+            for msg in messages:
+                if isinstance(msg, dict):
+                    copied = copy.deepcopy(msg)
+                    delta_messages.append(copied)
+                    state.messages.append(copied)
         if isinstance(prompt, str) and prompt:
-            state.messages.append({"role": "user", "content": prompt})
-        state.add_generation_prompt = bool(add_generation_prompt)
+            user_msg = {"role": "user", "content": prompt}
+            delta_messages.append(copy.deepcopy(user_msg))
+            state.messages.append(user_msg)
+        new_add_generation_prompt = bool(add_generation_prompt)
+        state.add_generation_prompt = new_add_generation_prompt
 
         if not self._gguf_prompt_cache_supports_local_control_plane():
             # Keyed-only GGUF caches still keep the in-process cache object, but they do not
             # advertise modular update/fork support to higher layers.
             return False
+
+        # Fast path: append-only updates (no system/tools changes) can reuse the serialized prompt.
+        can_incremental = (
+            system_prompt is None
+            and tools is None
+            and prev_prompt_tokens
+            and (not prev_add_generation_prompt)
+            and (not new_add_generation_prompt)
+        )
+        if can_incremental and delta_messages:
+            # Reject non-append semantics: new system messages belong in the prefix, not the tail.
+            has_system_delta = any(
+                str(m.get("role") or "").strip().lower() == "system" for m in delta_messages if isinstance(m, dict)
+            )
+            if not has_system_delta:
+                chat_format = self._gguf_prompt_cache_control_plane_chat_format() or self._gguf_prompt_cache_chat_format()
+                if chat_format == "llama-3":
+                    delta_text = self._gguf_render_llama3_prompt(messages=delta_messages, add_generation_prompt=False)
+                else:
+                    delta_text = self._gguf_render_chatml_prompt(messages=delta_messages, add_generation_prompt=False)
+
+                try:
+                    delta_tokens = (
+                        tuple(
+                            int(tok)
+                            for tok in self.llm.tokenize(
+                                delta_text.encode("utf-8"),
+                                add_bos=False,
+                                special=True,
+                            )
+                        )
+                        if delta_text
+                        else ()
+                    )
+                except Exception:
+                    delta_tokens = ()
+
+                if delta_tokens:
+                    prompt_tokens = tuple(int(tok) for tok in (prev_prompt_tokens + delta_tokens))
+                    with getattr(self, "_gguf_prompt_cache_lock", _MPS_GENERATION_LOCK):
+                        ok = self._gguf_prefill_prompt_cache(state.cache, prompt_tokens)
+                    if not ok:
+                        return False
+                    state.prompt_text = prev_prompt_text + delta_text
+                    state.prompt_tokens = prompt_tokens
+                    return True
 
         system_text = "\n\n".join(part for part in state.system_prompt_parts if isinstance(part, str) and part)
         chat_messages = self._gguf_build_chat_messages(
@@ -797,12 +1373,26 @@ class HuggingFaceProvider(BaseProvider):
         return True
 
     def _prompt_cache_backend_token_count(self, cache_value: Any) -> Optional[int]:
+        transformers_state = self._transformers_prompt_cache_state(cache_value)
+        if transformers_state is not None:
+            if transformers_state.prompt_tokens:
+                return len(transformers_state.prompt_tokens)
+            cache_obj = transformers_state.cache
+            try:
+                tok = cache_obj.get_seq_length() if cache_obj is not None else None
+            except Exception:
+                tok = None
+            if isinstance(tok, int) and tok >= 0:
+                return tok
+            return None
+
         state = self._gguf_prompt_cache_state(cache_value)
         if state is None:
             return None
+        longest = self._gguf_prompt_cache_longest_prefix_tokens(state.cache)
         if state.prompt_tokens:
-            return len(state.prompt_tokens)
-        return len(self._gguf_prompt_cache_longest_prefix_tokens(state.cache))
+            return max(len(state.prompt_tokens), len(longest))
+        return len(longest)
 
     def prompt_cache_set(
         self,
@@ -813,10 +1403,32 @@ class HuggingFaceProvider(BaseProvider):
         capacity_bytes: Optional[int] = None,
         **kwargs,
     ) -> bool:
-        """Create/reset a llama.cpp prompt cache for the given key (GGUF only)."""
+        """Create/reset a prompt cache for the given key (best-effort)."""
         _ = kwargs
         if not self.supports_prompt_cache():
             return False
+
+        if getattr(self, "model_type", None) != "gguf":
+            ok = super().prompt_cache_set(key, make_default=make_default)
+            if not ok:
+                return False
+            normalized = self._normalize_prompt_cache_key(key)
+            if normalized is None:
+                return False
+            cache_value = self._prompt_cache_store.get(normalized)
+            state = self._transformers_prompt_cache_state(cache_value)
+            if state is None:
+                return False
+            try:
+                self._prompt_cache_store.set(
+                    normalized,
+                    state,
+                    ttl_s=ttl_s,
+                    meta={"backend": "transformers"},
+                )
+            except Exception:
+                return False
+            return True
 
         self._gguf_prompt_cache_pending_capacity_bytes = self._coerce_gguf_prompt_cache_capacity_bytes(capacity_bytes)
         try:
@@ -840,7 +1452,7 @@ class HuggingFaceProvider(BaseProvider):
                 ttl_s=ttl_s,
                 meta={
                     "backend": "llama_cpp",
-                    "capacity_bytes": int(state.capacity_bytes),
+                    "capacity_bytes": int(getattr(state.cache, "capacity_bytes", state.capacity_bytes) or state.capacity_bytes),
                 },
             )
         except Exception:
@@ -863,6 +1475,370 @@ class HuggingFaceProvider(BaseProvider):
         except Exception:
             pass
         return cleared
+
+    def prompt_cache_save(self, key: str, filename: str, **kwargs: Any) -> Dict[str, Any]:
+        """Save a GGUF llama.cpp prompt cache snapshot to disk (best-effort).
+
+        This persists the provider-side cache metadata plus the *single* longest-prefix llama.cpp
+        state snapshot for the key. It is sufficient to warm-start large chats without rebuilding
+        the prefix, but it does not attempt to persist every intermediate prefix in the RAM cache.
+        """
+        _ = kwargs
+        if not self.supports_prompt_cache():
+            raise ValueError("Prompt caching is not supported for this provider/model.")
+
+        if getattr(self, "model_type", None) != "gguf":
+            try:
+                import torch  # type: ignore
+                from safetensors.torch import save_file  # type: ignore
+                from transformers.cache_utils import DynamicCache  # type: ignore
+            except Exception as e:
+                raise ImportError(
+                    "Transformers prompt cache saving requires `torch`, `transformers`, and `safetensors`."
+                ) from e
+
+            normalized = self._normalize_prompt_cache_key(key)
+            if normalized is None:
+                raise ValueError("prompt cache key must be a non-empty string")
+
+            cache_value = self._prompt_cache_store.get(normalized)
+            state = self._transformers_prompt_cache_state(cache_value)
+            if state is None:
+                raise ValueError(f"prompt cache key '{normalized}' does not exist")
+            if not isinstance(state.cache, DynamicCache):
+                raise ValueError("prompt cache key does not reference a supported transformers cache object")
+
+            tensors: Dict[str, torch.Tensor] = {}
+            prompt_tokens = tuple(int(tok) for tok in (state.prompt_tokens or ()))
+            tensors["prompt_tokens"] = torch.tensor(prompt_tokens, dtype=torch.int32, device="cpu")
+
+            layers = getattr(state.cache, "layers", []) or []
+            for idx, layer in enumerate(layers):
+                if not bool(getattr(layer, "is_initialized", False)):
+                    continue
+                keys = getattr(layer, "keys", None)
+                values = getattr(layer, "values", None)
+                if keys is None or values is None:
+                    continue
+                tensors[f"layer_{idx}_keys"] = keys.detach().to("cpu")
+                tensors[f"layer_{idx}_values"] = values.detach().to("cpu")
+
+            meta: Dict[str, str] = {
+                "format": "abstractcore-transformers-prompt-cache/v1",
+                "provider": str(getattr(self, "provider", "huggingface")),
+                "model": str(getattr(self, "model", "")),
+                "saved_at": datetime.now().isoformat(),
+                "token_count": str(len(prompt_tokens)),
+                "cache_implementation": "dynamic",
+            }
+
+            save_file(tensors, str(filename), metadata=meta)
+
+            return {
+                "supported": True,
+                "operation": "save",
+                "provider": str(getattr(self, "provider", "huggingface")),
+                "model": str(getattr(self, "model", "")),
+                "key": normalized,
+                "filename": str(filename),
+                "meta": meta,
+            }
+
+        try:
+            import numpy as np
+            from llama_cpp.llama import LlamaState
+        except Exception as e:
+            raise ImportError("GGUF prompt cache saving requires `llama-cpp-python` and `numpy`.") from e
+
+        normalized = self._normalize_prompt_cache_key(key)
+        if normalized is None:
+            raise ValueError("prompt cache key must be a non-empty string")
+
+        cache_value = self._prompt_cache_store.get(normalized)
+        state = self._gguf_prompt_cache_state(cache_value)
+        if state is None:
+            raise ValueError(f"prompt cache key '{normalized}' does not exist")
+
+        cache_obj = self._gguf_prompt_cache_unwrap(state)
+        if cache_obj is None:
+            raise ValueError("prompt cache key does not reference a llama.cpp cache object")
+
+        prompt_tokens = tuple(int(tok) for tok in (state.prompt_tokens or self._gguf_prompt_cache_longest_prefix_tokens(cache_obj)))
+        if not prompt_tokens:
+            raise ValueError("prompt cache has no stored prefix tokens to save")
+
+        # Ensure a concrete state exists for the stored prefix tokens.
+        state_map = getattr(cache_obj, "cache_state", None)
+        llama_state = None
+        if hasattr(state_map, "get"):
+            llama_state = state_map.get(prompt_tokens)
+        if llama_state is None:
+            with getattr(self, "_gguf_prompt_cache_lock", _MPS_GENERATION_LOCK):
+                if not self._gguf_prefill_prompt_cache(cache_obj, prompt_tokens):
+                    raise RuntimeError("failed to prefill prompt cache prior to saving")
+            state_map = getattr(cache_obj, "cache_state", None)
+            if hasattr(state_map, "get"):
+                llama_state = state_map.get(prompt_tokens)
+
+        if not isinstance(llama_state, LlamaState):
+            raise RuntimeError("could not retrieve a llama.cpp state snapshot for the prompt cache key")
+
+        exported_state = self._gguf_prompt_cache_export_state(state)
+        meta: Dict[str, Any] = {
+            "format": "abstractcore-gguf-prompt-cache/v1",
+            "provider": str(getattr(self, "provider", "huggingface")),
+            "model": str(getattr(self, "model", "")),
+            "saved_at": datetime.now().isoformat(),
+            "cache_state": exported_state,
+        }
+
+        np.savez_compressed(
+            str(filename),
+            meta_json=np.array(json.dumps(meta, ensure_ascii=False), dtype=np.str_),
+            prompt_tokens=np.asarray(prompt_tokens, dtype=np.intc),
+            input_ids=np.asarray(getattr(llama_state, "input_ids"), dtype=np.intc),
+            scores=np.asarray(getattr(llama_state, "scores"), dtype=np.single),
+            n_tokens=np.asarray(int(getattr(llama_state, "n_tokens", 0) or 0), dtype=np.int64),
+            llama_state=np.frombuffer(bytes(getattr(llama_state, "llama_state", b"")), dtype=np.uint8),
+            llama_state_size=np.asarray(int(getattr(llama_state, "llama_state_size", 0) or 0), dtype=np.int64),
+            seed=np.asarray(int(getattr(llama_state, "seed", 0) or 0), dtype=np.int64),
+        )
+
+        return {
+            "supported": True,
+            "operation": "save",
+            "provider": str(getattr(self, "provider", "huggingface")),
+            "model": str(getattr(self, "model", "")),
+            "key": normalized,
+            "filename": str(filename),
+            "meta": meta,
+        }
+
+    def prompt_cache_load(
+        self,
+        filename: str,
+        *,
+        key: Optional[str] = None,
+        make_default: bool = True,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Load a GGUF llama.cpp prompt cache snapshot from disk (best-effort)."""
+        _ = kwargs
+        if not self.supports_prompt_cache():
+            raise ValueError("Prompt caching is not supported for this provider/model.")
+
+        if getattr(self, "model_type", None) != "gguf":
+            try:
+                import torch  # type: ignore
+                from safetensors import safe_open  # type: ignore
+                from safetensors.torch import load_file  # type: ignore
+                from transformers.cache_utils import DynamicCache, DynamicLayer  # type: ignore
+            except Exception as e:
+                raise ImportError(
+                    "Transformers prompt cache loading requires `torch`, `transformers`, and `safetensors`."
+                ) from e
+
+            device_str = self._transformers_cache_device_str()
+            meta: Dict[str, Any] = {}
+            try:
+                with safe_open(str(filename), framework="pt", device="cpu") as f:
+                    raw_meta = f.metadata() or {}
+                    meta = dict(raw_meta) if isinstance(raw_meta, dict) else {}
+            except Exception:
+                meta = {}
+
+            fmt = meta.get("format")
+            if fmt and str(fmt) != "abstractcore-transformers-prompt-cache/v1":
+                raise ValueError(f"Unsupported transformers prompt cache format: {fmt}")
+
+            required_model = meta.get("model")
+            current_model = str(getattr(self, "model", "") or "")
+            if isinstance(required_model, str) and required_model.strip() and required_model.strip() != current_model:
+                raise ValueError(
+                    f"Prompt cache model mismatch: cache expects '{required_model.strip()}', current model is '{current_model}'."
+                )
+
+            tensors = load_file(str(filename), device=device_str)
+            prompt_tok_tensor = tensors.get("prompt_tokens")
+            if prompt_tok_tensor is None:
+                raise ValueError("Invalid transformers prompt cache file (missing prompt_tokens)")
+            prompt_tokens = tuple(int(tok) for tok in prompt_tok_tensor.to("cpu").tolist())
+
+            layer_indices: List[int] = []
+            for name in tensors.keys():
+                if name.startswith("layer_") and name.endswith("_keys"):
+                    try:
+                        layer_indices.append(int(name.split("_", 2)[1]))
+                    except Exception:
+                        continue
+            max_idx = max(layer_indices) if layer_indices else -1
+
+            cache = DynamicCache()
+            if max_idx >= 0:
+                cache.layers = [DynamicLayer() for _ in range(max_idx + 1)]
+                for idx in range(max_idx + 1):
+                    keys = tensors.get(f"layer_{idx}_keys")
+                    values = tensors.get(f"layer_{idx}_values")
+                    if keys is None or values is None:
+                        continue
+                    layer = cache.layers[idx]
+                    layer.keys = keys
+                    layer.values = values
+                    layer.is_initialized = True
+
+            imported_state = _TransformersPromptCacheValue(cache=cache, prompt_tokens=prompt_tokens)
+
+            normalized = self._normalize_prompt_cache_key(key) if key is not None else None
+            if normalized is None:
+                normalized = f"cache:{uuid.uuid4().hex[:12]}"
+
+            store_meta: Dict[str, Any] = {
+                "backend": "transformers",
+                "loaded_from": str(filename),
+            }
+            store_meta.update(meta)
+            try:
+                store_meta.setdefault("token_count", len(prompt_tokens))
+            except Exception:
+                pass
+
+            self._prompt_cache_store.set(normalized, imported_state, meta=store_meta)
+            if make_default:
+                self._default_prompt_cache_key = normalized
+
+            return {
+                "supported": True,
+                "operation": "load",
+                "provider": str(getattr(self, "provider", "huggingface")),
+                "model": str(getattr(self, "model", "")),
+                "key": normalized,
+                "filename": str(filename),
+                "meta": store_meta,
+            }
+
+        try:
+            import numpy as np
+            from llama_cpp.llama_cache import LlamaRAMCache
+            from llama_cpp.llama import LlamaState
+        except Exception as e:
+            raise ImportError("GGUF prompt cache loading requires `llama-cpp-python` and `numpy`.") from e
+
+        with np.load(str(filename), allow_pickle=False) as data:
+            meta_json = data.get("meta_json")
+            meta_raw = str(meta_json.tolist()) if meta_json is not None else ""
+            try:
+                meta: Dict[str, Any] = json.loads(meta_raw) if meta_raw else {}
+            except Exception:
+                meta = {}
+
+            fmt = meta.get("format")
+            if fmt and str(fmt) != "abstractcore-gguf-prompt-cache/v1":
+                raise ValueError(f"Unsupported GGUF prompt cache format: {fmt}")
+
+            required_model = meta.get("model") if isinstance(meta, dict) else None
+            current_model = str(getattr(self, "model", "") or "")
+            if isinstance(required_model, str) and required_model.strip() and required_model.strip() != current_model:
+                raise ValueError(
+                    f"Prompt cache model mismatch: cache expects '{required_model.strip()}', current model is '{current_model}'."
+                )
+
+            prompt_tokens_arr = data.get("prompt_tokens")
+            if prompt_tokens_arr is None:
+                raise ValueError("Invalid GGUF prompt cache file (missing prompt_tokens)")
+            prompt_tokens = tuple(int(tok) for tok in prompt_tokens_arr.tolist())
+
+            input_ids = data.get("input_ids")
+            scores = data.get("scores")
+            n_tokens = int(data.get("n_tokens").tolist()) if data.get("n_tokens") is not None else 0
+            llama_state_u8 = data.get("llama_state")
+            llama_state_size = int(data.get("llama_state_size").tolist()) if data.get("llama_state_size") is not None else 0
+            seed = int(data.get("seed").tolist()) if data.get("seed") is not None else 0
+
+        if not prompt_tokens or input_ids is None or scores is None or llama_state_u8 is None:
+            raise ValueError("Invalid GGUF prompt cache file (missing required arrays)")
+
+        llama_state = LlamaState(
+            input_ids=np.asarray(input_ids, dtype=np.intc).copy(),
+            scores=np.asarray(scores, dtype=np.single).copy(),
+            n_tokens=int(n_tokens),
+            llama_state=bytes(np.asarray(llama_state_u8, dtype=np.uint8).tobytes()),
+            llama_state_size=int(llama_state_size),
+            seed=int(seed),
+        )
+
+        cache_state = meta.get("cache_state") if isinstance(meta, dict) else None
+        cap = None
+        if isinstance(cache_state, dict):
+            cap = cache_state.get("capacity_bytes")
+        cap_i = self._coerce_gguf_prompt_cache_capacity_bytes(cap)
+        try:
+            state_size_i = int(getattr(llama_state, "llama_state_size", 0) or 0)
+        except Exception:
+            state_size_i = 0
+
+        # If the saved state is larger than the declared capacity, fall back to the auto-growing
+        # cache so we don't evict the single snapshot during load.
+        if cap_i > 0 and state_size_i > 0 and state_size_i <= cap_i:
+            cache_obj = LlamaRAMCache(capacity_bytes=int(cap_i))
+        else:
+            global _AUTO_GROWING_LLAMA_RAM_CACHE_CLS
+            cache_cls = _AUTO_GROWING_LLAMA_RAM_CACHE_CLS
+            if cache_cls is None:
+                class _AutoGrowingLlamaRAMCache(LlamaRAMCache):  # type: ignore[misc]
+                    def __setitem__(self, key, value):  # type: ignore[override]
+                        try:
+                            state_size = int(getattr(value, "llama_state_size", 0) or 0)
+                        except Exception:
+                            state_size = 0
+                        if state_size > 0:
+                            try:
+                                cap_now = int(getattr(self, "capacity_bytes", 0) or 0)
+                            except Exception:
+                                cap_now = 0
+                            if state_size > cap_now:
+                                self.capacity_bytes = int(state_size)
+                        return super().__setitem__(key, value)
+
+                cache_cls = _AutoGrowingLlamaRAMCache
+                _AUTO_GROWING_LLAMA_RAM_CACHE_CLS = cache_cls
+            cache_obj = cache_cls(capacity_bytes=0)
+        cache_obj[prompt_tokens] = llama_state
+
+        imported_state = self._gguf_prompt_cache_import_state(cache_obj, cache_state if isinstance(cache_state, dict) else None)
+        # Ensure the loaded state knows the saved prompt_tokens.
+        imported_state.prompt_tokens = prompt_tokens
+
+        normalized = self._normalize_prompt_cache_key(key) if key is not None else None
+        if normalized is None:
+            normalized = f"cache:{uuid.uuid4().hex[:12]}"
+
+        store_meta: Dict[str, Any] = {"backend": "llama_cpp", "loaded_from": str(filename)}
+        if isinstance(meta, dict):
+            store_meta.update({k: v for k, v in meta.items() if k != "cache_state"})
+        try:
+            store_meta.setdefault("token_count", len(prompt_tokens))
+        except Exception:
+            pass
+
+        self._prompt_cache_store.set(normalized, imported_state, meta=store_meta)
+        if make_default:
+            self._default_prompt_cache_key = normalized
+
+        try:
+            if getattr(self, "llm", None) is not None and hasattr(self.llm, "set_cache"):
+                self.llm.set_cache(cache_obj)
+        except Exception:
+            pass
+
+        return {
+            "supported": True,
+            "operation": "load",
+            "provider": str(getattr(self, "provider", "huggingface")),
+            "model": str(getattr(self, "model", "")),
+            "key": normalized,
+            "filename": str(filename),
+            "meta": store_meta,
+        }
 
     def _is_gguf_model(self, model: str) -> bool:
         """Detect if the model is a GGUF model"""
@@ -931,6 +1907,8 @@ class HuggingFaceProvider(BaseProvider):
                     self.device = "cpu"
                 else:
                     self.device = "mps"
+                    # Enable MPS fallback for unsupported ops (notably some vision pipelines).
+                    os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
             elif requested == "cuda":
                 if torch.cuda.is_available():
                     self.device = "cuda"
@@ -951,6 +1929,7 @@ class HuggingFaceProvider(BaseProvider):
         # Auto device selection.
         if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             self.device = "mps"
+            os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
         elif torch.cuda.is_available():
             self.device = "cuda"
         else:
@@ -978,48 +1957,80 @@ class HuggingFaceProvider(BaseProvider):
 
     def _setup_device_gguf(self):
         """Setup device for GGUF models"""
-        # Auto-detect GPU layers if not specified
-        if self.n_gpu_layers is None:
-            if self.device == "cuda" or (self.device is None and self._has_cuda()):
-                # Use all layers on GPU for CUDA
-                self.n_gpu_layers = -1
-            elif self.device == "mps" or (self.device is None and self._has_metal()):
-                # Use GPU layers for Metal
-                self.n_gpu_layers = 1  # Metal works differently
-            else:
-                # CPU only
-                self.n_gpu_layers = 0
+        if self.n_gpu_layers is not None:
+            return
 
-    def _has_cuda(self) -> bool:
-        """Check if CUDA is available"""
+        requested = str(self.device or "").strip().lower() if isinstance(self.device, str) else ""
+        if requested == "cpu":
+            self.n_gpu_layers = 0
+            return
+
+        is_metal_platform = platform.system().lower() == "darwin" and platform.machine().lower() == "arm64"
+        wants_metal_request = requested == "mps" or (not requested and is_metal_platform)
+
+        # Safety guard: on macOS, importing PyTorch/transformers in-process can hard-crash
+        # llama.cpp when using Metal offload. Avoid SIGABRT by forcing CPU in that scenario,
+        # unless the user explicitly opts into the unsafe path.
+        llama_cpp_preimported_for_metal = False
+        if "llama_cpp" in sys.modules:
+            try:
+                import llama_cpp  # type: ignore
+
+                llama_cpp_preimported_for_metal = bool(
+                    getattr(llama_cpp, "__abstractcore_preimported_for_metal", False)
+                )
+            except Exception:
+                llama_cpp_preimported_for_metal = False
+
+        if (
+            wants_metal_request
+            and os.environ.get("ABSTRACTCORE_GGUF_METAL_UNSAFE", "").strip().lower() not in {"1", "true", "yes"}
+            and ("torch" in sys.modules or "transformers" in sys.modules)
+            and not llama_cpp_preimported_for_metal
+        ):
+            import warnings
+
+            warnings.warn(
+                "GGUF Metal offload disabled because PyTorch/transformers is already imported in this process "
+                "(llama-cpp-python Metal offload can SIGABRT). "
+                "Start a fresh Python process (import GGUF first) to use Metal, "
+                "or ensure `llama_cpp` is imported before PyTorch, "
+                "or set ABSTRACTCORE_GGUF_METAL_UNSAFE=1 to force Metal offload.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+            self.n_gpu_layers = 0
+            return
+
+        # Prefer GPU offload when available. Use llama.cpp's own capability probe so we
+        # don't need to import PyTorch.
+        supports_gpu_offload = False
         try:
-            import torch
-            return torch.cuda.is_available()
-        except:
-            return False
+            import llama_cpp  # type: ignore
 
-    def _has_metal(self) -> bool:
-        """Check if Metal (Apple Silicon) is available (best-effort)."""
-        # Prefer PyTorch's MPS availability when present; it reflects whether Metal is usable
-        # for the current process (important in sandboxed/headless environments).
-        try:
-            import torch  # type: ignore
-
-            if hasattr(torch.backends, "mps"):
-                return bool(torch.backends.mps.is_available())
+            probe = getattr(llama_cpp, "llama_supports_gpu_offload", None)
+            supports_gpu_offload = bool(probe() if callable(probe) else probe)
         except Exception:
-            pass
+            supports_gpu_offload = False
 
-        # Fallback: assume Metal-capable on Apple Silicon.
-        try:
-            import platform
+        wants_metal = requested == "mps" or (not requested and is_metal_platform and supports_gpu_offload)
+        wants_cuda = requested == "cuda" or (not requested and not is_metal_platform and supports_gpu_offload)
 
-            return platform.system().lower() == "darwin" and platform.machine().lower() == "arm64"
-        except Exception:
-            return False
+        self.n_gpu_layers = int(-1 if (wants_metal or wants_cuda) else 0)
 
     def _load_transformers_model(self):
         """Load standard HuggingFace transformers model"""
+        try:
+            import torch  # type: ignore
+            from transformers import (  # type: ignore
+                AutoModel,
+                AutoModelForCausalLM,
+                AutoTokenizer,
+                pipeline,
+            )
+        except Exception as e:
+            raise ImportError("Transformers + PyTorch are required for HuggingFace (transformers) models.") from e
+
         try:
             # Check if this is a vision model that requires special handling
             if self._is_vision_model(self.model):
@@ -1094,6 +2105,8 @@ class HuggingFaceProvider(BaseProvider):
     def _load_vision_model(self):
         """Load vision model using AutoModelForImageTextToText and AutoProcessor"""
         try:
+            from transformers import AutoModelForImageTextToText, AutoProcessor  # type: ignore
+
             # Suppress progress bars during model loading unless in debug mode
             import os
             from transformers.utils import logging as transformers_logging
@@ -1208,10 +2221,11 @@ class HuggingFaceProvider(BaseProvider):
         def _pick_preferred_gguf(gguf_files: list[Path]) -> Optional[str]:
             if not gguf_files:
                 return None
+            gguf_files = sorted(gguf_files, key=lambda p: p.name)
             preferred_quants = ['Q4_K_M', 'Q5_K_M', 'Q4_0', 'Q4_1', 'Q5_0', 'Q8_0']
             for quant in preferred_quants:
                 for gguf_file in gguf_files:
-                    if quant in gguf_file.name:
+                    if quant in gguf_file.name.upper():
                         return str(gguf_file)
             return str(gguf_files[0])
 
@@ -1355,6 +2369,10 @@ class HuggingFaceProvider(BaseProvider):
         """Load GGUF model using llama-cpp-python (cache-only, no downloading)"""
         import os
         try:
+            llama_cls = globals().get("Llama")
+            if llama_cls is None:
+                from llama_cpp import Llama as llama_cls  # type: ignore
+
             # llama-cpp-python 0.3.x can throw an "Exception ignored in: __del__" when model
             # initialization fails early (missing `sampler` attribute). Patch defensively to
             # keep failures clean and actionable.
@@ -1429,58 +2447,88 @@ class HuggingFaceProvider(BaseProvider):
             except Exception:
                 pass
 
-            # Initialize llama-cpp-python with stderr redirected to our logger
-            n_ctx = self.max_tokens  # Unified context window knob (input+output budget)
-            if not getattr(self, "_user_provided_max_tokens", False):
-                # Many model cards advertise very large context windows (e.g. 262k for Qwen3.5),
-                # but allocating a KV cache for the full window is often infeasible locally.
-                # Use a conservative default for llama.cpp unless the caller explicitly opts in.
-                try:
-                    default_n_ctx = int(os.environ.get("ABSTRACTCORE_GGUF_DEFAULT_N_CTX", "8192"))
-                except Exception:
-                    default_n_ctx = 8192
-                if default_n_ctx <= 0:
-                    default_n_ctx = 8192
-                if n_ctx is None or int(n_ctx) > int(default_n_ctx):
-                    self.logger.warning(
-                        (
-                            f"Clamping llama.cpp n_ctx for {self.model}: requested max_tokens={n_ctx} "
-                            f"but using n_ctx={default_n_ctx}. Pass max_tokens=... to HuggingFaceProvider() "
-                            "(or set ABSTRACTCORE_GGUF_DEFAULT_N_CTX) to override."
-                        )
-                    )
-                    n_ctx = int(default_n_ctx)
-
-            llama_kwargs = {
-                "model_path": model_path,
-                "n_ctx": int(n_ctx) if n_ctx is not None else 8192,
-                "n_gpu_layers": self.n_gpu_layers,
-                "chat_format": chat_format,
-                "verbose": self.debug,  # Use debug flag for verbose output
-                "n_threads": os.cpu_count() // 2 if os.cpu_count() else 4,
-                # Additional performance settings
-                "n_batch": 512,
-                "use_mmap": use_mmap,
-                "use_mlock": False
-            }
-
+            # Initialize llama-cpp-python with stderr redirected to our logger.
+            #
+            # `self.max_tokens` is AbstractCore's unified "context window budget" and defaults
+            # to the model's `max_tokens` from `assets/model_capabilities.json`.
+            #
+            # For GGUF/llama.cpp we must allocate a concrete KV cache (`n_ctx`). When callers do
+            # not pass `max_tokens=...` explicitly and the advertised context is too large for
+            # the local machine, we retry with smaller windows (best-effort) instead of using a
+            # hidden env var.
+            requested_n_ctx = self.max_tokens if self.max_tokens is not None else 16384
             try:
-                self.llm = Llama(**llama_kwargs)
-            except Exception as e:
-                # Common on macOS: Metal backend unavailable for the current process. Retry on CPU.
-                if isinstance(self.n_gpu_layers, int) and self.n_gpu_layers != 0:
-                    self.logger.warning(
-                        "GGUF load failed with n_gpu_layers=%s; retrying with CPU (n_gpu_layers=0). Error: %s",
-                        self.n_gpu_layers,
-                        e,
-                    )
-                    llama_kwargs_cpu = llama_kwargs.copy()
-                    llama_kwargs_cpu["n_gpu_layers"] = 0
-                    # Avoid any GPU KV offload in the retry.
-                    llama_kwargs_cpu["offload_kqv"] = False
-                    self.llm = Llama(**llama_kwargs_cpu)
-                    self.n_gpu_layers = 0
-                else:
+                requested_n_ctx_i = int(requested_n_ctx)
+            except Exception:
+                requested_n_ctx_i = 16384
+            if requested_n_ctx_i <= 0:
+                requested_n_ctx_i = 16384
+
+            if getattr(self, "_user_provided_max_tokens", False):
+                candidate_ctxs = [requested_n_ctx_i]
+            else:
+                candidate_ctxs = [requested_n_ctx_i]
+                for fallback in (131072, 65536, 32768, 16384, 8192, 4096):
+                    if fallback < requested_n_ctx_i:
+                        candidate_ctxs.append(int(fallback))
+
+            last_error: Exception | None = None
+            chosen_n_ctx: int | None = None
+            for n_ctx_i in candidate_ctxs:
+                llama_kwargs = {
+                    "model_path": model_path,
+                    "n_ctx": int(n_ctx_i),
+                    "n_gpu_layers": self.n_gpu_layers,
+                    "chat_format": chat_format,
+                    "verbose": self.debug,  # Use debug flag for verbose output
+                    "n_threads": os.cpu_count() // 2 if os.cpu_count() else 4,
+                    # Additional performance settings
+                    "n_batch": 512,
+                    "use_mmap": use_mmap,
+                    "use_mlock": False,
+                }
+
+                try:
+                    self.llm = llama_cls(**llama_kwargs)
+                    chosen_n_ctx = int(n_ctx_i)
+                    break
+                except Exception as e:
+                    # Common on macOS: Metal backend unavailable for the current process. Retry on CPU.
+                    if isinstance(self.n_gpu_layers, int) and self.n_gpu_layers != 0:
+                        try:
+                            self.logger.warning(
+                                f"GGUF load failed with n_gpu_layers={self.n_gpu_layers}; retrying with CPU (n_gpu_layers=0). Error: {e}"
+                            )
+                            llama_kwargs_cpu = llama_kwargs.copy()
+                            llama_kwargs_cpu["n_gpu_layers"] = 0
+                            # Avoid any GPU KV offload in the retry.
+                            llama_kwargs_cpu["offload_kqv"] = False
+                            self.llm = llama_cls(**llama_kwargs_cpu)
+                            self.n_gpu_layers = 0
+                            chosen_n_ctx = int(n_ctx_i)
+                            break
+                        except Exception as e_cpu:
+                            e = e_cpu
+
+                    last_error = e
+
+                    # If caller explicitly requested a context window, fail fast with a clear message.
+                    if getattr(self, "_user_provided_max_tokens", False):
+                        raise RuntimeError(
+                            f"Failed to load GGUF model {self.model} with n_ctx={n_ctx_i}. "
+                            "Try lowering max_tokens=... when constructing HuggingFaceProvider(). "
+                            f"Underlying error: {e}"
+                        ) from e
+
+                    # Best-effort retry with smaller context windows for local stability.
+                    is_last = (n_ctx_i == candidate_ctxs[-1])
+                    if not is_last:
+                        self.logger.warning(
+                            f"GGUF load failed for {self.model} with n_ctx={n_ctx_i}; retrying with a smaller context window. Error: {e}"
+                        )
+                        continue
+
+                    # No more fallbacks available.
                     if gguf_arch == "qwen35moe":
                         raise RuntimeError(
                             "This GGUF uses architecture 'qwen35moe', which is not supported by the "
@@ -1494,6 +2542,36 @@ class HuggingFaceProvider(BaseProvider):
                             f"Failed to load GGUF model (architecture: {gguf_arch}): {e}"
                         ) from e
                     raise
+
+            if self.llm is None or chosen_n_ctx is None:
+                raise RuntimeError(f"Failed to load GGUF model {self.model}: {last_error}")
+
+            # Keep AbstractCore's token budget in sync with the actual llama.cpp context window.
+            #
+            # `model_capabilities.json` stores advertised limits, but GGUF loads require a
+            # concrete `n_ctx` allocation. After successful load (including fallbacks),
+            # treat `self.max_tokens` as the runtime context window budget.
+            self.max_tokens = int(chosen_n_ctx)
+
+            # Ensure output reservation never exceeds the runtime context window.
+            #
+            # Many models (e.g. Qwen3.5) advertise very large output limits, but GGUF runtime
+            # context windows are often smaller locally. Keep invariants consistent to avoid
+            # negative/invalid derived `max_input_tokens` and provider-side errors.
+            try:
+                if (
+                    isinstance(self.max_output_tokens, int)
+                    and int(self.max_output_tokens) > int(self.max_tokens)
+                ):
+                    self.logger.warning(
+                        (
+                            f"Clamping max_output_tokens for {self.model}: configured "
+                            f"max_output_tokens={self.max_output_tokens} exceeds GGUF n_ctx={self.max_tokens}."
+                        )
+                    )
+                    self.max_output_tokens = int(self.max_tokens)
+            except Exception:
+                pass
 
         except Exception as e:
             raise RuntimeError(f"Failed to load GGUF model {self.model}: {str(e)}")
@@ -1690,6 +2768,8 @@ class HuggingFaceProvider(BaseProvider):
             # Try Outlines if available (auto or native_outlines mode)
             if OUTLINES_AVAILABLE:
                 try:
+                    import outlines  # type: ignore
+
                     # Cache Outlines model wrapper to avoid re-initialization
                     if not hasattr(self, '_outlines_model') or self._outlines_model is None:
                         self.logger.debug("Creating Outlines model wrapper for native structured output")
@@ -1701,12 +2781,15 @@ class HuggingFaceProvider(BaseProvider):
                     # Build input text (same as normal generation)
                     input_text = self._build_input_text_transformers(prompt, messages, system_prompt, tools)
 
+                    generation_kwargs = self._prepare_generation_kwargs(**kwargs)
+                    max_new_tokens = self._get_provider_max_tokens_param(generation_kwargs)
+
                     # Create constrained generator with JSON schema
                     self.logger.debug(f"Using Outlines native structured output for {response_model.__name__}")
                     generator = self._outlines_model(
                         input_text,
                         outlines.json_schema(response_model),
-                        max_tokens=kwargs.get("max_tokens", self.max_tokens or 512)
+                        max_tokens=max_new_tokens,
                     )
 
                     # Validate and return
@@ -1763,14 +2846,99 @@ class HuggingFaceProvider(BaseProvider):
             except Exception as e:
                 self.logger.warning(f"Failed to process media content: {e}")
 
-        input_text = self._build_input_text_transformers(prompt, messages, system_prompt, tools)
-
         # Generation parameters using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
         max_new_tokens = self._get_provider_max_tokens_param(generation_kwargs)
         temperature = generation_kwargs.get("temperature", self.temperature)
         top_p = kwargs.get("top_p", 0.9)
         seed_value = generation_kwargs.get("seed")
+
+        prompt_cache_key = kwargs.get("prompt_cache_key")
+        prefilled_modules = kwargs.get("prompt_cache_prefilled_modules")
+        if (
+            isinstance(prompt_cache_key, str)
+            and prompt_cache_key.strip()
+            and self._transformers_prompt_cache_supported()
+        ):
+            try:
+                cached = self._single_generate_transformers_cached(
+                    prompt=str(prompt or ""),
+                    prompt_cache_key=prompt_cache_key.strip(),
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    tools=tools,
+                    prefilled_modules=prefilled_modules,
+                    max_new_tokens=max_new_tokens,
+                    temperature=float(temperature) if temperature is not None else None,
+                    top_p=float(top_p) if top_p is not None else 0.9,
+                    seed=seed_value,
+                )
+            except Exception as e:
+                return GenerateResponse(
+                    content=f"Error generating response with prompt cache: {str(e)}",
+                    model=self.model,
+                    finish_reason="error",
+                )
+
+            if stream:
+                def _stream_cached() -> Iterator[GenerateResponse]:
+                    # Simulated streaming: yield word chunks, then run tool execution if requested.
+                    content = cached.content or ""
+                    tool_call_tags = kwargs.get("tool_call_tags")
+                    if tool_call_tags and content:
+                        try:
+                            from ..tools.tag_rewriter import create_tag_rewriter
+                            rewriter = create_tag_rewriter(tool_call_tags)
+                            content = rewriter.rewrite_text(content)
+                        except Exception:
+                            pass
+
+                    words = content.split()
+                    collected = ""
+                    if not words:
+                        yield GenerateResponse(content="", model=self.model, finish_reason="stop")
+                        return
+                    for i, word in enumerate(words):
+                        chunk_content = word + (" " if i < len(words) - 1 else "")
+                        collected += chunk_content
+                        yield GenerateResponse(
+                            content=chunk_content,
+                            model=self.model,
+                            finish_reason="stop" if i == len(words) - 1 else None,
+                        )
+
+                    # Tool execution (prompted) happens after streaming in this provider.
+                    if tools and getattr(self.tool_handler, "supports_prompted", False) and collected:
+                        complete = GenerateResponse(
+                            content=collected,
+                            model=self.model,
+                            finish_reason="stop",
+                        )
+                        final = self._handle_prompted_tool_execution(complete, tools)
+                        if final.content and final.content != collected:
+                            suffix = final.content[len(collected):]
+                            if suffix:
+                                yield GenerateResponse(
+                                    content=suffix,
+                                    model=self.model,
+                                    finish_reason="stop",
+                                )
+
+                return _stream_cached()
+
+            response = cached
+            if media_enrichment:
+                from ..media.enrichment import merge_enrichment_metadata
+
+                response.metadata = merge_enrichment_metadata(response.metadata, media_enrichment)
+
+            # Handle tool execution for prompted models
+            if tools and self.tool_handler.supports_prompted and response.content:
+                response = self._handle_prompted_tool_execution(response, tools)
+
+            return response
+
+        input_text = self._build_input_text_transformers(prompt, messages, system_prompt, tools)
 
         try:
             if stream:
@@ -1810,6 +2978,11 @@ class HuggingFaceProvider(BaseProvider):
         import tempfile
         import os
         start_time = time.time()
+
+        try:
+            import torch  # type: ignore
+        except Exception:
+            torch = None  # type: ignore[assignment]
         
         try:
             # Handle media content for vision models like DeepSeek-OCR
@@ -1852,7 +3025,10 @@ class HuggingFaceProvider(BaseProvider):
                     temp_output_dir = tempfile.mkdtemp()
                     
                     # Patch DeepSeek-OCR for MPS/CPU compatibility if needed
-                    if self.device == "mps" or (self.device is None and hasattr(torch.backends, 'mps') and torch.backends.mps.is_available()):
+                    if torch is not None and (
+                        self.device == "mps"
+                        or (self.device is None and hasattr(torch.backends, "mps") and torch.backends.mps.is_available())
+                    ):
                         self._patch_deepseek_for_mps()
                     
                     result = self.model_instance.infer(
@@ -2492,6 +3668,7 @@ class HuggingFaceProvider(BaseProvider):
         )
 
         # Prompt caching (GGUF/llama.cpp): best-effort per-key cache selection.
+        cache_obj = None
         prompt_cache_key = kwargs.get("prompt_cache_key")
         if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
             key = prompt_cache_key.strip()
@@ -2564,6 +3741,37 @@ class HuggingFaceProvider(BaseProvider):
                 has_native_tools = True
 
         try:
+            # GGUF local control-plane generation: use cached state snapshots + `llm.generate(reset=False)`
+            # to avoid llama-cpp-python's `create_chat_completion()` resetting and re-evaluating the full prompt.
+            control_plane_enabled = (
+                cache_obj is not None
+                and self._gguf_prompt_cache_supports_local_control_plane()
+                and os.environ.get("ABSTRACTCORE_GGUF_CONTROL_PLANE", "1").strip().lower() not in {"0", "false", "no", "off"}
+                and response_model is None
+                and not has_native_tools
+                and self._gguf_control_plane_can_stream(chat_messages)
+            )
+            if control_plane_enabled:
+                return self._gguf_control_plane_generate(
+                    chat_messages=chat_messages,
+                    cache_obj=cache_obj,
+                    max_output_tokens=int(max_output_tokens),
+                    temperature=float(generation_kwargs.get("temperature") or 0.2),
+                    top_p=float(generation_kwargs.get("top_p") or 0.95),
+                    top_k=int(kwargs.get("top_k", 40) or 40),
+                    min_p=float(kwargs.get("min_p", 0.05) or 0.05),
+                    typical_p=float(kwargs.get("typical_p", 1.0) or 1.0),
+                    repeat_penalty=float(kwargs.get("repeat_penalty", 1.1) or 1.1),
+                    presence_penalty=float(kwargs.get("presence_penalty", 0.0) or 0.0),
+                    frequency_penalty=float(kwargs.get("frequency_penalty", 0.0) or 0.0),
+                    tfs_z=float(kwargs.get("tfs_z", 1.0) or 1.0),
+                    mirostat_mode=int(kwargs.get("mirostat_mode", 0) or 0),
+                    mirostat_tau=float(kwargs.get("mirostat_tau", 5.0) or 5.0),
+                    mirostat_eta=float(kwargs.get("mirostat_eta", 0.1) or 0.1),
+                    seed=seed_value,
+                    stream=bool(stream),
+                )
+
             if stream:
                 return self._stream_generate_gguf_with_tools(generation_kwargs, tools, has_native_tools, kwargs.get('tool_call_tags'))
             else:
@@ -2638,6 +3846,272 @@ class HuggingFaceProvider(BaseProvider):
             finish_reason=choice.get('finish_reason', 'stop'),
             usage=usage,
             tool_calls=tool_calls
+        )
+
+    def _gguf_control_plane_stop_strings(self) -> List[str]:
+        """Return stop strings for GGUF local control-plane generation."""
+        chat_format = self._gguf_prompt_cache_control_plane_chat_format() or self._gguf_prompt_cache_chat_format()
+        fmt = str(chat_format or "").strip().lower()
+        if fmt == "llama-3":
+            return ["<|eot_id|>"]
+        # ChatML and chatml-function-calling.
+        return ["<|im_end|>"]
+
+    def _gguf_control_plane_can_stream(self, chat_messages: List[Dict[str, Any]]) -> bool:
+        """Return True when control-plane streaming can safely handle the message payloads."""
+        # Control-plane renderer/tokenizer only supports text content (strings / JSON-serializable).
+        for msg in chat_messages or []:
+            if not isinstance(msg, dict):
+                return False
+            role = str(msg.get("role") or "").strip().lower()
+            if role not in {"system", "user", "assistant"}:
+                return False
+            content = msg.get("content")
+            if content is None:
+                continue
+            if isinstance(content, str):
+                continue
+            # For now, fall back to llama-cpp-python's chat completion for multimodal payloads.
+            return False
+        return True
+
+    def _gguf_control_plane_stream_generate(
+        self,
+        *,
+        chat_messages: List[Dict[str, Any]],
+        cache_obj: Any,
+        max_output_tokens: int,
+        temperature: float,
+        top_p: float,
+        top_k: int,
+        min_p: float,
+        typical_p: float,
+        repeat_penalty: float,
+        presence_penalty: float,
+        frequency_penalty: float,
+        tfs_z: float,
+        mirostat_mode: int,
+        mirostat_tau: float,
+        mirostat_eta: float,
+        seed: Optional[int],
+    ) -> Iterator[GenerateResponse]:
+        """Generate GGUF text by prefilling cached KV state and sampling from it.
+
+        This bypasses llama-cpp-python's `create_chat_completion()` so we can benefit from
+        cached state snapshots even when llama.cpp does not support incremental KV trimming.
+        """
+        llm = getattr(self, "llm", None)
+        if llm is None:
+            yield GenerateResponse(
+                content="Error: GGUF model not loaded",
+                model=self.model,
+                finish_reason="error",
+            )
+            return
+
+        stop_strs = [s for s in (self._gguf_control_plane_stop_strings() or []) if isinstance(s, str) and s]
+        flush_threshold = 160
+
+        prompt_text, prompt_tokens = self._gguf_render_prompt_tokens(
+            messages=chat_messages,
+            add_generation_prompt=True,
+        )
+
+        # Prefill prompt KV from cache (do not persist the generation-prompt state; key mode
+        # maintains transcript-aligned caches via prompt_cache_update).
+        ok = self._gguf_prefill_prompt_cache(cache_obj, prompt_tokens, save_state=False, set_cache=False)
+        if not ok:
+            yield GenerateResponse(
+                content="Error: failed to prefill GGUF prompt cache",
+                model=self.model,
+                finish_reason="error",
+            )
+            return
+
+        # Best-effort determinism.
+        if seed is not None:
+            try:
+                llm.set_seed(int(seed))
+            except Exception:
+                pass
+
+        # Prefer stop detection by token id because special tokens (e.g. `<|im_end|>`) often
+        # detokenize to empty bytes.
+        stop_token_seqs: List[tuple[int, ...]] = []
+        for s in stop_strs:
+            try:
+                toks = llm.tokenize(s.encode("utf-8"), add_bos=False, special=True)
+                seq = tuple(int(t) for t in toks)
+                if seq:
+                    stop_token_seqs.append(seq)
+            except Exception:
+                continue
+
+        max_stop_seq_len = max((len(seq) for seq in stop_token_seqs), default=0)
+        recent_tokens: List[int] = []
+
+        import codecs
+        decoder = codecs.getincrementaldecoder("utf-8")()
+        pending = ""
+        output_tokens = 0
+        finish_reason = "stop"
+
+        try:
+            for tok in llm.generate(
+                [],
+                top_k=int(top_k),
+                top_p=float(top_p),
+                min_p=float(min_p),
+                typical_p=float(typical_p),
+                temp=float(temperature),
+                repeat_penalty=float(repeat_penalty),
+                frequency_penalty=float(frequency_penalty),
+                presence_penalty=float(presence_penalty),
+                tfs_z=float(tfs_z),
+                mirostat_mode=int(mirostat_mode),
+                mirostat_tau=float(mirostat_tau),
+                mirostat_eta=float(mirostat_eta),
+                reset=False,
+            ):
+                tok_i = int(tok)
+
+                # Stop token detection (token-id based).
+                if stop_token_seqs:
+                    recent_tokens.append(tok_i)
+                    if max_stop_seq_len and len(recent_tokens) > max_stop_seq_len:
+                        recent_tokens = recent_tokens[-max_stop_seq_len:]
+                    if any(
+                        len(seq) <= len(recent_tokens) and tuple(recent_tokens[-len(seq) :]) == seq
+                        for seq in stop_token_seqs
+                    ):
+                        finish_reason = "stop"
+                        break
+
+                output_tokens += 1
+                if isinstance(max_output_tokens, int) and max_output_tokens > 0 and output_tokens > int(max_output_tokens):
+                    finish_reason = "length"
+                    break
+
+                try:
+                    token_bytes = llm.detokenize([tok_i])
+                except Exception:
+                    token_bytes = b""
+
+                if token_bytes:
+                    pending += decoder.decode(token_bytes)
+
+                if len(pending) > flush_threshold:
+                    yield GenerateResponse(content=pending, model=self.model)
+                    pending = ""
+
+        except Exception as e:
+            yield GenerateResponse(
+                content=f"Error: {str(e)}",
+                model=self.model,
+                finish_reason="error",
+            )
+            return
+
+        # Flush decoder and any remaining buffered content.
+        try:
+            pending += decoder.decode(b"", final=True) or ""
+        except Exception:
+            pass
+
+        if pending:
+            yield GenerateResponse(content=pending, model=self.model)
+
+        completion_tokens = int(output_tokens)
+        if finish_reason == "length" and isinstance(max_output_tokens, int) and max_output_tokens > 0:
+            completion_tokens = int(max_output_tokens)
+
+        usage = {
+            "prompt_tokens": int(len(prompt_tokens)),
+            "completion_tokens": completion_tokens,
+            "total_tokens": int(len(prompt_tokens) + completion_tokens),
+        }
+
+        yield GenerateResponse(
+            content="",
+            model=self.model,
+            finish_reason=finish_reason,
+            usage=usage,
+            metadata={
+                "_acore_backend": "gguf_control_plane",
+            },
+        )
+
+    def _gguf_control_plane_generate(
+        self,
+        *,
+        chat_messages: List[Dict[str, Any]],
+        cache_obj: Any,
+        max_output_tokens: int,
+        temperature: float,
+        top_p: float,
+        top_k: int,
+        min_p: float,
+        typical_p: float,
+        repeat_penalty: float,
+        presence_penalty: float,
+        frequency_penalty: float,
+        tfs_z: float,
+        mirostat_mode: int,
+        mirostat_tau: float,
+        mirostat_eta: float,
+        seed: Optional[int],
+        stream: bool,
+    ) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
+        if stream:
+            return self._gguf_control_plane_stream_generate(
+                chat_messages=chat_messages,
+                cache_obj=cache_obj,
+                max_output_tokens=max_output_tokens,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                min_p=min_p,
+                typical_p=typical_p,
+                repeat_penalty=repeat_penalty,
+                presence_penalty=presence_penalty,
+                frequency_penalty=frequency_penalty,
+                tfs_z=tfs_z,
+                mirostat_mode=mirostat_mode,
+                mirostat_tau=mirostat_tau,
+                mirostat_eta=mirostat_eta,
+                seed=seed,
+            )
+
+        collected = ""
+        last: Optional[GenerateResponse] = None
+        for chunk in self._gguf_control_plane_stream_generate(
+            chat_messages=chat_messages,
+            cache_obj=cache_obj,
+            max_output_tokens=max_output_tokens,
+            temperature=temperature,
+            top_p=top_p,
+            top_k=top_k,
+            min_p=min_p,
+            typical_p=typical_p,
+            repeat_penalty=repeat_penalty,
+            presence_penalty=presence_penalty,
+            frequency_penalty=frequency_penalty,
+            tfs_z=tfs_z,
+            mirostat_mode=mirostat_mode,
+            mirostat_tau=mirostat_tau,
+            mirostat_eta=mirostat_eta,
+            seed=seed,
+        ):
+            last = chunk
+            if isinstance(chunk.content, str) and chunk.content:
+                collected += chunk.content
+
+        return GenerateResponse(
+            content=collected,
+            model=self.model,
+            finish_reason=getattr(last, "finish_reason", None) if last is not None else "stop",
+            usage=getattr(last, "usage", None) if last is not None else None,
+            metadata=getattr(last, "metadata", None) if last is not None else None,
         )
 
     def _stream_generate_gguf(self, kwargs: Dict[str, Any], tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
@@ -2727,6 +4201,211 @@ class HuggingFaceProvider(BaseProvider):
                         model=self.model,
                         finish_reason=choice['finish_reason']
                     )
+
+    def _single_generate_transformers_cached(
+        self,
+        *,
+        prompt: str,
+        prompt_cache_key: str,
+        messages: Optional[List[Dict[str, str]]],
+        system_prompt: Optional[str],
+        tools: Optional[List[Any]],
+        prefilled_modules: Any,
+        max_new_tokens: int,
+        temperature: Optional[float],
+        top_p: float,
+        seed: Optional[int] = None,
+    ) -> GenerateResponse:
+        """Generate a single response using a transformers KV cache keyed by `prompt_cache_key`."""
+
+        if not isinstance(prompt_cache_key, str) or not prompt_cache_key.strip():
+            raise ValueError("prompt_cache_key must be a non-empty string")
+
+        if not self._transformers_prompt_cache_supported():
+            raise ValueError("Transformers prompt caching is not available for this model/provider instance.")
+
+        try:
+            import torch  # type: ignore
+        except Exception as e:
+            raise ImportError("Transformers prompt caching requires `torch`.") from e
+
+        if getattr(self, "model_instance", None) is None or getattr(self, "tokenizer", None) is None:
+            raise RuntimeError("Transformers model/tokenizer not loaded")
+
+        key = prompt_cache_key.strip()
+        cache_value = self._prompt_cache_store.get(key)
+        if cache_value is None:
+            self.prompt_cache_set(key, make_default=False)
+            cache_value = self._prompt_cache_store.get(key)
+
+        state = self._transformers_prompt_cache_state(cache_value)
+        if state is None:
+            raise RuntimeError("prompt cache key does not reference a transformers cache state")
+
+        # Best-effort first-call prefill when callers pass system/tools/messages alongside the key.
+        if not state.prompt_tokens and (system_prompt is not None or messages or tools):
+            tools_for_cache = None
+            if isinstance(tools, list) and tools and all(isinstance(t, dict) for t in tools):
+                tools_for_cache = tools  # type: ignore[assignment]
+            self.prompt_cache_update(
+                key,
+                system_prompt=system_prompt,
+                tools=tools_for_cache,  # type: ignore[arg-type]
+                messages=messages,  # type: ignore[arg-type]
+                add_generation_prompt=False,
+            )
+            cache_value = self._prompt_cache_store.get(key)
+            state = self._transformers_prompt_cache_state(cache_value) or state
+
+        # Seed for determinism (best-effort).
+        if seed is not None:
+            try:
+                torch.manual_seed(int(seed))
+                if torch.cuda.is_available():
+                    torch.cuda.manual_seed_all(int(seed))
+            except Exception:
+                pass
+
+        start_time = time.time()
+
+        # Delta-only fragment: user message + assistant generation prefix.
+        delta_text = self._transformers_build_prompt_fragment(
+            prompt=str(prompt or ""),
+            messages=None,
+            system_prompt=None,
+            tools=None,
+            add_generation_prompt=True,
+            prefilled_modules=prefilled_modules,
+        )
+        delta_ids = self._transformers_tokenize_fragment(delta_text, add_bos_if_empty=not bool(state.prompt_tokens))
+        if not delta_ids:
+            return GenerateResponse(
+                content="",
+                model=self.model,
+                finish_reason="stop",
+                usage={"prompt_tokens": len(state.prompt_tokens), "completion_tokens": 0, "total_tokens": len(state.prompt_tokens)},
+                gen_time=round((time.time() - start_time) * 1000, 1),
+            )
+
+        device = self._transformers_cache_device() or torch.device("cpu")
+        past_len = len(state.prompt_tokens)
+        input_ids = torch.tensor([delta_ids], dtype=torch.long, device=device)
+        attention_mask = torch.ones((1, past_len + len(delta_ids)), dtype=torch.long, device=device)
+
+        do_sample = True
+        temp_val: float = float(temperature) if temperature is not None else float(getattr(self, "temperature", 0.7) or 0.7)
+        try:
+            if temp_val <= 0:
+                do_sample = False
+                temp_val = 0.0
+        except Exception:
+            do_sample = True
+
+        pad_token_id = getattr(self.tokenizer, "pad_token_id", None)
+        eos_token_id = getattr(self.tokenizer, "eos_token_id", None)
+        try:
+            pad_i = int(pad_token_id) if pad_token_id is not None else None
+        except Exception:
+            pad_i = None
+        try:
+            eos_i = int(eos_token_id) if eos_token_id is not None else None
+        except Exception:
+            eos_i = None
+        if pad_i is None and eos_i is not None:
+            pad_i = eos_i
+
+        generate_kwargs: Dict[str, Any] = {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "max_new_tokens": int(max_new_tokens),
+            "temperature": temp_val,
+            "top_p": float(top_p),
+            "do_sample": bool(do_sample),
+            "use_cache": True,
+            "return_dict_in_generate": True,
+            "pad_token_id": pad_i,
+            "cache_implementation": "dynamic",
+        }
+        if eos_i is not None:
+            generate_kwargs["eos_token_id"] = eos_i
+
+        # Prefer updating the existing cache object in-place for speed.
+        generate_kwargs["past_key_values"] = state.cache
+
+        output = None
+        try:
+            with torch.inference_mode():
+                use_mps_lock = str(device).startswith("mps") or str(getattr(self, "device", "") or "").strip().lower() == "mps"
+                if use_mps_lock:
+                    with _MPS_GENERATION_LOCK:
+                        output = self.model_instance.generate(**generate_kwargs)
+                else:
+                    output = self.model_instance.generate(**generate_kwargs)
+        except Exception:
+            # Fallback: some models may reject an empty cache object on the first call.
+            try:
+                generate_kwargs["past_key_values"] = None
+                with torch.inference_mode():
+                    output = self.model_instance.generate(**generate_kwargs)
+            except Exception as e:
+                raise RuntimeError(f"Transformers cached generation failed: {e}") from e
+
+        sequences = getattr(output, "sequences", None)
+        if sequences is None:
+            # Some generate paths return a raw tensor; treat it like sequences.
+            sequences = output
+
+        seq0 = sequences[0].tolist() if hasattr(sequences, "__getitem__") else []
+        gen_ids = [int(tok) for tok in seq0[len(delta_ids):]] if seq0 else []
+
+        decoded = ""
+        try:
+            decoded = self.tokenizer.decode(gen_ids, skip_special_tokens=True).strip() if gen_ids else ""
+        except Exception:
+            decoded = ""
+
+        # Update KV cache + token tracker.
+        new_cache = getattr(output, "past_key_values", None)
+        if new_cache is not None:
+            state.cache = new_cache
+        state.prompt_tokens = tuple(int(tok) for tok in (state.prompt_tokens + tuple(delta_ids) + tuple(gen_ids)))
+        state.add_generation_prompt = False
+
+        if prompt:
+            try:
+                state.messages.append({"role": "user", "content": str(prompt)})
+            except Exception:
+                pass
+        if decoded:
+            try:
+                state.messages.append({"role": "assistant", "content": decoded})
+            except Exception:
+                pass
+
+        try:
+            meta = self._prompt_cache_store.meta(key) or {}
+            meta = dict(meta)
+            meta["token_count"] = len(state.prompt_tokens)
+            self._prompt_cache_store.set(key, state, meta=meta)
+        except Exception:
+            pass
+
+        gen_time = round((time.time() - start_time) * 1000, 1)
+        usage = {
+            "prompt_tokens": past_len + len(delta_ids),
+            "completion_tokens": len(gen_ids),
+            "total_tokens": past_len + len(delta_ids) + len(gen_ids),
+            "input_tokens": past_len + len(delta_ids),
+            "output_tokens": len(gen_ids),
+        }
+
+        return GenerateResponse(
+            content=decoded,
+            model=self.model,
+            finish_reason="stop",
+            usage=usage,
+            gen_time=gen_time,
+        )
 
     def _single_generate_transformers(self, input_text: str, max_new_tokens: int,
                                      temperature: float, top_p: float, seed: Optional[int] = None) -> GenerateResponse:

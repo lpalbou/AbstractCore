@@ -58,6 +58,12 @@ class IncrementalToolDetector:
                 'start': r'<\|tool_call\|>',
                 'end': r'</\|tool_call\|>',
             },
+            # Gemma4 special-token tool blocks:
+            #   <|tool_call>call:tool_name{...}<tool_call|>
+            'gemma4': {
+                'start': r'<\|tool_call>',
+                'end': r'<tool_call\|>',
+            },
             # Harmony/ChatML-style tool transcript (no explicit closing tag; ends at end of JSON after <|message|>).
             'harmony': {
                 'start': r'<\|channel\|>',
@@ -118,7 +124,7 @@ class IncrementalToolDetector:
 
         # Special-token tools (Qwen-style). Some "prompted" models share this convention.
         if tool_format == "special_token" or (tool_format == "prompted" and message_format == "im_start_end"):
-            return [self.patterns["qwen"], self.patterns["llama"], self.patterns["xml"]]
+            return [self.patterns["qwen"], self.patterns["gemma4"], self.patterns["llama"], self.patterns["xml"]]
 
         # XML-wrapped tools.
         if tool_format in {"xml", "glm_xml"}:
@@ -423,6 +429,20 @@ class IncrementalToolDetector:
 
         cleaned = json_content.strip()
 
+        # Gemma4-style tool-call payloads:
+        #   call:tool_name{...json args...}
+        call_match = re.search(r'(?is)\bcall\s*:\s*(?P<name>\w+)\s*(?P<arguments>\{.*\})', cleaned)
+        if call_match:
+            name = call_match.group("name")
+            args_raw = call_match.group("arguments")
+            try:
+                parsed_args = loads_dict_like(args_raw)
+            except Exception:
+                parsed_args = None
+            arguments = parsed_args if isinstance(parsed_args, dict) else {}
+            if isinstance(name, str) and name.strip():
+                return ToolCall(name=name.strip(), arguments=arguments, call_id=None)
+
         # Handle missing braces (best-effort).
         if cleaned.count("{") > cleaned.count("}"):
             missing = cleaned.count("{") - cleaned.count("}")
@@ -564,12 +584,13 @@ class UnifiedStreamProcessor:
             # No explicit format conversion requested - no text rewriting.
             self.tag_rewriter = None
 
-        # Create detector - preserve tool calls when user explicitly wants format conversion
-        # Filter out tool calls for clean UX when no explicit format conversion is requested
-        preserve_for_rewriting = (
-            self.convert_to_openai_json or  # OpenAI JSON conversion
-            (tool_call_tags is not None)   # Explicit format conversion requested
-        )
+        # Create detector.
+        #
+        # Default UX: remove tool-call markup from visible content and surface it via `tool_calls`.
+        # Only preserve tool-call markup when the caller explicitly requested tag conversion.
+        #
+        # Note: treat empty/whitespace tool_call_tags like "no rewrite" (avoid leaking raw tags).
+        preserve_for_rewriting = bool(self.convert_to_openai_json or tool_call_tags)
         
         self.detector = IncrementalToolDetector(
             model_name=model_name,

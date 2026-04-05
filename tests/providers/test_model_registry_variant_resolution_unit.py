@@ -3,21 +3,21 @@ from abstractcore.architectures import detect_architecture, get_model_capabiliti
 
 def test_variant_suffix_normalization_resolves_qwen_liquid_and_gpt_families() -> None:
     qwen = get_model_capabilities("mlx-community/Qwen3.5-9B-4bit")
-    assert qwen.get("architecture") == "qwen3"
+    assert qwen.get("architecture") == "qwen3_5"
     assert qwen.get("max_tokens") == 262144
 
     qwen_gguf = get_model_capabilities("unsloth/Qwen3.5-9B-Q4_K_M.gguf")
-    assert qwen_gguf.get("architecture") == "qwen3"
+    assert qwen_gguf.get("architecture") == "qwen3_5"
     assert qwen_gguf.get("max_tokens") == 262144
 
     qwen_frontier = get_model_capabilities("Qwen/Qwen3.5-122B-A10B-fp16")
-    assert qwen_frontier.get("architecture") == "qwen3"
+    assert qwen_frontier.get("architecture") == "qwen3_5"
     assert qwen_frontier.get("total_parameters") == "122B"
 
     liquid = get_model_capabilities("LiquidAI/LFM2-24B-A2B-GGUF")
     assert liquid.get("architecture") == "lfm2"
     assert liquid.get("max_tokens") == 32768
-    assert liquid.get("tool_support") == "native"
+    assert liquid.get("tool_support") == "prompted"
 
     liquid_q8 = get_model_capabilities("LiquidAI/LFM2-24B-A2B-Q8_0")
     assert liquid_q8.get("architecture") == "lfm2"
@@ -25,7 +25,7 @@ def test_variant_suffix_normalization_resolves_qwen_liquid_and_gpt_families() ->
 
     liquid_mlx = get_model_capabilities("mlx-community/LFM2.5-1.2B-Instruct-8bit")
     assert liquid_mlx.get("architecture") == "lfm2"
-    assert liquid_mlx.get("structured_output") == "native"
+    assert liquid_mlx.get("structured_output") == "prompted"
 
     gpt = get_model_capabilities("openai/gpt-5.4-pro-fp16")
     assert gpt.get("architecture") == "gpt"
@@ -43,11 +43,11 @@ def test_new_family_entries_are_resolved_with_expected_architectures() -> None:
 def test_new_model_entries_expose_verified_capabilities() -> None:
     minimax = get_model_capabilities("MiniMaxAI/MiniMax-M2.5")
     assert minimax.get("architecture") == "minimax_m2"
-    assert minimax.get("max_tokens") == 184000
-    assert minimax.get("max_output_tokens") == 80000
+    assert minimax.get("max_tokens") == 196608
+    assert minimax.get("max_output_tokens") == 8192
     assert minimax.get("total_parameters") == "480B"
     assert minimax.get("active_parameters") == "40B"
-    assert minimax.get("tool_support") == "prompted"
+    assert minimax.get("tool_support") == "native"
 
     glm = get_model_capabilities("zai-org/GLM-5")
     assert glm.get("architecture") == "glm4_moe"

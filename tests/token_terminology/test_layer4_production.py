@@ -59,13 +59,13 @@ class TestExistingTestSuite:
         """Verify the GPT-5 capabilities test from test_system_integration.py."""
         json_caps = get_model_capabilities('gpt-5')
 
-        assert json_caps['max_tokens'] == 200000
-        assert json_caps['max_output_tokens'] == 8192
+        assert json_caps['max_tokens'] == 400000
+        assert json_caps['max_output_tokens'] == 128000
         assert json_caps['tool_support'] == 'native'
 
         provider = OpenAIProvider('gpt-5')
-        assert provider.max_tokens == 200000
-        assert provider.max_output_tokens == 8192
+        assert provider.max_tokens == 400000
+        assert provider.max_output_tokens == 128000
 
     def test_unknown_model_fallback_still_works(self):
         """Verify unknown model fallback test from test_system_integration.py."""
@@ -115,7 +115,7 @@ class TestRealProviderCreation:
         test_cases = [
             ("openai", "gpt-4", 128000, 4096),
             ("openai", "gpt-4o-mini", 128000, 16000),
-            ("openai", "gpt-5", 200000, 8192),
+            ("openai", "gpt-5", 400000, 128000),
         ]
 
         for provider_name, model, expected_max_tokens, expected_max_output in test_cases:

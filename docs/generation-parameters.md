@@ -125,7 +125,7 @@ print(response.reasoning)
 - **HuggingFace (GGUF / llama-cpp-python)** (`HuggingFaceProvider` with GGUF models):
   - llama.cpp’s CLI/server supports template kwargs (e.g., `--chat-template-kwargs '{"enable_thinking":false}'`), but `llama-cpp-python`’s `Llama.create_chat_completion()` does not currently expose/forward per-request template kwargs like `enable_thinking`. As a result, Qwen3/Qwen3.5 `thinking="off"/"none"` uses the Qwen hard-switch marker (`<think>\n\n</think>\n\n`) as a robust input-side control.
   - `thinking="low|medium|high"` is treated as “thinking enabled” (best-effort) and may be a no-op beyond on/off for Qwen templates.
-  - **Local context note**: model cards may advertise extremely large context windows (e.g. 262k). For GGUF loads, AbstractCore clamps llama.cpp `n_ctx` by default (configurable via `ABSTRACTCORE_GGUF_DEFAULT_N_CTX`) unless you explicitly pass `max_tokens=...` to `HuggingFaceProvider()`.
+  - **Local context note**: model cards may advertise extremely large context windows (e.g. 262k). For GGUF loads, AbstractCore will first try the advertised `max_tokens` (context window); if allocation fails locally it retries with smaller llama.cpp `n_ctx` values (best-effort). Pass `max_tokens=...` to `HuggingFaceProvider()` to explicitly control the runtime `n_ctx`.
 - **vLLM**: `extra_body.chat_template_kwargs.enable_thinking` (commonly used by Qwen3/Qwen3.5 templates)
   - When `thinking` is a level (`low|medium|high|xhigh`), AbstractCore also sets `extra_body.thinking_token_budget` (vLLM reasoning-budget feature).
 - **Ollama**: request field `think` (bool for most models; `"low"|"medium"|"high"` for GPT‑OSS)
@@ -133,7 +133,23 @@ print(response.reasoning)
 
 **Output semantics**: when a provider/model exposes reasoning, AbstractCore normalizes it into `GenerateResponse.metadata["reasoning"]` and keeps `GenerateResponse.content` clean using `abstractcore/architectures/response_postprocessing.py` (asset-driven via `assets/model_capabilities.json` + `assets/architecture_formats.json`).
 
-When a requested thinking mode is not supported by a model/provider, AbstractCore emits a `RuntimeWarning` (request may be ignored).
+When a requested thinking mode is not supported by a model/provider, AbstractCore emits a `RuntimeWarning` and applies a best-effort approximation:
+
+- If the model advertises `reasoning_levels`, AbstractCore maps the requested level to the nearest supported level (generic ordering: `minimal < low < medium < high < xhigh`) and reports the effective level in the warning.
+- If a provider/model can only toggle reasoning on/off (no effort scaling), AbstractCore still enables reasoning for level requests and warns that the requested effort level may be ignored.
+
+### Observability: requested vs effective thinking
+
+When `thinking=` is provided, AbstractCore records the requested and effective thinking mode in `GenerateResponse.metadata`:
+
+- `thinking_requested`: normalized unified request (`"off"`, `"on"`, or a level like `"high"`)
+- `thinking_effective`: effective unified control after mappings (for example `"xhigh" → "high"` for a model that only supports up to `"high"`)
+- `thinking_level_requested` / `thinking_level_effective`: effort-level details when applicable
+- `thinking_handled_enable_disable` / `thinking_handled_level`: whether the provider/model actually implemented the on/off toggle and/or the effort scaling knob
+- `thinking_supported_levels`: model-advertised effort enum when available (from assets)
+- `thinking_supports_output` / `thinking_supports_control`: asset-driven capability split (model emits reasoning vs model exposes a request-side knob)
+
+These fields make it easier to debug best-effort fallbacks without relying only on warnings.
 
 ## Session Integration
 
@@ -151,6 +167,15 @@ response1 = session.generate("Hello")
 
 # Override for specific message
 response2 = session.generate("Be creative!", temperature=0.9)
+```
+
+For prompt-cache-aware long chats, use `CachedSession` (see `docs/prompt-caching.md`):
+
+```python
+from abstractcore import CachedSession
+
+session = CachedSession(provider=llm, system_prompt="You are helpful.", prompt_cache_strategy="auto")
+session.generate("Hello")
 ```
 
 ## Code Quality Benefits

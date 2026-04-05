@@ -17,6 +17,7 @@ once a reachable vLLM server is available in the test environment.
 from typing import Any, Dict, List, Optional
 
 from .openai_compatible_provider import OpenAICompatibleProvider
+from .base import ThinkingControlHandling
 
 
 class VLLMProvider(OpenAICompatibleProvider):
@@ -79,7 +80,7 @@ class VLLMProvider(OpenAICompatibleProvider):
         enabled: Optional[bool],
         level: Optional[str],
         kwargs: Dict[str, Any],
-    ) -> tuple[Dict[str, Any], bool]:
+    ) -> tuple[Dict[str, Any], ThinkingControlHandling]:
         # vLLM exposes reasoning controls via request extensions under `payload["extra_body"]`.
         #
         # - Template switch: `extra_body.chat_template_kwargs.enable_thinking` (commonly used by Qwen3/Qwen3.5,
@@ -89,7 +90,7 @@ class VLLMProvider(OpenAICompatibleProvider):
         # References:
         # - https://docs.vllm.ai/en/latest/features/reasoning_outputs/
         if enabled is None and level is None:
-            return kwargs, False
+            return kwargs, ThinkingControlHandling()
 
         new_kwargs = dict(kwargs)
         extra_body = new_kwargs.get("extra_body")
@@ -117,7 +118,8 @@ class VLLMProvider(OpenAICompatibleProvider):
                 extra_body_dict["thinking_token_budget"] = int(budget)
 
         new_kwargs["extra_body"] = extra_body_dict
-        return new_kwargs, True
+        handled_level = bool(enabled is not False and isinstance(level, str) and level in {"minimal", "low", "medium", "high", "xhigh"})
+        return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=handled_level)
 
     # vLLM-specific methods
 

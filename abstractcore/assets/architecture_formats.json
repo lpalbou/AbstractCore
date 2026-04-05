@@ -342,22 +342,36 @@
       "tool_format": "none",
       "patterns": ["codegemma"]
     },
-      "gemma3": {
-        "description": "Google's Gemma 3 multimodal architecture (March 2025)",
-        "message_format": "basic",
-        "system_prefix": "",
-        "system_suffix": "\n\n",
-        "user_prefix": "Human: ",
-        "user_suffix": "\n",
-        "assistant_prefix": "Assistant: ",
-        "assistant_suffix": "\n",
-        "tool_format": "native",
-        "patterns": ["gemma3", "gemma-3", "gemma3:4b", "gemma3:270m", "gemma3:1b"]
-      },
-    "gemma2": {
-      "description": "Google's Gemma 2 architecture (June 2024)",
-      "message_format": "basic",
-      "system_prefix": "",
+	      "gemma3": {
+	        "description": "Google's Gemma 3 multimodal architecture (March 2025)",
+	        "message_format": "basic",
+	        "system_prefix": "",
+	        "system_suffix": "\n\n",
+	        "user_prefix": "Human: ",
+	        "user_suffix": "\n",
+	        "assistant_prefix": "Assistant: ",
+	        "assistant_suffix": "\n",
+	        "tool_format": "native",
+	        "patterns": ["gemma3", "gemma-3", "gemma3:4b", "gemma3:270m", "gemma3:1b"]
+	      },
+	      "gemma4": {
+	        "description": "Google's Gemma 4 multimodal architecture (March 2026)",
+	        "message_format": "basic",
+	        "system_prefix": "",
+	        "system_suffix": "\n\n",
+	        "user_prefix": "Human: ",
+	        "user_suffix": "\n",
+	        "assistant_prefix": "Assistant: ",
+	        "assistant_suffix": "\n",
+	        "tool_format": "special_token",
+	        "tool_prefix": "<|tool_call>",
+		        "thinking_tags": ["<|channel>thought", "<channel|>"],
+	        "patterns": ["gemma-4", "gemma4", "google/gemma-4"]
+	      },
+	    "gemma2": {
+	      "description": "Google's Gemma 2 architecture (June 2024)",
+	      "message_format": "basic",
+	      "system_prefix": "",
       "system_suffix": "\n\n",
       "user_prefix": "Human: ",
       "user_suffix": "\n",

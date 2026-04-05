@@ -7,6 +7,9 @@ and __init__.py files.
 """
 
 import os
+import sys
+import platform
+import importlib.util
 from typing import List, Dict, Any, Optional, Type, Callable
 from dataclasses import dataclass, field
 from abc import ABC
@@ -14,6 +17,43 @@ import logging
 from ..utils.structured_logging import get_logger
 
 logger = get_logger("provider_registry")
+
+def _preimport_llama_cpp_for_macos() -> None:
+    """Best-effort: import `llama_cpp` early on macOS to keep Metal offload stable.
+
+    llama-cpp-python's Metal backend can SIGABRT when `llama_cpp` is imported *after*
+    PyTorch/transformers in the same process. Many local backends import transformers
+    transitively (tokenizers/config), so importing `llama_cpp` first avoids the unsafe
+    order when GGUF is used later in the same interpreter.
+
+    This is intentionally conservative:
+    - macOS Apple Silicon only
+    - only when `llama_cpp` is installed
+    - only when PyTorch/transformers are not already imported
+    """
+    try:
+        if platform.system().lower() != "darwin" or platform.machine().lower() != "arm64":
+            return
+        if "torch" in sys.modules or "transformers" in sys.modules:
+            return
+        if "llama_cpp" in sys.modules:
+            try:
+                import llama_cpp  # type: ignore
+
+                setattr(llama_cpp, "__abstractcore_preimported_for_metal", True)
+            except Exception:
+                pass
+            return
+        if importlib.util.find_spec("llama_cpp") is None:
+            return
+        import llama_cpp  # type: ignore
+
+        try:
+            setattr(llama_cpp, "__abstractcore_preimported_for_metal", True)
+        except Exception:
+            pass
+    except Exception:
+        return
 
 
 @dataclass
@@ -499,6 +539,8 @@ class ProviderRegistry:
         This is used by the factory to create provider instances.
         """
         from ..config import get_provider_config
+
+        _preimport_llama_cpp_for_macos()
 
         provider_info = self.get_provider_info(provider_name)
         if not provider_info:

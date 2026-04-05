@@ -342,6 +342,7 @@
       ],
       "audio_support": false,
       "thinking_support": true,
+      "thinking_control_mode": "budget",
       "reasoning_levels": ["low", "medium", "high", "xhigh"],
       "notes": "Claude Haiku 4.5 with extended thinking. Fastest model with near-frontier intelligence",
       "source": "Anthropic official docs 2025",
@@ -366,6 +367,7 @@
       ],
       "audio_support": false,
       "thinking_support": true,
+      "thinking_control_mode": "budget",
       "reasoning_levels": ["low", "medium", "high", "xhigh"],
       "notes": "Claude 4 Opus with extended thinking",
       "source": "Anthropic official docs",
@@ -387,6 +389,7 @@
       ],
       "audio_support": false,
       "thinking_support": true,
+      "thinking_control_mode": "budget",
       "reasoning_levels": ["low", "medium", "high", "xhigh"],
       "notes": "Claude 4.1 Opus with extended thinking",
       "source": "Anthropic official docs",
@@ -408,6 +411,7 @@
       ],
       "audio_support": false,
       "thinking_support": true,
+      "thinking_control_mode": "budget",
       "reasoning_levels": ["low", "medium", "high", "xhigh"],
       "notes": "Claude 4 Sonnet with extended thinking",
       "source": "Anthropic official docs",
@@ -429,6 +433,7 @@
       ],
       "audio_support": false,
       "thinking_support": true,
+      "thinking_control_mode": "budget",
       "reasoning_levels": ["low", "medium", "high", "xhigh"],
       "notes": "Claude 4.5 Sonnet with extended thinking. Anthropic API enforces a 64K max output token cap.",
       "source": "Anthropic official docs 2025",
@@ -454,6 +459,7 @@
       ],
       "audio_support": false,
       "thinking_support": true,
+      "thinking_control_mode": "budget",
       "reasoning_levels": ["low", "medium", "high", "xhigh"],
       "notes": "Claude Opus 4.5 with extended thinking. Anthropic API enforces a 64K max output token cap.",
       "source": "Anthropic official docs 2025",
@@ -479,6 +485,8 @@
       "audio_support": false,
       "thinking_support": true,
       "thinking_budget": true,
+      "thinking_control_mode": "adaptive",
+      "max_effort_supported": true,
       "reasoning_levels": ["low", "medium", "high", "xhigh"],
       "notes": "Claude Opus 4.6. Most intelligent Anthropic model for building agents and coding. Extended + adaptive thinking",
       "source": "Anthropic official docs 2026",
@@ -503,6 +511,8 @@
       "audio_support": false,
       "thinking_support": true,
       "thinking_budget": true,
+      "thinking_control_mode": "adaptive",
+      "max_effort_supported": false,
       "reasoning_levels": ["low", "medium", "high", "xhigh"],
       "notes": "Claude Sonnet 4.6. Best combination of speed and intelligence. Extended + adaptive thinking",
       "source": "Anthropic official docs 2026",
@@ -1645,6 +1655,198 @@
       "max_tools": -1,
       "video_input_mode": "none"
     },
+    "gemma-4-e2b-it": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": true,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_tokens": 1120,
+      "thinking_support": true,
+      "notes": "Gemma 4 E2B instruction-tuned multimodal model (text, image, audio, video), 128K context",
+      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "canonical_name": "gemma-4-e2b-it",
+      "aliases": [
+        "google/gemma-4-E2B-it",
+        "gemma-4-E2B-it"
+      ],
+      "max_tokens": 131072,
+      "max_tools": -1,
+      "video_input_mode": "native"
+    },
+    "gemma-4-e4b-it": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": true,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_tokens": 1120,
+      "thinking_support": true,
+      "notes": "Gemma 4 E4B instruction-tuned multimodal model (text, image, audio, video), 128K context",
+      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "canonical_name": "gemma-4-e4b-it",
+      "aliases": [
+        "google/gemma-4-E4B-it",
+        "gemma-4-E4B-it"
+      ],
+      "max_tokens": 131072,
+      "max_tools": -1,
+      "video_input_mode": "native"
+    },
+    "gemma-4-26b-a4b-it": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_tokens": 1120,
+      "thinking_support": true,
+      "notes": "Gemma 4 26B A4B instruction-tuned MoE multimodal model (text, image, video), 256K context",
+      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "canonical_name": "gemma-4-26b-a4b-it",
+      "aliases": [
+        "google/gemma-4-26B-A4B-it",
+        "gemma-4-26B-A4B-it"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "native"
+    },
+    "gemma-4-31b-it": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_tokens": 1120,
+      "thinking_support": true,
+      "notes": "Gemma 4 31B instruction-tuned dense multimodal model (text, image, video), 256K context",
+      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "canonical_name": "gemma-4-31b-it",
+      "aliases": [
+        "google/gemma-4-31B-it",
+        "gemma-4-31B-it"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "native"
+    },
+    "gemma-4-e2b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": true,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_tokens": 1120,
+      "thinking_support": true,
+      "notes": "Gemma 4 E2B pretrained multimodal model (text, image, audio, video), 128K context",
+      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "canonical_name": "gemma-4-e2b",
+      "aliases": [
+        "google/gemma-4-E2B",
+        "gemma-4-E2B"
+      ],
+      "max_tokens": 131072,
+      "max_tools": -1,
+      "video_input_mode": "native"
+    },
+    "gemma-4-e4b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": true,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_tokens": 1120,
+      "thinking_support": true,
+      "notes": "Gemma 4 E4B pretrained multimodal model (text, image, audio, video), 128K context",
+      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "canonical_name": "gemma-4-e4b",
+      "aliases": [
+        "google/gemma-4-E4B",
+        "gemma-4-E4B"
+      ],
+      "max_tokens": 131072,
+      "max_tools": -1,
+      "video_input_mode": "native"
+    },
+    "gemma-4-26b-a4b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_tokens": 1120,
+      "thinking_support": true,
+      "notes": "Gemma 4 26B A4B pretrained MoE multimodal model (text, image, video), 256K context",
+      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "canonical_name": "gemma-4-26b-a4b",
+      "aliases": [
+        "google/gemma-4-26B-A4B",
+        "gemma-4-26B-A4B"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "native"
+    },
+    "gemma-4-31b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_tokens": 1120,
+      "thinking_support": true,
+      "notes": "Gemma 4 31B pretrained dense multimodal model (text, image, video), 256K context",
+      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "canonical_name": "gemma-4-31b",
+      "aliases": [
+        "google/gemma-4-31B",
+        "gemma-4-31B"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "native"
+    },
     "codegemma": {
       "max_output_tokens": 8192,
       "tool_support": "none",
@@ -2013,7 +2215,7 @@
       "unsupported_parameters": ["temperature", "top_p", "frequency_penalty", "presence_penalty"],
       "token_param_name": "max_completion_tokens",
       "reasoning_levels": ["minimal", "low", "medium", "high"],
-      "notes": "GPT-5 reasoning model for coding and agentic tasks. Official docs list 400,000-token context, 128,000 output, tools, structured outputs, and reasoning.effort levels: minimal, low, medium (default), high. Audio not supported. Rejects temperature/top_p/frequency_penalty/presence_penalty.",
+      "notes": "GPT-5 reasoning model for coding and agentic tasks. Official docs list 400,000-token total context and 128,000 max output (so max prompt ≈ 272,000 at full output), tools, structured outputs, and reasoning.effort levels: minimal, low, medium (default), high. Audio not supported. Rejects temperature/top_p/frequency_penalty/presence_penalty.",
       "source": "OpenAI API model card (gpt-5, accessed 2026-03-21) + OpenAI Chat Completions API reference (reasoning_effort, accessed 2026-03-21)",
       "canonical_name": "gpt-5",
       "aliases": [],
@@ -2042,7 +2244,7 @@
       "video_input_mode": "frames"
     },
     "gpt-5-pro": {
-      "max_output_tokens": 272000,
+      "max_output_tokens": 128000,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -2053,7 +2255,7 @@
       "unsupported_parameters": ["temperature", "top_p", "frequency_penalty", "presence_penalty"],
       "token_param_name": "max_completion_tokens",
       "reasoning_levels": ["high"],
-      "notes": "Previous pro GPT-5 model. Official docs list 400,000-token context and 272,000 max output tokens. As OpenAI’s most advanced reasoning model, it defaults to (and only supports) reasoning.effort: high. Audio not supported.",
+      "notes": "Pro GPT-5 model. Official docs list 400,000-token context and 128,000 max output tokens. As OpenAI’s most advanced reasoning model, it defaults to (and only supports) reasoning.effort: high. Audio not supported.",
       "source": "OpenAI API model card (gpt-5-pro, accessed 2026-03-21)",
       "canonical_name": "gpt-5-pro",
       "aliases": [],

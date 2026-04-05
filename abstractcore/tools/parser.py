@@ -98,7 +98,9 @@ def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
     if tool_format == ToolFormat.TOOL_CODE:
         return "```tool_code" in response_lower or "```tool_call" in response_lower
     elif tool_format == ToolFormat.SPECIAL_TOKEN:
-        return "<|tool_call|>" in response_lower
+        # Qwen uses <|tool_call|> ... </|tool_call|>
+        # Gemma4 uses <|tool_call> ... <tool_call|>
+        return "<|tool_call|>" in response_lower or "<|tool_call>" in response_lower
     elif tool_format == ToolFormat.FUNCTION_CALL:
         return "<function_call" in response_lower or _has_json_tool_pattern(response)
     elif tool_format == ToolFormat.XML_WRAPPED:
@@ -109,6 +111,7 @@ def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
             "```tool_code" in response_lower,
             "```tool_call" in response_lower,
             "<|tool_call|>" in response_lower,
+            "<|tool_call>" in response_lower,
             "<function_call" in response_lower,
             "<tool_call>" in response_lower,
             _has_bracket_tool_prefix(response),
@@ -191,7 +194,7 @@ def format_tool_prompt(
     if tool_format == ToolFormat.TOOL_CODE:
         return _format_gemma_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
     elif tool_format == ToolFormat.SPECIAL_TOKEN:
-        return _format_qwen_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
+        return _format_qwen_style(tools, model_name=model_name, include_tool_list=include_tool_list, include_examples=include_examples)
     elif tool_format == ToolFormat.FUNCTION_CALL:
         return _format_llama_style(tools, include_tool_list=include_tool_list, include_examples=include_examples)
     elif tool_format == ToolFormat.XML_WRAPPED:
@@ -208,9 +211,11 @@ def _sanitize_tool_call_tags(response: str) -> str:
     """
     Sanitize malformed tool call tags before parsing.
 
-    Handles common LLM output malformations:
+    Handles common LLM output malformations across "special token" tool-call formats:
     - Doubled opening tags: <|tool_call|><|tool_call|> → <|tool_call|>
+    - Doubled opening tags (Gemma4): <|tool_call><|tool_call> → <|tool_call>
     - Doubled closing tags: </|tool_call|></|tool_call|> → </|tool_call|>
+    - Doubled closing tags (Gemma4): <tool_call|><tool_call|> → <tool_call|>
     - Malformed closing with }: </|tool_call|} → </|tool_call|>
 
     Args:
@@ -224,14 +229,11 @@ def _sanitize_tool_call_tags(response: str) -> str:
 
     original = response
 
-    # Fix doubled/multiple opening tags (collapse to single)
-    # Handles: <|tool_call|><|tool_call|> or <|tool_call|>\n<|tool_call|>
-    response = re.sub(
-        r'(<\|tool_call\|>\s*)+',
-        r'<|tool_call|>',
-        response,
-        flags=re.IGNORECASE
-    )
+    # Fix doubled/multiple opening tags (collapse to single) for both:
+    # - Qwen:   <|tool_call|>
+    # - Gemma4: <|tool_call>
+    response = re.sub(r'(<\|tool_call\|>\s*)+', r'<|tool_call|>', response, flags=re.IGNORECASE)
+    response = re.sub(r'(<\|tool_call>\s*)+', r'<|tool_call>', response, flags=re.IGNORECASE)
 
     # Fix malformed closing tags with } instead of |>
     # Handles: </|tool_call|} → </|tool_call|>
@@ -243,12 +245,8 @@ def _sanitize_tool_call_tags(response: str) -> str:
     )
 
     # Fix doubled/multiple closing tags (collapse to single)
-    response = re.sub(
-        r'(</\|tool_call\|>\s*)+',
-        r'</|tool_call|>',
-        response,
-        flags=re.IGNORECASE
-    )
+    response = re.sub(r'(</\|tool_call\|>\s*)+', r'</|tool_call|>', response, flags=re.IGNORECASE)
+    response = re.sub(r'(<tool_call\|>\s*)+', r'<tool_call|>', response, flags=re.IGNORECASE)
 
     if response != original:
         logger.debug(f"Sanitized malformed tool call tags")
@@ -301,7 +299,12 @@ def _get_tool_format(model_name: Optional[str]) -> ToolFormat:
 
 
 def _parse_special_token(response: str) -> List[ToolCall]:
-    """Parse Qwen-style <|tool_call|> format with robust fallback."""
+    """Parse special-token tool calls with robust fallback.
+
+    Supported variants:
+    - Qwen-style:   <|tool_call|>{...}</|tool_call|>
+    - Gemma4-style: <|tool_call>call:tool_name{...}<tool_call|>
+    """
     tool_calls = []
 
     # SANITIZE FIRST: Fix malformed tags (doubled tags, broken closing tags)
@@ -315,13 +318,21 @@ def _parse_special_token(response: str) -> List[ToolCall]:
     # First, find all tool call positions to avoid duplicates from overlapping patterns
     all_matches = []
 
-    # Strategy 1: Look for properly closed tags
-    pattern_with_close = r'<\|tool_call\|>\s*(.*?)\s*</\|tool_call\|>'
+    open_tag = r'<\|tool_call\|?>'
+    close_tag = r'(?:</\|tool_call\|>|<tool_call\|>)'
+
+    # Strategy 1: Look for properly closed tags (Qwen + Gemma4)
+    pattern_with_close = open_tag + r'\s*(.*?)\s*' + close_tag
     for match in re.finditer(pattern_with_close, cleaned_response, re.DOTALL | re.IGNORECASE):
         all_matches.append((match.start(), match.end(), match.group(1).strip()))
 
     # Strategy 2: Look for opening tags followed by valid JSON (no closing tag)
-    pattern_no_close = r'<\|tool_call\|>\s*(\{(?:[^{}]|(?:\{[^{}]*\}))*\})\s*(?:</\|tool_call\|>|$|\n|<)'
+    pattern_no_close = (
+        open_tag
+        + r'\s*(\{(?:[^{}]|(?:\{[^{}]*\}))*\})\s*(?:'
+        + close_tag
+        + r'|$|\n|<)'
+    )
     for match in re.finditer(pattern_no_close, cleaned_response, re.DOTALL | re.IGNORECASE):
         # Check if this match overlaps with any closed tag match
         overlaps = False
@@ -333,7 +344,7 @@ def _parse_special_token(response: str) -> List[ToolCall]:
             all_matches.append((match.start(), match.end(), match.group(1).strip()))
 
     # Strategy 3: Ultra-robust pattern - just find start tag + JSON, ignore ending completely
-    pattern_start_json = r'<\|tool_call\|>\s*(\{[^<]*?\})'
+    pattern_start_json = open_tag + r'\s*(\{[^<]*?\})'
     for match in re.finditer(pattern_start_json, cleaned_response, re.DOTALL | re.IGNORECASE):
         # Check if this match overlaps with any previous matches
         overlaps = False
@@ -351,21 +362,20 @@ def _parse_special_token(response: str) -> List[ToolCall]:
 
     # Sort by position and parse each match
     all_matches.sort(key=lambda x: x[0])
-    for _, _, json_str in all_matches:
+    for _, _, payload in all_matches:
         try:
-            # Clean up the JSON string - remove any trailing content that might interfere
-            json_str = json_str.strip()
+            payload = payload.strip()
 
             # Handle cases where there might be trailing text after the JSON
-            if json_str.count('{') > json_str.count('}'):
+            if payload.count('{') > payload.count('}'):
                 # Missing closing braces - try to add them
-                missing_braces = json_str.count('{') - json_str.count('}')
-                json_str += '}' * missing_braces
+                missing_braces = payload.count('{') - payload.count('}')
+                payload += '}' * missing_braces
 
             # Try to find the JSON object boundaries more precisely
             brace_count = 0
             json_end = -1
-            for i, char in enumerate(json_str):
+            for i, char in enumerate(payload):
                 if char == '{':
                     brace_count += 1
                 elif char == '}':
@@ -375,11 +385,12 @@ def _parse_special_token(response: str) -> List[ToolCall]:
                         break
 
             if json_end > 0:
-                json_str = json_str[:json_end]
+                payload = payload[:json_end]
 
-            # Try normal JSON parsing first
+            tool_data: Any = None
+            # Try normal JSON parsing first (Qwen-style tool payloads)
             try:
-                tool_data = json.loads(json_str)
+                tool_data = json.loads(payload)
             except json.JSONDecodeError:
                 # Fallback: Escape newlines/tabs only inside JSON string values
                 # This prevents escaping structural newlines which would break parsing
@@ -388,7 +399,7 @@ def _parse_special_token(response: str) -> List[ToolCall]:
                 escaped = False
                 fixed = []
 
-                for char in json_str:
+                for char in payload:
                     if escaped:
                         # Previous char was backslash, this is part of escape sequence
                         fixed.append(char)
@@ -415,7 +426,15 @@ def _parse_special_token(response: str) -> List[ToolCall]:
                         fixed.append(char)
 
                 fixed_json = ''.join(fixed)
-                tool_data = json.loads(fixed_json)
+                try:
+                    tool_data = json.loads(fixed_json)
+                except json.JSONDecodeError:
+                    tool_data = None
+            except Exception:
+                tool_data = None
+
+            if not isinstance(tool_data, dict):
+                tool_data = _loads_dict_like(payload)
 
             if isinstance(tool_data, dict):
                 # Normalize field names: accept "name", "command", "function", "tool", "action"
@@ -437,8 +456,22 @@ def _parse_special_token(response: str) -> List[ToolCall]:
                         arguments=tool_data.get("arguments", tool_data.get("params", tool_data.get("parameters", {}))),
                         call_id=tool_data.get("id")
                     ))
+                continue
+
+            # Gemma4-style payloads: `call:tool_name{...json...}`
+            #
+            # From tokenizer_config.json response_schema:
+            #   call\:(?P<name>\w+)(?P<arguments>\{.*\})
+            call_match = re.search(r'(?is)\bcall\s*:\s*(?P<name>\w+)\s*(?P<arguments>\{.*\})', payload)
+            if call_match:
+                name = call_match.group("name")
+                args_raw = call_match.group("arguments")
+                args = _loads_dict_like(args_raw)
+                if not isinstance(args, dict):
+                    args = {}
+                tool_calls.append(ToolCall(name=name, arguments=args, call_id=None))
         except json.JSONDecodeError as e:
-            logger.debug(f"JSON decode error for tool call: {e}, JSON string: {repr(json_str)}")
+            logger.debug(f"JSON decode error for tool call: {e}, payload: {repr(payload)}")
             continue
 
     return tool_calls
@@ -1056,6 +1089,7 @@ def _append_tool_examples(
     tools: List[ToolDefinition],
     *,
     tool_format: ToolFormat,
+    model_name: Optional[str] = None,
     max_examples_total: int = 8,
 ) -> str:
     """Append a small, globally-capped examples section.
@@ -1110,7 +1144,7 @@ def _append_tool_examples(
         args_dict = dict(args) if isinstance(args, dict) else {}
 
         out += f"- {tool.name}: {desc}\n"
-        out += _format_tool_call_example(tool.name, args_dict, tool_format) + "\n\n"
+        out += _format_tool_call_example(tool.name, args_dict, tool_format, model_name=model_name) + "\n\n"
         added += 1
         if added >= max_examples_total:
             break
@@ -1118,12 +1152,42 @@ def _append_tool_examples(
     return out
 
 
-def _format_qwen_style(tools: List[ToolDefinition], *, include_tool_list: bool = True, include_examples: bool = True) -> str:
-    """Format tools for Qwen models using <|tool_call|> format with enhanced metadata."""
+def _format_qwen_style(
+    tools: List[ToolDefinition],
+    *,
+    model_name: Optional[str] = None,
+    include_tool_list: bool = True,
+    include_examples: bool = True,
+) -> str:
+    """Format tools for special-token tool-call models.
+
+    Defaults to Qwen-style:
+      <|tool_call|>{"name": "...", "arguments": {...}}</|tool_call|>
+
+    Adapts to Gemma4 when the architecture declares `tool_prefix: "<|tool_call>"`:
+      <|tool_call>call:tool_name{...}<tool_call|>
+    """
     if not tools:
         return ""
 
     prompt = "You are a helpful AI assistant with access to the following tools:\n\n"
+
+    tool_call_start = "<|tool_call|>"
+    tool_call_end = "</|tool_call|>"
+    example_payload = '{"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}'
+
+    if model_name:
+        try:
+            architecture = detect_architecture(model_name)
+            arch_format = get_architecture_format(architecture)
+        except Exception:
+            arch_format = {}
+
+        tool_prefix = str(arch_format.get("tool_prefix") or "").strip()
+        if tool_prefix == "<|tool_call>":
+            tool_call_start = "<|tool_call>"
+            tool_call_end = "<tool_call|>"
+            example_payload = 'call:tool_name{"param1":"value1","param2":"value2"}'
 
     if include_tool_list:
         total_tools = len(tools)
@@ -1135,17 +1199,18 @@ def _format_qwen_style(tools: List[ToolDefinition], *, include_tool_list: bool =
                 prompt += f"  • **When**: {tool.when_to_use}\n"
             prompt += "\n"
 
-    prompt += """To use a tool, respond with one or more tool-call blocks (no other text):
-<|tool_call|>
-{"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}
-</|tool_call|>
-
-To call multiple tools, repeat the block once per call.
-""" + _critical_rules()
+    prompt += (
+        "To use a tool, respond with one or more tool-call blocks (no other text):\n"
+        f"{tool_call_start}\n"
+        f"{example_payload}\n"
+        f"{tool_call_end}\n\n"
+        "To call multiple tools, repeat the block once per call.\n"
+        + _critical_rules()
+    )
 
 
     if include_examples:
-        prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.SPECIAL_TOKEN)
+        prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.SPECIAL_TOKEN, model_name=model_name)
 
     return prompt
 
@@ -1471,14 +1536,16 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
 
     # Use the same sophisticated patterns as the _parse_special_token function
     patterns = [
-        # Strategy 1: Properly closed <|tool_call|> tags
-        r'<\|tool_call\|>\s*.*?\s*</\|tool_call\|>',
+        # Strategy 1: Properly closed special-token tool blocks
+        # - Qwen:   <|tool_call|> ... </|tool_call|>
+        # - Gemma4: <|tool_call> ... <tool_call|>
+        r'<\|tool_call\|?>\s*.*?\s*(?:</\|tool_call\|>|<tool_call\|>)',
 
         # Strategy 2: Opening tag with JSON, flexible ending
-        r'<\|tool_call\|>\s*\{(?:[^{}]|(?:\{[^{}]*\}))*\}\s*(?:</\|tool_call\|>|$|\n|<)',
+        r'<\|tool_call\|?>\s*\{(?:[^{}]|(?:\{[^{}]*\}))*\}\s*(?:</\|tool_call\|>|<tool_call\|>|$|\n|<)',
 
         # Strategy 3: Ultra-robust - just start tag + JSON
-        r'<\|tool_call\|>\s*\{[^<]*?\}',
+        r'<\|tool_call\|?>\s*\{[^<]*?\}',
 
         # Other formats
         r'<function_call>.*?</function_call>',
@@ -1493,7 +1560,9 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
         r'(?is)<\|channel\|>\s*[a-zA-Z0-9_\-]+\s+to=[a-zA-Z0-9_\-\.]+\b.*?<\|message\|>\s*\{.*?\}',
         # Orphan tags (some models emit a closing tag on its own line)
         r'(?im)^\s*<\|tool_call\|>\s*$',
+        r'(?im)^\s*<\|tool_call>\s*$',
         r'(?im)^\s*</\|tool_call\|>\s*$',
+        r'(?im)^\s*<tool_call\|>\s*$',
         r'(?im)^\s*<tool_call>\s*$',
         r'(?im)^\s*</tool_call>\s*$',
         r'(?im)^\s*<\|channel\|>\s*$',
@@ -1508,7 +1577,13 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
     return content.strip()
 
 
-def _format_tool_call_example(tool_name: str, arguments: Dict[str, Any], tool_format: ToolFormat) -> str:
+def _format_tool_call_example(
+    tool_name: str,
+    arguments: Dict[str, Any],
+    tool_format: ToolFormat,
+    *,
+    model_name: Optional[str] = None,
+) -> str:
     """
     Format a tool call example using the correct format for the architecture.
     
@@ -1523,7 +1598,21 @@ def _format_tool_call_example(tool_name: str, arguments: Dict[str, Any], tool_fo
     tool_call_json = json.dumps({"name": tool_name, "arguments": arguments}, separators=(",", ":"), ensure_ascii=False)
     
     if tool_format == ToolFormat.SPECIAL_TOKEN:
-        # Qwen3, GLM-4.5+ format
+        # Qwen-style: <|tool_call|> ... </|tool_call|>
+        # Gemma4-style: <|tool_call>call:tool_name{...}<tool_call|>
+        tool_prefix = ""
+        if model_name:
+            try:
+                architecture = detect_architecture(model_name)
+                arch_format = get_architecture_format(architecture)
+                tool_prefix = str(arch_format.get("tool_prefix") or "").strip()
+            except Exception:
+                tool_prefix = ""
+
+        if tool_prefix == "<|tool_call>":
+            args_json = json.dumps(arguments, separators=(",", ":"), ensure_ascii=False)
+            return f"<|tool_call>\ncall:{tool_name}{args_json}\n<tool_call|>"
+
         return f"<|tool_call|>\n{tool_call_json}\n</|tool_call|>"
     elif tool_format == ToolFormat.FUNCTION_CALL:
         # LLaMA3 format

@@ -77,12 +77,6 @@ class PDFProcessor(BaseMediaHandler):
                 - page_range: Tuple of (start_page, end_page) or None for all pages
                 - extract_metadata: Whether to extract PDF metadata
         """
-        if not PYMUPDF4LLM_AVAILABLE:
-            raise ImportError(
-                "PyMuPDF4LLM is required for PDF processing. "
-                "Install with: pip install \"abstractcore[media]\""
-            )
-
         super().__init__(**kwargs)
 
         # PDF processing configuration
@@ -182,6 +176,12 @@ class PDFProcessor(BaseMediaHandler):
             Tuple of (content, metadata)
         """
         try:
+            if not PYMUPDF4LLM_AVAILABLE or pymupdf4llm is None:
+                raise MediaProcessingError(
+                    "PyMuPDF4LLM not installed (required for PDF processing). "
+                    "Install with: pip install \"abstractcore[media]\""
+                )
+
             # Configure PyMuPDF4LLM options
             extraction_options = {
                 'pages': page_range,

@@ -41,6 +41,23 @@ class DummyPromptCacheProvider(BaseProvider):
         return ["dummy"]
 
 
+class DummyPromptCacheSaveLoadProvider(DummyPromptCacheProvider):
+    def prompt_cache_save(self, key: str, filename: str, **kwargs) -> Dict[str, Any]:
+        _ = (key, filename, kwargs)
+        return {"supported": True, "operation": "save"}
+
+    def prompt_cache_load(
+        self,
+        filename: str,
+        *,
+        key: Optional[str] = None,
+        make_default: bool = True,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        _ = (filename, key, make_default, kwargs)
+        return {"supported": True, "operation": "load"}
+
+
 def test_prompt_cache_default_key_is_applied():
     llm = DummyPromptCacheProvider()
     assert llm.prompt_cache_set("cache-a") is True
@@ -88,6 +105,19 @@ def test_prompt_cache_capabilities_for_keyed_provider() -> None:
     assert caps.supports_update is False
     assert caps.supports_fork is False
     assert caps.supports_prepare_modules is False
+    assert caps.supports_save is False
+    assert caps.supports_load is False
+
+
+def test_prompt_cache_capabilities_detect_save_load_overrides() -> None:
+    llm = DummyPromptCacheSaveLoadProvider()
+
+    caps = llm.get_prompt_cache_capabilities()
+
+    assert caps.supported is True
+    assert caps.mode == "keyed"
+    assert caps.supports_save is True
+    assert caps.supports_load is True
 
 
 def test_prompt_cache_prepare_modules_raises_clear_error_for_keyed_provider() -> None:

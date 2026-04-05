@@ -138,6 +138,158 @@ def strip_thinking_tags(
     return cleaned, reasoning or None
 
 
+class IncrementalThinkingTagStripper:
+    """Incrementally strip inline thinking tags from a streamed assistant response.
+
+    This mirrors `strip_thinking_tags()` semantics as closely as possible while handling
+    tag boundaries that may be split across stream chunks.
+
+    Notes:
+    - Only strips when a complete start/end pair is observed.
+    - Also supports the "closing-only" case (end tag appears, start tag absent) by
+      treating everything before the first end tag as reasoning (the start tag may
+      have been injected by the chat template).
+    - If a start tag is observed but the end tag never appears (truncated stream),
+      we roll back and emit the captured content verbatim (including the start tag),
+      matching `strip_thinking_tags()` behavior (no stripping without a closing tag).
+    """
+
+    def __init__(self, *, start_tag: str, end_tag: str) -> None:
+        if not isinstance(start_tag, str) or not start_tag:
+            raise ValueError("start_tag must be a non-empty string")
+        if not isinstance(end_tag, str) or not end_tag:
+            raise ValueError("end_tag must be a non-empty string")
+
+        self._start_tag = start_tag
+        self._end_tag = end_tag
+
+        self._buffer = ""
+        self._state: str = "searching"  # searching|visible|thinking
+        self._current_reasoning_parts: list[str] = []
+        self._reasoning_blocks: list[str] = []
+
+    @staticmethod
+    def _suffix_prefix_len(haystack: str, needle: str) -> int:
+        """Return length of longest suffix of `haystack` that is a prefix of `needle`."""
+        if not haystack or not needle:
+            return 0
+        max_len = min(len(haystack), max(0, len(needle) - 1))
+        for n in range(max_len, 0, -1):
+            if needle.startswith(haystack[-n:]):
+                return n
+        return 0
+
+    def _finalize_current_reasoning(self) -> None:
+        raw = "".join(self._current_reasoning_parts)
+        self._current_reasoning_parts = []
+        chunk = raw.strip()
+        if chunk:
+            self._reasoning_blocks.append(chunk)
+
+    def process(self, text: str) -> str:
+        """Process a streamed text chunk and return visible content."""
+        if not isinstance(text, str) or not text:
+            return ""
+
+        self._buffer += text
+        out_parts: list[str] = []
+
+        while self._buffer:
+            if self._state == "searching":
+                start_idx = self._buffer.find(self._start_tag)
+                end_idx = self._buffer.find(self._end_tag)
+                if start_idx == -1 and end_idx == -1:
+                    # Ambiguous prefix: we might be in the "closing-only" mode where the
+                    # start tag is injected by the template. Buffer until we see a tag.
+                    break
+
+                candidates: list[tuple[int, str]] = []
+                if start_idx != -1:
+                    candidates.append((start_idx, "start"))
+                if end_idx != -1:
+                    candidates.append((end_idx, "end"))
+                idx, kind = min(candidates)
+
+                if kind == "start":
+                    prefix = self._buffer[:idx]
+                    if prefix:
+                        out_parts.append(prefix)
+                    self._buffer = self._buffer[idx + len(self._start_tag) :]
+                    self._state = "thinking"
+                    self._current_reasoning_parts = []
+                    continue
+
+                # end tag before any explicit start tag -> closing-only case
+                reasoning_prefix = self._buffer[:idx]
+                if reasoning_prefix:
+                    self._current_reasoning_parts = [reasoning_prefix]
+                self._buffer = self._buffer[idx + len(self._end_tag) :]
+                self._finalize_current_reasoning()
+                self._state = "visible"
+                continue
+
+            if self._state == "visible":
+                start_idx = self._buffer.find(self._start_tag)
+                if start_idx == -1:
+                    keep = self._suffix_prefix_len(self._buffer, self._start_tag)
+                    if keep:
+                        out_parts.append(self._buffer[:-keep])
+                        self._buffer = self._buffer[-keep:]
+                    else:
+                        out_parts.append(self._buffer)
+                        self._buffer = ""
+                    break
+
+                prefix = self._buffer[:start_idx]
+                if prefix:
+                    out_parts.append(prefix)
+                self._buffer = self._buffer[start_idx + len(self._start_tag) :]
+                self._state = "thinking"
+                self._current_reasoning_parts = []
+                continue
+
+            if self._state == "thinking":
+                end_idx = self._buffer.find(self._end_tag)
+                if end_idx == -1:
+                    keep = self._suffix_prefix_len(self._buffer, self._end_tag)
+                    if keep:
+                        self._current_reasoning_parts.append(self._buffer[:-keep])
+                        self._buffer = self._buffer[-keep:]
+                    else:
+                        self._current_reasoning_parts.append(self._buffer)
+                        self._buffer = ""
+                    break
+
+                reasoning_text = self._buffer[:end_idx]
+                if reasoning_text:
+                    self._current_reasoning_parts.append(reasoning_text)
+                self._buffer = self._buffer[end_idx + len(self._end_tag) :]
+                self._finalize_current_reasoning()
+                self._state = "visible"
+                continue
+
+            break
+
+        return "".join(out_parts)
+
+    def finalize(self) -> tuple[str, Optional[str]]:
+        """Return (visible_tail, reasoning) after the stream ends."""
+        visible_tail = ""
+
+        if self._state == "thinking":
+            # Truncated: roll back (do not strip) to match `strip_thinking_tags()`.
+            visible_tail = self._start_tag + "".join(self._current_reasoning_parts) + self._buffer
+            self._current_reasoning_parts = []
+            self._buffer = ""
+        else:
+            # searching/visible: emit any remaining buffered visible content.
+            visible_tail = self._buffer
+            self._buffer = ""
+
+        reasoning = "\n\n".join(self._reasoning_blocks).strip() if self._reasoning_blocks else None
+        return visible_tail, reasoning or None
+
+
 def split_harmony_response_text(text: str) -> Tuple[Optional[str], Optional[str]]:
     """Best-effort split of OpenAI Harmony-style transcripts into (final, reasoning).
 
@@ -188,6 +340,25 @@ def split_harmony_response_text(text: str) -> Tuple[Optional[str], Optional[str]
     final_text = final_raw.strip()
 
     return final_text, reasoning_text
+
+
+def maybe_create_incremental_thinking_tag_stripper(
+    *,
+    architecture_format: Optional[Mapping[str, Any]] = None,
+    model_capabilities: Optional[Mapping[str, Any]] = None,
+) -> Optional[IncrementalThinkingTagStripper]:
+    """Return an incremental thinking-tag stripper when configured via assets."""
+    tags = _get_thinking_tags(
+        architecture_format=architecture_format,
+        model_capabilities=model_capabilities,
+    )
+    if tags is None:
+        return None
+    start_tag, end_tag = tags
+    try:
+        return IncrementalThinkingTagStripper(start_tag=start_tag, end_tag=end_tag)
+    except Exception:
+        return None
 
 
 def should_extract_harmony_final(

@@ -24,7 +24,7 @@ def test_qwen3_5_thinking_off_inserts_empty_think_marker_for_huggingface_gguf() 
     provider.provider = "huggingface"
     provider.model_type = "gguf"
 
-    prompt, messages, system_prompt, kwargs = provider._apply_thinking_request(
+    prompt, messages, system_prompt, kwargs, meta = provider._apply_thinking_request(
         thinking="off",
         prompt="hi",
         messages=None,
@@ -38,6 +38,8 @@ def test_qwen3_5_thinking_off_inserts_empty_think_marker_for_huggingface_gguf() 
     assert isinstance(messages, list)
     assert messages[-2] == {"role": "user", "content": "hi"}
     assert messages[-1] == {"role": "assistant", "content": "<think>\n\n</think>\n\n"}
+    assert isinstance(meta, dict)
+    assert meta.get("thinking_effective") == "off"
 
 
 def test_qwen3_5_thinking_off_does_not_apply_marker_for_huggingface_transformers() -> None:
@@ -46,7 +48,7 @@ def test_qwen3_5_thinking_off_does_not_apply_marker_for_huggingface_transformers
     provider.model_type = "transformers"
 
     with pytest.warns(RuntimeWarning):
-        prompt, messages, system_prompt, kwargs = provider._apply_thinking_request(
+        prompt, messages, system_prompt, kwargs, meta = provider._apply_thinking_request(
             thinking="off",
             prompt="hi",
             messages=None,
@@ -58,6 +60,7 @@ def test_qwen3_5_thinking_off_does_not_apply_marker_for_huggingface_transformers
     assert messages is None
     assert system_prompt is None
     assert kwargs == {}
+    assert isinstance(meta, dict)
 
 
 def test_huggingface_gguf_chat_messages_skips_empty_user_prompt() -> None:

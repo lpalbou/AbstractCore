@@ -28,6 +28,22 @@ def test_prompted_tool_format_selection_prefers_architecture_specific_syntax() -
     assert "<function_call>" not in openai_prompt
 
 
+def test_gemma4_tool_prompt_uses_gemma4_special_token_syntax() -> None:
+    tool = ToolDefinition.from_function(_echo)
+    prompt = format_tool_prompt([tool], model_name="google/gemma-4-31B-it", include_tool_list=False, include_examples=False)
+    assert "<|tool_call>" in prompt
+    assert "<tool_call|>" in prompt
+    assert "call:tool_name" in prompt
+
+
+def test_parse_tool_calls_supports_gemma4_call_syntax() -> None:
+    content = '<|tool_call>call:list_files{"directory_path":"."}<tool_call|>'
+    calls = parse_tool_calls(content, model_name="google/gemma-4-31B-it")
+    assert len(calls) == 1
+    assert calls[0].name == "list_files"
+    assert calls[0].arguments == {"directory_path": "."}
+
+
 def test_parse_tool_calls_prefers_raw_json_for_json_architectures() -> None:
     content = '{"name":"list_files","arguments":{"directory_path":"."}}'
     calls = parse_tool_calls(content, model_name="mistral-7b")

@@ -15,7 +15,7 @@ try:
 except ImportError:
     PYDANTIC_AVAILABLE = False
     BaseModel = None
-from .base import BaseProvider
+from .base import BaseProvider, ThinkingControlHandling
 from ..core.types import GenerateResponse
 from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error, format_provider_error
 from ..tools import UniversalToolHandler, ToolDefinition, execute_tools
@@ -106,7 +106,7 @@ class OllamaProvider(BaseProvider):
         enabled: Optional[bool],
         level: Optional[str],
         kwargs: Dict[str, Any],
-    ) -> tuple[Dict[str, Any], bool]:
+    ) -> tuple[Dict[str, Any], ThinkingControlHandling]:
         # Ollama exposes "thinking" via the request field `think`.
         #
         # Observed semantics:
@@ -117,7 +117,7 @@ class OllamaProvider(BaseProvider):
         # possible. Only models that cannot disable traces (e.g. GPT-OSS/Harmony) should degrade to
         # a low-effort mode.
         if enabled is None and level is None:
-            return kwargs, False
+            return kwargs, ThinkingControlHandling()
 
         new_kwargs = dict(kwargs)
 
@@ -130,19 +130,19 @@ class OllamaProvider(BaseProvider):
             # Harmony (GPT-OSS): supports string effort levels, but cannot fully disable traces.
             if level is not None:
                 new_kwargs["think"] = level
-                return new_kwargs, True
+                return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=True)
             if enabled is False:
                 new_kwargs["think"] = "low"
-                return new_kwargs, True
+                return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=True)
             if enabled is True:
                 new_kwargs["think"] = "medium"
-                return new_kwargs, True
-            return kwargs, False
+                return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=True)
+            return kwargs, ThinkingControlHandling()
 
         if enabled is False:
             new_kwargs["think"] = False
             new_kwargs.pop("think_level", None)
-            return new_kwargs, True
+            return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
 
         # Default mode (most models): boolean thinking enable/disable.
         #
@@ -154,9 +154,9 @@ class OllamaProvider(BaseProvider):
             new_kwargs["think"] = True
             if level is not None:
                 new_kwargs["think_level"] = level
-            return new_kwargs, True
+            return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
 
-        return kwargs, False
+        return kwargs, ThinkingControlHandling()
 
     def _convert_messages_for_ollama(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Convert OpenAI messages to Ollama-compatible format

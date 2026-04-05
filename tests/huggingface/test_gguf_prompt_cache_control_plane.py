@@ -197,6 +197,7 @@ def test_gguf_prompt_cache_prepare_modules_fork_and_update_reuse_prefix(chat_for
     assert isinstance(session_state, _GGUFPromptCacheValue)
     assert session_state.messages[-1]["content"] == "hi"
     assert session_state.prompt_tokens
+    assert session_state.prompt_tokens[: len(prefix_state.prompt_tokens)] == prefix_state.prompt_tokens
     assert len(provider.llm.eval_calls) == 1
     assert 0 < len(provider.llm.eval_calls[0]) < len(session_state.prompt_tokens)
 

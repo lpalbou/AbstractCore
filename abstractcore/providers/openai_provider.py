@@ -14,7 +14,7 @@ try:
 except ImportError:
     PYDANTIC_AVAILABLE = False
     BaseModel = None
-from .base import BaseProvider
+from .base import BaseProvider, ThinkingControlHandling
 from ..core.types import GenerateResponse
 from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error, format_auth_error
 from ..tools import UniversalToolHandler, execute_tools
@@ -82,15 +82,15 @@ class OpenAIProvider(BaseProvider):
         enabled: Optional[bool],
         level: Optional[str],
         kwargs: Dict[str, Any],
-    ) -> tuple[Dict[str, Any], bool]:
+    ) -> tuple[Dict[str, Any], ThinkingControlHandling]:
         # OpenAI Chat Completions exposes reasoning controls via `reasoning_effort`.
         #
         # Keep this mapping provider-local (BaseProvider normalizes thinking="none" -> enabled=False).
         reasoning_levels = self._model_reasoning_levels()
         if not reasoning_levels:
-            return kwargs, False
+            return kwargs, ThinkingControlHandling()
         if enabled is None and level is None:
-            return kwargs, False
+            return kwargs, ThinkingControlHandling()
 
         effort: Optional[str] = None
 
@@ -104,7 +104,7 @@ class OpenAIProvider(BaseProvider):
             else:
                 fallback = next((x for x in ("minimal", "low", "medium", "high", "xhigh") if x in reasoning_levels), None)
                 if not fallback:
-                    return kwargs, False
+                    return kwargs, ThinkingControlHandling()
                 warnings.warn(
                     f"thinking='off' requested for model '{self.model}', but reasoning_effort cannot be fully "
                     f"disabled (supported: {reasoning_levels}); using reasoning_effort={fallback!r}.",
@@ -121,14 +121,14 @@ class OpenAIProvider(BaseProvider):
             elif "low" in reasoning_levels:
                 effort = "low"
             else:
-                return kwargs, False
+                return kwargs, ThinkingControlHandling()
 
         if not effort:
-            return kwargs, False
+            return kwargs, ThinkingControlHandling()
 
         new_kwargs = dict(kwargs)
         new_kwargs["reasoning_effort"] = effort
-        return new_kwargs, True
+        return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=True)
 
     @property
     def async_client(self):

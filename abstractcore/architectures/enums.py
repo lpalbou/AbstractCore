@@ -67,6 +67,7 @@ class ArchitectureFamily(Enum):
     GEMMA = "gemma"                     # Google Gemma v1 family
     GEMMA2 = "gemma2"                   # Google Gemma 2 family
     GEMMA3 = "gemma3"                   # Google Gemma 3 family
+    GEMMA4 = "gemma4"                   # Google Gemma 4 family
     GEMMA3N = "gemma3n"                 # Google Gemma 3n family
     CODEGEMMA = "codegemma"             # Google CodeGemma family
     PALIGEMMA = "paligemma"             # Google PaliGemma family

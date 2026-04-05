@@ -14,7 +14,7 @@ try:
 except ImportError:
     PYDANTIC_AVAILABLE = False
     BaseModel = None
-from .base import BaseProvider
+from .base import BaseProvider, ThinkingControlHandling
 from ..core.types import GenerateResponse
 from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error, format_auth_error
 from ..tools import UniversalToolHandler, execute_tools
@@ -70,18 +70,24 @@ class AnthropicProvider(BaseProvider):
         enabled: Optional[bool],
         level: Optional[str],
         kwargs: Dict[str, Any],
-    ) -> tuple[Dict[str, Any], bool]:
+    ) -> tuple[Dict[str, Any], ThinkingControlHandling]:
         # Anthropic Messages API exposes thinking controls via a `thinking` object.
         #
         # As of early 2026, newer Claude models recommend "adaptive" thinking with a separate
         # `output_config.effort` knob, while manual `budget_tokens` is deprecated but still
         # accepted for extended thinking on some models.
         if enabled is None and level is None:
-            return kwargs, False
+            return kwargs, ThinkingControlHandling()
 
-        model_s = str(getattr(self, "model", "") or "").strip().lower()
-        adaptive_supported = ("opus-4-6" in model_s) or ("sonnet-4-6" in model_s) or ("4.6" in model_s)
-        max_effort_supported = ("opus-4-6" in model_s) or ("4.6" in model_s and "opus" in model_s)
+        caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
+        mode = str(caps.get("thinking_control_mode") or "").strip().lower()
+        adaptive_supported = mode == "adaptive"
+        max_effort_supported = bool(caps.get("max_effort_supported")) if "max_effort_supported" in caps else False
+        if not mode:
+            # Backward-compatible heuristic fallback for models missing capability metadata.
+            model_s = str(getattr(self, "model", "") or "").strip().lower()
+            adaptive_supported = ("opus-4-6" in model_s) or ("sonnet-4-6" in model_s) or ("4.6" in model_s)
+            max_effort_supported = ("opus-4-6" in model_s) or ("4.6" in model_s and "opus" in model_s)
 
         def _level_to_effort(lvl: Optional[str]) -> str:
             if lvl in {"low", "medium", "high"}:
@@ -98,7 +104,7 @@ class AnthropicProvider(BaseProvider):
 
         if enabled is False:
             new_kwargs["thinking"] = {"type": "disabled"}
-            return new_kwargs, True
+            return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
 
         if adaptive_supported:
             new_kwargs["thinking"] = {"type": "adaptive"}
@@ -114,7 +120,7 @@ class AnthropicProvider(BaseProvider):
             output_config_dict: Dict[str, Any] = dict(output_config) if isinstance(output_config, dict) else {}
             output_config_dict["effort"] = effort
             new_kwargs["output_config"] = output_config_dict
-            return new_kwargs, True
+            return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=True)
 
         # Manual budget fallback (deprecated on newest models but still best-effort for older ones).
         budget_tokens = _level_to_budget_tokens(level)
@@ -127,7 +133,7 @@ class AnthropicProvider(BaseProvider):
             budget_tokens = max(0, min(int(budget_tokens), int(max_out_i)))
 
         new_kwargs["thinking"] = {"type": "enabled", "budget_tokens": int(budget_tokens)}
-        return new_kwargs, True
+        return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=True)
 
     @property
     def async_client(self):

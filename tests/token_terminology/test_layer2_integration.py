@@ -40,8 +40,8 @@ class TestProviderInitialization:
 
         provider = OpenAIProvider("gpt-5")
 
-        assert provider.max_tokens == 200000, "GPT-5 should have max_tokens=200000"
-        assert provider.max_output_tokens == 8192, "GPT-5 should have max_output_tokens=8192"
+        assert provider.max_tokens == 400000, "GPT-5 should have max_tokens=400000"
+        assert provider.max_output_tokens == 128000, "GPT-5 should have max_output_tokens=128000"
 
     def test_ollama_provider_uses_json_max_tokens(self):
         """Test Ollama provider gets max_tokens from JSON."""

@@ -547,7 +547,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             resp = session.generate(
                 line,
                 thinking=thinking,
-                max_tokens=args.max_output_tokens,
+                max_output_tokens=args.max_output_tokens,
                 temperature=args.temperature,
             )
         except Exception as e:  # noqa: BLE001

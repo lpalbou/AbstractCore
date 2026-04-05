@@ -10,6 +10,8 @@ import json
 import re
 import socket
 import hashlib
+import inspect
+import threading
 from collections import deque, OrderedDict
 from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING, Tuple
@@ -40,6 +42,7 @@ from ..exceptions import (
 from ..architectures import detect_architecture, get_architecture_format, get_model_capabilities
 from ..architectures.response_postprocessing import (
     normalize_assistant_text,
+    maybe_create_incremental_thinking_tag_stripper,
     strip_output_wrappers,
 )
 from ..tools import execute_tools
@@ -74,6 +77,7 @@ class PromptCacheStore:
         self._max_entries = int(max_entries) if max_entries and int(max_entries) > 0 else 32
         self._default_ttl_s = default_ttl_s if default_ttl_s is None else float(default_ttl_s)
         self._entries: "OrderedDict[str, _PromptCacheEntry]" = OrderedDict()
+        self._lock = threading.RLock()
 
     def _is_expired(self, entry: _PromptCacheEntry) -> bool:
         ttl_s = entry.ttl_s if entry.ttl_s is not None else self._default_ttl_s
@@ -85,15 +89,16 @@ class PromptCacheStore:
         if not isinstance(key, str) or not key.strip():
             return None
         key = key.strip()
-        entry = self._entries.get(key)
-        if entry is None:
-            return None
-        if self._is_expired(entry):
-            self.delete(key)
-            return None
-        entry.last_accessed_at_s = time.time()
-        self._entries.move_to_end(key)
-        return entry.value
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None:
+                return None
+            if self._is_expired(entry):
+                self.delete(key)
+                return None
+            entry.last_accessed_at_s = time.time()
+            self._entries.move_to_end(key)
+            return entry.value
 
     def set(
         self,
@@ -107,51 +112,73 @@ class PromptCacheStore:
             raise ValueError("prompt cache key must be a non-empty string")
         key = key.strip()
         now = time.time()
-        self._entries[key] = _PromptCacheEntry(
-            value=value,
-            created_at_s=now,
-            last_accessed_at_s=now,
-            ttl_s=ttl_s,
-            meta=dict(meta or {}),
-        )
-        self._entries.move_to_end(key)
-        while len(self._entries) > self._max_entries:
-            self._entries.popitem(last=False)
+        with self._lock:
+            self._entries[key] = _PromptCacheEntry(
+                value=value,
+                created_at_s=now,
+                last_accessed_at_s=now,
+                ttl_s=ttl_s,
+                meta=dict(meta or {}),
+            )
+            self._entries.move_to_end(key)
+            while len(self._entries) > self._max_entries:
+                self._entries.popitem(last=False)
 
     def delete(self, key: str) -> bool:
         if not isinstance(key, str) or not key.strip():
             return False
         key = key.strip()
-        return self._entries.pop(key, None) is not None
+        with self._lock:
+            return self._entries.pop(key, None) is not None
 
     def clear(self) -> None:
-        self._entries.clear()
+        with self._lock:
+            self._entries.clear()
 
     def stats(self) -> Dict[str, Any]:
         # Opportunistically purge expired entries.
-        expired = []
-        for k, v in self._entries.items():
-            if self._is_expired(v):
-                expired.append(k)
-        for k in expired:
-            self.delete(k)
+        with self._lock:
+            expired = []
+            for k, v in self._entries.items():
+                if self._is_expired(v):
+                    expired.append(k)
+            for k in expired:
+                self.delete(k)
 
-        return {
-            "entries": len(self._entries),
-            "max_entries": self._max_entries,
-            "default_ttl_s": self._default_ttl_s,
-        }
+            return {
+                "entries": len(self._entries),
+                "max_entries": self._max_entries,
+                "default_ttl_s": self._default_ttl_s,
+            }
 
     def keys(self) -> List[str]:
-        return list(self._entries.keys())
+        with self._lock:
+            return list(self._entries.keys())
 
     def meta(self, key: str) -> Optional[Dict[str, Any]]:
         if not isinstance(key, str) or not key.strip():
             return None
-        entry = self._entries.get(key.strip())
-        if entry is None:
-            return None
-        return dict(entry.meta or {})
+        with self._lock:
+            entry = self._entries.get(key.strip())
+            if entry is None:
+                return None
+            return dict(entry.meta or {})
+
+
+@dataclass(frozen=True)
+class ThinkingControlHandling:
+    """Provider/model prompt thinking control handling details.
+
+    This makes "partial handling" explicit (e.g., provider can enable/disable thinking
+    but cannot enforce effort levels).
+    """
+
+    handled_enable_disable: bool = False
+    handled_level: bool = False
+
+    @property
+    def handled(self) -> bool:
+        return bool(self.handled_enable_disable or self.handled_level)
 
 
 @dataclass(frozen=True)
@@ -179,8 +206,16 @@ class PromptCacheModule:
         if isinstance(self.messages, list) and self.messages:
             out: List[Dict[str, Any]] = []
             for m in self.messages:
-                if isinstance(m, dict):
-                    out.append(dict(m))
+                if not isinstance(m, dict):
+                    continue
+                role = str(m.get("role") or "").strip().lower()
+                if not role:
+                    continue
+                msg: Dict[str, Any] = {"role": role, "content": m.get("content")}
+                for k in ("name", "tool_call_id", "tool_calls", "function_call"):
+                    if k in m:
+                        msg[k] = m.get(k)
+                out.append(msg)
             messages = out or None
         tools = None
         if isinstance(self.tools, list) and self.tools:
@@ -188,7 +223,35 @@ class PromptCacheModule:
             for t in self.tools:
                 if isinstance(t, dict):
                     out_tools.append(dict(t))
+                    continue
+                if hasattr(t, "to_dict") and callable(getattr(t, "to_dict")):
+                    try:
+                        td = t.to_dict()
+                        if isinstance(td, dict):
+                            out_tools.append(dict(td))
+                            continue
+                    except Exception:
+                        pass
+                if hasattr(t, "model_dump") and callable(getattr(t, "model_dump")):
+                    try:
+                        td = t.model_dump()
+                        if isinstance(td, dict):
+                            out_tools.append(dict(td))
+                            continue
+                    except Exception:
+                        pass
             tools = out_tools or None
+            if tools:
+                def _tool_sort_key(tool: Dict[str, Any]) -> str:
+                    func = tool.get("function") if isinstance(tool.get("function"), dict) else None
+                    name = ""
+                    if func:
+                        name = str(func.get("name") or "").strip()
+                    if not name:
+                        name = str(tool.get("name") or "").strip()
+                    return name.lower()
+
+                tools.sort(key=_tool_sort_key)
         add_generation_prompt = bool(self.add_generation_prompt)
         scope = str(self.scope or "private").strip().lower() or "private"
         if scope not in {"private", "shared"}:
@@ -218,7 +281,42 @@ class PromptCacheModule:
             "add_generation_prompt": bool(mod.add_generation_prompt),
             "scope": mod.scope,
         }
-        raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        try:
+            raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        except TypeError as e:
+            def _first_issue(obj: Any, path: str = "$", seen: Optional[set[int]] = None) -> Optional[str]:
+                if seen is None:
+                    seen = set()
+                try:
+                    oid = id(obj)
+                    if oid in seen:
+                        return None
+                    seen.add(oid)
+                except Exception:
+                    pass
+                if obj is None or isinstance(obj, (str, int, float, bool)):
+                    return None
+                if isinstance(obj, dict):
+                    for k, v in obj.items():
+                        if not isinstance(k, str):
+                            return f"{path} (non-string key type {type(k).__name__})"
+                        issue = _first_issue(v, f"{path}.{k}", seen)
+                        if issue:
+                            return issue
+                    return None
+                if isinstance(obj, (list, tuple)):
+                    for i, v in enumerate(obj):
+                        issue = _first_issue(v, f"{path}[{i}]", seen)
+                        if issue:
+                            return issue
+                    return None
+                return f"{path} (type {type(obj).__name__})"
+
+            issue = _first_issue(payload) or str(e)
+            raise ValueError(
+                "PromptCacheModule.fingerprint requires JSON-serializable values; "
+                f"first non-serializable value at {issue}."
+            ) from e
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -227,6 +325,8 @@ _PROMPT_CACHE_OPERATION_ALIASES: Dict[str, str] = {
     "clear": "clear",
     "update": "update",
     "fork": "fork",
+    "save": "save",
+    "load": "load",
     "prepare": "prepare_modules",
     "prepare_modules": "prepare_modules",
     "modules": "prepare_modules",
@@ -254,6 +354,8 @@ class PromptCacheCapabilities:
     supports_fork: bool = False
     supports_prepare_modules: bool = False
     supports_stats: bool = False
+    supports_save: bool = False
+    supports_load: bool = False
     supports_ttl: bool = False
     notes: Tuple[str, ...] = ()
 
@@ -271,6 +373,10 @@ class PromptCacheCapabilities:
             return bool(self.supports_prepare_modules)
         if op == "stats":
             return bool(self.supports_stats)
+        if op == "save":
+            return bool(self.supports_save)
+        if op == "load":
+            return bool(self.supports_load)
         return False
 
     def to_dict(self) -> Dict[str, Any]:
@@ -283,6 +389,8 @@ class PromptCacheCapabilities:
             "supports_fork": bool(self.supports_fork),
             "supports_prepare_modules": bool(self.supports_prepare_modules),
             "supports_stats": bool(self.supports_stats),
+            "supports_save": bool(self.supports_save),
+            "supports_load": bool(self.supports_load),
             "supports_ttl": bool(self.supports_ttl),
             "notes": list(self.notes or ()),
         }
@@ -848,6 +956,116 @@ class BaseProvider(AbstractCoreInterface, ABC):
             return True
         return False
 
+    @staticmethod
+    def _thinking_level_rank(level: Optional[str]) -> Optional[int]:
+        order = ("minimal", "low", "medium", "high", "xhigh")
+        if not isinstance(level, str):
+            return None
+        lvl = level.strip().lower()
+        try:
+            return order.index(lvl)
+        except ValueError:
+            return None
+
+    @classmethod
+    def _nearest_supported_thinking_level(cls, requested_level: str, supported_levels: List[str]) -> Optional[str]:
+        """Map a requested thinking level to the nearest supported level (best-effort)."""
+        if not isinstance(requested_level, str) or not requested_level.strip():
+            return None
+        req = requested_level.strip().lower()
+        req_rank = cls._thinking_level_rank(req)
+        if req_rank is None:
+            return None
+
+        ranked: List[Tuple[int, str]] = []
+        for lvl in supported_levels or []:
+            if not isinstance(lvl, str):
+                continue
+            s = lvl.strip().lower()
+            if s == "none":
+                # "none" is a disable signal for some providers, not an effort level.
+                continue
+            r = cls._thinking_level_rank(s)
+            if r is None:
+                continue
+            ranked.append((r, s))
+        if not ranked:
+            return None
+
+        # Nearest in ordinal space; ties prefer the lower effort (less surprising escalation).
+        ranked.sort(key=lambda x: x[0])
+        best: Optional[str] = None
+        best_dist: Optional[int] = None
+        best_rank: Optional[int] = None
+        for r, s in ranked:
+            dist = abs(r - req_rank)
+            if best_dist is None or dist < best_dist or (dist == best_dist and best_rank is not None and r < best_rank):
+                best = s
+                best_dist = dist
+                best_rank = r
+        return best
+
+    def _model_supports_reasoning_output(self) -> bool:
+        """Return True if the model is expected to emit a separate reasoning/thinking channel."""
+        caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
+        arch = self.architecture_config if isinstance(self.architecture_config, dict) else {}
+
+        resp_fmt = str((caps.get("response_format") or arch.get("response_format") or "")).strip().lower()
+        if resp_fmt == "harmony":
+            return True
+        msg_fmt = str((arch.get("message_format") or "")).strip().lower()
+        if msg_fmt == "harmony":
+            return True
+
+        if caps.get("thinking_support") is True:
+            return True
+        if isinstance(caps.get("thinking_tags"), (list, tuple)) and len(caps.get("thinking_tags")) == 2:
+            return True
+        if isinstance(caps.get("thinking_output_field"), str) and caps.get("thinking_output_field").strip():
+            return True
+        if self._model_reasoning_levels():
+            return True
+
+        if arch.get("reasoning_support") is True:
+            return True
+        if isinstance(arch.get("thinking_tags"), (list, tuple)) and len(arch.get("thinking_tags")) == 2:
+            return True
+        if isinstance(arch.get("thinking_output_field"), str) and arch.get("thinking_output_field").strip():
+            return True
+        if isinstance(arch.get("reasoning_levels"), list) and arch.get("reasoning_levels"):
+            return True
+
+        return False
+
+    def _model_supports_reasoning_control(self) -> bool:
+        """Return True if the model advertises a request-side reasoning/thinking control surface."""
+        caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
+        arch = self.architecture_config if isinstance(self.architecture_config, dict) else {}
+
+        # Harmony response format implies a request-side Reasoning control via system prompt injection.
+        resp_fmt = str((caps.get("response_format") or arch.get("response_format") or "")).strip().lower()
+        if resp_fmt == "harmony":
+            return True
+        msg_fmt = str((arch.get("message_format") or "")).strip().lower()
+        if msg_fmt == "harmony":
+            return True
+
+        # Explicit effort enums (OpenAI reasoning_effort, Harmony Reasoning: ..., etc.).
+        if self._model_reasoning_levels():
+            return True
+
+        # Explicit budget knobs (e.g., Claude extended thinking budget).
+        if caps.get("thinking_budget") is True:
+            return True
+
+        # Prompt-level disable tokens (e.g., GLM /nothink, Qwen /no_think).
+        for src in (caps, arch):
+            token = src.get("thinking_control")
+            if isinstance(token, str) and token.strip():
+                return True
+
+        return False
+
     def _is_parameter_supported(self, param: str) -> bool:
         """Check if a generation parameter is supported by this model.
 
@@ -870,28 +1088,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
         return caps.get("token_param_name", "max_tokens")
 
     def _model_supports_thinking_control(self) -> bool:
-        caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
-        arch = self.architecture_config if isinstance(self.architecture_config, dict) else {}
+        # Backward-compatible alias. Prefer `_model_supports_reasoning_control()` / `_model_supports_reasoning_output()`.
+        return self._model_supports_reasoning_control()
 
-        if caps.get("thinking_support") is True:
-            return True
-        if isinstance(caps.get("thinking_tags"), (list, tuple)) and len(caps.get("thinking_tags")) == 2:
-            return True
-        if isinstance(caps.get("thinking_output_field"), str) and caps.get("thinking_output_field").strip():
-            return True
-        if self._model_reasoning_levels():
-            return True
-
-        if isinstance(arch.get("thinking_tags"), (list, tuple)) and len(arch.get("thinking_tags")) == 2:
-            return True
-        if isinstance(arch.get("thinking_control"), str) and arch.get("thinking_control").strip():
-            return True
-        if arch.get("reasoning_support") is True:
-            return True
-        if isinstance(arch.get("reasoning_levels"), list) and arch.get("reasoning_levels"):
-            return True
-
-        return False
+    @staticmethod
+    def _coerce_thinking_handling(value: Any) -> ThinkingControlHandling:
+        if isinstance(value, ThinkingControlHandling):
+            return value
+        if value is True:
+            return ThinkingControlHandling(handled_enable_disable=True, handled_level=True)
+        return ThinkingControlHandling()
 
     def _apply_thinking_request(
         self,
@@ -901,23 +1107,34 @@ class BaseProvider(AbstractCoreInterface, ABC):
         messages: Optional[List[Dict[str, str]]],
         system_prompt: Optional[str],
         kwargs: Dict[str, Any],
-    ) -> Tuple[str, Optional[List[Dict[str, str]]], Optional[str], Dict[str, Any]]:
+    ) -> Tuple[str, Optional[List[Dict[str, str]]], Optional[str], Dict[str, Any], Optional[Dict[str, Any]]]:
         """Apply unified thinking controls to the request."""
-        enabled, level = self._normalize_thinking_request(thinking)
-        if enabled is None and level is None:
-            return prompt, messages, system_prompt, kwargs
+        enabled, requested_level = self._normalize_thinking_request(thinking)
+        requested_enabled = enabled
+        if enabled is None and requested_level is None:
+            return prompt, messages, system_prompt, kwargs, None
 
-        supports_control = self._model_supports_thinking_control()
         reasoning_levels = self._model_reasoning_levels()
+        effective_level = requested_level
 
-        if level is not None and reasoning_levels and level not in reasoning_levels:
-            warnings.warn(
-                f"thinking level '{level}' requested but not supported for model '{self.model}' "
-                f"(supported: {reasoning_levels}); falling back to thinking='on'.",
-                RuntimeWarning,
-                stacklevel=3,
-            )
-            level = None
+        if requested_level is not None and reasoning_levels and requested_level not in reasoning_levels:
+            mapped = self._nearest_supported_thinking_level(requested_level, reasoning_levels)
+            if mapped:
+                warnings.warn(
+                    f"thinking level '{requested_level}' requested but not supported for model '{self.model}' "
+                    f"(supported: {reasoning_levels}); using '{mapped}'.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+                effective_level = mapped
+            else:
+                warnings.warn(
+                    f"thinking level '{requested_level}' requested but not supported for model '{self.model}' "
+                    f"(supported: {reasoning_levels}); treating as thinking='on'.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+                effective_level = None
             enabled = True
 
         # When a specific thinking level is requested but the model does not advertise supported
@@ -925,10 +1142,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # We still enable thinking, but do not warn: many open-weight stacks expose the knob via
         # template kwargs (enable_thinking) and/or server-side budgets without a stable upstream
         # "effort enum" to record in assets.
-        if level is not None and not reasoning_levels:
+        if effective_level is not None and not reasoning_levels:
             enabled = True
 
-        handled_by_model_prompt = False
+        supports_reasoning_output = self._model_supports_reasoning_output()
+        supports_reasoning_control = self._model_supports_reasoning_control()
+
+        handled_model_enable_disable = False
+        handled_model_level = False
+        harmony_effective_level: Optional[str] = None
 
         # Harmony (GPT-OSS): control via system message `Reasoning: low|medium|high`.
         msg_fmt = str((self.architecture_config or {}).get("message_format") or "").strip().lower()
@@ -936,8 +1158,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
         is_harmony = msg_fmt == "harmony" or resp_fmt == "harmony"
         if is_harmony:
             target_level: Optional[str] = None
-            if level is not None:
-                target_level = level
+            if effective_level is not None:
+                target_level = effective_level
             elif enabled is False:
                 warnings.warn(
                     f"thinking='off' requested for Harmony model '{self.model}', but GPT-OSS reasoning traces "
@@ -951,6 +1173,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 target_level = "medium"
 
             if target_level:
+                harmony_effective_level = target_level
                 line = f"Reasoning: {target_level}"
                 if isinstance(system_prompt, str) and system_prompt.strip():
                     # Replace any existing Reasoning line; otherwise prepend.
@@ -965,13 +1188,35 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         system_prompt = f"{line}\n{system_prompt}"
                 else:
                     system_prompt = line
-                handled_by_model_prompt = True
+                handled_model_enable_disable = True
+                handled_model_level = True
 
-        kwargs, handled_by_provider = self._apply_provider_thinking_kwargs(
-            enabled=enabled,
-            level=level,
-            kwargs=kwargs,
-        )
+        # Provider-specific hook: allow providers to see both requested and effective levels.
+        hook = getattr(self, "_apply_provider_thinking_kwargs", None)
+        raw_provider_handling: Any = False
+        if callable(hook):
+            call_kwargs: Dict[str, Any] = {
+                "enabled": enabled,
+                "level": effective_level,
+                "kwargs": kwargs,
+                "requested_level": requested_level,
+                "supported_levels": reasoning_levels,
+            }
+            filtered_kwargs: Dict[str, Any] = {"enabled": enabled, "level": effective_level, "kwargs": kwargs}
+            try:
+                sig = inspect.signature(hook)
+                params = sig.parameters
+                accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+                if accepts_var_kw:
+                    filtered_kwargs = call_kwargs
+                else:
+                    filtered_kwargs = {k: v for k, v in call_kwargs.items() if k in params}
+            except Exception:
+                filtered_kwargs = {"enabled": enabled, "level": effective_level, "kwargs": kwargs}
+
+            kwargs, raw_provider_handling = hook(**filtered_kwargs)
+
+        provider_handling = self._coerce_thinking_handling(raw_provider_handling)
         # IMPORTANT: Avoid prompt-injection based "reasoning effort" toggles here.
         #
         # Thinking controls should be mapped to backend-native request fields whenever possible
@@ -1022,7 +1267,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 ):
                     new_messages.append({"role": "assistant", "content": marker})
                 messages = new_messages
-                handled_by_model_prompt = True
+                handled_model_enable_disable = True
 
         # Model-level control token for disabling thinking (e.g., GLM `/nothink`).
         #
@@ -1037,8 +1282,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if isinstance(token, str) and token.strip():
                 thinking_control = token.strip()
 
-        if enabled is False and thinking_control and not handled_by_provider:
-            handled_by_model_prompt = True
+        if enabled is False and thinking_control and not provider_handling.handled_enable_disable:
+            handled_model_enable_disable = True
 
             def _append_control(text: str) -> str:
                 if thinking_control in text:
@@ -1069,12 +1314,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         stacklevel=3,
                     )
 
-        requesting_enable = enabled is True or level is not None
+        requesting_enable = enabled is True or effective_level is not None
         requesting_disable = enabled is False
+        requesting_level = requested_level is not None
 
         # Warn about unsupported thinking capability only when the caller is *enabling* thinking.
         # When thinking="off"/"none", a non-thinking model is already in the desired mode.
-        if requesting_enable and not supports_control:
+        if requesting_enable and not supports_reasoning_output:
             warnings.warn(
                 f"thinking={thinking!r} requested but model '{self.model}' is not marked as thinking-capable "
                 "in model_capabilities.json; the request may be ignored.",
@@ -1082,19 +1328,127 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 stacklevel=3,
             )
 
-        # Warn about missing provider-level mapping only when the request is expected to take effect:
-        # - enabling thinking always needs a mapping/hint;
-        # - disabling thinking only matters when the model is known to support thinking controls.
-        should_warn_unhandled = requesting_enable or (requesting_disable and supports_control)
-        if should_warn_unhandled and not handled_by_model_prompt and not handled_by_provider:
+        handled_enable_disable = handled_model_enable_disable or provider_handling.handled_enable_disable
+        handled_level = handled_model_level or provider_handling.handled_level
+
+        if requesting_level and not handled_level and effective_level is not None:
+            warnings.warn(
+                f"thinking level '{requested_level}' requested for model '{self.model}', but provider "
+                f"'{self.provider or self.__class__.__name__}' cannot enforce effort scaling; treating as thinking='on'.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+
+        # Warn about missing mapping only when the request is expected to take effect.
+        if requesting_enable and not handled_enable_disable and not handled_level:
             warnings.warn(
                 f"thinking={thinking!r} requested but provider '{self.provider or self.__class__.__name__}' "
                 "does not implement a thinking control mapping for this model; the request may be ignored.",
                 RuntimeWarning,
                 stacklevel=3,
             )
+        if requesting_disable and supports_reasoning_output and not handled_enable_disable:
+            if supports_reasoning_control:
+                warnings.warn(
+                    f"thinking={thinking!r} requested but provider '{self.provider or self.__class__.__name__}' "
+                    "does not implement a thinking disable mapping for this model; the request may be ignored.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+            else:
+                warnings.warn(
+                    f"thinking={thinking!r} requested but model '{self.model}' does not advertise a thinking control "
+                    "surface in assets; the request may be ignored.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
 
-        return prompt, messages, system_prompt, kwargs
+        def _request_repr(enabled_val: Optional[bool], level_val: Optional[str]) -> Optional[str]:
+            if isinstance(level_val, str) and level_val:
+                return level_val
+            if enabled_val is True:
+                return "on"
+            if enabled_val is False:
+                return "off"
+            return None
+
+        effective_enabled: Optional[bool] = None
+        effective_level_meta: Optional[str] = None
+
+        if isinstance(harmony_effective_level, str) and harmony_effective_level:
+            effective_enabled = True
+            effective_level_meta = harmony_effective_level
+
+        # Best-effort infer the effective control after provider hooks.
+        # Prefer explicit provider-native knobs over our internal request vars.
+        effort = kwargs.get("reasoning_effort")
+        if isinstance(effort, str) and effort.strip():
+            effort_norm = effort.strip().lower()
+            if effort_norm == "none":
+                effective_enabled = False
+                effective_level_meta = None
+            else:
+                effective_enabled = True
+                effective_level_meta = effort_norm
+
+        think = kwargs.get("think")
+        if isinstance(think, bool):
+            effective_enabled = bool(think)
+            if not think:
+                effective_level_meta = None
+        elif isinstance(think, str) and think.strip():
+            effective_enabled = True
+            effective_level_meta = think.strip().lower()
+
+        anthropic_thinking = kwargs.get("thinking")
+        if isinstance(anthropic_thinking, dict):
+            typ = str(anthropic_thinking.get("type") or "").strip().lower()
+            if typ == "disabled":
+                effective_enabled = False
+                effective_level_meta = None
+            elif typ:
+                effective_enabled = True
+                output_config = kwargs.get("output_config")
+                if isinstance(output_config, dict):
+                    eff = output_config.get("effort")
+                    if isinstance(eff, str) and eff.strip():
+                        effective_level_meta = eff.strip().lower()
+
+        if effective_enabled is None:
+            if enabled is False:
+                effective_enabled = False
+            elif enabled is True or effective_level is not None:
+                effective_enabled = True
+
+        if effective_level_meta is None and effective_level is not None and handled_level:
+            effective_level_meta = effective_level
+
+        thinking_requested = _request_repr(requested_enabled, requested_level)
+        thinking_effective: Optional[str]
+        if effective_enabled is False:
+            thinking_effective = "off"
+        elif isinstance(effective_level_meta, str) and effective_level_meta:
+            thinking_effective = effective_level_meta
+        elif effective_enabled is True:
+            thinking_effective = "on"
+        else:
+            thinking_effective = None
+
+        thinking_meta: Dict[str, Any] = {
+            "thinking_requested": thinking_requested,
+            "thinking_effective": thinking_effective,
+            "thinking_level_requested": requested_level,
+            "thinking_level_effective": effective_level_meta,
+            "thinking_supported_levels": list(reasoning_levels) if reasoning_levels else None,
+            "thinking_handled_enable_disable": bool(handled_enable_disable),
+            "thinking_handled_level": bool(handled_level),
+            "thinking_supports_output": bool(supports_reasoning_output),
+            "thinking_supports_control": bool(supports_reasoning_control),
+        }
+        # Keep metadata clean (omit nulls).
+        thinking_meta = {k: v for k, v in thinking_meta.items() if v is not None}
+
+        return prompt, messages, system_prompt, kwargs, thinking_meta
 
     def _apply_provider_thinking_kwargs(
         self,
@@ -1149,17 +1503,23 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if "max_output_tokens" not in kwargs and "max_tokens" in kwargs and kwargs.get("max_tokens") is not None:
             kwargs["max_output_tokens"] = kwargs.pop("max_tokens")
 
+        carried_thinking_meta = kwargs.pop("_acore_thinking_meta", None)
+        if carried_thinking_meta is not None and not isinstance(carried_thinking_meta, dict):
+            carried_thinking_meta = None
+
         # Prompt caching: apply a default `prompt_cache_key` if configured.
         self._apply_default_prompt_cache_key(kwargs)
 
         # Apply unified thinking controls (provider-agnostic + provider-specific mappings).
-        prompt, messages, system_prompt, kwargs = self._apply_thinking_request(
+        prompt, messages, system_prompt, kwargs, thinking_meta = self._apply_thinking_request(
             thinking=thinking,
             prompt=prompt,
             messages=messages,
             system_prompt=system_prompt,
             kwargs=kwargs,
         )
+        if thinking_meta is None and carried_thinking_meta is not None:
+            thinking_meta = carried_thinking_meta
 
         # Handle structured output request
         if response_model is not None:
@@ -1835,6 +2195,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         policy_to_use = "frames_caption"
                         kwargs["video_policy"] = policy_to_use
                         # Re-run this branch once with explicit policy.
+                        if thinking_meta is not None:
+                            kwargs["_acore_thinking_meta"] = thinking_meta
                         return self.generate_with_telemetry(
                             prompt=prompt,
                             messages=messages,
@@ -1955,17 +2317,20 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
                         # Process stream with incremental tool detection and execution
                         ttft_ms: Optional[float] = None
+                        thinking_stripper = maybe_create_incremental_thinking_tag_stripper(
+                            architecture_format=self.architecture_config,
+                            model_capabilities=self.model_capabilities,
+                        )
+                        last_chunk: Optional[GenerateResponse] = None
                         for processed_chunk in processor.process_stream(response, converted_tools):
-                            if isinstance(processed_chunk.content, str) and processed_chunk.content:
-                                processed_chunk.content = strip_output_wrappers(
-                                    processed_chunk.content,
-                                    architecture_format=self.architecture_config,
-                                    model_capabilities=self.model_capabilities,
-                                )
+                            last_chunk = processed_chunk
+
+                            # TTFT: measure "time to first token" from the provider stream,
+                            # independent of downstream post-processing (wrapper/thinking stripping).
                             if ttft_ms is None:
-                                has_content = isinstance(processed_chunk.content, str) and bool(processed_chunk.content)
-                                has_tools = isinstance(processed_chunk.tool_calls, list) and bool(processed_chunk.tool_calls)
-                                if has_content or has_tools:
+                                raw_has_content = isinstance(processed_chunk.content, str) and bool(processed_chunk.content)
+                                raw_has_tools = isinstance(processed_chunk.tool_calls, list) and bool(processed_chunk.tool_calls)
+                                if raw_has_content or raw_has_tools:
                                     ttft_ms = round((time.perf_counter() - start_perf) * 1000, 1)
                                     meta = processed_chunk.metadata if isinstance(processed_chunk.metadata, dict) else {}
                                     timing = meta.get("_timing") if isinstance(meta.get("_timing"), dict) else {}
@@ -1974,7 +2339,37 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                     merged["ttft_ms"] = ttft_ms
                                     meta["_timing"] = merged
                                     processed_chunk.metadata = meta
+
+                            if isinstance(processed_chunk.content, str) and processed_chunk.content:
+                                processed_chunk.content = strip_output_wrappers(
+                                    processed_chunk.content,
+                                    architecture_format=self.architecture_config,
+                                    model_capabilities=self.model_capabilities,
+                                )
+                                if thinking_stripper is not None:
+                                    processed_chunk.content = thinking_stripper.process(processed_chunk.content)
+                            if thinking_meta and isinstance(thinking_meta, dict):
+                                meta = processed_chunk.metadata if isinstance(processed_chunk.metadata, dict) else {}
+                                meta.update(thinking_meta)
+                                processed_chunk.metadata = meta
                             yield processed_chunk
+
+                        if thinking_stripper is not None:
+                            tail, reasoning = thinking_stripper.finalize()
+                            reasoning_text = reasoning.strip() if isinstance(reasoning, str) and reasoning.strip() else None
+
+                            if (isinstance(tail, str) and tail) or reasoning_text:
+                                meta: Dict[str, Any] = {}
+                                if thinking_meta and isinstance(thinking_meta, dict):
+                                    meta.update(thinking_meta)
+                                if reasoning_text:
+                                    meta["reasoning"] = reasoning_text
+
+                                yield GenerateResponse(
+                                    content=tail if isinstance(tail, str) else "",
+                                    model=self.model,
+                                    metadata=meta or None,
+                                )
 
                         # Track generation after streaming completes
                         self._track_generation(prompt, None, start_time, success=True, stream=True)
@@ -2042,6 +2437,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     if not response.metadata:
                         response.metadata = {}
                     response.metadata['trace_id'] = trace_id
+
+                if thinking_meta and response:
+                    if response.metadata is None or not isinstance(response.metadata, dict):
+                        response.metadata = {}
+                    response.metadata.update(thinking_meta)
 
                 self._track_generation(prompt, response, start_time, success=True, stream=False)
                 return response
@@ -2582,6 +2982,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """
         return False
 
+    def prompt_cache_supports_kv_source_of_truth(self) -> bool:
+        """Return True if this provider can use the prompt cache as the context source-of-truth.
+
+        When True, callers may omit `system_prompt`, `tools`, and `messages` and send only the
+        delta user `prompt` each turn, relying on the in-process KV cache keyed by
+        `prompt_cache_key` to retain prior context (append-only semantics).
+        """
+        return False
+
     def get_prompt_cache_capabilities(self) -> PromptCacheCapabilities:
         """Return the provider prompt-cache capability profile.
 
@@ -2597,6 +3006,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
         clone_overridden = type(self)._prompt_cache_backend_clone is not BaseProvider._prompt_cache_backend_clone
         append_overridden = type(self)._prompt_cache_backend_append is not BaseProvider._prompt_cache_backend_append
         set_overridden = type(self).prompt_cache_set is not BaseProvider.prompt_cache_set
+        save_overridden = type(self).prompt_cache_save is not BaseProvider.prompt_cache_save
+        load_overridden = type(self).prompt_cache_load is not BaseProvider.prompt_cache_load
 
         supports_update = bool(create_overridden and append_overridden)
         supports_fork = bool(create_overridden and clone_overridden)
@@ -2619,6 +3030,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
             supports_fork=supports_fork,
             supports_prepare_modules=supports_prepare_modules,
             supports_stats=True,
+            supports_save=bool(save_overridden),
+            supports_load=bool(load_overridden),
             supports_ttl=supports_ttl,
             notes=tuple(notes),
         )
@@ -2707,6 +3120,44 @@ class BaseProvider(AbstractCoreInterface, ABC):
         except Exception:
             pass
         return stats
+
+    def prompt_cache_token_count(self, key: Optional[str] = None) -> Optional[int]:
+        """Best-effort: return the current token count for an in-process cache key.
+
+        Notes:
+        - For local control-plane providers (MLX / GGUF / HF transformers KV reuse), the cache value
+          stored in-process is mutated over time; this method queries the backend directly.
+        - For server-managed caches (`mode="keyed"`), this typically returns None because there is
+          no local KV/prefix state to introspect.
+        """
+        if not self.supports_prompt_cache():
+            return None
+
+        normalized = self._default_prompt_cache_key if key is None else self._normalize_prompt_cache_key(key)
+        if normalized is None:
+            return None
+
+        cache_value = None
+        try:
+            cache_value = self._prompt_cache_store.get(normalized)
+        except Exception:
+            cache_value = None
+
+        if cache_value is not None:
+            try:
+                tok = self._prompt_cache_backend_token_count(cache_value)
+            except Exception:
+                tok = None
+            if isinstance(tok, int) and tok >= 0:
+                return tok
+
+        try:
+            meta = self._prompt_cache_store.meta(normalized) or {}
+            tok = meta.get("token_count")
+            tok_i = int(tok)
+            return tok_i if tok_i >= 0 else None
+        except Exception:
+            return None
 
     def prompt_cache_set(self, key: str, *, make_default: bool = True, **kwargs) -> bool:
         """Set the default prompt cache key for this provider instance.
@@ -2929,14 +3380,32 @@ class BaseProvider(AbstractCoreInterface, ABC):
             )
 
         normalized_modules: List[PromptCacheModule] = []
-        for m in modules or []:
-            if isinstance(m, PromptCacheModule):
-                normalized_modules.append(m.normalized())
-            elif isinstance(m, dict):
-                try:
-                    normalized_modules.append(PromptCacheModule(**m).normalized())
-                except Exception:
-                    continue
+        fingerprints: List[str] = []
+        for idx, m in enumerate(modules or []):
+            try:
+                if isinstance(m, PromptCacheModule):
+                    mod = m.normalized()
+                elif isinstance(m, dict):
+                    mod = PromptCacheModule(**m).normalized()
+                else:
+                    raise TypeError(f"Expected PromptCacheModule or dict, got {type(m).__name__}")
+
+                if not mod.module_id:
+                    raise ValueError("module_id must be a non-empty string")
+
+                fp = mod.fingerprint(version=version)
+                normalized_modules.append(mod)
+                fingerprints.append(fp)
+            except Exception as e:
+                provider, model = self._prompt_cache_error_context()
+                raise PromptCacheOperationError(
+                    f"Invalid prompt cache module at index {idx}: {e}",
+                    operation="prepare_modules",
+                    provider=provider,
+                    model=model,
+                    code="prompt_cache_invalid_module",
+                    capabilities=caps,
+                ) from e
 
         if not normalized_modules:
             provider, model = self._prompt_cache_error_context()
@@ -2953,11 +3422,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
         prefix_hash = hashlib.sha256(f"acore-prompt-cache:{int(version)}".encode("utf-8")).hexdigest()
         derived: List[Dict[str, Any]] = []
         keys: List[str] = []
-        for mod in normalized_modules:
-            prefix_hash = hashlib.sha256((prefix_hash + mod.fingerprint(version=version)).encode("utf-8")).hexdigest()
-            key = f"{ns}:{prefix_hash[:16]}"
+        for mod, fp in zip(normalized_modules, fingerprints):
+            prefix_hash = hashlib.sha256((prefix_hash + fp).encode("utf-8")).hexdigest()
+            key = f"{ns}:{prefix_hash[:32]}"
             keys.append(key)
-            derived.append({"module_id": mod.module_id, "cache_key": key, "module_hash": mod.fingerprint(version=version)})
+            derived.append({"module_id": mod.module_id, "cache_key": key, "module_hash": fp})
 
         # Find the longest existing prefix cache.
         start_idx = -1
@@ -3024,7 +3493,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             meta = {
                 "namespace": ns,
                 "module_id": mod.module_id,
-                "module_hash": mod.fingerprint(version=version),
+                "module_hash": fingerprints[j],
                 "index": j,
                 "backend": "provider",
             }
@@ -3070,6 +3539,41 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 capabilities=caps,
             )
         return True
+
+    def prompt_cache_save(self, key: str, filename: str, **kwargs) -> Dict[str, Any]:
+        """Save an in-process prompt cache to disk (provider-specific; best-effort).
+
+        Providers that expose serializable KV/prefix caches (for example MLX and some llama.cpp
+        backends) override this method.
+        """
+        _ = (kwargs, filename)
+        provider, model = self._prompt_cache_error_context()
+        raise PromptCacheUnsupportedError(
+            operation="save",
+            provider=provider,
+            model=model,
+            capabilities=self.get_prompt_cache_capabilities(),
+            detail="This provider does not support saving prompt caches.",
+        )
+
+    def prompt_cache_load(
+        self,
+        filename: str,
+        *,
+        key: Optional[str] = None,
+        make_default: bool = True,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Load a prompt cache from disk into this provider instance (provider-specific; best-effort)."""
+        _ = (kwargs, filename, key, make_default)
+        provider, model = self._prompt_cache_error_context()
+        raise PromptCacheUnsupportedError(
+            operation="load",
+            provider=provider,
+            model=model,
+            capabilities=self.get_prompt_cache_capabilities(),
+            detail="This provider does not support loading prompt caches.",
+        )
 
     # Memory management methods
     @abstractmethod
@@ -3401,7 +3905,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     finish_reason=response.finish_reason,
                     raw_response=response.raw_response,
                     usage=response.usage,
-                    tool_calls=response.tool_calls
+                    tool_calls=response.tool_calls,
+                    metadata=response.metadata,
+                    gen_time=response.gen_time,
                 )
 
         except Exception as e:

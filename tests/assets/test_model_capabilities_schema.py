@@ -156,12 +156,14 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
         "text_image_processing",
         "thinking_budget",
         "thinking_control",
+        "thinking_control_mode",
         "thinking_format",
         "thinking_modes",
         "thinking_output_field",
         "thinking_paradigm",
         "thinking_support",
         "thinking_tags",
+        "max_effort_supported",
         "tile_size",
         "token_cap",
         "token_formula",
@@ -276,6 +278,17 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
     if thinking_budget is not None:
         assert isinstance(thinking_budget, bool), f"{label}.thinking_budget must be boolean"
 
+    thinking_control_mode = cfg.get("thinking_control_mode")
+    if thinking_control_mode is not None:
+        assert _non_empty_str(thinking_control_mode), f"{label}.thinking_control_mode must be a non-empty string when set"
+        assert thinking_control_mode in {"adaptive", "budget"}, (
+            f"{label}.thinking_control_mode must be one of: adaptive, budget"
+        )
+
+    max_effort_supported = cfg.get("max_effort_supported")
+    if max_effort_supported is not None:
+        assert isinstance(max_effort_supported, bool), f"{label}.max_effort_supported must be boolean"
+
     fim_support = cfg.get("fim_support")
     if fim_support is not None:
         assert isinstance(fim_support, bool), f"{label}.fim_support must be boolean"
@@ -351,6 +364,26 @@ def test_model_capabilities_aliases_are_unique_across_models():
         "Duplicate aliases across models are ambiguous and make alias resolution order-dependent.\n"
         f"Duplicates: {duplicates}"
     )
+
+
+@pytest.mark.basic
+def test_anthropic_thinking_models_declare_thinking_control_mode():
+    """Prevent model-name heuristics in Anthropic provider for thinking controls."""
+    data = _load_model_capabilities()
+    models = data["models"]
+
+    missing: list[str] = []
+    for model_key, cfg in models.items():
+        if not isinstance(cfg, dict):
+            continue
+        if "claude" not in str(model_key).lower():
+            continue
+        if cfg.get("thinking_support") is not True:
+            continue
+        if "thinking_control_mode" not in cfg:
+            missing.append(model_key)
+
+    assert not missing, f"Anthropic thinking models missing thinking_control_mode: {sorted(missing)}"
 
 
 @pytest.mark.basic

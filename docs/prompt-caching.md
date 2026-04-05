@@ -16,13 +16,83 @@ Prompt caching is most useful when many calls share a long, stable prefix (syste
   - `keyed`: accepts `prompt_cache_key` but does not expose a local control plane
   - `local_control_plane`: supports local key management / module preparation
 - `BaseProvider.prompt_cache_supports_operation(operation)`: one place to query whether a specific control-plane operation is supported.
+- `BaseProvider.prompt_cache_token_count(key=None)`: best-effort *live* token count for an in-process cache key (useful for observability in KV/local modes; typically `None` for server-managed caches).
 - `BaseProvider` control plane (best-effort, capability-gated):
   - `prompt_cache_set(key)`
   - `prompt_cache_update(key, ...)`
   - `prompt_cache_fork(from_key, to_key)`
   - `prompt_cache_clear(key=None)`
   - `prompt_cache_prepare_modules(...)` (hierarchical/prefix module caches)
+  - Persistence (local providers only):
+    - `prompt_cache_save(key, filename, ...)`
+    - `prompt_cache_load(filename, ...)`
 - Unsupported control-plane calls raise structured prompt-cache errors (for example `PromptCacheUnsupportedError`) with `operation`, `code`, and `capabilities` so higher layers can catch and downgrade cleanly.
+
+## Capability modes (examples)
+
+Query at runtime:
+
+```python
+caps = llm.get_prompt_cache_capabilities()
+print(caps.to_dict())
+```
+
+**Example: `mode="none"`**
+
+```json
+{
+  "supported": false,
+  "mode": "none",
+  "supports_set": false,
+  "supports_clear": false,
+  "supports_update": false,
+  "supports_fork": false,
+  "supports_prepare_modules": false,
+  "supports_stats": false,
+  "supports_save": false,
+  "supports_load": false,
+  "supports_ttl": false,
+  "notes": []
+}
+```
+
+**Example: `mode="keyed"`**
+
+```json
+{
+  "supported": true,
+  "mode": "keyed",
+  "supports_set": true,
+  "supports_clear": true,
+  "supports_update": false,
+  "supports_fork": false,
+  "supports_prepare_modules": false,
+  "supports_stats": true,
+  "supports_save": false,
+  "supports_load": false,
+  "supports_ttl": true,
+  "notes": ["Provider accepts prompt cache keys but does not expose the full local prompt-cache control plane."]
+}
+```
+
+**Example: `mode="local_control_plane"`**
+
+```json
+{
+  "supported": true,
+  "mode": "local_control_plane",
+  "supports_set": true,
+  "supports_clear": true,
+  "supports_update": true,
+  "supports_fork": true,
+  "supports_prepare_modules": true,
+  "supports_stats": true,
+  "supports_save": true,
+  "supports_load": true,
+  "supports_ttl": true,
+  "notes": ["…provider-specific notes…"]
+}
+```
 
 ## Provider status (Mar 2026)
 
@@ -31,9 +101,18 @@ Prompt caching is most useful when many calls share a long, stable prefix (syste
 - **OpenAI-compatible** (`OpenAICompatibleProvider`, `LMStudioProvider`, `VLLMProvider`, …): forwards `prompt_cache_key` when provided (server-managed if the backend implements it).
 - **MLX** (`MLXProvider`): supports in-process KV caches via `prompt_cache_key` and AbstractCore’s cache control plane.
   - CLI persistence: `abstractcore-chat` supports `/cache save|load` (writes/reads a `.safetensors` cache; model-locked).
+- **HuggingFace (transformers)** (`HuggingFaceProvider` with `model_type="transformers"`): supports in-process KV reuse keyed by `prompt_cache_key` via `past_key_values` (`DynamicCache`).
+  - Supports AbstractCore’s local prompt-cache control plane (`prompt_cache_update`, `prompt_cache_prepare_modules`, `prompt_cache_fork`, …).
+  - Supports cache persistence via `prompt_cache_save()` / `prompt_cache_load()` (writes/reads `.safetensors`; model-locked).
+  - Limitations: enabled only for standard text-generation models (decoder-only); vision/custom transformer backends do not currently expose prompt caching.
 - **HuggingFace GGUF** (`HuggingFaceProvider` with llama.cpp): always supports keyed in-process RAM caches (`LlamaRAMCache`), and reports `mode=local_control_plane` when AbstractCore can render the model's llama.cpp chat format exactly for cache composition.
   - Current exact renderers: `chatml-function-calling`, `llama-3`
   - Other GGUF chat formats remain `mode=keyed` until an exact cached prompt renderer is implemented.
+  - Local control plane optimization: append-only updates tokenize/render only the delta segment; tools are kept in a stable prefix position so system/tools caches remain effective as the discussion grows.
+  - Local control plane generation: when `prompt_cache_key` is set and the chat format is supported, AbstractCore can prefill from cached state snapshots and generate via `llm.generate(reset=False)` (instead of `create_chat_completion()`), which avoids llama-cpp-python chat handlers that reset/re-evaluate long prompts.
+    - Disable via `ABSTRACTCORE_GGUF_CONTROL_PLANE=0` (falls back to llama-cpp-python’s chat completion API).
+  - macOS Metal note: llama.cpp Metal offload can SIGABRT when `llama_cpp` is imported *after* PyTorch/transformers in the same process. AbstractCore pre-imports `llama_cpp` (best-effort) when creating providers on Apple Silicon to keep GGUF Metal usable even if you later use MLX / HuggingFace transformers.
+    - If PyTorch/transformers is imported *before* AbstractCore can pre-import `llama_cpp` (for example your app imports `torch` first), AbstractCore disables GGUF Metal offload for safety. Override with `ABSTRACTCORE_GGUF_METAL_UNSAFE=1` (unsafe).
 - **Ollama** (`OllamaProvider`): no prompt-cache integration currently (Ollama manages context internally per request).
 
 ## OpenAI notes
@@ -65,6 +144,102 @@ Notes:
 - Caches are **model-locked**; loading a cache resets the transcript and uses the KV cache as the context source of truth.
 - `--q8` quantizes the cache before saving (smaller, lossy).
 
+Implementation note: the CLI now calls `provider.prompt_cache_save()` / `provider.prompt_cache_load()` instead of reaching into provider internals (`_prompt_cache_store`).
+
+## Sessions: `CachedSession`
+
+For long chats, `CachedSession` promotes the CLI’s “prefill stable prefix once, then reuse” pattern into the library:
+
+```python
+from abstractcore import create_llm, CachedSession
+
+llm = create_llm("mlx", model="mlx-community/Mistral-7B-Instruct-v0.1-4bit")
+session = CachedSession(
+    provider=llm,
+    system_prompt="You are a helpful assistant.",
+    tools=[...],
+    prompt_cache_strategy="auto",  # chooses KV mode when supported
+)
+
+session.generate("Hello!")
+session.generate("Now continue the discussion…")
+```
+
+HuggingFace transformers example (KV mode):
+
+```python
+from abstractcore import create_llm, CachedSession
+
+llm = create_llm("huggingface", model="sshleifer/tiny-gpt2", device="cpu")
+session = CachedSession(provider=llm, system_prompt="You are helpful.", prompt_cache_strategy="auto")
+
+session.generate("Hello!", max_output_tokens=32)
+session.generate("Continue.", max_output_tokens=32)
+```
+
+Behavior:
+- **MLX / HuggingFace (transformers)**: uses the prompt cache as the context source-of-truth (`mode=kv`) and sends only delta prompts each turn after prefix prefill.
+- **Others**: keeps a stable `prompt_cache_key` (`mode=key`) so server-managed caches / local prefix caches can hit consistently.
+
+KV mode notes (MLX + HuggingFace transformers):
+- `system_prompt`, `tools`, and prior `messages` are **session-level cached state**. Per-call overrides are ignored (and warn).
+- `auto_compact=True` is disabled in KV mode because compaction mutates the transcript but cannot mutate the in-process KV cache without an explicit rebuild. Use `session.rebuild_prompt_cache()` after changing transcript state, or use `prompt_cache_strategy="key"` / `off` when you need compaction semantics.
+  - Rationale: KV mode treats the in-process cache as the **context source-of-truth**. Allowing per-call overrides for `messages=`, `system_prompt=`, or `tools=` would create a divergence between (a) the transcript you think you sent and (b) the KV cache the model is actually continuing from. That divergence is subtle and can produce hard-to-debug failures (e.g., tool-call parsing mismatches, “memory” that won’t go away, or incorrect citations).
+  - If you need to mutate session state (change system prompt, tool schema, or edit prior messages), prefer `prompt_cache_strategy="key"` or call `CachedSession.rebuild_prompt_cache()` after the mutation so the KV cache and transcript realign.
+
+## “Box caching” with modules (system/tools/discussion)
+
+When a provider supports `prompt_cache_prepare_modules`, you can build stable prefix “boxes” and only invalidate what changed:
+
+- module `system` → stable persona
+- module `tools` → stable tool schema
+- (optional) module `discussion_prefix` → immutable summary/memory
+- session cache key → append-only growth per turn
+
+The module fingerprints are canonicalized to reduce accidental cache invalidation:
+- tools are sorted by name for stable ordering
+- message dicts are normalized to a stable subset (`role`, `content`, and tool-call fields)
+
+## File attachments as cache “boxes”
+
+For fast iteration on large contexts, you often want file attachments (code, docs, CSVs, PDFs) to be appended **once** and then reused by KV/prefix caches.
+
+`CachedSession` supports this via `attach_files()`:
+
+- Each file becomes **1 dedicated message box** in the transcript (so history persists across turns).
+- In `prompt_cache_mode="kv"`, the same box is also appended to the provider KV cache via `prompt_cache_update()`
+  (because the KV cache is the context source-of-truth and `generate()` sends only delta prompts).
+- In `prompt_cache_mode="key"`, the file box stays in the transcript and is synced into the provider’s cache on the next `generate()` call (or immediately by passing `prefill_key_mode_cache=True`).
+  - The prompt-cache REPL demo enables key-mode prefill on attach so your first question after attaching a large file starts streaming quickly.
+
+Example:
+
+```python
+from abstractcore import CachedSession, create_llm
+
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+session = CachedSession(provider=llm, system_prompt="You are helpful.", prompt_cache_strategy="auto")
+
+session.attach_files(["README.md", "docs/prompt-caching.md"])
+session.generate("Summarize the attached files.", max_output_tokens=128)
+```
+
+Notes / limitations:
+
+- This helper extracts text only for `MediaType.TEXT` and `MediaType.DOCUMENT`. For images/audio/video, keep using `media=[...]` on `generate()`.
+- Dedupe is stat-based (path + size + mtime). If a file changes after being attached, prefer clearing/rebuilding the session cache before re-attaching to avoid conflicting context.
+- Performance benefits (KV/prefix reuse) are currently strongest for local providers with in-process caches: **MLX**, **HuggingFace transformers**, **HuggingFace GGUF**.
+- `attach_files()` returns a JSON-ish dict with `attached`/`skipped`/`errors` and a `timing` breakdown (`extract_ms`, `cache_update_ms`, `total_ms`) for observability.
+
+See also: `examples/prompt_cache_repl_demo.py` for an interactive demo with:
+
+- `/cache stats` (capabilities + cache keys)
+- `/boxes` (graphical per-box context breakdown + live cache token counts)
+- `/stream` (toggle live assistant output; TTFT/TIFT are still reported for observability)
+- `@file` attachments (file boxes)
+
+Note: when a model emits inline thinking tags and AbstractCore strips them from visible output, the REPL shows a brief `…` indicator so you can still see that streaming has started.
+
 ## Endpoint server: prompt cache control plane
 
 `abstractcore-endpoint` can expose prompt-cache controls under `/acore/prompt_cache/*` when the underlying provider supports them (see `docs/endpoint.md`).
@@ -79,7 +254,7 @@ This makes the same capability contract available over HTTP, not only in-process
 
 Gateway/operator note:
 
-- `abstractgateway` can save/load MLX and GGUF in-process prompt caches.
+- `abstractgateway` can save/load MLX, HuggingFace transformers, and GGUF in-process prompt caches.
 - For GGUF, gateway save/load persists both the raw `LlamaRAMCache` state and the provider-side module metadata needed to keep cache keys/module branches meaningful after reload.
 
 ## Safety / limitations
@@ -87,6 +262,9 @@ Gateway/operator note:
 - KV caches consume memory; large caches can be expensive.
 - Reusing a cache key across unrelated prompts can contaminate context.
 - Many remote OpenAI-compatible backends ignore unknown fields or differ in cache semantics; treat `prompt_cache_key` as best-effort.
+- GGUF / llama.cpp: if you see crashes with Metal/MPS acceleration, force CPU for stability:
+  - per-call/provider init: `create_llm("huggingface", ..., device="cpu", n_gpu_layers=0, ...)`
+  - env override: `ABSTRACTCORE_HF_DEVICE=cpu`
 
 ## Next steps (unification ideas)
 
