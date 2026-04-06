@@ -8,6 +8,8 @@ def test_qwen3_5_variants_detect_qwen3_5_architecture() -> None:
         "lmstudio/qwen/qwen3.5-9b",
         "models--Qwen--Qwen3.5-9B",
         "qwen3.5-9b",
+        "Jackrong/Qwopus3.5-9B-v3-GGUF",
+        "Jackrong/Qwopus3.5-27B-v3",
     ]
 
     for model in variants:
@@ -22,6 +24,18 @@ def test_qwen3_5_capabilities_resolve_from_aliases() -> None:
     assert caps.get("max_output_tokens") == 81920
     assert caps.get("tool_support") == "native"
     assert caps.get("vision_support") is True
+
+    community_9b = get_model_capabilities("Jackrong/Qwopus3.5-9B-v3-GGUF")
+    assert community_9b.get("architecture") == "qwen3_5"
+    assert community_9b.get("max_tokens") == 262144
+    assert community_9b.get("max_output_tokens") == 81920
+    assert community_9b.get("tool_support") == "native"
+
+    community_27b = get_model_capabilities("Jackrong/Qwopus3.5-27B-v3")
+    assert community_27b.get("architecture") == "qwen3_5"
+    assert community_27b.get("max_tokens") == 262144
+    assert community_27b.get("max_output_tokens") == 81920
+    assert community_27b.get("tool_support") == "native"
 
 
 def test_qwen3_5_family_capabilities_cover_dense_and_moe_variants() -> None:
@@ -68,6 +82,14 @@ def test_qwen3_5_family_capabilities_cover_dense_and_moe_variants() -> None:
 
 
 def test_lfm2_family_capabilities_resolve_from_aliases() -> None:
+    tiny = get_model_capabilities("LiquidAI/LFM2.5-350M")
+    assert tiny.get("architecture") == "lfm2"
+    assert tiny.get("max_tokens") == 32768
+    assert tiny.get("max_output_tokens") == 4096
+    assert tiny.get("tool_support") == "prompted"
+    assert tiny.get("structured_output") == "prompted"
+    assert tiny.get("total_parameters") == "350M"
+
     instruct = get_model_capabilities("liquidai/lfm2.5-1.2b-instruct")
     assert instruct.get("architecture") == "lfm2"
     assert instruct.get("max_tokens") == 32768

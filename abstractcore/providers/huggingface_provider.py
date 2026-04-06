@@ -1469,11 +1469,21 @@ class HuggingFaceProvider(BaseProvider):
     def prompt_cache_clear(self, key: Optional[str] = None) -> bool:
         """Clear llama.cpp prompt caches (GGUF only; best-effort)."""
         cleared = super().prompt_cache_clear(key)
+        llm = getattr(self, "llm", None)
         try:
-            if getattr(self, "llm", None) is not None and hasattr(self.llm, "set_cache"):
-                self.llm.set_cache(None)
+            if llm is not None and hasattr(llm, "set_cache"):
+                llm.set_cache(None)
         except Exception:
             pass
+        # llama.cpp can still reuse in-process KV state via prefix matching even when no cache
+        # object is configured. When clearing *all* caches, reset the runtime context as well so
+        # "cache cleared" is observable in long-running processes (CLI/REPL).
+        if key is None and str(getattr(self, "model_type", "") or "").strip().lower() == "gguf":
+            try:
+                if llm is not None and hasattr(llm, "reset"):
+                    llm.reset()
+            except Exception:
+                pass
         return cleared
 
     def prompt_cache_save(self, key: str, filename: str, **kwargs: Any) -> Dict[str, Any]:

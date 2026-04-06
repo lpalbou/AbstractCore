@@ -677,7 +677,50 @@ class MLXProvider(BaseProvider):
             # Silence the "Fetching" progress bar by redirecting stdout/stderr
             with open(os.devnull, "w") as devnull:
                 with redirect_stdout(devnull), redirect_stderr(devnull):
-                    self.llm, self.tokenizer = load(load_target)
+                    try:
+                        self.llm, self.tokenizer = load(load_target)
+                    except ValueError as e:
+                        msg = str(e)
+                        low = msg.lower()
+                        if "model type" in low and "not supported" in low:
+                            model_type = None
+                            try:
+                                cfg_path = Path(load_target) / "config.json"
+                                if cfg_path.is_file():
+                                    raw = cfg_path.read_text(encoding="utf-8", errors="ignore")
+                                    cfg = json.loads(raw) if raw.strip() else {}
+                                    model_type = cfg.get("model_type") if isinstance(cfg, dict) else None
+                            except Exception:
+                                model_type = None
+
+                            mlx_lm_version = None
+                            try:  # pragma: no cover
+                                import mlx_lm  # type: ignore
+
+                                mlx_lm_version = getattr(mlx_lm, "__version__", None)
+                            except Exception:
+                                mlx_lm_version = None
+
+                            ver_s = f" (mlx-lm {mlx_lm_version})" if mlx_lm_version else ""
+                            extra_hint = ""
+                            if str(model_type or "").strip().lower() == "gemma4":
+                                extra_hint = (
+                                    "\n"
+                                    "Note:\n"
+                                    "  - Gemma 4 MLX models require a newer mlx-lm build (>=0.31.2).\n"
+                                    "    If that version is not available on PyPI yet, install mlx-lm from source until it is released.\n"
+                                )
+
+                            raise ModelNotFoundError(
+                                f"❌ MLX provider cannot load '{clean_model_name}' from '{load_target}'.\n\n"
+                                f"Detected model_type={model_type!r}, but the installed mlx-lm does not support it{ver_s}.\n\n"
+                                "Try one of:\n"
+                                "  - Use provider='huggingface' (transformers) for this local model directory\n"
+                                "  - Use provider='lmstudio' if you are running LM Studio's local server\n"
+                                "  - Upgrade mlx-lm once a release with this model_type is published on PyPI\n"
+                                f"{extra_hint}"
+                            ) from e
+                        raise
 
             self.generate_fn = generate
             self.stream_generate_fn = stream_generate

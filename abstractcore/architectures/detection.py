@@ -50,12 +50,25 @@ _KNOWN_PROVIDER_PREFIXES = {
 }
 
 _VARIANT_EXTENSION_RE = re.compile(r"(?i)\.(?:gguf|safetensors|bin)$")
-_VARIANT_SUFFIX_RE = re.compile(
-    r"(?i)(?:[-_.@](?:"
-    r"gguf|mlx|awq|gptq|fp4|fp8|fp16|fp32|bf16|f16|f32|int4|int8|"
-    r"4bit|8bit|q[2-8](?:_[a-z0-9]+)*|bnb|mxfp4|mxfp8|quant|quantized"
-    r"))$"
+_VARIANT_TOKEN_RE = re.compile(
+    r"(?i)^(?:"
+    r"gguf|mlx|awq|gptq|bnb|quant|quantized|"
+    r"(?:nv|mx)?fp\d+|bf\d+|f(?:16|32|64)|int\d+|uint\d+|nf4|"
+    r"4bit|8bit|q[2-8](?:_[a-z0-9]+)*"
+    r")$"
 )
+_TRAILING_VARIANT_SEGMENT_RE = re.compile(r"(?i)([-_.@])([a-z0-9_]+)$")
+_FORMAT_VARIANT_TOKENS = {
+    "gguf",
+    "safetensors",
+    "bin",
+    "mlx",
+    "awq",
+    "gptq",
+    "bnb",
+    "quant",
+    "quantized",
+}
 
 
 def _strip_provider_prefix(model_name: str) -> str:
@@ -69,24 +82,69 @@ def _strip_provider_prefix(model_name: str) -> str:
 
 
 def _variant_normalizations(name: str) -> List[str]:
-    """Return a small set of normalized names with trailing backend/quantization tags removed."""
+    """Return normalized names with trailing precision/quantization/format tags removed."""
     s = str(name or "").strip()
     if not s:
         return []
 
     out: List[str] = []
     seen: set[str] = set()
-    current = s
 
-    while current and current not in seen:
-        seen.add(current)
-        out.append(current)
+    def _add(candidate: str) -> None:
+        candidate = str(candidate or "").strip()
+        if candidate and candidate not in seen:
+            seen.add(candidate)
+            out.append(candidate)
 
-        stripped = _VARIANT_EXTENSION_RE.sub("", current).rstrip(".-_")
-        stripped = _VARIANT_SUFFIX_RE.sub("", stripped).rstrip(".-_")
-        if not stripped or stripped == current:
+    def _is_variant_token(token: str) -> bool:
+        return bool(_VARIANT_TOKEN_RE.fullmatch(str(token or "").strip()))
+
+    _add(s)
+
+    working = s
+    trailing_tokens_reversed: List[tuple[str, str]] = []
+
+    extension_match = _VARIANT_EXTENSION_RE.search(working)
+    if extension_match:
+        trailing_tokens_reversed.append((".", extension_match.group(0)[1:]))
+        working = working[:extension_match.start()]
+
+    while True:
+        match = _TRAILING_VARIANT_SEGMENT_RE.search(working)
+        if not match:
             break
-        current = stripped
+        token = match.group(2)
+        if not _is_variant_token(token):
+            break
+        trailing_tokens_reversed.append((match.group(1), token))
+        working = working[:match.start()].rstrip(".-_@")
+
+    base = working.rstrip(".-_@")
+    if not base or not trailing_tokens_reversed:
+        return out
+
+    trailing_tokens = list(reversed(trailing_tokens_reversed))
+
+    subset_candidates: List[tuple[tuple[int, int, int, int], str]] = []
+    full_mask = (1 << len(trailing_tokens)) - 1
+    for mask in range(full_mask):
+        parts = [base]
+        selected_tokens: List[str] = []
+        selected_indices: List[int] = []
+        for idx, (sep, token) in enumerate(trailing_tokens):
+            if mask & (1 << idx):
+                parts.append(f"{sep}{token}")
+                selected_tokens.append(token.lower())
+                selected_indices.append(idx)
+
+        candidate = "".join(parts)
+        has_format = int(any(token in _FORMAT_VARIANT_TOKENS for token in selected_tokens))
+        format_count = sum(1 for token in selected_tokens if token in _FORMAT_VARIANT_TOKENS)
+        rightmost_index = max(selected_indices, default=-1)
+        subset_candidates.append(((has_format, format_count, len(selected_indices), rightmost_index), candidate))
+
+    for _, candidate in sorted(subset_candidates, key=lambda item: item[0], reverse=True):
+        _add(candidate)
 
     return out
 
@@ -213,10 +271,22 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     if model_name in _resolved_aliases_cache:
         return _resolved_aliases_cache[model_name]
 
+    canonical_lower_map: Dict[str, str] = {}
+    for canonical in models.keys():
+        if not isinstance(canonical, str):
+            continue
+        lowered = canonical.strip().lower()
+        if lowered and lowered not in canonical_lower_map:
+            canonical_lower_map[lowered] = canonical
+
     # First check if it's already a canonical name
     if model_name in models:
         _resolved_aliases_cache[model_name] = model_name
         return model_name
+    direct_lower_match = canonical_lower_map.get(str(model_name or "").strip().lower())
+    if direct_lower_match is not None:
+        _resolved_aliases_cache[model_name] = direct_lower_match
+        return direct_lower_match
 
     # Normalize model name
     normalized_model_name = model_name
@@ -315,6 +385,10 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
         if candidate in models:
             _resolved_aliases_cache[model_name] = candidate
             return candidate
+        lower_match = canonical_lower_map.get(str(candidate).strip().lower())
+        if lower_match is not None:
+            _resolved_aliases_cache[model_name] = lower_match
+            return lower_match
 
     # Check if it's an alias of any model (try both original and normalized).
     # Some JSON entries intentionally share aliases (e.g. base + variant). Prefer the
@@ -341,6 +415,10 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
         if candidate in models:
             _resolved_aliases_cache[model_name] = candidate
             return candidate
+        lower_match = canonical_lower_map.get(str(candidate).strip().lower())
+        if lower_match is not None:
+            _resolved_aliases_cache[model_name] = lower_match
+            return lower_match
 
     # Return normalized name if no alias found
     fallback = stripped_normalized_name or normalized_model_name

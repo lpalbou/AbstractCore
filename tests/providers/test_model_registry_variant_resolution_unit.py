@@ -1,4 +1,4 @@
-from abstractcore.architectures import detect_architecture, get_model_capabilities
+from abstractcore.architectures import detect_architecture, get_architecture_format, get_model_capabilities
 
 
 def test_variant_suffix_normalization_resolves_qwen_liquid_and_gpt_families() -> None:
@@ -33,11 +33,37 @@ def test_variant_suffix_normalization_resolves_qwen_liquid_and_gpt_families() ->
     assert gpt.get("structured_output") == "prompted"
 
 
+def test_precision_and_packaging_variants_resolve_to_the_right_family_entries() -> None:
+    nemotron_nvfp4 = get_model_capabilities("nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4")
+    assert nemotron_nvfp4.get("architecture") == "nemotron_hybrid_moe"
+    assert nemotron_nvfp4.get("quantization_method") == "NVFP4"
+    assert nemotron_nvfp4.get("max_tokens") == 1000000
+
+    nemotron_fp16 = get_model_capabilities("nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP16")
+    assert nemotron_fp16.get("architecture") == "nemotron_hybrid_moe"
+    assert nemotron_fp16.get("max_tokens") == 1000000
+
+    nemotron_fp8 = get_model_capabilities("nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-FP8")
+    assert nemotron_fp8.get("architecture") == "nemotron_hybrid_moe"
+    assert nemotron_fp8.get("max_tokens") == 1000000
+
+    omnicoder_gguf = get_model_capabilities("Tesslate/OmniCoder-9B-Q4_K_M-GGUF")
+    assert omnicoder_gguf.get("architecture") == "omnicoder"
+    assert omnicoder_gguf.get("max_tokens") == 8192
+    assert omnicoder_gguf.get("max_output_tokens") == 4096
+
+    omnicoder_bf16 = get_model_capabilities("Tesslate/OmniCoder-9B-BF16")
+    assert omnicoder_bf16.get("architecture") == "omnicoder"
+    assert omnicoder_bf16.get("max_tokens") == 262144
+    assert omnicoder_bf16.get("max_output_tokens") == 81920
+
+
 def test_new_family_entries_are_resolved_with_expected_architectures() -> None:
     assert detect_architecture("MiniMaxAI/MiniMax-M2.5") == "minimax_m2"
     assert detect_architecture("zai-org/GLM-5") == "glm4_moe"
     assert detect_architecture("Qwen/Qwen3-Coder-Next") == "qwen3_next"
     assert detect_architecture("LiquidAI/LFM2-24B-A2B-GGUF") == "lfm2"
+    assert detect_architecture("Tesslate/OmniCoder-9B") == "omnicoder"
 
 
 def test_new_model_entries_expose_verified_capabilities() -> None:
@@ -59,3 +85,65 @@ def test_new_model_entries_expose_verified_capabilities() -> None:
     assert coder_next.get("architecture") == "qwen3_next"
     assert coder_next.get("max_tokens") == 262144
     assert coder_next.get("tool_support") == "native"
+
+    minimax_m2 = get_model_capabilities("MiniMaxAI/MiniMax-M2")
+    assert minimax_m2.get("architecture") == "minimax_m2"
+    assert minimax_m2.get("max_tokens") == 208896
+    assert minimax_m2.get("tool_support") == "native"
+
+    minimax_m21 = get_model_capabilities("MiniMaxAI/MiniMax-M2.1")
+    assert minimax_m21.get("architecture") == "minimax_m2_1"
+    assert minimax_m21.get("max_tokens") == 204800
+    assert minimax_m21.get("tool_support") == "native"
+
+    omnicoder = get_model_capabilities("Tesslate/OmniCoder-9B")
+    assert omnicoder.get("architecture") == "omnicoder"
+    assert omnicoder.get("max_tokens") == 262144
+    assert omnicoder.get("max_output_tokens") == 81920
+    assert omnicoder.get("tool_support") == "prompted"
+    assert omnicoder.get("thinking_support") is True
+    assert omnicoder.get("vision_support") is True
+    assert omnicoder.get("agentic_coding") is True
+
+
+def test_recent_mistral_granite_and_nemotron_variants_resolve_to_expected_families() -> None:
+    assert detect_architecture("mistralai/Mistral-Small-4-119B-2603") == "mistral3"
+    assert detect_architecture("mistralai/Ministral-3-14B-Instruct-2512") == "ministral3"
+    assert detect_architecture("ibm-granite/granite-4.0-micro") == "granitemoehybrid"
+    assert detect_architecture("nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4") == "nemotron_hybrid_moe"
+
+    large3 = get_model_capabilities("mistralai/Mistral-Large-3-675B-Instruct-2512")
+    assert large3.get("architecture") == "mistral_large"
+    assert large3.get("max_tokens") == 262144
+    assert large3.get("vision_support") is True
+
+    ministral = get_model_capabilities("mistralai/Ministral-3-14B-Instruct-2512")
+    assert ministral.get("architecture") == "ministral3"
+    assert ministral.get("vision_support") is True
+    assert ministral.get("tool_support") == "native"
+
+    granite = get_model_capabilities("ibm-granite/granite-4.0-h-small")
+    assert granite.get("architecture") == "granitemoehybrid"
+    assert granite.get("max_tokens") == 131072
+
+    nemotron = get_model_capabilities("nvidia/NVIDIA-Nemotron-3-Super-120B-A12B-NVFP4")
+    assert nemotron.get("architecture") == "nemotron_hybrid_moe"
+    assert nemotron.get("quantization_method") == "NVFP4"
+    assert nemotron.get("max_tokens") == 1000000
+
+
+def test_granite_and_nemotron_architecture_formats_match_upstream_tool_transcripts() -> None:
+    granite_format = get_architecture_format(detect_architecture("ibm-granite/granite-4.0-micro"))
+    assert granite_format.get("tool_format") == "xml"
+    assert granite_format.get("tool_prefix") == "<tool_call>"
+    assert granite_format.get("system_prefix") == "<|start_of_role|>system<|end_of_role|>"
+
+    nemotron_format = get_architecture_format(detect_architecture("nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B-NVFP4"))
+    assert nemotron_format.get("tool_format") == "xml"
+    assert nemotron_format.get("tool_prefix") == "<tool_call>"
+    assert nemotron_format.get("default_tool_support") == "native"
+
+    omnicoder_format = get_architecture_format(detect_architecture("Tesslate/OmniCoder-9B"))
+    assert omnicoder_format.get("tool_format") == "xml"
+    assert omnicoder_format.get("tool_prefix") == "<tool_call>"
+    assert omnicoder_format.get("output_wrappers") == {"end": "<|im_end|>"}

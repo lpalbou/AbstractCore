@@ -323,9 +323,9 @@ class _Repl:
         # `self.stream` toggles *live printing* only.
         self._force_internal_streaming: bool = True
 
-        # Tools are included to demonstrate a stable "tools box", but provider-side execution
-        # is disabled by default (execute_tools=False in BaseProvider).
-        self.tools = self._default_tools()
+        # Tools are optional in this demo. Default to off to avoid models emitting raw tool-call
+        # blocks in responses. Enable via `/tools on` when you want to exercise the tools box.
+        self.tools = []
 
         self.provider = None
         self.session: CachedSession | None = None
@@ -437,7 +437,7 @@ class _Repl:
             if self.session.prompt_cache_mode == "kv":
                 self.session.rebuild_prompt_cache()
 
-    def _reset_provider_and_session(self, *, keep_transcript: bool) -> None:
+    def _reset_provider_and_session(self, *, keep_transcript: bool, allow_fallback: bool = True) -> None:
         old_messages = []
         if keep_transcript and self.session is not None:
             try:
@@ -449,6 +449,8 @@ class _Repl:
         try:
             self.provider = create_llm(self.provider_name, model=self.model_name, **kwargs)
         except Exception as e:
+            if not allow_fallback:
+                raise
             # Best-effort fallback to a locally cached model when the default isn't available.
             fallback = None
             try:
@@ -460,7 +462,7 @@ class _Repl:
             except Exception:
                 fallback = None
 
-            if isinstance(fallback, str) and fallback.strip():
+            if isinstance(fallback, str) and fallback.strip() and fallback != self.model_name:
                 print(f"⚠️ Failed to load {self.provider_name}:{self.model_name}: {e}")
                 print(f"🔎 Falling back to locally cached model: {fallback}")
                 self.model_name = fallback
@@ -685,23 +687,51 @@ class _Repl:
                 tools_tokens = 0
 
         files_tokens = 0
-        missing_file_token_estimates: List[int] = []
+        file_entries: List[Dict[str, Any]] = []
+        missing_by_msg_idx: Dict[int, Dict[str, Any]] = {}
         for meta in files:
             try:
+                path = meta.get("path")
+                if not isinstance(path, str) or not path.strip():
+                    continue
+                path = path.strip()
+                sha = str(meta.get("sha256") or "")[:12]
+
+                size_bytes = meta.get("size_bytes")
+                if not isinstance(size_bytes, int) or size_bytes < 0:
+                    try:
+                        size_bytes = int(Path(path).stat().st_size)
+                    except Exception:
+                        size_bytes = None
+
+                entry: Dict[str, Any] = {
+                    "path": path,
+                    "sha": sha,
+                    "size_bytes": size_bytes,
+                    "message_index": meta.get("message_index"),
+                    "tokens": None,
+                }
+
                 est = meta.get("estimated_tokens")
                 if isinstance(est, int) and est > 0:
+                    entry["tokens"] = int(est)
                     files_tokens += int(est)
                 else:
                     idx = meta.get("message_index")
                     if isinstance(idx, int):
-                        missing_file_token_estimates.append(idx)
+                        missing_by_msg_idx[idx] = entry
+
+                file_entries.append(entry)
             except Exception:
                 continue
-        for idx in missing_file_token_estimates:
+
+        for idx, entry in missing_by_msg_idx.items():
             try:
                 if 0 <= idx < len(msgs):
                     content = getattr(msgs[idx], "content", "")
-                    files_tokens += int(estimate_tokens(str(content or ""), model=model_name))
+                    tok = int(estimate_tokens(str(content or ""), model=model_name))
+                    entry["tokens"] = tok
+                    files_tokens += tok
             except Exception:
                 continue
 
@@ -786,16 +816,55 @@ class _Repl:
             print(self.ui.dim(f"- session_cache: key={session_key} tokens={cache_session_tokens}"))
 
         print(f"- history: messages={len(history_msgs)} tokens≈{history_tokens}")
-        if files:
-            print(f"- files: {len(files)} tokens≈{files_tokens}")
-            for i, meta in enumerate(files, 1):
-                path = meta.get("path")
-                sha = str(meta.get("sha256") or "")[:12]
-                est = meta.get("estimated_tokens")
-                est_s = f" tokens≈{est}" if isinstance(est, int) else ""
-                print(f"  {i}. {path} sha={sha}{est_s}")
-        else:
+        if not file_entries:
             print("- files: 0")
+            return
+
+        # Second "FILES" box: visualize file token usage within the FILES slice.
+        file_tok_list = [int(e.get("tokens") or 0) for e in file_entries]
+        file_bytes_list = [e.get("size_bytes") for e in file_entries]
+        files_total_tokens = sum(file_tok_list)
+        files_total_bytes = sum(int(b) for b in file_bytes_list if isinstance(b, int) and b >= 0)
+
+        print(self.ui.bold("Files"))
+        files_bar_width = bar_width
+        file_seg_widths = _allocate_widths(file_tok_list, width=files_bar_width) if files_bar_width else [0 for _ in file_tok_list]
+
+        if self.ui.use_color:
+            # 12 distinct-ish ANSI colors (normal + bright) for better per-file separation.
+            color_codes = ["34", "35", "36", "32", "33", "31", "94", "95", "96", "92", "93", "91"]
+
+            def paint(i: int, s: str) -> str:
+                return self.ui._c(s, color_codes[i % len(color_codes)])
+
+            segs = [paint(i, "█" * w) for i, w in enumerate(file_seg_widths)]
+            swatches = [paint(i, "■") for i in range(len(file_entries))]
+        else:
+            symbols = "123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+            segs = [(symbols[i % len(symbols)] * w) for i, w in enumerate(file_seg_widths)]
+            swatches = [symbols[i % len(symbols)] for i in range(len(file_entries))]
+
+        files_bar = f"[{''.join(segs)}]"
+        header = f"{files_bar}  ~{_fmt_int(files_total_tokens)} tokens"
+        if context_window_i is not None and context_window_i > 0:
+            pct = float(files_total_tokens) / float(context_window_i) * 100.0 if files_total_tokens > 0 else 0.0
+            header += f"  ({pct:.1f}% ctx)"
+        if files_total_bytes > 0:
+            header += f"  bytes={_fmt_bytes(files_total_bytes)}"
+        print(header)
+
+        print(self.ui.dim(f"- files: {len(file_entries)} tokens≈{files_tokens}"))
+        for i, entry in enumerate(file_entries, 1):
+            path = entry.get("path")
+            sha = str(entry.get("sha") or "")[:12]
+            tok = entry.get("tokens")
+            tok_i = int(tok) if isinstance(tok, int) else 0
+            pct_files = (float(tok_i) / float(files_total_tokens) * 100.0) if files_total_tokens > 0 else 0.0
+            size_b = entry.get("size_bytes")
+            sw = swatches[i - 1] if 0 <= i - 1 < len(swatches) else ""
+            print(
+                f"  {i}. {sw} {path} sha={sha} bytes={_fmt_bytes(size_b)} tokens≈{_fmt_int(tok_i)} ({pct_files:.1f}%)"
+            )
 
     def _cmd_cache(self, args: List[str]) -> None:
         assert self.session is not None
@@ -818,6 +887,13 @@ class _Repl:
                 print("cache already disabled")
                 return
             self.cache_enabled = False
+            # Best-effort: fully disable caching, including any in-process provider-side reuse.
+            # This keeps `/cache off` useful for A/B testing (on vs off) inside a single REPL run.
+            try:
+                if hasattr(self.provider, "prompt_cache_clear"):
+                    self.provider.prompt_cache_clear(None)  # type: ignore[union-attr]
+            except Exception:
+                pass
             self._make_session(keep_transcript=True)
             print("cache disabled")
             return
@@ -942,8 +1018,6 @@ class _Repl:
             pass
         self.session.system_prompt = text
 
-        if self.cache_enabled and self.session.prompt_cache_mode == "kv":
-            self.session.rebuild_prompt_cache()
         print("system prompt updated")
 
     def _cmd_tools(self, args: List[str]) -> None:
@@ -1028,9 +1102,23 @@ class _Repl:
             print("This demo supports provider=mlx|huggingface (transformers/GGUF).")
             return
 
+        old_provider_name = self.provider_name
+        old_model_name = self.model_name
+        old_provider = self.provider
+        old_session = self.session
+
         self.provider_name = prov
         self.model_name = model
-        self._reset_provider_and_session(keep_transcript=False)
+        try:
+            self._reset_provider_and_session(keep_transcript=False, allow_fallback=False)
+        except Exception as e:
+            self.provider_name = old_provider_name
+            self.model_name = old_model_name
+            self.provider = old_provider
+            self.session = old_session
+            print(self.ui.err(f"❌ Failed to load {prov}:{model}: {e}"))
+            return
+
         self._banner()
 
     def _handle_command(self, line: str) -> bool:

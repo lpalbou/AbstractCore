@@ -180,7 +180,32 @@
       "tool_prefix": "<|tool_call|>",
       "thinking_tags": ["<think>", "</think>"],
       "reasoning_support": true,
-      "patterns": ["qwen3.5-", "qwen3.5:", "qwen3_5-", "qwen3_5:"]
+      "patterns": [
+        "qwen3.5-",
+        "qwen3.5:",
+        "qwen3_5-",
+        "qwen3_5:",
+        "qwopus3.5-",
+        "jackrong/qwopus3.5-"
+      ]
+    },
+    "omnicoder": {
+      "description": "Tesslate OmniCoder chat template on top of Qwen3.5 with XML tool calls",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "output_wrappers": {
+        "end": "<|im_end|>"
+      },
+      "tool_format": "xml",
+      "tool_prefix": "<tool_call>",
+      "thinking_tags": ["<think>", "</think>"],
+      "reasoning_support": true,
+      "patterns": ["omnicoder-9b", "tesslate/omnicoder-9b"]
     },
     "sera": {
       "description": "AllenAI's SERA architecture (Qwen3-based Open Coding Agents series)",
@@ -280,7 +305,13 @@
       "assistant_prefix": "",
       "assistant_suffix": "",
       "tool_format": "native",
-      "patterns": ["mistral-small-3", "devstral-small-2"]
+      "patterns": [
+        "mistral-small-3",
+        "mistral-small-4",
+        "mistralai/mistral-small-3",
+        "mistralai/mistral-small-4",
+        "devstral-small-2"
+      ]
     },
     "ministral3": {
       "description": "Mistral AI Ministral 3 architecture (December 2024)",
@@ -292,7 +323,7 @@
       "assistant_prefix": "",
       "assistant_suffix": "",
       "tool_format": "native",
-      "patterns": ["devstral-2-123b"]
+      "patterns": ["devstral-2-123b", "ministral-3-"]
     },
     "phi": {
       "description": "Microsoft's Phi architecture family",
@@ -464,17 +495,17 @@
         "patterns": ["granite", "granite3.3:2b"]
       },
       "granitemoehybrid": {
-        "description": "IBM's Granite 4.0 hybrid MoE architecture with Mamba2 (October 2025)",
+        "description": "IBM's Granite 4.0 chat-template family across dense, Mamba2, and hybrid MoE variants",
         "message_format": "special_tokens",
-        "system_prefix": "<|system|>\n",
-        "system_suffix": "\n",
-        "user_prefix": "<|user|>\n",
-        "user_suffix": "\n",
-        "assistant_prefix": "<|assistant|>\n",
-        "assistant_suffix": "\n",
-        "tool_format": "native",
-        "tool_prefix": "<|tool_call|>",
-        "patterns": ["granite-4.0-h", "granite-h-tiny", "granite-h-micro"]
+        "system_prefix": "<|start_of_role|>system<|end_of_role|>",
+        "system_suffix": "<|end_of_text|>",
+        "user_prefix": "<|start_of_role|>user<|end_of_role|>",
+        "user_suffix": "<|end_of_text|>",
+        "assistant_prefix": "<|start_of_role|>assistant<|end_of_role|>",
+        "assistant_suffix": "<|end_of_text|>",
+        "tool_format": "xml",
+        "tool_prefix": "<tool_call>",
+        "patterns": ["granite-4.0", "granite-4.0-h", "granite-h-tiny", "granite-h-micro"]
       },
     "deepseek": {
       "description": "DeepSeek architecture family",
@@ -590,7 +621,9 @@
       "user_suffix": "<|im_end|>\n",
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-      "tool_format": "json",
+      "tool_format": "xml",
+      "tool_prefix": "<tool_call>",
+      "default_tool_support": "native",
       "reasoning_support": true,
       "thinking_tags": ["<think>", "</think>"],
       "patterns": [

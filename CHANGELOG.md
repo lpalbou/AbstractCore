@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Gemma 4 support**: adds `gemma4` architecture patterns plus capability entries (context windows, thinking/tool tokens, and vision/audio/video flags).
 - **Setup UX**: `--install` readiness check; `--config` wizard expanded; embeddings now support 7 providers (`openai`, `openrouter`, `portkey`, `openai-compatible`, `huggingface`, `ollama`, `lmstudio`).
 - **New model entries**: GPT-5.1, GPT-5.2, GPT-5.2-pro, GPT-5.2-codex, GPT-5.1-codex, GPT-5-codex, GPT-5-nano, o4-mini, GPT-4.1, GPT-4.1-mini, GPT-4.1-nano, Claude Opus 4.6, Claude Sonnet 4.6, Qwen3.5, LFM2.5, Nemotron.
+- **Expanded open-weight registry coverage**: added/normalized recent Mistral, Ministral, Devstral, Granite 4.0, Nemotron NVFP4, MiniMax M2/M2.1/M2.5, Liquid LFM2/LFM2.5-350M, GLM-5, Jackrong Qwopus3.5, and Tesslate OmniCoder model ids in the model/architecture assets.
 - **Local thinking probes**: `examples/local_qwen3_5_thinking_probe.py` records provider payloads for debugging.
 
 ### Changed
@@ -62,6 +63,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Streaming thinking-tag extraction**: `stream=True` strips inline thinking tags and surfaces extracted reasoning in `metadata["reasoning"]` (matching non-streaming behavior).
 - **Prompt-cache REPL stats clarity**: `examples/prompt_cache_repl_demo.py` reports TTFT/TIFT and prefill+decode throughput (no floats), shows GGUF offload (`n_gpu_layers`) and context limits, reports file-box attach timing (extract vs cache work), and prints a brief `…` indicator when early stream chunks are non-visible (e.g., stripped `<think>` blocks).
 - **Architecture assets schema**: `gemma4.thinking_tags` no longer includes trailing whitespace so asset schema validation and thinking-tag parsing remain stable.
+- **Model registry alignment**: corrected Granite 4.0 and Nemotron prompted tool transcript formats, fixed Mistral Small 4 and Qwopus family detection, and aligned MiniMax capability architecture tags with the architecture registry.
+- **Variant normalization robustness**: model detection now strips broader precision/quantization suffixes (including `NVFP4` / `FP*` / `BF*`) and preserves explicit packaging siblings like `-GGUF` when resolving quantized filenames such as `...-Q4_K_M-GGUF`.
 
 ### Documentation
 - Updated docs for `thinking=` and prompt caching (including the prompt-cache REPL demo and cache modes).

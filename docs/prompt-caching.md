@@ -185,7 +185,7 @@ KV mode notes (MLX + HuggingFace transformers):
 - `system_prompt`, `tools`, and prior `messages` are **session-level cached state**. Per-call overrides are ignored (and warn).
 - `auto_compact=True` is disabled in KV mode because compaction mutates the transcript but cannot mutate the in-process KV cache without an explicit rebuild. Use `session.rebuild_prompt_cache()` after changing transcript state, or use `prompt_cache_strategy="key"` / `off` when you need compaction semantics.
   - Rationale: KV mode treats the in-process cache as the **context source-of-truth**. Allowing per-call overrides for `messages=`, `system_prompt=`, or `tools=` would create a divergence between (a) the transcript you think you sent and (b) the KV cache the model is actually continuing from. That divergence is subtle and can produce hard-to-debug failures (e.g., tool-call parsing mismatches, “memory” that won’t go away, or incorrect citations).
-  - If you need to mutate session state (change system prompt, tool schema, or edit prior messages), prefer `prompt_cache_strategy="key"` or call `CachedSession.rebuild_prompt_cache()` after the mutation so the KV cache and transcript realign.
+  - Changing `session.system_prompt` or `session.tools` triggers an automatic cache rebuild on the next `generate()` / `attach_files()` call so the prefix modules realign. For other transcript mutations (editing prior messages, clearing files, compaction), call `CachedSession.rebuild_prompt_cache()` so the KV cache and transcript realign.
 
 ## “Box caching” with modules (system/tools/discussion)
 

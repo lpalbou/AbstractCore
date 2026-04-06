@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Generator as GeneratorABC
 from collections.abc import Iterator as IteratorABC
 import hashlib
+import json
 from pathlib import Path
 import uuid
 import warnings
@@ -55,6 +56,10 @@ class CachedSession(BasicSession):
         self._prompt_cache_prefix_key: Optional[str] = None
         self._prompt_cache_prefix_namespace: Optional[str] = None
         self._prompt_cache_prefix_modules: Dict[str, Dict[str, Any]] = {}
+        # Prefix fingerprint bookkeeping (system/tools). Used to detect mid-session mutations
+        # and trigger an automatic cache rebuild so the provider cache realigns.
+        self._prompt_cache_prefix_system_prompt: Optional[str] = None
+        self._prompt_cache_prefix_tools_fingerprint: Optional[str] = None
         # Key-mode bookkeeping: how many transcript messages (excluding system) have been
         # appended into the provider cache via `prompt_cache_update`.
         self._prompt_cache_key_mode_synced_messages: int = 0
@@ -110,6 +115,26 @@ class CachedSession(BasicSession):
             prefilled.append("tools")
         return tuple(prefilled) if prefilled else None
 
+    def _fingerprint_tools_schema(self, tools_schema: Optional[List[Dict[str, Any]]]) -> Optional[str]:
+        if not tools_schema:
+            return None
+
+        def _tool_sort_key(tool: Dict[str, Any]) -> str:
+            func = tool.get("function") if isinstance(tool.get("function"), dict) else None
+            name = ""
+            if func:
+                name = str(func.get("name") or "").strip()
+            if not name:
+                name = str(tool.get("name") or "").strip()
+            return name.lower()
+
+        try:
+            tools_sorted = [dict(t) for t in sorted(tools_schema, key=_tool_sort_key)]
+            raw = json.dumps(tools_sorted, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        except Exception:
+            return None
+        return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
     def _prepare_prefix_cache(self, *, session_key: str) -> bool:
         """Best-effort: prefill stable modules (system/tools) into the provider cache."""
         provider = self.provider
@@ -120,6 +145,8 @@ class CachedSession(BasicSession):
         self._prompt_cache_prefix_key = None
         self._prompt_cache_prefix_namespace = None
         self._prompt_cache_prefix_modules = {}
+        self._prompt_cache_prefix_system_prompt = None
+        self._prompt_cache_prefix_tools_fingerprint = None
 
         try:
             caps = getattr(provider, "get_prompt_cache_capabilities", None)
@@ -133,6 +160,8 @@ class CachedSession(BasicSession):
 
         system_prompt = self.system_prompt
         tools_schema = self._tool_schemas_for_fingerprinting()
+        tools_fp = self._fingerprint_tools_schema(tools_schema)
+        system_prompt_fp = system_prompt if isinstance(system_prompt, str) else None
 
         if use_modules and bool(getattr(caps, "supports_prepare_modules", False)):
             try:
@@ -169,6 +198,8 @@ class CachedSession(BasicSession):
                             ttl_s=self.prompt_cache_ttl_s,
                         )
                         self._prompt_cache_prefix_key = prefix_key.strip()
+                        self._prompt_cache_prefix_system_prompt = system_prompt_fp
+                        self._prompt_cache_prefix_tools_fingerprint = tools_fp
                         return True
             except Exception:
                 # Fall back to direct set+update below.
@@ -207,7 +238,26 @@ class CachedSession(BasicSession):
                 # Keep key-only mode if the backend can't prefill (still useful for server-managed caches).
                 pass
 
+        self._prompt_cache_prefix_system_prompt = system_prompt_fp
+        self._prompt_cache_prefix_tools_fingerprint = tools_fp
         return True
+
+    def _maybe_rebuild_prompt_cache_for_prefix_changes(self) -> bool:
+        """Rebuild prompt cache when system prompt/tools changed since prefix preparation."""
+        if self.prompt_cache_mode == "off":
+            return False
+        if not self.provider or not self.prompt_cache_key:
+            return False
+
+        current_system = self.system_prompt if isinstance(self.system_prompt, str) else None
+        current_tools_fp = self._fingerprint_tools_schema(self._tool_schemas_for_fingerprinting())
+
+        if current_system == self._prompt_cache_prefix_system_prompt and current_tools_fp == self._prompt_cache_prefix_tools_fingerprint:
+            return False
+
+        # Best-effort: keep the existing session cache key stable, but refresh the prefix state
+        # so the provider cache matches the session's current system/tools configuration.
+        return bool(self.rebuild_prompt_cache(reuse_key=True))
 
     def _init_prompt_caching(self) -> None:
         provider = self.provider
@@ -320,7 +370,7 @@ class CachedSession(BasicSession):
             self._prompt_cache_key_mode_synced_messages = len(transcript)
         return ok
 
-    def rebuild_prompt_cache(self) -> bool:
+    def rebuild_prompt_cache(self, *, reuse_key: bool = False) -> bool:
         """Clear and rebuild the provider prompt cache from the session transcript (best-effort)."""
         provider = self.provider
         if provider is None or not self.prompt_cache_key:
@@ -333,8 +383,10 @@ class CachedSession(BasicSession):
         except Exception:
             pass
 
-        # Use a fresh key to avoid any stale cache state.
-        new_key = f"sess:{uuid.uuid4().hex[:12]}"
+        old_key = self.prompt_cache_key
+        # Use a fresh key by default to avoid any stale cache state. When `reuse_key=True`,
+        # we clear/overwrite the existing key in-place so callers can keep stable handles.
+        new_key = old_key if (reuse_key and isinstance(old_key, str) and old_key.strip()) else f"sess:{uuid.uuid4().hex[:12]}"
         self.prompt_cache_key = new_key
         if not self._prepare_prefix_cache(session_key=new_key):
             return False
@@ -414,6 +466,10 @@ class CachedSession(BasicSession):
               - `total_ms`: total time for this call
         """
         import time
+
+        # If system/tools were mutated mid-session, refresh the prefix cache before we append
+        # file boxes so the provider cache stays aligned with session configuration.
+        self._maybe_rebuild_prompt_cache_for_prefix_changes()
 
         t_total0 = time.perf_counter()
         extract_ms = 0
@@ -591,6 +647,10 @@ class CachedSession(BasicSession):
                 compacted = self.compact(reason="auto_threshold")
                 self._replace_with_compacted(compacted)
 
+            # System/tools may have changed since the prefix cache was prepared; rebuild in-place
+            # so key-mode sync updates the correct prefix chain.
+            self._maybe_rebuild_prompt_cache_for_prefix_changes()
+
             # Best-effort: sync the *existing* transcript into the provider cache before we append
             # the new user message. In BasicSession-style calls, `prompt` is sent separately and
             # the provider receives `messages=` excluding the current user message. Keeping the
@@ -682,6 +742,7 @@ class CachedSession(BasicSession):
             return response  # type: ignore[return-value]
 
         # KV mode: prompt cache is context source-of-truth; keep transcript for UX only.
+        self._maybe_rebuild_prompt_cache_for_prefix_changes()
         self.add_message(MessageRole.USER.value, str(prompt), name=name, location=location)
 
         # Extract media parameter explicitly
