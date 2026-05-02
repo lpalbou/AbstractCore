@@ -466,6 +466,8 @@ version = {attr = "abstractcore.utils.version.__version__"}
 abstractcore = [
     "assets/*.json",
     "assets/*.jsonld",
+    "assets/*.md",
+    "assets/*.ttf",
     "py.typed",
 ]
 

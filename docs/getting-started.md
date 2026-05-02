@@ -84,6 +84,23 @@ resp = llm.generate("What is the capital of France?")
 print(resp.content)
 ```
 
+## Sessions (multi-turn)
+
+Use a session to keep conversation state (system prompt + message history) across turns:
+
+```python
+from abstractcore import BasicSession, create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+session = BasicSession(provider=llm, system_prompt="You are a helpful assistant.")
+
+print(session.generate("Hello!").content)
+print(session.generate("Now continue.").content)
+```
+
+For prompt-cache-aware long chats (reuse stable prefixes like system/tools/files), use `CachedSession`:
+- See [Prompt Caching](prompt-caching.md).
+
 ## Thinking / reasoning (best-effort)
 
 Many modern models can optionally emit a reasoning/thinking trace (sometimes in a separate channel, sometimes inline). AbstractCore exposes a single unified control:
@@ -143,6 +160,9 @@ print(resp.tool_calls)
 ```
 
 See [Tool Calling](tool-calling.md) and [Tool Syntax Rewriting](tool-syntax-rewriting.md) (`tool_call_tags`, server `agent_format`).
+
+Note:
+- If you pass both `tools=[...]` and `response_model=...` to `generate()`, AbstractCore uses a 2-pass hybrid flow (tool-capable call, then structured-output call). Streaming is not supported in this hybrid mode.
 
 ### Built-in tools (optional)
 

@@ -45,7 +45,6 @@ response = llm.generate(
 )
 
 print(response.content)
-# Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.
 
 # By default (`execute_tools=False`), AbstractCore does not execute tools.
 # Instead, it returns structured tool calls (if the model chose to call tools).

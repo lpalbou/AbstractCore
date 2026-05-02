@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **LM Studio unload for reasoning REPL**: `LMStudioProvider.unload_model()` now uses LM Studio's native REST unload endpoint and resolves model keys/variants to loaded instance IDs so `examples/reasoning/qwen_thinking_repl.py` can free LM Studio models via `:unload` (automatic unload-on-switch remains HuggingFace-only).
 
 ### Documentation
+- Clarified tool calling defaults (pass-through) and removed misleading “tools executed” wording from the quick start.
+- Documented `CachedSession` more consistently across core docs and `llms*.txt` (getting started, API map, sessions, structured output hybrid note).
 
 
 ## [2.13.0] - 2026-05-02

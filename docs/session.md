@@ -10,6 +10,9 @@ A **BasicSession** represents a complete conversation with an LLM, including:
 - Session configuration and settings
 - Optional analytics: summary, assessment, and extracted facts
 
+For prompt-cache-aware long chats (reuse stable prefixes like system/tools/files), use **`CachedSession`**:
+- See `docs/prompt-caching.md`.
+
 ## API Design: Two Methods for Different Purposes
 
 The `BasicSession` provides two main methods for managing conversation history:

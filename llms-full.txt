@@ -2,8 +2,8 @@
 
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
-Last updated: 2026-02-09  
-Package version: 2.11.8
+Last updated: 2026-05-02  
+Package version: 2.13.0
 
 ## How to use this file (agents)
 
@@ -68,6 +68,21 @@ print(llm.generate("Hello!").content)
 ```
 
 Important: most OpenAI-compatible servers expect the base URL to include `/v1`.
+
+### Examples (runnable tour)
+
+Start with the curated examples index:
+- `examples/README.md`
+
+Recommended guided path (read + run in order):
+```bash
+python examples/learning_path/01_basic_generation.py
+python examples/learning_path/02_provider_configuration.py
+python examples/learning_path/03_tool_calling.py
+python examples/learning_path/04_unified_streaming.py
+python examples/learning_path/05_server_agentic_cli.py
+python examples/learning_path/06_production_patterns.py
+```
 
 ---
 
@@ -422,6 +437,24 @@ print(session.generate("Give me 3 startup name ideas.").content)
 print(session.generate("Pick the best one and explain why.").content)
 ```
 
+### Prompt caching sessions (`CachedSession`)
+
+`CachedSession` is `BasicSession` plus best-effort **provider prompt caching** (reusing stable prefixes and/or sending only deltas when supported).
+
+```python
+from abstractcore import CachedSession, create_llm
+
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B")  # requires: abstractcore[mlx]
+session = CachedSession(llm, system_prompt="You are a helpful assistant.", prompt_cache_strategy="auto")
+
+# Attach local text/doc files as stable transcript "boxes" (1 file = 1 message).
+session.attach_files(["/path/to/A.md", "/path/to/B.md"])
+
+print(session.generate("What’s the key difference between A and B?").content)
+```
+
+See: `docs/prompt-caching.md` and `examples/prompt_caching/README.md`.
+
 ---
 
 ## 6) Tool calling (agentic workflows)
@@ -457,6 +490,10 @@ resp = llm.generate("Use the add tool to compute 2+3.", tools=[add])
 
 print(resp.tool_calls)  # structured calls for the host to run
 ```
+
+Hybrid note (tools + structured output):
+- If you pass both `tools=[...]` and `response_model=...` in one `generate()` call, AbstractCore uses a 2-pass hybrid flow: first a tool-capable call, then a structured-output call.
+- Streaming is not supported in this hybrid mode.
 
 ### Built-in tools (optional)
 
@@ -789,6 +826,9 @@ Server:
 
 Docs:
 - `docs/` (canonical docs)
+
+Examples:
+- `examples/` (runnable tutorials; start at `examples/README.md`)
 
 Tests:
 - `tests/` (pytest)
@@ -3170,7 +3210,7 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 2. `skim_url(...)` → quickly decide what’s worth fetching
 3. `fetch_url(...)` → parse the selected URL(s); set `include_full_content=False` when you want a smaller output
 
-Tip: you can measure output footprint/latency locally with `python examples/skim_tools_benchmark.py --help`.
+Tip: you can measure output footprint/latency locally with `python examples/tools/skim_tools_benchmark.py --help`.
 
 ### Real-World Example
 
@@ -12076,7 +12116,7 @@ Each returned tool spec is an AbstractCore-compatible dict you can pass to `tool
 
 `mcp::<server_id>::<tool_name>`
 
-See `abstractcore/abstractcore/mcp/naming.py`.
+See `abstractcore/mcp/naming.py`.
 
 ### 2) Execute MCP tools in your host/runtime
 
@@ -12108,14 +12148,14 @@ def execute_mcp_tool_call(call: dict) -> dict:
 with streamable HTTP (`application/json, text/event-stream`) and will capture `MCP-Session-Id`
 responses when provided.
 
-See `abstractcore/abstractcore/mcp/client.py`.
+See `abstractcore/mcp/client.py`.
 
 ### stdio
 
 `McpStdioClient` spawns an MCP server subprocess and communicates over stdin/stdout with JSON-RPC,
 including a best-effort initialization handshake.
 
-See `abstractcore/abstractcore/mcp/stdio_client.py`.
+See `abstractcore/mcp/stdio_client.py`.
 
 ## Configuration helpers
 
@@ -12128,7 +12168,7 @@ client = create_mcp_client(config={"url": "http://localhost:3000"})
 client = create_mcp_client(config={"transport": "stdio", "command": ["my-mcp-server", "--stdio"]})
 ```
 
-See `abstractcore/abstractcore/mcp/factory.py`.
+See `abstractcore/mcp/factory.py`.
 
 ## Current limitations
 
@@ -12568,7 +12608,7 @@ print(f"Usage details: {response.usage}")
 
 **Token Count Sources:**
 - **Provider APIs**: OpenAI, Anthropic, LMStudio (native API token counts)
-- **AbstractCore Calculation**: MLX, HuggingFace (using `token_utils.py`)
+- **AbstractCore Calculation**: MLX, HuggingFace (using `abstractcore/utils/token_utils.py`)
 - **Mixed Sources**: Ollama (combination of provider and calculated tokens)
 
 **Backward Compatibility**: Legacy `prompt_tokens` and `completion_tokens` keys remain available in `response.usage` dictionary.

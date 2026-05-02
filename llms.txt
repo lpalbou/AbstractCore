@@ -4,6 +4,10 @@
 
 This is the curated, high-signal index for agents. For a self-contained handbook with the important details inlined, read `llms-full.txt`.
 
+Important notes:
+- Default tool execution is **pass-through**: AbstractCore returns tool calls; your host/runtime executes them.
+- AbstractCore is **offline-first** for local models: it will not silently download model weights (download/pull explicitly).
+
 Ecosystem note:
 - AbstractCore is part of **AbstractFramework** (umbrella: https://github.com/lpalbou/AbstractFramework).
 - In the ecosystem, **AbstractRuntime** is the recommended runtime for executing `response.tool_calls` durably (policy, retries, persistence): https://github.com/lpalbou/abstractruntime
@@ -23,11 +27,20 @@ Quick start:
 - [Prerequisites](docs/prerequisites.md): provider setup (keys/base URLs) + local hardware notes
 - [FAQ](docs/faq.md): common issues + setup gotchas
 
+## Examples
+
+- [Examples index](examples/README.md): organized by topic + a guided learning path
+- [Learning path](examples/learning_path/README.md): 6 scripts in order (`01_...` → `06_...`)
+- [Prompt caching](examples/prompt_caching/README.md): `CachedSession` + attachments + REPL demo
+- [Media](examples/media/README.md): inspect pipeline + image/video/audio demos
+- [Tools](examples/tools/README.md): tool calling + host execution (ToolRegistry vs manual dispatcher)
+
 ## Core API + Concepts
 
 - [API (Python)](docs/api.md): public API map and common patterns
 - [API Reference](docs/api-reference.md): full function/class listing
 - [Generation parameters](docs/generation-parameters.md): max tokens / thinking / temperature semantics across providers
+- [Prompt caching](docs/prompt-caching.md): `CachedSession`, cache keys, and file attachments
 - [Tool calling](docs/tool-calling.md): `@tool`, passthrough vs execution, built-in tools
 - [Tool syntax rewriting](docs/tool-syntax-rewriting.md): preserve tool-call markup (`tool_call_tags`, server `agent_format`)
 - [Structured output](docs/structured-output.md): `response_model=...`, native vs prompted, validation/retry behavior
@@ -55,7 +68,7 @@ Quick start:
 ## Optional
 
 - [Architecture](docs/architecture.md): core/provider/session/tool/media/capabilities design
-- [Examples](docs/examples.md): end-to-end recipes
+- [Practical recipes](docs/examples.md): copy/paste code snippets (provider-agnostic)
 - [Troubleshooting](docs/troubleshooting.md): common errors and fixes
 - [Embeddings](docs/embeddings.md): EmbeddingManager (optional)
 - [Capabilities](docs/capabilities.md): `llm.voice` / `llm.audio` / `llm.vision` plugin model
