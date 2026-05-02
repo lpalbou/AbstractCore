@@ -37,11 +37,11 @@ By default, AbstractCore is **pass-through for tools** (`execute_tools=False`): 
 
 ```mermaid
 graph LR
-  APP[Your app] --> AC[AbstractCore]
-  AC --> P[Provider adapter]
-  P --> LLM[LLM backend]
-  AC -. tool_calls .-> RT[AbstractRuntime (optional)]
-  RT -. tool results .-> AC
+  APP["Your app"] --> AC["AbstractCore"]
+  AC --> P["Provider adapter"]
+  P --> LLM["LLM backend"]
+  AC -.->|tool calls| RT["AbstractRuntime optional"]
+  RT -.->|tool results| AC
 ```
 
 ## Install

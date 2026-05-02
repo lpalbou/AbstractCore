@@ -25,7 +25,22 @@ jobs:
           python -m pip install -U pip
           python -m pip install -e ".[dev]"
       - name: Pre-commit
-        run: pre-commit run --show-diff-on-failure --from-ref origin/main --to-ref HEAD
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            FROM_REF="${{ github.event.pull_request.base.sha }}"
+            TO_REF="${{ github.event.pull_request.head.sha }}"
+          else
+            FROM_REF="${{ github.event.before }}"
+            TO_REF="${{ github.sha }}"
+          fi
+          if [[ "${FROM_REF}" == "0000000000000000000000000000000000000000" ]]; then
+            echo "Running pre-commit on all files (no base ref available)"
+            pre-commit run --show-diff-on-failure --all-files
+          else
+            echo "Running pre-commit for diff: ${FROM_REF}..${TO_REF}"
+            pre-commit run --show-diff-on-failure --from-ref "${FROM_REF}" --to-ref "${TO_REF}"
+          fi
 
   test:
     runs-on: ubuntu-latest
