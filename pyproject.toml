@@ -465,6 +465,7 @@ version = {attr = "abstractcore.utils.version.__version__"}
 [tool.setuptools.package-data]
 abstractcore = [
     "assets/*.json",
+    "assets/*.jsonld",
     "py.typed",
 ]
 

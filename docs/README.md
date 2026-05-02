@@ -27,6 +27,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 - **[Session Management](session.md)** — conversation state, persistence, compaction
 - **[Prompt Caching](prompt-caching.md)** — `prompt_cache_key`, KV/prefix caches, and persistence (MLX)
 - **[Generation Parameters](generation-parameters.md)** — unified parameter vocabulary + provider quirks
+- **[Memory Blocs](memory-blocs.md)** — persistent extracted text snapshots + per-model KV artifacts
 - **Model/architecture registries (source of truth)** — `abstractcore/assets/model_capabilities.json` + `abstractcore/assets/architecture_formats.json` (see `abstractcore/assets/README.md`)
 - **[Centralized Config](centralized-config.md)** — config file + config CLI (`abstractcore --config`)
 - **[Events](events.md)** and **[Structured Logging](structured-logging.md)** — observability hooks
