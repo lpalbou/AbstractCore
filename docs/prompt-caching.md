@@ -105,7 +105,7 @@ print(caps.to_dict())
   - Supports AbstractCore’s local prompt-cache control plane (`prompt_cache_update`, `prompt_cache_prepare_modules`, `prompt_cache_fork`, …).
   - Supports cache persistence via `prompt_cache_save()` / `prompt_cache_load()` (writes/reads `.safetensors`; model-locked).
   - Limitations: enabled only for standard text-generation models (decoder-only); vision/custom transformer backends do not currently expose prompt caching.
-- **HuggingFace GGUF** (`HuggingFaceProvider` with llama.cpp): always supports keyed in-process RAM caches (`LlamaRAMCache`), and reports `mode=local_control_plane` when AbstractCore can render the model's llama.cpp chat format exactly for cache composition.
+- **HuggingFace GGUF** (`HuggingFaceProvider` with llama.cpp): always supports keyed in-process RAM caches (`LlamaRAMCache`), and reports `mode=local_control_plane` when AbstractCore can render the model's llama.cpp chat format exactly for cache reuse.
   - Current exact renderers: `chatml-function-calling`, `llama-3`
   - Other GGUF chat formats remain `mode=keyed` until an exact cached prompt renderer is implemented.
   - Local control plane optimization: append-only updates tokenize/render only the delta segment; tools are kept in a stable prefix position so system/tools caches remain effective as the discussion grows.
