@@ -1,422 +1,222 @@
 # Framework Comparison
 
-This guide compares AbstractCore with other popular LLM frameworks to help you choose the right tool for your needs.
+Snapshot: May 2026.
 
-## Quick Comparison Table
+This guide compares **AbstractCore** and the wider **AbstractFramework** ecosystem with nearby LLM libraries and application frameworks. The most important distinction is layer:
 
-| Feature | AbstractCore | LiteLLM | LangChain | LangGraph | LlamaIndex |
-|---------|-------------|---------|-----------|-----------|-------------|
-| **Primary Focus** | Clean LLM infrastructure | API compatibility | Full LLM framework | Agent workflows | RAG/search |
-| **Size** | ~8k LOC | ~15k LOC | 100k+ LOC | ~30k LOC | ~80k LOC |
-| **Learning Curve** | Minimal | Minimal | Steep | Medium | Medium |
-| **Provider Support** | 6 providers | 100+ providers | Many via integrations | Via LangChain | Via LlamaHub |
-| **Tool Calling** | ✅ Universal execution | ⚠️ Pass-through only | ✅ Via integrations | ✅ Native | ⚠️ Limited |
-| **Streaming** | ✅ With tool support | ✅ Basic | ✅ Basic | ❌ Limited | ❌ Limited |
-| **Structured Output** | ✅ With retry logic | ❌ None | ⚠️ Via parsers | ⚠️ Basic | ⚠️ Basic |
-| **Production Ready** | ✅ Retry + circuit breakers | ⚠️ Basic | ✅ Via LangSmith | ✅ Via LangSmith | ⚠️ Depends |
-| **Memory/Sessions** | ✅ Simple sessions | ❌ None | ✅ Advanced | ✅ Advanced | ✅ Advanced |
-| **RAG Support** | ⚠️ Embeddings only | ❌ None | ✅ Full pipelines | ⚠️ Basic | ✅ Full pipelines |
-| **Agent Support** | ❌ Single calls | ❌ None | ✅ Via chains | ✅ Native | ⚠️ Query engines |
-| **Observability** | ✅ Built-in events | ⚠️ Basic logging | ✅ Via LangSmith | ✅ Via LangSmith | ⚠️ Basic |
+- **AbstractCore** is an LLM I/O and reliability layer.
+- **AbstractFramework** is a larger agent/runtime/workflow ecosystem built on AbstractCore.
 
-## Detailed Comparisons
+That difference matters. AbstractCore should be compared mostly with provider clients, LiteLLM, and the model I/O layer inside larger frameworks. AbstractFramework should be compared with LangChain/LangGraph, AutoGen, CrewAI, workflow runtimes, gateway systems, and local AI workbenches.
 
-### AbstractCore vs LiteLLM
+## Short Verdict
 
-**LiteLLM** provides API compatibility across providers. **AbstractCore** provides production infrastructure.
+Yes, AbstractCore is interesting in May 2026, but not because it is the biggest or most popular framework. It is interesting because it is a focused provider layer with unusually broad local-model support and call-level infrastructure: tools, structured output, streaming, media policies, embeddings, MCP, prompt caching, events, tracing, and optional OpenAI-compatible server mode.
 
-#### When to choose LiteLLM:
-```python
-# LiteLLM is suitable for simple API compatibility
-from litellm import completion
+Yes, AbstractFramework is also interesting, but it should be judged as an emerging integrated stack. Its strongest idea is not a single API call; it is the combination of:
 
-# Same API for all providers - that's it
-response = completion(model="gpt-4", messages=[{"role": "user", "content": "Hello"}])
+- AbstractCore for provider I/O
+- AbstractRuntime for durable effects, waits, ledgers, snapshots, and replay
+- AbstractAgent for ReAct/CodeAct/MemAct loops
+- AbstractFlow for portable visual workflow bundles
+- AbstractGateway for run control, streaming ledgers, scheduling, and remote clients
+- AbstractMemory and AbstractSemantics for persistent knowledge and structured assertions
+- AbstractCode, AbstractAssistant, Observer, and UI packages as concrete clients
+
+The trade-off is maturity. LangChain, LangGraph, LlamaIndex, LiteLLM, AutoGen, and CrewAI have much larger communities and more battle-tested ecosystems. AbstractFramework is more opinionated, more local-first, and more vertically integrated, but still pre-1.0 in several packages.
+
+## Objective Ranking By Use Case
+
+These rankings are deliberately scenario-specific. There is no single winner across all layers.
+
+| Use case | Best default in May 2026 | Where AbstractCore / AbstractFramework ranks |
+| --- | --- | --- |
+| Maximum OpenAI-compatible model/API gateway coverage | LiteLLM | AbstractCore is behind LiteLLM for sheer routed provider coverage, but stronger as an embedded Python provider layer with local-model behavior, media policies, structured output, and sessions. |
+| Direct Python LLM I/O across cloud and local backends | AbstractCore, LiteLLM, provider SDKs | AbstractCore is near the top if you value local inference, provider capability handling, structured output, tools, and media in one package. |
+| Full RAG/document applications | LlamaIndex, LangChain | AbstractCore is not a full RAG framework. It provides embeddings and generation primitives; AbstractFramework's memory layer is more KG/temporal-memory oriented than document-RAG oriented. |
+| Stateful agent graphs | LangGraph | AbstractFramework is interesting here because AbstractRuntime gives durable waits, ledgers, replay, snapshots, and gateway execution, but LangGraph is more established and has a larger ecosystem. |
+| Multi-agent experimentation | AutoGen, CrewAI, LangGraph | AbstractAgent covers core ReAct/CodeAct/MemAct patterns, but the broader multi-agent ecosystem is less mature than AutoGen/CrewAI/LangGraph. |
+| Local-first/offline AI workbench | AbstractFramework, Ollama/LM Studio plus custom tooling | AbstractFramework ranks unusually high because local providers, voice/vision plugins, durable runtime, gateway, and concrete clients are designed to compose offline. |
+| Durable workflow orchestration for AI runs | AbstractRuntime/AbstractGateway, Temporal/custom systems, LangGraph with persistence | AbstractFramework is compelling if you want AI-specific run ledgers and replay. Temporal is more mature for general distributed workflows. |
+| Coding assistant product | Cursor/Claude Code/Codex-class tools for polish; AbstractCode for open local durable stack | AbstractCode is early, but strategically interesting because it sits on the same durable runtime/gateway/core foundation. |
+
+## Quick Comparison
+
+| Dimension | AbstractCore | AbstractFramework | LiteLLM | LangChain | LangGraph | LlamaIndex |
+| --- | --- | --- | --- | --- | --- | --- |
+| Primary layer | LLM provider I/O | Full AI system stack | API compatibility/proxy | Broad app framework | Stateful graph runtime | RAG/document framework |
+| Best fit | Own app/runtime needs stable LLM calls | Durable local-first agents and workflows | One OpenAI-style API across many providers | Many integrations and common app patterns | Explicit stateful agent workflows | Retrieval-heavy document apps |
+| Provider support | 10 direct adapters plus gateways | Through AbstractCore | Very broad routed coverage | Many integrations | Via model layer | Via integrations |
+| Local inference | First-class: Ollama, LM Studio, MLX, HF/GGUF, vLLM | First-class across stack | Supported, often via adapters/proxy | Supported via integrations | Via model layer | Supported in RAG pipelines |
+| Tool handling | Native/prompted normalization; pass-through by default | Runtime/gateway owns durable execution policy | Mostly forwards/normalizes provider calls | Mature abstractions | Strong graph tool loops | Available, less central |
+| Structured output | Pydantic-first, provider-aware strategies and retry | Used as contract layer for agents/workflows | Provider dependent | Mature APIs/parsers | Via model layer | Strong extraction/query patterns |
+| Durable execution | Sessions and prompt caches only | Core feature via AbstractRuntime | Not the main role | Via external components | Core strength | Not the main role |
+| Memory | Basic sessions, embeddings | AbstractMemory/semantics plus runtime state | Not the main role | Memory abstractions | Checkpoint/state persistence | Index/storage abstractions |
+| Gateway/server | Optional OpenAI-compatible server | AbstractGateway run gateway plus Core server | Core strength | Not the main role | Not the main role | Not the main role |
+| Ecosystem maturity | Beta but substantial | Emerging/pre-1.0 stack | Mature and widely used | Mature and widely used | Mature and widely used | Mature and widely used |
+
+## What AbstractCore Is
+
+AbstractCore is best understood as an **LLM I/O layer**:
+
+- one `create_llm(...)` interface for cloud, local, gateway, and OpenAI-compatible backends
+- 10 registered provider/backend adapters: OpenAI, Anthropic, Ollama, LM Studio, MLX, HuggingFace, vLLM, OpenAI-compatible, OpenRouter, Portkey
+- about 78k physical Python lines in the package source
+- 213 model capability entries and 48 architecture format entries
+- a default install with only `pydantic` and `httpx`; heavy features are optional extras
+- tool-call normalization across native and prompted formats
+- Pydantic structured output with provider-aware strategies and retry fallback
+- sync, async, streaming, media handling, embeddings, MCP tool sources, tracing, events, and optional server mode
+- prompt-cache-aware sessions, including stronger local KV/prefix-cache paths where backends expose the required control
+
+It is not trying to be the full agent runtime, RAG framework, or graph engine. In the AbstractFramework ecosystem, those concerns move upward into AbstractRuntime, AbstractAgent, AbstractFlow, AbstractGateway, AbstractMemory, and AbstractSemantics.
+
+## What AbstractFramework Is
+
+AbstractFramework is the larger system built around AbstractCore. Its architectural thesis is:
+
+```text
+clients / UIs / apps
+        |
+AbstractGateway and concrete hosts
+        |
+AbstractAgent and AbstractFlow
+        |
+AbstractRuntime durable execution
+        |
+AbstractCore provider I/O
+        |
+LLM providers, local models, tools, media, MCP
 ```
 
-#### When to choose AbstractCore:
+The interesting part is the integration:
+
+- **Durability**: runs can pause, resume, replay, and survive process restarts.
+- **Observability**: append-only ledgers make LLM calls, tool calls, waits, and decisions inspectable.
+- **Local-first design**: Ollama, LM Studio, MLX, HuggingFace/GGUF, local voice, local vision, and local workflow execution are first-class paths.
+- **Composable clients**: terminal, browser, tray apps, gateway clients, and visual flow bundles share the same underlying runtime contracts.
+- **Separation of concerns**: AbstractCore returns tool calls; the runtime/gateway decides whether and how to execute them.
+
+This is more ambitious than AbstractCore alone, but also less mature as a public ecosystem.
+
+## AbstractCore vs LiteLLM
+
+LiteLLM is strongest when you want **OpenAI-compatible access to many model APIs**, often through a proxy/gateway. It is a good fit for routing, cost controls, standardized request/response shapes, and using existing OpenAI-style client code.
+
+AbstractCore is strongest when you want **a Python infrastructure layer inside your application**:
+
 ```python
-# AbstractCore for production features
+from pydantic import BaseModel
 from abstractcore import create_llm
+
+class UserInfo(BaseModel):
+    name: str
+    email: str
 
 llm = create_llm("openai", model="gpt-4o-mini")
 
-# Tool calling that actually executes functions
-response = llm.generate("What's the weather?", tools=weather_tools)
+resp = llm.generate("What's the weather?", tools=weather_tools)
+print(resp.tool_calls)  # Host/runtime executes tool calls by default.
 
-# Structured output with automatic retry
-user = llm.generate("Extract user info", response_model=UserModel)
-
-# Production reliability built-in
-# - Automatic retries with circuit breakers
-# - Comprehensive event system
-# - Streaming with tool support
+user = llm.generate("Extract user info: Jane <jane@example.com>", response_model=UserInfo)
+print(user.email)
 ```
 
-**Summary**:
-- **LiteLLM** = API compatibility layer
-- **AbstractCore** = Production LLM infrastructure
-
-### AbstractCore vs LangChain
-
-**LangChain** is a comprehensive framework with many components. **AbstractCore** is focused infrastructure.
-
-#### LangChain Strengths:
-- **Ecosystem**: Massive ecosystem with pre-built components
-- **RAG**: Complete RAG pipelines out of the box
-- **Integrations**: Hundreds of integrations with external services
-- **Prompt Management**: Advanced prompt templates and few-shot learning
-
-#### AbstractCore Advantages:
-- **Simplicity**: Learn in 5 minutes vs days for LangChain
-- **Reliability**: Production-grade retry and error handling built-in
-- **Performance**: Lightweight with minimal dependencies
-- **Tool Execution**: Actually executes tools vs just formatting them
-
-#### Code Comparison:
-
-**LangChain approach:**
-```python
-from langchain.llms import OpenAI
-from langchain.agents import initialize_agent, AgentType
-from langchain.tools import BaseTool
-
-# More complex setup
-llm = OpenAI(temperature=0)
-tools = [CustomTool()]
-agent = initialize_agent(tools, llm, agent=AgentType.ZERO_SHOT_REACT_DESCRIPTION)
-response = agent.run("What's the weather?")
-```
-
-**AbstractCore approach:**
-```python
-from abstractcore import create_llm
-
-# Simple and direct
-llm = create_llm("openai", model="gpt-4o-mini")
-response = llm.generate("What's the weather?", tools=weather_tools)
-```
-
-**Summary**:
-- **LangChain** = Full framework with everything included
-- **AbstractCore** = Clean infrastructure you build on
-
-### AbstractCore vs LangGraph
-
-**LangGraph** focuses on agent workflows and state management. **AbstractCore** focuses on reliable LLM calls.
-
-#### LangGraph Strengths:
-- **Agent Workflows**: Multi-step agent reasoning with state
-- **Graph Structure**: DAG-based workflow definition
-- **Human-in-the-loop**: Built-in human approval workflows
-- **State Persistence**: Automatic state management
-
-#### AbstractCore + AbstractAgent:
-For complex agents, use [AbstractAgent](https://github.com/lpalbou/AbstractAgent) which builds on AbstractCore.
-
-```python
-# LangGraph - workflow definition
-from langgraph import StateGraph
-
-workflow = StateGraph()
-workflow.add_node("agent", agent_node)
-workflow.add_node("tools", tool_node)
-workflow.set_entry_point("agent")
-
-# AbstractAgent - simpler agent creation
-from abstract_agent import Agent
-from abstractcore import create_llm
+Choose LiteLLM when gateway compatibility and maximum routed provider coverage are the product center. Choose AbstractCore when local inference, media, tool-call normalization, structured output, sessions, tracing, and provider-aware behavior matter inside application code.
 
-agent = Agent(
-    llm=create_llm("openai", model="gpt-4o-mini"),
-    tools=tools,
-    memory=memory_system
-)
-```
+## AbstractCore vs LangChain
 
-**Summary**:
-- **LangGraph** = Complex workflow orchestration
-- **AbstractCore** = Foundation for building agents
-
-### AbstractCore vs LlamaIndex
-
-**LlamaIndex** specializes in RAG and document processing. **AbstractCore** provides general LLM infrastructure.
-
-#### LlamaIndex Strengths:
-- **RAG Focus**: Built specifically for retrieval-augmented generation
-- **Document Processing**: Advanced chunking and parsing strategies
-- **Vector Stores**: Integration with all major vector databases
-- **Query Engines**: Sophisticated query processing and routing
-
-#### AbstractCore Approach:
-AbstractCore provides the embeddings foundation - you build the RAG pipeline:
-
-```python
-# LlamaIndex - full RAG out of the box
-from llama_index import SimpleDirectoryReader, VectorStoreIndex
+LangChain is a broad application framework and integration ecosystem. It is appropriate when you want ready-made components for prompts, retrievers, tools, agents, callbacks, hosted tracing, and third-party integrations.
 
-documents = SimpleDirectoryReader('data').load_data()
-index = VectorStoreIndex.from_documents(documents)
-query_engine = index.as_query_engine()
-response = query_engine.query("What is the main topic?")
+AbstractCore is narrower. It gives you direct LLM calls and call-level reliability primitives, then leaves orchestration and product architecture to your application or to AbstractFramework.
 
-# AbstractCore - you build the pipeline
-from abstractcore import create_llm
-from abstractcore.embeddings import EmbeddingManager
+Choose LangChain when you want the ecosystem and are comfortable adopting its abstractions. Choose AbstractCore when you want a focused provider layer and prefer to own architecture above the LLM call.
 
-embedder = EmbeddingManager()
-llm = create_llm("openai", model="gpt-4o-mini")
+## AbstractFramework vs LangGraph
 
-# You implement: document chunking, vector storage, retrieval
-relevant_docs = your_retrieval_system(query, embedder)
-context = "\n".join(relevant_docs)
-response = llm.generate(f"Context: {context}\nQuestion: {query}")
-```
-
-**Summary**:
-- **LlamaIndex** = Full RAG framework
-- **AbstractCore** = RAG building blocks
-
-## Migration Guides
-
-### From LiteLLM to AbstractCore
-
-**Before (LiteLLM):**
-```python
-import litellm
-
-response = litellm.completion(
-    model="gpt-3.5-turbo",
-    messages=[{"role": "user", "content": "Hello"}]
-)
-print(response.choices[0].message.content)
-```
-
-**After (AbstractCore):**
-```python
-from abstractcore import create_llm
-
-llm = create_llm("openai", model="gpt-3.5-turbo")
-response = llm.generate("Hello")
-print(response.content)
-
-# Plus you get: tool calling, structured output, streaming, reliability
-```
-
-### From LangChain to AbstractCore
-
-**Before (LangChain):**
-```python
-from langchain.llms import OpenAI
-from langchain.schema import HumanMessage
-
-llm = OpenAI()
-response = llm([HumanMessage(content="Hello")])
-```
-
-**After (AbstractCore):**
-```python
-from abstractcore import create_llm
-
-llm = create_llm("openai", model="gpt-3.5-turbo")
-response = llm.generate("Hello")
-
-# Simpler API, same functionality
-```
-
-### From OpenAI SDK to AbstractCore
-
-**Before (OpenAI SDK):**
-```python
-import openai
-
-client = openai.OpenAI()
-response = client.chat.completions.create(
-    model="gpt-3.5-turbo",
-    messages=[{"role": "user", "content": "Hello"}]
-)
-print(response.choices[0].message.content)
-```
-
-**After (AbstractCore):**
-```python
-from abstractcore import create_llm
-
-llm = create_llm("openai", model="gpt-3.5-turbo")
-response = llm.generate("Hello")
-print(response.content)
-
-# Plus: works with any provider, built-in reliability, tool calling
-```
-
-## Performance Comparison
-
-### Memory Usage
-
-| Framework | Import Time | Memory (MB) | Dependencies |
-|-----------|-------------|-------------|--------------|
-| **AbstractCore** | ~0.3s | ~15MB | 3 core |
-| **LiteLLM** | ~0.5s | ~25MB | 5+ |
-| **LangChain** | ~2.0s | ~150MB | 50+ |
-| **LangGraph** | ~1.0s | ~80MB | 20+ |
-| **LlamaIndex** | ~1.5s | ~120MB | 40+ |
-
-### Feature Completeness vs Complexity
-
-```
-                    ┌─────────────────────┐
-                 High│  LangChain     ●   │
- Feature Completeness│                     │
-                     │  LlamaIndex ●      │
-                     │                     │
-                     │  LangGraph     ●   │
-                Medium│                     │
-                     │                     │
-                     │  AbstractCore  ●   │
-                     │                     │
-                  Low│  LiteLLM       ●   │
-                     └─────────────────────┘
-                      Low        Medium   High
-                           Complexity
-
-● = Sweet spot for different use cases
-```
-
-## Use Case Recommendations
-
-### Simple LLM Integration
-```
-Your App → AbstractCore → LLM Provider
-```
-**Recommended for**: AbstractCore
-**Why**: Simple, reliable, production-ready
-
-### API Compatibility Only
-```
-Your App → LiteLLM → Multiple Providers
-```
-**Recommended for**: LiteLLM
-**Why**: Massive provider support, minimal overhead
-
-### Complex RAG System
-```
-Documents → LlamaIndex → Vector DB → Query Engine
-```
-**Recommended for**: LlamaIndex
-**Why**: Full RAG pipeline with document processing
-
-### Agent Workflows
-```
-Task → LangGraph → Multi-step Agent → Tools
-```
-**Recommended for**: LangGraph or AbstractAgent
-**Why**: State management and workflow orchestration
-
-### Full Application Framework
-```
-Complex App → LangChain → Everything
-```
-**Recommended for**: LangChain
-**Why**: Comprehensive ecosystem
-
-## Decision Matrix
-
-### Choose AbstractCore if you want:
-- ✅ Production-ready LLM infrastructure
-- ✅ Universal tool calling across all providers
-- ✅ Structured output with automatic retry
-- ✅ Streaming with tool support
-- ✅ Clean, simple API
-- ✅ Built-in reliability (retry, circuit breakers)
-- ✅ Comprehensive observability
-
-### Choose LiteLLM if you want:
-- ✅ Simple API compatibility
-- ✅ Maximum provider coverage (100+)
-- ✅ Drop-in replacement for OpenAI SDK
-- ❌ But no: tool execution, structured output, reliability features
-
-### Choose LangChain if you want:
-- ✅ Pre-built components for everything
-- ✅ Massive ecosystem and integrations
-- ✅ Complex chain orchestration
-- ❌ But accept: complexity, learning curve, many dependencies
-
-### Choose LangGraph if you want:
-- ✅ Multi-step agent workflows
-- ✅ State management and persistence
-- ✅ Human-in-the-loop workflows
-- ❌ But don't need: simple LLM calls, basic tool execution
-
-### Choose LlamaIndex if you want:
-- ✅ Full RAG pipelines out of the box
-- ✅ Advanced document processing
-- ✅ Vector database integrations
-- ❌ But don't need: general-purpose LLM calls, other use cases
-
-## Combination Strategies
-
-Many projects benefit from combining tools:
-
-### AbstractCore + LlamaIndex
-```python
-# Use LlamaIndex for RAG, AbstractCore for LLM calls
-from llama_index import VectorStoreIndex
-from abstractcore import create_llm
-
-index = VectorStoreIndex.from_documents(docs)
-relevant_docs = index.similarity_search(query)
-
-llm = create_llm("anthropic", model="claude-3-5-sonnet-latest")
-response = llm.generate(f"Context: {relevant_docs}\nQuestion: {query}")
-```
-
-### AbstractCore + Custom Agents
-```python
-# Use AbstractCore for reliable LLM calls in your agent
-from abstractcore import create_llm
-
-class MyAgent:
-    def __init__(self):
-        self.llm = create_llm("openai", model="gpt-4o-mini")
-
-    def plan(self, task):
-        return self.llm.generate(f"Plan steps for: {task}")
-
-    def execute_step(self, step, tools):
-        return self.llm.generate(step, tools=tools)
-```
-
-### AbstractCore + LangChain Components
-```python
-# Use LangChain for prompts, AbstractCore for execution
-from langchain.prompts import PromptTemplate
-from abstractcore import create_llm
-
-template = PromptTemplate.from_template("Translate {text} to {language}")
-llm = create_llm("openai", model="gpt-4o-mini")
-
-prompt = template.format(text="Hello", language="French")
-response = llm.generate(prompt)
-```
+LangGraph is the more established answer for stateful agent graphs, especially if you already live in the LangChain ecosystem.
+
+AbstractFramework's answer is different:
+
+- AbstractRuntime models durable effects, waits, resumes, ledgers, snapshots, artifacts, and replay.
+- AbstractAgent provides agent loops on top.
+- AbstractFlow creates portable visual workflow bundles.
+- AbstractGateway exposes durable run control and ledger streaming to clients.
+
+Choose LangGraph when explicit graph modeling and ecosystem maturity are the priority. Choose AbstractFramework when the key requirements are local-first operation, durable replayable runs, gateway-controlled clients, and a single vertically integrated stack.
+
+## AbstractCore / AbstractFramework vs LlamaIndex
+
+LlamaIndex specializes in document ingestion, indexing, retrieval, query engines, and RAG application structure.
+
+AbstractCore does not replace that. It provides embeddings, generation, media/document extraction primitives, and provider normalization. AbstractFramework adds temporal memory and semantics, but that is closer to persistent knowledge and provenance than to turnkey document RAG.
+
+Choose LlamaIndex when retrieval over documents is the center of the product. Choose AbstractCore or AbstractFramework when RAG is one component inside a broader agent/workflow system.
+
+## When To Choose What
+
+Choose **AbstractCore alone** if you want:
+
+- a focused LLM provider layer for Python application code
+- first-class local/open-source model support
+- direct cloud and gateway providers in one API
+- tool-call normalization with pass-through execution by default
+- Pydantic structured output with retry and provider-aware strategies
+- policy-driven media handling and fallbacks
+- prompt-cache-aware sessions, events, tracing, MCP, embeddings, and optional server mode
+
+Choose **AbstractFramework** if you want:
+
+- durable agent/workflow execution
+- pause/resume/replay across restarts
+- observable ledgers for LLM calls, tool calls, waits, and decisions
+- visual workflows that can be bundled and deployed across clients
+- a gateway that can start, schedule, control, and stream runs
+- memory and semantics components for persistent knowledge
+- local-first voice, vision, coding, assistant, and workflow applications
+
+Choose **LiteLLM** if you want:
+
+- an OpenAI-compatible SDK/proxy across many model APIs
+- routing, gateway deployment, and broad API reach
+- a drop-in path for existing OpenAI-style clients
+
+Choose **LangChain** if you want:
+
+- a broad framework with many prebuilt components
+- prompt, retriever, agent, callback, and integration abstractions
+- a large community and many examples
+
+Choose **LangGraph** if you want:
+
+- stateful graph workflows
+- checkpointed agent execution
+- human-in-the-loop flows
+- strong compatibility with LangChain model/tool components
+
+Choose **LlamaIndex** if you want:
+
+- RAG pipelines
+- document ingestion and indexing
+- vector-store and data-source integrations
+- query engines and retrieval-heavy application structure
+
+## Maturity Notes
+
+AbstractCore is a beta package with substantial implementation and tests. The current repository has 242 test files and the package imports cleanly in a lightweight environment. A local `pytest -m basic` pass during review produced 68 passed, 21 skipped, and 3 failures caused by optional web-tool dependency monkeypatching when `requests` was absent. That is a real rough edge, but not evidence that the core provider API is broken.
+
+AbstractFramework is more uneven because it is a multi-package ecosystem. Some parts, especially AbstractRuntime's durable model and AbstractCore's provider layer, look architecturally serious. Other parts are early, pre-1.0, or still building public adoption. For production use today, pin versions, test the exact providers and workflows you plan to run, and treat the stack as promising but not yet a de facto standard.
 
 ## Summary
 
-**AbstractCore** is designed to be the **reliable foundation** that other tools can build on. It excels at:
+AbstractCore's strongest niche in May 2026 is not "smallest wrapper" or "largest ecosystem." It is a focused provider I/O layer with strong local/open-source support and broad call-level infrastructure.
 
-1. **Production reliability** - Built-in retry, circuit breakers, error handling
-2. **Universal tool calling** - Works across all providers
-3. **Structured output** - Type-safe responses with validation
-4. **Clean architecture** - Simple to use and integrate
+AbstractFramework's strongest niche is broader: a local-first, durable, observable AI systems stack where agents, workflows, memory, gateway control, and concrete clients share the same foundation.
 
-For specialized needs, combine AbstractCore with:
-- **LlamaIndex** for RAG pipelines
-- **AbstractAgent** for complex agents
-- **AbstractMemory** for advanced memory
-- **LangChain components** for specific features
+The objective answer is:
 
-Choose the right tool for your specific needs, and don't hesitate to combine them when it makes sense.
-
----
-
-**The key insight**: Every framework has trade-offs. AbstractCore prioritizes reliability and simplicity over feature completeness, making it an strong foundation for production LLM applications.
+- **Interesting?** Yes.
+- **Category leader by adoption?** No.
+- **Technically differentiated?** Yes, especially for local-first durable AI systems.
+- **Best used blindly instead of LangChain/LangGraph/LlamaIndex/LiteLLM?** No.
+- **Worth evaluating seriously if you want an open, composable, local-capable foundation?** Yes.

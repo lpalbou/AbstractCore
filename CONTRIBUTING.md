@@ -57,6 +57,23 @@ black .
 ruff check .
 ```
 
+### Pre-commit (recommended)
+
+This repo uses `pre-commit` to run formatting/lint checks as git hooks (before you commit).
+
+One-time setup:
+
+```bash
+pip install -e ".[dev,test]"
+pre-commit install
+```
+
+Run on all files:
+
+```bash
+pre-commit run --all-files
+```
+
 ### Tests
 
 ```bash

@@ -1,9 +1,12 @@
 """
 Test async generation with all providers.
 """
-import pytest
+
 import asyncio
 import os
+
+import pytest
+
 from abstractcore import create_llm
 
 
@@ -38,8 +41,9 @@ class TestAsyncProviders:
     @pytest.mark.asyncio
     async def test_lmstudio_async(self, skip_if_provider_unavailable):
         """Test LMStudio async generation."""
-        skip_if_provider_unavailable("lmstudio")
-        llm = create_llm("lmstudio", model="qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1")
+        model = os.getenv("ABSTRACTCORE_LMSTUDIO_TEST_MODEL") or "qwen/qwen3-4b-2507"
+        skip_if_provider_unavailable("lmstudio", model=model)
+        llm = create_llm("lmstudio", model=model, base_url="http://localhost:1234/v1")
         response = await llm.agenerate("Say hello")
         assert response is not None
         assert response.content is not None
@@ -48,7 +52,9 @@ class TestAsyncProviders:
     async def test_mlx_async(self, skip_if_provider_unavailable):
         """Test MLX async generation."""
         if os.getenv("ABSTRACTCORE_RUN_MLX_TESTS") != "1":
-            pytest.skip("MLX async generation test is heavy; set ABSTRACTCORE_RUN_MLX_TESTS=1 to run")
+            pytest.skip(
+                "MLX async generation test is heavy; set ABSTRACTCORE_RUN_MLX_TESTS=1 to run"
+            )
         skip_if_provider_unavailable("mlx")
         llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
         response = await llm.agenerate("Say hello", max_output_tokens=10)
@@ -59,7 +65,9 @@ class TestAsyncProviders:
     async def test_huggingface_async(self):
         """Test HuggingFace async generation."""
         if os.getenv("ABSTRACTCORE_RUN_HUGGINGFACE_TESTS") != "1":
-            pytest.skip("HuggingFace async generation test is heavy; set ABSTRACTCORE_RUN_HUGGINGFACE_TESTS=1 to run")
+            pytest.skip(
+                "HuggingFace async generation test is heavy; set ABSTRACTCORE_RUN_HUGGINGFACE_TESTS=1 to run"
+            )
         llm = create_llm("huggingface", model="unsloth/Qwen3-4B-Instruct-2507-GGUF")
         response = await llm.agenerate("Say hello", max_output_tokens=10)
         assert response is not None
@@ -104,9 +112,7 @@ class TestAsyncConcurrent:
         llm = create_llm("ollama", model="qwen3:4b-instruct", base_url="http://localhost:11434")
 
         # Execute 3 requests concurrently
-        tasks = [
-            llm.agenerate(f"Count to {i}") for i in range(1, 4)
-        ]
+        tasks = [llm.agenerate(f"Count to {i}") for i in range(1, 4)]
         responses = await asyncio.gather(*tasks)
 
         assert len(responses) == 3
@@ -124,8 +130,7 @@ class TestAsyncConcurrent:
         # Execute concurrently across providers
         try:
             responses = await asyncio.gather(
-                ollama.agenerate("Say hello"),
-                openai.agenerate("Say hello")
+                ollama.agenerate("Say hello"), openai.agenerate("Say hello")
             )
         except Exception as e:
             if _is_connectivity_error(e):

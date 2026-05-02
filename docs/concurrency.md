@@ -49,7 +49,7 @@ To compare *across runs and across models*, use a fixed prompt set file and keep
 ```bash
 python examples/performance/mlx_concurrency_benchmark.py \
   --model lmstudio-community/Qwen3-4B-Instruct-2507-MLX-4bit \
-  --prompts-file examples/assets/mlx_benchmark_prompts_128.json \
+  --prompts-file examples/performance/assets/mlx_benchmark_prompts_128.json \
   --queries 128 \
   --concurrency-levels 1 2 4 8 16 32 64 128 \
   --max-output-tokens 512 \
@@ -76,7 +76,7 @@ These runs were executed on a **MacBook Pro (M4 Max, 128GB)** with:
 - `--queries 128`
 - `--max-output-tokens 512` (so `total_out = 128 * 512 = 65536` output tokens per sweep point)
 - `--concurrency-levels 1 2 4 8 16 32 64 128`
-- prompt set: `examples/assets/mlx_benchmark_prompts_128.json`
+- prompt set: `examples/performance/assets/mlx_benchmark_prompts_128.json`
 
 Key takeaways:
 - **Throughput scales with concurrency** (continuous batching keeps the device busy).

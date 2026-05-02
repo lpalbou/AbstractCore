@@ -1,0 +1,46 @@
+site_name: AbstractCore
+site_description: Unified interface to multiple LLM providers with tool calling, streaming, structured output, and model management.
+repo_url: https://github.com/lpalbou/AbstractCore
+repo_name: lpalbou/AbstractCore
+
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.top
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - footnotes
+  - toc:
+      permalink: true
+  - pymdownx.superfences
+  - pymdownx.highlight
+
+plugins:
+  - search
+  - autorefs
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            show_source: false
+
+nav:
+  - Home: README.md
+  - Getting Started: getting-started.md
+  - API Overview: api.md
+  - Tool Calling: tool-calling.md
+  - Structured Output: structured-output.md
+  - Prompt Caching: prompt-caching.md
+  - Memory Blocs: memory-blocs.md
+  - Media: media-handling-system.md
+  - Embeddings: embeddings.md
+  - Server: server.md
+  - FAQ: faq.md
+  - Troubleshooting: troubleshooting.md

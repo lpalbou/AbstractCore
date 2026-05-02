@@ -12,7 +12,7 @@ Parameters are declared at the `AbstractCoreInterface` level, ensuring:
 
 ### 2. **DRY (Don't Repeat Yourself)**
 Common parameters are handled centrally to avoid:
-- Code duplication across 6 providers
+- Code duplication across providers
 - Inconsistent parameter handling
 - Maintenance overhead for parameter changes
 
@@ -182,7 +182,7 @@ session.generate("Hello")
 
 ### Before (Duplicated Code)
 ```python
-# In each of 6 providers:
+# In each provider:
 self.temperature = kwargs.get("temperature", 0.7)
 self.seed = kwargs.get("seed", None)
 # ... parameter extraction logic in each provider
@@ -247,7 +247,7 @@ python tests/manual_seed_verification.py
 
 **Provider-Specific Implementations**:
 - **OpenAI**: Native `seed` parameter in API
-- **MLX**: `mx.random.seed()` before generation  
+- **MLX**: `mx.random.seed()` before generation
 - **Ollama**: `seed` in options payload
 - **HuggingFace**: `torch.manual_seed()` + GGUF native seed
 - **LMStudio**: OpenAI-compatible `seed` parameter

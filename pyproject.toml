@@ -553,16 +553,29 @@ ignore = [
 # Pytest configuration
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -v --strict-markers --strict-config --tb=short"
+addopts = "-ra --tb=short --strict-markers --strict-config --disable-warnings -p no:cacheprovider"
 testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
+python_files = ["test_*.py"]
 python_functions = ["test_*"]
 python_classes = ["Test*"]
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-    "unit: marks tests as unit tests",
-    "provider: marks tests that require specific providers",
+    "basic: Level A (contract/unit) tests",
+    "vision: Tests requiring vision capabilities",
+    "provider: Tests for specific provider functionality",
+    "provider_required: Tests requiring specific provider availability",
+    "slow: Slow-running tests (use -m \"not slow\" to skip)",
+    "comprehensive: Comprehensive vision tests across all models/images",
+    "smoke: Quick smoke tests for basic functionality",
+    "integration: Integration tests that test multiple components",
+    "e2e: Level C (end-to-end/real infra) tests (opt-in)",
+    "unit: Unit tests for individual components",
+    "phase1: Phase 1 development tests (core integration)",
+    "phase2: Phase 2 development tests (documentation accuracy)",
+    "phase3: Phase 3 development tests (advanced features)",
+    "performance: Performance and benchmark tests",
+    "large_files: Tests requiring large test files",
+    "requires_deps: Tests requiring optional dependencies",
+    "asyncio: Async tests (pytest-asyncio)",
 ]
 
 # Coverage configuration
