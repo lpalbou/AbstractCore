@@ -6,68 +6,52 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 
-## [2.12.0] - Unreleased
+## [2.13.0] - Unreleased
 
 ### Added
 - **Prompt caching sessions**: `CachedSession` selects the best prompt-cache strategy automatically (KV mode for MLX + HuggingFace transformers; otherwise stable `prompt_cache_key`).
-- **Box caching for large contexts**: `CachedSession.attach_files()` extracts text from attached files and adds one immutable transcript “box” per file (reused via KV/prefix caches).
-- **Prompt cache persistence APIs**: providers expose `prompt_cache_save()` / `prompt_cache_load()` when supported (capability-gated); CLIs use these APIs instead of accessing provider internals.
-- **Prompt cache observability + demo REPL**: `BaseProvider.prompt_cache_token_count()` and `examples/prompt_cache_repl_demo.py` (`/boxes`, `/cache`, `/stream`, TTFT).
-- **HuggingFace transformers KV reuse**: true cross-call KV caching (`past_key_values` / `DynamicCache`) keyed by `prompt_cache_key`, including the local prompt-cache control plane (`prepare_modules`/`fork`/`update`) and `.safetensors` save/load.
-- **Capability-driven parameter filtering**: `model_capabilities.json` can declare per-model unsupported generation parameters via `unsupported_parameters` (so providers don’t need brittle model-name heuristics).
-- **Capability-driven token parameter naming**: `model_capabilities.json.token_param_name` selects the correct output-token parameter (`max_tokens` vs `max_completion_tokens`) per model.
-- **BaseProvider capability helpers**: `_is_parameter_supported()`, `_get_token_param_name()`, and `_is_reasoning_model()` read from `model_capabilities.json` for consistent enforcement across providers.
-- **Output wrapper stripping**: `architecture_formats.json` can declare `output_wrappers` so providers strip template artifacts from visible content (e.g., Qwen3 `<|im_end|>`).
-- **Thinking observability**: responses include `metadata.thinking_requested` / `metadata.thinking_effective` (and level/capability details) when `thinking=` is used.
-- **Reasoning-capability assets**: expanded `thinking_support` / `reasoning_levels` coverage for reasoning models (OpenAI o-series + GPT-5 family, Claude 4.x, DeepSeek-R1, …).
-- **`GenerateResponse.reasoning` property**: unified accessor for extracted reasoning (`metadata["reasoning"]` / `reasoning_content` / `thinking`).
-- **Qwen3/Qwen3.5 thinking control (local)**: LM Studio forwards `thinking=` via `chat_template_kwargs` when supported (with a hard-switch fallback for runtimes that ignore it); HuggingFace GGUF supports `thinking="off"` via the Qwen hard-switch marker.
-- **Gemma 4 support**: adds `gemma4` architecture patterns plus capability entries (context windows, thinking/tool tokens, and vision/audio/video flags).
-- **Setup UX**: `--install` readiness check; `--config` wizard expanded; embeddings now support 7 providers (`openai`, `openrouter`, `portkey`, `openai-compatible`, `huggingface`, `ollama`, `lmstudio`).
-- **New model entries**: GPT-5.1, GPT-5.2, GPT-5.2-pro, GPT-5.2-codex, GPT-5.1-codex, GPT-5-codex, GPT-5-nano, o4-mini, GPT-4.1, GPT-4.1-mini, GPT-4.1-nano, Claude Opus 4.6, Claude Sonnet 4.6, Qwen3.5, LFM2.5, Nemotron.
-- **Expanded open-weight registry coverage**: added/normalized recent Mistral, Ministral, Devstral, Granite 4.0, Nemotron NVFP4, MiniMax M2/M2.1/M2.5, Liquid LFM2/LFM2.5-350M, GLM-5, Jackrong Qwopus3.5, and Tesslate OmniCoder model ids in the model/architecture assets.
-- **Local thinking probes**: `examples/local_qwen3_5_thinking_probe.py` records provider payloads for debugging.
+- **File “boxes” for large contexts**: `CachedSession.attach_files()` extracts text from attached files and appends one immutable transcript “box” per file (reused via KV/prefix caches).
+- **Prompt cache persistence + REPL demo**: providers expose `prompt_cache_save()` / `prompt_cache_load()` when supported (capability-gated); `examples/prompt_cache_repl_demo.py` reports TTFT/TIFT + cache token counts.
+- **HuggingFace transformers KV reuse**: cross-call KV caching (`past_key_values` / `DynamicCache`) keyed by `prompt_cache_key`, including the local control plane (`prepare_modules`/`fork`/`update`) and `.safetensors` save/load.
+- **Memory blocs (persistent file ↔ bloc ↔ KV artifacts)**: `FileBlocStore` stores extracted text snapshots and optional per-(provider,model) KV artifacts; `generate_bloc_metadata_jsonld()` produces JSON-LD metadata using `abstractcore/assets/bloc-schema.jsonld`.
+- **Reasoning/thinking controls**: `GenerateResponse.reasoning` property, thinking/tag stripping in streaming, and expanded `thinking_support` / `reasoning_levels` coverage in model capability assets.
+- **Model registry expansion**: improved model/variant detection, new capability entries (incl. Gemma 4), and tooling to normalize vendor/model id variants.
+- **Telegram tooling**: expanded Telegram Bot API tools + tests, and improved tool transcript handling in the OpenAI provider.
 
 ### Changed
-- **Thinking control enforcement**: preserves requested vs effective effort levels, maps unsupported levels to the nearest supported level, and makes partial/no-op effort handling explicit (on/off handled vs level handled).
-- **Reasoning capability clarity**: split “model emits reasoning” vs “model supports thinking control” to avoid misleading warnings and improve enforcement decisions.
-- **OpenAI/Portkey parameter hygiene**: capability-driven filtering via `unsupported_parameters` and `token_param_name` (replacing model-name heuristics and provider-specific helpers like `_is_reasoning_model()` / `_uses_max_completion_tokens()`).
-- **GPT-5 family models updated**: context windows corrected to `max_tokens=400000` total; max output corrected to `max_output_tokens=128000` (so max prompt ≈ 272000 at full output); `audio_support=false` (text+image only per OpenAI docs); `reasoning_levels` declared in `model_capabilities.json`.
-- **`--install` embeddings checks**: now provider-aware (server/API-key providers validate reachability/auth instead of attempting local `sentence-transformers` downloads).
-- **Thinking warnings refined**: `thinking="off"/"none"` on non-thinking models no longer emits a spurious RuntimeWarning (the model is already in the desired state).
-- **GGUF prompt caching**: tools are kept in a stable prefix position for more effective prefix caching.
-  Local control-plane append-only updates render/tokenize only the delta segment for faster large-chat iteration.
-- **GGUF cache-aware generation**: when local control plane caching is available, GGUF generates from prefetched KV via `llm.generate(reset=False)` (avoids `create_chat_completion()` resets) and cuts TTFT on long cached prompts. Disable via `ABSTRACTCORE_GGUF_CONTROL_PLANE=0`.
-- **Prompt cache module keys**: derived module cache keys use a longer hash suffix; module fingerprints canonicalize tool ordering and message shapes for more stable cache invalidation.
-- **Prompt cache store thread-safety**: `PromptCacheStore` is protected by an internal `RLock` for safer concurrent access.
-- **CachedSession KV mode**: improved parity with `BasicSession` (tracing metadata, streaming collection), warns on per-call `system_prompt`/`tools`/`messages` overrides, and `rebuild_prompt_cache()` replays the transcript when possible.
-- **File-box attachments**: `CachedSession.attach_files()` returns a `timing` breakdown (`extract_ms`, `cache_update_ms`, `total_ms`). In `prompt_cache_mode="key"`, cache prefill is opt-in via `prefill_key_mode_cache=True` (default: defer until the next `generate()`).
-- **Anthropic thinking control metadata**: Claude models with extended thinking declare `thinking_control_mode` in `model_capabilities.json` so providers avoid model-name heuristics for “adaptive” vs “budget” behavior.
+- **Capability-driven parameter filtering**: providers enforce `unsupported_parameters` and `token_param_name` from `model_capabilities.json` (reduces model-name heuristics).
+- **GGUF prompt caching**: stable-prefix control plane for supported chat formats (delta-only append/update to reduce prompt re-rendering for long sessions).
+- **Prompt-cache REPL observability**: clearer TTFT/TIFT + throughput reporting and attach timing breakdown (extract vs cache work).
 
 ### Fixed
-- **GPT-5 temperature handling**: temperature is now correctly stripped via `unsupported_parameters` for GPT-5/5-mini/5-nano (which reject it) and correctly forwarded for GPT-5.1/5.2 (which accept it). All empirically verified via live API.
-- **Missing o3/o3-mini/o4-mini parameter restrictions**: these reasoning models were not matched by the old `_is_reasoning_model()` heuristic and would incorrectly receive temperature/top_p parameters. Now correctly handled via `unsupported_parameters`.
-- **max_tokens vs max_completion_tokens**: all reasoning models (o-series + GPT-5 family) reject `max_tokens` and require `max_completion_tokens`. `token_param_name` field ensures the correct parameter name.
-- **Ollama + Qwen3.x thinking edge case**: small `max_output_tokens` with thinking enabled could exhaust the budget in the reasoning channel and return empty final content; Ollama provider now enforces a minimum `options.num_predict` when `thinking` is enabled.
-- **Model capability schema**: `tool_support="none"` models now correctly use `max_tools: 0` (fixes LFM2.5 base variants).
-- **HuggingFace GGUF stability**: GGUF loads now attempt to honor `max_tokens` from `model_capabilities.json`. If the advertised context window is too large to allocate locally, AbstractCore retries with smaller llama.cpp `n_ctx` values (best-effort). Override by passing `max_tokens=...` when constructing `HuggingFaceProvider()`.
-- **HuggingFace GGUF Metal stability (macOS)**: AbstractCore pre-imports `llama_cpp` (best-effort) before PyTorch/transformers when creating providers so GGUF Metal offload remains usable even if you later use MLX / HuggingFace transformers in the same process. If PyTorch/transformers is imported first, GGUF Metal offload is disabled for safety; override with `ABSTRACTCORE_GGUF_METAL_UNSAFE=1` (unsafe).
-- **Audio strategy default changed from `native_only` to `auto`**: the `AudioConfig.strategy` default was `native_only`, which caused audio attachments to fail on text-only models unless the user explicitly configured it.
-- **Config-persisted API keys now injected into environment**: API keys saved via `abstractcore --set-api-key` were stored in config but providers only read from `os.environ`. Added `_apply_api_keys_to_env()` to bridge config-persisted keys into the environment at config load time.
-- **`--install` TTS/STT severity**: failed model downloads are now reported as warnings instead of critical errors since TTS/STT are optional subsystems.
-- **`--install` TTS/STT verification**: download results are now verified by re-checking the filesystem instead of trusting the subprocess exit code.
-- **GGUF prompt cache persistence**: `HuggingFaceProvider.prompt_cache_save()` is compatible with NumPy 2.x (`np.str_` instead of removed `np.unicode_`).
-- **MLX prompt cache persistence**: `MLXProvider.prompt_cache_save()` stringifies safetensors metadata values to satisfy `mlx-lm` requirements.
-- **MLX prompt cache module prep**: `MLXProvider._prompt_cache_backend_clone()` supports current `mlx-lm` cache layer variants (including empty `KVCache` layers), so `prompt_cache_prepare_modules()` works reliably.
-- **Non-streaming tag rewriting metadata**: `BaseProvider._apply_non_streaming_tag_rewriting()` preserves `GenerateResponse.metadata` instead of dropping it.
-- **Streaming thinking-tag extraction**: `stream=True` strips inline thinking tags and surfaces extracted reasoning in `metadata["reasoning"]` (matching non-streaming behavior).
-- **Prompt-cache REPL stats clarity**: `examples/prompt_cache_repl_demo.py` reports TTFT/TIFT and prefill+decode throughput (no floats), shows GGUF offload (`n_gpu_layers`) and context limits, reports file-box attach timing (extract vs cache work), and prints a brief `…` indicator when early stream chunks are non-visible (e.g., stripped `<think>` blocks).
-- **Architecture assets schema**: `gemma4.thinking_tags` no longer includes trailing whitespace so asset schema validation and thinking-tag parsing remain stable.
-- **Model registry alignment**: corrected Granite 4.0 and Nemotron prompted tool transcript formats, fixed Mistral Small 4 and Qwopus family detection, and aligned MiniMax capability architecture tags with the architecture registry.
-- **Variant normalization robustness**: model detection now strips broader precision/quantization suffixes (including `NVFP4` / `FP*` / `BF*`) and preserves explicit packaging siblings like `-GGUF` when resolving quantized filenames such as `...-Q4_K_M-GGUF`.
+- **Reasoning model token parameter mapping**: consistent `max_completion_tokens` vs `max_tokens` handling via `token_param_name`.
+- **MLX prompt cache persistence**: safetensors metadata is stringified to satisfy `mlx-lm`, and cache cloning handles newer cache layer variants.
+- **GGUF prompt cache persistence**: NumPy 2.x compatibility fixes for metadata encoding.
 
 ### Documentation
-- Updated docs for `thinking=` and prompt caching (including the prompt-cache REPL demo and cache modes).
+- Updated docs for prompt caching and memory blocs.
+
+## [2.12.0] - 2026-02-12
+
+### Added
+- **`--install` readiness check**: comprehensive check of all subsystems (default model, provider connectivity, embeddings model, vision fallback, STT/TTS models, ffmpeg, abstractvision, API keys). Reports ✅/⚠️/❌ for each area and offers to download/install missing models interactively. Use `--yes` (`-y`) to auto-accept all downloads for non-interactive environments (e.g. `abstractcore --install --yes`).
+- **Embeddings: 7 providers supported** (was 3). `EmbeddingManager` now accepts `openai`, `openrouter`, `portkey`, and `openai-compatible` in addition to the existing `huggingface`, `ollama`, and `lmstudio`. Added `OpenAIProvider.embed()` method; gateway providers (`OpenRouterProvider`, `PortkeyProvider`) already inherit `embed()` from `OpenAICompatibleProvider`. All server/cloud providers return embeddings in OpenAI-compatible format.
+- **Interactive config wizard (`--config`) — expanded to 7 steps**:
+  - Step 1: now asks for **base URL** when the selected provider is a local server (ollama, lmstudio, vllm, openai-compatible). Shows the env var name, current value if set, default URL, and prints the `export` command for shell persistence.
+  - Step 4 (NEW): **Audio strategy** — defaults to `auto` on Enter. Asks about `native_only` / `auto` / `speech_to_text` for audio attachment handling. Mentions `abstractvoice` dependency when needed.
+  - Step 5 (NEW): **Video strategy** — defaults to `auto` on Enter. Asks about `native_only` / `auto` / `frames_caption` for video attachment handling. Mentions `ffmpeg` dependency when needed.
+  - Step 6 (NEW): **Embeddings provider/model** — asks for embeddings configuration with examples across all 7 supported providers. Validates provider before saving.
+  - Step 7: Console logging verbosity (renumbered from step 4).
+
+### Changed
+- Interactive config wizard now covers all major configuration areas (model, base URL, vision, API keys, audio, video, embeddings, logging). Previously only covered model, vision, API keys, and logging.
+- **`--install` embeddings check**: now provider-aware — server-based providers (ollama, lmstudio, openai, openrouter, portkey, openai-compatible) check reachability or API key instead of trying to download via `sentence-transformers`. When `sentence-transformers` is missing, `--install` offers to `pip install "abstractcore[embeddings]"` and then download the model.
+
+### Fixed
+- **Audio strategy default changed from `native_only` to `auto`**: the `AudioConfig.strategy` default was `native_only`, which caused audio attachments to fail on text-only models unless the user explicitly configured it. Changed to `auto` (matching `VideoConfig.strategy` which was already `auto`). With `auto`, audio works seamlessly when `abstractvoice` is installed (STT fallback) and raises a clear error with install hints when it is not.
+- **Config-persisted API keys now injected into environment**: API keys saved via `abstractcore --set-api-key` (or `--config`) were stored in `~/.abstractcore/config/abstractcore.json` but providers only read from `os.environ` (e.g. `OPENAI_API_KEY`). Added `_apply_api_keys_to_env()` to bridge config-persisted keys into the environment at config load time. Environment variables always take precedence (config keys are injected only when the env var is absent).
+- **`--install` TTS/STT severity**: failed model downloads are now reported as `⚠️` (warning) instead of `❌` (critical) since TTS/STT are optional subsystems.
+- **`--install` TTS/STT verification**: download results are now verified by re-checking the filesystem instead of trusting the subprocess exit code (some prefetch commands exit 0 even on failure).
 
 ## [2.11.9] - 2026-02-09
 
