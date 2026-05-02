@@ -370,6 +370,12 @@ test = [
     "pytest-cov>=4.0.0",
     "responses>=0.23.0",
     "httpx>=0.24.0",
+    # These are imported unconditionally by parts of the test suite.
+    "numpy>=1.20.0,<2.0.0",
+    "Pillow>=10.0.0,<12.0.0",
+    "fastapi>=0.100.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "uvicorn>=0.23.0,<1.0.0",
 ]
 
 # Documentation dependencies
