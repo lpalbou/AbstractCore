@@ -19,7 +19,7 @@ If your goal is **measuring throughput vs concurrency on a single MLX model**, u
 
 ## MLX concurrency benchmark (recommended)
 
-Use `examples/mlx_concurrency_benchmark.py` to run *many distinct prompts* through a single MLX model and produce:
+Use `examples/performance/mlx_concurrency_benchmark.py` to run *many distinct prompts* through a single MLX model and produce:
 - realtime progress logs
 - a summary CSV (TOTAL tok/s)
 - a per-query CSV (per-query tok/s distribution)
@@ -34,7 +34,7 @@ python -m pip install -e ".[mlx,mlx-bench]"
 ### Run a sweep (custom concurrency levels)
 
 ```bash
-python examples/mlx_concurrency_benchmark.py \
+python examples/performance/mlx_concurrency_benchmark.py \
   --model lmstudio-community/Qwen3-4B-Instruct-2507-MLX-4bit \
   --queries 50 \
   --concurrency-levels 1 2 4 8 16 32 \
@@ -47,7 +47,7 @@ python examples/mlx_concurrency_benchmark.py \
 To compare *across runs and across models*, use a fixed prompt set file and keep it constant:
 
 ```bash
-python examples/mlx_concurrency_benchmark.py \
+python examples/performance/mlx_concurrency_benchmark.py \
   --model lmstudio-community/Qwen3-4B-Instruct-2507-MLX-4bit \
   --prompts-file examples/assets/mlx_benchmark_prompts_128.json \
   --queries 128 \

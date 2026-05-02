@@ -69,7 +69,7 @@ formats = handler.get_supported_formats()
 # Returns: {'text': [...90+ extensions], 'image': [...], 'document': [...]}
 ```
 
-**Example Script**: See [examples/list_supported_formats.py](../../examples/list_supported_formats.py) for complete demonstration.
+**Example Script**: See [examples/media/list_supported_formats.py](../../examples/media/list_supported_formats.py) for complete demonstration.
 
 ### Provider-Specific Features
 

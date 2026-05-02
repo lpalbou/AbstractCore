@@ -94,6 +94,11 @@ class _StubKVProvider(BaseProvider):
         return ["stub"]
 
 
+class _StubKeyProvider(_StubKVProvider):
+    def prompt_cache_supports_kv_source_of_truth(self) -> bool:
+        return False
+
+
 def _noop_tool(text: str) -> str:
     """Return the input."""
 
@@ -166,3 +171,56 @@ def test_cached_session_kv_mode_warns_on_per_call_overrides() -> None:
     with pytest.warns(RuntimeWarning, match="ignores per-call `tools=`"):
         _ = session.generate("hi", tools=[])
 
+
+def test_cached_session_kv_mode_ignores_system_alias_override() -> None:
+    llm = _StubKVProvider()
+    session = CachedSession(
+        provider=llm,
+        system_prompt="You are helpful.",
+        tools=[_noop_tool],
+        prompt_cache_strategy="kv",
+    )
+
+    with pytest.warns(RuntimeWarning, match="ignores `system=`"):
+        _ = session.generate("hi", system="Per-call override")
+
+    assert llm.last_call["system_prompt"] is None
+    assert "system" not in llm.last_kwargs
+
+
+def test_cached_session_key_mode_ignores_system_alias_override() -> None:
+    llm = _StubKeyProvider()
+    session = CachedSession(
+        provider=llm,
+        system_prompt="You are helpful.",
+        tools=[_noop_tool],
+        prompt_cache_strategy="key",
+    )
+
+    assert session.prompt_cache_mode == "key"
+
+    with pytest.warns(RuntimeWarning, match="ignores `system=`"):
+        _ = session.generate("hi", system="Per-call override")
+
+    assert llm.last_call["system_prompt"] == "You are helpful."
+    assert "system" not in llm.last_kwargs
+
+
+@pytest.mark.asyncio
+async def test_cached_session_key_mode_agenerate_ignores_system_alias_override() -> None:
+    llm = _StubKeyProvider()
+    session = CachedSession(
+        provider=llm,
+        system_prompt="You are helpful.",
+        tools=[_noop_tool],
+        prompt_cache_strategy="key",
+    )
+
+    assert session.prompt_cache_mode == "key"
+
+    with pytest.warns(RuntimeWarning, match="ignores `system=`"):
+        response = await session.agenerate("hi", system="Per-call override")
+
+    assert response.content == "ok"
+    assert llm.last_call["system_prompt"] == "You are helpful."
+    assert "system" not in llm.last_kwargs

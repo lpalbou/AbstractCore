@@ -121,7 +121,7 @@ mlx = [
 ]
 
 mlx-bench = [
-    # Used by `examples/mlx_concurrency_benchmark.py` to generate the PNG graph.
+    # Used by `examples/performance/mlx_concurrency_benchmark.py` to generate the PNG graph.
     "matplotlib>=3.8.0,<4.0.0",
 ]
 

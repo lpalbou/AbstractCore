@@ -1461,6 +1461,34 @@ class BaseProvider(AbstractCoreInterface, ABC):
         _ = (enabled, level)
         return kwargs, False
 
+    @staticmethod
+    def _normalize_system_prompt_alias(
+        system_prompt: Optional[str],
+        kwargs: Dict[str, Any],
+        *,
+        stacklevel: int,
+    ) -> Optional[str]:
+        """Accept `system=` as a warned alias for `system_prompt=` at the provider boundary."""
+        if "system" not in kwargs:
+            return system_prompt
+
+        system_alias = kwargs.pop("system")
+        if system_prompt is None:
+            warnings.warn(
+                "`system=` is accepted as an alias for `system_prompt=`, but `system_prompt=` is the "
+                "preferred AbstractCore parameter.",
+                UserWarning,
+                stacklevel=stacklevel,
+            )
+            return system_alias
+
+        warnings.warn(
+            "Both `system_prompt=` and `system=` were provided; using `system_prompt=` and ignoring `system=`.",
+            UserWarning,
+            stacklevel=stacklevel,
+        )
+        return system_prompt
+
     def generate_with_telemetry(self,
                                prompt: str,
                                messages: Optional[List[Dict[str, str]]] = None,
@@ -1493,6 +1521,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
             glyph_compression: Glyph compression preference ("auto", "always", "never")
             thinking: Unified reasoning/thinking control (auto/on/off/none or low/medium/high/xhigh when supported)
         """
+        system_prompt = self._normalize_system_prompt_alias(system_prompt, kwargs, stacklevel=4)
+
         # Normalize token limit naming at the provider boundary.
         #
         # - OpenAI-style APIs use `max_tokens` for the output-token cap.
@@ -4385,6 +4415,7 @@ Please provide a structured response."""
         Returns:
             GenerateResponse, AsyncIterator[GenerateResponse] for streaming, or BaseModel for structured output
         """
+        system_prompt = self._normalize_system_prompt_alias(system_prompt, kwargs, stacklevel=3)
         self._apply_default_prompt_cache_key(kwargs)
         response = await self._agenerate_internal(
             prompt, messages, system_prompt, tools, media, stream, **kwargs

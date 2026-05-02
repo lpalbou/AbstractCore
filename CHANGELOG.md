@@ -10,8 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 ### Changed
+- **System prompt alias compatibility**: provider `generate()`/`agenerate()` calls now accept `system=` as a warned alias for `system_prompt=`, prefer explicit `system_prompt=` when both are supplied, and remove the alias before provider-specific kwargs are dispatched.
+- **Structured output system alias**: direct `StructuredOutputHandler.generate_structured()` calls now apply the same warned `system=` alias handling.
 
 ### Fixed
+- **CachedSession system alias safety**: prompt-cache key/KV modes now warn and strip per-call `system=` overrides in sync and async generation so cached session context cannot be silently desynced.
+- **LM Studio unload for reasoning REPL**: `LMStudioProvider.unload_model()` now uses LM Studio's native REST unload endpoint and resolves model keys/variants to loaded instance IDs so `examples/reasoning/qwen_thinking_repl.py` can free LM Studio models via `:unload` (automatic unload-on-switch remains HuggingFace-only).
 
 ### Documentation
 
@@ -21,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Prompt caching sessions**: `CachedSession` selects the best prompt-cache strategy automatically (KV mode for MLX + HuggingFace transformers; otherwise stable `prompt_cache_key`).
 - **File “boxes” for large contexts**: `CachedSession.attach_files()` extracts text from attached files and appends one immutable transcript “box” per file (reused via KV/prefix caches).
-- **Prompt cache persistence + REPL demo**: providers expose `prompt_cache_save()` / `prompt_cache_load()` when supported (capability-gated); `examples/prompt_cache_repl_demo.py` reports TTFT/TIFT + cache token counts.
+- **Prompt cache persistence + REPL demo**: providers expose `prompt_cache_save()` / `prompt_cache_load()` when supported (capability-gated); `examples/prompt_caching/prompt_cache_repl_demo.py` reports TTFT/TIFT + cache token counts.
 - **HuggingFace transformers KV reuse**: cross-call KV caching (`past_key_values` / `DynamicCache`) keyed by `prompt_cache_key`, including the local control plane (`prepare_modules`/`fork`/`update`) and `.safetensors` save/load.
 - **Memory blocs (persistent file ↔ bloc ↔ KV artifacts)**: `FileBlocStore` stores extracted text snapshots and optional per-(provider,model) KV artifacts; `generate_bloc_metadata_jsonld()` produces JSON-LD metadata using `abstractcore/assets/bloc-schema.jsonld`.
 - **Reasoning/thinking controls**: `GenerateResponse.reasoning` property, thinking/tag stripping in streaming, and expanded `thinking_support` / `reasoning_levels` coverage in model capability assets.
@@ -116,7 +120,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.11.2] - 2026-02-04
 
 ### Added
-- **Skim tool benchmarks**: added `examples/skim_tools_benchmark.py` to measure output footprint and latency for `skim_websearch`/`web_search` and `skim_url`/`fetch_url`.
+- **Skim tool benchmarks**: added `examples/tools/skim_tools_benchmark.py` to measure output footprint and latency for `skim_websearch`/`web_search` and `skim_url`/`fetch_url`.
 - **Import-safety test**: added a test to ensure `import abstractcore` does not eagerly import optional deps (`requests`, `bs4`, `sentence_transformers`, `pymupdf*`, ...).
 
 ### Changed
@@ -150,7 +154,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.11.0] - 2026-01-28
 
 ### Added
-- **MLX throughput benchmarking**: `examples/mlx_concurrency_benchmark.py` to sweep concurrency with continuous batching (`mlx-lm`) and generate summary CSVs + PNG plots.
+- **MLX throughput benchmarking**: `examples/performance/mlx_concurrency_benchmark.py` to sweep concurrency with continuous batching (`mlx-lm`) and generate summary CSVs + PNG plots.
 
 ### Changed
 - **MLX install extras**: refreshed/clarified `mlx` + `mlx-bench` optional dependencies for Apple Silicon throughput benchmarking.
@@ -615,7 +619,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 ### Enhanced
 - **Async Documentation**:
   - Updated README.md with performance data and provider-specific details
-  - Educational [async CLI demo](examples/async_cli_demo.py) with 8 core async/await patterns
+  - Educational [async CLI demo](examples/cli/async_cli_demo.py) with 8 core async/await patterns
   - Created comprehensive async guide in docs/async-guide.md
   - Backlog documents: `async-mlx-hf.md` (investigation), `batching.md` (future enhancement)
 
@@ -642,7 +646,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 ### Documentation
 - [Async/Await Support](README.md#async) - Updated usage examples
 - [Async Guide](docs/async-guide.md) - Comprehensive examples and patterns
-- [Async CLI Demo](examples/async_cli_demo.py) - Educational reference for learning
+- [Async CLI Demo](examples/cli/async_cli_demo.py) - Educational reference for learning
 
 ## [2.5.4] - 2025-11-27
 

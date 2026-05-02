@@ -163,6 +163,129 @@ class LMStudioProvider(OpenAICompatibleProvider):
             gen_time=gen_time,
         )
 
+    def unload_model(self, model_name: str) -> None:
+        """Best-effort unload via LM Studio native REST (`POST /api/v1/models/unload`)."""
+        target = str(model_name or getattr(self, "model", "") or "").strip()
+        if target:
+            try:
+                self._native_rest_unload_model(target)
+            except Exception as e:
+                # Unload must remain best-effort; fall back to closing clients.
+                if hasattr(self, "logger"):
+                    self.logger.debug(f"LM Studio native REST unload failed for {target!r}: {e}")
+
+        super().unload_model(model_name)
+
+    def _native_rest_unload_model(self, target: str) -> None:
+        """Unload a model by instance id, resolving model keys to loaded instances when needed."""
+        unload_url = f"{self._native_rest_base_url()}/api/v1/models/unload"
+        headers = self._get_headers()
+
+        if self._post_native_unload(unload_url, target, headers=headers):
+            return
+
+        instance_ids = self._native_rest_loaded_instance_ids_for_model(target)
+        for instance_id in instance_ids:
+            self._post_native_unload(unload_url, instance_id, headers=headers, raise_on_failure=True)
+
+    def _post_native_unload(
+        self,
+        unload_url: str,
+        instance_id: str,
+        *,
+        headers: Dict[str, str],
+        raise_on_failure: bool = False,
+    ) -> bool:
+        resp = httpx.post(
+            unload_url,
+            json={"instance_id": instance_id},
+            headers=headers,
+            timeout=self._timeout,
+        )
+        try:
+            data = resp.json()
+        except Exception:
+            data = None
+
+        if isinstance(data, dict) and data.get("error"):
+            if raise_on_failure:
+                raise ProviderAPIError(str(data.get("error")))
+            return False
+
+        try:
+            resp.raise_for_status()
+        except Exception:
+            if raise_on_failure:
+                raise
+            return False
+
+        return True
+
+    def _native_rest_loaded_instance_ids_for_model(self, target: str) -> List[str]:
+        """Resolve an LM Studio model key/variant/display id to currently loaded instance ids."""
+        needle = str(target or "").strip().lower()
+        if not needle:
+            return []
+
+        url = f"{self._native_rest_base_url()}/api/v1/models"
+        resp = httpx.get(url, headers=self._get_headers(), timeout=self._timeout)
+        resp.raise_for_status()
+        data = resp.json()
+
+        items: Any = None
+        if isinstance(data, dict):
+            items = data.get("models") or data.get("data") or data.get("items")
+        if not isinstance(items, list):
+            return []
+
+        def _coerce_str(value: Any) -> str:
+            return value.strip() if isinstance(value, str) else ""
+
+        def _candidate_names(item: Dict[str, Any]) -> List[str]:
+            names: List[str] = []
+            for key in ("key", "id", "model", "name", "model_id", "modelId", "display_name", "selected_variant"):
+                value = _coerce_str(item.get(key))
+                if value:
+                    names.append(value)
+
+            variants = item.get("variants")
+            if isinstance(variants, list):
+                names.extend(v.strip() for v in variants if isinstance(v, str) and v.strip())
+
+            nested = item.get("model") if isinstance(item.get("model"), dict) else None
+            if isinstance(nested, dict):
+                for key in ("key", "id", "name", "identifier"):
+                    value = _coerce_str(nested.get(key))
+                    if value:
+                        names.append(value)
+            return names
+
+        out: List[str] = []
+        seen: set[str] = set()
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            names = [name.lower() for name in _candidate_names(item)]
+            if not any(needle == name or needle in name for name in names):
+                continue
+
+            direct_instance_id = _coerce_str(item.get("instance_id") or item.get("instanceId") or item.get("instance"))
+            if direct_instance_id and direct_instance_id not in seen:
+                out.append(direct_instance_id)
+                seen.add(direct_instance_id)
+
+            loaded_instances = item.get("loaded_instances") or item.get("loadedInstances")
+            if not isinstance(loaded_instances, list):
+                continue
+            for inst in loaded_instances:
+                if not isinstance(inst, dict):
+                    continue
+                instance_id = _coerce_str(inst.get("id") or inst.get("instance_id") or inst.get("instanceId"))
+                if instance_id and instance_id not in seen:
+                    out.append(instance_id)
+                    seen.add(instance_id)
+        return out
+
     def _generate_internal(
         self,
         prompt: str,

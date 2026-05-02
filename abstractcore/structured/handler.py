@@ -5,6 +5,7 @@ Structured output handler for managing schema-based LLM responses.
 import json
 import re
 import time
+import warnings
 from typing import Type, Dict, Any, Optional, get_args, get_origin
 from enum import Enum
 from pydantic import BaseModel, ValidationError
@@ -90,6 +91,29 @@ class StructuredOutputHandler:
         self.retry_strategy = retry_strategy or FeedbackRetry()
         self.logger = get_logger(__name__)
 
+    @staticmethod
+    def _normalize_system_prompt_alias(kwargs: Dict[str, Any], *, stacklevel: int) -> None:
+        """Accept `system=` as a warned alias for direct structured-output calls."""
+        if "system" not in kwargs:
+            return
+
+        system_alias = kwargs.pop("system")
+        if kwargs.get("system_prompt") is None:
+            warnings.warn(
+                "`system=` is accepted as an alias for `system_prompt=`, but `system_prompt=` is the "
+                "preferred AbstractCore parameter.",
+                UserWarning,
+                stacklevel=stacklevel,
+            )
+            kwargs["system_prompt"] = system_alias
+            return
+
+        warnings.warn(
+            "Both `system_prompt=` and `system=` were provided; using `system_prompt=` and ignoring `system=`.",
+            UserWarning,
+            stacklevel=stacklevel,
+        )
+
     def generate_structured(
         self,
         provider,
@@ -115,6 +139,7 @@ class StructuredOutputHandler:
         start_time = time.time()
         provider_name = getattr(provider, '__class__', {}).__name__ or 'unknown'
         model_name = getattr(provider, 'model', 'unknown')
+        self._normalize_system_prompt_alias(kwargs, stacklevel=3)
 
         # Note: STRUCTURED_OUTPUT_REQUESTED event removed in simplification
         # Structured output is just a special type of generation

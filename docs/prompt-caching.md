@@ -231,7 +231,7 @@ Notes / limitations:
 - Performance benefits (KV/prefix reuse) are currently strongest for local providers with in-process caches: **MLX**, **HuggingFace transformers**, **HuggingFace GGUF**.
 - `attach_files()` returns a JSON-ish dict with `attached`/`skipped`/`errors` and a `timing` breakdown (`extract_ms`, `cache_update_ms`, `total_ms`) for observability.
 
-See also: `examples/prompt_cache_repl_demo.py` for an interactive demo with:
+See also: `examples/prompt_caching/prompt_cache_repl_demo.py` for an interactive demo with:
 
 - `/cache stats` (capabilities + cache keys)
 - `/boxes` (graphical per-box context breakdown + live cache token counts)

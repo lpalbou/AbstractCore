@@ -17,8 +17,8 @@ AbstractCore includes an educational async CLI demo that illustrates 8 core asyn
 
 ```bash
 # Run the async demo (educational only)
-python examples/async_cli_demo.py --provider ollama --model qwen3:4b
-python examples/async_cli_demo.py --provider lmstudio --model qwen/qwen3-vl-30b --stream
+python examples/cli/async_cli_demo.py --provider ollama --model qwen3:4b
+python examples/cli/async_cli_demo.py --provider lmstudio --model qwen/qwen3-vl-30b --stream
 ```
 
 **What it demonstrates:**
@@ -40,7 +40,7 @@ python examples/async_cli_demo.py --provider lmstudio --model qwen/qwen3-vl-30b 
 
 **This is for LEARNING ONLY.** For production use, stick with the standard CLI below.
 
-[View the demo code →](../examples/async_cli_demo.py)
+[View the demo code →](../examples/cli/async_cli_demo.py)
 
 ## Quick Start
 

@@ -781,11 +781,11 @@ that you must justify
           tests/texts/intent2.json
           abstractcore/utils/cli.py
           abstractcore/processing/basic_intent.py
-          examples/simple_embeddings_examples.py
-          examples/matrix_operations_demo.py
-          examples/complete_rag_example.py
-          examples/embeddings_benchmark.py
-          examples/embeddings_demo.py
+          examples/embeddings/simple_embeddings_examples.py
+          examples/performance/matrix_operations_demo.py
+          examples/rag/complete_rag_example.py
+          examples/embeddings/embeddings_benchmark.py
+          examples/embeddings/embeddings_demo.py
           docs/research/CODEX_GUIDE.md
           docs/research/Unified LLM Tool Call Handling.md
           docs/archive/proposals.md
@@ -827,12 +827,12 @@ that you must justify
           tests/reports/2025-10-11_06-54-13_tool_execution_separation_validation
           .md
           tests/integration/test_system_integration.py
-          examples/progressive/example_3_tool_calling.py
-          examples/progressive/example_4_unified_streaming.py
-          examples/progressive/example_6_production_patterns.py
-          examples/tool_usage_advanced.py
-          examples/example_03_tools/README.md
-          examples/example_04_streaming/README.md
+          examples/learning_path/03_tool_calling.py
+          examples/learning_path/04_unified_streaming.py
+          examples/learning_path/06_production_patterns.py
+          examples/tools/tool_usage_advanced.py
+          examples/tools/README.md
+          examples/performance/README.md
           docs/tool-calling.md
           docs/research/Unified LLM Tool Call Handling.md
           docs/archive/proposals.md
@@ -1427,14 +1427,14 @@ that you must justify
   ⎿  Read 2174 lines
 
   ⎿    ⎿  Found 3 files                                                         
-          /Users/albou/projects/abstractcore/examples/progressive/example_5_serv
-          er_agentic_cli.py
+          /Users/albou/projects/abstractcore/examples/learning_path/05_server_age
+          ntic_cli.py
           /Users/albou/projects/abstractcore/tests/test_agentic_cli_compatibilit
           y.py
           /Users/albou/projects/abstractcore/untracked/lm-agent.py
   ⎿    ⎿  Found 0 files
 
-  ⎿  Read(examples/progressive/example_5_server_agentic_cli.py)
+  ⎿  Read(examples/learning_path/05_server_agentic_cli.py)
 
   ⎿  Read(abstractcore/providers/streaming.py · lines 1-300)
 
@@ -1913,18 +1913,18 @@ that you must justify
           tests/embeddings/test_embeddings_real.py
           tests/embeddings/test_embeddings_simple.py
           tests/embeddings/test_embeddings.py
-          examples/glyph_compression_demo.py
-          examples/glyph_complete_example.py
+          examples/media/glyph_compression_demo.py
+          examples/media/glyph_complete_example.py
           abstractcore/providers/mlx_provider.py
           abstractcore/providers/huggingface_provider.py
           tests/test_integrated_functionality.py
           tests/test_final_comprehensive.py
-          examples/progressive/example_4_unified_streaming.py
-          examples/progressive/example_5_server_agentic_cli.py
-          examples/simple_embeddings_examples.py
-          examples/matrix_operations_demo.py
-          examples/complete_rag_example.py
-          examples/embeddings_demo.py
+          examples/learning_path/04_unified_streaming.py
+          examples/learning_path/05_server_agentic_cli.py
+          examples/embeddings/simple_embeddings_examples.py
+          examples/performance/matrix_operations_demo.py
+          examples/rag/complete_rag_example.py
+          examples/embeddings/embeddings_demo.py
           abstractcore/processing/basic_summarizer.py
           abstractcore/media/processors/pdf_processor.py
           abstractcore/embeddings/__init__.py

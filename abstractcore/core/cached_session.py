@@ -370,6 +370,33 @@ class CachedSession(BasicSession):
             self._prompt_cache_key_mode_synced_messages = len(transcript)
         return ok
 
+    def _strip_per_call_cached_state_kwargs(self, kwargs: Dict[str, Any], *, mode: str) -> None:
+        """Warn and remove per-call context overrides that would desync cached state."""
+        if mode == "key":
+            messages_warning = "CachedSession key mode ignores `messages=`; context comes from the session transcript."
+            system_prompt_warning = "CachedSession key mode ignores `system_prompt=`; use session.system_prompt instead."
+            system_warning = "CachedSession key mode ignores `system=`; use session.system_prompt instead."
+            tools_warning = "CachedSession key mode ignores per-call `tools=`; tools are session-level cached state."
+        else:
+            messages_warning = "CachedSession kv mode ignores `messages=`; context comes from prompt cache."
+            system_prompt_warning = "CachedSession kv mode ignores `system_prompt=`; context comes from prompt cache."
+            system_warning = "CachedSession kv mode ignores `system=`; context comes from prompt cache."
+            tools_warning = "CachedSession kv mode ignores per-call `tools=`; tools are session-level cached state."
+
+        if "messages" in kwargs:
+            warnings.warn(messages_warning, RuntimeWarning, stacklevel=3)
+        if "system_prompt" in kwargs:
+            warnings.warn(system_prompt_warning, RuntimeWarning, stacklevel=3)
+        if "system" in kwargs:
+            warnings.warn(system_warning, RuntimeWarning, stacklevel=3)
+        if "tools" in kwargs:
+            warnings.warn(tools_warning, RuntimeWarning, stacklevel=3)
+
+        kwargs.pop("messages", None)
+        kwargs.pop("system_prompt", None)
+        kwargs.pop("system", None)
+        kwargs.pop("tools", None)
+
     def rebuild_prompt_cache(self, *, reuse_key: bool = False) -> bool:
         """Clear and rebuild the provider prompt cache from the session transcript (best-effort)."""
         provider = self.provider
@@ -664,27 +691,7 @@ class CachedSession(BasicSession):
             stream = bool(kwargs.pop("stream", False))
 
             # Avoid per-call overrides that would either error (duplicate kwargs) or desync the cache.
-            if "messages" in kwargs:
-                warnings.warn(
-                    "CachedSession key mode ignores `messages=`; context comes from the session transcript.",
-                    RuntimeWarning,
-                    stacklevel=3,
-                )
-            if "system_prompt" in kwargs:
-                warnings.warn(
-                    "CachedSession key mode ignores `system_prompt=`; use session.system_prompt instead.",
-                    RuntimeWarning,
-                    stacklevel=3,
-                )
-            if "tools" in kwargs:
-                warnings.warn(
-                    "CachedSession key mode ignores per-call `tools=`; tools are session-level cached state.",
-                    RuntimeWarning,
-                    stacklevel=3,
-                )
-            kwargs.pop("messages", None)
-            kwargs.pop("system_prompt", None)
-            kwargs.pop("tools", None)
+            self._strip_per_call_cached_state_kwargs(kwargs, mode="key")
 
             if hasattr(self, "tool_call_tags") and self.tool_call_tags is not None and "tool_call_tags" not in kwargs:
                 kwargs["tool_call_tags"] = self.tool_call_tags
@@ -749,15 +756,7 @@ class CachedSession(BasicSession):
         media = kwargs.pop("media", None)
 
         # KV mode does not send system/messages (they are prefixed in the cache).
-        if "messages" in kwargs:
-            warnings.warn("CachedSession kv mode ignores `messages=`; context comes from prompt cache.", RuntimeWarning, stacklevel=3)
-        if "system_prompt" in kwargs:
-            warnings.warn("CachedSession kv mode ignores `system_prompt=`; context comes from prompt cache.", RuntimeWarning, stacklevel=3)
-        if "tools" in kwargs:
-            warnings.warn("CachedSession kv mode ignores per-call `tools=`; tools are session-level cached state.", RuntimeWarning, stacklevel=3)
-        kwargs.pop("messages", None)
-        kwargs.pop("system_prompt", None)
-        kwargs.pop("tools", None)
+        self._strip_per_call_cached_state_kwargs(kwargs, mode="kv")
 
         if hasattr(self, "tool_call_tags") and self.tool_call_tags is not None and "tool_call_tags" not in kwargs:
             kwargs["tool_call_tags"] = self.tool_call_tags
@@ -836,26 +835,88 @@ class CachedSession(BasicSession):
         location: Optional[str] = None,
         **kwargs: Any,
     ) -> Union[GenerateResponse, AsyncIterator[GenerateResponse]]:
-        if self.prompt_cache_mode != "kv":
+        if self.prompt_cache_mode == "off":
             return await super().agenerate(prompt, name=name, location=location, **kwargs)  # type: ignore[misc]
 
         if not self.provider:
             raise ValueError("No provider configured")
 
+        if self.prompt_cache_mode == "key":
+            # Key mode mirrors the sync path: transcript remains source-of-truth, and the
+            # provider cache is kept aligned best-effort for prefix reuse.
+            if getattr(self, "auto_compact", False) and self.should_compact(getattr(self, "auto_compact_threshold", 8000)):
+                compacted = self.compact(reason="auto_threshold")
+                self._replace_with_compacted(compacted)
+
+            self._maybe_rebuild_prompt_cache_for_prefix_changes()
+            self._key_mode_sync_prompt_cache()
+
+            self.add_message(MessageRole.USER.value, str(prompt), name=name, location=location)
+
+            media = kwargs.pop("media", None)
+            stream = bool(kwargs.pop("stream", False))
+            self._strip_per_call_cached_state_kwargs(kwargs, mode="key")
+
+            if hasattr(self, "tool_call_tags") and self.tool_call_tags is not None and "tool_call_tags" not in kwargs:
+                kwargs["tool_call_tags"] = self.tool_call_tags
+            if "temperature" not in kwargs and self.temperature is not None:
+                kwargs["temperature"] = self.temperature
+            if "seed" not in kwargs and isinstance(self.seed, int) and self.seed >= 0:
+                kwargs["seed"] = self.seed
+
+            if getattr(self, "enable_tracing", False):
+                trace_meta = kwargs.get("trace_metadata")
+                if not isinstance(trace_meta, dict):
+                    trace_meta = {}
+                    kwargs["trace_metadata"] = trace_meta
+                trace_meta.update(
+                    {
+                        "session_id": getattr(self, "id", None),
+                        "step_type": kwargs.get("step_type", "chat"),
+                        "attempt_number": kwargs.get("attempt_number", 1),
+                    }
+                )
+
+            messages = self._format_messages_for_provider_excluding_current()
+            tools_for_call = self.tools if getattr(self, "tools", None) else None
+            response = await self.provider.agenerate(
+                prompt=str(prompt),
+                messages=messages,
+                system_prompt=self.system_prompt,
+                tools=tools_for_call,
+                media=media,
+                stream=stream,
+                **kwargs,
+            )
+
+            if hasattr(response, "__aiter__"):
+                collected = ""
+
+                async def _wrap(stream_it: AsyncIterator[GenerateResponse]) -> AsyncIterator[GenerateResponse]:
+                    nonlocal collected
+                    async for chunk in stream_it:
+                        if getattr(chunk, "content", None):
+                            collected += str(chunk.content)
+                        yield chunk
+                    if collected:
+                        self.add_message(MessageRole.ASSISTANT.value, collected)
+                        self._key_mode_sync_prompt_cache()
+
+                return _wrap(response)  # type: ignore[return-value]
+
+            if hasattr(response, "content") and response.content:
+                self.add_message(MessageRole.ASSISTANT.value, response.content)
+                self._key_mode_sync_prompt_cache()
+
+            return response  # type: ignore[return-value]
+
+        self._maybe_rebuild_prompt_cache_for_prefix_changes()
         self.add_message(MessageRole.USER.value, str(prompt), name=name, location=location)
 
         media = kwargs.pop("media", None)
 
         # KV mode does not send system/messages (they are prefixed in the cache).
-        if "messages" in kwargs:
-            warnings.warn("CachedSession kv mode ignores `messages=`; context comes from prompt cache.", RuntimeWarning, stacklevel=3)
-        if "system_prompt" in kwargs:
-            warnings.warn("CachedSession kv mode ignores `system_prompt=`; context comes from prompt cache.", RuntimeWarning, stacklevel=3)
-        if "tools" in kwargs:
-            warnings.warn("CachedSession kv mode ignores per-call `tools=`; tools are session-level cached state.", RuntimeWarning, stacklevel=3)
-        kwargs.pop("tools", None)
-        kwargs.pop("messages", None)
-        kwargs.pop("system_prompt", None)
+        self._strip_per_call_cached_state_kwargs(kwargs, mode="kv")
         stream = bool(kwargs.pop("stream", False))
         if hasattr(self, "tool_call_tags") and self.tool_call_tags is not None and "tool_call_tags" not in kwargs:
             kwargs["tool_call_tags"] = self.tool_call_tags
