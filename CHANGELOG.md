@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI vs local provider test gating**: clarified and fixed the split between real implementation tests and GitHub CI. Most provider tests intentionally exercise real providers with real SDKs, API keys, local model servers, and model caches. GitHub CI does not have access to LLM provider credentials or local inference services, so credential/local-provider-dependent tests now skip in that environment instead of failing during provider construction, while still running normally in a configured local test environment.
 
 ### Documentation
+- README badges now include GitHub Actions CI status and tested Python versions read from the CI matrix.
 - Clarified tool calling defaults (pass-through) and removed misleading “tools executed” wording from the quick start.
 - Documented `CachedSession` more consistently across core docs and `llms*.txt` (getting started, API map, sessions, structured output hybrid note).
 
