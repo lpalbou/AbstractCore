@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Version bumped to 2.13.1** for the install-quality and release-process cleanup.
+- **Structured native test runtime**: simplified `tests/structured/test_comprehensive_native.py` so normal runs use a fast fake-native handler regression test, local provider inference is gated behind `ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1`, the three-level live matrix is opt-in with `ABSTRACTCORE_RUN_COMPREHENSIVE_NATIVE_STRUCTURED_TESTS=1`, and native structured skip output no longer prints huge local model inventories.
 - **Install guidance**: README and docs now emphasize the lightweight core install, `abstractcore[remote]` for hosted SDKs, composable extras, `all-apple` for Apple Silicon local stacks, and `all-gpu` for NVIDIA/vLLM stacks. The legacy `all-non-mlx` extra remains available but is no longer promoted as a primary install path.
 - **Product positioning**: README and comparison docs now present AbstractCore as an offline-capable, open-source-first provider layer that can run local, self-hosted, hosted, or hybrid deployments from the same `create_llm(...)` application code.
 - **Comparison guide**: refreshed `docs/comparison.md` with a clearer AbstractCore vs LiteLLM/LangChain/LangGraph/LlamaIndex distinction, including offline/self-hosted/remote deployment posture and AbstractFramework ecosystem positioning.

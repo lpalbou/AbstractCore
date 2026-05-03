@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, with or without the leading v (example: 2.13.1)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -59,6 +65,9 @@ jobs:
     name: Build distributions
     runs-on: ubuntu-latest
     needs: [test, docs]
+    outputs:
+      version: ${{ steps.release-meta.outputs.version }}
+      tag: ${{ steps.release-meta.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -70,14 +79,22 @@ jobs:
           python -m pip install -U pip
           python -m pip install build twine
       - name: Validate tag, version, and changelog
+        id: release-meta
+        env:
+          RELEASE_INPUT_VERSION: ${{ github.event.inputs.version || '' }}
         run: |
           python - <<'PY'
           import os
           import re
           from pathlib import Path
 
-          tag = os.environ["GITHUB_REF_NAME"]
-          version = tag[1:] if tag.startswith("v") else tag
+          version_input = os.environ.get("RELEASE_INPUT_VERSION", "").strip()
+          ref_name = os.environ["GITHUB_REF_NAME"].strip()
+          raw_version = version_input or ref_name
+          version = raw_version[1:] if raw_version.startswith("v") else raw_version
+          if not re.fullmatch(r"\d+\.\d+\.\d+(?:[a-zA-Z0-9.-]+)?", version):
+              raise SystemExit(f"Invalid release version: {raw_version!r}")
+          tag = f"v{version}"
 
           version_text = Path("abstractcore/utils/version.py").read_text()
           version_match = re.search(r'__version__\s*=\s*"([^"]+)"', version_text)
@@ -101,6 +118,10 @@ jobs:
               raise SystemExit(f"CHANGELOG.md entry for {version} is empty")
 
           Path("release-notes.md").write_text(notes + "\n")
+          github_output = Path(os.environ["GITHUB_OUTPUT"])
+          with github_output.open("a", encoding="utf-8") as fh:
+              print(f"version={version}", file=fh)
+              print(f"tag={tag}", file=fh)
           PY
       - name: Build
         run: python -m build
@@ -115,10 +136,36 @@ jobs:
           name: release-notes
           path: release-notes.md
 
+  ensure-tag:
+    name: Ensure release tag
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Create annotated tag for manual releases
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          tag="${{ needs.build.outputs.tag }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag ${tag} already exists on origin."
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "${tag}" -m "AbstractCore ${tag}"
+          git push origin "${tag}"
+      - name: Tag already supplied by push trigger
+        if: github.event_name != 'workflow_dispatch'
+        run: echo "Using existing tag ${{ needs.build.outputs.tag }}"
+
   publish-pypi:
     name: Publish to PyPI
     runs-on: ubuntu-latest
-    needs: build
+    needs: [build, ensure-tag]
     environment:
       name: pypi
       url: https://pypi.org/project/abstractcore/
@@ -134,7 +181,7 @@ jobs:
   github-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build, publish-pypi]
+    needs: [build, ensure-tag, publish-pypi]
     permissions:
       contents: write
     steps:
@@ -148,7 +195,8 @@ jobs:
           path: .
       - uses: softprops/action-gh-release@v2
         with:
-          name: AbstractCore ${{ github.ref_name }}
+          tag_name: ${{ needs.build.outputs.tag }}
+          name: AbstractCore ${{ needs.build.outputs.tag }}
           body_path: release-notes.md
           files: dist/*
           fail_on_unmatched_files: true

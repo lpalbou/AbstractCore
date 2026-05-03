@@ -1,47 +1,90 @@
-"""
-Comprehensive Native Structured Output Testing Suite
+"""Compact native structured-output coverage for local providers.
 
-Tests both Ollama and LMStudio providers with:
-- Multiple models (small, medium, large)
-- Three complexity levels (simple, medium, complex)
-- Retry strategy analysis
-- Success rate tracking
-- Performance measurement
+The original version of this file ran a large Ollama x LM Studio x model x
+schema x prompt matrix on every pytest invocation. That made ordinary test runs
+slow and noisy whenever local model servers happened to be available.
 
-This test suite will help determine:
-1. Are native structured outputs truly "guaranteed"?
-2. When do we need retry strategies?
-3. Which models work best for structured outputs?
-4. What are the practical limitations?
+Default coverage here is intentionally cheap:
+- one fake-native unit test verifies that the structured handler uses the native
+  path and validates a nested enum schema;
+- live local-provider checks are gated behind environment flags.
+
+Live modes:
+- ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1
+  runs one compact nested-schema smoke case per configured local provider.
+- ABSTRACTCORE_RUN_COMPREHENSIVE_NATIVE_STRUCTURED_TESTS=1
+  expands the live check to simple, nested, and deep schemas. Add comma-separated
+  model lists with ABSTRACTCORE_OLLAMA_STRUCTURED_TEST_MODELS or
+  ABSTRACTCORE_LMSTUDIO_STRUCTURED_TEST_MODELS when benchmarking several models.
 """
+
+from __future__ import annotations
 
 import json
-import time
-import pytest
-from enum import Enum
-from typing import List, Optional, Dict, Any
-from pydantic import BaseModel, ValidationError
+import os
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime
+from enum import Enum
+
+import pytest
+from pydantic import BaseModel
 
 from abstractcore import create_llm
+from abstractcore.core.types import GenerateResponse
 from abstractcore.structured import StructuredOutputHandler
+from abstractcore.structured.retry import FeedbackRetry
 
 
-# ============================================================================
-# SIMPLE SCHEMAS (Complexity Level 1)
-# ============================================================================
+def _env_flag(name: str) -> bool:
+    value = os.getenv(name, "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _csv_env(name: str, default: Iterable[str]) -> list[str]:
+    raw = os.getenv(name)
+    if raw is None:
+        return list(default)
+    values = [part.strip() for part in raw.split(",") if part.strip()]
+    return values or list(default)
+
+
+def _short_error(error: Exception) -> str:
+    """Keep skip output small when providers include long model lists."""
+    text = str(error).strip()
+    for marker in ("✅ Available models", "Available models", "\n  •"):
+        idx = text.find(marker)
+        if idx >= 0:
+            text = text[:idx].strip()
+            break
+    text = " ".join(text.split())
+    if len(text) > 240:
+        text = text[:237].rstrip() + "..."
+    return text or type(error).__name__
+
+
+def _looks_like_local_availability_error(error: Exception) -> bool:
+    text = f"{type(error).__name__}: {error}".lower()
+    return any(
+        marker in text
+        for marker in (
+            "connection",
+            "connecterror",
+            "connection refused",
+            "model not found",
+            "not found for",
+            "not running",
+            "operation not permitted",
+            "timeout",
+            "timed out",
+        )
+    )
+
 
 class SimplePersonInfo(BaseModel):
-    """Simple schema: basic fields only"""
     name: str
     age: int
     email: str
 
-
-# ============================================================================
-# MEDIUM SCHEMAS (Complexity Level 2)
-# ============================================================================
 
 class Priority(str, Enum):
     LOW = "low"
@@ -58,498 +101,224 @@ class TaskStatus(str, Enum):
 
 
 class Task(BaseModel):
-    """Medium complexity: nested objects with enums"""
     title: str
     description: str
     priority: Priority
     status: TaskStatus
-    estimated_hours: Optional[float] = None
-    tags: List[str] = []
+    estimated_hours: float | None = None
 
 
 class Project(BaseModel):
-    """Medium complexity: object with array of nested objects"""
     name: str
     description: str
-    tasks: List[Task]
+    tasks: list[Task]
     total_hours: float
 
-
-# ============================================================================
-# COMPLEX SCHEMAS (Complexity Level 3)
-# ============================================================================
 
 class Department(str, Enum):
     ENGINEERING = "engineering"
     MARKETING = "marketing"
-    SALES = "sales"
-    HR = "hr"
-    FINANCE = "finance"
-
-
-class EmployeeLevel(str, Enum):
-    JUNIOR = "junior"
-    MID = "mid"
-    SENIOR = "senior"
-    STAFF = "staff"
-    PRINCIPAL = "principal"
-
-
-class Skill(BaseModel):
-    name: str
-    proficiency: int  # 1-10
-    years_experience: float
 
 
 class Employee(BaseModel):
     name: str
     email: str
     department: Department
-    level: EmployeeLevel
-    skills: List[Skill]
-    manager_email: Optional[str] = None
+    skills: list[str]
 
 
 class Team(BaseModel):
     name: str
     department: Department
     lead: Employee
-    members: List[Employee]
-    active_projects: List[Project]
+    members: list[Employee]
+    active_projects: list[Project]
 
 
 class Organization(BaseModel):
-    """Complex schema: deeply nested with multiple enums and arrays"""
     company_name: str
     founded_year: int
-    departments: List[Department]
-    teams: List[Team]
+    departments: list[Department]
+    teams: list[Team]
     total_employees: int
 
 
-# ============================================================================
-# TEST RESULT TRACKING
-# ============================================================================
+class OllamaProvider:
+    """Tiny fake provider whose class name exercises the native handler branch."""
 
-@dataclass
-class TestResult:
-    """Track results of a single test"""
+    model = "fake-native"
+    model_capabilities = {"structured_output": "native"}
+
+    def __init__(self, content: str):
+        self.content = content
+        self.calls: list[dict[str, object]] = []
+
+    def _generate_internal(self, prompt: str, response_model=None, **kwargs):
+        self.calls.append(
+            {
+                "prompt": prompt,
+                "response_model": response_model,
+                "kwargs": dict(kwargs),
+            }
+        )
+        return GenerateResponse(content=self.content, model=self.model, finish_reason="stop")
+
+
+def test_native_handler_validates_nested_enum_schema_without_backend():
+    """Fast regression coverage for the native structured-output path."""
+    provider = OllamaProvider(
+        json.dumps(
+            {
+                "name": "Website Redesign",
+                "description": "Refresh the public site.",
+                "tasks": [
+                    {
+                        "title": "Design mockups",
+                        "description": "Create the main screens.",
+                        "priority": "high",
+                        "status": "pending",
+                        "estimated_hours": 8,
+                    }
+                ],
+                "total_hours": 8,
+            }
+        )
+    )
+
+    handler = StructuredOutputHandler(retry_strategy=FeedbackRetry(max_attempts=1))
+    result = handler.generate_structured(
+        provider=provider,
+        prompt="Create a project with one design task.",
+        response_model=Project,
+        temperature=0,
+        max_output_tokens=256,
+    )
+
+    assert isinstance(result, Project)
+    assert result.tasks[0].priority is Priority.HIGH
+    assert provider.calls[0]["response_model"] is Project
+    assert provider.calls[0]["kwargs"] == {"temperature": 0, "max_output_tokens": 256}
+
+
+@dataclass(frozen=True)
+class SchemaCase:
+    name: str
+    response_model: type[BaseModel]
+    prompt: str
+    max_output_tokens: int
+
+
+SCHEMA_CASES = {
+    "simple": SchemaCase(
+        name="simple",
+        response_model=SimplePersonInfo,
+        prompt="Extract a person: John Doe, 35 years old, john@example.com.",
+        max_output_tokens=160,
+    ),
+    "nested": SchemaCase(
+        name="nested",
+        response_model=Project,
+        prompt=(
+            "Create project 'Website Redesign' with one task: 'Design mockups', "
+            "high priority, pending status, 8 hours. Total: 8 hours."
+        ),
+        max_output_tokens=256,
+    ),
+    "deep": SchemaCase(
+        name="deep",
+        response_model=Organization,
+        prompt=(
+            "Create organization 'TechCorp', founded in 2020, departments engineering "
+            "and marketing. Include one engineering team 'Platform' led by Sarah "
+            "(sarah@tech.com, skills Python and AWS), with Bob (bob@tech.com, skill "
+            "JavaScript) as member. One active project named 'Runtime'. Total employees: 2."
+        ),
+        max_output_tokens=640,
+    ),
+}
+
+
+@dataclass(frozen=True)
+class LiveCase:
     provider: str
     model: str
-    schema_complexity: str  # simple, medium, complex
-    attempt_number: int
-    success: bool
-    response_time_ms: float
-    error_type: Optional[str] = None
-    error_message: Optional[str] = None
-    validation_error: bool = False
-    required_retry: bool = False
-
-
-class TestResultTracker:
-    """Track all test results for analysis"""
-
-    def __init__(self):
-        self.results: List[TestResult] = []
-
-    def add_result(self, result: TestResult):
-        self.results.append(result)
-
-    def get_success_rate(self, provider: str = None, model: str = None, complexity: str = None) -> float:
-        """Calculate success rate for given filters"""
-        filtered = self.results
-        if provider:
-            filtered = [r for r in filtered if r.provider == provider]
-        if model:
-            filtered = [r for r in filtered if r.model == model]
-        if complexity:
-            filtered = [r for r in filtered if r.schema_complexity == complexity]
-
-        if not filtered:
-            return 0.0
-
-        successful = len([r for r in filtered if r.success])
-        return (successful / len(filtered)) * 100
-
-    def get_avg_response_time(self, provider: str = None, model: str = None) -> float:
-        """Calculate average response time"""
-        filtered = self.results
-        if provider:
-            filtered = [r for r in filtered if r.provider == provider]
-        if model:
-            filtered = [r for r in filtered if r.model == model]
-
-        if not filtered:
-            return 0.0
-
-        successful = [r for r in filtered if r.success]
-        if not successful:
-            return 0.0
-
-        return sum(r.response_time_ms for r in successful) / len(successful)
-
-    def get_retry_rate(self, provider: str = None, model: str = None, complexity: str = None) -> float:
-        """Calculate retry necessity rate"""
-        filtered = self.results
-        if provider:
-            filtered = [r for r in filtered if r.provider == provider]
-        if model:
-            filtered = [r for r in filtered if r.model == model]
-        if complexity:
-            filtered = [r for r in filtered if r.schema_complexity == complexity]
-
-        if not filtered:
-            return 0.0
-
-        required_retry = len([r for r in filtered if r.required_retry])
-        return (required_retry / len(filtered)) * 100
-
-    def save_to_json(self, filepath: str):
-        """Save results to JSON file"""
-        data = {
-            "timestamp": datetime.now().isoformat(),
-            "total_tests": len(self.results),
-            "results": [
-                {
-                    "provider": r.provider,
-                    "model": r.model,
-                    "schema_complexity": r.schema_complexity,
-                    "attempt_number": r.attempt_number,
-                    "success": r.success,
-                    "response_time_ms": r.response_time_ms,
-                    "error_type": r.error_type,
-                    "error_message": r.error_message,
-                    "validation_error": r.validation_error,
-                    "required_retry": r.required_retry
-                }
-                for r in self.results
-            ]
-        }
-
-        with open(filepath, 'w') as f:
-            json.dump(data, f, indent=2)
-
-
-# ============================================================================
-# TEST CONFIGURATION
-# ============================================================================
-
-# Models to test for each provider
-OLLAMA_MODELS = [
-    "qwen3:4b-instruct-2507-q4_K_M",  # Small model (~4B params)
-    "gpt-oss:20b",                     # Medium model (~20B params)
-]
-
-LMSTUDIO_MODELS = [
-    "qwen/qwen3-4b-2507",             # Small model
-    "openai/gpt-oss-20b",             # Medium model
-]
-
-# Test prompts for each complexity level
-SIMPLE_PROMPTS = [
-    "Generate a person: John Doe, 35 years old, john@example.com",
-    "Create a person: Alice Smith, 28, alice.smith@company.com",
-]
-
-MEDIUM_PROMPTS = [
-    """Create a project 'Website Redesign' with 2 tasks:
-    1. 'Design mockups' - high priority, pending, 8 hours, tags: design, ui
-    2. 'Implement frontend' - medium priority, in progress, 16 hours, tags: development, react
-    Total: 24 hours""",
-
-    """Create a project 'Mobile App' with 2 tasks:
-    1. 'API Integration' - critical priority, in progress, 12 hours, tags: backend, api
-    2. 'Testing' - high priority, pending, 6 hours, tags: qa, testing
-    Total: 18 hours""",
-]
-
-COMPLEX_PROMPTS = [
-    """Create an organization 'TechCorp' founded in 2020 with:
-    - Departments: engineering, marketing
-    - 1 Engineering team 'Platform' with:
-      - Lead: Sarah (sarah@tech.com, senior engineer, skills: Python-9-5yrs, AWS-8-4yrs)
-      - Member: Bob (bob@tech.com, mid engineer, skills: JavaScript-7-3yrs)
-    - 1 Marketing team 'Growth' with:
-      - Lead: Alice (alice@tech.com, staff marketing, skills: SEO-9-6yrs)
-      - Member: Charlie (charlie@tech.com, junior marketing, skills: Content-6-2yrs)
-    - Total employees: 4""",
-]
-
-
-# ============================================================================
-# TEST CLASS
-# ============================================================================
-
-class TestComprehensiveNativeStructured:
-    """Comprehensive testing of native structured outputs"""
-
-    tracker = TestResultTracker()
-
-    def _run_single_test(
-        self,
-        provider_name: str,
-        model: str,
-        schema_class: type[BaseModel],
-        prompt: str,
-        complexity: str,
-        max_retries: int = 3
-    ) -> None:
-        """Run a single test with retry tracking"""
-
-        try:
-            # Create LLM instance
-            llm = create_llm(provider_name, model=model)
-            handler = StructuredOutputHandler()
-
-            for attempt in range(1, max_retries + 1):
-                start_time = time.time()
-                error_occurred = None
-                success = False
-
-                try:
-                    result = handler.generate_structured(
-                        provider=llm,
-                        prompt=prompt,
-                        response_model=schema_class,
-                        temperature=0  # Deterministic
-                    )
-
-                    response_time = (time.time() - start_time) * 1000
-                    success = True
-
-                    # Verify it's the correct type
-                    assert isinstance(result, schema_class)
-
-                    # Record successful result
-                    self.tracker.add_result(TestResult(
-                        provider=provider_name,
-                        model=model,
-                        schema_complexity=complexity,
-                        attempt_number=attempt,
-                        success=True,
-                        response_time_ms=response_time,
-                        required_retry=(attempt > 1)
-                    ))
-
-                    print(f"✅ {provider_name}/{model}/{complexity} - Success on attempt {attempt} ({response_time:.0f}ms)")
-                    return  # Success, exit retry loop
-
-                except ValidationError as e:
-                    response_time = (time.time() - start_time) * 1000
-                    error_occurred = e
-
-                    # Record validation error
-                    self.tracker.add_result(TestResult(
-                        provider=provider_name,
-                        model=model,
-                        schema_complexity=complexity,
-                        attempt_number=attempt,
-                        success=False,
-                        response_time_ms=response_time,
-                        error_type="ValidationError",
-                        error_message=str(e),
-                        validation_error=True,
-                        required_retry=True
-                    ))
-
-                    if attempt < max_retries:
-                        print(f"⚠️  {provider_name}/{model}/{complexity} - ValidationError on attempt {attempt}, retrying...")
-                    else:
-                        print(f"❌ {provider_name}/{model}/{complexity} - Failed after {max_retries} attempts")
-
-                except Exception as e:
-                    response_time = (time.time() - start_time) * 1000
-                    error_occurred = e
-
-                    # Record other errors
-                    self.tracker.add_result(TestResult(
-                        provider=provider_name,
-                        model=model,
-                        schema_complexity=complexity,
-                        attempt_number=attempt,
-                        success=False,
-                        response_time_ms=response_time,
-                        error_type=type(e).__name__,
-                        error_message=str(e),
-                        required_retry=True
-                    ))
-
-                    print(f"❌ {provider_name}/{model}/{complexity} - {type(e).__name__}: {str(e)[:100]}")
-                    return  # Non-recoverable error, don't retry
-
-        except Exception as e:
-            # Provider initialization failed
-            pytest.skip(f"Provider {provider_name} not available: {e}")
-
-    # ========================================================================
-    # OLLAMA TESTS
-    # ========================================================================
-
-    @pytest.mark.parametrize("model", OLLAMA_MODELS)
-    def test_ollama_simple_schema(self, model):
-        """Test Ollama with simple schema"""
-        for prompt in SIMPLE_PROMPTS:
-            self._run_single_test(
-                provider_name="ollama",
-                model=model,
-                schema_class=SimplePersonInfo,
-                prompt=prompt,
-                complexity="simple"
-            )
-
-    @pytest.mark.parametrize("model", OLLAMA_MODELS)
-    def test_ollama_medium_schema(self, model):
-        """Test Ollama with medium complexity schema"""
-        for prompt in MEDIUM_PROMPTS:
-            self._run_single_test(
-                provider_name="ollama",
-                model=model,
-                schema_class=Project,
-                prompt=prompt,
-                complexity="medium"
-            )
-
-    @pytest.mark.parametrize("model", OLLAMA_MODELS)
-    def test_ollama_complex_schema(self, model):
-        """Test Ollama with complex nested schema"""
-        for prompt in COMPLEX_PROMPTS:
-            self._run_single_test(
-                provider_name="ollama",
-                model=model,
-                schema_class=Organization,
-                prompt=prompt,
-                complexity="complex"
-            )
-
-    # ========================================================================
-    # LMSTUDIO TESTS
-    # ========================================================================
-
-    @pytest.mark.parametrize("model", LMSTUDIO_MODELS)
-    def test_lmstudio_simple_schema(self, model):
-        """Test LMStudio with simple schema"""
-        for prompt in SIMPLE_PROMPTS:
-            self._run_single_test(
-                provider_name="lmstudio",
-                model=model,
-                schema_class=SimplePersonInfo,
-                prompt=prompt,
-                complexity="simple"
-            )
-
-    @pytest.mark.parametrize("model", LMSTUDIO_MODELS)
-    def test_lmstudio_medium_schema(self, model):
-        """Test LMStudio with medium complexity schema"""
-        for prompt in MEDIUM_PROMPTS:
-            self._run_single_test(
-                provider_name="lmstudio",
-                model=model,
-                schema_class=Project,
-                prompt=prompt,
-                complexity="medium"
-            )
-
-    @pytest.mark.parametrize("model", LMSTUDIO_MODELS)
-    def test_lmstudio_complex_schema(self, model):
-        """Test LMStudio with complex nested schema"""
-        for prompt in COMPLEX_PROMPTS:
-            self._run_single_test(
-                provider_name="lmstudio",
-                model=model,
-                schema_class=Organization,
-                prompt=prompt,
-                complexity="complex"
-            )
-
-
-# ============================================================================
-# TEST RUNNER AND RESULTS
-# ============================================================================
-
-def run_all_tests_and_save_results():
-    """Run all tests and save results to JSON"""
-    print("\n" + "="*80)
-    print("COMPREHENSIVE NATIVE STRUCTURED OUTPUT TESTING")
-    print("="*80)
-
-    test_instance = TestComprehensiveNativeStructured()
-
-    # Run all tests
-    print("\n📊 Testing Ollama Simple Schemas...")
-    for model in OLLAMA_MODELS:
-        for prompt in SIMPLE_PROMPTS:
-            test_instance._run_single_test("ollama", model, SimplePersonInfo, prompt, "simple")
-
-    print("\n📊 Testing Ollama Medium Schemas...")
-    for model in OLLAMA_MODELS:
-        for prompt in MEDIUM_PROMPTS:
-            test_instance._run_single_test("ollama", model, Project, prompt, "medium")
-
-    print("\n📊 Testing Ollama Complex Schemas...")
-    for model in OLLAMA_MODELS:
-        for prompt in COMPLEX_PROMPTS:
-            test_instance._run_single_test("ollama", model, Organization, prompt, "complex")
-
-    print("\n📊 Testing LMStudio Simple Schemas...")
-    for model in LMSTUDIO_MODELS:
-        for prompt in SIMPLE_PROMPTS:
-            test_instance._run_single_test("lmstudio", model, SimplePersonInfo, prompt, "simple")
-
-    print("\n📊 Testing LMStudio Medium Schemas...")
-    for model in LMSTUDIO_MODELS:
-        for prompt in MEDIUM_PROMPTS:
-            test_instance._run_single_test("lmstudio", model, Project, prompt, "medium")
-
-    print("\n📊 Testing LMStudio Complex Schemas...")
-    for model in LMSTUDIO_MODELS:
-        for prompt in COMPLEX_PROMPTS:
-            test_instance._run_single_test("lmstudio", model, Organization, prompt, "complex")
-
-    # Print summary
-    print("\n" + "="*80)
-    print("TEST RESULTS SUMMARY")
-    print("="*80)
-
-    tracker = test_instance.tracker
-
-    # Overall stats
-    total_tests = len(tracker.results)
-    overall_success_rate = tracker.get_success_rate()
-    print(f"\nTotal Tests: {total_tests}")
-    print(f"Overall Success Rate: {overall_success_rate:.1f}%")
-
-    # By provider
-    print("\n--- By Provider ---")
-    for provider in ["ollama", "lmstudio"]:
-        success_rate = tracker.get_success_rate(provider=provider)
-        avg_time = tracker.get_avg_response_time(provider=provider)
-        retry_rate = tracker.get_retry_rate(provider=provider)
-        print(f"{provider.capitalize()}: {success_rate:.1f}% success, {avg_time:.0f}ms avg, {retry_rate:.1f}% needed retries")
-
-    # By complexity
-    print("\n--- By Complexity ---")
-    for complexity in ["simple", "medium", "complex"]:
-        success_rate = tracker.get_success_rate(complexity=complexity)
-        retry_rate = tracker.get_retry_rate(complexity=complexity)
-        print(f"{complexity.capitalize()}: {success_rate:.1f}% success, {retry_rate:.1f}% needed retries")
-
-    # By model
-    print("\n--- By Model ---")
-    all_models = OLLAMA_MODELS + LMSTUDIO_MODELS
-    for model in all_models:
-        success_rate = tracker.get_success_rate(model=model)
-        avg_time = tracker.get_avg_response_time(model=model)
-        print(f"{model}: {success_rate:.1f}% success, {avg_time:.0f}ms avg")
-
-    # Save to JSON
-    output_file = "test_results_native_structured.json"
-    tracker.save_to_json(output_file)
-    print(f"\n✅ Results saved to: {output_file}")
-
-    print("\n" + "="*80)
-
-    return tracker
-
-
-if __name__ == "__main__":
-    run_all_tests_and_save_results()
+    schema: SchemaCase
+
+    @property
+    def id(self) -> str:
+        return f"{self.provider}-{self.model}-{self.schema.name}".replace("/", "_")
+
+
+def _provider_models(provider: str) -> list[str]:
+    if provider == "ollama":
+        return _csv_env(
+            "ABSTRACTCORE_OLLAMA_STRUCTURED_TEST_MODELS",
+            _csv_env(
+                "ABSTRACTCORE_OLLAMA_STRUCTURED_TEST_MODEL",
+                [os.getenv("OLLAMA_MODEL", "qwen3:4b-instruct")],
+            ),
+        )
+    if provider == "lmstudio":
+        return _csv_env(
+            "ABSTRACTCORE_LMSTUDIO_STRUCTURED_TEST_MODELS",
+            _csv_env(
+                "ABSTRACTCORE_LMSTUDIO_STRUCTURED_TEST_MODEL",
+                [os.getenv("LMSTUDIO_MODEL", "qwen/qwen3-4b-2507")],
+            ),
+        )
+    raise ValueError(f"Unsupported native structured provider: {provider}")
+
+
+def _live_cases() -> list[LiveCase]:
+    providers = _csv_env("ABSTRACTCORE_STRUCTURED_NATIVE_PROVIDERS", ["ollama", "lmstudio"])
+    schema_names = ["nested"]
+    if _env_flag("ABSTRACTCORE_RUN_COMPREHENSIVE_NATIVE_STRUCTURED_TESTS"):
+        schema_names = ["simple", "nested", "deep"]
+
+    cases: list[LiveCase] = []
+    for provider in providers:
+        if provider not in {"ollama", "lmstudio"}:
+            continue
+        for model in _provider_models(provider):
+            for schema_name in schema_names:
+                cases.append(LiveCase(provider=provider, model=model, schema=SCHEMA_CASES[schema_name]))
+    return cases
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+@pytest.mark.skipif(
+    not (
+        _env_flag("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS")
+        or _env_flag("ABSTRACTCORE_RUN_COMPREHENSIVE_NATIVE_STRUCTURED_TESTS")
+    ),
+    reason=(
+        "Local native structured tests disabled; set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1 "
+        "for smoke coverage or ABSTRACTCORE_RUN_COMPREHENSIVE_NATIVE_STRUCTURED_TESTS=1 "
+        "for the three-level matrix"
+    ),
+)
+@pytest.mark.parametrize("case", _live_cases(), ids=lambda case: case.id)
+def test_local_native_structured_output_live(case: LiveCase):
+    """Live smoke/matrix coverage for Ollama and LM Studio native schema paths."""
+    timeout = float(os.getenv("ABSTRACTCORE_STRUCTURED_NATIVE_TEST_TIMEOUT", "45"))
+    try:
+        llm = create_llm(case.provider, model=case.model, timeout=timeout)
+    except Exception as error:
+        pytest.skip(f"{case.provider}/{case.model} unavailable: {_short_error(error)}")
+
+    handler = StructuredOutputHandler(retry_strategy=FeedbackRetry(max_attempts=1))
+    try:
+        result = handler.generate_structured(
+            provider=llm,
+            prompt=case.schema.prompt,
+            response_model=case.schema.response_model,
+            temperature=0,
+            max_output_tokens=case.schema.max_output_tokens,
+        )
+    except Exception as error:
+        if _looks_like_local_availability_error(error):
+            pytest.skip(f"{case.provider}/{case.model} unavailable during generation: {_short_error(error)}")
+        raise
+
+    assert isinstance(result, case.schema.response_model)

@@ -1,7 +1,12 @@
 # Release Process
 
-This repo publishes releases from annotated Git tags. A tag like `v2.13.1`
-starts the `Release` GitHub Actions workflow, which:
+This repo publishes releases through the `Release` GitHub Actions workflow. The
+preferred path is a manual workflow dispatch with the version number; the
+workflow validates the release, creates the annotated tag, publishes to PyPI, and
+creates the GitHub Release. Pushing an annotated tag like `v2.13.1` also starts
+the same workflow.
+
+The workflow:
 
 - checks that the tag version matches `abstractcore/utils/version.py`
 - checks that `CHANGELOG.md` has release notes for that version
@@ -11,6 +16,7 @@ starts the `Release` GitHub Actions workflow, which:
 - runs `twine check`
 - publishes to PyPI through Trusted Publishing
 - creates a GitHub Release using the matching changelog section
+- creates the annotated `vX.Y.Z` tag when launched manually
 
 ## One-time setup
 
@@ -25,11 +31,11 @@ Configure PyPI Trusted Publishing for the `abstractcore` project:
 
 No PyPI API token is needed when Trusted Publishing is configured.
 
-## Release checklist
+## Preferred automated release
 
 1. Update `abstractcore/utils/version.py`.
 2. Move the relevant `CHANGELOG.md` notes from `Unreleased` to the new version.
-3. Run the local checks:
+3. Run the local checks you want before pushing:
 
    ```bash
    ruff check --select W293 .
@@ -40,8 +46,36 @@ No PyPI API token is needed when Trusted Publishing is configured.
    mkdocs build -q
    ```
 
-4. Commit and push `main`.
-5. Create and push an annotated tag:
+4. Commit and push `main`:
+
+   ```bash
+   git push origin main
+   ```
+
+5. Open GitHub Actions, choose the `Release` workflow, click `Run workflow`,
+   select `main`, and enter the version, for example:
+
+   ```text
+   2.13.1
+   ```
+
+6. The workflow will:
+
+   ```text
+   validate version/changelog
+   run tests and docs build
+   build and check dist/*
+   create annotated tag v2.13.1
+   publish to PyPI
+   create GitHub Release "AbstractCore v2.13.1"
+   ```
+
+7. Verify the GitHub Release and the PyPI project page.
+
+## Tag-push alternative
+
+If you prefer to launch from the terminal, create and push the annotated tag
+after `main` is pushed:
 
    ```bash
    git tag -a v2.13.1 -m "AbstractCore v2.13.1"
@@ -49,8 +83,7 @@ No PyPI API token is needed when Trusted Publishing is configured.
    git push origin v2.13.1
    ```
 
-6. Watch the `Release` workflow in GitHub Actions.
-7. Verify the GitHub Release and the PyPI project page.
+Then watch the `Release` workflow in GitHub Actions and verify GitHub + PyPI.
 
 ## Manual fallback
 

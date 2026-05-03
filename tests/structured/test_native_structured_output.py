@@ -8,13 +8,28 @@ This test suite verifies that:
 4. Complex schemas with nested objects and enums work correctly
 """
 
-import pytest
 from enum import Enum
+from typing import Optional
+
+import pytest
 from pydantic import BaseModel
-from typing import List, Optional
 
 from abstractcore import create_llm
 from abstractcore.structured import StructuredOutputHandler
+
+
+def _short_error(error: Exception) -> str:
+    """Trim provider errors that include long model availability lists."""
+    text = str(error).strip()
+    for marker in ("✅ Available models", "Available models", "\n  •"):
+        idx = text.find(marker)
+        if idx >= 0:
+            text = text[:idx].strip()
+            break
+    text = " ".join(text.split())
+    if len(text) > 240:
+        text = text[:237].rstrip() + "..."
+    return text or type(error).__name__
 
 
 # Test models
@@ -42,7 +57,7 @@ class Task(BaseModel):
 
 class Project(BaseModel):
     name: str
-    tasks: List[Task]
+    tasks: list[Task]
     total_estimated_hours: float
 
 
@@ -65,7 +80,7 @@ class TestNativeStructuredOutput:
             assert handler._has_native_support(llm) is True, \
                 "Ollama provider should have native structured output support"
         except Exception as e:
-            pytest.skip(f"Ollama not available: {e}")
+            pytest.skip(f"Ollama not available: {_short_error(e)}")
 
     def test_lmstudio_native_support_detection(self):
         """Test that LMStudio provider is correctly detected as having native support."""
@@ -76,7 +91,7 @@ class TestNativeStructuredOutput:
             assert handler._has_native_support(llm) is True, \
                 "LMStudio provider should have native structured output support"
         except Exception as e:
-            pytest.skip(f"LMStudio not available: {e}")
+            pytest.skip(f"LMStudio not available: {_short_error(e)}")
 
     def test_ollama_simple_structured_output(self):
         """Test Ollama with simple structured output (PersonInfo)."""
@@ -101,7 +116,7 @@ class TestNativeStructuredOutput:
             print(f"✅ Ollama simple structured output: {result}")
 
         except Exception as e:
-            pytest.skip(f"Ollama test skipped: {e}")
+            pytest.skip(f"Ollama test skipped: {_short_error(e)}")
 
     def test_ollama_complex_structured_output_with_enums(self):
         """Test Ollama with complex nested structure and enums."""
@@ -133,7 +148,7 @@ class TestNativeStructuredOutput:
             print(f"✅ Ollama complex structured output: {result.name} with {len(result.tasks)} tasks")
 
         except Exception as e:
-            pytest.skip(f"Ollama complex test skipped: {e}")
+            pytest.skip(f"Ollama complex test skipped: {_short_error(e)}")
 
     def test_lmstudio_simple_structured_output(self):
         """Test LMStudio with simple structured output (PersonInfo)."""
@@ -158,7 +173,7 @@ class TestNativeStructuredOutput:
             print(f"✅ LMStudio simple structured output: {result}")
 
         except Exception as e:
-            pytest.skip(f"LMStudio test skipped: {e}")
+            pytest.skip(f"LMStudio test skipped: {_short_error(e)}")
 
     def test_lmstudio_complex_structured_output_with_enums(self):
         """Test LMStudio with complex nested structure and enums."""
@@ -190,7 +205,7 @@ class TestNativeStructuredOutput:
             print(f"✅ LMStudio complex structured output: {result.name} with {len(result.tasks)} tasks")
 
         except Exception as e:
-            pytest.skip(f"LMStudio complex test skipped: {e}")
+            pytest.skip(f"LMStudio complex test skipped: {_short_error(e)}")
 
     def test_schema_generation_for_ollama(self):
         """Verify that Ollama receives the full JSON schema in the format parameter."""
@@ -204,7 +219,7 @@ class TestNativeStructuredOutput:
             print("✅ Ollama schema generation verified")
 
         except Exception as e:
-            pytest.skip(f"Ollama schema test skipped: {e}")
+            pytest.skip(f"Ollama schema test skipped: {_short_error(e)}")
 
     def test_schema_generation_for_lmstudio(self):
         """Verify that LMStudio uses response_format parameter correctly."""
@@ -219,7 +234,7 @@ class TestNativeStructuredOutput:
             print("✅ LMStudio schema generation verified")
 
         except Exception as e:
-            pytest.skip(f"LMStudio schema test skipped: {e}")
+            pytest.skip(f"LMStudio schema test skipped: {_short_error(e)}")
 
 
 if __name__ == "__main__":
