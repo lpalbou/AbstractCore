@@ -549,7 +549,7 @@ class TestUnifiedStreamProcessor:
 
         # Cleanup
         clear_registry()
-        
+
 
     def test_error_handling_in_stream_processing(self):
         """Test error handling during stream processing"""

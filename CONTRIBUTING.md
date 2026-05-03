@@ -23,6 +23,7 @@ pytest -q
 AbstractCore’s default install is intentionally lightweight. Most features and provider SDKs are behind extras:
 
 ```bash
+pip install -e ".[remote]"       # OpenAI + Anthropic SDKs (OpenRouter/Portkey use core httpx)
 pip install -e ".[openai]"       # OpenAI SDK
 pip install -e ".[anthropic]"    # Anthropic SDK
 pip install -e ".[tools]"        # requests/bs4/lxml/ddgs for built-in tools
@@ -30,6 +31,8 @@ pip install -e ".[media]"        # Pillow + PDF/Office extraction
 pip install -e ".[embeddings]"   # sentence-transformers + numpy
 pip install -e ".[server]"       # FastAPI gateway
 ```
+
+Extras compose, so a realistic app setup might be `pip install -e ".[remote,tools,media,server]"`.
 
 If you want a “kitchen sink” contributor environment, `full-dev` is a convenient superset, but it may not install everywhere (for example MLX vs CUDA-only stacks):
 
@@ -50,16 +53,48 @@ When contributing:
 - Keep optional subsystems behind explicit extras (`[tools]`, `[media]`, `[embeddings]`, `[server]`, provider SDKs).
 - Avoid importing optional dependencies on default import paths (for example `abstractcore/__init__.py`). Prefer lazy imports and clear install hints like `pip install "abstractcore[media]"`.
 
-### Style
+### Formatting, linting, and typing
+
+These tools are useful, but the full-repo baselines are not currently clean.
+Treat them as diagnostics unless a maintainer explicitly asks for a full-repo
+cleanup.
+
+- `black` is the code formatter. It rewrites layout/spacing; most failures are
+  style drift, not runtime bugs.
+- `ruff` is the fast linter. Some findings are cosmetic, but `F821` undefined
+  names, broad `except`, unused imports, and similar findings can point to real
+  bugs.
+- `mypy` is the static type checker. The repo has a strict target config, but
+  dynamic provider code and optional dependencies still produce known legacy
+  errors.
+
+For normal PRs, format and lint the files you touched when they already have a
+clean local baseline:
 
 ```bash
-black .
-ruff check .
+black path/to/changed_file.py
+ruff check path/to/changed_file.py
+```
+
+If a touched file has legacy style/lint debt, avoid unrelated churn and keep the
+high-signal package check clean:
+
+```bash
+ruff check --select F821 abstractcore
+```
+
+Full-repo checks are still useful for maintainers tracking cleanup progress:
+
+```bash
+black --check abstractcore tests
+ruff check abstractcore
+mypy abstractcore
 ```
 
 ### Pre-commit (recommended)
 
-This repo uses `pre-commit` to run formatting/lint checks as git hooks (before you commit).
+This repo has `pre-commit` hooks for formatting/lint checks. The expensive hooks
+are configured for manual use, so run them explicitly when you want them.
 
 One-time setup:
 
@@ -80,7 +115,11 @@ pre-commit run --all-files
 pytest -q
 ```
 
-Some provider-/network-/hardware-dependent tests are intentionally opt-in and may skip locally. See `tests/README_VISION_TESTING.md` and `tests/README_SEED_TESTING.md`.
+Some provider-/network-/hardware-dependent tests are intentionally opt-in and may
+skip locally. When local LLM services or heavyweight inference tests are enabled,
+the suite can take a long time; during development, run the focused test file or
+marker first, then a broader pass before release. See
+`tests/README_VISION_TESTING.md` and `tests/README_SEED_TESTING.md`.
 
 ## Documentation
 
@@ -98,8 +137,9 @@ Keep language clear, user-oriented, and accurate to the code (the code is the so
 ## Pull request checklist
 
 - Add or update tests where appropriate.
-- Run `pytest -q`.
-- Run `black .` and `ruff check .`.
+- Run relevant tests; run `pytest -q` when feasible.
+- Run `black` and `ruff check` on changed files.
+- Keep `ruff check --select F821 abstractcore` passing.
 - Update relevant documentation.
 - Add a changelog entry when the change is user-visible.
 

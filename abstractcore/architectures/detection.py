@@ -192,7 +192,7 @@ def detect_architecture(model_name: str) -> str:
     # Check cache first to avoid redundant logging
     if model_name in _detected_architectures_cache:
         return _detected_architectures_cache[model_name]
-    
+
     _load_json_assets()
 
     if not _architecture_formats or "architectures" not in _architecture_formats:
@@ -665,24 +665,24 @@ def detect_model_type(model_name: str) -> str:
 def get_vision_capabilities(model_name: str) -> Dict[str, Any]:
     """
     Get vision-specific capabilities for a model with fallback to generic vision model.
-    
+
     Args:
         model_name: Model name to get vision capabilities for
-        
+
     Returns:
         Dictionary with vision capabilities, using generic fallback if model not found
     """
     from ..utils.structured_logging import get_logger
     logger = get_logger(__name__)
-    
+
     # Get model capabilities
     capabilities = get_model_capabilities(model_name)
-    
+
     # Check if model has vision support
     if not capabilities.get('vision_support', False):
         logger.warning(f"Model '{model_name}' does not have vision support")
         return {}
-    
+
     # Extract vision-specific fields
     vision_fields = [
         'image_resolutions', 'max_image_resolution', 'image_patch_size', 
@@ -691,12 +691,12 @@ def get_vision_capabilities(model_name: str) -> Dict[str, Any]:
         'base_tokens_per_resolution', 'fixed_resolution', 'tokens_per_tile',
         'tile_size', 'base_image_tokens', 'pixel_divisor', 'token_cap'
     ]
-    
+
     vision_capabilities = {}
     for field in vision_fields:
         if field in capabilities:
             vision_capabilities[field] = capabilities[field]
-    
+
     # If we have minimal vision capabilities, use generic fallback
     if not vision_capabilities or len(vision_capabilities) < 3:
         logger.warning(
@@ -704,7 +704,7 @@ def get_vision_capabilities(model_name: str) -> Dict[str, Any]:
             model=model_name,
             found_fields=list(vision_capabilities.keys())
         )
-        
+
         # Get generic vision model capabilities
         _load_json_assets()
         if _model_capabilities and "generic_vision_model" in _model_capabilities:
@@ -712,25 +712,25 @@ def get_vision_capabilities(model_name: str) -> Dict[str, Any]:
             for field in vision_fields:
                 if field in generic_caps:
                     vision_capabilities[field] = generic_caps[field]
-    
+
     return vision_capabilities
 
 
 def get_glyph_compression_capabilities(model_name: str) -> Dict[str, Any]:
     """
     Get capabilities relevant for Glyph compression with intelligent fallbacks.
-    
+
     Args:
         model_name: Model name to get Glyph capabilities for
-        
+
     Returns:
         Dictionary with Glyph-relevant capabilities and recommendations
     """
     from ..utils.structured_logging import get_logger
     logger = get_logger(__name__)
-    
+
     capabilities = get_model_capabilities(model_name)
-    
+
     # Check if model supports vision (required for Glyph)
     if not capabilities.get('vision_support', False):
         logger.error(
@@ -741,24 +741,24 @@ def get_glyph_compression_capabilities(model_name: str) -> Dict[str, Any]:
             'glyph_compatible': False,
             'reason': 'no_vision_support'
         }
-    
+
     # Get vision capabilities
     vision_caps = get_vision_capabilities(model_name)
-    
+
     # Determine Glyph compatibility and optimal settings
     glyph_caps = {
         'glyph_compatible': True,
         'model_name': model_name,
         'vision_support': True
     }
-    
+
     # Add vision-specific fields for token calculation
     glyph_caps.update(vision_caps)
-    
+
     # Determine optimal compression settings based on model capabilities
     max_image_tokens = vision_caps.get('max_image_tokens', 2048)
     image_patch_size = vision_caps.get('image_patch_size', 16)
-    
+
     # Recommend compression parameters
     if max_image_tokens >= 16000:
         glyph_caps['recommended_pages_per_image'] = 2
@@ -769,29 +769,29 @@ def get_glyph_compression_capabilities(model_name: str) -> Dict[str, Any]:
     else:
         glyph_caps['recommended_pages_per_image'] = 1
         glyph_caps['recommended_dpi'] = 100
-    
+
     # Check for Glyph-optimized models
     if capabilities.get('optimized_for_glyph', False):
         glyph_caps['glyph_optimized'] = True
         logger.info(f"Model '{model_name}' is optimized for Glyph compression")
-    
+
     return glyph_caps
 
 
 def check_vision_model_compatibility(model_name: str, provider: str = None) -> Dict[str, Any]:
     """
     Comprehensive check for vision model compatibility with detailed recommendations.
-    
+
     Args:
         model_name: Model name to check
         provider: Provider name (optional, for provider-specific checks)
-        
+
     Returns:
         Dictionary with compatibility status and recommendations
     """
     from ..utils.structured_logging import get_logger
     logger = get_logger(__name__)
-    
+
     result = {
         'model_name': model_name,
         'provider': provider,
@@ -802,18 +802,18 @@ def check_vision_model_compatibility(model_name: str, provider: str = None) -> D
         'recommendations': [],
         'capabilities': {}
     }
-    
+
     # Get model capabilities
     capabilities = get_model_capabilities(model_name)
-    
+
     # Check if this is an unknown model (architecture is 'generic' means it wasn't found in database)
     is_unknown_model = capabilities.get('architecture') == 'generic' and not capabilities.get('vision_support', False)
-    
+
     if is_unknown_model:
         result['warnings'].append(f"Model '{model_name}' not found in capabilities database")
         result['recommendations'].append("Add model specifications to model_capabilities.json")
         result['recommendations'].append("Using generic vision model fallback for VLM calculations")
-        
+
         # Use generic fallback - assume vision support for unknown models
         _load_json_assets()
         if _model_capabilities and "generic_vision_model" in _model_capabilities:
@@ -821,11 +821,11 @@ def check_vision_model_compatibility(model_name: str, provider: str = None) -> D
             result['compatible'] = True
             result['vision_support'] = True
             result['capabilities'] = generic_caps
-            
+
             # Also get vision capabilities using the generic model
             vision_caps = generic_caps.copy()
             result['vision_capabilities'] = vision_caps
-            
+
             # Check Glyph compatibility with generic model
             glyph_caps = {
                 'glyph_compatible': True,
@@ -837,39 +837,39 @@ def check_vision_model_compatibility(model_name: str, provider: str = None) -> D
             glyph_caps.update(vision_caps)
             result['glyph_compatible'] = True
             result['glyph_capabilities'] = glyph_caps
-            
+
             logger.warning(f"Using generic vision model fallback for unknown model '{model_name}'")
-        
+
         return result
-    
+
     # Check vision support
     vision_support = capabilities.get('vision_support', False)
     result['vision_support'] = vision_support
     result['capabilities'] = capabilities
-    
+
     if not vision_support:
         result['warnings'].append(f"Model '{model_name}' does not support vision")
         result['recommendations'].append("Use a vision-capable model for image processing")
         return result
-    
+
     result['compatible'] = True
-    
+
     # Get vision-specific capabilities
     vision_caps = get_vision_capabilities(model_name)
     result['vision_capabilities'] = vision_caps
-    
+
     # Check Glyph compatibility
     glyph_caps = get_glyph_compression_capabilities(model_name)
     result['glyph_compatible'] = glyph_caps.get('glyph_compatible', False)
     result['glyph_capabilities'] = glyph_caps
-    
+
     # Add specific recommendations based on capabilities
     if not vision_caps.get('image_patch_size'):
         result['warnings'].append("No image_patch_size specified, using generic fallback")
         result['recommendations'].append("Add image_patch_size to model capabilities for better accuracy")
-    
+
     if not vision_caps.get('max_image_tokens'):
         result['warnings'].append("No max_image_tokens specified")
         result['recommendations'].append("Add max_image_tokens to model capabilities")
-    
+
     return result

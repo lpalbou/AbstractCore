@@ -142,7 +142,7 @@ class TestSingleModelComprehensive:
         """Calculate keyword-based similarity metrics with semantic matching and fuzzy matching."""
         response_lower = response_text.lower()
         response_words = set(response_lower.split())
-        
+
         # Define synonym mappings for common vision terms
         synonyms = {
             "mountain": ["hill", "peak", "summit", "ridge", "slope"],
@@ -169,7 +169,7 @@ class TestSingleModelComprehensive:
 
         found_keywords = []
         semantic_matches = []
-        
+
         # First pass: exact matching (case-insensitive)
         for keyword in reference_keywords:
             keyword_lower = keyword.lower()
@@ -185,7 +185,7 @@ class TestSingleModelComprehensive:
                             semantic_matches.append(f"{keyword}->{synonym}")
                             found_synonym = True
                             break
-                
+
                 # Third pass: check if keyword is a synonym of response words
                 if not found_synonym:
                     for response_word in response_words:
@@ -197,7 +197,7 @@ class TestSingleModelComprehensive:
         # Fourth pass: fuzzy matching for partial word matches
         fuzzy_matches = []
         remaining_keywords = [k for k in reference_keywords if k not in [fk for fk in found_keywords]]
-        
+
         for keyword in remaining_keywords:
             keyword_lower = keyword.lower()
             # Check for partial matches (keyword contains response word or vice versa)
@@ -211,13 +211,13 @@ class TestSingleModelComprehensive:
 
         # Calculate metrics with more lenient scoring
         recall = len(found_keywords) / len(reference_keywords) if reference_keywords else 0
-        
+
         # For precision, count meaningful words (length >= 3) and give partial credit
         meaningful_response_words = [w for w in response_words if len(w) >= 3 and w.isalpha()]
         reference_word_set = set()
         for keyword in reference_keywords:
             reference_word_set.update(keyword.lower().split())
-        
+
         # Count overlapping meaningful words
         overlapping_words = 0
         for word in meaningful_response_words:
@@ -317,10 +317,10 @@ class TestSingleModelComprehensive:
                     semantic_info += f" [Semantic: {len(keyword_eval['semantic_matches'])}]"
                 if keyword_eval.get('fuzzy_matches'):
                     semantic_info += f" [Fuzzy: {len(keyword_eval['fuzzy_matches'])}]"
-                
+
                 print(f"  ✅ F1 Score: {keyword_eval['f1']:.3f}, Time: {duration:.2f}s")
                 print(f"     Keywords: {keyword_eval['found_count']}/{keyword_eval['total_keywords']}{semantic_info}")
-                
+
                 # Show some example matches for debugging
                 if keyword_eval.get('semantic_matches'):
                     print(f"     Semantic matches: {keyword_eval['semantic_matches'][:3]}")

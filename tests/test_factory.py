@@ -61,7 +61,7 @@ class TestFactory:
             llm1 = create_llm("OPENAI")
             llm2 = create_llm("OpenAI")
             llm3 = create_llm("openai")
-            
+
             assert all(isinstance(llm, OpenAIProvider) for llm in [llm1, llm2, llm3])
         except ImportError:
             pytest.skip("OpenAI dependencies not available")

@@ -23,15 +23,15 @@ from abstractcore.exceptions import ModelNotFoundError, AuthenticationError
 
 class SeedDeterminismTester:
     """Test suite for seed determinism across providers"""
-    
+
     def __init__(self):
         self.test_prompt = "Write exactly 3 words about coding."
         self.results = {}
-        
+
     def test_provider_determinism(self, provider_name: str, model: str, **config) -> Dict[str, any]:
         """Test deterministic behavior for a single provider"""
         print(f"\n🧪 Testing {provider_name} ({model}) for seed determinism...")
-        
+
         try:
             # Create provider with seed and temperature=0
             llm = create_llm(
@@ -41,7 +41,7 @@ class SeedDeterminismTester:
                 seed=42,
                 **config
             )
-            
+
             # Test 1: Same seed should produce identical outputs
             print("  📌 Test 1: Same seed reproducibility...")
             responses_same_seed = []
@@ -49,9 +49,9 @@ class SeedDeterminismTester:
                 response = llm.generate(self.test_prompt, temperature=0.0, seed=42)
                 responses_same_seed.append(response.content.strip())
                 print(f"    Call {i+1}: '{response.content.strip()}'")
-            
+
             same_seed_identical = len(set(responses_same_seed)) == 1
-            
+
             # Test 2: Different seeds should produce different outputs (when supported)
             print("  📌 Test 2: Different seed variation...")
             responses_diff_seed = []
@@ -59,9 +59,9 @@ class SeedDeterminismTester:
                 response = llm.generate(self.test_prompt, temperature=0.0, seed=seed)
                 responses_diff_seed.append(response.content.strip())
                 print(f"    Seed {seed}: '{response.content.strip()}'")
-            
+
             diff_seed_varied = len(set(responses_diff_seed)) > 1
-            
+
             # Test 3: Session-level seed persistence
             print("  📌 Test 3: Session-level seed persistence...")
             session = BasicSession(provider=llm, temperature=0.0, seed=42)
@@ -70,12 +70,12 @@ class SeedDeterminismTester:
                 response = session.generate(self.test_prompt)
                 session_responses.append(response.content.strip())
                 print(f"    Session call {i+1}: '{response.content.strip()}'")
-            
+
             session_consistent = len(set(session_responses)) == 1
-            
+
             # Determine provider seed support
             seed_supported = self._provider_supports_seed(provider_name)
-            
+
             return {
                 "provider": provider_name,
                 "model": model,
@@ -89,7 +89,7 @@ class SeedDeterminismTester:
                 "success": True,
                 "error": None
             }
-            
+
         except Exception as e:
             print(f"  ❌ Error testing {provider_name}: {e}")
             return {
@@ -105,7 +105,7 @@ class SeedDeterminismTester:
                 "success": False,
                 "error": str(e)
             }
-    
+
     def _provider_supports_seed(self, provider_name: str) -> bool:
         """Check if provider natively supports seed parameter"""
         supported_providers = {
@@ -117,11 +117,11 @@ class SeedDeterminismTester:
             "mlx": True          # Native support via mx.random.seed()
         }
         return supported_providers.get(provider_name.lower(), False)
-    
+
     def run_comprehensive_test(self) -> Dict[str, any]:
         """Run determinism tests across all available providers"""
         print("🚀 Starting comprehensive SEED determinism test...")
-        
+
         # Provider configurations
         provider_configs = {
             "openai": {
@@ -149,9 +149,9 @@ class SeedDeterminismTester:
                 "config": {}
             }
         }
-        
+
         results = []
-        
+
         for provider_name, provider_info in provider_configs.items():
             for model in provider_info["models"]:
                 try:
@@ -170,7 +170,7 @@ class SeedDeterminismTester:
                         "error": f"Setup failed: {e}",
                         "seed_supported": self._provider_supports_seed(provider_name)
                     })
-        
+
         return {
             "total_providers_tested": len(results),
             "successful_tests": len([r for r in results if r["success"]]),
@@ -178,20 +178,20 @@ class SeedDeterminismTester:
             "results": results,
             "summary": self._generate_summary(results)
         }
-    
+
     def _generate_summary(self, results: List[Dict]) -> Dict[str, any]:
         """Generate test summary with key insights"""
         successful_results = [r for r in results if r["success"]]
-        
+
         # Analyze determinism by provider type
         seed_supported_providers = [r for r in successful_results if r["seed_supported"]]
         seed_unsupported_providers = [r for r in successful_results if not r["seed_supported"]]
-        
+
         # Count deterministic behavior
         deterministic_with_seed = len([r for r in seed_supported_providers if r["same_seed_identical"]])
         varied_with_diff_seed = len([r for r in seed_supported_providers if r["diff_seed_varied"]])
         session_consistent = len([r for r in successful_results if r["session_consistent"]])
-        
+
         return {
             "seed_supported_providers": len(seed_supported_providers),
             "seed_unsupported_providers": len(seed_unsupported_providers),
@@ -210,10 +210,10 @@ def test_openai_seed_determinism():
         pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
-    
+
     tester = SeedDeterminismTester()
     result = tester.test_provider_determinism("openai", "gpt-4o-mini")
-    
+
     assert result["success"], f"OpenAI test failed: {result.get('error')}"
     assert result["seed_supported"], "OpenAI should support seed"
     assert result["same_seed_identical"], "Same seed should produce identical outputs"
@@ -226,10 +226,10 @@ def test_anthropic_seed_fallback():
         pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
     if not os.getenv("ANTHROPIC_API_KEY"):
         pytest.skip("ANTHROPIC_API_KEY not set")
-    
+
     tester = SeedDeterminismTester()
     result = tester.test_provider_determinism("anthropic", "claude-haiku-4-5")
-    
+
     assert result["success"], f"Anthropic test failed: {result.get('error')}"
     assert not result["seed_supported"], "Anthropic should not support seed natively"
     # Note: Anthropic may still show some consistency due to temperature=0
@@ -240,16 +240,16 @@ def test_ollama_seed_determinism():
     tester = SeedDeterminismTester()
     if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") != "1":
         pytest.skip("Local provider tests disabled (set ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1)")
-    
+
     try:
         result = tester.test_provider_determinism("ollama", "qwen3:4b-instruct")
-        
+
         if not result["success"] and "connection" in result.get("error", "").lower():
             pytest.skip("Ollama server not running")
-        
+
         assert result["success"], f"Ollama test failed: {result.get('error')}"
         assert result["seed_supported"], "Ollama should support seed"
-        
+
     except Exception as e:
         if "connection" in str(e).lower():
             pytest.skip("Ollama server not running")
@@ -266,20 +266,20 @@ def test_session_seed_persistence():
     # Use OpenAI provider for this test if available
     try:
         from abstractcore.providers.openai_provider import OpenAIProvider
-        
+
         # Create session with seed
         provider = OpenAIProvider(model="gpt-4o-mini", temperature=0.0, seed=42)
         session = BasicSession(provider=provider, temperature=0.0, seed=42)
-        
+
         # Generate multiple responses
         responses = []
         for i in range(3):
             response = session.generate("Test prompt")
             responses.append(response.content)
-        
+
         # With seed, responses should be deterministic
         assert len(set(responses)) <= 2, "Session should maintain some consistency with seed"
-        
+
     except (ImportError, ValueError) as e:
         pytest.skip(f"OpenAI provider not available: {e}")
 
@@ -290,32 +290,32 @@ def test_temperature_zero_consistency():
         pytest.skip("Live API test; set ABSTRACTCORE_RUN_LIVE_API_TESTS=1 to run")
     if not os.getenv("OPENAI_API_KEY"):
         pytest.skip("OPENAI_API_KEY not set")
-    
+
     try:
         llm = create_llm("openai", model="gpt-5-mini")
-        
+
         # Test with temperature=0
         responses_temp_0 = []
         for i in range(3):
             response = llm.generate("Say exactly: Hello World", temperature=0.0)
             responses_temp_0.append(response.content.strip())
-        
+
         # Test with temperature=1.0
         responses_temp_1 = []
         for i in range(3):
             response = llm.generate("Say exactly: Hello World", temperature=1.0)
             responses_temp_1.append(response.content.strip())
-        
+
         # Temperature=0 should be more consistent
         temp_0_unique = len(set(responses_temp_0))
         temp_1_unique = len(set(responses_temp_1))
-        
+
         print(f"Temperature=0 unique responses: {temp_0_unique}")
         print(f"Temperature=1.0 unique responses: {temp_1_unique}")
-        
+
         # Temperature=0 should have fewer unique responses (more consistent)
         assert temp_0_unique <= temp_1_unique, "Temperature=0 should be more consistent than temperature=1.0"
-        
+
     except Exception as e:
         pytest.skip(f"Temperature consistency test failed: {e}")
 
@@ -324,11 +324,11 @@ if __name__ == "__main__":
     # Run comprehensive test when executed directly
     tester = SeedDeterminismTester()
     results = tester.run_comprehensive_test()
-    
+
     print("\n" + "="*80)
     print("🎯 SEED DETERMINISM TEST RESULTS")
     print("="*80)
-    
+
     summary = results["summary"]
     print(f"📊 Total providers tested: {results['total_providers_tested']}")
     print(f"✅ Successful tests: {results['successful_tests']}")
@@ -337,7 +337,7 @@ if __name__ == "__main__":
     print(f"🔄 Seed-unsupported providers: {summary['seed_unsupported_providers']}")
     print(f"🎯 Determinism rate: {summary['determinism_rate']:.1f}%")
     print(f"🌟 Variation rate: {summary['variation_rate']:.1f}%")
-    
+
     print("\n📋 Detailed Results:")
     for result in results["results"]:
         if result["success"]:
@@ -348,7 +348,7 @@ if __name__ == "__main__":
                 print(f"    ⚠️  Expected determinism but got variation")
         else:
             print(f"❌ {result['provider']} ({result['model']}): {result['error']}")
-    
+
     print("\n🔍 Key Insights:")
     if summary["determinism_rate"] >= 80:
         print("✅ Excellent: Most seed-supported providers show deterministic behavior")
@@ -356,9 +356,9 @@ if __name__ == "__main__":
         print("⚠️  Good: Majority of seed-supported providers show deterministic behavior")
     else:
         print("❌ Concerning: Low determinism rate across providers")
-    
+
     print(f"📈 Session consistency: {summary['session_level_consistent']}/{results['successful_tests']} providers")
-    
+
     # Save detailed results to file
     import json
     results_file = Path(__file__).parent / "seed_determinism_results.json"

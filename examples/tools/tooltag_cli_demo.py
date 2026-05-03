@@ -38,7 +38,7 @@ def run_cli_demo():
     print()
     print("Starting CLI...")
     print("=" * 60)
-    
+
     # Start the CLI
     try:
         subprocess.run([

@@ -17,7 +17,7 @@ import uuid
 from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union, Iterator, Type
+from typing import List, Dict, Any, Optional, Union, Iterator, Type, TYPE_CHECKING
 
 # Import config manager to respect offline-first settings
 from ..config.manager import get_config_manager
@@ -52,6 +52,10 @@ from ..exceptions import ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
 
+if TYPE_CHECKING:
+    import torch
+    from ..media.types import MediaContent
+
 
 _MPS_GENERATION_LOCK = threading.Lock()
 _AUTO_GROWING_LLAMA_RAM_CACHE_CLS = None
@@ -65,10 +69,10 @@ def _get_local_model_path(model_name: str) -> Optional[str]:
     # Use centralized configuration for cache directory
     config = _config
     hf_cache_dir = Path(config.config.cache.huggingface_cache_dir).expanduser()
-    
+
     model_cache_name = f"models--{model_name.replace('/', '--')}"
     model_cache_path = hf_cache_dir / "hub" / model_cache_name / "snapshots"
-    
+
     if model_cache_path.exists():
         snapshot_dirs = [d for d in model_cache_path.iterdir() if d.is_dir()]
         if snapshot_dirs:
@@ -167,13 +171,13 @@ class HuggingFaceProvider(BaseProvider):
         self.n_gpu_layers = n_gpu_layers
         self.model_type = None  # Will be "transformers" or "gguf"
         self.device = self._resolve_requested_device(device)
-        
+
         # Store transformers-specific parameters
         self.transformers_kwargs = {
             k: v for k, v in kwargs.items() 
             if k in ['trust_remote_code', 'torch_dtype', 'device_map', 'load_in_8bit', 'load_in_4bit', 'attn_implementation']
         }
-        
+
         # Store device preference for custom models
         self.preferred_device = kwargs.get('device_map', 'auto')
 
@@ -258,7 +262,7 @@ class HuggingFaceProvider(BaseProvider):
 
             if hasattr(self, 'tokenizer') and self.tokenizer is not None:
                 self.tokenizer = None
-                
+
             if hasattr(self, 'processor') and self.processor is not None:
                 self.processor = None
 
@@ -1875,7 +1879,7 @@ class HuggingFaceProvider(BaseProvider):
     def _is_vision_model(self, model: str) -> bool:
         """Detect if the model is a vision model that requires special handling"""
         model_lower = model.lower()
-        
+
         # Known vision models that require AutoModelForImageTextToText
         vision_models = [
             'glyph',           # zai-org/Glyph
@@ -1889,7 +1893,7 @@ class HuggingFaceProvider(BaseProvider):
             'blip2',           # BLIP2 models
             'flamingo',        # Flamingo models
         ]
-        
+
         return any(vision_keyword in model_lower for vision_keyword in vision_models)
 
     def _setup_device_transformers(self):
@@ -2045,7 +2049,7 @@ class HuggingFaceProvider(BaseProvider):
             # Check if this is a vision model that requires special handling
             if self._is_vision_model(self.model):
                 return self._load_vision_model()
-            
+
             # Load tokenizer with transformers-specific parameters
             tokenizer_kwargs = {k: v for k, v in self.transformers_kwargs.items() 
                               if k in ['trust_remote_code']}
@@ -2053,14 +2057,14 @@ class HuggingFaceProvider(BaseProvider):
             if _config.should_force_local_files_only():
                 tokenizer_kwargs['local_files_only'] = True
             self.tokenizer = AutoTokenizer.from_pretrained(self.model, **tokenizer_kwargs)
-            
+
             # Load model with all transformers-specific parameters
             # Try AutoModelForCausalLM first, fall back to AutoModel for custom models
             model_kwargs = self.transformers_kwargs.copy()
             # Respect offline-first configuration
             if _config.should_force_local_files_only():
                 model_kwargs['local_files_only'] = True
-            
+
             try:
                 self.model_instance = AutoModelForCausalLM.from_pretrained(self.model, **model_kwargs)
             except ValueError as e:
@@ -2120,14 +2124,14 @@ class HuggingFaceProvider(BaseProvider):
             # Suppress progress bars during model loading unless in debug mode
             import os
             from transformers.utils import logging as transformers_logging
-            
+
             if not self.debug:
                 # Disable transformers progress bars
                 os.environ['TRANSFORMERS_VERBOSITY'] = 'error'
                 transformers_logging.set_verbosity_error()
                 # Disable tqdm progress bars
                 os.environ['DISABLE_TQDM'] = '1'
-            
+
             # Load processor for vision models (handles both text and images)
             processor_kwargs = {k: v for k, v in self.transformers_kwargs.items() 
                               if k in ['trust_remote_code']}
@@ -2138,7 +2142,7 @@ class HuggingFaceProvider(BaseProvider):
             # Respect offline-first configuration
             if _config.should_force_local_files_only():
                 processor_kwargs['local_files_only'] = True
-            
+
             # Use local cache path if offline mode is enabled and model is cached
             model_path = self.model
             if _config.should_force_local_files_only():
@@ -2147,9 +2151,9 @@ class HuggingFaceProvider(BaseProvider):
                     model_path = local_path
                     processor_kwargs.pop('local_files_only', None)  # Remove since we're using local path
                     self.logger.debug(f"Loading processor from local cache: {local_path}")
-            
+
             self.processor = AutoProcessor.from_pretrained(model_path, **processor_kwargs)
-            
+
             # Load vision model using AutoModelForImageTextToText with trust_remote_code
             vision_kwargs = self.transformers_kwargs.copy()
             vision_kwargs['trust_remote_code'] = True
@@ -2165,7 +2169,7 @@ class HuggingFaceProvider(BaseProvider):
                     vision_kwargs["torch_dtype"] = _torch.float16
             except Exception:
                 pass
-            
+
             # Use local cache path if offline mode is enabled and model is cached
             model_path = self.model
             if _config.should_force_local_files_only():
@@ -2174,9 +2178,9 @@ class HuggingFaceProvider(BaseProvider):
                     model_path = local_path
                     vision_kwargs.pop('local_files_only', None)  # Remove since we're using local path
                     self.logger.debug(f"Loading model from local cache: {local_path}")
-            
+
             self.model_instance = AutoModelForImageTextToText.from_pretrained(model_path, **vision_kwargs)
-            
+
             # Restore logging levels if they were suppressed
             if not self.debug:
                 # Restore transformers logging
@@ -2184,7 +2188,7 @@ class HuggingFaceProvider(BaseProvider):
                 # Remove tqdm suppression
                 if 'DISABLE_TQDM' in os.environ:
                     del os.environ['DISABLE_TQDM']
-            
+
             # Move to device (only if not using device_map)
             if self.device in ["cuda", "mps"] and 'device_map' not in self.transformers_kwargs:
                 self.model_instance = self.model_instance.to(self.device)
@@ -2193,15 +2197,15 @@ class HuggingFaceProvider(BaseProvider):
                 self.model_instance.eval()
             except Exception:
                 pass
-            
+
             # For vision models, we don't use the standard pipeline
             self.pipeline = None
-            
+
             self.logger.info(f"Successfully loaded vision model {self.model} using AutoModelForImageTextToText")
-            
+
         except Exception as e:
             error_str = str(e).lower()
-            
+
             # Check for transformers version issues
             if 'glm4v' in error_str and 'does not recognize this architecture' in error_str:
                 import transformers
@@ -2682,11 +2686,11 @@ class HuggingFaceProvider(BaseProvider):
     def _handle_timeout_parameter(self, kwargs: Dict[str, Any]) -> None:
         """
         Handle timeout parameter for HuggingFace provider.
-        
+
         Since HuggingFace models run locally (both transformers and GGUF),
         timeout parameters don't apply. If a non-None timeout is provided,
         issue a warning and treat it as None (infinity).
-        
+
         Args:
             kwargs: Initialization kwargs that may contain timeout
         """
@@ -2983,7 +2987,7 @@ class HuggingFaceProvider(BaseProvider):
                               response_model: Optional[Type[BaseModel]] = None,
                               **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate using custom model methods (e.g., DeepSeek-OCR's infer method)"""
-        
+
         import time
         import tempfile
         import os
@@ -2993,20 +2997,20 @@ class HuggingFaceProvider(BaseProvider):
             import torch  # type: ignore
         except Exception:
             torch = None  # type: ignore[assignment]
-        
+
         try:
             # Handle media content for vision models like DeepSeek-OCR
             if media and len(media) > 0:
                 # Use the first image for OCR
                 media_item = media[0]
-                
+
                 # DeepSeek-OCR expects image file path
                 if hasattr(media_item, 'file_path') and media_item.file_path:
                     image_file = str(media_item.file_path)
                 else:
                     # If no file path, save media content to temp file
                     from PIL import Image
-                    
+
                     if hasattr(media_item, 'content') and media_item.content:
                         # Handle base64 content
                         if media_item.content_format == 'BASE64':
@@ -3028,19 +3032,19 @@ class HuggingFaceProvider(BaseProvider):
                             model=self.model,
                             finish_reason="error"
                         )
-                
+
                 # Use DeepSeek-OCR's infer method
                 try:
                     # Create temporary output directory for DeepSeek-OCR
                     temp_output_dir = tempfile.mkdtemp()
-                    
+
                     # Patch DeepSeek-OCR for MPS/CPU compatibility if needed
                     if torch is not None and (
                         self.device == "mps"
                         or (self.device is None and hasattr(torch.backends, "mps") and torch.backends.mps.is_available())
                     ):
                         self._patch_deepseek_for_mps()
-                    
+
                     result = self.model_instance.infer(
                         self.tokenizer,
                         prompt=prompt,
@@ -3052,18 +3056,18 @@ class HuggingFaceProvider(BaseProvider):
                         save_results=False,
                         test_compress=False
                     )
-                    
+
                     # Clean up temp output directory
                     import shutil
                     shutil.rmtree(temp_output_dir, ignore_errors=True)
-                    
+
                     # Clean up temp file if created
                     if 'temp_file' in locals() and os.path.exists(image_file):
                         os.unlink(image_file)
-                    
+
                     # Calculate generation time
                     gen_time = (time.time() - start_time) * 1000
-                    
+
                     return GenerateResponse(
                         content=result if isinstance(result, str) else str(result),
                         model=self.model,
@@ -3072,7 +3076,7 @@ class HuggingFaceProvider(BaseProvider):
                         output_tokens=len(str(result).split()) if result else 0,
                         gen_time=gen_time
                     )
-                    
+
                 except Exception as e:
                     return GenerateResponse(
                         content=f"Error during DeepSeek-OCR inference: {str(e)}",
@@ -3085,7 +3089,7 @@ class HuggingFaceProvider(BaseProvider):
                     model=self.model,
                     finish_reason="error"
                 )
-                
+
         except Exception as e:
             return GenerateResponse(
                 content=f"Error in custom model generation: {str(e)}",
@@ -3103,10 +3107,10 @@ class HuggingFaceProvider(BaseProvider):
                               response_model: Optional[Type[BaseModel]] = None,
                               **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate using vision model (Glyph, GLM-4.1V, etc.)"""
-        
+
         import time
         start_time = time.time()
-        
+
         # Import torch safely
         try:
             import torch
@@ -3117,7 +3121,7 @@ class HuggingFaceProvider(BaseProvider):
                 finish_reason="error",
                 gen_time=0.0
             )
-        
+
         try:
             # Server/gateway sometimes call providers with prompt="" + messages=[...] + media=[...].
             # For multimodal models, the user text and the media must live in the SAME user turn.
@@ -3152,20 +3156,20 @@ class HuggingFaceProvider(BaseProvider):
 
             # Build messages for vision model
             chat_messages = []
-            
+
             if system_prompt:
                 chat_messages.append({"role": "system", "content": system_prompt})
-            
+
             if messages_for_context:
                 chat_messages.extend(messages_for_context)
-            
+
             # Build user message with media content
             user_content = []
-            
+
             # Add text content
             if isinstance(prompt_text, str) and prompt_text.strip():
                 user_content.append({"type": "text", "text": prompt_text.strip()})
-            
+
             # Add media content (images, video)
             has_video = False
             try:
@@ -3214,13 +3218,13 @@ class HuggingFaceProvider(BaseProvider):
                             mime_type = getattr(media_item, "mime_type", "image/png")
                             data_url = f"data:{mime_type};base64,{content}"
                             user_content.append({"type": "image", "url": data_url})
-            
+
             # Add user message
             chat_messages.append({
                 "role": "user",
                 "content": user_content
             })
-            
+
             # Process messages using the processor.
             #
             # Some multimodal processors (e.g. LlavaNextVideoProcessor) return a *string*
@@ -3426,7 +3430,7 @@ class HuggingFaceProvider(BaseProvider):
                         inputs = inputs.to(self.model_instance.device)
                 else:
                     inputs = templated.to(self.model_instance.device)
-            
+
             temperature_value = kwargs.get("temperature", self.temperature)
             # For HF multimodal video models, default to greedy decoding unless the caller explicitly
             # provided a temperature. This avoids premature EOS producing unusably short answers.
@@ -3459,14 +3463,14 @@ class HuggingFaceProvider(BaseProvider):
                 "do_sample": do_sample,
                 "pad_token_id": self.processor.tokenizer.eos_token_id,
             }
-            
+
             # Add seed if provided
             seed_value = self._normalize_seed(kwargs.get("seed", self.seed))
             if seed_value is not None:
                 torch.manual_seed(seed_value)
                 if torch.cuda.is_available():
                     torch.cuda.manual_seed_all(seed_value)
-            
+
             # Generate response
             generated_ids = None
             try:
@@ -3500,20 +3504,20 @@ class HuggingFaceProvider(BaseProvider):
                     gc.collect()
                 except Exception:
                     pass
-            
+
             # Decode response
             output_text = self.processor.decode(
                 generated_ids[0][inputs["input_ids"].shape[1]:], 
                 skip_special_tokens=True
             )
-            
+
             # Calculate generation time
             gen_time = (time.time() - start_time) * 1000
-            
+
             # Calculate token usage
             input_tokens = inputs["input_ids"].shape[1]
             output_tokens = len(generated_ids[0]) - input_tokens
-            
+
             response = GenerateResponse(
                 content=output_text.strip(),
                 model=self.model,
@@ -3532,7 +3536,7 @@ class HuggingFaceProvider(BaseProvider):
                     yield response
                 return _single_chunk_stream()
             return response
-            
+
         except Exception as e:
             gen_time = (time.time() - start_time) * 1000 if 'start_time' in locals() else 0.0
             error_resp = GenerateResponse(
@@ -3550,11 +3554,11 @@ class HuggingFaceProvider(BaseProvider):
     def _patch_deepseek_for_mps(self):
         """Patch DeepSeek-OCR model to work with MPS instead of CUDA"""
         import types
-        
+
         def patched_infer(self, tokenizer, prompt='', image_file='', output_path='', base_size=1024, image_size=640, crop_mode=True, test_compress=False, save_results=False, eval_mode=False):
             """Patched infer method that uses MPS instead of CUDA"""
             import torch
-            
+
             # Determine the best available device
             if torch.backends.mps.is_available():
                 device = torch.device('mps')
@@ -3562,10 +3566,10 @@ class HuggingFaceProvider(BaseProvider):
                 device = torch.device('cuda')
             else:
                 device = torch.device('cpu')
-            
+
             # Call the original infer method but patch tensor.cuda() calls
             original_cuda = torch.Tensor.cuda
-            
+
             def patched_cuda(tensor, device=None, non_blocking=False, **kwargs):
                 """Redirect .cuda() calls to the appropriate device"""
                 if device == 'mps' or (device is None and torch.backends.mps.is_available()):
@@ -3574,20 +3578,20 @@ class HuggingFaceProvider(BaseProvider):
                     return original_cuda(tensor, device, non_blocking, **kwargs)
                 else:
                     return tensor.to('cpu', non_blocking=non_blocking)
-            
+
             # Temporarily patch the cuda method
             torch.Tensor.cuda = patched_cuda
-            
+
             try:
                 # Move model to the appropriate device first
                 self.to(device)
-                
+
                 # Call original infer with device patching
                 return self._original_infer(tokenizer, prompt, image_file, output_path, base_size, image_size, crop_mode, test_compress, save_results, eval_mode)
             finally:
                 # Restore original cuda method
                 torch.Tensor.cuda = original_cuda
-        
+
         # Only patch if not already patched
         if not hasattr(self.model_instance, '_original_infer'):
             self.model_instance._original_infer = self.model_instance.infer
@@ -3799,18 +3803,19 @@ class HuggingFaceProvider(BaseProvider):
                 return response
 
         except Exception as e:
+            error_message = str(e)
             if stream:
                 # Return error as a generator
                 def error_generator():
                     yield GenerateResponse(
-                        content=f"Error: {str(e)}",
+                        content=f"Error: {error_message}",
                         model=self.model,
                         finish_reason="error"
                     )
                 return error_generator()
             else:
                 return GenerateResponse(
-                    content=f"Error: {str(e)}",
+                    content=f"Error: {error_message}",
                     model=self.model,
                     finish_reason="error"
                 )
@@ -4130,7 +4135,7 @@ class HuggingFaceProvider(BaseProvider):
 
         current_tool_call = None
         accumulated_arguments = ""
-        
+
         # Initialize tool tag rewriter if needed
         rewriter = None
         buffer = ""
@@ -4155,7 +4160,7 @@ class HuggingFaceProvider(BaseProvider):
                 if content:
                     import html
                     content = html.unescape(content)
-                    
+
                     # Apply tool tag rewriting if enabled
                     if rewriter:
                         rewritten_content, buffer = rewriter.rewrite_streaming_chunk(content, buffer)
@@ -4433,7 +4438,7 @@ class HuggingFaceProvider(BaseProvider):
 
             # Track generation time
             start_time = time.time()
-            
+
             outputs = self.pipeline(
                 input_text,
                 max_new_tokens=max_new_tokens,
@@ -4445,7 +4450,7 @@ class HuggingFaceProvider(BaseProvider):
                 truncation=True,
                 return_full_text=False
             )
-            
+
             gen_time = round((time.time() - start_time) * 1000, 1)
 
             if outputs and len(outputs) > 0:
@@ -4512,7 +4517,7 @@ class HuggingFaceProvider(BaseProvider):
                         content = rewriter.rewrite_text(content)
                     except ImportError:
                         pass
-                
+
                 words = content.split()
                 for i, word in enumerate(words):
                     chunk_content = word + (" " if i < len(words) - 1 else "")
@@ -4752,7 +4757,7 @@ class HuggingFaceProvider(BaseProvider):
             # Apply new capability filtering if provided
             input_capabilities = kwargs.get('input_capabilities')
             output_capabilities = kwargs.get('output_capabilities')
-            
+
             if input_capabilities or output_capabilities:
                 models = filter_models_by_capabilities(
                     models, 

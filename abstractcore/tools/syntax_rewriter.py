@@ -354,7 +354,7 @@ class ToolCallSyntaxRewriter:
     def remove_tool_call_patterns(self, content: str) -> str:
         """
         Remove existing tool call patterns from content.
-        
+
         This method intelligently removes tool call syntax while preserving
         the surrounding text content. It handles multiple formats and edge cases
         like double-tagging and malformed tool calls.
@@ -363,13 +363,13 @@ class ToolCallSyntaxRewriter:
             return content
 
         cleaned = content
-        
+
         # Remove internal conversation format tags that shouldn't appear
         # These indicate model output issues
         cleaned = re.sub(r'<\|assistant\|>', '', cleaned)
         cleaned = re.sub(r'<\|user\|>', '', cleaned)
         cleaned = re.sub(r'<\|system\|>', '', cleaned)
-        
+
         # Common tool call patterns to remove (in order of specificity)
         patterns = [
             # Qwen format (with potential double-tagging)
@@ -377,17 +377,17 @@ class ToolCallSyntaxRewriter:
             r'\s*</\|tool_call\|>+',  # Closing tags (including doubles)
             # After removing tags, remove the JSON content if it's a tool call
             r'<\|tool_call\|>.*?</\|tool_call\|>',
-            
+
             # LLaMA format
             r'<function_call>\s*',
             r'\s*</function_call>',
             r'<function_call>.*?</function_call>',
-            
+
             # XML format
             r'<tool_call>\s*',
             r'\s*</tool_call>',
             r'<tool_call>.*?</tool_call>',
-            
+
             # Gemma format
             r'```tool_code\s*',
             r'\s*```(?=\s|$)',  # Closing backticks only if followed by space or end
@@ -403,7 +403,7 @@ class ToolCallSyntaxRewriter:
             # Harmony/ChatML tool transcript: <|channel|>... to=tool ... <|message|>{...}
             r'<\|channel\|>\s*[a-zA-Z0-9_\-]+\s+to=[a-zA-Z0-9_\-\.]+\b.*?<\|message\|>\s*\{.*?\}',
         ]
-        
+
         for pattern in complete_patterns:
             cleaned = re.sub(pattern, '', cleaned, flags=re.DOTALL | re.IGNORECASE)
 
@@ -411,7 +411,7 @@ class ToolCallSyntaxRewriter:
         cleaned = re.sub(r'<\|channel\|>', '', cleaned)
         cleaned = re.sub(r'<\|message\|>', '', cleaned)
         cleaned = re.sub(r'<\|constrain\|>', '', cleaned)
-        
+
         # Second pass: remove orphaned tags (from malformed tool calls)
         orphaned_patterns = [
             r'<\|tool_call\|>+',
@@ -425,10 +425,10 @@ class ToolCallSyntaxRewriter:
             r'<\|message\|>',
             r'<\|constrain\|>',
         ]
-        
+
         for pattern in orphaned_patterns:
             cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
-        
+
         # Third pass: remove standalone JSON tool calls that weren't wrapped in tags
         # Be careful here - only remove if it looks like a tool call
         # (has "name" and "arguments" fields at the top level)
@@ -439,7 +439,7 @@ class ToolCallSyntaxRewriter:
             if not re.match(json_pattern, line, re.MULTILINE):
                 cleaned_lines.append(line)
         cleaned = '\n'.join(cleaned_lines)
-        
+
         # Clean up extra whitespace (but preserve paragraph breaks)
         cleaned = re.sub(r'\n\s*\n\s*\n+', '\n\n', cleaned)
         cleaned = re.sub(r'^\s+', '', cleaned)  # Leading whitespace

@@ -679,10 +679,12 @@ pip install "abstractcore[media]"
 
 ```bash
 # Media features (PDF + Office docs) are covered by `abstractcore[media]`.
-# If you want the full framework install (providers + tools + server + docs), pick one:
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+# Compose only what your app needs:
+pip install "abstractcore[remote,media,tools]"
+
+# Or choose a turnkey local-runtime install:
+pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
+pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
 ```
 
 Advanced: If you prefer to install only the pieces you need (instead of `abstractcore[media]`),

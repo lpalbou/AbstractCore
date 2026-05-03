@@ -84,13 +84,33 @@ deepsearch = "abstractcore.apps.deepsearch:main"
 abstractcore-deepsearch = "abstractcore.apps.deepsearch:main"
 
 [project.optional-dependencies]
-# Individual providers
+# Provider extras
 openai = [
     "openai>=1.0.0,<2.0.0",
 ]
 
 anthropic = [
     "anthropic>=0.25.0,<1.0.0",
+]
+
+remote = [
+    # Lightweight hosted/API provider bundle. OpenRouter, Portkey, Ollama,
+    # LMStudio, and generic OpenAI-compatible endpoints use core httpx and do
+    # not need SDK dependencies.
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
+]
+
+openrouter = [
+    # No additional dependencies - uses core httpx via OpenAI-compatible API.
+]
+
+portkey = [
+    # No additional dependencies - uses core httpx via OpenAI-compatible API.
+]
+
+openai-compatible = [
+    # No additional dependencies - uses core httpx.
 ]
 
 ollama = [
@@ -179,10 +199,11 @@ compression = [
     "Pillow>=10.0.0,<12.0.0",
 ]
 
-# Turnkey installs (end-user focused). Prefer these in docs.
+# Turnkey installs.
 # Notes:
-# - `ollama` / `lmstudio` / `openai-compatible` / `openrouter` use only core deps.
-# - `all` includes both MLX (Apple Silicon) and vLLM (CUDA) and may not install everywhere.
+# - Prefer `remote`, explicit composed extras, `all-apple`, or `all-gpu` in docs.
+# - `ollama`, `lmstudio`, `openai-compatible`, `openrouter`, and `portkey` use only core deps.
+# - `all` includes both MLX (Apple Silicon) and vLLM (CUDA/ROCm) and may not install everywhere.
 all = [
     # Providers
     "openai>=1.0.0,<2.0.0",
@@ -294,6 +315,8 @@ all-gpu = [
     "abstractvision>=0.2.0",
 ]
 
+# Legacy broad bundle kept for existing users. New installs should usually
+# compose explicit extras or choose `all-apple` / `all-gpu`.
 all-non-mlx = [
     # Providers
     "openai>=1.0.0,<2.0.0",
@@ -552,6 +575,8 @@ ignore_missing_imports = true
 [tool.ruff]
 target-version = "py39"
 line-length = 100
+
+[tool.ruff.lint]
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
@@ -567,7 +592,7 @@ ignore = [
     "B904",  # Within an except clause, raise exceptions with raise ... from err
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/**/*" = ["B011"]
 

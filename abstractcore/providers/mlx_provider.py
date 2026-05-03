@@ -7,7 +7,7 @@ import time
 import uuid
 import inspect
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Union, Iterator, Type
+from typing import List, Dict, Any, Optional, Union, Iterator, Type, TYPE_CHECKING
 
 try:
     from pydantic import BaseModel
@@ -28,6 +28,9 @@ from ..core.types import GenerateResponse
 from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
+
+if TYPE_CHECKING:
+    from ..media.types import MediaContent
 
 
 class MLXProvider(BaseProvider):
@@ -770,11 +773,11 @@ class MLXProvider(BaseProvider):
     def _handle_timeout_parameter(self, kwargs: Dict[str, Any]) -> None:
         """
         Handle timeout parameter for MLX provider.
-        
+
         Since MLX models run locally on Apple Silicon,
         timeout parameters don't apply. If a non-None timeout is provided,
         issue a warning and treat it as None (infinity).
-        
+
         Args:
             kwargs: Initialization kwargs that may contain timeout
         """
@@ -1010,7 +1013,7 @@ class MLXProvider(BaseProvider):
 
         # Track generation time
         start_time = time.time()
-        
+
         # Try different MLX API signatures
         try:
             # Try new mlx-lm API
@@ -1035,7 +1038,7 @@ class MLXProvider(BaseProvider):
                 response_text = prompt + " I am an AI assistant powered by MLX on Apple Silicon."
 
         gen_time = round((time.time() - start_time) * 1000, 1)
-        
+
         # Use the full response as-is - preserve all content including thinking
         generated = response_text.strip()
 
@@ -1050,11 +1053,11 @@ class MLXProvider(BaseProvider):
     def _calculate_usage(self, prompt: str, response: str) -> Dict[str, int]:
         """Calculate token usage using centralized token utilities."""
         from ..utils.token_utils import TokenUtils
-        
+
         input_tokens = TokenUtils.estimate_tokens(prompt, self.model)
         output_tokens = TokenUtils.estimate_tokens(response, self.model)
         total_tokens = input_tokens + output_tokens
-        
+
         return {
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
@@ -1102,19 +1105,19 @@ class MLXProvider(BaseProvider):
             ):
                 # Each response has a .text attribute with the new token(s)
                 content = response.text
-                
+
                 # Apply tool tag rewriting if enabled
                 if rewriter and content:
                     rewritten_content, buffer = rewriter.rewrite_streaming_chunk(content, buffer)
                     content = rewritten_content
-                
+
                 yield GenerateResponse(
                     content=content,
                     model=self.model,
                     finish_reason=None,  # MLX doesn't provide finish reason in stream
                     raw_response=response
                 )
-                
+
         except Exception as e:
             yield GenerateResponse(
                 content=f"Error: {str(e)}",
@@ -1235,7 +1238,7 @@ class MLXProvider(BaseProvider):
             # Apply new capability filtering if provided
             input_capabilities = kwargs.get('input_capabilities')
             output_capabilities = kwargs.get('output_capabilities')
-            
+
             if input_capabilities or output_capabilities:
                 models = filter_models_by_capabilities(
                     models, 

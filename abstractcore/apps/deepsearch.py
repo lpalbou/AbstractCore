@@ -55,17 +55,17 @@ def timeout_type(value):
 def save_report(report, output_path: str, format_type: str) -> None:
     """
     Save research report to file
-    
+
     Args:
         report: ResearchReport object or dictionary
         output_path: Path to save the report
         format_type: Output format type
     """
     output_file = Path(output_path)
-    
+
     # Create directory if it doesn't exist
     output_file.parent.mkdir(parents=True, exist_ok=True)
-    
+
     try:
         if hasattr(report, 'model_dump'):
             # Pydantic model
@@ -76,7 +76,7 @@ def save_report(report, output_path: str, format_type: str) -> None:
         else:
             # Dictionary
             report_data = report
-        
+
         # Determine file format based on extension
         if output_path.lower().endswith('.json'):
             with open(output_file, 'w', encoding='utf-8') as f:
@@ -95,9 +95,9 @@ def save_report(report, output_path: str, format_type: str) -> None:
             # Default to JSON
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(report_data, f, indent=2, ensure_ascii=False)
-        
+
         print(f"✅ Report saved to: {output_file}")
-        
+
     except Exception as e:
         print(f"❌ Failed to save report: {e}")
         sys.exit(1)
@@ -105,20 +105,20 @@ def save_report(report, output_path: str, format_type: str) -> None:
 
 def format_report_as_markdown(report_data: Dict[str, Any]) -> str:
     """Convert report data to markdown format"""
-    
+
     md_lines = []
-    
+
     # Title
     md_lines.append(f"# {report_data.get('title', 'Research Report')}")
     md_lines.append("")
-    
+
     # Executive Summary
     if report_data.get('executive_summary'):
         md_lines.append("## Executive Summary")
         md_lines.append("")
         md_lines.append(report_data['executive_summary'])
         md_lines.append("")
-    
+
     # Key Findings
     if report_data.get('key_findings'):
         md_lines.append("## Key Findings")
@@ -126,21 +126,21 @@ def format_report_as_markdown(report_data: Dict[str, Any]) -> str:
         for i, finding in enumerate(report_data['key_findings'], 1):
             md_lines.append(f"{i}. {finding}")
         md_lines.append("")
-    
+
     # Detailed Analysis
     if report_data.get('detailed_analysis'):
         md_lines.append("## Detailed Analysis")
         md_lines.append("")
         md_lines.append(report_data['detailed_analysis'])
         md_lines.append("")
-    
+
     # Conclusions
     if report_data.get('conclusions'):
         md_lines.append("## Conclusions")
         md_lines.append("")
         md_lines.append(report_data['conclusions'])
         md_lines.append("")
-    
+
     # Sources
     if report_data.get('sources'):
         md_lines.append("## Sources")
@@ -151,29 +151,29 @@ def format_report_as_markdown(report_data: Dict[str, Any]) -> str:
             relevance = source.get('relevance', 0)
             md_lines.append(f"{i}. [{title}]({url}) (Relevance: {relevance:.2f})")
         md_lines.append("")
-    
+
     # Methodology
     if report_data.get('methodology'):
         md_lines.append("## Methodology")
         md_lines.append("")
         md_lines.append(report_data['methodology'])
         md_lines.append("")
-    
+
     # Limitations
     if report_data.get('limitations'):
         md_lines.append("## Limitations")
         md_lines.append("")
         md_lines.append(report_data['limitations'])
         md_lines.append("")
-    
+
     return "\n".join(md_lines)
 
 
 def format_report_as_html(report_data: Dict[str, Any]) -> str:
     """Convert report data to HTML format"""
-    
+
     html_parts = []
-    
+
     # HTML header
     html_parts.append("""<!DOCTYPE html>
 <html lang="en">
@@ -195,17 +195,17 @@ def format_report_as_html(report_data: Dict[str, Any]) -> str:
     </style>
 </head>
 <body>""")
-    
+
     # Title
     html_parts.append(f"<h1>{report_data.get('title', 'Research Report')}</h1>")
-    
+
     # Executive Summary
     if report_data.get('executive_summary'):
         html_parts.append('<div class="section">')
         html_parts.append('<h2>📊 Executive Summary</h2>')
         html_parts.append(f"<p>{report_data['executive_summary']}</p>")
         html_parts.append('</div>')
-    
+
     # Key Findings
     if report_data.get('key_findings'):
         html_parts.append('<div class="section">')
@@ -213,7 +213,7 @@ def format_report_as_html(report_data: Dict[str, Any]) -> str:
         for i, finding in enumerate(report_data['key_findings'], 1):
             html_parts.append(f'<div class="finding">{i}. {finding}</div>')
         html_parts.append('</div>')
-    
+
     # Detailed Analysis
     if report_data.get('detailed_analysis'):
         html_parts.append('<div class="section">')
@@ -222,7 +222,7 @@ def format_report_as_html(report_data: Dict[str, Any]) -> str:
         analysis = report_data['detailed_analysis'].replace('\n\n', '</p><p>').replace('\n', '<br>')
         html_parts.append(f"<p>{analysis}</p>")
         html_parts.append('</div>')
-    
+
     # Conclusions
     if report_data.get('conclusions'):
         html_parts.append('<div class="section">')
@@ -230,7 +230,7 @@ def format_report_as_html(report_data: Dict[str, Any]) -> str:
         conclusions = report_data['conclusions'].replace('\n\n', '</p><p>').replace('\n', '<br>')
         html_parts.append(f"<p>{conclusions}</p>")
         html_parts.append('</div>')
-    
+
     # Sources
     if report_data.get('sources'):
         html_parts.append('<div class="section">')
@@ -244,7 +244,7 @@ def format_report_as_html(report_data: Dict[str, Any]) -> str:
                 <div class="relevance">Relevance: {relevance:.2f}</div>
             </div>''')
         html_parts.append('</div>')
-    
+
     # Methodology and Limitations
     if report_data.get('methodology') or report_data.get('limitations'):
         html_parts.append('<div class="section">')
@@ -254,20 +254,20 @@ def format_report_as_html(report_data: Dict[str, Any]) -> str:
         if report_data.get('limitations'):
             html_parts.append(f"<p><strong>Limitations:</strong> {report_data['limitations']}</p>")
         html_parts.append('</div>')
-    
+
     # Footer
     html_parts.append('<div class="metadata">')
     html_parts.append('<p>Generated by AbstractCore Deep Search</p>')
     html_parts.append('</div>')
     html_parts.append('</body></html>')
-    
+
     return '\n'.join(html_parts)
 
 
 def print_report(report, format_type: str) -> None:
     """
     Print research report to console
-    
+
     Args:
         report: ResearchReport object or dictionary
         format_type: Output format type
@@ -282,36 +282,36 @@ def print_report(report, format_type: str) -> None:
         else:
             # Dictionary
             report_data = report
-        
+
         print("\n" + "="*80)
         print(f"🔍 DEEP SEARCH REPORT")
         print("="*80)
-        
+
         # Title
         print(f"\n📋 {report_data.get('title', 'Research Report')}")
         print("-" * 60)
-        
+
         # Executive Summary
         if report_data.get('executive_summary'):
             print(f"\n📊 EXECUTIVE SUMMARY")
             print(f"{report_data['executive_summary']}")
-        
+
         # Key Findings
         if report_data.get('key_findings'):
             print(f"\n🎯 KEY FINDINGS")
             for i, finding in enumerate(report_data['key_findings'], 1):
                 print(f"{i}. {finding}")
-        
+
         # Detailed Analysis (show full content)
         if report_data.get('detailed_analysis'):
             print(f"\n📝 DETAILED ANALYSIS")
             print(report_data['detailed_analysis'])
-        
+
         # Conclusions
         if report_data.get('conclusions'):
             print(f"\n💡 CONCLUSIONS")
             print(report_data['conclusions'])
-        
+
         # Sources
         if report_data.get('sources'):
             print(f"\n📚 SOURCES ({len(report_data['sources'])} total)")
@@ -320,7 +320,7 @@ def print_report(report, format_type: str) -> None:
                 url = source.get('url', '')
                 print(f"{i}. {title}")
                 print(f"   🔗 {url}")
-        
+
         # Methodology and Limitations
         if report_data.get('methodology') or report_data.get('limitations'):
             print(f"\n📋 METHODOLOGY & LIMITATIONS")
@@ -328,9 +328,9 @@ def print_report(report, format_type: str) -> None:
                 print(f"Methodology: {report_data['methodology']}")
             if report_data.get('limitations'):
                 print(f"Limitations: {report_data['limitations']}")
-        
+
         print("\n" + "="*80)
-        
+
     except Exception as e:
         print(f"❌ Error displaying report: {e}")
         # Fallback to JSON output
@@ -359,157 +359,157 @@ Examples:
   %(prog)s "blockchain technology trends" --max-sources 25 --verbose
         """
     )
-    
+
     # Required argument
     parser.add_argument(
         'query',
         help='Research query or question to investigate'
     )
-    
+
     # Research configuration
     parser.add_argument(
         '--focus',
         type=str,
         help='Comma-separated focus areas (e.g., "technology,business,impact")'
     )
-    
+
     parser.add_argument(
         '--depth',
         choices=['brief', 'standard', 'comprehensive'],
         default='standard',
         help='Research depth (default: standard)'
     )
-    
+
     parser.add_argument(
         '--max-sources',
         type=int,
         default=15,
         help='Maximum number of sources to gather (default: 15)'
     )
-    
+
     parser.add_argument(
         '--format',
         choices=['structured', 'narrative', 'executive'],
         default='structured',
         help='Output format (default: structured)'
     )
-    
+
     # Output options
     parser.add_argument(
         '--output',
         type=str,
         help='Output file path (supports .json, .md, .html, .txt formats)'
     )
-    
+
     parser.add_argument(
         '--output-format',
         choices=['text', 'json', 'markdown', 'html'],
         default='text',
         help='Console output format (default: text)'
     )
-    
+
     # LLM configuration
     parser.add_argument(
         '--provider',
         type=str,
         help='LLM provider (requires --model)'
     )
-    
+
     parser.add_argument(
         '--model',
         type=str,
         help='LLM model (requires --provider)'
     )
-    
+
     parser.add_argument(
         '--max-tokens',
         type=int,
         default=32000,
         help='Maximum total tokens for LLM context (default: 32000)'
     )
-    
+
     parser.add_argument(
         '--max-output-tokens',
         type=int,
         default=8000,
         help='Maximum tokens for LLM output generation (default: 8000)'
     )
-    
+
     parser.add_argument(
         '--timeout',
         type=timeout_type,
         default=300,
         help='HTTP timeout for LLM providers in seconds (default: 300, "none" for unlimited)'
     )
-    
+
     # Research options
     parser.add_argument(
         '--no-verification',
         action='store_true',
         help='Skip fact-checking and verification stage'
     )
-    
+
     parser.add_argument(
         '--parallel-searches',
         type=int,
         default=5,
         help='Maximum parallel web searches (default: 5)'
     )
-    
+
     parser.add_argument(
         '--full-text',
         action='store_true',
         help='Extract full text content from web pages (slower but more comprehensive)'
     )
-    
+
     parser.add_argument(
         '--reflexive',
         action='store_true',
         help='Enable reflexive mode - analyzes limitations and performs targeted refinement searches'
     )
-    
+
     parser.add_argument(
         '--max-reflexive-iterations',
         type=int,
         default=2,
         help='Maximum number of reflexive refinement cycles (default: 2)'
     )
-    
+
     parser.add_argument(
         '--temperature',
         type=float,
         default=0.1,
         help='LLM temperature for consistency (default: 0.1, range: 0.0-1.0)'
     )
-    
+
     # Utility options
     parser.add_argument(
         '--verbose',
         action='store_true',
         help='Show detailed progress information'
     )
-    
+
     parser.add_argument(
         '--debug',
         action='store_true',
         help='Show comprehensive debug information: all queries, URLs, relevance assessments, and processing decisions'
     )
-    
+
     args = parser.parse_args()
-    
+
     # Validate arguments
     if (args.provider and not args.model) or (args.model and not args.provider):
         print("❌ Error: Both --provider and --model must be specified together")
         sys.exit(1)
-    
+
     if args.max_sources < 1 or args.max_sources > 100:
         print("❌ Error: --max-sources must be between 1 and 100")
         sys.exit(1)
-    
+
     if args.parallel_searches < 1 or args.parallel_searches > 20:
         print("❌ Error: --parallel-searches must be between 1 and 20")
         sys.exit(1)
-    
+
     # Configure logging level (default: ERROR-only).
     import logging
 
@@ -519,7 +519,7 @@ Examples:
     elif args.verbose:
         log_level = logging.INFO
     logging.basicConfig(level=log_level, format="%(asctime)s - %(levelname)s - %(message)s")
-    
+
     try:
         # Initialize LLM
         if args.provider and args.model:
@@ -532,7 +532,7 @@ Examples:
             )
         else:
             llm = None  # Will use default in BasicDeepSearch
-        
+
         # Initialize Deep Search
         searcher = BasicDeepSearch(
             llm=llm,
@@ -546,13 +546,13 @@ Examples:
             temperature=args.temperature,
             debug_mode=args.debug
         )
-        
+
         # Parse focus areas
         focus_areas = None
         if args.focus:
             focus_areas = [area.strip() for area in args.focus.split(',')]
             print(f"🎯 Focus areas: {', '.join(focus_areas)}")
-        
+
         # Display research configuration
         print(f"🔍 Research Query: {args.query}")
         print(f"📊 Depth: {args.depth}")
@@ -564,11 +564,11 @@ Examples:
         print(f"🔄 Reflexive Mode: {'Enabled' if args.reflexive else 'Disabled'}")
         if args.reflexive:
             print(f"🔁 Max Reflexive Iterations: {args.max_reflexive_iterations}")
-        
+
         # Start research
         start_time = time.time()
         print(f"\n🚀 Starting deep search research...")
-        
+
         report = searcher.research(
             query=args.query,
             focus_areas=focus_areas,
@@ -577,14 +577,14 @@ Examples:
             include_verification=not args.no_verification,
             output_format=args.format
         )
-        
+
         elapsed_time = time.time() - start_time
         print(f"\n✨ Research completed in {elapsed_time:.1f} seconds")
-        
+
         # Output results
         if args.output:
             save_report(report, args.output, args.format)
-        
+
         # Console output based on format
         if args.output_format == 'json':
             # JSON output to console
@@ -616,7 +616,7 @@ Examples:
         else:
             # Default text output
             print_report(report, args.format)
-        
+
         # Summary statistics
         if hasattr(report, 'sources'):
             source_count = len(report.sources) if report.sources else 0
@@ -624,16 +624,16 @@ Examples:
             source_count = len(report['sources']) if report['sources'] else 0
         else:
             source_count = 0
-        
+
         print(f"\n📊 Research Summary:")
         print(f"   • Sources analyzed: {source_count}")
         print(f"   • Research depth: {args.depth}")
         print(f"   • Time taken: {elapsed_time:.1f} seconds")
         print(f"   • Format: {args.format}")
-        
+
         if args.output:
             print(f"   • Saved to: {args.output}")
-        
+
     except KeyboardInterrupt:
         print("\n⚠️ Research interrupted by user")
         sys.exit(1)

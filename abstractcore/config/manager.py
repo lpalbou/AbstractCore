@@ -559,7 +559,7 @@ class ConfigurationManager:
     def _detect_provider_from_model(self, model: str) -> Optional[str]:
         """Detect provider from model name."""
         model_lower = model.lower()
-        
+
         if any(x in model_lower for x in ['qwen2.5vl', 'llama3.2-vision', 'llava']):
             return "ollama"
         elif any(x in model_lower for x in ['gpt-4', 'gpt-4o']):
@@ -568,7 +568,7 @@ class ConfigurationManager:
             return "anthropic"
         elif '/' in model:
             return "lmstudio"
-        
+
         return None
 
     def get_status(self) -> Dict[str, Any]:
@@ -682,7 +682,7 @@ class ConfigurationManager:
                 # Assume it's just a model name, use default provider
                 provider = "ollama"
                 model = provider_model
-            
+
             self.config.default_models.global_provider = provider
             self.config.default_models.global_model = model
             self._save_config()
@@ -947,7 +947,7 @@ class ConfigurationManager:
                 self.config.app_defaults.intent_model = model
             else:
                 raise ValueError(f"Unknown app: {app_name}")
-            
+
             self._save_config()
             return True
         except Exception:
@@ -968,7 +968,7 @@ class ConfigurationManager:
                 self.config.api_keys.google = key
             else:
                 return False
-            
+
             self._save_config()
             return True
         except Exception:

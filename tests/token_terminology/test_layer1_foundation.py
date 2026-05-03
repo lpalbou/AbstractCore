@@ -40,7 +40,7 @@ class TestModelCapabilitiesJSON:
             # Verify max_tokens is a non-negative integer
             max_tokens = model_data["max_tokens"]
             assert isinstance(max_tokens, int), f"Model {model_name} max_tokens is not an int: {type(max_tokens)}"
-            
+
             # Embedding models can have max_tokens = 0 since they don't generate text
             model_type = model_data.get("model_type", "generative")
             if model_type == "embedding":

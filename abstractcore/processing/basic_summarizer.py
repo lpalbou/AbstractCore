@@ -291,7 +291,7 @@ class BasicSummarizer:
 
         # Split text into overlapping chunks
         chunks = self._split_text_into_chunks(text)
-        
+
         logger.debug("Split document into chunks", 
                     chunk_count=len(chunks), 
                     avg_chunk_size=sum(len(c) for c in chunks) // len(chunks))
@@ -373,31 +373,31 @@ class BasicSummarizer:
     def _should_chunk_by_tokens(self, text: str) -> bool:
         """
         Determine if text should be chunked based on token count.
-        
+
         Token budget logic:
         - max_tokens = -1 (AUTO): Uses model's full context window capability
         - max_tokens = N: Hard limit (deployment constraint for GPU/RAM)
-        
+
         This ensures we don't exceed GPU memory constraints even when the model
         theoretically supports larger contexts.
-        
+
         Uses centralized TokenUtils for accurate token estimation.
         Falls back to character count if model information unavailable.
         """
         from ..utils.token_utils import TokenUtils
-        
+
         # Get model name from LLM if available
         model_name = None
         if self.llm and hasattr(self.llm, 'model'):
             model_name = self.llm.model
-            
+
         # Estimate tokens using centralized utility. If estimation fails for any reason,
         # fall back to character chunking (conservative).
         try:
             estimated_tokens = TokenUtils.estimate_tokens(text, model_name)
         except Exception:
             return len(text) > self.max_chunk_size
-        
+
         # Determine the effective token budget
         # Get provider's capabilities
         provider_max_input = getattr(self.llm, "max_input_tokens", None) if self.llm else None
@@ -409,7 +409,7 @@ class BasicSummarizer:
                     provider_max_input = int(provider_total) - int(provider_output)
                 except Exception:
                     provider_max_input = None
-        
+
         # Determine effective max_input_tokens based on configuration
         if self.max_tokens == -1:
             # AUTO mode: Use model's capability
@@ -422,7 +422,7 @@ class BasicSummarizer:
             # User-specified limit (deployment constraint)
             user_max_output = self.max_output_tokens if self.max_output_tokens != -1 else 8000
             user_max_input = self.max_tokens - user_max_output
-            
+
             if provider_max_input is not None:
                 # Respect BOTH user limit AND model capability (take minimum)
                 max_input_tokens = min(provider_max_input, user_max_input)

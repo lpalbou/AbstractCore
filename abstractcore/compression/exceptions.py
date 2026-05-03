@@ -12,7 +12,7 @@ class CompressionError(AbstractCoreError):
 
 class CompressionQualityError(CompressionError):
     """Exception raised when compression quality is below threshold."""
-    
+
     def __init__(self, message: str, quality_score: float = None, threshold: float = None):
         super().__init__(message)
         self.quality_score = quality_score

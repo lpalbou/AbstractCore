@@ -15,7 +15,7 @@ import os
 import httpx
 import json
 import time
-from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type
+from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING
 
 try:
     from pydantic import BaseModel
@@ -23,6 +23,9 @@ try:
 except ImportError:
     PYDANTIC_AVAILABLE = False
     BaseModel = None
+
+if TYPE_CHECKING:
+    from ..media.types import MediaContent
 
 
 def _inline_json_schema_refs(schema: Dict[str, Any]) -> Dict[str, Any]:

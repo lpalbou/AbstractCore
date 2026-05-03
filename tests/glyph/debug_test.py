@@ -14,7 +14,7 @@ from abstractcore import create_llm
 def test_lmstudio_connection():
     """Test basic LMStudio connection"""
     print("🔍 Testing LMStudio connection...")
-    
+
     try:
         # Create LLM
         llm = create_llm(
@@ -23,14 +23,14 @@ def test_lmstudio_connection():
             base_url="http://localhost:1234/v1"
         )
         print("✅ LLM created successfully")
-        
+
         # Test simple generation
         print("🔄 Testing simple text generation...")
         response = llm.generate("Hello, how are you?")
-        
+
         print(f"Response type: {type(response)}")
         print(f"Response: {response}")
-        
+
         if response is not None:
             print(f"Content: {response.content}")
             print(f"Model: {response.model}")
@@ -38,7 +38,7 @@ def test_lmstudio_connection():
             print(f"Metadata: {response.metadata}")
         else:
             print("❌ Response is None!")
-            
+
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback
@@ -47,7 +47,7 @@ def test_lmstudio_connection():
 def test_pdf_processing():
     """Test PDF processing without questions"""
     print("\n🔍 Testing PDF processing...")
-    
+
     try:
         # Create LLM
         llm = create_llm(
@@ -55,24 +55,24 @@ def test_pdf_processing():
             model="qwen/qwen3-next-80b",
             base_url="http://localhost:1234/v1"
         )
-        
+
         # Test with PDF
         print("🔄 Testing PDF processing...")
         response = llm.generate(
             "What is this document about?",
             media=["preserving_privacy.pdf"]
         )
-        
+
         print(f"Response type: {type(response)}")
         print(f"Response: {response}")
-        
+
         if response is not None:
             print(f"Content length: {len(response.content) if response.content else 0}")
             print(f"Model: {response.model}")
             print(f"Usage: {response.usage}")
         else:
             print("❌ Response is None!")
-            
+
     except Exception as e:
         print(f"❌ Error: {e}")
         import traceback

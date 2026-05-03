@@ -7,10 +7,10 @@ It's designed to be simple and provide clear visual feedback.
 
 Usage:
     python tests/manual_seed_verification.py
-    
+
     # Test specific provider:
     python tests/manual_seed_verification.py --provider openai
-    
+
     # Test with custom prompt:
     python tests/manual_seed_verification.py --prompt "Count to 5"
 """
@@ -32,12 +32,12 @@ def test_provider_determinism(provider_name: str, model: str, test_prompt: str, 
     print(f"\n{'='*60}")
     print(f"🧪 Testing {provider_name.upper()} ({model})")
     print(f"{'='*60}")
-    
+
     try:
         # Create provider with deterministic settings
         print(f"📝 Prompt: '{test_prompt}'")
         print(f"⚙️  Settings: temperature=0.0, seed=42")
-        
+
         llm = create_llm(
             provider_name,
             model=model,
@@ -45,7 +45,7 @@ def test_provider_determinism(provider_name: str, model: str, test_prompt: str, 
             seed=42,
             **config
         )
-        
+
         print(f"\n🔄 Testing same seed reproducibility (3 calls)...")
         responses = []
         for i in range(3):
@@ -57,20 +57,20 @@ def test_provider_determinism(provider_name: str, model: str, test_prompt: str, 
             except Exception as e:
                 print(f"  Call {i+1}: ❌ Error: {e}")
                 return False
-        
+
         # Check determinism
         unique_responses = set(responses)
         is_deterministic = len(unique_responses) == 1
-        
+
         print(f"\n📊 Results:")
         print(f"  Unique responses: {len(unique_responses)}")
         print(f"  Deterministic: {'✅ YES' if is_deterministic else '❌ NO'}")
-        
+
         if not is_deterministic:
             print(f"  ⚠️  Expected identical responses but got {len(unique_responses)} different ones")
             for i, resp in enumerate(unique_responses, 1):
                 print(f"    Variant {i}: '{resp}'")
-        
+
         # Test different seeds
         print(f"\n🎲 Testing different seeds (should vary)...")
         seed_responses = []
@@ -82,14 +82,14 @@ def test_provider_determinism(provider_name: str, model: str, test_prompt: str, 
                 print(f"  Seed {seed}: '{content}'")
             except Exception as e:
                 print(f"  Seed {seed}: ❌ Error: {e}")
-        
+
         unique_seed_responses = set(seed_responses)
         has_variation = len(unique_seed_responses) > 1
-        
+
         print(f"\n📊 Seed variation:")
         print(f"  Unique responses: {len(unique_seed_responses)}")
         print(f"  Has variation: {'✅ YES' if has_variation else '⚠️  NO (may not support seed)'}")
-        
+
         # Test session persistence
         print(f"\n🔗 Testing session-level seed persistence...")
         session = BasicSession(provider=llm, temperature=0.0, seed=42)
@@ -102,10 +102,10 @@ def test_provider_determinism(provider_name: str, model: str, test_prompt: str, 
                 print(f"  Session call {i+1}: '{content}'")
             except Exception as e:
                 print(f"  Session call {i+1}: ❌ Error: {e}")
-        
+
         session_consistent = len(set(session_responses)) == 1
         print(f"  Session consistent: {'✅ YES' if session_consistent else '❌ NO'}")
-        
+
         # Overall assessment
         print(f"\n🎯 Overall Assessment:")
         if is_deterministic and session_consistent:
@@ -114,9 +114,9 @@ def test_provider_determinism(provider_name: str, model: str, test_prompt: str, 
             print(f"  ⚠️  PARTIAL: Some determinism features work")
         else:
             print(f"  ❌ LIMITED: No clear determinism (may not support seed)")
-        
+
         return is_deterministic
-        
+
     except Exception as e:
         print(f"❌ Failed to test {provider_name}: {e}")
         return False
@@ -127,12 +127,12 @@ def main():
     parser.add_argument("--provider", help="Test specific provider (openai, anthropic, ollama, etc.)")
     parser.add_argument("--prompt", default="Write exactly 3 words about coding.", help="Test prompt")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
-    
+
     args = parser.parse_args()
-    
+
     print("🚀 AbstractCore SEED Determinism Verification")
     print("=" * 50)
-    
+
     # Provider configurations
     providers = {
         "openai": {
@@ -156,7 +156,7 @@ def main():
             "required_env": None
         }
     }
-    
+
     # Filter providers if specific one requested
     if args.provider:
         if args.provider.lower() in providers:
@@ -165,17 +165,17 @@ def main():
             print(f"❌ Unknown provider: {args.provider}")
             print(f"Available providers: {', '.join(providers.keys())}")
             return 1
-    
+
     results = {}
     tested_count = 0
     successful_count = 0
-    
+
     for provider_name, provider_info in providers.items():
         # Check if required environment variable is set
         if provider_info["required_env"] and not os.getenv(provider_info["required_env"]):
             print(f"\n⏭️  Skipping {provider_name}: {provider_info['required_env']} not set")
             continue
-        
+
         for model in provider_info["models"]:
             tested_count += 1
             try:
@@ -194,7 +194,7 @@ def main():
             except Exception as e:
                 print(f"\n❌ Unexpected error testing {provider_name}: {e}")
                 results[f"{provider_name}:{model}"] = False
-    
+
     # Summary
     print(f"\n{'='*60}")
     print(f"📋 SUMMARY")
@@ -202,12 +202,12 @@ def main():
     print(f"Total providers tested: {tested_count}")
     print(f"Deterministic providers: {successful_count}")
     print(f"Success rate: {(successful_count/tested_count*100) if tested_count > 0 else 0:.1f}%")
-    
+
     print(f"\n📊 Detailed Results:")
     for provider_model, success in results.items():
         status = "✅ Deterministic" if success else "❌ Non-deterministic"
         print(f"  {provider_model}: {status}")
-    
+
     # Recommendations
     print(f"\n💡 Recommendations:")
     if successful_count == 0:
@@ -221,7 +221,7 @@ def main():
     else:
         print("  • All tested providers show deterministic behavior! 🎉")
         print("  • You can rely on seed+temperature=0 for reproducible results")
-    
+
     print(f"\n🔍 Provider-specific notes:")
     print(f"  • OpenAI: Native seed support (except o1 models)")
     print(f"  • Anthropic: No seed support (issues warning when provided)")
@@ -229,7 +229,7 @@ def main():
     print(f"  • LMStudio: OpenAI-compatible seed support")
     print(f"  • HuggingFace: Full seed support (transformers + GGUF)")
     print(f"  • MLX: Native seed support via mx.random.seed()")
-    
+
     return 0 if successful_count > 0 else 1
 
 

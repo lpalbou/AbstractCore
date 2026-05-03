@@ -136,7 +136,7 @@ class TestProviderRegistry:
     def test_get_provider_class_openai(self):
         """Test getting provider class for OpenAI provider."""
         registry = ProviderRegistry()
-        
+
         try:
             provider_class = registry.get_provider_class("openai")
             assert provider_class is not None

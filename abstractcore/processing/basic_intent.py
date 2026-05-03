@@ -314,7 +314,7 @@ class BasicIntentAnalyzer:
 
         # Split text into overlapping chunks
         chunks = self._split_text_into_chunks(text)
-        
+
         logger.debug("Split document into chunks", 
                     chunk_count=len(chunks), 
                     avg_chunk_size=sum(len(c) for c in chunks) // len(chunks))
@@ -400,27 +400,27 @@ class BasicIntentAnalyzer:
     def _should_chunk_by_tokens(self, text: str) -> bool:
         """
         Determine if text should be chunked based on token count.
-        
+
         Uses centralized TokenUtils for accurate token estimation.
         Falls back to character count if model information unavailable.
         """
         from ..utils.token_utils import TokenUtils
-        
+
         # Get model name from LLM if available
         model_name = None
         if self.llm and hasattr(self.llm, 'model'):
             model_name = self.llm.model
-            
+
         # Estimate tokens using centralized utility
         estimated_tokens = TokenUtils.estimate_tokens(text, model_name)
-        
+
         # Use a conservative token limit (leaving room for prompt overhead)
         # Most models have 32k+ context nowadays, so 8k tokens for input text is safe
         token_limit = 8000
-        
+
         if estimated_tokens > token_limit:
             return True
-            
+
         # Fallback to character-based check for very long texts
         return len(text) > self.max_chunk_size
 
@@ -653,31 +653,31 @@ CRITICAL JSON FORMAT REQUIREMENTS:
         for msg in messages:
             role = msg.get('role', 'unknown')
             content = msg.get('content', '').strip()
-            
+
             if not content:
                 continue
-                
+
             if role not in participant_messages:
                 participant_messages[role] = []
             participant_messages[role].append(content)
 
         # Analyze intents for each participant (or just the focused one)
         results = {}
-        
+
         participants_to_analyze = [focus_participant] if focus_participant else list(participant_messages.keys())
-        
+
         for role in participants_to_analyze:
             if role not in participant_messages:
                 continue
-                
+
             # Combine all messages from this participant
             combined_text = "\n\n".join(participant_messages[role])
-            
+
             logger.debug("Analyzing conversation intents for participant", 
                         participant=role,
                         message_count=len(participant_messages[role]),
                         text_length=len(combined_text))
-            
+
             # Analyze with conversational context (deception analysis always included)
             analysis = self.analyze_intent(
                 combined_text,
@@ -685,7 +685,7 @@ CRITICAL JSON FORMAT REQUIREMENTS:
                 depth=depth,
                 focus=f"{role} intentions and goals in this conversation"
             )
-            
+
             results[role] = analysis
 
         return results

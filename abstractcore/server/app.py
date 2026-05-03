@@ -1087,7 +1087,7 @@ class EmbeddingRequest(BaseModel):
                     "This is optional but recommended for production applications.",
         example="user-123"
     )
-    
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -2173,7 +2173,7 @@ async def list_models(
         # Use the capability enums directly
         input_capabilities = [input_type] if input_type else None
         output_capabilities = [output_type] if output_type else None
-        
+
         _reject_query_api_key(api_key)
 
         if provider:
@@ -2264,7 +2264,7 @@ async def list_models(
                 filter_parts.append(f"input_type={input_type.value}")
             if output_type:
                 filter_parts.append(f"output_type={output_type.value}")
-            
+
             filter_msg = f" ({', '.join(filter_parts)})" if filter_parts else ""
             logger.info(f"Listed {len(models_data)} models for provider {provider}{filter_msg}")
         else:
@@ -2298,7 +2298,7 @@ async def list_models(
                 filter_parts.append(f"input_type={input_type.value}")
             if output_type:
                 filter_parts.append(f"output_type={output_type.value}")
-            
+
             filter_msg = f" ({', '.join(filter_parts)})" if filter_parts else ""
             logger.info(f"Listed {len(models_data)} models from all providers{filter_msg}")
 
@@ -2587,25 +2587,25 @@ async def create_response(
 async def create_embeddings(request: EmbeddingRequest):
     """
     Create embedding vectors representing the input text.
-    
+
     Creates an embedding vector representing the input text. Embeddings are useful for:
     - Semantic search
     - Document similarity
     - Clustering and classification
     - Retrieval-Augmented Generation (RAG)
-    
+
     **Supported Providers:**
     - **HuggingFace**: Local sentence-transformers models with ONNX acceleration
     - **Ollama**: Local embedding models via Ollama API
     - **LMStudio**: Local embedding models via LMStudio API
-    
+
     **Model Format:** Use `provider/model` format:
     - `huggingface/sentence-transformers/all-MiniLM-L6-v2`
     - `ollama/granite-embedding:278m`
     - `lmstudio/text-embedding-all-minilm-l6-v2`
-    
+
     **To see available embedding models:** `GET /v1/models?type=text-embedding`
-    
+
     **Returns:** A list of embedding objects containing the embedding vector and metadata.
     """
     try:
@@ -3206,7 +3206,7 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
     - Tool/function calling with automatic syntax conversion
     - Media attachments (images, documents, data files)
     - OpenAI Vision API compatible format
-    
+
     **Provider Format:** Use `provider/model` format in the model field:
     - `openai/gpt-4` - OpenAI GPT-4
     - `ollama/llama3:latest` - Ollama LLaMA 3
@@ -3219,7 +3219,7 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
     - Size limits: 10MB per file, 32MB total per request
 
     **To see available models:** `GET /v1/models?type=text-generation`
-    
+
     **Returns:** A chat completion object, or a stream of chat completion chunks if streaming is enabled.
     """
     provider, model = parse_model_string(request.model)
@@ -3233,14 +3233,14 @@ async def provider_chat_completions(
 ):
     """
     Provider-specific chat completions endpoint.
-    
+
     Same functionality as `/v1/chat/completions` but allows specifying the provider in the URL path.
     Useful when you want explicit provider routing or when the model name doesn't include the provider prefix.
-    
+
     **Examples:**
     - `POST /ollama/v1/chat/completions` with `"model": "llama3:latest"`
     - `POST /openai/v1/chat/completions` with `"model": "gpt-4"`
-    
+
     **Note:** Provider in the URL takes precedence over provider in the model name.
     """
     _, model = parse_model_string(request.model)

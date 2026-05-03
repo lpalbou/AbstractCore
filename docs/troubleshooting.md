@@ -245,15 +245,16 @@ ModuleNotFoundError: No module named 'openai'
 # Install AbstractCore
 pip install abstractcore
 
-# Install with specific provider
+# Install hosted SDKs or a specific provider
+pip install "abstractcore[remote]"
 pip install "abstractcore[openai]"
 pip install "abstractcore[anthropic]"
-# Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, ...) work with the core install.
+# Local OpenAI-compatible servers and gateways (Ollama, LMStudio, OpenRouter,
+# Portkey, llama.cpp, ...) work with the core install.
 
-# Install the full feature set (pick one)
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+# Turnkey local-runtime installs
+pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
+pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
 
 # Verify installation
 pip list | grep abstract
@@ -276,9 +277,9 @@ source .venv/bin/activate  # Linux/Mac
 
 # Fresh install
 pip install --upgrade pip
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon
-# or: pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac
-# or: pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU
+pip install "abstractcore[remote,tools,media]"  # API-first app
+# or: pip install "abstractcore[all-apple]"     # Apple Silicon local stack
+# or: pip install "abstractcore[all-gpu]"       # NVIDIA GPU local stack
 
 # If still failing, try one provider at a time
 pip install "abstractcore[openai]"

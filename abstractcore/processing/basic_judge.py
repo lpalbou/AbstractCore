@@ -123,7 +123,7 @@ class BasicJudge:
         timeout: Optional[float] = None
     ):
         """Initialize the judge
-        
+
         Args:
             llm: AbstractCore instance (any provider). If None, uses default Ollama model
             temperature: Temperature for evaluation consistency (default 0.1)
@@ -157,7 +157,7 @@ class BasicJudge:
                 raise RuntimeError(error_msg) from e
         else:
             self.llm = llm
-        
+
         self.debug = debug
 
         self.retry_strategy = FeedbackRetry(max_attempts=3)
@@ -235,7 +235,7 @@ class BasicJudge:
                 response_model=AssessmentModel,
                 retry_strategy=self.retry_strategy
             )
-            
+
             # Debug output if requested
             if self.debug:
                 print(f"\n=== DEBUG: Raw LLM Response ===")

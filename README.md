@@ -9,13 +9,37 @@
 Unified LLM Interface
 > Write once, run everywhere
 
-AbstractCore is a Python library that provides a unified `create_llm(...)` API across cloud + local LLM providers (OpenAI, Anthropic, Ollama, LMStudio, and more). The default install is intentionally lightweight; add providers and optional subsystems via explicit install extras.
+AbstractCore is an offline-capable, open-source-first LLM infrastructure layer
+for Python applications. It gives you one `create_llm(...)` API across local
+runtimes, self-hosted servers, cloud APIs, and OpenAI-compatible gateways.
+
+Use it in-process from Python, or run it as a universal `/v1` endpoint for apps
+that already speak the OpenAI API. The same application can run fully offline
+once local model assets are installed, stay private on your own inference
+server, or route to hosted providers when you want managed capacity.
+
+The goal is simple: put LLM capability at your fingertips without tying your
+product to a vendor, network connection, or model family. AbstractCore keeps
+application code portable while the model underneath moves between OpenAI,
+Anthropic, Ollama, LM Studio, MLX, HuggingFace/GGUF, vLLM, OpenRouter, Portkey,
+or any OpenAI-compatible backend.
+
+The default install is intentionally lightweight; add providers and optional
+subsystems via explicit install extras. For local runtimes, AbstractCore is
+cache-first and offline-first: it will not silently download model weights; you
+pull or prefetch the models you want, then run without internet when your
+chosen provider and tools are local.
 
 First-class support for:
+- offline-capable local operation with explicit model setup (no silent downloads)
+- local/open-weight model backends (Ollama, LM Studio, MLX, HuggingFace/GGUF, vLLM)
+- cloud, hosted gateway, and generic OpenAI-compatible providers
 - sync + async
 - streaming + non-streaming
 - universal tool calling (native + prompted tool syntax)
 - structured output (Pydantic)
+- unified generation parameters, capability detection, and provider quirks
+- session memory, prompt caching, events, tracing, and retry-aware reliability hooks
 - media input (images/audio/video + documents) with explicit, policy-driven fallbacks (*)
 - optional capability plugins (`core.voice/core.audio/core.vision`) for deterministic TTS/STT and generative vision (via `abstractvoice` / `abstractvision`)
 - glyph visual-text compression for long documents (**)
@@ -26,6 +50,31 @@ First-class support for:
 
 Docs: [Getting Started](docs/getting-started.md) · [FAQ](docs/faq.md) · [Docs Index](docs/README.md) · https://lpalbou.github.io/AbstractCore
 
+## Why AbstractCore
+
+Many libraries can call an LLM. AbstractCore is for the messy middle of real
+applications, where you need the same product code to survive different model
+families, local inference servers, API dialects, offline deployments, and
+capability gaps.
+
+Open-source and self-hosted models are first-class, not a demo path. AbstractCore
+handles the things that often break when you move beyond a single hosted API:
+prompted vs native tools, schema-following differences, structured-output retry,
+reasoning text, media support, token budget vocabulary, local server discovery,
+and prompt/cache behavior.
+
+That makes it a practical foundation for privacy-sensitive assistants, local
+developer tools, document workflows, research machines, edge deployments, and
+cloud-backed production services. You can build remote-first products, fully
+local products, or hybrid products that move between the two as cost, privacy,
+latency, and hardware constraints change.
+
+Use AbstractCore when you want a focused provider layer that stays close to your
+application code. Use the wider AbstractFramework stack when you also need
+durable runtime execution, agents, flows, gateways, agentic CLI surfaces, memory,
+or assistant applications such as
+[AbstractAssistant](https://github.com/lpalbou/abstractassistant).
+
 ## AbstractFramework ecosystem
 
 AbstractCore is part of the **AbstractFramework** ecosystem:
@@ -33,32 +82,43 @@ AbstractCore is part of the **AbstractFramework** ecosystem:
 - **AbstractFramework (umbrella)**: https://github.com/lpalbou/AbstractFramework
 - **AbstractCore (this package)**: provider-agnostic LLM I/O + reliability primitives
 - **AbstractRuntime**: durable tool/effect execution, workflows, and state persistence (recommended host runtime) — https://github.com/lpalbou/abstractruntime
+- **Wider stack**: agents, flows, gateway control, agentic CLI integrations, memory, semantics, coding tools, and digital assistant surfaces built on the same foundation
 
 By default, AbstractCore is **pass-through for tools** (`execute_tools=False`): it returns structured tool calls in `response.tool_calls`, and your runtime decides *whether/how* to execute them (policy, sandboxing, retries, persistence). See [Tool Calling](docs/tool-calling.md) and [Architecture](docs/architecture.md).
 
 ```mermaid
 graph LR
   APP["Your app"] --> AC["AbstractCore"]
+  AF["AbstractFramework optional"] --> AC
+  AF --> RT["AbstractRuntime / Agent / Flow / Gateway"]
   AC --> P["Provider adapter"]
   P --> LLM["LLM backend"]
-  AC -.->|tool calls| RT["AbstractRuntime optional"]
+  AC -.->|tool calls| RT
   RT -.->|tool results| AC
 ```
 
 ## Install
 
+Choose the smallest install that matches where your models run. Extras compose,
+so you can start with `abstractcore[remote]` and add `media`, `tools`, `server`,
+or local runtime extras as your app grows.
+
 ```bash
-# Core (small, lightweight default)
+# Core: local HTTP servers and gateways that need no SDK
+# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
 pip install abstractcore
 
-# Providers
+# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
+pip install "abstractcore[remote]"
+
+# Individual provider SDKs / local runtimes
 pip install "abstractcore[openai]"       # OpenAI SDK
 pip install "abstractcore[anthropic]"    # Anthropic SDK
 pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
 pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
 pip install "abstractcore[vllm]"         # NVIDIA CUDA / ROCm (heavy)
 
-# Optional features
+# Optional application features
 pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
 pip install "abstractcore[media]"       # images, PDFs, Office docs
 pip install "abstractcore[compression]" # glyph visual-text compression (Pillow-only)
@@ -67,17 +127,27 @@ pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
 pip install "abstractcore[server]"      # OpenAI-compatible HTTP gateway
 
 # Combine extras (zsh: keep quotes)
-pip install "abstractcore[openai,media,tools]"
+pip install "abstractcore[remote,media,tools]"
 
-# Turnkey "everything" installs (pick one)
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+# Turnkey local-runtime installs
+pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
+pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
 ```
 
 ## Quickstart
 
-OpenAI example (requires `pip install "abstractcore[openai]"`):
+Local/offline example (requires Ollama running with `ollama pull qwen3:4b`
+already done):
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("ollama", model="qwen3:4b")
+response = llm.generate("Draft a privacy-preserving onboarding checklist.")
+print(response.content)
+```
+
+Remote API example (requires `pip install "abstractcore[openai]"`):
 
 ```python
 from abstractcore import create_llm
@@ -102,7 +172,7 @@ print(session.generate("Pick the best one and explain why.").content)
 ```python
 from abstractcore import create_llm
 
-llm = create_llm("ollama", model="qwen3:4b-instruct")
+llm = create_llm("ollama", model="qwen3:4b")
 for chunk in llm.generate("Write a short poem about distributed systems.", stream=True):
     print(chunk.content or "", end="", flush=True)
 ```
@@ -248,7 +318,7 @@ from openai import OpenAI
 
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
 resp = client.chat.completions.create(
-    model="ollama/qwen3:4b-instruct",
+    model="ollama/qwen3:4b",
     messages=[{"role": "user", "content": "Hello from the gateway!"}],
 )
 print(resp.choices[0].message.content)
@@ -285,6 +355,7 @@ Start here:
 - [Getting Started](docs/getting-started.md) — first call + core concepts
 - [FAQ](docs/faq.md) — common questions and setup gotchas
 - [Examples](docs/examples.md) — end-to-end patterns and recipes
+- [Framework Comparison](docs/comparison.md) — where AbstractCore and AbstractFramework fit next to LiteLLM, LangChain, LangGraph, and LlamaIndex
 - [Troubleshooting](docs/troubleshooting.md) — common failures and fixes
 
 Core features:
@@ -312,6 +383,7 @@ Reference and internals:
 
 Project:
 - [Changelog](CHANGELOG.md) — version history and upgrade notes
+- [Release Process](docs/release-process.md) — maintainer checklist for GitHub + PyPI releases
 - [Contributing](CONTRIBUTING.md) — dev setup and contribution guidelines
 - [Security](SECURITY.md) — responsible vulnerability reporting
 - [Acknowledgements](ACKNOWLEDGEMENTS.md) — upstream projects and communities

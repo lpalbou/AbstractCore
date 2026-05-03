@@ -561,7 +561,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Create provider key for circuit breaker tracking
         self.provider_key = f"{self.__class__.__name__}:{self.model}"
-        
+
         # Setup Glyph compression configuration
         self.glyph_config = kwargs.get('glyph_config', None)
 
@@ -1601,7 +1601,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if media:
             compression_pref = glyph_compression or kwargs.get('glyph_compression', 'auto')
             processed_media = self._process_media_content(media, compression_pref)
-            
+
             # Extract metadata from processed media for response
             if processed_media:
                 media_metadata = []
@@ -2265,7 +2265,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 else:
                     # Handle other types gracefully
                     self.logger.warning(f"Unknown tool type: {type(tool)}, skipping")
-        
+
         # Handle tool execution control
         should_execute_tools = execute_tools if execute_tools is not None else self.execute_tools
         if should_execute_tools and converted_tools:
@@ -2532,36 +2532,36 @@ class BaseProvider(AbstractCoreInterface, ABC):
             # Calculate visual tokens using VLM token calculator
             provider_name = self.provider or self.__class__.__name__.lower().replace('provider', '')
             self.logger.debug(f"Calculating visual tokens for provider={provider_name}, model={self.model}")
-            
+
             visual_tokens = self._calculate_visual_tokens(media_metadata, provider_name, self.model)
             self.logger.debug(f"Calculated visual tokens: {visual_tokens}")
-            
+
             if visual_tokens > 0:
                 # Ensure response has metadata
                 if not response.metadata:
                     response.metadata = {}
-                
+
                 # Add visual token information to metadata
                 response.metadata['visual_tokens'] = visual_tokens
-                
+
                 # Ensure response has usage dict
                 if not response.usage:
                     response.usage = {}
-                
+
                 # Add visual tokens to usage
                 response.usage['visual_tokens'] = visual_tokens
-                
+
                 # Update total tokens to include visual tokens
                 original_total = response.usage.get('total_tokens', 0)
                 response.usage['total_tokens'] = original_total + visual_tokens
-                
+
                 self.logger.info(f"Enhanced response with {visual_tokens} visual tokens (new total: {response.usage['total_tokens']})")
             else:
                 self.logger.debug("No visual tokens calculated - skipping enhancement")
-                
+
         except Exception as e:
             self.logger.warning(f"Failed to enhance response with visual tokens: {e}")
-        
+
         return response
 
     def _calculate_visual_tokens(self, media_metadata: List[Dict[str, Any]], provider: str, model: str) -> int:
@@ -2569,29 +2569,29 @@ class BaseProvider(AbstractCoreInterface, ABC):
         try:
             from ..utils.vlm_token_calculator import VLMTokenCalculator
             from pathlib import Path
-            
+
             calculator = VLMTokenCalculator()
             total_visual_tokens = 0
-            
+
             self.logger.debug(f"Processing {len(media_metadata)} media metadata items")
-            
+
             for i, metadata in enumerate(media_metadata):
                 self.logger.debug(f"Metadata {i}: processing_method={metadata.get('processing_method')}")
-                
+
                 # Check if this is Glyph compression
                 if metadata.get('processing_method') == 'direct_pdf_conversion':
                     glyph_cache_dir = metadata.get('glyph_cache_dir')
                     total_images = metadata.get('total_images', 0)
-                    
+
                     self.logger.debug(f"Glyph metadata found: cache_dir={glyph_cache_dir}, total_images={total_images}")
-                    
+
                     if glyph_cache_dir and Path(glyph_cache_dir).exists():
                         # Get actual image paths
                         cache_dir = Path(glyph_cache_dir)
                         image_paths = list(cache_dir.glob("image_*.png"))
-                        
+
                         self.logger.debug(f"Found {len(image_paths)} images in cache directory")
-                        
+
                         if image_paths:
                             # Calculate tokens for all images
                             token_analysis = calculator.calculate_tokens_for_images(
@@ -2600,21 +2600,21 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                 model=model
                             )
                             total_visual_tokens += token_analysis['total_tokens']
-                            
+
                             self.logger.debug(f"Calculated {token_analysis['total_tokens']} visual tokens for {len(image_paths)} Glyph images")
                         else:
                             # Fallback: estimate based on total_images
                             base_tokens = calculator.PROVIDER_CONFIGS.get(provider, {}).get('base_tokens', 512)
                             estimated_tokens = total_images * base_tokens
                             total_visual_tokens += estimated_tokens
-                            
+
                             self.logger.debug(f"Estimated {estimated_tokens} visual tokens for {total_images} Glyph images (fallback)")
                     else:
                         self.logger.debug(f"Cache directory not found or doesn't exist: {glyph_cache_dir}")
-            
+
             self.logger.debug(f"Total visual tokens calculated: {total_visual_tokens}")
             return total_visual_tokens
-            
+
         except Exception as e:
             self.logger.warning(f"Failed to calculate visual tokens: {e}")
             return 0
@@ -2812,23 +2812,23 @@ class BaseProvider(AbstractCoreInterface, ABC):
     def _extract_generation_params(self, **kwargs) -> Dict[str, Any]:
         """
         Extract generation parameters with consistent fallback hierarchy.
-        
+
         Returns:
             Dict containing temperature, seed, and other generation parameters
         """
         params = {}
-        
+
         # Temperature (always present)
         temperature = kwargs.get("temperature", self.temperature)
         if temperature is None:
             temperature = self.temperature
         params["temperature"] = temperature
-        
+
         # Seed (only if not None)
         seed_value = self._normalize_seed(kwargs.get("seed", self.seed))
         if seed_value is not None:
             params["seed"] = seed_value
-            
+
         return params
 
     def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
@@ -2864,7 +2864,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """Core tool execution with event emission (shared implementation)"""
         # Check if tool execution is enabled
         should_execute = execute_tools_param if execute_tools_param is not None else self.execute_tools
-        
+
         if not should_execute:
             # Tool execution disabled - return response with tool calls but don't execute
             self.logger.debug(
@@ -2872,7 +2872,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 "returning response with tool calls."
             )
             return response
-        
+
         # Emit tool started event
         event_data = {
             "tool_calls": [{
@@ -4266,12 +4266,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                            **kwargs) -> BaseModel:
         """
         Handle the hybrid case: tools + structured output.
-        
+
         Strategy: Sequential execution
         1. First, generate response with tools (may include tool calls)
         2. If tool calls are generated, execute them
         3. Then generate structured output using tool results as context
-        
+
         Args:
             prompt: Input prompt
             messages: Optional message history
@@ -4283,10 +4283,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
             execute_tools: Whether to execute tools automatically
             stream: Whether to use streaming (not supported for hybrid mode)
             **kwargs: Additional parameters
-            
+
         Returns:
             Validated instance of response_model
-            
+
         Raises:
             ValueError: If streaming is requested (not supported for hybrid mode)
         """
@@ -4295,16 +4295,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 "Streaming is not supported when combining tools with structured output. "
                 "Please use either stream=True OR response_model, but not both."
             )
-            
+
         # Step 1: Generate response with tools (normal tool execution flow)
         self.logger.info("Hybrid mode: Executing tools first, then structured output",
                         model=self.model,
                         response_model=response_model.__name__,
                         num_tools=len(tools) if tools else 0)
-        
+
         # Force tool execution for hybrid mode
         should_execute_tools = execute_tools if execute_tools is not None else True
-        
+
         # Generate response with tools using the normal flow (without response_model)
         tool_response = self.generate_with_telemetry(
             prompt=prompt,
@@ -4317,7 +4317,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             execute_tools=should_execute_tools,
             **kwargs
         )
-        
+
         # Step 2: Generate structured output using tool results as context
         # Create enhanced prompt with tool execution context
         if hasattr(tool_response, 'content') and tool_response.content:
@@ -4329,16 +4329,16 @@ Based on the following tool execution results:
 Please provide a structured response."""
         else:
             enhanced_prompt = prompt
-            
+
         self.logger.info("Hybrid mode: Generating structured output with tool context",
                         model=self.model,
                         response_model=response_model.__name__,
                         has_tool_context=bool(hasattr(tool_response, 'content') and tool_response.content))
-        
+
         # Generate structured output using the enhanced prompt
         from ..structured import StructuredOutputHandler
         handler = StructuredOutputHandler(retry_strategy=retry_strategy)
-        
+
         structured_result = handler.generate_structured(
             provider=self,
             prompt=enhanced_prompt,
@@ -4349,12 +4349,12 @@ Please provide a structured response."""
             stream=False,
             **kwargs
         )
-        
+
         self.logger.info("Hybrid mode: Successfully completed tools + structured output",
                         model=self.model,
                         response_model=response_model.__name__,
                         success=True)
-        
+
         return structured_result
 
     def generate(self,

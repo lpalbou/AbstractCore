@@ -41,10 +41,10 @@ logger = get_logger(__name__)
 @contextmanager
 def _suppress_onnx_warnings():
     """Temporarily suppress known harmless ONNX and sentence-transformers warnings.
-    
+
     This suppresses the CoreML and node assignment warnings commonly seen on macOS.
     These warnings are informational only and don't impact performance or quality.
-    
+
     To enable verbose ONNX logging for debugging, set: ABSTRACTCORE_ONNX_VERBOSE=1
     """
     with warnings.catch_warnings():
@@ -67,12 +67,12 @@ def _suppress_onnx_warnings():
         # Suppress ONNX Runtime provider warnings (these are system-level logs)
         # Note: CoreML warnings are logged directly to stderr by ONNX Runtime,
         # not through Python's warning system, so they're harder to suppress
-        
+
         # Suppress ONNX Runtime warnings at the source
         try:
             import onnxruntime as ort
             import os
-            
+
             # Allow users to enable verbose ONNX logging for debugging
             # Set ABSTRACTCORE_ONNX_VERBOSE=1 to see ONNX warnings for debugging
             if os.environ.get("ABSTRACTCORE_ONNX_VERBOSE", "0") != "1":
@@ -157,7 +157,7 @@ class EmbeddingManager:
 
         # Store provider (after config loading)
         self.provider = self._resolved_provider.lower()
-        
+
         # Validate provider
         _SUPPORTED_EMB_PROVIDERS = [
             "huggingface", "ollama", "lmstudio", "openai",
@@ -168,11 +168,11 @@ class EmbeddingManager:
                 f"Unsupported provider: {provider}. "
                 f"Supported: {', '.join(_SUPPORTED_EMB_PROVIDERS)}"
             )
-        
+
         # Initialize provider-specific attributes
         self.model_config = None
         self._provider_instance = None
-        
+
         # Set up model identifier
         if self.provider == "huggingface":
             # Model configuration - HuggingFace only
@@ -190,7 +190,7 @@ class EmbeddingManager:
 
             self.backend = EmbeddingBackend(backend) if backend != "auto" else None
             self.trust_remote_code = trust_remote_code
-            
+
             # Validate Matryoshka dimensions
             if output_dims and self.model_config:
                 if not self.model_config.supports_matryoshka:
@@ -206,7 +206,7 @@ class EmbeddingManager:
             self.model_id = self._resolved_model
             self.backend = None
             self.trust_remote_code = False
-            
+
             # Create provider instance for delegation
             if self.provider == "ollama":
                 from ..providers.ollama_provider import OllamaProvider
@@ -677,15 +677,15 @@ class EmbeddingManager:
                 # Apply Matryoshka truncation if specified
                 if self.output_dims and len(embedding) > self.output_dims:
                     embedding = embedding[:self.output_dims]
-                    
+
             else:
                 # Ollama or LMStudio: Delegate to provider
                 result = self._provider_instance.embed(input_text=text)
-                
+
                 # Extract embedding from OpenAI-compatible response
                 if "data" in result and len(result["data"]) > 0:
                     embedding = result["data"][0]["embedding"]
-                    
+
                     # Apply dimension truncation if specified
                     if self.output_dims and len(embedding) > self.output_dims:
                         embedding = embedding[:self.output_dims]
@@ -776,24 +776,24 @@ class EmbeddingManager:
                         cached_embeddings[idx] = embedding_list
 
                     logger.debug(f"Generated {len(batch_embeddings)} embeddings in batch (HuggingFace)")
-                    
+
                 else:
                     # Ollama or LMStudio: Delegate to provider (supports batch in single call)
                     result = self._provider_instance.embed(input_text=uncached_texts)
-                    
+
                     # Extract embeddings from OpenAI-compatible response
                     if "data" in result:
                         for text, embedding_data, idx in zip(uncached_texts, result["data"], uncached_indices):
                             embedding = embedding_data["embedding"]
-                            
+
                             # Apply dimension truncation if specified
                             if self.output_dims and len(embedding) > self.output_dims:
                                 embedding = embedding[:self.output_dims]
-                            
+
                             text_hash = self._text_hash(text)
                             self._persistent_cache[text_hash] = embedding
                             cached_embeddings[idx] = embedding
-                        
+
                         logger.debug(f"Generated {len(result['data'])} embeddings in batch ({self.provider})")
                     else:
                         raise ValueError(f"Invalid batch response from {self.provider} provider")
@@ -830,7 +830,7 @@ class EmbeddingManager:
         """Get the dimension of embeddings produced by this model."""
         if self.output_dims:
             return self.output_dims
-        
+
         if self.provider == "huggingface":
             return self.model.get_sentence_embedding_dimension()
         else:

@@ -118,7 +118,7 @@ def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
             _has_harmony_tool_prefix(response),
             _has_json_tool_pattern(response),
         ])
-    
+
     # Additional check for plain JSON when no specific format is detected
     if tool_format == ToolFormat.RAW_JSON:
         return _has_json_tool_pattern(response)
@@ -449,7 +449,7 @@ def _parse_special_token(response: str) -> List[ToolCall]:
                     tool_name = tool_data["tool"]
                 elif "action" in tool_data:
                     tool_name = tool_data["action"]
-                
+
                 if tool_name:
                     tool_calls.append(ToolCall(
                         name=tool_name,
@@ -1586,17 +1586,17 @@ def _format_tool_call_example(
 ) -> str:
     """
     Format a tool call example using the correct format for the architecture.
-    
+
     Args:
         tool_name: Name of the tool
         arguments: Tool arguments
         tool_format: The tool format for the architecture
-        
+
     Returns:
         Formatted tool call example string
     """
     tool_call_json = json.dumps({"name": tool_name, "arguments": arguments}, separators=(",", ":"), ensure_ascii=False)
-    
+
     if tool_format == ToolFormat.SPECIAL_TOKEN:
         # Qwen-style: <|tool_call|> ... </|tool_call|>
         # Gemma4-style: <|tool_call>call:tool_name{...}<tool_call|>

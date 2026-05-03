@@ -180,7 +180,7 @@ everyday applications.
 
 [Additional charts, graphs, and supporting documentation...]
 """
-    
+
     # Create temporary file
     with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
         f.write(content)
@@ -191,45 +191,45 @@ def demo_basic_compression():
     """Demonstrate basic Glyph compression functionality."""
     print("🎯 Basic Glyph Compression Demo")
     print("=" * 50)
-    
+
     # Create sample document
     doc_path = create_sample_document()
     print(f"📄 Created sample document: {doc_path}")
-    
+
     try:
         # Read document content
         with open(doc_path, 'r') as f:
             content = f.read()
-        
+
         print(f"📊 Original document: {len(content)} characters")
-        
+
         # Estimate original token count
         from abstractcore.utils.token_utils import TokenUtils
         original_tokens = TokenUtils.estimate_tokens(content)
         print(f"🔢 Estimated tokens: {original_tokens}")
-        
+
         # Initialize compression orchestrator
         orchestrator = CompressionOrchestrator()
-        
+
         # Get compression recommendation
         recommendation = orchestrator.get_compression_recommendation(
             content, "openai", "gpt-4o"
         )
-        
+
         print("\n📋 Compression Recommendation:")
         print(f"   Should compress: {recommendation['should_compress']}")
         print(f"   Reason: {recommendation['recommendation_reason']}")
-        
+
         if recommendation['should_compress']:
             print(f"   Estimated ratio: {recommendation['compression_estimate']['estimated_ratio']:.1f}x")
             print(f"   Token savings: {recommendation['compression_estimate']['estimated_token_savings']}")
             print(f"   Cost savings: ${recommendation['compression_estimate']['estimated_cost_savings']:.4f}")
-        
+
     except Exception as e:
         print(f"❌ Demo failed: {e}")
         print("Note: This demo requires reportlab and pdf2image packages")
         print("Install with: pip install reportlab pdf2image")
-    
+
     finally:
         # Cleanup
         if doc_path.exists():
@@ -240,11 +240,11 @@ def demo_provider_integration():
     """Demonstrate Glyph integration with AbstractCore providers."""
     print("\n🔗 Provider Integration Demo")
     print("=" * 50)
-    
+
     # Create sample document
     doc_path = create_sample_document()
     print(f"📄 Created sample document: {doc_path}")
-    
+
     try:
         # Create LLM with Glyph compression enabled
         llm = create_llm(
@@ -252,22 +252,22 @@ def demo_provider_integration():
             model="gpt-4o",
             api_key=os.getenv("OPENAI_API_KEY", "demo-key")
         )
-        
+
         print("🤖 Created LLM instance with Glyph support")
-        
+
         # Test compression decision
         print("\n🧠 Testing compression decision logic...")
-        
+
         # This would normally process the document with compression
         # For demo purposes, we'll just show the API
         print("✅ Glyph compression would be applied automatically for large documents")
         print("✅ Fallback to standard processing if compression fails")
         print("✅ Provider-specific optimization (OpenAI: DPI 72, font 9pt)")
-        
+
     except Exception as e:
         print(f"❌ Demo failed: {e}")
         print("Note: Set OPENAI_API_KEY environment variable for full demo")
-    
+
     finally:
         # Cleanup
         if doc_path.exists():
@@ -278,7 +278,7 @@ def demo_configuration():
     """Demonstrate Glyph configuration options."""
     print("\n⚙️ Configuration Demo")
     print("=" * 50)
-    
+
     # Create custom configuration
     config = GlyphConfig(
         enabled=True,
@@ -287,20 +287,20 @@ def demo_configuration():
         target_compression_ratio=3.5,
         cache_directory="~/.abstractcore/glyph_cache"
     )
-    
+
     print("📋 Default Configuration:")
     print(f"   Enabled: {config.enabled}")
     print(f"   Global default: {config.global_default}")
     print(f"   Quality threshold: {config.quality_threshold}")
     print(f"   Target ratio: {config.target_compression_ratio}x")
     print(f"   Cache directory: {config.cache_directory}")
-    
+
     print("\n🎛️ Provider-Specific Profiles:")
     for provider, profile in config.provider_profiles.items():
         print(f"   {provider.title()}:")
         for key, value in profile.items():
             print(f"     {key}: {value}")
-    
+
     print("\n📱 App-Specific Defaults:")
     for app, setting in config.app_defaults.items():
         print(f"   {app}: {setting}")
@@ -310,11 +310,11 @@ def demo_quality_assessment():
     """Demonstrate quality assessment features."""
     print("\n🔍 Quality Assessment Demo")
     print("=" * 50)
-    
+
     from abstractcore.compression.quality import QualityValidator
-    
+
     validator = QualityValidator()
-    
+
     # Sample content types
     test_cases = [
         ("prose", "This is a sample of natural language text with common words and standard sentence structure."),
@@ -322,7 +322,7 @@ def demo_quality_assessment():
         ("data", "name,age,city\nJohn,25,NYC\nJane,30,LA\nBob,35,Chicago"),
         ("mixed", "# Code Example\n\n```python\ndef process_data(data):\n    return data.upper()\n```\n\nThis function processes text data.")
     ]
-    
+
     print("📊 Content Type Analysis:")
     for content_type, sample in test_cases:
         # Simulate quality assessment
@@ -340,13 +340,13 @@ def main():
     print("This demo showcases AbstractCore's Glyph compression integration")
     print("which provides 3-4x token compression for long documents.")
     print()
-    
+
     # Run demos
     demo_basic_compression()
     demo_provider_integration()
     demo_configuration()
     demo_quality_assessment()
-    
+
     print("\n✨ Demo Complete!")
     print("\nNext Steps:")
     print("1. Install dependencies: pip install reportlab pdf2image")

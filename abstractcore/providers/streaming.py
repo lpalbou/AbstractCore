@@ -591,7 +591,7 @@ class UnifiedStreamProcessor:
         #
         # Note: treat empty/whitespace tool_call_tags like "no rewrite" (avoid leaking raw tags).
         preserve_for_rewriting = bool(self.convert_to_openai_json or tool_call_tags)
-        
+
         self.detector = IncrementalToolDetector(
             model_name=model_name,
             rewrite_tags=preserve_for_rewriting

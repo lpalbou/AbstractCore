@@ -1,6 +1,6 @@
 # Getting Started
 
-AbstractCore is a unified Python interface for cloud + local LLM providers. The default install is lightweight; add features via extras.
+AbstractCore is a unified Python interface for cloud, gateway, and local LLM providers. The default install is lightweight; add only the extras your application needs.
 
 ## Prerequisites
 
@@ -9,16 +9,23 @@ AbstractCore is a unified Python interface for cloud + local LLM providers. The 
 
 ## Installation
 
+Extras compose. For example, `abstractcore[remote,media,tools]` installs hosted
+API SDKs plus document/media handling and built-in tools in one command.
+
 ```bash
-# Core (small, lightweight default)
+# Core: local HTTP servers and gateways that need no SDK
+# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
 pip install abstractcore
 
-# Providers (install only what you use)
+# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
+pip install "abstractcore[remote]"
+
+# Individual provider SDKs / local runtimes
 pip install "abstractcore[openai]"       # OpenAI SDK
 pip install "abstractcore[anthropic]"    # Anthropic SDK
 pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
 pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
-pip install "abstractcore[vllm]"         # GPU inference server integrations (heavy)
+pip install "abstractcore[vllm]"         # NVIDIA CUDA / ROCm inference (heavy)
 
 # Optional features
 pip install "abstractcore[tools]"        # built-in tools (web/file/command helpers)
@@ -29,7 +36,11 @@ pip install "abstractcore[tokens]"       # precise token counting (tiktoken)
 pip install "abstractcore[server]"       # OpenAI-compatible HTTP gateway
 
 # Combine extras (zsh: keep quotes)
-pip install "abstractcore[openai,media,tools]"
+pip install "abstractcore[remote,media,tools]"
+
+# Turnkey local-runtime installs
+pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
+pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
 ```
 
 Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, LocalAI, etc.) work with the core install; you just point AbstractCore at the server base URL. See [Prerequisites](prerequisites.md) for provider setup.

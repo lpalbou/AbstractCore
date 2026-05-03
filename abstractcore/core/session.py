@@ -99,49 +99,49 @@ class BasicSession:
                    location: Optional[str] = None, **metadata_kwargs) -> Message:
         """
         Add a message to conversation history manually.
-        
+
         Use this method when you need to:
         - Add system messages
         - Add tool messages  
         - Manually construct conversation history
         - Add messages without triggering LLM generation
-        
+
         For normal user interactions, use generate() instead.
-        
+
         Args:
             role: Message role (user, assistant, system, tool)
             content: Message content
             name: Username for the message. Defaults to "user" for user messages, None for others
             location: Location information (geographical, contextual, etc.)
             **metadata_kwargs: Additional metadata fields
-        
+
         Returns:
             Message: The created message with timestamp and metadata
-        
+
         Example:
             # Add a system message
             session.add_message('system', 'You are a helpful assistant.')
-            
+
             # Add a user message manually (without LLM response)
             session.add_message('user', 'Hello!', name='alice')
-            
+
             # For normal chat, use generate() instead:
             # response = session.generate('Hello!', name='alice')
         """
         # Set default username for user messages if not specified
         if name is None and role == 'user':
             name = "user"
-        
+
         # Build metadata
         metadata = {}
         if name is not None:
             metadata['name'] = name
         if location is not None:
             metadata['location'] = location
-        
+
         # Add any additional metadata
         metadata.update(metadata_kwargs)
-            
+
         message = Message(role=role, content=content, metadata=metadata if metadata else None)
         self.messages.append(message)
         return message
@@ -167,29 +167,29 @@ class BasicSession:
                 location: Optional[str] = None, **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """
         Generate LLM response for user input (recommended method for normal chat).
-        
+
         This is the main method for conversational interactions. It:
         1. Adds your message to conversation history
         2. Calls the LLM provider to generate a response
         3. Adds the assistant's response to history
         4. Returns the response
-        
+
         Args:
             prompt: User input prompt
             name: Optional username for the message (defaults to "user")
             location: Optional location information for the message
             **kwargs: Additional arguments passed to provider (stream, tools, etc.)
-            
+
         Returns:
             GenerateResponse or Iterator[GenerateResponse]: Response from the provider
-            
+
         Example:
             # Normal chat interaction
             response = session.generate('What is Python?', name='alice')
-            
+
             # With location context
             response = session.generate('What time is it?', name='bob', location='Paris')
-            
+
             # With streaming
             for chunk in session.generate('Tell me a story', stream=True):
                 print(chunk.content, end='')
@@ -431,16 +431,16 @@ class BasicSession:
     def save(self, filepath: Union[str, Path]):
         """
         Save session to file with complete metadata preservation.
-        
+
         Args:
             filepath: Path to save the session file
-            
+
         Note:
             Provider and tools are not serialized as they may contain non-serializable
             elements. They should be re-registered when loading the session.
         """
         data = self.to_dict()
-        
+
         with open(filepath, 'w') as f:
             json.dump(data, f, indent=2)
 
@@ -449,15 +449,15 @@ class BasicSession:
              tools: Optional[List[Callable]] = None) -> 'BasicSession':
         """
         Load session from file with complete metadata restoration.
-        
+
         Args:
             filepath: Path to the session file
             provider: LLM provider to use (must be provided separately)
             tools: Tools to register (must be provided separately)
-            
+
         Returns:
             BasicSession: Loaded session with all metadata preserved
-            
+
         Note:
             Provider and tools must be provided separately as they are not serialized.
         """
@@ -469,7 +469,7 @@ class BasicSession:
     def to_dict(self) -> Dict[str, Any]:
         """
         Convert session to dictionary using the session-archive/v1 schema.
-        
+
         Returns:
             Dict containing complete session archive with versioned schema
         """
@@ -483,7 +483,7 @@ class BasicSession:
                 if hasattr(tool, 'json_schema') and tool.json_schema:
                     tool_entry["json_schema"] = tool.json_schema
                 tool_registry.append(tool_entry)
-        
+
         # Build session object
         session_data = {
             "id": self.id,
@@ -498,7 +498,7 @@ class BasicSession:
                 "auto_compact_threshold": self.auto_compact_threshold
             }
         }
-        
+
         # Add optional analytics if present
         if self.summary:
             session_data["summary"] = self.summary
@@ -506,7 +506,7 @@ class BasicSession:
             session_data["assessment"] = self.assessment
         if self.facts:
             session_data["facts"] = self.facts
-        
+
         # Return complete archive
         return {
             "schema_version": "session-archive/v1",
@@ -519,12 +519,12 @@ class BasicSession:
                   tools: Optional[List[Callable]] = None) -> 'BasicSession':
         """
         Create session from dictionary data (supports both new archive format and legacy format).
-        
+
         Args:
             data: Dictionary containing session data
             provider: LLM provider to use (must be provided separately)
             tools: Tools to register (must be provided separately)
-            
+
         Returns:
             BasicSession: Reconstructed session
         """
@@ -537,12 +537,12 @@ class BasicSession:
             # Legacy format - data is the session object directly
             session_data = data
             messages_data = data.get("messages", [])
-        
+
         # Extract settings
         settings = session_data.get("settings", {})
         auto_compact = settings.get("auto_compact", session_data.get("auto_compact", False))
         auto_compact_threshold = settings.get("auto_compact_threshold", session_data.get("auto_compact_threshold", 6000))
-        
+
         # Create session with basic parameters
         session = cls(
             provider=provider,
@@ -551,24 +551,24 @@ class BasicSession:
             auto_compact=auto_compact,
             auto_compact_threshold=auto_compact_threshold
         )
-        
+
         # Restore session metadata
         session.id = session_data["id"]
         session.created_at = datetime.fromisoformat(session_data["created_at"])
         session.system_prompt = session_data.get("system_prompt")
         session._original_session = session_data.get("original_session")
-        
+
         # Restore optional analytics
         session.summary = session_data.get("summary")
         session.assessment = session_data.get("assessment")
         session.facts = session_data.get("facts")
-        
+
         # Clear any auto-added messages and restore from data
         session.messages = []
         for msg_data in messages_data:
             message = Message.from_dict(msg_data)
             session.messages.append(message)
-            
+
         return session
 
     def _register_tools(self, tools: List[Callable]) -> List:
@@ -782,22 +782,22 @@ class BasicSession:
     def get_token_estimate(self) -> int:
         """
         Estimate token count for current conversation using centralized utilities.
-        
+
         Returns:
             Estimated total token count for all messages in the session
         """
         from ..utils.token_utils import TokenUtils
-        
+
         # Get model name from provider if available
         model_name = None
         if self.provider and hasattr(self.provider, 'model'):
             model_name = self.provider.model
-            
+
         # Calculate tokens for all messages
         total_tokens = 0
         for msg in self.messages:
             total_tokens += TokenUtils.estimate_tokens(msg.content, model_name)
-            
+
         return total_tokens
 
     def should_compact(self, token_limit: int = 8000) -> bool:
@@ -868,49 +868,49 @@ class BasicSession:
                         compact_provider: Optional[AbstractCoreInterface] = None) -> Dict[str, Any]:
         """
         Generate a summary of the entire conversation and store it in session.summary.
-        
+
         Args:
             preserve_recent: Number of recent messages to preserve in analysis
             focus: Optional focus for summarization
             compact_provider: Optional provider for summarization
-            
+
         Returns:
             Dict containing the generated summary
         """
         if not self.messages:
             return {}
-            
+
         start_time = datetime.now()
         original_tokens = self.get_token_estimate()
-        
+
         # Use compact provider or fall back to session provider
         summarizer_provider = compact_provider or self.provider
         if not summarizer_provider:
             raise ValueError("No provider available for summarization")
-        
+
         try:
             from ..processing import BasicSummarizer
         except ImportError:
             raise ImportError("BasicSummarizer not available")
-        
+
         # Create summarizer
         summarizer = BasicSummarizer(summarizer_provider)
-        
+
         # Convert messages to dict format for summarizer
         conversation_messages = [msg for msg in self.messages if msg.role != 'system']
         message_dicts = [{"role": msg.role, "content": msg.content} for msg in conversation_messages]
-        
+
         # Generate summary
         summary_result = summarizer.summarize_chat_history(
             messages=message_dicts,
             preserve_recent=preserve_recent,
             focus=focus
         )
-        
+
         # Calculate metrics
         end_time = datetime.now()
         duration_ms = (end_time - start_time).total_seconds() * 1000
-        
+
         # Store summary in session
         self.summary = {
             "created_at": start_time.isoformat(),
@@ -924,7 +924,7 @@ class BasicSession:
                 "gen_time": duration_ms
             }
         }
-        
+
         return self.summary
 
     def _estimate_tokens_for_summary(self, summary_text: Optional[str]) -> int:
@@ -937,7 +937,7 @@ class BasicSession:
         if self.provider and hasattr(self.provider, 'model'):
             model_name = self.provider.model
         return TokenUtils.estimate_tokens(summary_text, model_name)
-    
+
     def _calculate_compression_ratio(self, original_tokens: int, summary_text: Optional[str]) -> float:
         """Helper method to calculate compression ratio."""
         if not summary_text:
@@ -962,18 +962,18 @@ class BasicSession:
         """
         if not self.messages:
             return {}
-            
+
         start_time = datetime.now()
-        
+
         if not self.provider:
             raise ValueError("No provider available for assessment")
-        
+
         try:
             from ..processing import BasicJudge
             from ..processing.basic_judge import JudgmentCriteria
         except ImportError:
             raise ImportError("BasicJudge not available")
-        
+
         # Default criteria if not provided
         if criteria is None:
             criteria = {
@@ -983,19 +983,19 @@ class BasicSession:
                 "completeness": True,
                 "actionability": True
             }
-        
+
         # Create judge
         judge = BasicJudge(self.provider)
-        
+
         # Format conversation for assessment
         conversation_messages = [msg for msg in self.messages if msg.role != 'system']
         conversation_text = "\n\n".join([
             f"{msg.role.title()}: {msg.content}" for msg in conversation_messages
         ])
-        
+
         # Create criteria object
         judge_criteria = JudgmentCriteria(**criteria)
-        
+
         # Generate assessment
         assessment_result = judge.evaluate(
             content=conversation_text,
@@ -1003,7 +1003,7 @@ class BasicSession:
             criteria=judge_criteria,
             custom_criteria=custom_criteria
         )
-        
+
         # Store assessment in session
         self.assessment = {
             "created_at": start_time.isoformat(),
@@ -1027,44 +1027,44 @@ class BasicSession:
             "actionable_feedback": assessment_result.get('actionable_feedback', []),
             "reasoning": assessment_result.get('reasoning', '')
         }
-        
+
         return self.assessment
 
     def extract_facts(self, output_format: str = "triples") -> Dict[str, Any]:
         """
         Extract facts from the entire conversation and store them in session.facts.
-        
+
         Args:
             output_format: Format for fact extraction ("triples" or "jsonld")
-            
+
         Returns:
             Dict containing the extracted facts
         """
         if not self.messages:
             return {}
-            
+
         start_time = datetime.now()
-        
+
         if not self.provider:
             raise ValueError("No provider available for fact extraction")
-        
+
         try:
             from ..processing import BasicExtractor
         except ImportError:
             raise ImportError("BasicExtractor not available")
-        
+
         # Create extractor
         extractor = BasicExtractor(self.provider)
-        
+
         # Format conversation for extraction
         conversation_messages = [msg for msg in self.messages if msg.role != 'system']
         conversation_text = "\n\n".join([
             f"{msg.role.title()}: {msg.content}" for msg in conversation_messages
         ])
-        
+
         # Extract facts
         extraction_result = extractor.extract(conversation_text, output_format=output_format)
-        
+
         # Store facts in session
         self.facts = {
             "extracted_at": start_time.isoformat(),
@@ -1072,7 +1072,7 @@ class BasicSession:
             "jsonld": extraction_result.get("@graph") if output_format == "jsonld" else None,
             "statistics": extraction_result.get("statistics", {})
         }
-        
+
         return self.facts
 
     def analyze_intents(self, 
@@ -1081,36 +1081,36 @@ class BasicSession:
                        context_type: str = "conversational") -> Dict[str, Any]:
         """
         Analyze intents in the conversation using BasicIntentAnalyzer.
-        
+
         Args:
             focus_participant: Optional role to focus analysis on (e.g., "user", "assistant")
             depth: Depth of intent analysis ("surface", "underlying", "comprehensive")
             context_type: Context type for analysis ("conversational" is default for sessions)
-            
+
         Returns:
             Dict containing intent analysis results for each participant
         """
         if not self.messages:
             return {}
-            
+
         if not self.provider:
             raise ValueError("No provider available for intent analysis")
-        
+
         try:
             from ..processing import BasicIntentAnalyzer, IntentDepth, IntentContext
         except ImportError:
             raise ImportError("BasicIntentAnalyzer not available")
-        
+
         # Create intent analyzer
         analyzer = BasicIntentAnalyzer(self.provider)
-        
+
         # Convert depth and context strings to enums
         depth_enum = IntentDepth(depth)
         context_enum = IntentContext(context_type)
-        
+
         # Convert session messages to the format expected by analyze_conversation_intents
         message_dicts = [{"role": msg.role, "content": msg.content} for msg in self.messages]
-        
+
         # Analyze conversation intents
         results = analyzer.analyze_conversation_intents(
             messages=message_dicts,

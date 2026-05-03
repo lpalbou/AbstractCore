@@ -491,7 +491,7 @@ class LocalMediaHandler(BaseProviderMediaHandler):
                             "url": data_url
                         }
                     }
-                    
+
                     # Add detail level if specified in metadata (for Qwen models)
                     detail_level = media_content.metadata.get('detail_level', 'auto')
                     self.logger.debug(f"MediaContent metadata: {media_content.metadata}")
@@ -501,7 +501,7 @@ class LocalMediaHandler(BaseProviderMediaHandler):
                         self.logger.info(f"Setting detail level to '{detail_level}' for LMStudio image")
                     else:
                         self.logger.warning(f"Invalid detail level '{detail_level}', skipping")
-                    
+
                     content.append(image_obj)
                 else:
                     self.logger.warning(f"LMStudio requires base64 image format, got {media_content.content_format}")

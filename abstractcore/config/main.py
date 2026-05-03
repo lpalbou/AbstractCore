@@ -356,7 +356,7 @@ def print_status():
         print("❌ Configuration system not available")
         print("💡 The AbstractCore configuration module is missing")
         return
-    
+
     config_manager = get_config_manager()
     status = config_manager.get_status()
 
@@ -1210,7 +1210,7 @@ def handle_commands(args) -> bool:
         print("💡 The AbstractCore configuration module is missing or not properly installed")
         print("💡 Please reinstall AbstractCore or check your installation")
         return True
-    
+
     config_manager = get_config_manager()
     handled = False
 

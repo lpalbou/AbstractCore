@@ -3,8 +3,11 @@ Core interface for LLM providers.
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Union, Iterator
+from typing import List, Dict, Any, Optional, Union, Iterator, TYPE_CHECKING
 from .types import GenerateResponse, Message
+
+if TYPE_CHECKING:
+    from ..media.types import MediaContent
 
 
 class AbstractCoreInterface(ABC):
@@ -82,13 +85,13 @@ class AbstractCoreInterface(ABC):
         self.max_tokens = max_tokens
         self.max_input_tokens = max_input_tokens
         self.max_output_tokens = max_output_tokens
-        
+
         # Unified generation parameters
         self.temperature = temperature
         # Default seed policy: -1 means "random" (do not forward a provider seed).
         # Accept None for backward compatibility and normalize it to -1.
         self.seed = -1 if seed is None else seed
-        
+
         self.debug = debug
 
         # Validate token parameters

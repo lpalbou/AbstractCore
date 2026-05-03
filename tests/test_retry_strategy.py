@@ -433,7 +433,7 @@ class MockProvider(BaseProvider):
         if self._should_fail and self._fail_count > 0:
             self._fail_count -= 1
             raise RateLimitError("Rate limit exceeded")
-        
+
         return GenerateResponse(
             content="Generated response",
             model=self.model,
@@ -458,7 +458,7 @@ class MockProvider(BaseProvider):
 
     def unload_model(self, model_name: str) -> None:
         return None
-    
+
     def set_failure_mode(self, should_fail: bool, fail_count: int = 1):
         """Configure the provider to fail for testing."""
         self._should_fail = should_fail

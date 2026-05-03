@@ -10,8 +10,11 @@ Handles CLI commands for vision fallback configuration:
 """
 
 import argparse
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, TYPE_CHECKING
 from pathlib import Path
+
+if TYPE_CHECKING:
+    from ..media.vision_fallback import VisionFallbackHandler
 
 def handle_vision_commands(args) -> bool:
     """

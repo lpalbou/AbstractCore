@@ -42,5 +42,6 @@ nav:
   - Media: media-handling-system.md
   - Embeddings: embeddings.md
   - Server: server.md
+  - Release Process: release-process.md
   - FAQ: faq.md
   - Troubleshooting: troubleshooting.md

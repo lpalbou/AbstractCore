@@ -225,7 +225,7 @@ class TestFactoryWithRealProviders:
             # Verify basic functionality exists
             assert hasattr(instance, 'generate')
             assert hasattr(instance, 'list_available_models')
-            
+
             # Test model listing (may require API key)
             models = instance.list_available_models()
             assert isinstance(models, list)

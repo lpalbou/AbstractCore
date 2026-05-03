@@ -61,7 +61,7 @@ class AutoMediaHandler(BaseMediaHandler):
         self._pdf_processor = None
         self._office_processor = None
         self._video_processor = None
-        
+
         # Initialize Glyph compression support
         self._compression_orchestrator = None
         self.glyph_config = kwargs.get('glyph_config')
@@ -105,7 +105,7 @@ class AutoMediaHandler(BaseMediaHandler):
 
         # VideoProcessor (dependency-free)
         availability['video'] = True
-        
+
         # GlyphProcessor (PIL renderer). Requires Pillow at runtime.
         availability['glyph'] = bool(
             GLYPH_AVAILABLE and self.enable_compression and availability.get('image', False)
@@ -142,7 +142,7 @@ class AutoMediaHandler(BaseMediaHandler):
         if self._video_processor is None:
             self._video_processor = VideoProcessor(**self.processor_config)
         return self._video_processor
-    
+
     def _get_compression_orchestrator(self) -> 'CompressionOrchestrator':
         """Get or create CompressionOrchestrator instance."""
         if self._compression_orchestrator is None and GLYPH_AVAILABLE:
@@ -227,7 +227,7 @@ class AutoMediaHandler(BaseMediaHandler):
         provider = kwargs.get('provider')
         model = kwargs.get('model')
         glyph_compression = kwargs.get('glyph_compression', 'auto')
-        
+
         if self._should_apply_compression(file_path, media_type, provider, model, glyph_compression):
             try:
                 # Remove provider and model from kwargs to avoid duplicate arguments
@@ -236,7 +236,7 @@ class AutoMediaHandler(BaseMediaHandler):
             except Exception as e:
                 self.logger.warning(f"Glyph compression failed, falling back to standard processing: {e}")
                 # Continue with standard processing
-        
+
         # Select the appropriate processor
         processor = self._select_processor(file_path, media_type)
 
@@ -288,7 +288,7 @@ class AutoMediaHandler(BaseMediaHandler):
             fallback_processing=True,
             available_processors=list(self._available_processors.keys())
         )
-    
+
     def _should_apply_compression(self, file_path: Path, media_type: MediaType,
                                 provider: str, model: str, glyph_compression: str) -> bool:
         """
@@ -371,42 +371,42 @@ class AutoMediaHandler(BaseMediaHandler):
     def _log_compression_unavailable_warning(self):
         """Log detailed warning about why Glyph compression is unavailable."""
         self.logger.warning("Glyph compression requested but not available")
-        
+
         # Check specific reasons
         if not GLYPH_AVAILABLE:
             self.logger.warning("Glyph compression modules could not be imported")
-            
+
         # Check dependencies
         missing_deps = []
         try:
             from PIL import Image  # noqa: F401
         except ImportError:
             missing_deps.append("Pillow")
-            
+
         try:
             import pdf2image
         except ImportError:
             # Only required for the experimental direct PDF→image path.
             missing_deps.append("pdf2image (optional)")
-            
+
         if missing_deps:
             deps_str = ", ".join(missing_deps)
             self.logger.warning(f"Missing Glyph dependencies: {deps_str}")
             self.logger.warning("Install with: pip install \"abstractcore[compression]\" (Pillow renderer)")
             self.logger.warning("Optional (PDF→image): pip install pdf2image (+ Poppler installed on your system)")
-        
+
         if not self.enable_compression:
             self.logger.warning("Glyph compression is disabled in AutoMediaHandler configuration")
-    
+
     def _apply_compression(self, file_path: Path, provider: str, model: str, **kwargs) -> MediaContent:
         """Apply Glyph compression to the file."""
         media_type = detect_media_type(file_path)
-        
+
         # For PDF files, use direct PDF-to-image conversion (no text extraction!)
         if media_type == MediaType.DOCUMENT and file_path.suffix.lower() == '.pdf':
             try:
                 from .processors.direct_pdf_processor import DirectPDFProcessor
-                
+
                 # Configure for optimal compression (2 pages per image)
                 direct_processor = DirectPDFProcessor(
                     pages_per_image=2,  # 16 pages → 8 images
@@ -415,10 +415,10 @@ class AutoMediaHandler(BaseMediaHandler):
                     gap=20,  # Small gap between pages
                     **kwargs
                 )
-                
+
                 # Get all combined images
                 combined_images = direct_processor.get_combined_image_paths(file_path)
-                
+
                 # Get session info for metadata from DirectPDFProcessor
                 from ..config import get_config_manager
                 import hashlib
@@ -426,16 +426,16 @@ class AutoMediaHandler(BaseMediaHandler):
                 glyph_cache_base = Path(config_manager.config.cache.glyph_cache_dir).expanduser()
                 pdf_hash = hashlib.md5(str(file_path).encode()).hexdigest()[:8]
                 session_id = f"pdf_{pdf_hash}_{len(combined_images)}pages"
-                
+
                 # Create MediaContent objects for each combined image
                 media_contents = []
                 for i, img_path in enumerate(combined_images):
                     with open(img_path, 'rb') as f:
                         image_data = f.read()
-                    
+
                     import base64
                     encoded_data = base64.b64encode(image_data).decode('utf-8')
-                    
+
                     media_content = MediaContent(
                         media_type=MediaType.IMAGE,
                         content=encoded_data,
@@ -454,54 +454,54 @@ class AutoMediaHandler(BaseMediaHandler):
                         }
                     )
                     media_contents.append(media_content)
-                
+
                 self.logger.info(f"Direct PDF conversion: {len(combined_images)} combined images created")
-                
+
                 # Return first image (in full implementation, would handle multiple)
                 if media_contents:
                     return media_contents[0]
                 else:
                     raise Exception("No combined images created")
-                    
+
             except Exception as e:
                 self.logger.warning(f"DirectPDFProcessor failed: {e}, falling back to text extraction")
                 # Fall back to text extraction method
                 pass
-        
+
         # Fallback: text extraction method (for non-PDF or if direct method fails)
         orchestrator = self._get_compression_orchestrator()
         if not orchestrator:
             raise Exception("Compression orchestrator not available")
-        
+
         if media_type == MediaType.DOCUMENT and file_path.suffix.lower() == '.pdf':
             processor = self._get_pdf_processor()
         elif media_type == MediaType.DOCUMENT:
             processor = self._get_office_processor()
         else:
             processor = self._get_text_processor()
-        
+
         # Extract text content
         extracted_content = processor._process_internal(file_path, media_type, **kwargs)
         text_content = extracted_content.content
-        
+
         # Compress the extracted text content
         glyph_compression = kwargs.get('glyph_compression', 'auto')
         compressed_content = orchestrator.compress_content(text_content, provider, model, glyph_compression)
-        
+
         if compressed_content and len(compressed_content) > 0:
             # Return first compressed image as primary content
             # Additional images can be accessed through metadata
             primary_content = compressed_content[0]
-            
+
             # Add information about additional images
             if len(compressed_content) > 1:
                 primary_content.metadata['additional_images'] = len(compressed_content) - 1
                 primary_content.metadata['total_compressed_images'] = len(compressed_content)
-            
+
             # Add compression metadata
             primary_content.metadata['compression_used'] = True
             primary_content.metadata['original_file'] = str(file_path)
-            
+
             return primary_content
         else:
             raise Exception("No compressed content generated")

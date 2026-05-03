@@ -7,7 +7,7 @@ import os
 import httpx
 import time
 import warnings
-from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type
+from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING
 
 try:
     from pydantic import BaseModel
@@ -20,6 +20,9 @@ from ..core.types import GenerateResponse
 from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error, format_provider_error
 from ..tools import UniversalToolHandler, ToolDefinition, execute_tools
 from ..events import EventType
+
+if TYPE_CHECKING:
+    from ..media.types import MediaContent
 
 
 class OllamaProvider(BaseProvider):
@@ -432,7 +435,7 @@ class OllamaProvider(BaseProvider):
                 thinking_text = None
             if isinstance(thinking_text, str) and thinking_text.strip():
                 generate_response.metadata.setdefault("reasoning", thinking_text.strip())
-            
+
             # Attach media metadata if available
             if media_metadata:
                 if not generate_response.metadata:
@@ -469,7 +472,7 @@ class OllamaProvider(BaseProvider):
 
                 # Collect full response for tool processing
                 full_content = ""
-                
+
                 # Initialize tool tag rewriter if needed
                 rewriter = None
                 buffer = ""
@@ -889,7 +892,7 @@ class OllamaProvider(BaseProvider):
                 # Apply new capability filtering if provided
                 input_capabilities = kwargs.get('input_capabilities')
                 output_capabilities = kwargs.get('output_capabilities')
-                
+
                 if input_capabilities or output_capabilities:
                     models = filter_models_by_capabilities(
                         models, 
@@ -909,11 +912,11 @@ class OllamaProvider(BaseProvider):
     def embed(self, input_text: Union[str, List[str]], **kwargs) -> Dict[str, Any]:
         """
         Generate embeddings using Ollama's embedding API.
-        
+
         Args:
             input_text: Single string or list of strings to embed
             **kwargs: Additional parameters (currently unused)
-            
+
         Returns:
             Dict with embeddings in OpenAI-compatible format:
             {
@@ -926,37 +929,37 @@ class OllamaProvider(BaseProvider):
         try:
             # Convert single string to list for uniform processing
             texts = [input_text] if isinstance(input_text, str) else input_text
-            
+
             embeddings_data = []
             total_tokens = 0
-            
+
             for idx, text in enumerate(texts):
                 # Call Ollama's embeddings API
                 payload = {
                     "model": self.model,
                     "prompt": text
                 }
-                
+
                 response = self.client.post(
                     f"{self.base_url}/api/embeddings",
                     json=payload
                 )
                 response.raise_for_status()
-                
+
                 result = response.json()
                 embedding = result.get("embedding", [])
-                
+
                 # Use centralized token estimation for accuracy
                 from ..utils.token_utils import TokenUtils
                 estimated_tokens = TokenUtils.estimate_tokens(text, self.model)
                 total_tokens += estimated_tokens
-                
+
                 embeddings_data.append({
                     "object": "embedding",
                     "embedding": embedding,
                     "index": idx
                 })
-            
+
             return {
                 "object": "list",
                 "data": embeddings_data,
@@ -966,7 +969,7 @@ class OllamaProvider(BaseProvider):
                     "total_tokens": total_tokens
                 }
             }
-            
+
         except Exception as e:
             self.logger.error(f"Failed to generate embeddings: {e}")
             raise ProviderAPIError(f"Ollama embedding error: {str(e)}")

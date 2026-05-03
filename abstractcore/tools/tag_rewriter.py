@@ -31,7 +31,7 @@ class ToolCallTags:
     end_tag: str
     preserve_json: bool = True
     auto_format: bool = True
-    
+
     def __post_init__(self):
         """Validate tag configuration."""
         if not self.start_tag or not self.end_tag:
@@ -60,11 +60,11 @@ class ToolCallTags:
 class ToolCallTagRewriter:
     """
     Real-time tool call tag rewriter.
-    
+
     This class provides functionality to rewrite tool call tags in real-time,
     supporting streaming scenarios and different agentic CLI requirements.
     """
-    
+
     def __init__(self, target_tags: ToolCallTags):
         """
         Initialize the tag rewriter.
@@ -107,7 +107,7 @@ class ToolCallTagRewriter:
         else:
             # Start tag: add < prefix and > suffix
             return f'<{tag}>'
-    
+
     def _compile_patterns(self) -> List[Tuple[re.Pattern, str]]:
         """
         Compile regex patterns for different tool call formats.
@@ -155,7 +155,7 @@ class ToolCallTagRewriter:
         patterns.append((json_pattern, f"{self._output_start_tag}\\1{self._output_end_tag}"))
 
         return patterns
-    
+
     def rewrite_text(self, text: str) -> str:
         """
         Rewrite tool call tags in text.
@@ -402,29 +402,29 @@ class ToolCallTagRewriter:
             rewritten = rewritten[: match.start()] + replacement + rewritten[brace_end + 1 :]
 
         return rewritten
-    
+
     def rewrite_streaming_chunk(self, chunk: str, buffer: str = "") -> Tuple[str, str]:
         """
         Rewrite tool call tags in a streaming chunk using SOTA buffer-based approach.
-        
+
         This method uses immediate rewriting strategy:
         1. Rewrite start tags immediately when detected
         2. Buffer content until end tag is found
         3. Rewrite end tag when complete tool call is detected
-        
+
         This approach minimizes latency for agency loops while maintaining
         clean output and avoiding double-tagging.
-        
+
         Args:
             chunk: Current chunk of text
             buffer: Previous buffer for handling split tool calls
-            
+
         Returns:
             Tuple of (rewritten_chunk, updated_buffer)
         """
         if not chunk:
             return chunk, buffer
-        
+
         # Combine buffer with current chunk
         full_text = buffer + chunk
 
@@ -434,25 +434,25 @@ class ToolCallTagRewriter:
             self._output_end_tag in full_text):
             # Already in target format, just return as-is
             return full_text, ""
-        
+
         # Check if we have a complete tool call in the full text
         if self._has_complete_tool_call(full_text):
             # Rewrite the complete tool call
             rewritten_tool_call = self._rewrite_complete_tool_call(full_text)
             return rewritten_tool_call, ""
-        
+
         # Check if we have an incomplete tool call (start tag but no end tag)
         if self._has_incomplete_tool_call(full_text):
             # We have a start tag but no end tag yet
             # Don't output anything yet, keep buffering
             return "", full_text
-        
+
         # Check if we have a complete plain JSON tool call
         if self._is_plain_json_tool_call(full_text.strip()):
             # We have a complete plain JSON tool call
             rewritten_tool_call = self._rewrite_complete_tool_call(full_text.strip())
             return rewritten_tool_call, ""
-        
+
         # Check if we're in the middle of a potential plain JSON tool call
         if (full_text.strip().startswith('{') and 
             '"name"' in full_text and
@@ -476,7 +476,7 @@ class ToolCallTagRewriter:
             import re
             json_pattern = r'\{[^{}]*"name"[^{}]*(?:\{[^{}]*\}[^{}]*)*\}'
             matches = re.findall(json_pattern, full_text)
-            
+
             if matches:
                 # Found JSON tool calls in the text, rewrite them
                 rewritten_text = full_text
@@ -494,7 +494,7 @@ class ToolCallTagRewriter:
             else:
                 # No tool call detected, output the chunk and clear buffer
                 return chunk, ""
-    
+
     def _has_complete_tool_call(self, text: str) -> bool:
         """Check if text contains a complete tool call."""
         # Look for any source format that has both start and end tags
@@ -504,17 +504,17 @@ class ToolCallTagRewriter:
             r'<tool_call>.*?</tool_call>',
             r'```tool_code.*?```',
         ]
-        
+
         for pattern in source_patterns:
             if re.search(pattern, text, re.DOTALL):
                 return True
-        
+
         # Also check for plain JSON tool calls
         if self._is_plain_json_tool_call(text):
             return True
-            
+
         return False
-    
+
     def _has_incomplete_tool_call(self, text: str) -> bool:
         """Check if text contains an incomplete tool call (start tag but no end tag)."""
         # Look for start tags without corresponding end tags
@@ -524,7 +524,7 @@ class ToolCallTagRewriter:
             r'<tool_call>',
             r'```tool_code',
         ]
-        
+
         for pattern in start_patterns:
             if re.search(pattern, text):
                 # Check if we have the corresponding end tag
@@ -538,12 +538,12 @@ class ToolCallTagRewriter:
                     end_pattern = r'```'
                 else:
                     continue
-                
+
                 if not re.search(end_pattern, text):
                     return True
-        
+
         return False
-    
+
     def _is_plain_json_tool_call(self, text: str) -> bool:
         """Check if text is a plain JSON tool call."""
         try:
@@ -553,7 +553,7 @@ class ToolCallTagRewriter:
             return isinstance(data, dict) and "name" in data
         except:
             return False
-    
+
     def _find_json_objects(self, text: str) -> List[str]:
         """Find all potential JSON objects in text by looking for balanced braces."""
         json_objects = []
@@ -579,7 +579,7 @@ class ToolCallTagRewriter:
             else:
                 i += 1
         return json_objects
-    
+
     def _rewrite_complete_tool_call(self, text: str) -> str:
         """Rewrite a complete tool call to target format."""
         # Find the tool call in the text
@@ -604,31 +604,31 @@ class ToolCallTagRewriter:
 
         # If no pattern matches, return original text
         return text
-    
+
     def is_tool_call(self, text: str) -> bool:
         """
         Check if text contains a tool call.
-        
+
         Args:
             text: Text to check
-            
+
         Returns:
             True if text contains a tool call
         """
         return any(pattern.search(text) for pattern, _ in self._compiled_patterns)
-    
+
     def extract_tool_calls(self, text: str) -> List[Dict[str, Any]]:
         """
         Extract tool calls from text.
-        
+
         Args:
             text: Text containing tool calls
-            
+
         Returns:
             List of tool call dictionaries
         """
         tool_calls = []
-        
+
         # Find all tool call patterns
         for pattern, _ in self._compiled_patterns:
             matches = pattern.findall(text)
@@ -640,7 +640,7 @@ class ToolCallTagRewriter:
                         tool_calls.append(tool_data)
                 except json.JSONDecodeError:
                     continue
-        
+
         return tool_calls
 
 
@@ -662,29 +662,29 @@ PREDEFINED_TAGS = {
 def get_predefined_tags(cli_name: str) -> ToolCallTags:
     """
     Get predefined tag configuration for a CLI.
-    
+
     Args:
         cli_name: Name of the CLI (e.g., "qwen3", "llama3", "codex")
-        
+
     Returns:
         ToolCallTags configuration
-        
+
     Raises:
         ValueError: If CLI name is not recognized
     """
     if cli_name not in PREDEFINED_TAGS:
         raise ValueError(f"Unknown CLI name: {cli_name}. Available: {list(PREDEFINED_TAGS.keys())}")
-    
+
     return PREDEFINED_TAGS[cli_name]
 
 
 def create_tag_rewriter(cli_name: str = "qwen3") -> ToolCallTagRewriter:
     """
     Create a tag rewriter for a specific CLI.
-    
+
     Args:
         cli_name: Name of the CLI (e.g., "qwen3", "llama3", "codex")
-        
+
     Returns:
         ToolCallTagRewriter instance
     """

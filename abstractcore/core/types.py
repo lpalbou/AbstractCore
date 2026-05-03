@@ -68,7 +68,7 @@ class Message:
 
         # Handle backward compatibility: if 'name' exists as separate field, move to metadata
         metadata = data.get("metadata", {}).copy() if data.get("metadata") else {}
-        
+
         # Backward compatibility: migrate old 'name' field to metadata
         if "name" in data and data["name"] is not None:
             metadata["name"] = data["name"]
@@ -145,21 +145,21 @@ class GenerateResponse:
             raise TypeError("reasoning must be a string or None")
         # Canonical storage key.
         self.metadata["reasoning"] = value
-    
+
     @property
     def input_tokens(self) -> Optional[int]:
         """Get input tokens with consistent terminology (prompt_tokens or input_tokens)."""
         if not self.usage:
             return None
         return self.usage.get('input_tokens') or self.usage.get('prompt_tokens')
-    
+
     @property
     def output_tokens(self) -> Optional[int]:
         """Get output tokens with consistent terminology (completion_tokens or output_tokens)."""
         if not self.usage:
             return None
         return self.usage.get('output_tokens') or self.usage.get('completion_tokens')
-    
+
     @property
     def total_tokens(self) -> Optional[int]:
         """Get total tokens."""

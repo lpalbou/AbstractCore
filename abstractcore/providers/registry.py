@@ -476,7 +476,7 @@ class ProviderRegistry:
     def get_providers_with_models(self, include_models: bool = True) -> List[Dict[str, Any]]:
         """
         Get only providers that have available models.
-        
+
         Args:
             include_models: If True, include actual model lists (slower).
                            If False, return metadata only (much faster). Default: True.
@@ -496,24 +496,24 @@ class ProviderRegistry:
     def get_providers_metadata_only(self) -> List[Dict[str, Any]]:
         """
         Get provider metadata without enumerating models (fast path).
-        
+
         This method returns provider information without making API calls
         or scanning for models, making it extremely fast for UI discovery.
         """
         providers_metadata = []
-        
+
         for provider_name in self.list_provider_names():
             provider_info = self.get_provider_info(provider_name)
             if not provider_info:
                 continue
-                
+
             # Basic availability check without model enumeration
             try:
                 provider_class = self.get_provider_class(provider_name)
                 status = "available"  # Assume available if class can be imported
             except Exception:
                 status = "error"
-            
+
             metadata = {
                 "name": provider_info.name,
                 "display_name": provider_info.display_name,
@@ -527,9 +527,9 @@ class ProviderRegistry:
                 "installation_extras": provider_info.installation_extras,
                 "models": []  # Empty list for fast response
             }
-            
+
             providers_metadata.append(metadata)
-        
+
         return providers_metadata
 
     def create_provider_instance(self, provider_name: str, model: Optional[str] = None, **kwargs):
@@ -641,7 +641,7 @@ def create_provider(provider_name: str, model: Optional[str] = None, **kwargs):
 def get_available_models_for_provider(provider_name: str, **kwargs) -> List[str]:
     """
     Get available models for a specific provider.
-    
+
     Args:
         provider_name: Name of the provider
         **kwargs: Provider-specific parameters including:

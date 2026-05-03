@@ -228,7 +228,7 @@ class SimpleCLI:
             print("\n" + "=" * 70)
             print("🚀 AbstractCore CLI - Interactive LLM Interface".center(70))
             print("=" * 70)
-            
+
             print("\n📖 CORE COMMANDS")
             print("─" * 50)
             print("  /help                    Show this comprehensive help")
@@ -237,7 +237,7 @@ class SimpleCLI:
             print("  /cls                     Clear the screen (like unix terminal)")
             print("  /reset                   Reset conversation history")
             print("  /status                  Show system status and capabilities")
-            
+
             print("\n💬 CONVERSATION MANAGEMENT")
             print("─" * 50)
             print("  /history [n]             Show conversation history")
@@ -250,7 +250,7 @@ class SimpleCLI:
             print("  /system [prompt]         View or change system prompt")
             print("                           • /system         - Show current prompt")
             print("                           • /system <text>  - Set new prompt")
-            
+
             print("\n💾 SESSION & CACHE")
             print("─" * 50)
             print("  /session save <name> [options]  Save session to <name>.json with optional analytics")
@@ -270,7 +270,7 @@ class SimpleCLI:
             print("  /cache load <name>              Load prompt/KV cache from <name>.safetensors (MLX only, model-locked)")
             print("                           • /cache load chat_cache")
             print("  /cache clear                    Clear prompt cache only (KV mode rebuilds from transcript)")
-            
+
             print("\n📊 ANALYTICS & INSIGHTS")
             print("─" * 50)
             print("  /facts [file]            Extract facts from conversation")
@@ -281,7 +281,7 @@ class SimpleCLI:
             print("                           • /intent         - Analyze all participants")
             print("                           • /intent user    - Focus on user intents")
             print("                           • /intent assistant - Focus on assistant intents")
-            
+
             print("\n⚙️  CONFIGURATION")
             print("─" * 50)
             print("  /model <provider:model>  Switch LLM provider/model")
@@ -296,7 +296,7 @@ class SimpleCLI:
             print("                           • /show-reasoning auto|on|off")
             print("  /stream                  Toggle streaming mode on/off")
             print("  /debug                   Toggle debug info (timing, detection)")
-            
+
             print("\n🛠️ AVAILABLE TOOLS")
             print("─" * 50)
             print("  The assistant can use these tools automatically:")
@@ -305,7 +305,7 @@ class SimpleCLI:
             print("  • read_file              Read file contents")
             print("  • write_file             Create or modify files")
             print("  • execute_command        Run shell commands")
-            
+
             print("\n📎 FILE ATTACHMENTS")
             print("─" * 50)
             print("  Use @filename syntax to attach files to your message:")
@@ -325,7 +325,7 @@ class SimpleCLI:
             print("  • Save important conversations: '/session save project_discussion --summary'")
             print("  • Switch models for different tasks: '/model ollama:qwen3-coder:30b'")
             print("  • Use /status to check token usage and model capabilities")
-            
+
             print("\n" + "=" * 70)
             print("Type any message to start chatting, or use commands above".center(70))
             print("=" * 70 + "\n")
@@ -1381,7 +1381,7 @@ class SimpleCLI:
             for participant, analysis in results.items():
                 print(f"\n👤 {participant.upper()} INTENTS:")
                 print("─" * 40)
-                
+
                 # Primary Intent
                 primary = analysis.primary_intent
                 print(f"🎯 Primary Intent: {primary.intent_type.value.replace('_', ' ').title()}")
@@ -1389,7 +1389,7 @@ class SimpleCLI:
                 print(f"   Underlying Goal: {primary.underlying_goal}")
                 print(f"   Emotional Undertone: {primary.emotional_undertone}")
                 print(f"   Confidence: {primary.confidence:.2f} | Urgency: {primary.urgency_level:.2f}")
-                
+
                 # Secondary Intents (show top 2 for brevity)
                 if analysis.secondary_intents:
                     print(f"\n🔄 Secondary Intents:")
@@ -1397,13 +1397,13 @@ class SimpleCLI:
                         print(f"   {i}. {intent.intent_type.value.replace('_', ' ').title()}")
                         print(f"      Goal: {intent.underlying_goal}")
                         print(f"      Confidence: {intent.confidence:.2f}")
-                
+
                 # Key contextual factors (show top 3)
                 if analysis.contextual_factors:
                     print(f"\n🌍 Key Context Factors:")
                     for factor in analysis.contextual_factors[:3]:
                         print(f"   • {factor}")
-                
+
                 # Response approach
                 print(f"\n💡 Suggested Response Approach:")
                 # Truncate long response approaches for readability
@@ -1411,7 +1411,7 @@ class SimpleCLI:
                 if len(response_approach) > 200:
                     response_approach = preview_text(response_approach, max_chars=200)
                 print(f"   {response_approach}")
-                
+
                 # Analysis metadata
                 print(f"\n📊 Analysis: {analysis.word_count_analyzed} words | "
                       f"Complexity: {analysis.intent_complexity:.2f} | "
@@ -1573,17 +1573,17 @@ class SimpleCLI:
         """Handle /save <file> command - save current session to file with optional analytics"""
         try:
             filename = self._force_extension(filename, ".json")
-            
+
             print(f"💾 Saving session to {filename}...")
-            
+
             # Get session info before saving
             messages = self.session.get_messages()
             tokens = self.session.get_token_estimate()
-            
+
             # Generate optional analytics if requested
             analytics_generated = []
             analysis_provider = self._analysis_provider()
-            
+
             if summary:
                 print("   🔄 Generating summary...")
                 try:
@@ -1592,7 +1592,7 @@ class SimpleCLI:
                     print("   ✅ Summary generated")
                 except Exception as e:
                     print(f"   ⚠️  Summary generation failed: {e}")
-            
+
             if assessment:
                 print("   🔄 Generating assessment...")
                 original_provider = None
@@ -1610,7 +1610,7 @@ class SimpleCLI:
                     except Exception:
                         pass
                     print(f"   ⚠️  Assessment generation failed: {e}")
-            
+
             if facts:
                 print("   🔄 Extracting facts...")
                 original_provider = None
@@ -1628,23 +1628,23 @@ class SimpleCLI:
                     except Exception:
                         pass
                     print(f"   ⚠️  Fact extraction failed: {e}")
-            
+
             # Save using enhanced serialization
             self.session.save(filename)
-            
+
             print(f"✅ Session saved successfully!")
             print(f"   📁 File: {filename}")
             print(f"   📝 Messages: {len(messages)}")
             print(f"   🔢 Tokens: ~{tokens:,}")
             print(f"   🤖 Provider: {self.provider_name}:{self.model_name}")
             print(f"   ⚙️  Settings: auto_compact={self.session.auto_compact}")
-            
+
             if analytics_generated:
                 print(f"   📊 Analytics: {', '.join(analytics_generated)}")
-            
+
             # Note about provider restoration
             print(f"   💡 Note: Provider and tools will need to be specified when loading")
-            
+
         except Exception as e:
             print(f"❌ Failed to save session: {e}")
             if self.debug_mode:
@@ -1655,25 +1655,25 @@ class SimpleCLI:
         """Handle /load <file> command - load session from file"""
         try:
             resolved = self._resolve_session_path(filename) or self._force_extension(filename, ".json")
-            
+
             # Check if file exists
             import os
             if not os.path.exists(resolved):
                 print(f"❌ File not found: {resolved}")
                 return
-            
+
             print(f"📂 Loading session from {resolved}...")
-            
+
             # Store current session info for comparison
             old_messages = len(self.session.get_messages())
             old_tokens = self.session.get_token_estimate()
-            
+
             # Load session with current provider and tools
             from ..tools.common_tools import list_files, read_file, write_file, execute_command, search_files
             tools = [list_files, read_file, write_file, execute_command, search_files]
-            
+
             loaded_session = BasicSession.load(resolved, provider=self.provider, tools=tools)
-            
+
             # Replace current session
             self.session = loaded_session
 
@@ -1690,31 +1690,31 @@ class SimpleCLI:
             # Get new session info
             new_messages = len(self.session.get_messages())
             new_tokens = self.session.get_token_estimate()
-            
+
             print(f"✅ Session loaded successfully!")
             print(f"   📁 File: {resolved}")
             print(f"   📝 Messages: {old_messages} → {new_messages}")
             print(f"   🔢 Tokens: ~{old_tokens:,} → ~{new_tokens:,}")
             print(f"   🤖 Provider: {self.provider_name}:{self.model_name} (current)")
             print(f"   ⚙️  Settings: auto_compact={self.session.auto_compact}")
-            
+
             # Show session structure
             messages = self.session.get_messages()
             conversation_messages = [msg for msg in messages if msg.role != 'system']
             interactions = len(conversation_messages) // 2
-            
+
             has_summary = any(msg.role == 'system' and '[CONVERSATION HISTORY]' in msg.content for msg in messages)
             if has_summary:
                 print(f"   📚 History: Compacted conversation with {interactions} recent interactions")
             else:
                 print(f"   💬 History: Full conversation with {interactions} interactions")
-            
+
             # Show timestamps if available
             if messages:
                 first_msg = next((msg for msg in messages if msg.role != 'system'), None)
                 if first_msg and hasattr(first_msg, 'timestamp') and first_msg.timestamp:
                     print(f"   📅 Created: {first_msg.timestamp.strftime('%Y-%m-%d %H:%M:%S')}")
-            
+
         except Exception as e:
             print(f"❌ Failed to load session: {e}")
             if self.debug_mode:
@@ -2067,20 +2067,20 @@ class SimpleCLI:
                 full_content = ""
                 display_buffer = ""  # Buffer for cleaned display content
                 reasoning_parts: List[str] = []
-                
+
                 for chunk in response:
                     if hasattr(chunk, 'content') and chunk.content:
                         full_content += chunk.content
-                        
+
                         # Filter out internal model tags that shouldn't appear
                         # These tags indicate model formatting issues
                         chunk_text = chunk.content
-                        
+
                         # Remove internal conversation tags
                         chunk_text = re.sub(r'<\|assistant\|>', '', chunk_text)
                         chunk_text = re.sub(r'<\|user\|>', '', chunk_text)
                         chunk_text = re.sub(r'<\|system\|>', '', chunk_text)
-                        
+
                         # For now, don't display tool calls during streaming
                         # We'll show them after execution
                         # Check if this chunk contains tool call markers
@@ -2090,7 +2090,7 @@ class SimpleCLI:
                             '<tool_call>', '</tool_call>',
                             '```tool_code'
                         ])
-                        
+
                         # If we want reasoning-first display, buffer output (no live streaming).
                         if buffer_for_reasoning_first:
                             display_buffer += chunk_text
@@ -2106,10 +2106,10 @@ class SimpleCLI:
                     r = getattr(chunk, "reasoning", None)
                     if isinstance(r, str) and r.strip():
                         reasoning_parts.append(r.strip())
-                
+
                 if not buffer_for_reasoning_first:
                     print()  # New line after streaming
-                
+
                 # Parse and execute tool calls from full content
                 clean_content, tool_calls = self._parse_and_strip_tool_calls(full_content)
                 if self.prompt_cache_mode == "kv":
@@ -2118,7 +2118,7 @@ class SimpleCLI:
                         self.session.add_message("assistant", clean_content.strip() or full_content)
                     except Exception:
                         pass
-                
+
                 # If we buffered tool call content, we should have shown clean content
                 # For now, if there's significant difference, show the clean version
                 if tool_calls and clean_content.strip() and clean_content.strip() != display_buffer.strip():
@@ -2151,7 +2151,7 @@ class SimpleCLI:
                         self.session.add_message("assistant", clean_content.strip() or response.content)
                     except Exception:
                         pass
-                
+
                 meta = getattr(response, "metadata", None)
                 if self._should_show_reasoning() and not self.single_prompt_mode and isinstance(meta, dict):
                     r = meta.get("reasoning")
@@ -2309,26 +2309,26 @@ class SimpleCLI:
     def _parse_and_strip_tool_calls(self, content: str):
         """
         Parse tool calls from content and return (clean_content, tool_calls).
-        
+
         Returns:
             Tuple of (content_without_tool_calls, list_of_tool_call_dicts)
         """
         import re
         import json
-        
+
         if not content:
             return content, []
-        
+
         # Use the universal parser from tools.parser for better compatibility
         # IMPORTANT: Use format-agnostic parsing in CLI since models can generate
         # different formats regardless of their architecture
         try:
             from ..tools.parser import _parse_any_format
             detected_calls = _parse_any_format(content)
-            
+
             if not detected_calls:
                 return content, []
-            
+
             # Convert to simple dicts for execution
             tool_calls = []
             for call in detected_calls:
@@ -2336,22 +2336,22 @@ class SimpleCLI:
                     'name': call.name,
                     'arguments': call.arguments if isinstance(call.arguments, dict) else {}
                 })
-            
+
             # Strip tool call syntax from content using syntax rewriter
             from ..tools.syntax_rewriter import ToolCallSyntaxRewriter, SyntaxFormat
             rewriter = ToolCallSyntaxRewriter(SyntaxFormat.PASSTHROUGH, model_name=self.model_name)
             clean_content = rewriter.remove_tool_call_patterns(content)
-            
+
             return clean_content, tool_calls
-            
+
         except Exception as e:
             if self.debug_mode:
                 print(f"⚠️ Tool parsing fallback to regex: {e}")
-            
+
             # Fallback to regex parsing for multiple formats
             tool_calls = []
             clean_content = content
-            
+
             # Support multiple tool call formats
             patterns = [
                 r'<\|tool_call\|>(.*?)</\|tool_call\|>',  # Qwen3
@@ -2359,7 +2359,7 @@ class SimpleCLI:
                 r'<tool_call>(.*?)</tool_call>',           # XML
                 r'```tool_code\s*\n(.*?)\n```',            # Gemma
             ]
-            
+
             for pattern in patterns:
                 matches = re.findall(pattern, content, re.DOTALL)
                 for match in matches:
@@ -2374,20 +2374,20 @@ class SimpleCLI:
                             clean_content = re.sub(pattern, '', clean_content, count=1, flags=re.DOTALL)
                     except json.JSONDecodeError:
                         continue
-            
+
             # Clean up extra whitespace
             clean_content = re.sub(r'\n\s*\n\s*\n', '\n\n', clean_content).strip()
-            
+
             return clean_content, tool_calls
 
     def _execute_tool_calls(self, tool_calls):
         """Execute a list of tool call dictionaries and add results to session history."""
         if not tool_calls:
             return
-        
+
         if not self.single_prompt_mode:
             print("\n🔧 Tool Results:")
-        
+
         # Available tools mapping
         available_tools = {
             "list_files": list_files,
@@ -2396,12 +2396,12 @@ class SimpleCLI:
             "write_file": write_file,
             "execute_command": execute_command
         }
-        
+
         for tool_data in tool_calls:
             try:
                 tool_name = tool_data.get("name")
                 tool_args = tool_data.get("arguments", {})
-                
+
                 if tool_name not in available_tools:
                     error_msg = f"❌ Unknown tool: {tool_name}"
                     print(error_msg)
@@ -2411,26 +2411,26 @@ class SimpleCLI:
                                            status="error",
                                            tool_name=tool_name)
                     continue
-                
+
                 # Display tool call for transparency (only in interactive mode)
                 if not self.single_prompt_mode:
                     args_str = str(tool_args) if tool_args else "{}"
                     if len(args_str) > 100:
                         args_str = preview_text(args_str, max_chars=100)
                     print(f"**{tool_name}({args_str})**")
-                
+
                 # Execute the tool
                 tool_function = available_tools[tool_name]
-                
+
                 start_time = time.time()
                 try:
                     if tool_args:
                         result = tool_function(**tool_args)
                     else:
                         result = tool_function()
-                    
+
                     execution_time = (time.time() - start_time) * 1000  # Convert to ms
-                    
+
                     # Add successful tool result to session history
                     self.session.add_message('tool', str(result),
                                            call_id=tool_data.get("call_id"),
@@ -2438,17 +2438,17 @@ class SimpleCLI:
                                            duration_ms=execution_time,
                                            tool_name=tool_name,
                                            tool_arguments=tool_args)
-                    
+
                     # In single-prompt mode, just print the result cleanly
                     if self.single_prompt_mode:
                         print(result)
                     else:
                         print(f"✅ {result}")
-                        
+
                 except Exception as tool_error:
                     execution_time = (time.time() - start_time) * 1000
                     error_msg = f"Tool execution failed: {str(tool_error)}"
-                    
+
                     # Add failed tool result to session history
                     self.session.add_message('tool', error_msg,
                                            call_id=tool_data.get("call_id"),
@@ -2457,12 +2457,12 @@ class SimpleCLI:
                                            tool_name=tool_name,
                                            tool_arguments=tool_args,
                                            stderr=str(tool_error))
-                    
+
                     print(f"❌ {error_msg}")
                     if self.debug_mode:
                         import traceback
                         traceback.print_exc()
-                
+
             except Exception as e:
                 print(f"❌ Tool execution failed: {e}")
                 if self.debug_mode:

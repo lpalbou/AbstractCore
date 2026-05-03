@@ -57,7 +57,7 @@ class BasicExtractor:
         timeout: Optional[float] = None
     ):
         """Initialize the extractor
-        
+
         Args:
             llm: AbstractCore instance (any provider). If None, uses default Ollama model
             max_chunk_size: Maximum characters per chunk for long documents (default 8000)
@@ -357,10 +357,10 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
     def _remove_dangling_references(self, result: dict) -> dict:
         """
         Validate relationships and handle entity reference issues gracefully.
-        
+
         Instead of removing relationships with non-standard predicates or references,
         we log them and try to preserve the LLM's intent.
-        
+
         Accepts all predefined relationship types from the LLM prompt:
         is, is_not, part_of, transforms, provides, describes, mentions, integrates, 
         supports, discourages, requires, uses, creates, develops, compatible_with, works_with, 
@@ -427,7 +427,7 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
                 # Track predicate usage for debugging
                 if predicate:
                     predicate_usage[predicate] = predicate_usage.get(predicate, 0) + 1
-                
+
                 # Validate predicate - log if it's not in our accepted list but still accept it
                 if predicate and predicate not in ACCEPTED_PREDICATES:
                     logger.debug("LLM used non-standard predicate, but accepting it", 
@@ -443,7 +443,7 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
                 else:
                     # Try to salvage the relationship by fuzzy matching entity names
                     salvaged = False
-                    
+
                     # If source_id is not found, try to match by name
                     if source_id not in defined_entities and isinstance(source_ref, str):
                         potential_source = entity_name_to_id.get(source_ref.lower().strip())
@@ -456,7 +456,7 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
                             item['s:about'] = {"@id": potential_source}
                             source_id = potential_source
                             salvaged = True
-                    
+
                     # If target_id is not found, try to match by name
                     if target_id not in defined_entities and isinstance(target_ref, str):
                         potential_target = entity_name_to_id.get(target_ref.lower().strip())
@@ -469,7 +469,7 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
                             item['s:object'] = {"@id": potential_target}
                             target_id = potential_target
                             salvaged = True
-                    
+
                     # Final check after salvage attempts
                     if source_id in defined_entities and target_id in defined_entities:
                         cleaned_graph.append(item)
@@ -1040,27 +1040,27 @@ CRITICAL: ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS."""
     def _should_chunk_by_tokens(self, text: str) -> bool:
         """
         Determine if text should be chunked based on token count.
-        
+
         Uses centralized TokenUtils for accurate token estimation.
         Falls back to character count if model information unavailable.
         """
         from ..utils.token_utils import TokenUtils
-        
+
         # Get model name from LLM if available
         model_name = None
         if self.llm and hasattr(self.llm, 'model'):
             model_name = self.llm.model
-            
+
         # Estimate tokens using centralized utility
         estimated_tokens = TokenUtils.estimate_tokens(text, model_name)
-        
+
         # Use a conservative token limit (leaving room for prompt overhead)
         # Most models have 16k+ context, so 6k tokens for input text is safe
         token_limit = 6000
-        
+
         if estimated_tokens > token_limit:
             return True
-            
+
         # Fallback to character-based check for very long texts
         return len(text) > self.max_chunk_size
 

@@ -6,7 +6,7 @@ import os
 import json
 import time
 import warnings
-from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type
+from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING
 
 try:
     from pydantic import BaseModel
@@ -19,6 +19,9 @@ from ..core.types import GenerateResponse
 from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error, format_auth_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
+
+if TYPE_CHECKING:
+    from ..media.types import MediaContent
 
 try:
     import openai
@@ -368,7 +371,7 @@ class OpenAIProvider(BaseProvider):
                 start_time = time.time()
                 response = self.client.chat.completions.create(**call_params)
                 gen_time = round((time.time() - start_time) * 1000, 1)
-                
+
                 formatted = self._format_response(response)
                 # Add generation time to response
                 formatted.gen_time = gen_time
@@ -1109,7 +1112,7 @@ class OpenAIProvider(BaseProvider):
             # Apply new capability filtering if provided
             input_capabilities = kwargs.get('input_capabilities')
             output_capabilities = kwargs.get('output_capabilities')
-            
+
             if input_capabilities or output_capabilities:
                 chat_models = filter_models_by_capabilities(
                     chat_models, 

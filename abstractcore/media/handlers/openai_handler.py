@@ -123,12 +123,12 @@ class OpenAIMediaHandler(BaseProviderMediaHandler):
             detail_level = media_content.metadata.get('detail_level', 'auto')
             self.logger.debug(f"OpenAI Handler - MediaContent metadata: {media_content.metadata}")
             self.logger.debug(f"OpenAI Handler - Found detail_level: {detail_level}")
-            
+
             # Auto-adjust detail level for Qwen models to prevent context overflow
             if self._is_qwen_model() and detail_level == 'auto':
                 detail_level = self._get_optimal_detail_for_qwen(media_content)
                 self.logger.debug(f"OpenAI Handler - Qwen auto-adjusted detail_level: {detail_level}")
-            
+
             if detail_level in self.supported_image_detail:
                 image_obj["image_url"]["detail"] = detail_level
                 self.logger.info(f"OpenAI Handler - Setting detail level to '{detail_level}' for image")
@@ -141,7 +141,7 @@ class OpenAIMediaHandler(BaseProviderMediaHandler):
         """Check if the current model is a Qwen vision model."""
         if not hasattr(self, 'model_name') or not self.model_name:
             return False
-        
+
         model_name_lower = self.model_name.lower()
         return any(qwen_variant in model_name_lower for qwen_variant in [
             'qwen3-vl', 'qwen2.5-vl', 'qwen-vl', 'qwen/qwen3-vl', 'qwen/qwen2.5-vl'
@@ -150,28 +150,28 @@ class OpenAIMediaHandler(BaseProviderMediaHandler):
     def _get_optimal_detail_for_qwen(self, media_content: MediaContent) -> str:
         """
         Determine optimal detail level for Qwen models based on context constraints.
-        
+
         According to SiliconFlow documentation:
         - detail=low: 256 tokens per image (448x448 resize)
         - detail=high: Variable tokens based on resolution (can be 24,576+ tokens)
-        
+
         For Qwen3-VL-30B with 131,072 token context limit, we should use detail=low
         when processing multiple images to avoid context overflow.
         """
         # Get model context limit
         max_tokens = self.model_capabilities.get('max_tokens', 32768)
         max_image_tokens = self.model_capabilities.get('max_image_tokens', 24576)
-        
+
         # Estimate how many images we might be processing
         # This is a heuristic - in practice we'd need the full batch context
         estimated_images = getattr(self, '_estimated_image_count', 1)
-        
+
         # Calculate potential token usage with high detail
         high_detail_tokens = estimated_images * max_image_tokens
-        
+
         # Use low detail if high detail would consume >60% of context
         context_threshold = max_tokens * 0.6
-        
+
         if high_detail_tokens > context_threshold:
             self.logger.info(f"Using detail=low for Qwen model: {estimated_images} images would consume "
                            f"{high_detail_tokens:,} tokens (>{context_threshold:,} threshold)")

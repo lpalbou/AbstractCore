@@ -1784,7 +1784,7 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
                 head_limit = int(head_limit)
             except ValueError:
                 head_limit = 25  # fallback to default
-        
+
         # Expand home directory shortcuts like ~
         directory_input = Path(directory_path).expanduser()
         directory = directory_input.absolute()
@@ -3616,18 +3616,18 @@ def web_search(
             tag_re = re.compile(r"<[^>]+>")
 
             links = list(link_re.finditer(page))
-            results: List[Dict[str, Any]] = []
+            results: list[dict[str, Any]] = []
             for i, m in enumerate(links, 1):
                 if i > int(num_results or 0):
                     break
                 href = html_lib.unescape((m.group(1) or "").strip())
-                
+
                 # Normalize protocol-relative URLs for programmatic use.
                 # DuckDuckGo uses // for browser contexts, but we need full URLs for Python requests.
                 if href.startswith("//"):
                     href = "https:" + href
                 href = _unwrap_duckduckgo_redirect(href)
-                
+
                 title_html = m.group(2) or ""
                 title = html_lib.unescape(tag_re.sub("", title_html)).strip()
 
@@ -4220,10 +4220,10 @@ def fetch_url(
 ) -> Dict[str, Any]:
     """
     Fetch and intelligently parse content from URLs with comprehensive content type detection.
-    
+
     This tool automatically detects content types (HTML, JSON, XML, images, etc.) and provides
     appropriate parsing with metadata extraction including timestamps and response headers.
-    
+
     Args:
         url: The URL to fetch content from
         method: HTTP method to use (default: "GET")
@@ -4234,10 +4234,10 @@ def fetch_url(
         keep_links: Whether to preserve and extract links from HTML content (default: True)
         user_agent: User-Agent header to use (default: "AbstractCore-FetchTool/1.0")
         include_full_content: Whether to include full text/JSON/XML content (no preview truncation) (default: True)
-    
+
     Returns:
         Formatted string with parsed content, metadata, and analysis or error message
-        
+
     Examples:
         fetch_url("https://api.github.com/repos/python/cpython")  # Fetch and parse JSON API
         fetch_url("https://example.com", headers={"Accept": "text/html"})  # Fetch HTML with custom headers
@@ -4262,7 +4262,7 @@ def fetch_url(
         if not parsed_url.scheme or not parsed_url.netloc:
             rendered = f"❌ Invalid URL format: {url}"
             return {"success": False, "error": rendered.lstrip("❌").strip(), "url": url, "rendered": rendered}
-        
+
         if parsed_url.scheme not in ['http', 'https']:
             rendered = f"❌ Unsupported URL scheme: {parsed_url.scheme}. Only HTTP and HTTPS are supported."
             return {
@@ -4280,10 +4280,10 @@ def fetch_url(
             'Accept-Encoding': 'gzip, deflate',
             'Connection': 'keep-alive'
         }
-        
+
         if headers:
             request_headers.update(headers)
-        
+
         # Add data for POST/PUT requests
         if data and method.upper() in ['POST', 'PUT', 'PATCH']:
             if isinstance(data, dict):
@@ -4300,7 +4300,7 @@ def fetch_url(
         else:
             request_json = None
             request_data = None
-        
+
         # Record fetch timestamp
         fetch_timestamp = datetime.now().isoformat()
         max_content_length = int(FETCH_URL_MAX_CONTENT_LENGTH_BYTES)
@@ -4320,7 +4320,7 @@ def fetch_url(
                 except (UnicodeDecodeError, LookupError):
                     continue
             return content.decode("utf-8", errors="replace")
-        
+
         # Make the request with session for connection reuse and keep it open while streaming
         with requests.Session() as session:
             session.headers.update(request_headers)
@@ -4568,7 +4568,7 @@ def fetch_url(
                     # LLM-visible / UI-friendly rendering.
                     "rendered": rendered,
                 }
-        
+
     except requests.exceptions.Timeout:
         rendered = (
             f"⏰ Request timeout after {timeout} seconds\n"
@@ -4582,7 +4582,7 @@ def fetch_url(
             "timeout_s": int(timeout),
             "rendered": rendered,
         }
-    
+
     except requests.exceptions.ConnectionError as e:
         rendered = (
             f"🔌 Connection error: {str(e)}\n"
@@ -4595,7 +4595,7 @@ def fetch_url(
             "url": str(url),
             "rendered": rendered,
         }
-    
+
     except requests.exceptions.TooManyRedirects:
         rendered = (
             "🔄 Too many redirects\n"
@@ -4608,11 +4608,11 @@ def fetch_url(
             "url": str(url),
             "rendered": rendered,
         }
-    
+
     except requests.exceptions.RequestException as e:
         rendered = f"❌ Request error: {str(e)}\nURL: {url}"
         return {"success": False, "error": str(e), "url": str(url), "rendered": rendered}
-    
+
     except Exception as e:
         rendered = f"❌ Unexpected error fetching URL: {str(e)}\nURL: {url}"
         return {"success": False, "error": str(e), "url": str(url), "rendered": rendered}
@@ -4624,22 +4624,22 @@ def _detect_meta_refresh(content_bytes: bytes, content_type: str) -> Optional[st
     main_type = str(content_type or "").split(";")[0].strip().lower()
     if not main_type.startswith(("text/html", "application/xhtml")):
         return None
-    
+
     # Only check small pages (> 2KB suggests real content, not a redirect stub)
     if len(content_bytes) > 2000:
         return None
-    
+
     try:
         html = content_bytes.decode("utf-8", errors="ignore")
     except Exception:
         return None
-    
+
     # Look for meta refresh tag: <meta http-equiv="refresh" content="0;URL=https://example.com">
     import re
     meta_refresh = re.search(r'<meta[^>]+http-equiv=["\']?refresh["\']?[^>]+content=["\']?\d+;\s*URL=([^"\'\s>]+)', html, re.IGNORECASE)
     if meta_refresh:
         return meta_refresh.group(1).strip()
-    
+
     return None
 
 
@@ -4653,33 +4653,33 @@ def _parse_content_by_type(
 ) -> str:
     """
     Parse content based on detected content type with intelligent fallbacks.
-    
+
     This function provides robust content type detection and parsing for various formats
     including HTML, JSON, XML, plain text, images, and other binary formats.
     """
     try:
         # Normalize content type
         main_type = content_type.split(';')[0].strip().lower()
-        
+
         # Try to decode as text first for text-based formats
         text_content = None
         encoding = 'utf-8'
-        
+
         # Detect encoding from content-type header
         if 'charset=' in content_type:
             try:
                 encoding = content_type.split('charset=')[1].split(';')[0].strip()
             except:
                 encoding = 'utf-8'
-        
+
         # Attempt text decoding for text-based content types with better encoding detection
         text_based_types = [
             'text/', 'application/json', 'application/xml', 'application/javascript',
             'application/rss+xml', 'application/atom+xml', 'application/xhtml+xml'
         ]
-        
+
         is_text_based = any(main_type.startswith(t) for t in text_based_types)
-        
+
         if is_text_based:
             # Try multiple encoding strategies
             for enc in [encoding, 'utf-8', 'iso-8859-1', 'windows-1252']:
@@ -4691,7 +4691,7 @@ def _parse_content_by_type(
             else:
                 # Final fallback with error replacement
                 text_content = content_bytes.decode('utf-8', errors='replace')
-        
+
         # Parse based on content type with fallback content detection
         if main_type.startswith('text/html') or main_type.startswith('application/xhtml'):
             return _parse_html_content(
@@ -4700,13 +4700,13 @@ def _parse_content_by_type(
                 include_full_content=include_full_content,
                 keep_links=keep_links,
             )
-        
+
         elif main_type == 'application/json':
             return _parse_json_content(text_content, include_full_content)
-        
+
         elif main_type in ['application/xml', 'text/xml', 'application/rss+xml', 'application/atom+xml', 'application/soap+xml']:
             return _parse_xml_content(text_content, include_full_content)
-        
+
         elif main_type.startswith('text/'):
             # For generic text types, check if it's actually HTML/XML/JSON
             if text_content and text_content.strip():
@@ -4722,16 +4722,16 @@ def _parse_content_by_type(
                 elif _is_json_content(text_content):
                     return _parse_json_content(text_content, include_full_content)
             return _parse_text_content(text_content, main_type, include_full_content)
-        
+
         elif main_type.startswith('image/'):
             return _parse_image_content(content_bytes, main_type, include_binary_preview)
-        
+
         elif main_type == 'application/pdf':
             return _parse_pdf_content(content_bytes, include_binary_preview)
-        
+
         else:
             return _parse_binary_content(content_bytes, main_type, include_binary_preview)
-    
+
     except Exception as e:
         return f"❌ Error parsing content: {str(e)}\n" \
                f"Content-Type: {content_type}\n" \
@@ -4742,29 +4742,29 @@ def _is_xml_content(content: str) -> bool:
     """Detect if content is XML rather than HTML."""
     if not content:
         return False
-    
+
     content_lower = content.lower().strip()
-    
+
     # Check for XML declaration
     if content_lower.startswith('<?xml'):
         return True
-    
+
     # Check for common XML root elements without HTML indicators
     xml_indicators = ['<rss', '<feed', '<urlset', '<sitemap', '<soap:', '<xml']
     html_indicators = ['<!doctype html', '<html', '<head>', '<body>', '<div', '<span', '<p>', '<a ']
-    
+
     # Look at the first 1000 characters for indicators
     #[WARNING:TRUNCATION] bounded sample for heuristic detection (performance)
     sample = content_lower[:1000]
-    
+
     # If we find HTML indicators, it's likely HTML
     if any(indicator in sample for indicator in html_indicators):
         return False
-    
+
     # If we find XML indicators without HTML indicators, it's likely XML
     if any(indicator in sample for indicator in xml_indicators):
         return True
-    
+
     # Check if it starts with a root element that looks like XML
     import re
     root_match = re.search(r'<([^?\s/>]+)', content)
@@ -4774,7 +4774,7 @@ def _is_xml_content(content: str) -> bool:
         xml_roots = ['rss', 'feed', 'urlset', 'sitemap', 'configuration', 'data', 'response']
         if root_element in xml_roots:
             return True
-    
+
     return False
 
 
@@ -4782,9 +4782,9 @@ def _is_json_content(content: str) -> bool:
     """Detect if content is JSON."""
     if not content:
         return False
-    
+
     content_stripped = content.strip()
-    
+
     # Quick check for JSON structure
     if (content_stripped.startswith('{') and content_stripped.endswith('}')) or \
        (content_stripped.startswith('[') and content_stripped.endswith(']')):
@@ -4794,7 +4794,7 @@ def _is_json_content(content: str) -> bool:
             return True
         except (json.JSONDecodeError, ValueError):
             pass
-    
+
     return False
 
 
@@ -5552,7 +5552,7 @@ def _get_appropriate_parser(content: str) -> str:
     # If lxml is available and content looks like XML, use xml parser
     if BS4_PARSER == "lxml" and _is_xml_content(content):
         return "xml"
-    
+
     # Default to the configured parser (lxml or html.parser)
     return BS4_PARSER
 
@@ -5566,7 +5566,7 @@ def _parse_html_content(
     """Parse HTML content and extract meaningful information."""
     if not html_content:
         return "❌ No HTML content to parse"
-    
+
     # Detect if content is actually XML (fallback detection)
     if _is_xml_content(html_content):
         return _parse_xml_content(html_content, include_full_content)
@@ -5585,10 +5585,10 @@ def _parse_html_content(
                 preview,
             ]
         )
-    
+
     result_parts = []
     result_parts.append("🌐 HTML Document Analysis")
-    
+
     try:
         # Choose appropriate parser based on content analysis
         parser = _get_appropriate_parser(html_content)
@@ -5702,7 +5702,7 @@ def _parse_html_content(
         if not include_full_content and len(fallback) > 1000:
             preview += "\n... (truncated)"
         result_parts.append(preview)
-    
+
     return "\n".join(result_parts)
 
 
@@ -5710,16 +5710,16 @@ def _parse_json_content(json_content: str, include_full_content: bool = False) -
     """Parse JSON content and provide structured analysis."""
     if not json_content:
         return "❌ No JSON content to parse"
-    
+
     result_parts = []
     result_parts.append("📊 JSON Data Analysis")
-    
+
     try:
         data = json.loads(json_content)
-        
+
         # Analyze JSON structure
         result_parts.append(f"📋 Structure: {type(data).__name__}")
-        
+
         if isinstance(data, dict):
             result_parts.append(f"🔑 Keys ({len(data)}): {', '.join(list(data.keys())[:10])}")
             if len(data) > 10:
@@ -5728,7 +5728,7 @@ def _parse_json_content(json_content: str, include_full_content: bool = False) -
             result_parts.append(f"📝 Array length: {len(data)}")
             if data and isinstance(data[0], dict):
                 result_parts.append(f"🔑 First item keys: {', '.join(list(data[0].keys())[:10])}")
-        
+
         # Pretty print JSON with smart truncation
         json_str = json.dumps(data, indent=2, ensure_ascii=False, separators=(',', ': '))
         preview_length = None if include_full_content else 1500  # Reduced for better readability
@@ -5741,11 +5741,11 @@ def _parse_json_content(json_content: str, include_full_content: bool = False) -
                 json_preview = json_str[:preview_length] + "\n... (truncated)"
         else:
             json_preview = json_str
-        
+
         result_parts.append(f"📄 JSON Content:")
         result_parts.append(json_preview)
         result_parts.append(f"📊 Total size: {len(json_content):,} characters")
-    
+
     except json.JSONDecodeError as e:
         result_parts.append(f"❌ JSON parsing error: {str(e)}")
         result_parts.append(f"📄 Raw content preview (first 1000 chars):")
@@ -5753,7 +5753,7 @@ def _parse_json_content(json_content: str, include_full_content: bool = False) -
             result_parts.append(json_content)
         else:
             result_parts.append(json_content[:1000] + ("..." if len(json_content) > 1000 else ""))
-    
+
     return "\n".join(result_parts)
 
 
@@ -5761,40 +5761,40 @@ def _parse_xml_content(xml_content: str, include_full_content: bool = False) -> 
     """Parse XML content including RSS/Atom feeds."""
     if not xml_content:
         return "❌ No XML content to parse"
-    
+
     result_parts = []
     result_parts.append("📄 XML/RSS/Atom Analysis")
-    
+
     try:
         # Try to detect if it's RSS/Atom
         if '<rss' in xml_content.lower() or '<feed' in xml_content.lower():
             result_parts.append("📡 Detected: RSS/Atom Feed")
-        
+
         # Basic XML structure analysis
         import re
-        
+
         # Find root element
         root_match = re.search(r'<([^?\s/>]+)', xml_content)
         if root_match:
             result_parts.append(f"🏷️  Root element: <{root_match.group(1)}>")
-        
+
         # Count elements (basic)
         elements = re.findall(r'<([^/\s>]+)', xml_content)
         if elements:
             from collections import Counter
             element_counts = Counter(elements[:50])  # Limit analysis
             result_parts.append(f"📊 Top elements: {dict(list(element_counts.most_common(10)))}")
-        
+
         # Show XML preview
         preview_length = None if include_full_content else 1500
         xml_preview = xml_content if preview_length is None else xml_content[:preview_length]
         if preview_length is not None and len(xml_content) > preview_length:
             xml_preview += "\n... (truncated)"
-        
+
         result_parts.append("📄 XML Content:" if include_full_content else "📄 XML Content Preview:")
         result_parts.append(xml_preview)
         result_parts.append(f"📊 Total size: {len(xml_content):,} characters")
-    
+
     except Exception as e:
         result_parts.append(f"❌ XML parsing error: {str(e)}")
         result_parts.append(f"📄 Raw content preview (first 1000 chars):")
@@ -5802,7 +5802,7 @@ def _parse_xml_content(xml_content: str, include_full_content: bool = False) -> 
             result_parts.append(xml_content)
         else:
             result_parts.append(xml_content[:1000] + ("..." if len(xml_content) > 1000 else ""))
-    
+
     return "\n".join(result_parts)
 
 
@@ -5810,28 +5810,28 @@ def _parse_text_content(text_content: str, content_type: str, include_full_conte
     """Parse plain text content."""
     if not text_content:
         return "❌ No text content to parse"
-    
+
     result_parts = []
     result_parts.append(f"📝 Text Content Analysis ({content_type})")
-    
+
     # Basic text statistics
     lines = text_content.splitlines()
     words = text_content.split()
-    
+
     result_parts.append(f"📊 Statistics:")
     result_parts.append(f"  • Lines: {len(lines):,}")
     result_parts.append(f"  • Words: {len(words):,}")
     result_parts.append(f"  • Characters: {len(text_content):,}")
-    
+
     # Show text preview
     preview_length = None if include_full_content else 2000
     text_preview = text_content if preview_length is None else text_content[:preview_length]
     if preview_length is not None and len(text_content) > preview_length:
         text_preview += "\n... (truncated)"
-    
+
     result_parts.append("📄 Content:" if include_full_content else "📄 Content Preview:")
     result_parts.append(text_preview)
-    
+
     return "\n".join(result_parts)
 
 
@@ -5839,9 +5839,9 @@ def _parse_image_content(image_bytes: bytes, content_type: str, include_preview:
     """Parse image content and extract metadata."""
     result_parts = []
     result_parts.append(f"🖼️  Image Analysis ({content_type})")
-    
+
     result_parts.append(f"📊 Size: {len(image_bytes):,} bytes")
-    
+
     # Try to get image dimensions (basic approach)
     try:
         if content_type.startswith('image/jpeg') or content_type.startswith('image/jpg'):
@@ -5857,7 +5857,7 @@ def _parse_image_content(image_bytes: bytes, content_type: str, include_preview:
                 result_parts.append("✅ Valid GIF format detected")
     except Exception:
         pass
-    
+
     if include_preview:
         # Provide base64 preview for small images
         if len(image_bytes) <= 1048576:  # 1MB limit for preview
@@ -5866,9 +5866,9 @@ def _parse_image_content(image_bytes: bytes, content_type: str, include_preview:
             result_parts.append(f"{b64_preview}...")
         else:
             result_parts.append("⚠️  Image too large for base64 preview")
-    
+
     result_parts.append("💡 Use image processing tools for detailed analysis")
-    
+
     return "\n".join(result_parts)
 
 
@@ -5876,9 +5876,9 @@ def _parse_pdf_content(pdf_bytes: bytes, include_preview: bool = False) -> str:
     """Parse PDF content and extract basic metadata."""
     result_parts = []
     result_parts.append("📄 PDF Document Analysis")
-    
+
     result_parts.append(f"📊 Size: {len(pdf_bytes):,} bytes")
-    
+
     # Check PDF header
     if pdf_bytes.startswith(b'%PDF-'):
         try:
@@ -5888,15 +5888,15 @@ def _parse_pdf_content(pdf_bytes: bytes, include_preview: bool = False) -> str:
             result_parts.append("✅ Valid PDF format detected")
     else:
         result_parts.append("⚠️  Invalid PDF format - missing PDF header")
-    
+
     if include_preview:
         # Show hex preview of first few bytes
         hex_preview = ' '.join(f'{b:02x}' for b in pdf_bytes[:64])
         result_parts.append(f"🔍 Hex Preview (first 64 bytes):")
         result_parts.append(hex_preview)
-    
+
     result_parts.append("💡 Use PDF processing tools for text extraction and detailed analysis")
-    
+
     return "\n".join(result_parts)
 
 
@@ -5904,9 +5904,9 @@ def _parse_binary_content(binary_bytes: bytes, content_type: str, include_previe
     """Parse generic binary content."""
     result_parts = []
     result_parts.append(f"📦 Binary Content Analysis ({content_type})")
-    
+
     result_parts.append(f"📊 Size: {len(binary_bytes):,} bytes")
-    
+
     # Detect file type by magic bytes
     magic_signatures = {
         b'\x50\x4b\x03\x04': 'ZIP archive',
@@ -5923,22 +5923,22 @@ def _parse_binary_content(binary_bytes: bytes, content_type: str, include_previe
         b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1': 'Microsoft Office document',
         b'\x4d\x5a': 'Windows executable'
     }
-    
+
     detected_type = None
     for signature, file_type in magic_signatures.items():
         if binary_bytes.startswith(signature):
             detected_type = file_type
             break
-    
+
     if detected_type:
         result_parts.append(f"🔍 Detected format: {detected_type}")
-    
+
     if include_preview:
         # Show hex preview
         hex_preview = ' '.join(f'{b:02x}' for b in binary_bytes[:64])
         result_parts.append(f"🔍 Hex Preview (first 64 bytes):")
         result_parts.append(hex_preview)
-        
+
         # Try to show any readable ASCII strings
         try:
             ascii_preview = ''.join(chr(b) if 32 <= b <= 126 else '.' for b in binary_bytes[:200])
@@ -5947,9 +5947,9 @@ def _parse_binary_content(binary_bytes: bytes, content_type: str, include_previe
                 result_parts.append(ascii_preview)
         except:
             pass
-    
+
     result_parts.append("💡 Use specialized tools for detailed binary analysis")
-    
+
     return "\n".join(result_parts)
 
 

@@ -7,14 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.1] - 2026-05-03
+
 ### Added
+- **Install extras for common deployment paths**: added `remote` as a lightweight hosted-SDK bundle (`openai` + `anthropic`) and explicit no-dependency extras for `openrouter`, `portkey`, and `openai-compatible` so installation commands are clearer and compose cleanly.
+- **Automated release workflow**: pushing a `vX.Y.Z` tag now validates the version/changelog, runs tests, builds docs, builds and checks distributions, publishes to PyPI via Trusted Publishing, and creates a GitHub Release with notes from `CHANGELOG.md`.
+- **Release process documentation**: added a maintainer runbook for preparing, tagging, publishing, and verifying releases.
+- **GGUF streaming regression coverage**: added a focused unit test ensuring HuggingFace/GGUF streaming setup errors are returned as error responses with the original message.
 
 ### Changed
+- **Version bumped to 2.13.1** for the install-quality and release-process cleanup.
+- **Install guidance**: README and docs now emphasize the lightweight core install, `abstractcore[remote]` for hosted SDKs, composable extras, `all-apple` for Apple Silicon local stacks, and `all-gpu` for NVIDIA/vLLM stacks. The legacy `all-non-mlx` extra remains available but is no longer promoted as a primary install path.
+- **Product positioning**: README and comparison docs now present AbstractCore as an offline-capable, open-source-first provider layer that can run local, self-hosted, hosted, or hybrid deployments from the same `create_llm(...)` application code.
+- **Comparison guide**: refreshed `docs/comparison.md` with a clearer AbstractCore vs LiteLLM/LangChain/LangGraph/LlamaIndex distinction, including offline/self-hosted/remote deployment posture and AbstractFramework ecosystem positioning.
+- **Lint configuration**: updated Ruff settings to the current `[tool.ruff.lint]` / `[tool.ruff.lint.per-file-ignores]` layout.
+- **Formatting baseline**: removed the full-repo W293 blank-line-with-whitespace noise so focused lint checks can be more meaningful.
 - **System prompt alias compatibility**: provider `generate()`/`agenerate()` calls now accept `system=` as a warned alias for `system_prompt=`, prefer explicit `system_prompt=` when both are supplied, and remove the alias before provider-specific kwargs are dispatched.
 - **Structured output system alias**: direct `StructuredOutputHandler.generate_structured()` calls now apply the same warned `system=` alias handling.
 - **CI Python matrix**: GitHub CI now tests Python 3.9, 3.10, 3.11, 3.12, and 3.13; NumPy dependency markers allow NumPy 2.x on Python 3.13 while keeping the existing NumPy 1.x constraint on older supported Python versions.
 
 ### Fixed
+- **Optional import hygiene**: provider/interface type-only media references now use `TYPE_CHECKING` so core/provider imports stay lightweight and do not pull optional media modules at runtime.
+- **HuggingFace/GGUF streaming errors**: streaming setup failures now preserve the original exception text in the returned error chunk instead of closing over an exception variable that Python clears after the `except` block.
+- **Glyph text renderer fallback**: PIL text-width fallback now uses the active font size when Pillow lacks `textbbox`/`textsize`.
 - **Server auth/provider credential routing**: `ABSTRACTCORE_SERVER_API_KEY` now acts as the server master key for all configured providers, `X-AbstractCore-Provider-API-Key` overrides only the requested upstream provider, and `Authorization` is forwarded as a provider key only when server auth is not configured. Body/query `api_key` fields remain disabled and secret-bearing headers/URLs are redacted.
 - **Server request hardening**: request-level `base_url` overrides now default to loopback or explicit allowlists, remote overrides cannot silently inherit server environment API keys, URL media fetches block non-public targets across redirects, and HTTP-request local media paths require an explicit safe root or unsafe opt-in.
 - **Server URL allowlists**: URL-based allowlist entries now parse and compare scheme, exact host, effective port, and path-segment prefixes to prevent host-confusion and path-prefix bypasses.
@@ -26,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - README badges now include GitHub Actions CI status and tested Python versions read from the CI matrix.
 - Clarified tool calling defaults (pass-through) and removed misleading “tools executed” wording from the quick start.
 - Documented `CachedSession` more consistently across core docs and `llms*.txt` (getting started, API map, sessions, structured output hybrid note).
+- Updated install examples across README, getting started, prerequisites, FAQ, troubleshooting, media docs, app docs, and contributing guidance.
+- Documented the automated GitHub Release + PyPI publishing path.
 
 
 ## [2.13.0] - 2026-05-02

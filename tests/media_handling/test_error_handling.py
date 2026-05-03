@@ -48,7 +48,7 @@ class TestDependencyHandling:
         import sys
         import importlib
         from unittest.mock import patch
-        
+
         temp_dir = tempfile.mkdtemp()
         test_file = Path(temp_dir) / "test.jpg"
         test_file.write_bytes(b"fake image content")

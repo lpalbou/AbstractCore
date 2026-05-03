@@ -229,7 +229,7 @@ class UniversalToolHandler:
             # GenerateResponse object
             content = response.content
             tool_calls = []
-            
+
             # Check if response has tool_calls attribute
             if hasattr(response, 'tool_calls') and response.tool_calls:
                 for tc in response.tool_calls:
@@ -250,7 +250,7 @@ class UniversalToolHandler:
 
                     tool_call.arguments = canonicalize_tool_arguments(tool_call.name, tool_call.arguments)
                     tool_calls.append(tool_call)
-            
+
             return ToolCallResponse(
                 content=content,
                 tool_calls=tool_calls,

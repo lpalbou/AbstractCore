@@ -24,19 +24,19 @@ Memory Management:
     --max-tokens controls token budget:
     - Use 'auto' (default): Automatically uses model's full capability
     - Use specific value: Hard limit for memory-constrained environments (e.g., --max-tokens 16000)
-    
+
     Example: 8GB GPU → --max-tokens 16000, 16GB GPU → --max-tokens 32000
 
 Examples:
     # Auto mode (uses model's full capability)
     python -m abstractcore.apps.summarizer document.pdf
-    
+
     # Memory-constrained (8GB GPU)
     python -m abstractcore.apps.summarizer report.txt --max-tokens 16000
-    
+
     # Large document with specific style
     python -m abstractcore.apps.summarizer data.md --style executive --length brief
-    
+
     # Custom model with hard limit
     python -m abstractcore.apps.summarizer large.txt --provider openai --model gpt-4o-mini --max-tokens 24000
 """
@@ -371,7 +371,7 @@ Default model setup:
             except ValueError:
                 print(f"Error: --max-tokens must be 'auto' or a number, got: {args.max_tokens}")
                 sys.exit(1)
-        
+
         # Parse max_output_tokens (support 'auto', -1, or specific number)
         if args.max_output_tokens in ('auto', 'Auto', 'AUTO'):
             max_output_tokens = -1
@@ -409,7 +409,7 @@ Default model setup:
                 llm_kwargs['max_tokens'] = max_tokens
             if max_output_tokens != -1:
                 llm_kwargs['max_output_tokens'] = max_output_tokens
-            
+
             llm = create_llm(provider, model=model, **llm_kwargs)
             summarizer = BasicSummarizer(
                 llm,

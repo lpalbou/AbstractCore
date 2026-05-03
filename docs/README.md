@@ -61,6 +61,7 @@ These are convenience CLIs built on top of the core library:
 ## Project docs
 
 - **[Changelog](../CHANGELOG.md)** — release notes and upgrade guidance
+- **[Release Process](release-process.md)** — maintainer checklist for GitHub + PyPI releases
 - **[Contributing](../CONTRIBUTING.md)** — dev setup and PR guidelines
 - **[Security](../SECURITY.md)** — responsible vulnerability reporting
 - **[Acknowledgements](../ACKNOWLEDGEMENTS.md)** — upstream projects and communities

@@ -8,22 +8,24 @@ Anything heavy (provider SDKs, torch/transformers, PDF parsing, embeddings model
 
 ## Which extra do I need for my provider?
 
+- Hosted SDK bundle: `pip install "abstractcore[remote]"` installs OpenAI + Anthropic.
 - OpenAI: `pip install "abstractcore[openai]"`
 - Anthropic: `pip install "abstractcore[anthropic]"`
+- OpenRouter, Portkey, Ollama, LM Studio, and generic OpenAI-compatible `/v1` endpoints: core install is enough (`pip install abstractcore`).
 - HuggingFace (transformers/torch; heavy): `pip install "abstractcore[huggingface]"`
 - MLX (Apple Silicon; heavy): `pip install "abstractcore[mlx]"`
 - vLLM integration (GPU; heavy): `pip install "abstractcore[vllm]"`
 
-These providers work with the core install (no provider extra): `ollama`, `lmstudio`, `openrouter`, `openai-compatible`.
+These providers work with the core install (no provider extra): `ollama`, `lmstudio`, `openrouter`, `portkey`, `openai-compatible`.
 
 ## How do I combine extras?
 
 ```bash
 # zsh: keep quotes
-pip install "abstractcore[openai,media,tools]"
+pip install "abstractcore[remote,media,tools]"
 ```
 
-For “turnkey” installs, see `README.md` (`all-apple`, `all-non-mlx`, `all-gpu`).
+For “turnkey” local-runtime installs, see `README.md` (`all-apple` for Apple Silicon, `all-gpu` for NVIDIA GPU).
 
 ## Why did my install pull `torch` / take a long time?
 
