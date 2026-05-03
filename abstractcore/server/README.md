@@ -298,7 +298,7 @@ curl http://localhost:8000/providers
 | `tools` | array | null | Available function tools |
 | `tool_choice` | string/object | "auto" | Tool calling strategy |
 | `agent_format` | string | null | Tool syntax format |
-| `api_key` | string | null | Deprecated/disabled in request bodies. Use server-side provider config, or `Authorization` as a provider key only when server auth is not configured. |
+| `api_key` | string | null | Deprecated/disabled in request bodies. Use server-side provider config, `X-AbstractCore-Provider-API-Key` for a provider override, or `Authorization` as a provider key only when server auth is not configured. |
 | `base_url` | string | null | Custom API endpoint URL |
 
 **Response (Non-Streaming)**:
@@ -338,8 +338,11 @@ data: [DONE]
 **Usage Examples**:
 
 **Server authentication**:
-All non-health endpoints require `Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY` by default.
-Set `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1` only for intentional local/dev use without server auth.
+If `ABSTRACTCORE_SERVER_API_KEY` is configured, every non-health endpoint requires
+`Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY`. Authenticated clients can use all
+provider keys/endpoints configured on the server. If it is not configured,
+`Authorization: Bearer <provider-key>` may be used as a bring-your-own upstream provider key;
+that key is forwarded only to the requested provider. `GET /health` is always unauthenticated.
 
 **Basic Text Chat**:
 ```bash
@@ -419,12 +422,13 @@ print(result["choices"][0]["message"]["content"])
 
 **OpenAI Python Client**:
 ```python
+import os
 from openai import OpenAI
 
 # Point to AbstractCore server
 client = OpenAI(
     base_url="http://localhost:8000/v1",
-    api_key="not-needed"  # Use ABSTRACTCORE_SERVER_API_KEY here when server auth is enabled
+    api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"]
 )
 
 response = client.chat.completions.create(
@@ -441,12 +445,23 @@ print(response.choices[0].message.content)
 **Provider authentication**:
 ```bash
 # Preferred: configure provider keys on the server (e.g. OPENAI_API_KEY).
-# If ABSTRACTCORE_SERVER_API_KEY is set, clients authenticate to this server with it:
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
   -d '{
     "model": "openai/gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
+```bash
+# Override only the requested upstream provider while still using the server master key.
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "X-AbstractCore-Provider-API-Key: $ANTHROPIC_API_KEY" \
+  -d '{
+    "model": "anthropic/claude-haiku-4-5",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
@@ -949,6 +964,9 @@ python -m abstractcore.server --host 0.0.0.0 --port 8080 --debug
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 
+# Server master key
+export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
+
 # Debug mode
 export ABSTRACTCORE_DEBUG="true"
 
@@ -993,6 +1011,7 @@ CMD ["uvicorn", "abstractcore.server.app:app", "--host", "0.0.0.0", "--port", "8
 ```bash
 docker build -t abstractcore-server .
 docker run -p 8000:8000 \
+  -e ABSTRACTCORE_SERVER_API_KEY="acore-server-secret" \
   -e OPENAI_API_KEY="sk-..." \
   abstractcore-server
 ```
@@ -1029,6 +1048,7 @@ The server automatically reads API keys from environment variables:
 ```bash
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
+export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
 ```
 
 Or use AbstractCore's configuration system:
@@ -1181,11 +1201,12 @@ result = client.chat(
 ### Python (OpenAI SDK)
 
 ```python
+import os
 from openai import OpenAI
 
 client = OpenAI(
     base_url="http://localhost:8000/v1",
-    api_key="not-needed"  # Use ABSTRACTCORE_SERVER_API_KEY here when server auth is enabled
+    api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"]
 )
 
 response = client.chat.completions.create(

@@ -84,6 +84,7 @@ def test_server_auth_is_required_by_default_when_key_is_not_configured(monkeypat
 def test_server_api_key_allows_authenticated_request_without_forwarding_server_key(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
     monkeypatch.setenv("ABSTRACTCORE_SERVER_API_KEY", "server-secret")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-server-openai-key")
 
     created: List[Dict[str, Any]] = []
 
@@ -102,6 +103,32 @@ def test_server_api_key_allows_authenticated_request_without_forwarding_server_k
     assert r.status_code == 200
     assert created
     assert "api_key" not in created[-1]
+
+
+def test_server_api_key_allows_provider_override_header(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_API_KEY", "server-secret")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-server-key")
+
+    created: List[Dict[str, Any]] = []
+
+    def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
+        created.append(dict(kwargs))
+        return _StubLLM()
+
+    monkeypatch.setattr(server_app, "create_llm", fake_create_llm)
+
+    client = TestClient(server_app.app)
+    r = client.post(
+        "/v1/chat/completions",
+        headers={
+            "Authorization": "Bearer server-secret",
+            "X-AbstractCore-Provider-API-Key": "sk-ant-request-key",
+        },
+        json={"model": "anthropic/claude-haiku-4-5", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 200
+    assert created and created[-1].get("api_key") == "sk-ant-request-key"
 
 
 def test_provider_api_key_body_field_is_disabled(monkeypatch) -> None:
@@ -158,6 +185,49 @@ def test_provider_api_key_authorization_header_is_forwarded_only_without_server_
     assert created and created[-1].get("api_key") == "sk-provider-request-key"
 
 
+def test_provider_api_key_authorization_overrides_server_env_without_server_auth(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-server-env-key")
+
+    created: List[Dict[str, Any]] = []
+
+    def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
+        created.append(dict(kwargs))
+        return _StubLLM()
+
+    monkeypatch.setattr(server_app, "create_llm", fake_create_llm)
+
+    client = TestClient(server_app.app)
+    r = client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer sk-provider-request-key"},
+        json={"model": "openai/gpt-4", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 200
+    assert created and created[-1].get("api_key") == "sk-provider-request-key"
+
+
+def test_provider_override_header_is_forwarded_without_server_auth(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+
+    created: List[Dict[str, Any]] = []
+
+    def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
+        created.append(dict(kwargs))
+        return _StubLLM()
+
+    monkeypatch.setattr(server_app, "create_llm", fake_create_llm)
+
+    client = TestClient(server_app.app)
+    r = client.post(
+        "/v1/chat/completions",
+        headers={"X-AbstractCore-Provider-API-Key": "sk-provider-request-key"},
+        json={"model": "openai/gpt-4", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 200
+    assert created and created[-1].get("api_key") == "sk-provider-request-key"
+
+
 def test_unauthenticated_request_cannot_use_server_provider_env_key(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-server-env-key")
@@ -179,11 +249,17 @@ def test_sensitive_values_are_redacted_from_structured_log_fields() -> None:
     server_app = importlib.import_module("abstractcore.server.app")
 
     assert server_app._redact_headers(
-        {"Authorization": "Bearer server-secret", "Cookie": "sid=abc", "User-Agent": "test"}
+        {
+            "Authorization": "Bearer server-secret",
+            "Cookie": "sid=abc",
+            "User-Agent": "test",
+            "X-AbstractCore-Provider-API-Key": "sk-provider-key",
+        }
     ) == {
         "Authorization": "[REDACTED]",
         "Cookie": "[REDACTED]",
         "User-Agent": "test",
+        "X-AbstractCore-Provider-API-Key": "[REDACTED]",
     }
 
     assert (

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Structured output system alias**: direct `StructuredOutputHandler.generate_structured()` calls now apply the same warned `system=` alias handling.
 
 ### Fixed
+- **Server auth/provider credential routing**: `ABSTRACTCORE_SERVER_API_KEY` now acts as the server master key for all configured providers, `X-AbstractCore-Provider-API-Key` overrides only the requested upstream provider, and `Authorization` is forwarded as a provider key only when server auth is not configured. Body/query `api_key` fields remain disabled and secret-bearing headers/URLs are redacted.
 - **Server request hardening**: request-level `base_url` overrides now default to loopback or explicit allowlists, remote overrides cannot silently inherit server environment API keys, URL media fetches block non-public targets across redirects, and HTTP-request local media paths require an explicit safe root or unsafe opt-in.
 - **Server URL allowlists**: URL-based allowlist entries now parse and compare scheme, exact host, effective port, and path-segment prefixes to prevent host-confusion and path-prefix bypasses.
 - **CachedSession system alias safety**: prompt-cache key/KV modes now warn and strip per-call `system=` overrides in sync and async generation so cached session context cannot be silently desynced.

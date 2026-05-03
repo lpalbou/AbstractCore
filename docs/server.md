@@ -18,6 +18,10 @@ Visit while the server is running:
 # Install
 pip install "abstractcore[server]"
 
+# Configure server auth and provider keys
+export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
+export OPENAI_API_KEY="sk-..."
+
 # Start server
 python -m abstractcore.server.app
 
@@ -34,6 +38,7 @@ curl http://localhost:8000/health
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
   -d '{
     "model": "openai/gpt-4o-mini",
     "messages": [{"role": "user", "content": "Hello!"}]
@@ -43,9 +48,10 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 Or with Python:
 
 ```python
+import os
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"])
 
 response = client.chat.completions.create(
     model="anthropic/claude-haiku-4-5",
@@ -67,6 +73,9 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 export OPENROUTER_API_KEY="sk-or-..."
 export PORTKEY_API_KEY="pk_..."         # optional (Portkey)
 export PORTKEY_CONFIG="pcfg_..."        # required for Portkey routing
+
+# Server master key. Authenticated clients can use all server-configured providers.
+export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
 
 # Local providers
 export OLLAMA_BASE_URL="http://localhost:11434"          # (or legacy: OLLAMA_HOST)
@@ -127,10 +136,14 @@ uvicorn abstractcore.server.app:app --port 3000             # Custom port
 
 Standard OpenAI-compatible endpoint. Works with all providers.
 
-Server auth: by default, every non-health endpoint requires
-`Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY`. Set
-`ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1` only for intentional local/dev use without
-server auth.
+Server auth:
+- If `ABSTRACTCORE_SERVER_API_KEY` is configured, every non-health endpoint requires
+  `Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY`. Authenticated clients can use all
+  provider keys/endpoints configured on the server.
+- If `ABSTRACTCORE_SERVER_API_KEY` is not configured, `Authorization: Bearer <provider-key>`
+  may be used as a bring-your-own upstream provider key. That key is forwarded only to the
+  requested provider and never unlocks server-configured provider keys.
+- Health checks (`GET /health`) are always unauthenticated.
 
 **Request:**
 ```json
@@ -152,7 +165,7 @@ server auth.
 - `stream` (optional): Enable streaming responses
 - `tools` (optional): Tools for function calling
 - `agent_format` (optional, AbstractCore extension): Tool-call syntax output format for agentic clients (`"auto"|"openai"|"codex"|"qwen3"|"llama3"|"gemma"|"xml"|"passthrough"`). When omitted, the server auto-detects from user-agent + model heuristics.
-- `api_key` (deprecated/disabled, AbstractCore extension): Provider API keys are no longer accepted in request bodies or query strings. Configure provider keys on the server, or use `Authorization` as a provider key only when `ABSTRACTCORE_SERVER_API_KEY` is not configured.
+- `api_key` (deprecated/disabled, AbstractCore extension): Provider API keys are no longer accepted in request bodies or query strings. Configure provider keys on the server, use `X-AbstractCore-Provider-API-Key` for a per-request provider override, or use `Authorization` as a provider key only when `ABSTRACTCORE_SERVER_API_KEY` is not configured.
 - `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
 - `unload_after` (optional, AbstractCore extension): If `true`, calls `llm.unload_model(model)` after the request completes. Disabled for `ollama/*` unless `ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1`.
 - `prompt_cache_key` (optional, AbstractCore extension): Best-effort prompt caching key (semantics depend on provider/backend). See `docs/prompt-caching.md`.
@@ -185,9 +198,10 @@ Notes:
 **Example with streaming:**
 
 ```python
+import os
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"])
 
 stream = client.chat.completions.create(
     model="ollama/qwen3-coder:30b",
@@ -208,7 +222,7 @@ Security notes:
 - Request-level `base_url` overrides are **loopback-only by default**. To allow additional
   origins or host globs, set `ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST`. URL entries are parsed
   and matched on scheme, exact host, effective port, and path-segment prefix.
-- If the server has an environment provider key set (e.g. `OPENAI_API_KEY`) and you route to a **non-loopback** `base_url`, the request is refused unless the provider key was supplied via `Authorization` while server auth is disabled.
+- If the server has an environment provider key set (e.g. `OPENAI_API_KEY`) and you route to a **non-loopback** `base_url`, the request is refused unless the provider key was supplied explicitly with `X-AbstractCore-Provider-API-Key`, or with `Authorization` when server auth is disabled.
 
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
@@ -239,6 +253,20 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 When `ABSTRACTCORE_SERVER_API_KEY` is not configured, `Authorization: Bearer <provider-key>` may
 be used as an upstream provider key. Once server auth is enabled, `Authorization` is reserved for
 the AbstractCore server key and is never forwarded upstream.
+
+To override a single upstream provider while still using the server master key, send the provider
+key in `X-AbstractCore-Provider-API-Key`. The override applies only to the requested provider:
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "X-AbstractCore-Provider-API-Key: $ANTHROPIC_API_KEY" \
+  -d '{
+    "model": "anthropic/claude-haiku-4-5",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
 
 ### Media generation endpoints (optional)
 
@@ -440,10 +468,11 @@ Combine text, images, and documents in a single request:
 
 **Using OpenAI Client:**
 ```python
+import os
 from openai import OpenAI
 import base64
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"])
 
 # Method 1: @filename syntax
 response = client.chat.completions.create(
@@ -681,9 +710,10 @@ All file types supported via URL, local path, or base64:
 #### Python Client Example
 
 ```python
+import os
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"])
 
 # Direct request to /v1/responses endpoint
 import requests
@@ -869,7 +899,10 @@ CMD ["uvicorn", "abstractcore.server.app:app", "--host", "0.0.0.0", "--port", "8
 **Run:**
 ```bash
 docker build -t abstractcore-server .
-docker run -p 8000:8000 -e OPENAI_API_KEY=$OPENAI_API_KEY abstractcore-server
+docker run -p 8000:8000 \
+  -e ABSTRACTCORE_SERVER_API_KEY=$ABSTRACTCORE_SERVER_API_KEY \
+  -e OPENAI_API_KEY=$OPENAI_API_KEY \
+  abstractcore-server
 ```
 
 ### Docker Compose
@@ -883,6 +916,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - ABSTRACTCORE_SERVER_API_KEY=${ABSTRACTCORE_SERVER_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     restart: unless-stopped
@@ -1035,6 +1069,7 @@ ollama list
 
 ```bash
 # Set API keys
+export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 

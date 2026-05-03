@@ -127,8 +127,12 @@ _SENSITIVE_FIELD_NAMES = {
     "token",
     "x-api-key",
 }
-_SENSITIVE_FIELD_FRAGMENTS = ("api_key", "apikey", "authorization", "password", "secret", "token")
+_SENSITIVE_FIELD_FRAGMENTS = ("api_key", "api-key", "apikey", "authorization", "password", "secret", "token")
 _PLACEHOLDER_API_KEYS = {"not-needed", "not_needed", "notneeded", "unused", "dummy", "empty", "none"}
+_PROVIDER_API_KEY_HEADERS = (
+    "x-abstractcore-provider-api-key",
+    "x-provider-api-key",
+)
 
 
 def _is_sensitive_name(name: Any) -> bool:
@@ -231,6 +235,13 @@ def _extract_bearer_token(auth_header: Any) -> str:
     return auth[7:].strip()
 
 
+def _extract_secret_header(header_value: Any) -> str:
+    value = str(header_value or "").strip()
+    if value.lower().startswith("bearer "):
+        return value[7:].strip()
+    return value
+
+
 def _is_placeholder_api_key(token: Any) -> bool:
     t = str(token or "").strip()
     return not t or t.lower() in _PLACEHOLDER_API_KEYS
@@ -252,13 +263,18 @@ def _unauthorized_response(message: str) -> JSONResponse:
 
 
 async def _enforce_server_auth(request: Request, call_next):
-    """Require inbound Authorization for non-health routes unless local/dev mode is explicit."""
+    """Enforce the server-master auth boundary before endpoint/provider creation."""
     if _request_is_auth_exempt(request):
         return await call_next(request)
 
     expected = _server_api_key()
     if not expected:
-        if _server_allows_unauthenticated():
+        # No master server key is configured. In this mode Authorization may be
+        # used as a provider key, but it does not unlock server-held provider keys.
+        if (
+            _server_allows_unauthenticated()
+            or _provider_api_key_from_request(request)
+        ):
             return await call_next(request)
         return JSONResponse(
             status_code=503,
@@ -266,8 +282,9 @@ async def _enforce_server_auth(request: Request, call_next):
                 "error": {
                     "message": (
                         "Server authentication is required but ABSTRACTCORE_SERVER_API_KEY is not configured. "
-                        "Set ABSTRACTCORE_SERVER_API_KEY, or set ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1 "
-                        "only for intentional local/dev use."
+                        "Set ABSTRACTCORE_SERVER_API_KEY, pass an explicit provider key with Authorization: "
+                        "Bearer <provider-key>, or set ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1 only for "
+                        "intentional local/dev use."
                     ),
                     "type": "server_auth_not_configured",
                 }
@@ -284,10 +301,29 @@ async def _enforce_server_auth(request: Request, call_next):
     return await call_next(request)
 
 
-def _provider_api_key_from_authorization(http_request: Request) -> Optional[str]:
-    """Use Authorization as an upstream provider key only when it is not server auth."""
+def _request_has_server_auth(http_request: Optional[Request]) -> bool:
+    if http_request is None:
+        return False
+    return bool(getattr(http_request.state, "abstractcore_server_authenticated", False))
+
+
+def _provider_api_key_from_request(http_request: Request) -> Optional[str]:
+    """Resolve the explicit upstream provider key for this request.
+
+    Contract:
+    - `Authorization` is the AbstractCore server key whenever server auth is configured.
+    - `X-AbstractCore-Provider-API-Key` is the per-request upstream provider override.
+    - For compatibility, when server auth is not configured, `Authorization` may carry
+      the upstream provider key.
+    """
+    for header_name in _PROVIDER_API_KEY_HEADERS:
+        token = _extract_secret_header(http_request.headers.get(header_name))
+        if not _is_placeholder_api_key(token):
+            return token
+
     if _server_auth_enabled():
         return None
+
     token = _extract_bearer_token(http_request.headers.get("authorization"))
     if _is_placeholder_api_key(token):
         return None
@@ -776,8 +812,9 @@ class ChatCompletionRequest(BaseModel):
     api_key: Optional[str] = Field(
         default=None,
         description="Deprecated/disabled for HTTP requests. Provider API keys must be supplied via "
-                    "Authorization only when server auth is not configured, or configured on the server "
-                    "(e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, PORTKEY_API_KEY).",
+                    "X-AbstractCore-Provider-API-Key, via Authorization only when server auth is not "
+                    "configured, or configured on the server (e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, "
+                    "OPENROUTER_API_KEY, PORTKEY_API_KEY).",
         example=None
     )
     base_url: Optional[str] = Field(
@@ -1503,9 +1540,23 @@ def _provider_api_key_env_var(provider: str) -> Optional[str]:
 
 
 def _server_has_provider_api_key(provider: str) -> bool:
+    p = str(provider or "").strip().lower()
     env_var = _provider_api_key_env_var(provider)
     if env_var and str(os.getenv(env_var) or "").strip():
         return True
+
+    try:
+        from ..config import manager as config_manager_module
+
+        cfg = getattr(config_manager_module, "_config_manager", None)
+        if cfg is not None:
+            runtime_config = cfg.get_provider_config(p)
+            for key_name in ("api_key", "provider_api_key"):
+                if str(runtime_config.get(key_name) or "").strip():
+                    return True
+    except Exception:
+        pass
+
     return False
 
 
@@ -1518,8 +1569,9 @@ def _reject_body_api_key(api_key: Any) -> None:
             "error": {
                 "message": (
                     "Per-request provider api_key fields are disabled for the HTTP server because they leak "
-                    "through bodies, logs, and client history. Use Authorization as a provider key only when "
-                    "server auth is not configured, or configure provider keys on the server."
+                    "through bodies, logs, and client history. Use X-AbstractCore-Provider-API-Key for a "
+                    "provider override, Authorization as a provider key only when server auth is not "
+                    "configured, or configure provider keys on the server."
                 ),
                 "type": "invalid_request",
             }
@@ -1536,7 +1588,9 @@ def _reject_query_api_key(api_key: Any) -> None:
             "error": {
                 "message": (
                     "Query-string api_key is disabled because URLs are routinely logged. Use Authorization "
-                    "as a provider key only when server auth is not configured, or configure provider keys on the server."
+                    "as a provider key only when server auth is not configured, "
+                    "X-AbstractCore-Provider-API-Key for a provider override, or configure provider keys "
+                    "on the server."
                 ),
                 "type": "invalid_request",
             }
@@ -1548,9 +1602,10 @@ def _guard_unauthenticated_server_provider_key_use(
     provider: str,
     *,
     explicit_provider_key: bool,
+    http_request: Optional[Request] = None,
 ) -> None:
     """Do not let unauthenticated HTTP callers spend or exfiltrate server-held provider keys."""
-    if _server_auth_enabled() or explicit_provider_key:
+    if _request_has_server_auth(http_request) or explicit_provider_key:
         return
     if not _server_has_provider_api_key(provider):
         return
@@ -1563,7 +1618,8 @@ def _guard_unauthenticated_server_provider_key_use(
                 "message": (
                     f"Server-held {env_var} is configured, but inbound server auth is not. "
                     "Set ABSTRACTCORE_SERVER_API_KEY and send Authorization: Bearer <server-key>, "
-                    "or pass a provider key via Authorization only when server auth is disabled."
+                    "or pass an explicit provider key with Authorization: Bearer <provider-key> "
+                    "when server auth is not configured."
                 ),
                 "type": "authentication_error",
             }
@@ -1848,7 +1904,7 @@ class PromptCacheProxyBase(BaseModel):
     )
     api_key: Optional[str] = Field(
         default=None,
-        description="Deprecated/disabled for HTTP request bodies. Use Authorization only when server auth is not configured.",
+        description="Deprecated/disabled for HTTP request bodies. Use X-AbstractCore-Provider-API-Key for provider overrides.",
         example=None,
     )
 
@@ -1927,7 +1983,7 @@ def _proxy_prompt_cache_request(
     url = f"{upstream_root}{path}"
 
     headers: Dict[str, str] = {}
-    upstream_api_key = _provider_api_key_from_authorization(http_request) if http_request is not None else None
+    upstream_api_key = _provider_api_key_from_request(http_request) if http_request is not None else None
     if upstream_api_key:
         headers["Authorization"] = f"Bearer {upstream_api_key}"
 
@@ -1962,7 +2018,7 @@ def _proxy_prompt_cache_request(
 def acore_prompt_cache_stats(
     http_request: Request,
     base_url: Optional[str] = Query(None, description="Upstream AbstractEndpoint base_url (optionally including /v1)"),
-    api_key: Optional[str] = Query(None, description="Deprecated/disabled. Use Authorization only when server auth is not configured."),
+    api_key: Optional[str] = Query(None, description="Deprecated/disabled. Use X-AbstractCore-Provider-API-Key for provider overrides."),
 ):
     _reject_query_api_key(api_key)
     return _proxy_prompt_cache_request(
@@ -1979,7 +2035,7 @@ def acore_prompt_cache_stats(
 def acore_prompt_cache_capabilities(
     http_request: Request,
     base_url: Optional[str] = Query(None, description="Upstream AbstractEndpoint base_url (optionally including /v1)"),
-    api_key: Optional[str] = Query(None, description="Deprecated/disabled. Use Authorization only when server auth is not configured."),
+    api_key: Optional[str] = Query(None, description="Deprecated/disabled. Use X-AbstractCore-Provider-API-Key for provider overrides."),
 ):
     _reject_query_api_key(api_key)
     return _proxy_prompt_cache_request(
@@ -2085,7 +2141,8 @@ async def list_models(
     api_key: Optional[str] = Query(
         None,
         description=(
-            "Deprecated/disabled. Query-string secrets leak through URLs; use Authorization only when "
+            "Deprecated/disabled. Query-string secrets leak through URLs; use "
+            "X-AbstractCore-Provider-API-Key for provider overrides, Authorization only when "
             "server auth is not configured, or configure provider keys on the server."
         ),
     ),
@@ -2129,16 +2186,14 @@ async def list_models(
 
             provider_kwargs: Dict[str, Any] = {}
 
-            # Authorization can be used as an upstream provider key only when server
-            # auth is not configured. If server auth is enabled, that header is reserved
-            # for ABSTRACTCORE_SERVER_API_KEY and never forwarded.
-            candidate_key = _provider_api_key_from_authorization(http_request) or ""
+            candidate_key = _provider_api_key_from_request(http_request) or ""
 
             if candidate_key:
                 provider_kwargs["api_key"] = candidate_key
             _guard_unauthenticated_server_provider_key_use(
                 provider_norm,
                 explicit_provider_key=bool(candidate_key),
+                http_request=http_request,
             )
             if isinstance(base_url, str) and base_url.strip():
                 base_url_s = base_url.strip()
@@ -2170,8 +2225,8 @@ async def list_models(
                                     "message": (
                                         "Refusing request-level base_url override without an explicit provider key "
                                         f"because the server has {env_var} set. Provide the provider key via "
-                                        "Authorization only when server auth is not configured, or remove the server "
-                                        "environment key."
+                                        "X-AbstractCore-Provider-API-Key, or via Authorization only when server auth "
+                                        "is not configured."
                                     ),
                                     "type": "forbidden",
                                 }
@@ -3247,7 +3302,7 @@ async def process_chat_completion(
         )
 
         _reject_body_api_key(request.api_key)
-        provider_api_key = _provider_api_key_from_authorization(http_request)
+        provider_api_key = _provider_api_key_from_request(http_request)
 
         # Detect target format for tool call syntax
         target_format = detect_target_format(f"{provider}/{model}", request, http_request)
@@ -3305,10 +3360,11 @@ async def process_chat_completion(
             provider_kwargs.setdefault("max_traces", 0)
         if provider_api_key:
             provider_kwargs["api_key"] = provider_api_key
-            logger.debug("🔑 Provider API key supplied via Authorization", request_id=request_id, provider=provider)
+            logger.debug("🔑 Explicit provider API key supplied", request_id=request_id, provider=provider)
         _guard_unauthenticated_server_provider_key_use(
             provider,
             explicit_provider_key=bool(provider_api_key),
+            http_request=http_request,
         )
         if isinstance(request.base_url, str) and request.base_url.strip():
             base_url = request.base_url.strip()
@@ -3343,8 +3399,9 @@ async def process_chat_completion(
                             "error": {
                                 "message": (
                                     "Refusing request-level base_url override without an explicit provider key because "
-                                    f"the server has {env_var} set. Provide the provider key via Authorization only "
-                                    "when server auth is not configured, or remove the server environment key. "
+                                    f"the server has {env_var} set. Provide the provider key via "
+                                    "X-AbstractCore-Provider-API-Key, or via Authorization only when server auth is "
+                                    "not configured. "
                                     f"(provider={provider})"
                                 ),
                                 "type": "forbidden",
@@ -3802,6 +3859,7 @@ Examples:
   python -m abstractcore.server.app --debug --port 8080           # Debug on custom port
 
 Environment Variables:
+  ABSTRACTCORE_SERVER_API_KEY=...  # Server master key for non-health endpoints
   ABSTRACTCORE_DEBUG=true    # Enable debug mode (equivalent to --debug)
   HOST=127.0.0.1            # Server host (overridden by --host)
   PORT=8080                  # Server port (overridden by --port)
