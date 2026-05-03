@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Structured output system alias**: direct `StructuredOutputHandler.generate_structured()` calls now apply the same warned `system=` alias handling.
 
 ### Fixed
+- **Server request hardening**: request-level `base_url` overrides now default to loopback or explicit allowlists, remote overrides cannot silently inherit server environment API keys, URL media fetches block non-public targets across redirects, and HTTP-request local media paths require an explicit safe root or unsafe opt-in.
 - **Server URL allowlists**: URL-based allowlist entries now parse and compare scheme, exact host, effective port, and path-segment prefixes to prevent host-confusion and path-prefix bypasses.
 - **CachedSession system alias safety**: prompt-cache key/KV modes now warn and strip per-call `system=` overrides in sync and async generation so cached session context cannot be silently desynced.
 - **LM Studio unload for reasoning REPL**: `LMStudioProvider.unload_model()` now uses LM Studio's native REST unload endpoint and resolves model keys/variants to loaded instance IDs so `examples/reasoning/qwen_thinking_repl.py` can free LM Studio models via `:unload` (automatic unload-on-switch remains HuggingFace-only).
