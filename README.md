@@ -383,7 +383,6 @@ Reference and internals:
 
 Project:
 - [Changelog](CHANGELOG.md) — version history and upgrade notes
-- [Release Process](docs/release-process.md) — maintainer checklist for GitHub + PyPI releases
 - [Contributing](CONTRIBUTING.md) — dev setup and contribution guidelines
 - [Security](SECURITY.md) — responsible vulnerability reporting
 - [Acknowledgements](ACKNOWLEDGEMENTS.md) — upstream projects and communities

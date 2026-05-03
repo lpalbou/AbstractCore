@@ -25,6 +25,7 @@ import os
 from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
+from typing import Optional
 
 import pytest
 from pydantic import BaseModel
@@ -105,7 +106,7 @@ class Task(BaseModel):
     description: str
     priority: Priority
     status: TaskStatus
-    estimated_hours: float | None = None
+    estimated_hours: Optional[float] = None
 
 
 class Project(BaseModel):

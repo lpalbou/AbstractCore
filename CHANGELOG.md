@@ -12,11 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Install extras for common deployment paths**: added `remote` as a lightweight hosted-SDK bundle (`openai` + `anthropic`) and explicit no-dependency extras for `openrouter`, `portkey`, and `openai-compatible` so installation commands are clearer and compose cleanly.
 - **Automated release workflow**: pushing a `vX.Y.Z` tag now validates the version/changelog, runs tests, builds docs, builds and checks distributions, publishes to PyPI via Trusted Publishing, and creates a GitHub Release with notes from `CHANGELOG.md`.
-- **Release process documentation**: added a maintainer runbook for preparing, tagging, publishing, and verifying releases.
 - **GGUF streaming regression coverage**: added a focused unit test ensuring HuggingFace/GGUF streaming setup errors are returned as error responses with the original message.
 
 ### Changed
-- **Version bumped to 2.13.1** for the install-quality and release-process cleanup.
+- **Version bumped to 2.13.1** for the install-quality and release-automation cleanup.
 - **Structured native test runtime**: simplified `tests/structured/test_comprehensive_native.py` so normal runs use a fast fake-native handler regression test, local provider inference is gated behind `ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1`, the three-level live matrix is opt-in with `ABSTRACTCORE_RUN_COMPREHENSIVE_NATIVE_STRUCTURED_TESTS=1`, and native structured skip output no longer prints huge local model inventories.
 - **Install guidance**: README and docs now emphasize the lightweight core install, `abstractcore[remote]` for hosted SDKs, composable extras, `all-apple` for Apple Silicon local stacks, and `all-gpu` for NVIDIA/vLLM stacks. The legacy `all-non-mlx` extra remains available but is no longer promoted as a primary install path.
 - **Product positioning**: README and comparison docs now present AbstractCore as an offline-capable, open-source-first provider layer that can run local, self-hosted, hosted, or hybrid deployments from the same `create_llm(...)` application code.
@@ -43,7 +42,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Clarified tool calling defaults (pass-through) and removed misleading “tools executed” wording from the quick start.
 - Documented `CachedSession` more consistently across core docs and `llms*.txt` (getting started, API map, sessions, structured output hybrid note).
 - Updated install examples across README, getting started, prerequisites, FAQ, troubleshooting, media docs, app docs, and contributing guidance.
-- Documented the automated GitHub Release + PyPI publishing path.
 
 
 ## [2.13.0] - 2026-05-02
