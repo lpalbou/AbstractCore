@@ -2,6 +2,8 @@
 Async test fixtures and configuration.
 """
 
+from __future__ import annotations
+
 import asyncio
 import os
 from typing import Any

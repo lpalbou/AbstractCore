@@ -45,7 +45,7 @@ Or with Python:
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
 
 response = client.chat.completions.create(
     model="anthropic/claude-haiku-4-5",
@@ -127,6 +127,11 @@ uvicorn abstractcore.server.app:app --port 3000             # Custom port
 
 Standard OpenAI-compatible endpoint. Works with all providers.
 
+Server auth: by default, every non-health endpoint requires
+`Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY`. Set
+`ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1` only for intentional local/dev use without
+server auth.
+
 **Request:**
 ```json
 {
@@ -147,7 +152,7 @@ Standard OpenAI-compatible endpoint. Works with all providers.
 - `stream` (optional): Enable streaming responses
 - `tools` (optional): Tools for function calling
 - `agent_format` (optional, AbstractCore extension): Tool-call syntax output format for agentic clients (`"auto"|"openai"|"codex"|"qwen3"|"llama3"|"gemma"|"xml"|"passthrough"`). When omitted, the server auto-detects from user-agent + model heuristics.
-- `api_key` (optional, AbstractCore extension): Provider API key for per-request authentication. Falls back to environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `PORTKEY_API_KEY`)
+- `api_key` (deprecated/disabled, AbstractCore extension): Provider API keys are no longer accepted in request bodies or query strings. Configure provider keys on the server, or use `Authorization` as a provider key only when `ABSTRACTCORE_SERVER_API_KEY` is not configured.
 - `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
 - `unload_after` (optional, AbstractCore extension): If `true`, calls `llm.unload_model(model)` after the request completes. Disabled for `ollama/*` unless `ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1`.
 - `prompt_cache_key` (optional, AbstractCore extension): Best-effort prompt caching key (semantics depend on provider/backend). See `docs/prompt-caching.md`.
@@ -182,7 +187,7 @@ Notes:
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
 
 stream = client.chat.completions.create(
     model="ollama/qwen3-coder:30b",
@@ -203,7 +208,7 @@ Security notes:
 - Request-level `base_url` overrides are **loopback-only by default**. To allow additional
   origins or host globs, set `ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST`. URL entries are parsed
   and matched on scheme, exact host, effective port, and path-segment prefix.
-- If the server has an environment provider key set (e.g. `OPENAI_API_KEY`) and you route to a **non-loopback** `base_url`, you must provide an explicit `api_key` in the request to avoid accidentally using the server’s env key.
+- If the server has an environment provider key set (e.g. `OPENAI_API_KEY`) and you route to a **non-loopback** `base_url`, the request is refused unless the provider key was supplied via `Authorization` while server auth is disabled.
 
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
@@ -215,32 +220,25 @@ curl -X POST http://localhost:8000/v1/chat/completions \
   }'
 ```
 
-#### Per-request `api_key` (AbstractCore extension)
+#### Provider Authentication
 
-Pass API keys directly in requests (useful for multi-tenant scenarios or OpenRouter):
+Do not put provider keys in request bodies or query strings. Those fields are disabled because
+they leak through logs, shell history, browser history, and reverse proxies.
 
 ```bash
-# OpenRouter with per-request API key
+# Preferred: configure provider keys on the server and authenticate to AbstractCore.
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
   -d '{
-    "model": "openrouter/anthropic/claude-3.5-sonnet",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "api_key": "sk-or-v1-your-openrouter-key"
-  }'
-
-# OpenAI-compatible endpoint with custom auth
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "openai-compatible/my-model",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "api_key": "your-api-key",
-    "base_url": "https://my-custom-endpoint.com/v1"
+    "model": "openai/gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
 
-If `api_key` is not provided, AbstractCore falls back to environment variables.
+When `ABSTRACTCORE_SERVER_API_KEY` is not configured, `Authorization: Bearer <provider-key>` may
+be used as an upstream provider key. Once server auth is enabled, `Authorization` is reserved for
+the AbstractCore server key and is never forwarded upstream.
 
 ### Media generation endpoints (optional)
 
@@ -445,7 +443,7 @@ Combine text, images, and documents in a single request:
 from openai import OpenAI
 import base64
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
 
 # Method 1: @filename syntax
 response = client.chat.completions.create(
@@ -685,7 +683,7 @@ All file types supported via URL, local path, or base64:
 ```python
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="not-needed")
 
 # Direct request to /v1/responses endpoint
 import requests

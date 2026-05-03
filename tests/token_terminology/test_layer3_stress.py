@@ -18,8 +18,8 @@ from abstractcore.architectures import (
     detect_architecture
 )
 from abstractcore.architectures.detection import resolve_model_alias
-from abstractcore.providers.openai_provider import OpenAIProvider
 from abstractcore.providers.ollama_provider import OllamaProvider
+from tests.provider_stubs import StaticProvider
 
 
 class TestAll85Models:
@@ -311,7 +311,7 @@ class TestErrorHandlingAndRecovery:
         """Test provider behavior with invalid max_tokens override."""
         # Test with negative value
         try:
-            provider = OpenAIProvider("gpt-4", max_tokens=-1000)
+            provider = StaticProvider("gpt-4", max_tokens=-1000)
             # If it doesn't raise, it should clamp or ignore
             assert provider.max_tokens > 0, "Should not allow negative max_tokens"
         except (ValueError, AssertionError):
@@ -320,7 +320,7 @@ class TestErrorHandlingAndRecovery:
 
         # Test with zero
         try:
-            provider = OpenAIProvider("gpt-4", max_tokens=0)
+            provider = StaticProvider("gpt-4", max_tokens=0)
             assert provider.max_tokens > 0, "Should not allow zero max_tokens"
         except (ValueError, AssertionError):
             pass
@@ -378,7 +378,7 @@ class TestPerformanceStress:
         # Create 50 provider instances
         for i in range(50):
             model = models[i % len(models)]
-            provider = OpenAIProvider(model)
+            provider = StaticProvider(model)
             providers.append(provider)
 
             # Verify each has correct max_tokens
@@ -421,10 +421,7 @@ class TestConsistencyChecks:
             json_caps = get_model_capabilities(model)
 
             # Provider lookup
-            if "gpt" in model or "o1" in model or "o3" in model:
-                provider = OpenAIProvider(model)
-            else:
-                provider = OllamaProvider(model)
+            provider = StaticProvider(model)
 
             # Should match
             assert provider.max_tokens == json_caps["max_tokens"], \

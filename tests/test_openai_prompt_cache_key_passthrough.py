@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any, Dict, List
 
 from pydantic import BaseModel
@@ -9,24 +10,27 @@ from abstractcore.providers import openai_provider as openai_provider_module
 from abstractcore.providers.openai_provider import OpenAIProvider
 
 
-class _DummyChatCompletions:
-    def __init__(self, capture: List[Dict[str, Any]]):
-        self._capture = capture
+def _install_fake_openai(monkeypatch, capture: List[Dict[str, Any]]) -> None:
+    class _DummyChatCompletions:
+        def __init__(self, _capture: List[Dict[str, Any]]):
+            self._capture = _capture
 
-    def create(self, **kwargs):
-        self._capture.append(dict(kwargs))
-        return object()
+        def create(self, **kwargs):
+            self._capture.append(dict(kwargs))
+            return object()
 
+    class _DummyChat:
+        def __init__(self, _capture: List[Dict[str, Any]]):
+            self.completions = _DummyChatCompletions(_capture)
 
-class _DummyChat:
-    def __init__(self, capture: List[Dict[str, Any]]):
-        self.completions = _DummyChatCompletions(capture)
+    class _DummyOpenAIClient:
+        def __init__(self, _capture: List[Dict[str, Any]], **_kwargs):
+            self.chat = _DummyChat(_capture)
+            self.models = SimpleNamespace(list=lambda: SimpleNamespace(data=[]))
 
-
-class _DummyOpenAIClient:
-    def __init__(self, capture: List[Dict[str, Any]], **kwargs):
-        _ = kwargs
-        self.chat = _DummyChat(capture)
+    fake_openai = SimpleNamespace(OpenAI=lambda **kwargs: _DummyOpenAIClient(capture, **kwargs))
+    monkeypatch.setattr(openai_provider_module, "OPENAI_AVAILABLE", True, raising=False)
+    monkeypatch.setattr(openai_provider_module, "openai", fake_openai, raising=False)
 
 
 def test_openai_prompt_cache_key_is_forwarded(monkeypatch):
@@ -34,11 +38,7 @@ def test_openai_prompt_cache_key_is_forwarded(monkeypatch):
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.setattr(OpenAIProvider, "_validate_model_exists", lambda self: None)
-    monkeypatch.setattr(
-        openai_provider_module.openai,
-        "OpenAI",
-        lambda **kwargs: _DummyOpenAIClient(capture, **kwargs),
-    )
+    _install_fake_openai(monkeypatch, capture)
 
     def _format_response(self, _response):
         return GenerateResponse(content="ok", model=self.model, finish_reason="stop")
@@ -59,11 +59,7 @@ def test_openai_prompt_cache_key_explicit_overrides_default(monkeypatch):
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.setattr(OpenAIProvider, "_validate_model_exists", lambda self: None)
-    monkeypatch.setattr(
-        openai_provider_module.openai,
-        "OpenAI",
-        lambda **kwargs: _DummyOpenAIClient(capture, **kwargs),
-    )
+    _install_fake_openai(monkeypatch, capture)
 
     monkeypatch.setattr(
         OpenAIProvider,
@@ -83,11 +79,7 @@ def test_openai_prompt_cache_retention_is_forwarded(monkeypatch):
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.setattr(OpenAIProvider, "_validate_model_exists", lambda self: None)
-    monkeypatch.setattr(
-        openai_provider_module.openai,
-        "OpenAI",
-        lambda **kwargs: _DummyOpenAIClient(capture, **kwargs),
-    )
+    _install_fake_openai(monkeypatch, capture)
     monkeypatch.setattr(
         OpenAIProvider,
         "_format_response",
@@ -104,11 +96,7 @@ def test_openai_native_structured_output_sets_response_format(monkeypatch):
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.setattr(OpenAIProvider, "_validate_model_exists", lambda self: None)
-    monkeypatch.setattr(
-        openai_provider_module.openai,
-        "OpenAI",
-        lambda **kwargs: _DummyOpenAIClient(capture, **kwargs),
-    )
+    _install_fake_openai(monkeypatch, capture)
     monkeypatch.setattr(
         OpenAIProvider,
         "_format_response",

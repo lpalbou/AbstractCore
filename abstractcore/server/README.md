@@ -281,7 +281,6 @@ curl http://localhost:8000/providers
   "frequency_penalty": 0.0,
   "presence_penalty": 0.0,
   "agent_format": "auto",
-  "api_key": null,
   "base_url": null
 }
 ```
@@ -299,7 +298,7 @@ curl http://localhost:8000/providers
 | `tools` | array | null | Available function tools |
 | `tool_choice` | string/object | "auto" | Tool calling strategy |
 | `agent_format` | string | null | Tool syntax format |
-| `api_key` | string | null | Provider API key (falls back to env vars) |
+| `api_key` | string | null | Deprecated/disabled in request bodies. Use server-side provider config, or `Authorization` as a provider key only when server auth is not configured. |
 | `base_url` | string | null | Custom API endpoint URL |
 
 **Response (Non-Streaming)**:
@@ -338,10 +337,15 @@ data: [DONE]
 
 **Usage Examples**:
 
+**Server authentication**:
+All non-health endpoints require `Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY` by default.
+Set `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1` only for intentional local/dev use without server auth.
+
 **Basic Text Chat**:
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
   -d '{
     "model": "openai/gpt-4o-mini",
     "messages": [
@@ -420,7 +424,7 @@ from openai import OpenAI
 # Point to AbstractCore server
 client = OpenAI(
     base_url="http://localhost:8000/v1",
-    api_key="not-needed"  # AbstractCore manages API keys
+    api_key="not-needed"  # Use ABSTRACTCORE_SERVER_API_KEY here when server auth is enabled
 )
 
 response = client.chat.completions.create(
@@ -434,33 +438,33 @@ response = client.chat.completions.create(
 print(response.choices[0].message.content)
 ```
 
-**With Per-Request API Key** (OpenRouter, OpenAI-compatible, etc.):
+**Provider authentication**:
 ```bash
-# Pass API key directly in request (useful for multi-tenant scenarios)
+# Preferred: configure provider keys on the server (e.g. OPENAI_API_KEY).
+# If ABSTRACTCORE_SERVER_API_KEY is set, clients authenticate to this server with it:
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
   -d '{
-    "model": "openrouter/anthropic/claude-3.5-sonnet",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "api_key": "sk-or-v1-your-openrouter-key",
-    "temperature": 0.7
+    "model": "openai/gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
 
 ```python
-# Python example with per-request API key
+# When server auth is not configured, Authorization may be used as the upstream provider key.
 response = requests.post(
     "http://localhost:8000/v1/chat/completions",
+    headers={"Authorization": "Bearer sk-provider-key"},
     json={
         "model": "openai-compatible/my-model",
         "messages": [{"role": "user", "content": "Hello!"}],
-        "api_key": "your-api-key",
         "base_url": "https://my-custom-endpoint.com/v1"
     }
 )
 ```
 
-Note: If `api_key` is not provided, AbstractCore falls back to environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`).
+Note: request-body and query-string `api_key` are disabled because those values are routinely logged by clients, proxies, and servers.
 
 ---
 
@@ -1181,7 +1185,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://localhost:8000/v1",
-    api_key="not-needed"
+    api_key="not-needed"  # Use ABSTRACTCORE_SERVER_API_KEY here when server auth is enabled
 )
 
 response = client.chat.completions.create(

@@ -3,9 +3,24 @@ from __future__ import annotations
 import importlib
 from typing import Any, Dict, List
 
+import pytest
 from fastapi.testclient import TestClient
 
 from abstractcore.core.types import GenerateResponse
+
+
+@pytest.fixture(autouse=True)
+def _clear_security_sensitive_env(monkeypatch) -> None:
+    for name in (
+        "ABSTRACTCORE_SERVER_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "OPENROUTER_API_KEY",
+        "PORTKEY_API_KEY",
+        "OPENAI_COMPATIBLE_API_KEY",
+        "VLLM_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
 
 class _StubLLM:
@@ -20,6 +35,166 @@ class _StubLLM:
             finish_reason="stop",
             usage={"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
         )
+
+
+def test_server_api_key_blocks_unauthenticated_requests_before_provider_creation(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_API_KEY", "server-secret")
+
+    def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
+        raise AssertionError("create_llm should not be called before server auth succeeds")
+
+    monkeypatch.setattr(server_app, "create_llm", fake_create_llm)
+
+    client = TestClient(server_app.app)
+
+    health = client.get("/health")
+    assert health.status_code == 200
+
+    r = client.post(
+        "/v1/chat/completions",
+        json={"model": "openai/gpt-4", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 401
+
+    models = client.get("/v1/models")
+    assert models.status_code == 401
+
+
+def test_server_auth_is_required_by_default_when_key_is_not_configured(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.delenv("ABSTRACTCORE_SERVER_API_KEY", raising=False)
+    monkeypatch.delenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", raising=False)
+
+    def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
+        raise AssertionError("create_llm should not be called when server auth is not configured")
+
+    monkeypatch.setattr(server_app, "create_llm", fake_create_llm)
+
+    client = TestClient(server_app.app)
+    assert client.get("/health").status_code == 200
+
+    r = client.post(
+        "/v1/chat/completions",
+        json={"model": "openai/gpt-4", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 503
+
+
+def test_server_api_key_allows_authenticated_request_without_forwarding_server_key(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_API_KEY", "server-secret")
+
+    created: List[Dict[str, Any]] = []
+
+    def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
+        created.append(dict(kwargs))
+        return _StubLLM()
+
+    monkeypatch.setattr(server_app, "create_llm", fake_create_llm)
+
+    client = TestClient(server_app.app)
+    r = client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer server-secret"},
+        json={"model": "openai/gpt-4", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 200
+    assert created
+    assert "api_key" not in created[-1]
+
+
+def test_provider_api_key_body_field_is_disabled(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+
+    def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
+        raise AssertionError("create_llm should not be called when body api_key is rejected")
+
+    monkeypatch.setattr(server_app, "create_llm", fake_create_llm)
+
+    client = TestClient(server_app.app)
+    r = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "openai/gpt-4",
+            "messages": [{"role": "user", "content": "hi"}],
+            "api_key": "sk-should-not-be-used",
+        },
+    )
+    assert r.status_code == 400
+
+
+def test_provider_api_key_query_param_is_disabled(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+
+    def fake_get_models_from_provider(*args: Any, **kwargs: Any) -> List[str]:
+        raise AssertionError("model discovery should not run when query api_key is rejected")
+
+    monkeypatch.setattr(server_app, "get_models_from_provider", fake_get_models_from_provider)
+
+    client = TestClient(server_app.app)
+    r = client.get("/v1/models?provider=openai&api_key=sk-should-not-be-logged")
+    assert r.status_code == 400
+
+
+def test_provider_api_key_authorization_header_is_forwarded_only_without_server_auth(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+
+    created: List[Dict[str, Any]] = []
+
+    def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
+        created.append(dict(kwargs))
+        return _StubLLM()
+
+    monkeypatch.setattr(server_app, "create_llm", fake_create_llm)
+
+    client = TestClient(server_app.app)
+    r = client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer sk-provider-request-key"},
+        json={"model": "openai/gpt-4", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 200
+    assert created and created[-1].get("api_key") == "sk-provider-request-key"
+
+
+def test_unauthenticated_request_cannot_use_server_provider_env_key(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-server-env-key")
+
+    def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
+        raise AssertionError("create_llm should not be called with unauthenticated server-held provider keys")
+
+    monkeypatch.setattr(server_app, "create_llm", fake_create_llm)
+
+    client = TestClient(server_app.app)
+    r = client.post(
+        "/v1/chat/completions",
+        json={"model": "openai/gpt-4", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    assert r.status_code == 401
+
+
+def test_sensitive_values_are_redacted_from_structured_log_fields() -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+
+    assert server_app._redact_headers(
+        {"Authorization": "Bearer server-secret", "Cookie": "sid=abc", "User-Agent": "test"}
+    ) == {
+        "Authorization": "[REDACTED]",
+        "Cookie": "[REDACTED]",
+        "User-Agent": "test",
+    }
+
+    assert (
+        server_app._redact_url("http://localhost/v1/models?provider=openai&api_key=sk-secret&x=1")
+        == "http://localhost/v1/models?provider=openai&api_key=%5BREDACTED%5D&x=1"
+    )
+
+    assert server_app._redact_sensitive_data({"api_key": "sk-secret", "nested": {"token": "abc"}}) == {
+        "api_key": "[REDACTED]",
+        "nested": {"token": "[REDACTED]"},
+    }
 
 
 def test_server_blocks_non_loopback_base_url_by_default(monkeypatch) -> None:
@@ -88,7 +263,7 @@ def test_server_prevents_env_key_exfiltration_via_base_url_override(monkeypatch)
             "base_url": "https://example.com/v1",
         },
     )
-    assert r.status_code == 403
+    assert r.status_code == 401
 
 
 def test_url_allowlist_url_entries_reject_host_confusion() -> None:

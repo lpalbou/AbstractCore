@@ -40,6 +40,7 @@ import httpx
 import ipaddress
 import fnmatch
 import posixpath
+import hmac
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Literal, Union, Iterator, Tuple, Annotated
 from enum import Enum
@@ -105,6 +106,192 @@ _configure_warning_logging()
 
 # Log initial startup with debug mode status (may be suppressed by console level).
 logger.info("🚀 AbstractCore Server Initializing", version=__version__, debug_mode=debug_mode)
+
+
+_REDACTED = "[REDACTED]"
+_SENSITIVE_FIELD_NAMES = {
+    "api_key",
+    "apikey",
+    "api-key",
+    "access_token",
+    "auth_token",
+    "authorization",
+    "bearer",
+    "cookie",
+    "id_token",
+    "key",
+    "password",
+    "refresh_token",
+    "secret",
+    "set-cookie",
+    "token",
+    "x-api-key",
+}
+_SENSITIVE_FIELD_FRAGMENTS = ("api_key", "apikey", "authorization", "password", "secret", "token")
+_PLACEHOLDER_API_KEYS = {"not-needed", "not_needed", "notneeded", "unused", "dummy", "empty", "none"}
+
+
+def _is_sensitive_name(name: Any) -> bool:
+    key = str(name or "").strip().lower()
+    if not key:
+        return False
+    return key in _SENSITIVE_FIELD_NAMES or any(fragment in key for fragment in _SENSITIVE_FIELD_FRAGMENTS)
+
+
+def _redact_sensitive_data(value: Any) -> Any:
+    """Recursively redact known secret-bearing fields for logs and validation responses."""
+    if isinstance(value, dict):
+        return {
+            k: (_REDACTED if _is_sensitive_name(k) else _redact_sensitive_data(v))
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_redact_sensitive_data(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_sensitive_data(v) for v in value)
+    return value
+
+
+def _redact_url(url: Any) -> str:
+    """Redact sensitive query params and userinfo from a URL before logging."""
+    raw = str(url or "")
+    try:
+        parsed = urllib.parse.urlsplit(raw)
+    except Exception:
+        return raw
+
+    query = urllib.parse.parse_qsl(parsed.query, keep_blank_values=True)
+    redacted_query = [
+        (k, _REDACTED if _is_sensitive_name(k) else v)
+        for k, v in query
+    ]
+
+    netloc = parsed.netloc
+    if parsed.hostname:
+        host = parsed.hostname
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        try:
+            parsed_port = parsed.port
+        except Exception:
+            parsed_port = None
+        port = f":{parsed_port}" if parsed_port is not None else ""
+        netloc = f"{host}{port}"
+
+    return urllib.parse.urlunsplit(
+        (
+            parsed.scheme,
+            netloc,
+            parsed.path,
+            urllib.parse.urlencode(redacted_query, doseq=True),
+            parsed.fragment,
+        )
+    )
+
+
+def _redact_headers(headers: Any) -> Dict[str, Any]:
+    """Redact sensitive request/response headers before logging."""
+    try:
+        items = headers.items()
+    except Exception:
+        return {}
+    return {
+        str(k): (_REDACTED if _is_sensitive_name(k) else v)
+        for k, v in items
+    }
+
+
+def _redact_text(text: Any) -> str:
+    """Best-effort redaction for strings that may contain URLs with secret query params."""
+    raw = str(text or "")
+    try:
+        return _redact_url(raw)
+    except Exception:
+        return raw
+
+
+def _server_api_key() -> str:
+    """Return the configured inbound server API key, if any."""
+    return str(os.getenv("ABSTRACTCORE_SERVER_API_KEY") or "").strip()
+
+
+def _server_auth_enabled() -> bool:
+    return bool(_server_api_key())
+
+
+def _server_allows_unauthenticated() -> bool:
+    raw = str(os.getenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _extract_bearer_token(auth_header: Any) -> str:
+    auth = str(auth_header or "").strip()
+    if not auth.lower().startswith("bearer "):
+        return ""
+    return auth[7:].strip()
+
+
+def _is_placeholder_api_key(token: Any) -> bool:
+    t = str(token or "").strip()
+    return not t or t.lower() in _PLACEHOLDER_API_KEYS
+
+
+def _request_is_auth_exempt(request: Request) -> bool:
+    path = str(getattr(request.url, "path", "") or "")
+    if request.method.upper() == "OPTIONS":
+        return True
+    return path == "/health"
+
+
+def _unauthorized_response(message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=401,
+        content={"error": {"message": message, "type": "authentication_error"}},
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+async def _enforce_server_auth(request: Request, call_next):
+    """Require inbound Authorization for non-health routes unless local/dev mode is explicit."""
+    if _request_is_auth_exempt(request):
+        return await call_next(request)
+
+    expected = _server_api_key()
+    if not expected:
+        if _server_allows_unauthenticated():
+            return await call_next(request)
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": {
+                    "message": (
+                        "Server authentication is required but ABSTRACTCORE_SERVER_API_KEY is not configured. "
+                        "Set ABSTRACTCORE_SERVER_API_KEY, or set ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1 "
+                        "only for intentional local/dev use."
+                    ),
+                    "type": "server_auth_not_configured",
+                }
+            },
+        )
+
+    provided = _extract_bearer_token(request.headers.get("authorization"))
+    if not provided:
+        return _unauthorized_response("Missing server Authorization bearer token")
+    if not hmac.compare_digest(provided, expected):
+        return _unauthorized_response("Invalid server Authorization bearer token")
+
+    request.state.abstractcore_server_authenticated = True
+    return await call_next(request)
+
+
+def _provider_api_key_from_authorization(http_request: Request) -> Optional[str]:
+    """Use Authorization as an upstream provider key only when it is not server auth."""
+    if _server_auth_enabled():
+        return None
+    token = _extract_bearer_token(http_request.headers.get("authorization"))
+    if _is_placeholder_api_key(token):
+        return None
+    return token
 
 def reconfigure_for_debug():
     """Reconfigure logging for debug mode when --debug flag is used."""
@@ -177,19 +364,19 @@ async def debug_logging_middleware(request: Request, call_next):
         logger.debug(
             "📥 HTTP Request",
             method=request.method,
-            url=str(request.url),
-            headers=dict(request.headers),
+            url=_redact_url(str(request.url)),
+            headers=_redact_headers(request.headers),
             client=request.client.host if request.client else "unknown"
         )
 
-    response = await call_next(request)
+    response = await _enforce_server_auth(request, call_next)
 
     process_time = time.time() - start_time
 
     # Log response details
     log_data = {
         "method": request.method,
-        "url": str(request.url),
+        "url": _redact_url(str(request.url)),
         "status_code": response.status_code,
         "process_time_ms": round(process_time * 1000, 2)
     }
@@ -212,14 +399,14 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "field": " -> ".join(str(loc) for loc in error["loc"]),
             "message": error["msg"],
             "type": error["type"],
-            "input": error.get("input")
+            "input": _redact_sensitive_data(error.get("input")),
         })
 
     # Log detailed validation error information
     logger.error(
         "🔴 Request Validation Error (422)",
         method=request.method,
-        url=str(request.url),
+        url=_redact_url(str(request.url)),
         error_count=len(error_details),
         errors=error_details,
         client=request.client.host if request.client else "unknown"
@@ -236,7 +423,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
                     body_json = json.loads(body)
                     logger.debug(
                         "📋 Request Body (Validation Error)",
-                        body=body_json
+                        body=_redact_sensitive_data(body_json),
                     )
                 except json.JSONDecodeError:
                     raw = body.decode("utf-8", errors="replace")
@@ -266,12 +453,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     """Enhanced handler for HTTP exceptions with detailed logging."""
+    safe_detail = _redact_sensitive_data(exc.detail)
     logger.error(
         "🔴 HTTP Exception",
         method=request.method,
-        url=str(request.url),
+        url=_redact_url(str(request.url)),
         status_code=exc.status_code,
-        detail=str(exc.detail),
+        detail=safe_detail,
         client=request.client.host if request.client else "unknown"
     )
 
@@ -279,10 +467,11 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         status_code=exc.status_code,
         content={
             "error": {
-                "message": str(exc.detail),
+                "message": str(safe_detail),
                 "type": "http_error"
             }
-        }
+        },
+        headers=getattr(exc, "headers", None),
     )
 
 @app.exception_handler(Exception)
@@ -291,9 +480,9 @@ async def general_exception_handler(request: Request, exc: Exception):
     logger.error(
         "💥 Unexpected Server Error",
         method=request.method,
-        url=str(request.url),
+        url=_redact_url(str(request.url)),
         exception_type=type(exc).__name__,
-        exception_message=str(exc),
+        exception_message=_redact_text(str(exc)),
         client=request.client.host if request.client else "unknown",
         exc_info=True  # This will include the full stack trace
     )
@@ -348,7 +537,7 @@ def get_models_from_provider(
     except Exception as e:
         if bool(kwargs.get("raise_on_error", False)):
             raise
-        logger.debug(f"Failed to get models from provider {provider_name}: {e}")
+        logger.debug(f"Failed to get models from provider {provider_name}: {_redact_text(str(e))}")
         return []
 
 
@@ -586,9 +775,8 @@ class ChatCompletionRequest(BaseModel):
     # Provider-specific parameters (AbstractCore-specific feature)
     api_key: Optional[str] = Field(
         default=None,
-        description="API key for the provider (AbstractCore-specific feature). "
-                    "Supports all providers requiring authentication: openai, anthropic, openrouter, portkey, openai-compatible, huggingface. "
-                    "If not specified, falls back to provider-specific environment variables "
+        description="Deprecated/disabled for HTTP requests. Provider API keys must be supplied via "
+                    "Authorization only when server auth is not configured, or configured on the server "
                     "(e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, OPENROUTER_API_KEY, PORTKEY_API_KEY).",
         example=None
     )
@@ -822,24 +1010,7 @@ class ChatCompletionRequest(BaseModel):
                         "frequency_penalty": 0.0,
                         "presence_penalty": 0.0,
                         "agent_format": "auto",
-                        "api_key": None,
                         "base_url": None
-                    }
-                },
-                "openrouter_with_api_key": {
-                    "summary": "OpenRouter with Per-Request API Key",
-                    "description": "Use OpenRouter with a per-request API key (useful for multi-tenant scenarios)",
-                    "value": {
-                        "model": "openrouter/anthropic/claude-3.5-sonnet",
-                        "messages": [
-                            {
-                                "role": "user",
-                                "content": "Explain quantum computing in simple terms"
-                            }
-                        ],
-                        "api_key": "sk-or-v1-your-openrouter-key",
-                        "temperature": 0.7,
-                        "max_tokens": 500
                     }
                 }
             }.values())
@@ -1115,6 +1286,8 @@ def _safe_split_http_url(value: str) -> Optional[Tuple[Any, str, str, Optional[i
     scheme = str(parsed.scheme or "").lower()
     if scheme not in {"http", "https"}:
         return None
+    if parsed.username is not None or parsed.password is not None:
+        return None
 
     host = _canonical_allowlist_host(parsed.hostname)
     if not host:
@@ -1327,6 +1500,76 @@ def _provider_api_key_env_var(provider: str) -> Optional[str]:
     if p == "vllm":
         return "VLLM_API_KEY"
     return None
+
+
+def _server_has_provider_api_key(provider: str) -> bool:
+    env_var = _provider_api_key_env_var(provider)
+    if env_var and str(os.getenv(env_var) or "").strip():
+        return True
+    return False
+
+
+def _reject_body_api_key(api_key: Any) -> None:
+    if api_key is None:
+        return
+    raise HTTPException(
+        status_code=400,
+        detail={
+            "error": {
+                "message": (
+                    "Per-request provider api_key fields are disabled for the HTTP server because they leak "
+                    "through bodies, logs, and client history. Use Authorization as a provider key only when "
+                    "server auth is not configured, or configure provider keys on the server."
+                ),
+                "type": "invalid_request",
+            }
+        },
+    )
+
+
+def _reject_query_api_key(api_key: Any) -> None:
+    if api_key is None:
+        return
+    raise HTTPException(
+        status_code=400,
+        detail={
+            "error": {
+                "message": (
+                    "Query-string api_key is disabled because URLs are routinely logged. Use Authorization "
+                    "as a provider key only when server auth is not configured, or configure provider keys on the server."
+                ),
+                "type": "invalid_request",
+            }
+        },
+    )
+
+
+def _guard_unauthenticated_server_provider_key_use(
+    provider: str,
+    *,
+    explicit_provider_key: bool,
+) -> None:
+    """Do not let unauthenticated HTTP callers spend or exfiltrate server-held provider keys."""
+    if _server_auth_enabled() or explicit_provider_key:
+        return
+    if not _server_has_provider_api_key(provider):
+        return
+
+    env_var = _provider_api_key_env_var(provider) or "provider API key"
+    raise HTTPException(
+        status_code=401,
+        detail={
+            "error": {
+                "message": (
+                    f"Server-held {env_var} is configured, but inbound server auth is not. "
+                    "Set ABSTRACTCORE_SERVER_API_KEY and send Authorization: Bearer <server-key>, "
+                    "or pass a provider key via Authorization only when server auth is disabled."
+                ),
+                "type": "authentication_error",
+            }
+        },
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 def _server_allows_request_base_url(base_url: str) -> bool:
@@ -1605,7 +1848,7 @@ class PromptCacheProxyBase(BaseModel):
     )
     api_key: Optional[str] = Field(
         default=None,
-        description="Optional upstream API key (sent as Authorization: Bearer ...).",
+        description="Deprecated/disabled for HTTP request bodies. Use Authorization only when server auth is not configured.",
         example=None,
     )
 
@@ -1654,6 +1897,7 @@ def _normalize_control_plane_base_url(base_url: str) -> str:
 
 def _proxy_prompt_cache_request(
     *,
+    http_request: Optional[Request] = None,
     base_url: Optional[str],
     api_key: Optional[str],
     method: str,
@@ -1666,6 +1910,7 @@ def _proxy_prompt_cache_request(
             "supported": False,
             "error": "base_url is required to proxy prompt cache control plane calls (use AbstractEndpoint)",
         }
+    _reject_body_api_key(api_key)
 
     base_url_s = base_url.strip()
     if not _server_allows_request_base_url(base_url_s):
@@ -1682,8 +1927,9 @@ def _proxy_prompt_cache_request(
     url = f"{upstream_root}{path}"
 
     headers: Dict[str, str] = {}
-    if isinstance(api_key, str) and api_key.strip():
-        headers["Authorization"] = f"Bearer {api_key.strip()}"
+    upstream_api_key = _provider_api_key_from_authorization(http_request) if http_request is not None else None
+    if upstream_api_key:
+        headers["Authorization"] = f"Bearer {upstream_api_key}"
 
     try:
         with httpx.Client(timeout=timeout_s) as client:
@@ -1714,10 +1960,13 @@ def _proxy_prompt_cache_request(
 
 @app.get("/acore/prompt_cache/stats")
 def acore_prompt_cache_stats(
+    http_request: Request,
     base_url: Optional[str] = Query(None, description="Upstream AbstractEndpoint base_url (optionally including /v1)"),
-    api_key: Optional[str] = Query(None, description="Optional upstream API key"),
+    api_key: Optional[str] = Query(None, description="Deprecated/disabled. Use Authorization only when server auth is not configured."),
 ):
+    _reject_query_api_key(api_key)
     return _proxy_prompt_cache_request(
+        http_request=http_request,
         base_url=base_url,
         api_key=api_key,
         method="GET",
@@ -1728,10 +1977,13 @@ def acore_prompt_cache_stats(
 
 @app.get("/acore/prompt_cache/capabilities")
 def acore_prompt_cache_capabilities(
+    http_request: Request,
     base_url: Optional[str] = Query(None, description="Upstream AbstractEndpoint base_url (optionally including /v1)"),
-    api_key: Optional[str] = Query(None, description="Optional upstream API key"),
+    api_key: Optional[str] = Query(None, description="Deprecated/disabled. Use Authorization only when server auth is not configured."),
 ):
+    _reject_query_api_key(api_key)
     return _proxy_prompt_cache_request(
+        http_request=http_request,
         base_url=base_url,
         api_key=api_key,
         method="GET",
@@ -1741,11 +1993,12 @@ def acore_prompt_cache_capabilities(
 
 
 @app.post("/acore/prompt_cache/set")
-def acore_prompt_cache_set(req: PromptCacheSetProxyRequest):
+def acore_prompt_cache_set(req: PromptCacheSetProxyRequest, http_request: Request):
     body = req.model_dump(exclude_none=True)
     base_url = body.pop("base_url", None)
     api_key = body.pop("api_key", None)
     return _proxy_prompt_cache_request(
+        http_request=http_request,
         base_url=base_url,
         api_key=api_key,
         method="POST",
@@ -1755,11 +2008,12 @@ def acore_prompt_cache_set(req: PromptCacheSetProxyRequest):
 
 
 @app.post("/acore/prompt_cache/update")
-def acore_prompt_cache_update(req: PromptCacheUpdateProxyRequest):
+def acore_prompt_cache_update(req: PromptCacheUpdateProxyRequest, http_request: Request):
     body = req.model_dump(exclude_none=True)
     base_url = body.pop("base_url", None)
     api_key = body.pop("api_key", None)
     return _proxy_prompt_cache_request(
+        http_request=http_request,
         base_url=base_url,
         api_key=api_key,
         method="POST",
@@ -1769,11 +2023,12 @@ def acore_prompt_cache_update(req: PromptCacheUpdateProxyRequest):
 
 
 @app.post("/acore/prompt_cache/fork")
-def acore_prompt_cache_fork(req: PromptCacheForkProxyRequest):
+def acore_prompt_cache_fork(req: PromptCacheForkProxyRequest, http_request: Request):
     body = req.model_dump(exclude_none=True)
     base_url = body.pop("base_url", None)
     api_key = body.pop("api_key", None)
     return _proxy_prompt_cache_request(
+        http_request=http_request,
         base_url=base_url,
         api_key=api_key,
         method="POST",
@@ -1783,11 +2038,12 @@ def acore_prompt_cache_fork(req: PromptCacheForkProxyRequest):
 
 
 @app.post("/acore/prompt_cache/clear")
-def acore_prompt_cache_clear(req: PromptCacheClearProxyRequest):
+def acore_prompt_cache_clear(req: PromptCacheClearProxyRequest, http_request: Request):
     body = req.model_dump(exclude_none=True)
     base_url = body.pop("base_url", None)
     api_key = body.pop("api_key", None)
     return _proxy_prompt_cache_request(
+        http_request=http_request,
         base_url=base_url,
         api_key=api_key,
         method="POST",
@@ -1797,11 +2053,12 @@ def acore_prompt_cache_clear(req: PromptCacheClearProxyRequest):
 
 
 @app.post("/acore/prompt_cache/prepare_modules")
-def acore_prompt_cache_prepare_modules(req: PromptCachePrepareModulesProxyRequest):
+def acore_prompt_cache_prepare_modules(req: PromptCachePrepareModulesProxyRequest, http_request: Request):
     body = req.model_dump(exclude_none=True)
     base_url = body.pop("base_url", None)
     api_key = body.pop("api_key", None)
     return _proxy_prompt_cache_request(
+        http_request=http_request,
         base_url=base_url,
         api_key=api_key,
         method="POST",
@@ -1828,8 +2085,8 @@ async def list_models(
     api_key: Optional[str] = Query(
         None,
         description=(
-            "Optional upstream provider API key. Not recommended for production because it appears in URLs; "
-            "prefer the standard 'Authorization: Bearer ...' header."
+            "Deprecated/disabled. Query-string secrets leak through URLs; use Authorization only when "
+            "server auth is not configured, or configure provider keys on the server."
         ),
     ),
     base_url: Optional[str] = Query(
@@ -1860,6 +2117,7 @@ async def list_models(
         input_capabilities = [input_type] if input_type else None
         output_capabilities = [output_type] if output_type else None
         
+        _reject_query_api_key(api_key)
 
         if provider:
             provider_norm = provider.lower().strip()
@@ -1871,20 +2129,17 @@ async def list_models(
 
             provider_kwargs: Dict[str, Any] = {}
 
-            # Allow per-request API keys for model discovery.
-            # Priority: explicit query param > Authorization header.
-            candidate_key = str(api_key).strip() if isinstance(api_key, str) else ""
-            if not candidate_key:
-                auth = http_request.headers.get("authorization")
-                auth_s = str(auth or "").strip()
-                if auth_s.lower().startswith("bearer "):
-                    token = auth_s[7:].strip()
-                    placeholder = token.lower()
-                    if token and placeholder not in {"not-needed", "not_needed", "notneeded", "empty", "none"}:
-                        candidate_key = token
+            # Authorization can be used as an upstream provider key only when server
+            # auth is not configured. If server auth is enabled, that header is reserved
+            # for ABSTRACTCORE_SERVER_API_KEY and never forwarded.
+            candidate_key = _provider_api_key_from_authorization(http_request) or ""
 
             if candidate_key:
                 provider_kwargs["api_key"] = candidate_key
+            _guard_unauthenticated_server_provider_key_use(
+                provider_norm,
+                explicit_provider_key=bool(candidate_key),
+            )
             if isinstance(base_url, str) and base_url.strip():
                 base_url_s = base_url.strip()
                 if not _server_allows_request_base_url(base_url_s):
@@ -1907,16 +2162,16 @@ async def list_models(
                 host = str(parsed.hostname or "").strip()
                 if host and not _is_loopback_host(host):
                     env_var = _provider_api_key_env_var(provider_norm)
-                    env_key_present = bool(env_var and str(os.getenv(env_var) or "").strip())
-                    if env_key_present and not candidate_key:
+                    if _server_has_provider_api_key(provider_norm) and not candidate_key:
                         raise HTTPException(
                             status_code=403,
                             detail={
                                 "error": {
                                     "message": (
-                                        "Refusing request-level base_url override without an explicit api_key because "
-                                        f"the server has {env_var} set. Provide api_key (query param or Authorization "
-                                        "header), or remove the server environment key."
+                                        "Refusing request-level base_url override without an explicit provider key "
+                                        f"because the server has {env_var} set. Provide the provider key via "
+                                        "Authorization only when server auth is not configured, or remove the server "
+                                        "environment key."
                                     ),
                                     "type": "forbidden",
                                 }
@@ -1962,6 +2217,12 @@ async def list_models(
             from ..providers.registry import list_available_providers
             providers = list_available_providers()
             for prov in providers:
+                if not _server_auth_enabled() and _server_has_provider_api_key(prov):
+                    logger.warning(
+                        "Skipping provider model discovery because server-held API key requires server auth",
+                        provider=prov,
+                    )
+                    continue
                 models = get_models_from_provider(
                     prov, 
                     input_capabilities=input_capabilities,
@@ -1994,7 +2255,7 @@ async def list_models(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to list models: {e}")
+        logger.error(f"Failed to list models: {_redact_text(str(e))}")
         return {
             "object": "list",
             "data": []
@@ -2044,7 +2305,24 @@ async def list_providers(
     **Returns:** A list of provider objects with comprehensive metadata.
     """
     try:
-        from ..providers.registry import get_all_providers_with_models, get_all_providers_status
+        from ..providers.registry import get_all_providers_with_models, get_all_providers_status, list_available_providers
+
+        if include_models and not _server_auth_enabled():
+            keyed_providers = [p for p in list_available_providers() if _server_has_provider_api_key(p)]
+            if keyed_providers:
+                raise HTTPException(
+                    status_code=401,
+                    detail={
+                        "error": {
+                            "message": (
+                                "Provider model discovery would use server-held API keys, but inbound server auth is "
+                                "not configured. Set ABSTRACTCORE_SERVER_API_KEY or omit include_models=true."
+                            ),
+                            "type": "authentication_error",
+                        }
+                    },
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
 
         # Get providers with models (available providers)
         available_providers = get_all_providers_with_models(include_models=include_models)
@@ -2062,12 +2340,14 @@ async def list_providers(
             "note": "Provider information from centralized AbstractCore registry"
         }
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Failed to list providers: {e}")
+        logger.error(f"Failed to list providers: {_redact_text(str(e))}")
         return {
             "providers": [],
             "total_providers": 0,
-            "error": str(e),
+            "error": _redact_text(str(e)),
             "registry_version": "2.0"
         }
 
@@ -2188,6 +2468,7 @@ async def create_response(
     try:
         # Use the parsed request body directly
         request_data = request_body
+        _reject_body_api_key(request_data.get("api_key") if isinstance(request_data, dict) else None)
 
         # Detect OpenAI responses format vs legacy format
         if "input" in request_data:
@@ -2238,11 +2519,13 @@ async def create_response(
 
         return await process_chat_completion(provider, model, chat_request, http_request)
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"Responses API error: {e}")
+        logger.error(f"Responses API error: {_redact_text(str(e))}")
         raise HTTPException(
             status_code=400,
-            detail={"error": {"message": str(e), "type": "processing_error"}}
+            detail={"error": {"message": _redact_text(str(e)), "type": "processing_error"}}
         )
 
 @app.post("/v1/embeddings")
@@ -2354,10 +2637,10 @@ async def create_embeddings(request: EmbeddingRequest):
         # Re-raise HTTP exceptions as-is
         raise
     except Exception as e:
-        logger.error(f"❌ Embedding generation failed: {e}", exc_info=True)
+        logger.error(f"❌ Embedding generation failed: {_redact_text(str(e))}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"error": {"message": str(e), "type": "embedding_error"}}
+            detail={"error": {"message": _redact_text(str(e)), "type": "embedding_error"}}
         )
 
 # ============================================================================
@@ -2429,10 +2712,10 @@ def handle_base64_image(data_url: str) -> str:
         return temp_file_path
 
     except Exception as e:
-        logger.error(f"Failed to process base64 media: {e}")
+        logger.error(f"Failed to process base64 media: {_redact_text(str(e))}")
         raise HTTPException(
             status_code=400,
-            detail={"error": {"message": f"Invalid base64 media data: {e}", "type": "media_error"}}
+            detail={"error": {"message": f"Invalid base64 media data: {_redact_text(str(e))}", "type": "media_error"}}
         )
 
 def download_file_temporarily(url: str) -> str:
@@ -2576,10 +2859,10 @@ def download_file_temporarily(url: str) -> str:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to download file from URL {url}: {e}")
+        logger.error(f"Failed to download file from URL {_redact_url(url)}: {_redact_text(str(e))}")
         raise HTTPException(
             status_code=400,
-            detail={"error": {"message": f"Failed to download file: {e}", "type": "media_error"}},
+            detail={"error": {"message": f"Failed to download file: {_redact_text(str(e))}", "type": "media_error"}},
         ) from e
 
 def download_image_temporarily(url: str) -> str:
@@ -2640,7 +2923,7 @@ def process_file_url_object(file_url_obj: Dict[str, Any]) -> Optional[str]:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Failed to process file URL object: {e}")
+        logger.error(f"Failed to process file URL object: {_redact_text(str(e))}")
         return None
 
 def process_message_content(message: ChatMessage) -> Tuple[str, List[str]]:
@@ -2963,6 +3246,9 @@ async def process_chat_completion(
             stream=request.stream
         )
 
+        _reject_body_api_key(request.api_key)
+        provider_api_key = _provider_api_key_from_authorization(http_request)
+
         # Detect target format for tool call syntax
         target_format = detect_target_format(f"{provider}/{model}", request, http_request)
         user_agent_raw = http_request.headers.get("user-agent", "")
@@ -3017,13 +3303,13 @@ async def process_chat_completion(
             # Enable trace capture (trace_id) without retaining full trace buffers by default.
             provider_kwargs["enable_tracing"] = True
             provider_kwargs.setdefault("max_traces", 0)
-        if request.api_key is not None:
-            provider_kwargs["api_key"] = request.api_key
-            logger.debug(
-                "🔑 Custom API Key Provided",
-                request_id=request_id,
-                provider=provider,
-            )
+        if provider_api_key:
+            provider_kwargs["api_key"] = provider_api_key
+            logger.debug("🔑 Provider API key supplied via Authorization", request_id=request_id, provider=provider)
+        _guard_unauthenticated_server_provider_key_use(
+            provider,
+            explicit_provider_key=bool(provider_api_key),
+        )
         if isinstance(request.base_url, str) and request.base_url.strip():
             base_url = request.base_url.strip()
             if not _server_allows_request_base_url(base_url):
@@ -3043,23 +3329,23 @@ async def process_chat_completion(
                 )
 
             # Prevent accidental provider key exfiltration when the server has an env API key.
-            # If a client sets a non-loopback base_url and does not provide an explicit api_key,
+            # If a client sets a non-loopback base_url and does not provide an explicit provider key,
             # providers may fall back to server env keys and send them to the supplied endpoint.
             parsed = urllib.parse.urlsplit(base_url)
             host = str(parsed.hostname or "").strip()
             if host and not _is_loopback_host(host):
                 env_var = _provider_api_key_env_var(provider)
-                env_key_present = bool(env_var and str(os.getenv(env_var) or "").strip())
-                explicit_key = bool(isinstance(request.api_key, str) and request.api_key.strip())
-                if env_key_present and not explicit_key:
+                explicit_key = bool(provider_api_key)
+                if _server_has_provider_api_key(provider) and not explicit_key:
                     raise HTTPException(
                         status_code=403,
                         detail={
                             "error": {
                                 "message": (
-                                    "Refusing request-level base_url override without an explicit api_key because the "
-                                    f"server has {env_var} set. Provide api_key in the request, or remove the server "
-                                    f"environment key. (provider={provider})"
+                                    "Refusing request-level base_url override without an explicit provider key because "
+                                    f"the server has {env_var} set. Provide the provider key via Authorization only "
+                                    "when server auth is not configured, or remove the server environment key. "
+                                    f"(provider={provider})"
                                 ),
                                 "type": "forbidden",
                             }
@@ -3067,7 +3353,7 @@ async def process_chat_completion(
                     )
 
             provider_kwargs["base_url"] = base_url
-            logger.info("🔗 Custom Base URL", request_id=request_id, base_url=base_url)
+            logger.info("🔗 Custom Base URL", request_id=request_id, base_url=_redact_url(base_url))
         if request.timeout_s is not None:
             # Orchestrator policy: allow the caller to specify the provider timeout.
             # Note: BaseProvider treats non-positive values as "unlimited".

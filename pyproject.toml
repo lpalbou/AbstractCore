@@ -370,12 +370,17 @@ test = [
     "pytest-cov>=4.0.0",
     "responses>=0.23.0",
     "httpx>=0.24.0",
+    "tomli>=2.0.0; python_version < '3.11'",
     # These are imported unconditionally by parts of the test suite.
     "numpy>=1.20.0,<2.0.0",
     "Pillow>=10.0.0,<12.0.0",
     "fastapi>=0.100.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "uvicorn>=0.23.0,<1.0.0",
+    # Tools HTML parsing tests expect these to be installed.
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
 ]
 
 # Documentation dependencies

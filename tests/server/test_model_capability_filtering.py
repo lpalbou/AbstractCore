@@ -16,6 +16,20 @@ from abstractcore.server.app import app
 from abstractcore.providers.model_capabilities import ModelInputCapability, ModelOutputCapability
 
 
+@pytest.fixture(autouse=True)
+def _clear_server_auth_env(monkeypatch):
+    for name in (
+        "ABSTRACTCORE_SERVER_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "OPENROUTER_API_KEY",
+        "PORTKEY_API_KEY",
+        "OPENAI_COMPATIBLE_API_KEY",
+        "VLLM_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 class TestModelCapabilityFiltering:
     """Test model capability filtering in server endpoints."""
     

@@ -16,6 +16,12 @@ from abstractcore import create_llm
 from abstractcore.media.capabilities import is_vision_model
 
 
+@pytest.fixture(autouse=True)
+def allow_unauthenticated_server_in_tests(monkeypatch):
+    """Keep existing server unit tests explicit about using unauthenticated local mode."""
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
+
+
 @pytest.fixture(scope="session")
 def vision_examples_dir():
     """Path to vision examples directory."""

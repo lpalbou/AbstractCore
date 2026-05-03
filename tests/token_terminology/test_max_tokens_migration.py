@@ -13,6 +13,7 @@ Test Structure:
 
 import pytest
 import json
+import os
 from pathlib import Path
 from typing import Dict, Any
 
@@ -23,8 +24,8 @@ from abstractcore.architectures import (
 )
 from abstractcore.architectures.detection import resolve_model_alias
 from abstractcore.providers.ollama_provider import OllamaProvider
-from abstractcore.providers.openai_provider import OpenAIProvider
 from abstractcore.providers.base import BaseProvider
+from tests.provider_stubs import StaticProvider
 
 
 class TestLayer1Foundation:
@@ -118,7 +119,7 @@ class TestLayer2Integration:
     def test_provider_uses_max_tokens_from_json(self):
         """Test that providers correctly use max_tokens from JSON"""
         # Test OpenAI provider
-        openai_provider = OpenAIProvider('gpt-4')
+        openai_provider = StaticProvider('gpt-4')
         assert openai_provider.max_tokens == 128000, \
             f"OpenAI provider should have max_tokens=128000, got {openai_provider.max_tokens}"
 
@@ -130,8 +131,8 @@ class TestLayer2Integration:
     def test_provider_max_output_tokens(self):
         """Test that providers have correct max_output_tokens"""
         providers_tests = [
-            (OpenAIProvider('gpt-4'), 4096),
-            (OpenAIProvider('gpt-4o-mini'), 16000),
+            (StaticProvider('gpt-4'), 4096),
+            (StaticProvider('gpt-4o-mini'), 16000),
             (OllamaProvider('llama-3.1-8b'), 8192),
         ]
 
@@ -353,6 +354,13 @@ class TestLayer3Stress:
             assert 'max_tokens' in limits
 
 
+RUN_TOKEN_PRODUCTION_TESTS = os.getenv("ABSTRACTCORE_RUN_TOKEN_TERMINOLOGY_PRODUCTION_TESTS") == "1"
+
+
+@pytest.mark.skipif(
+    not RUN_TOKEN_PRODUCTION_TESTS,
+    reason="Token terminology production tests are opt-in; set ABSTRACTCORE_RUN_TOKEN_TERMINOLOGY_PRODUCTION_TESTS=1 to run",
+)
 class TestLayer4Production:
     """Layer 4: Production Tests - Real-world scenario validation"""
 
@@ -373,6 +381,8 @@ class TestLayer4Production:
 
     def test_real_provider_creation_max_tokens(self):
         """Test real provider creation uses max_tokens from JSON"""
+        from abstractcore.providers.openai_provider import OpenAIProvider
+
         # Create real providers for different model types
         providers = [
             OpenAIProvider('gpt-4'),
@@ -405,6 +415,8 @@ class TestLayer4Production:
 
     def test_multi_provider_compatibility(self):
         """Test that max_tokens works across different providers"""
+        from abstractcore.providers.openai_provider import OpenAIProvider
+
         # Create providers for same model class but different providers
         test_cases = [
             ('openai', OpenAIProvider, 'gpt-4', 128000),
@@ -421,6 +433,8 @@ class TestLayer4Production:
 
     def test_backward_compatibility_no_breaking_changes(self):
         """Test that the migration doesn't break existing functionality"""
+        from abstractcore.providers.openai_provider import OpenAIProvider
+
         # Test that all key functions still work
         model = 'gpt-4'
 

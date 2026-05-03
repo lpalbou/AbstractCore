@@ -22,6 +22,8 @@ Example:
     pytest tests/providers/test_openai_compatible_provider.py -v
 """
 
+from __future__ import annotations
+
 import pytest
 import os
 import httpx

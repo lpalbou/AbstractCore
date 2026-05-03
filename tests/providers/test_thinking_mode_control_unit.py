@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 import pytest
 
 from abstractcore.core.types import GenerateResponse
@@ -8,6 +10,19 @@ from abstractcore.providers.openai_compatible_provider import OpenAICompatiblePr
 from abstractcore.providers.vllm_provider import VLLMProvider
 from abstractcore.providers.huggingface_provider import HuggingFaceProvider
 from abstractcore.providers.base import BaseProvider
+
+
+def _install_fake_openai(monkeypatch) -> None:
+    import abstractcore.providers.openai_provider as openai_provider_module
+
+    class _FakeOpenAIClient:
+        def __init__(self, **_kwargs):
+            self.chat = SimpleNamespace(completions=SimpleNamespace(create=lambda **_k: object()))
+            self.models = SimpleNamespace(list=lambda: SimpleNamespace(data=[]))
+
+    fake_openai = SimpleNamespace(OpenAI=_FakeOpenAIClient, AsyncOpenAI=_FakeOpenAIClient)
+    monkeypatch.setattr(openai_provider_module, "OPENAI_AVAILABLE", True, raising=False)
+    monkeypatch.setattr(openai_provider_module, "openai", fake_openai, raising=False)
 
 
 def test_vllm_thinking_sets_chat_template_kwargs_enable_thinking(monkeypatch):
@@ -73,6 +88,7 @@ def test_thinking_xhigh_is_accepted(monkeypatch):
 
 
 def test_openai_thinking_maps_to_reasoning_effort_without_network(monkeypatch):
+    _install_fake_openai(monkeypatch)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.setattr(OpenAIProvider, "_validate_model_exists", lambda self: None, raising=False)
     provider = OpenAIProvider(model="gpt-5.2")
@@ -102,6 +118,7 @@ def test_openai_thinking_maps_to_reasoning_effort_without_network(monkeypatch):
 
 
 def test_openai_pro_thinking_off_maps_to_min_supported_effort(monkeypatch):
+    _install_fake_openai(monkeypatch)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.setattr(OpenAIProvider, "_validate_model_exists", lambda self: None, raising=False)
     provider = OpenAIProvider(model="gpt-5.2-pro")
@@ -219,6 +236,7 @@ def test_harmony_unsupported_thinking_level_maps_to_nearest(monkeypatch):
 
 
 def test_openai_unsupported_thinking_level_maps_to_nearest(monkeypatch):
+    _install_fake_openai(monkeypatch)
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.setattr(OpenAIProvider, "_validate_model_exists", lambda self: None, raising=False)
     provider = OpenAIProvider(model="gpt-5")

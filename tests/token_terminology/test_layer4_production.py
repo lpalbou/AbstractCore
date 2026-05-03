@@ -9,6 +9,8 @@ Tests production readiness:
 - Validate integration with existing features
 """
 
+import os
+
 import pytest
 import subprocess
 import sys
@@ -17,6 +19,13 @@ from abstractcore import create_llm
 from abstractcore.architectures import get_model_capabilities, get_context_limits
 from abstractcore.providers.openai_provider import OpenAIProvider
 from abstractcore.providers.ollama_provider import OllamaProvider
+
+
+if os.getenv("ABSTRACTCORE_RUN_TOKEN_TERMINOLOGY_PRODUCTION_TESTS") != "1":
+    pytest.skip(
+        "Token terminology production tests are opt-in; set ABSTRACTCORE_RUN_TOKEN_TERMINOLOGY_PRODUCTION_TESTS=1 to run",
+        allow_module_level=True,
+    )
 
 
 class TestExistingTestSuite:

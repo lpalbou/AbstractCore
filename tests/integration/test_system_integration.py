@@ -15,10 +15,10 @@ import tempfile
 from pathlib import Path
 
 from abstractcore.providers.ollama_provider import OllamaProvider
-from abstractcore.providers.openai_provider import OpenAIProvider
 from abstractcore.tools import register_tool, get_registry, ToolDefinition, clear_registry
 from abstractcore.utils.structured_logging import configure_logging, get_logger
 from abstractcore.architectures import get_model_capabilities, detect_architecture
+from tests.provider_stubs import StaticProvider
 
 
 class TestJSONCapabilitiesIntegration:
@@ -34,7 +34,7 @@ class TestJSONCapabilitiesIntegration:
         assert json_caps['tool_support'] == 'native'
 
         # Verify provider uses these values
-        provider = OpenAIProvider('gpt-4')
+        provider = StaticProvider('gpt-4')
         assert provider.max_tokens == 128000
         assert provider.max_output_tokens == 4096
 
@@ -48,7 +48,7 @@ class TestJSONCapabilitiesIntegration:
         assert json_caps['tool_support'] == 'native'
 
         # Verify provider uses these values
-        provider = OpenAIProvider('gpt-5')
+        provider = StaticProvider('gpt-5')
         assert provider.max_tokens == 400000
         assert provider.max_output_tokens == 128000
 

@@ -9,6 +9,20 @@ from fastapi.testclient import TestClient
 pytestmark = pytest.mark.integration
 
 
+@pytest.fixture(autouse=True)
+def _clear_server_auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        "ABSTRACTCORE_SERVER_API_KEY",
+        "OPENAI_API_KEY",
+        "ANTHROPIC_API_KEY",
+        "OPENROUTER_API_KEY",
+        "PORTKEY_API_KEY",
+        "OPENAI_COMPATIBLE_API_KEY",
+        "VLLM_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 class _StubGenerateResponse:
     def __init__(self, *, content: str, metadata: Optional[Dict[str, Any]] = None) -> None:
         self.content = content

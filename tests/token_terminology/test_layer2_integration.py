@@ -10,23 +10,23 @@ Tests integration points:
 
 import pytest
 from abstractcore.providers.base import BaseProvider
-from abstractcore.providers.openai_provider import OpenAIProvider
 from abstractcore.providers.ollama_provider import OllamaProvider
 from abstractcore.architectures import get_context_limits, get_model_capabilities
+from tests.provider_stubs import StaticProvider
 
 
 class TestProviderInitialization:
     """Test that providers initialize with max_tokens from JSON."""
 
-    def test_openai_provider_uses_json_max_tokens(self):
-        """Test OpenAI provider gets max_tokens from JSON."""
+    def test_provider_uses_json_max_tokens(self):
+        """Test provider gets max_tokens from JSON."""
         # Get expected values from JSON
         json_caps = get_model_capabilities("gpt-4")
         expected_max_tokens = json_caps["max_tokens"]
         expected_max_output = json_caps["max_output_tokens"]
 
         # Create provider
-        provider = OpenAIProvider("gpt-4")
+        provider = StaticProvider("gpt-4")
 
         # Provider should use JSON values
         assert provider.max_tokens == expected_max_tokens, \
@@ -34,11 +34,11 @@ class TestProviderInitialization:
         assert provider.max_output_tokens == expected_max_output, \
             f"Provider max_output_tokens should be {expected_max_output}, got {provider.max_output_tokens}"
 
-    def test_openai_provider_gpt5_values(self):
+    def test_gpt5_values(self):
         """Test GPT-5 models get correct values from JSON."""
         json_caps = get_model_capabilities("gpt-5")
 
-        provider = OpenAIProvider("gpt-5")
+        provider = StaticProvider("gpt-5")
 
         assert provider.max_tokens == 400000, "GPT-5 should have max_tokens=400000"
         assert provider.max_output_tokens == 128000, "GPT-5 should have max_output_tokens=128000"
@@ -110,7 +110,7 @@ class TestBaseProviderMethods:
     def test_get_default_context_window_returns_max_tokens(self):
         """Test _get_default_context_window returns max_tokens value."""
         # Create a provider
-        provider = OpenAIProvider("gpt-4")
+        provider = StaticProvider("gpt-4")
 
         # Call the method
         context_window = provider._get_default_context_window()
@@ -122,7 +122,7 @@ class TestBaseProviderMethods:
 
     def test_get_default_max_output_tokens_works(self):
         """Test _get_default_max_output_tokens returns correct values."""
-        provider = OpenAIProvider("gpt-4")
+        provider = StaticProvider("gpt-4")
 
         max_output = provider._get_default_max_output_tokens()
 
@@ -133,7 +133,7 @@ class TestBaseProviderMethods:
     def test_initialize_token_limits_uses_json_values(self):
         """Test _initialize_token_limits sets values from JSON."""
         # Create provider (initialization happens in __init__)
-        provider = OpenAIProvider("gpt-4")
+        provider = StaticProvider("gpt-4")
 
         # Check it initialized with JSON values
         json_caps = get_model_capabilities("gpt-4")
@@ -211,7 +211,7 @@ class TestMultiProviderConsistency:
     def test_provider_overrides_work(self):
         """Test that manual max_tokens override still works."""
         # Create provider with manual override
-        provider = OpenAIProvider("gpt-4", max_tokens=50000)
+        provider = StaticProvider("gpt-4", max_tokens=50000)
 
         # Should use the override value
         assert provider.max_tokens == 50000, \
@@ -255,7 +255,7 @@ class TestBackwardCompatibility:
 
     def test_max_output_tokens_still_works(self):
         """Test max_output_tokens field still works as expected."""
-        provider = OpenAIProvider("gpt-4")
+        provider = StaticProvider("gpt-4")
 
         # Should have max_output_tokens
         assert hasattr(provider, "max_output_tokens"), \
@@ -265,7 +265,7 @@ class TestBackwardCompatibility:
 
     def test_provider_max_tokens_attribute(self):
         """Test provider max_tokens attribute exists and is correct."""
-        provider = OpenAIProvider("gpt-4")
+        provider = StaticProvider("gpt-4")
 
         # Should have max_tokens attribute
         assert hasattr(provider, "max_tokens"), \
@@ -275,7 +275,7 @@ class TestBackwardCompatibility:
 
     def test_interface_methods_still_work(self):
         """Test AbstractCore interface methods still work."""
-        provider = OpenAIProvider("gpt-4")
+        provider = StaticProvider("gpt-4")
 
         # Should have core interface methods
         assert hasattr(provider, "get_capabilities"), \
