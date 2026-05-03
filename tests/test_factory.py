@@ -2,6 +2,7 @@
 Test the factory function.
 """
 
+import os
 import pytest
 from abstractcore import create_llm
 from abstractcore.providers.openai_provider import OpenAIProvider
@@ -13,6 +14,9 @@ class TestFactory:
 
     def test_create_openai_provider(self):
         """Test creating OpenAI provider"""
+        if not os.getenv("OPENAI_API_KEY"):
+            pytest.skip("OpenAI API key not set; real provider construction test")
+
         try:
             llm = create_llm("openai")
             assert isinstance(llm, OpenAIProvider)
@@ -22,6 +26,9 @@ class TestFactory:
 
     def test_create_anthropic_provider(self):
         """Test creating Anthropic provider"""
+        if not os.getenv("ANTHROPIC_API_KEY"):
+            pytest.skip("Anthropic API key not set; real provider construction test")
+
         try:
             llm = create_llm("anthropic")
             assert isinstance(llm, AnthropicProvider)
@@ -31,6 +38,9 @@ class TestFactory:
 
     def test_create_provider_with_custom_model(self):
         """Test creating provider with custom model"""
+        if not os.getenv("OPENAI_API_KEY"):
+            pytest.skip("OpenAI API key not set; real provider construction test")
+
         try:
             llm = create_llm("openai", model="gpt-4o")
             assert llm.model == "gpt-4o"
@@ -44,6 +54,9 @@ class TestFactory:
 
     def test_provider_case_insensitive(self):
         """Test provider names are case insensitive"""
+        if not os.getenv("OPENAI_API_KEY"):
+            pytest.skip("OpenAI API key not set; real provider construction test")
+
         try:
             llm1 = create_llm("OPENAI")
             llm2 = create_llm("OpenAI")

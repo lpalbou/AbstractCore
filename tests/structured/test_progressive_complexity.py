@@ -102,15 +102,18 @@ def test_provider_complexity():
     """Test progressive complexity across available providers."""
 
     # Define test configurations
-    providers_to_test = [
-        ("ollama", "qwen3:4b-instruct"),
-    ]
+    providers_to_test = []
+    if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") == "1":
+        providers_to_test.append(("ollama", "qwen3:4b-instruct"))
 
     # Add cloud providers if available
     if os.getenv("ANTHROPIC_API_KEY"):
         providers_to_test.append(("anthropic", "claude-haiku-4-5"))
     if os.getenv("OPENAI_API_KEY"):
         providers_to_test.append(("openai", "gpt-4o-mini"))
+
+    if not providers_to_test:
+        pytest.skip("No structured-output complexity providers enabled in this environment")
 
     # Define complexity tests
     complexity_tests = {

@@ -5,10 +5,16 @@ Tests the integration between the provider registry and the factory create_llm f
 ensuring that the factory uses the centralized registry properly.
 """
 
+import os
 import pytest
 from unittest.mock import patch, MagicMock
 from abstractcore.core.factory import create_llm
 from abstractcore.exceptions import ModelNotFoundError, AuthenticationError, ProviderAPIError
+
+
+def _skip_without_provider_key(env_var: str, provider: str) -> None:
+    if not os.getenv(env_var):
+        pytest.skip(f"{provider} API key not set; real provider construction test")
 
 
 class TestFactoryRegistryIntegration:
@@ -182,6 +188,7 @@ class TestFactoryWithRealProviders:
 
     def test_create_openai_provider_real(self):
         """Test creating OpenAI provider without mocking (integration test)."""
+        _skip_without_provider_key("OPENAI_API_KEY", "OpenAI")
         try:
             # This test uses the actual registry and OpenAI provider
             instance = create_llm("openai", "gpt-4o")
@@ -198,6 +205,7 @@ class TestFactoryWithRealProviders:
 
     def test_create_provider_with_kwargs(self):
         """Test creating provider with additional kwargs."""
+        _skip_without_provider_key("OPENAI_API_KEY", "OpenAI")
         try:
             instance = create_llm("openai", "gpt-4o", max_tokens=8192, timeout=30)
 
@@ -210,6 +218,7 @@ class TestFactoryWithRealProviders:
 
     def test_provider_functionality(self):
         """Test that provider created through factory works correctly."""
+        _skip_without_provider_key("OPENAI_API_KEY", "OpenAI")
         try:
             instance = create_llm("openai")
 

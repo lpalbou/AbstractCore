@@ -5,6 +5,7 @@ This module tests all the new event types and comprehensive event functionality
 across the entire AbstractCore library.
 """
 
+import os
 import pytest
 import json
 from typing import List, Dict, Any
@@ -311,6 +312,9 @@ class TestStructuredOutputEvents:
 
     def test_structured_output_mock_events(self, event_capture):
         """Test structured output validation events"""
+        if not os.getenv("OPENAI_API_KEY"):
+            pytest.skip("OpenAI API key not set; real provider construction test")
+
         from pydantic import BaseModel
 
         class TestModel(BaseModel):

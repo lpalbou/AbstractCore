@@ -8,6 +8,7 @@ Tests the centralized provider registry system including:
 - Error handling
 """
 
+import os
 import pytest
 from unittest.mock import patch, MagicMock
 from abstractcore.providers.registry import (
@@ -22,6 +23,11 @@ from abstractcore.providers.registry import (
     create_provider,
     get_available_models_for_provider
 )
+
+
+def _skip_without_provider_key(env_var: str, provider: str) -> None:
+    if not os.getenv(env_var):
+        pytest.skip(f"{provider} API key not set; real provider construction test")
 
 
 class TestProviderInfo:
@@ -211,6 +217,7 @@ class TestProviderRegistry:
 
     def test_create_provider_instance(self):
         """Test creating provider instance."""
+        _skip_without_provider_key("OPENAI_API_KEY", "OpenAI")
         registry = ProviderRegistry()
 
         try:

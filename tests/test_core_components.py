@@ -139,6 +139,9 @@ class TestProviderFactory:
 
     def test_create_openai_provider(self):
         """Test creating OpenAI provider"""
+        if not os.getenv("OPENAI_API_KEY"):
+            pytest.skip("OpenAI API key not set; real provider construction test")
+
         try:
             provider = create_llm("openai")
             assert provider is not None
