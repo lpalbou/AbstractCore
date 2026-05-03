@@ -85,11 +85,13 @@ export ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1
 
 # Server security controls (recommended)
 #
-# - Request-level base_url overrides are loopback-only by default. To allow additional hosts/prefixes:
+# - Request-level base_url overrides are loopback-only by default.
+#   URL entries match scheme + exact host + default/explicit port + path-segment prefix.
+#   Bare entries match hostname globs, e.g. "*.example.com".
 export ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST="https://api.openai.com,https://example.com/v1"
 #
 # - Remote URL fetches for attachments are blocked for private/loopback/link-local targets by default (SSRF protection).
-#   To allow specific hosts/prefixes:
+#   To allow specific hosts/prefixes, use the same structured allowlist syntax:
 export ABSTRACTCORE_SERVER_URL_FETCH_ALLOWLIST="https://www.berkshirehathaway.com"
 #
 # - Local file paths in HTTP requests are disabled by default (including @/path/to/file in message strings).
@@ -198,7 +200,9 @@ for chunk in stream:
 Route a provider to a specific endpoint (useful for remote OpenAI-compatible servers):
 
 Security notes:
-- Request-level `base_url` overrides are **loopback-only by default**. To allow additional hosts/prefixes, set `ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST`.
+- Request-level `base_url` overrides are **loopback-only by default**. To allow additional
+  origins or host globs, set `ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST`. URL entries are parsed
+  and matched on scheme, exact host, effective port, and path-segment prefix.
 - If the server has an environment provider key set (e.g. `OPENAI_API_KEY`) and you route to a **non-loopback** `base_url`, you must provide an explicit `api_key` in the request to avoid accidentally using the server’s env key.
 
 ```bash

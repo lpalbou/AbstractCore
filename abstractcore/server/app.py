@@ -39,6 +39,7 @@ import socket
 import httpx
 import ipaddress
 import fnmatch
+import posixpath
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Literal, Union, Iterator, Tuple, Annotated
 from enum import Enum
@@ -1078,29 +1079,157 @@ def _is_loopback_host(hostname: str) -> bool:
         return False
 
 
+def _canonical_allowlist_host(hostname: Any) -> str:
+    """Canonicalize a parsed hostname for allowlist comparisons."""
+    host = str(hostname or "").strip().rstrip(".").lower()
+    if not host:
+        return ""
+    try:
+        return ipaddress.ip_address(host).compressed.lower()
+    except Exception:
+        pass
+    try:
+        return host.encode("idna").decode("ascii").lower()
+    except Exception:
+        return host
+
+
+def _effective_url_port(scheme: str, port: Optional[int]) -> Optional[int]:
+    if port is not None:
+        return port
+    if scheme == "http":
+        return 80
+    if scheme == "https":
+        return 443
+    return None
+
+
+def _safe_split_http_url(value: str) -> Optional[Tuple[Any, str, str, Optional[int]]]:
+    """Parse an http(s) URL into canonical pieces, rejecting malformed ports."""
+    try:
+        parsed = urllib.parse.urlsplit(str(value or "").strip())
+        port = parsed.port
+    except Exception:
+        return None
+
+    scheme = str(parsed.scheme or "").lower()
+    if scheme not in {"http", "https"}:
+        return None
+
+    host = _canonical_allowlist_host(parsed.hostname)
+    if not host:
+        return None
+
+    return parsed, scheme, host, _effective_url_port(scheme, port)
+
+
+def _canonical_allowlist_path(path: Any) -> str:
+    """Normalize URL paths for path-prefix allowlists.
+
+    Repeated percent-decoding and dot-segment normalization make `/v1/../admin`
+    and `/v1/%252e%252e/admin` compare as `/admin`, avoiding prefix bypasses.
+    """
+    p = str(path or "")
+    if not p.startswith("/"):
+        p = "/" + p
+
+    for _ in range(3):
+        decoded = urllib.parse.unquote(p)
+        if decoded == p:
+            break
+        p = decoded
+
+    p = p.replace("\\", "/")
+    normalized = posixpath.normpath(p)
+    if not normalized.startswith("/"):
+        normalized = "/" + normalized
+    if p.endswith("/") and normalized != "/" and not normalized.endswith("/"):
+        normalized += "/"
+    return normalized
+
+
+def _allowlist_path_prefix_matches(target_path: Any, allowed_path: Any) -> bool:
+    allowed = _canonical_allowlist_path(allowed_path)
+    target = _canonical_allowlist_path(target_path)
+    if allowed == "/":
+        return True
+    allowed = allowed.rstrip("/")
+    return target == allowed or target.startswith(f"{allowed}/")
+
+
+def _split_host_allowlist_item(item: str) -> Tuple[str, Optional[int]]:
+    """Split a host/glob allowlist entry into host pattern and optional port."""
+    raw = str(item or "").strip()
+    if not raw:
+        return "", None
+
+    if raw.startswith("["):
+        end = raw.find("]")
+        if end > 0:
+            host = raw[1:end]
+            rest = raw[end + 1:]
+            if rest.startswith(":") and rest[1:].isdigit():
+                return host, int(rest[1:])
+            if not rest:
+                return host, None
+            return raw, None
+
+    if raw.count(":") == 1:
+        host, port_s = raw.rsplit(":", 1)
+        if port_s.isdigit():
+            return host, int(port_s)
+
+    return raw, None
+
+
 def _allowlist_matches_url(url: str, allowlist: List[str]) -> bool:
     """Match a URL/host against an operator-provided allowlist.
 
     Allowlist items:
-    - If item contains '://': treated as a URL prefix match.
-    - Otherwise: treated as a hostname glob match (fnmatch), e.g. '*.example.com'.
+    - If item contains '://': match scheme, host, effective port, and path prefix
+      with a path-segment boundary.
+    - Otherwise: match a hostname glob (optionally `:port`), e.g. '*.example.com'.
     """
-    u = str(url or "").strip()
-    if not u or not allowlist:
+    target = _safe_split_http_url(url)
+    if target is None or not allowlist:
         return False
-    lower_u = u.lower()
-    host = urllib.parse.urlsplit(u).hostname
-    host_l = str(host or "").strip().lower()
+    target_parsed, target_scheme, target_host, target_port = target
+
     for item in allowlist:
         it = str(item or "").strip()
         if not it:
             continue
-        it_l = it.lower()
-        if "://" in it_l:
-            if lower_u.startswith(it_l.rstrip("/")):
+        if "://" in it:
+            allowed = _safe_split_http_url(it)
+            if allowed is None:
+                continue
+            allowed_parsed, allowed_scheme, allowed_host, allowed_port = allowed
+
+            if allowed_parsed.username is not None or allowed_parsed.password is not None:
+                continue
+            if allowed_parsed.fragment:
+                continue
+
+            if target_scheme != allowed_scheme:
+                continue
+            if target_host != allowed_host:
+                continue
+            if target_port != allowed_port:
+                continue
+            if allowed_parsed.query and target_parsed.query != allowed_parsed.query:
+                continue
+            if _allowlist_path_prefix_matches(target_parsed.path, allowed_parsed.path):
                 return True
             continue
-        if host_l and fnmatch.fnmatch(host_l, it_l):
+
+        host_pattern, allowed_port = _split_host_allowlist_item(it)
+        if allowed_port is not None and target_port != allowed_port:
+            continue
+        if any(ch in host_pattern for ch in "*?["):
+            pattern = host_pattern.strip().rstrip(".").lower()
+        else:
+            pattern = _canonical_allowlist_host(host_pattern)
+        if pattern and fnmatch.fnmatchcase(target_host, pattern):
             return True
     return False
 
@@ -1109,17 +1238,20 @@ def _require_public_url(url: str, *, allowlist_env: str) -> None:
     """Enforce that a URL does not resolve to private/link-local/loopback addresses.
 
     Operator escape hatch: set an allowlist env var (comma-separated) to permit specific
-    URL prefixes or hosts for controlled environments.
+    structured URL entries or host globs for controlled environments.
     """
     u = str(url or "").strip()
     if not u:
         raise HTTPException(status_code=400, detail={"error": {"message": "Empty URL", "type": "invalid_request"}})
 
-    allowlist = _csv_env(allowlist_env)
-    if _allowlist_matches_url(u, allowlist):
-        return
-
-    parsed = urllib.parse.urlsplit(u)
+    try:
+        parsed = urllib.parse.urlsplit(u)
+        _ = parsed.port
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"message": "Invalid URL", "type": "invalid_request"}},
+        )
     if parsed.scheme not in {"http", "https"}:
         raise HTTPException(
             status_code=400,
@@ -1131,6 +1263,10 @@ def _require_public_url(url: str, *, allowlist_env: str) -> None:
             status_code=400,
             detail={"error": {"message": "Invalid URL (missing host)", "type": "invalid_request"}},
         )
+
+    allowlist = _csv_env(allowlist_env)
+    if _allowlist_matches_url(u, allowlist):
+        return
 
     ips = _resolve_host_ips(host)
     if not ips:
@@ -1201,10 +1337,11 @@ def _server_allows_request_base_url(base_url: str) -> bool:
     u = str(base_url or "").strip()
     if not u:
         return False
-    parsed = urllib.parse.urlsplit(u)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+    parsed = _safe_split_http_url(u)
+    if parsed is None:
         return False
-    if _is_loopback_host(parsed.hostname):
+    _parsed_url, _scheme, host, _port = parsed
+    if _is_loopback_host(host):
         return True
     allowlist = _csv_env("ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST")
     return _allowlist_matches_url(u, allowlist)

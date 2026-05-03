@@ -91,6 +91,47 @@ def test_server_prevents_env_key_exfiltration_via_base_url_override(monkeypatch)
     assert r.status_code == 403
 
 
+def test_url_allowlist_url_entries_reject_host_confusion() -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+
+    allowlist = ["https://example.com"]
+    assert server_app._allowlist_matches_url("https://example.com/v1", allowlist)
+    assert not server_app._allowlist_matches_url("https://example.com.evil/v1", allowlist)
+    assert not server_app._allowlist_matches_url("https://example.com@evil.test/v1", allowlist)
+
+
+def test_url_allowlist_url_entries_enforce_port_and_path_boundaries() -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+
+    allowlist = ["https://example.com:8443/v1"]
+    assert server_app._allowlist_matches_url("https://example.com:8443/v1", allowlist)
+    assert server_app._allowlist_matches_url("https://example.com:8443/v1/models", allowlist)
+    assert not server_app._allowlist_matches_url("https://example.com:8444/v1", allowlist)
+    assert not server_app._allowlist_matches_url("https://example.com:8443/v10", allowlist)
+    assert not server_app._allowlist_matches_url("https://example.com:8443/v1evil", allowlist)
+    assert not server_app._allowlist_matches_url("https://example.com:8443/v1/../admin", allowlist)
+    assert not server_app._allowlist_matches_url(
+        "https://example.com:8443/v1/%252e%252e/admin",
+        allowlist,
+    )
+
+
+def test_url_allowlist_url_entries_use_default_ports() -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+
+    allowlist = ["https://example.com"]
+    assert server_app._allowlist_matches_url("https://example.com:443/v1", allowlist)
+    assert not server_app._allowlist_matches_url("https://example.com:444/v1", allowlist)
+
+
+def test_url_allowlist_host_globs_still_match_canonical_hosts() -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+
+    allowlist = ["*.example.com"]
+    assert server_app._allowlist_matches_url("https://api.example.com/v1", allowlist)
+    assert not server_app._allowlist_matches_url("https://api.example.com.evil/v1", allowlist)
+
+
 def test_server_blocks_local_file_paths_in_http_requests_by_default(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
 
@@ -143,4 +184,3 @@ def test_server_blocks_private_url_fetches_by_default(monkeypatch) -> None:
         },
     )
     assert r.status_code == 403
-
