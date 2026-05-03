@@ -55,6 +55,9 @@ def test_skim_url_extracts_title_description_headings_and_preview(
 ) -> None:
     import abstractcore.tools.common_tools as common_tools
 
+    if not common_tools._ensure_requests():
+        pytest.skip('requests not available; install with: pip install "abstractcore[tools]"')
+
     html = (
         "<html><head><title>R-Type</title>"
         '<meta name="description" content="A classic shmup." />'

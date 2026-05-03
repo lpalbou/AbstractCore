@@ -43,6 +43,9 @@ def test_fetch_url_respects_max_content_length_via_content_length_check(monkeypa
     from abstractcore.tools.common_tools import fetch_url
     import abstractcore.tools.common_tools as common_tools
 
+    if not common_tools._ensure_requests():
+        pytest.skip('requests not available; install with: pip install "abstractcore[tools]"')
+
     monkeypatch.setattr(common_tools, "FETCH_URL_MAX_CONTENT_LENGTH_BYTES", 5000)
     body = b"a" * 10_000
 
@@ -74,6 +77,9 @@ def test_fetch_url_respects_max_content_length_via_content_length_check(monkeypa
 def test_fetch_url_respects_max_content_length_via_streaming_limit(monkeypatch: pytest.MonkeyPatch) -> None:
     from abstractcore.tools.common_tools import fetch_url
     import abstractcore.tools.common_tools as common_tools
+
+    if not common_tools._ensure_requests():
+        pytest.skip('requests not available; install with: pip install "abstractcore[tools]"')
 
     cap = 5000
     monkeypatch.setattr(common_tools, "FETCH_URL_MAX_CONTENT_LENGTH_BYTES", cap)

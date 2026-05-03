@@ -102,6 +102,14 @@ abstractcore --status
 
 Config is stored in `~/.abstractcore/config/abstractcore.json`. See [Centralized Config](centralized-config.md).
 
+## Can I use the HTTP server with only provider API keys?
+
+Yes. You do not have to give a client the AbstractCore server master key. If `ABSTRACTCORE_SERVER_API_KEY` is not configured, a client can bring its own upstream provider key, for example an Anthropic, OpenRouter, or Portkey key, by sending it as `Authorization: Bearer <provider-key>` or `X-AbstractCore-Provider-API-Key`.
+
+That key is forwarded only to the provider requested by the model route, such as `anthropic/...`, `openrouter/...`, or `portkey/...`. It does not unlock other server-configured provider keys, and it does not grant access to providers the client did not supply credentials for.
+
+If `ABSTRACTCORE_SERVER_API_KEY` is configured, `Authorization` is reserved for the AbstractCore server key. In that mode, use `X-AbstractCore-Provider-API-Key` only when you want to override the upstream provider key for a single request. Provider keys in request bodies or query strings are disabled.
+
 ## Why aren’t tools executed automatically?
 
 By default, AbstractCore runs in **pass-through** mode (`execute_tools=False`): it returns tool calls in `resp.tool_calls`, and your host/runtime decides whether/how to execute them.
