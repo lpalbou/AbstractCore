@@ -32,6 +32,7 @@ jobs:
           ABSTRACTCORE_RUN_LIVE_API_TESTS: "0"
           ABSTRACTCORE_RUN_MLX_TESTS: "0"
           ABSTRACTCORE_RUN_HUGGINGFACE_TESTS: "0"
+          ABSTRACTCORE_TEST_HERMETIC_MODEL_DISCOVERY: "1"
         run: python -m pytest
 
   build:

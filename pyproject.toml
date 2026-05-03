@@ -372,6 +372,8 @@ test = [
     "httpx>=0.24.0",
     "tomli>=2.0.0; python_version < '3.11'",
     # These are imported unconditionally by parts of the test suite.
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
     "numpy>=1.20.0,<2.0.0",
     "Pillow>=10.0.0,<12.0.0",
     "fastapi>=0.100.0,<1.0.0",

@@ -5,6 +5,7 @@ This test validates that the server correctly filters models by input and output
 using the ModelInputCapability and ModelOutputCapability enums.
 """
 
+import os
 import pytest
 import requests
 import time
@@ -13,7 +14,18 @@ import uvicorn
 from fastapi.testclient import TestClient
 
 from abstractcore.server.app import app
-from abstractcore.providers.model_capabilities import ModelInputCapability, ModelOutputCapability
+from abstractcore.providers.model_capabilities import filter_models_by_capabilities
+
+
+FAKE_PROVIDER_MODELS = {
+    "openai": ["gpt-4o", "gpt-4o-mini", "text-embedding-3-small"],
+    "anthropic": ["claude-haiku-4-5"],
+    "ollama": [
+        "qwen3:4b-instruct-2507-q4_K_M",
+        "llama3.2-vision:11b",
+        "nomic-embed-text",
+    ],
+}
 
 
 @pytest.fixture(autouse=True)
@@ -28,6 +40,47 @@ def _clear_server_auth_env(monkeypatch):
         "VLLM_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _use_deterministic_model_discovery(monkeypatch):
+    """Use hermetic model discovery only for CI jobs without provider infrastructure."""
+    if os.getenv("ABSTRACTCORE_TEST_HERMETIC_MODEL_DISCOVERY") != "1":
+        return
+
+    from abstractcore.server import app as server_app
+    from abstractcore.providers import registry as provider_registry
+
+    def fake_list_available_providers():
+        return list(FAKE_PROVIDER_MODELS)
+
+    def fake_is_provider_available(provider_name):
+        return str(provider_name or "").strip().lower() in FAKE_PROVIDER_MODELS
+
+    def fake_get_models_from_provider(
+        provider_name,
+        input_capabilities=None,
+        output_capabilities=None,
+        **_kwargs,
+    ):
+        models = FAKE_PROVIDER_MODELS.get(str(provider_name or "").strip().lower(), [])
+        return filter_models_by_capabilities(
+            list(models),
+            input_capabilities=input_capabilities,
+            output_capabilities=output_capabilities,
+        )
+
+    monkeypatch.setattr(
+        provider_registry,
+        "list_available_providers",
+        fake_list_available_providers,
+    )
+    monkeypatch.setattr(
+        provider_registry,
+        "is_provider_available",
+        fake_is_provider_available,
+    )
+    monkeypatch.setattr(server_app, "get_models_from_provider", fake_get_models_from_provider)
 
 
 class TestModelCapabilityFiltering:
