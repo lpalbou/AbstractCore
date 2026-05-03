@@ -38,6 +38,7 @@ classifiers = [
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
@@ -131,7 +132,8 @@ vllm = [
 
 embeddings = [
     "sentence-transformers>=5.1.0,<6.0.0",  # Required for EmbeddingGemma model support
-    "numpy>=1.20.0,<2.0.0",
+    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
 ]
 
 tokens = [
@@ -199,7 +201,8 @@ all = [
     "vllm>=0.6.0,<1.0.0",
     # Features
     "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<2.0.0",
+    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     "tiktoken>=0.5.0,<1.0.0",
     "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
@@ -234,7 +237,8 @@ all-apple = [
     "mlx-lm>=0.30.0,<1.0.0",
     # Features
     "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<2.0.0",
+    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     "tiktoken>=0.5.0,<1.0.0",
     "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
@@ -268,7 +272,8 @@ all-gpu = [
     "vllm>=0.6.0,<1.0.0",
     # Features
     "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<2.0.0",
+    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     "tiktoken>=0.5.0,<1.0.0",
     "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
@@ -301,7 +306,8 @@ all-non-mlx = [
     "outlines>=0.1.0",
     # Features
     "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<2.0.0",
+    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     "tiktoken>=0.5.0,<1.0.0",
     "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
@@ -374,7 +380,8 @@ test = [
     # These are imported unconditionally by parts of the test suite.
     "openai>=1.0.0,<2.0.0",
     "anthropic>=0.25.0,<1.0.0",
-    "numpy>=1.20.0,<2.0.0",
+    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     "Pillow>=10.0.0,<12.0.0",
     "fastapi>=0.100.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
@@ -408,7 +415,8 @@ full-dev = [
     "mlx-lm>=0.30.0,<1.0.0",
     "vllm>=0.6.0,<1.0.0",
     "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<2.0.0",
+    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     "tiktoken>=0.5.0,<1.0.0",
     "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",

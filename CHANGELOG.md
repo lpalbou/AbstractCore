@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **System prompt alias compatibility**: provider `generate()`/`agenerate()` calls now accept `system=` as a warned alias for `system_prompt=`, prefer explicit `system_prompt=` when both are supplied, and remove the alias before provider-specific kwargs are dispatched.
 - **Structured output system alias**: direct `StructuredOutputHandler.generate_structured()` calls now apply the same warned `system=` alias handling.
+- **CI Python matrix**: GitHub CI now tests Python 3.9, 3.10, 3.11, 3.12, and 3.13; NumPy dependency markers allow NumPy 2.x on Python 3.13 while keeping the existing NumPy 1.x constraint on older supported Python versions.
 
 ### Fixed
 - **Server auth/provider credential routing**: `ABSTRACTCORE_SERVER_API_KEY` now acts as the server master key for all configured providers, `X-AbstractCore-Provider-API-Key` overrides only the requested upstream provider, and `Authorization` is forwarded as a provider key only when server auth is not configured. Body/query `api_key` fields remain disabled and secret-bearing headers/URLs are redacted.
@@ -19,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Server URL allowlists**: URL-based allowlist entries now parse and compare scheme, exact host, effective port, and path-segment prefixes to prevent host-confusion and path-prefix bypasses.
 - **CachedSession system alias safety**: prompt-cache key/KV modes now warn and strip per-call `system=` overrides in sync and async generation so cached session context cannot be silently desynced.
 - **LM Studio unload for reasoning REPL**: `LMStudioProvider.unload_model()` now uses LM Studio's native REST unload endpoint and resolves model keys/variants to loaded instance IDs so `examples/reasoning/qwen_thinking_repl.py` can free LM Studio models via `:unload` (automatic unload-on-switch remains HuggingFace-only).
+- **CI vs local provider test gating**: clarified and fixed the split between real implementation tests and GitHub CI. Most provider tests intentionally exercise real providers with real SDKs, API keys, local model servers, and model caches. GitHub CI does not have access to LLM provider credentials or local inference services, so credential/local-provider-dependent tests now skip in that environment instead of failing during provider construction, while still running normally in a configured local test environment.
 
 ### Documentation
 - Clarified tool calling defaults (pass-through) and removed misleading “tools executed” wording from the quick start.
