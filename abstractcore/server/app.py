@@ -37,6 +37,9 @@ import threading
 import warnings
 import socket
 import httpx
+import ipaddress
+import fnmatch
+from pathlib import Path
 from typing import List, Dict, Any, Optional, Literal, Union, Iterator, Tuple, Annotated
 from enum import Enum
 from fastapi import FastAPI, HTTPException, Request, Query, Body
@@ -1027,6 +1030,280 @@ def _parse_boolish(value: Any) -> bool:
     raise ValueError(f"Expected boolean, got {type(value).__name__}: {value!r}")
 
 
+def _csv_env(var_name: str) -> List[str]:
+    """Parse a comma-separated env var into a list of non-empty items."""
+    raw = os.getenv(var_name)
+    if not isinstance(raw, str) or not raw.strip():
+        return []
+    items = [p.strip() for p in raw.split(",")]
+    return [p for p in items if p]
+
+
+def _resolve_host_ips(hostname: str) -> List[str]:
+    """Best-effort: resolve hostname to IP strings (v4/v6)."""
+    host = str(hostname or "").strip()
+    if not host:
+        return []
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except Exception:
+        return []
+    out: List[str] = []
+    for _fam, _typ, _proto, _canon, sockaddr in infos:
+        try:
+            ip = sockaddr[0]
+        except Exception:
+            continue
+        if isinstance(ip, str) and ip and ip not in out:
+            out.append(ip)
+    return out
+
+
+def _is_loopback_host(hostname: str) -> bool:
+    host = str(hostname or "").strip().lower()
+    if not host:
+        return False
+    if host == "localhost":
+        return True
+    try:
+        return bool(ipaddress.ip_address(host).is_loopback)
+    except Exception:
+        pass
+    ips = _resolve_host_ips(host)
+    if not ips:
+        return False
+    try:
+        return all(ipaddress.ip_address(ip).is_loopback for ip in ips)
+    except Exception:
+        return False
+
+
+def _allowlist_matches_url(url: str, allowlist: List[str]) -> bool:
+    """Match a URL/host against an operator-provided allowlist.
+
+    Allowlist items:
+    - If item contains '://': treated as a URL prefix match.
+    - Otherwise: treated as a hostname glob match (fnmatch), e.g. '*.example.com'.
+    """
+    u = str(url or "").strip()
+    if not u or not allowlist:
+        return False
+    lower_u = u.lower()
+    host = urllib.parse.urlsplit(u).hostname
+    host_l = str(host or "").strip().lower()
+    for item in allowlist:
+        it = str(item or "").strip()
+        if not it:
+            continue
+        it_l = it.lower()
+        if "://" in it_l:
+            if lower_u.startswith(it_l.rstrip("/")):
+                return True
+            continue
+        if host_l and fnmatch.fnmatch(host_l, it_l):
+            return True
+    return False
+
+
+def _require_public_url(url: str, *, allowlist_env: str) -> None:
+    """Enforce that a URL does not resolve to private/link-local/loopback addresses.
+
+    Operator escape hatch: set an allowlist env var (comma-separated) to permit specific
+    URL prefixes or hosts for controlled environments.
+    """
+    u = str(url or "").strip()
+    if not u:
+        raise HTTPException(status_code=400, detail={"error": {"message": "Empty URL", "type": "invalid_request"}})
+
+    allowlist = _csv_env(allowlist_env)
+    if _allowlist_matches_url(u, allowlist):
+        return
+
+    parsed = urllib.parse.urlsplit(u)
+    if parsed.scheme not in {"http", "https"}:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"message": "Only http/https URLs are allowed", "type": "invalid_request"}},
+        )
+    host = parsed.hostname
+    if not host:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"message": "Invalid URL (missing host)", "type": "invalid_request"}},
+        )
+
+    ips = _resolve_host_ips(host)
+    if not ips:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": {
+                    "message": f"URL host did not resolve: {host}",
+                    "type": "forbidden",
+                }
+            },
+        )
+    # Block anything that is not globally routable (covers loopback, RFC1918, link-local, etc).
+    for ip in ips:
+        try:
+            if not ipaddress.ip_address(ip).is_global:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": {
+                            "message": (
+                                "Refusing to fetch non-public URL target (SSRF protection). "
+                                f"Host={host} resolved to {ip}. "
+                                f"To allow this, set {allowlist_env} with an explicit allowlist."
+                            ),
+                            "type": "forbidden",
+                        }
+                    },
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            # If parsing fails, be conservative.
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": {
+                        "message": f"Refusing to fetch URL with unparseable IP for host={host!r} (SSRF protection).",
+                        "type": "forbidden",
+                    }
+                },
+            )
+
+
+def _provider_api_key_env_var(provider: str) -> Optional[str]:
+    """Best-effort mapping of provider -> env var used for auth."""
+    p = str(provider or "").strip().lower()
+    if p == "openai":
+        return "OPENAI_API_KEY"
+    if p == "anthropic":
+        return "ANTHROPIC_API_KEY"
+    if p == "openrouter":
+        return "OPENROUTER_API_KEY"
+    if p == "portkey":
+        return "PORTKEY_API_KEY"
+    if p == "openai-compatible":
+        return "OPENAI_COMPATIBLE_API_KEY"
+    if p == "vllm":
+        return "VLLM_API_KEY"
+    return None
+
+
+def _server_allows_request_base_url(base_url: str) -> bool:
+    """Allow request-level provider base_url overrides only when explicitly safe.
+
+    Default: allow loopback only. Operators can expand via `ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST`.
+    """
+    u = str(base_url or "").strip()
+    if not u:
+        return False
+    parsed = urllib.parse.urlsplit(u)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    if _is_loopback_host(parsed.hostname):
+        return True
+    allowlist = _csv_env("ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST")
+    return _allowlist_matches_url(u, allowlist)
+
+
+def _server_media_root() -> Optional[Path]:
+    """Optional safe-root for local file attachments in HTTP requests.
+
+    If set, local paths are only allowed when they resolve under this directory.
+    """
+    raw = os.getenv("ABSTRACTCORE_SERVER_MEDIA_ROOT")
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        return Path(raw).expanduser().resolve()
+    except Exception:
+        return None
+
+
+def _server_allows_local_files() -> bool:
+    """Dangerous: allow arbitrary local file paths from HTTP requests."""
+    return _parse_bool_env("ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES")
+
+
+def _resolve_local_media_path(path_value: str) -> str:
+    """Resolve and validate a local file path under server policy."""
+    raw = str(path_value or "").strip()
+    if not raw:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"message": "Empty local file path", "type": "invalid_request"}},
+        )
+
+    root = _server_media_root()
+    allow_all = _server_allows_local_files()
+    if root is None and not allow_all:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": {
+                    "message": (
+                        "Local file paths are disabled for HTTP requests. "
+                        "Use http(s) URLs or data: base64 attachments, or configure "
+                        "ABSTRACTCORE_SERVER_MEDIA_ROOT (safe) / ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1 (unsafe)."
+                    ),
+                    "type": "forbidden",
+                }
+            },
+        )
+
+    p = Path(raw).expanduser()
+    if root is not None and not p.is_absolute():
+        p = root / p
+
+    try:
+        resolved = p.resolve()
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"message": f"Invalid local path: {e}", "type": "invalid_request"}},
+        ) from e
+
+    if root is not None:
+        try:
+            if not resolved.is_relative_to(root):
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": {
+                            "message": (
+                                "Local file path is outside ABSTRACTCORE_SERVER_MEDIA_ROOT. "
+                                f"root={str(root)} path={str(resolved)}"
+                            ),
+                            "type": "forbidden",
+                        }
+                    },
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": {
+                        "message": "Local file path rejected by server policy.",
+                        "type": "forbidden",
+                    }
+                },
+            )
+
+    if not resolved.exists() or not resolved.is_file():
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"message": f"File not found: {str(resolved)}", "type": "file_not_found"}},
+        )
+
+    return str(resolved)
+
+
 _OLLAMA_INFLIGHT_LOCK = threading.Lock()
 _OLLAMA_INFLIGHT_COUNTS: Dict[Tuple[str, str, str], int] = {}
 _OLLAMA_UNLOAD_REQUESTED: Dict[Tuple[str, str, str], bool] = {}
@@ -1253,7 +1530,18 @@ def _proxy_prompt_cache_request(
             "error": "base_url is required to proxy prompt cache control plane calls (use AbstractEndpoint)",
         }
 
-    upstream_root = _normalize_control_plane_base_url(base_url)
+    base_url_s = base_url.strip()
+    if not _server_allows_request_base_url(base_url_s):
+        return {
+            "supported": False,
+            "error": (
+                "Request-level base_url overrides are restricted for security. "
+                "By default only loopback URLs are allowed. "
+                "To allow additional hosts/prefixes, set ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+            ),
+        }
+
+    upstream_root = _normalize_control_plane_base_url(base_url_s)
     url = f"{upstream_root}{path}"
 
     headers: Dict[str, str] = {}
@@ -1461,7 +1749,44 @@ async def list_models(
             if candidate_key:
                 provider_kwargs["api_key"] = candidate_key
             if isinstance(base_url, str) and base_url.strip():
-                provider_kwargs["base_url"] = base_url.strip()
+                base_url_s = base_url.strip()
+                if not _server_allows_request_base_url(base_url_s):
+                    raise HTTPException(
+                        status_code=403,
+                        detail={
+                            "error": {
+                                "message": (
+                                    "Request-level base_url overrides are restricted for security. "
+                                    "By default only loopback URLs are allowed. "
+                                    "To allow additional hosts/prefixes, set "
+                                    "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+                                ),
+                                "type": "forbidden",
+                            }
+                        },
+                    )
+
+                parsed = urllib.parse.urlsplit(base_url_s)
+                host = str(parsed.hostname or "").strip()
+                if host and not _is_loopback_host(host):
+                    env_var = _provider_api_key_env_var(provider_norm)
+                    env_key_present = bool(env_var and str(os.getenv(env_var) or "").strip())
+                    if env_key_present and not candidate_key:
+                        raise HTTPException(
+                            status_code=403,
+                            detail={
+                                "error": {
+                                    "message": (
+                                        "Refusing request-level base_url override without an explicit api_key because "
+                                        f"the server has {env_var} set. Provide api_key (query param or Authorization "
+                                        "header), or remove the server environment key."
+                                    ),
+                                    "type": "forbidden",
+                                }
+                            },
+                        )
+
+                provider_kwargs["base_url"] = base_url_s
 
             # Get models from specific provider with optional filtering
             try:
@@ -1983,110 +2308,142 @@ def download_file_temporarily(url: str) -> str:
     Returns:
         Path to temporary file
     """
+    # Security: prevent SSRF by default. Operators can allow specific hosts/prefixes
+    # via ABSTRACTCORE_SERVER_URL_FETCH_ALLOWLIST.
+    _require_public_url(url, allowlist_env="ABSTRACTCORE_SERVER_URL_FETCH_ALLOWLIST")
+
+    max_bytes = 10 * 1024 * 1024  # 10MB per file
+    max_redirects = 5
+
+    # Determine extension from content-type or URL
+    ext_map = {
+        # Images
+        "image/jpeg": ".jpg",
+        "image/jpg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "image/bmp": ".bmp",
+        "image/tiff": ".tiff",
+        # Documents
+        "application/pdf": ".pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
+        # Data files
+        "text/csv": ".csv",
+        "text/tab-separated-values": ".tsv",
+        "application/json": ".json",
+        "application/xml": ".xml",
+        "text/xml": ".xml",
+        "text/plain": ".txt",
+        "text/markdown": ".md",
+        # Generic fallback
+        "application/octet-stream": ".bin",
+    }
+
+    def _ext_from_url(u: str) -> str:
+        try:
+            p = urllib.parse.urlsplit(u)
+            path = str(p.path or "").lower()
+        except Exception:
+            path = ""
+        if path.endswith(".pdf"):
+            return ".pdf"
+        if path.endswith(".jpg") or path.endswith(".jpeg"):
+            return ".jpg"
+        if path.endswith(".png"):
+            return ".png"
+        if path.endswith(".docx"):
+            return ".docx"
+        if path.endswith(".xlsx"):
+            return ".xlsx"
+        if path.endswith(".csv"):
+            return ".csv"
+        if path.endswith(".md"):
+            return ".md"
+        if path.endswith(".txt"):
+            return ".txt"
+        if path.endswith(".json"):
+            return ".json"
+        if path.endswith(".xml"):
+            return ".xml"
+        return ".bin"
+
+    # Browser-ish headers to reduce 403s on commodity hosting.
+    headers = {
+        "User-Agent": "Mozilla/5.0 (AbstractCore Server)",
+        "Accept": "*/*",
+    }
+
+    current_url = str(url).strip()
     try:
-        # Validate URL
-        parsed = urllib.parse.urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            raise ValueError("Only HTTP and HTTPS URLs are allowed")
+        with httpx.Client(timeout=30.0, follow_redirects=False) as client:
+            for _ in range(max_redirects + 1):
+                # Re-validate each hop (redirects are common SSRF bypasses).
+                _require_public_url(current_url, allowlist_env="ABSTRACTCORE_SERVER_URL_FETCH_ALLOWLIST")
 
-        # Create request with browser-like headers to avoid 403 Forbidden errors
-        request = urllib.request.Request(url)
-        request.add_header('User-Agent', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
-        # Generic accept header for all file types
-        request.add_header('Accept', '*/*')
-        request.add_header('Accept-Language', 'en-US,en;q=0.9')
-        request.add_header('Accept-Encoding', 'gzip, deflate, br')
-        request.add_header('Connection', 'keep-alive')
-        request.add_header('Upgrade-Insecure-Requests', '1')
-        request.add_header('Sec-Fetch-Dest', 'document')  # More generic than 'image'
-        request.add_header('Sec-Fetch-Mode', 'no-cors')
-        request.add_header('Sec-Fetch-Site', 'cross-site')
+                with client.stream("GET", current_url, headers=headers) as resp:
+                    status = int(getattr(resp, "status_code", 0) or 0)
+                    if status in {301, 302, 303, 307, 308}:
+                        loc = resp.headers.get("location")
+                        if not loc:
+                            raise ValueError(f"Redirect without Location header (status={status})")
+                        current_url = urllib.parse.urljoin(current_url, str(loc))
+                        continue
 
-        # Download with size limit (10MB)
-        response = urllib.request.urlopen(request, timeout=30)
-        if response.getheader('content-length'):
-            size = int(response.getheader('content-length'))
-            if size > 10 * 1024 * 1024:  # 10MB limit
-                raise ValueError("File too large (max 10MB)")
+                    if status >= 400:
+                        body = ""
+                        try:
+                            body = (resp.text or "").strip()
+                        except Exception:
+                            body = ""
+                        raise ValueError(f"HTTP {status}: {body[:200] or '(empty)'}")
 
-        # Read data with size check
-        data = b""
-        while True:
-            chunk = response.read(8192)
-            if not chunk:
-                break
-            data += chunk
-            if len(data) > 10 * 1024 * 1024:  # 10MB limit
-                raise ValueError("File too large (max 10MB)")
+                    content_len = resp.headers.get("content-length")
+                    if content_len:
+                        try:
+                            n = int(str(content_len).strip())
+                        except Exception:
+                            n = -1
+                        if n > max_bytes:
+                            raise ValueError("File too large (max 10MB)")
 
-        # Determine extension from content-type or URL
-        content_type = response.getheader('content-type', '').lower()
-        ext_map = {
-            # Images
-            "image/jpeg": ".jpg",
-            "image/jpg": ".jpg",
-            "image/png": ".png",
-            "image/gif": ".gif",
-            "image/webp": ".webp",
-            "image/bmp": ".bmp",
-            "image/tiff": ".tiff",
-            # Documents
-            "application/pdf": ".pdf",
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ".docx",
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": ".xlsx",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation": ".pptx",
-            # Data files
-            "text/csv": ".csv",
-            "text/tab-separated-values": ".tsv",
-            "application/json": ".json",
-            "application/xml": ".xml",
-            "text/xml": ".xml",
-            "text/plain": ".txt",
-            "text/markdown": ".md",
-            # Generic fallback
-            "application/octet-stream": ".bin"
-        }
+                    content_type = str(resp.headers.get("content-type", "") or "").split(";", 1)[0].strip().lower()
+                    extension = ext_map.get(content_type) or _ext_from_url(current_url)
 
-        # Try to get extension from content-type first, then URL
-        extension = ext_map.get(content_type)
-        if not extension:
-            # Try to get extension from URL
-            url_path = parsed.path.lower()
-            if url_path.endswith('.pdf'):
-                extension = '.pdf'
-            elif url_path.endswith('.jpg') or url_path.endswith('.jpeg'):
-                extension = '.jpg'
-            elif url_path.endswith('.png'):
-                extension = '.png'
-            elif url_path.endswith('.docx'):
-                extension = '.docx'
-            elif url_path.endswith('.xlsx'):
-                extension = '.xlsx'
-            elif url_path.endswith('.csv'):
-                extension = '.csv'
-            else:
-                extension = '.bin'  # Generic fallback
+                    import hashlib
 
-        # Save to temporary file with request-specific prefix for better isolation
-        import hashlib
-        url_hash = hashlib.md5(url.encode()).hexdigest()[:8]
-        request_id = uuid.uuid4().hex[:8]
-        prefix = f"abstractcore_file_{url_hash}_{request_id}_"
+                    url_hash = hashlib.md5(current_url.encode("utf-8")).hexdigest()[:8]
+                    request_id = uuid.uuid4().hex[:8]
+                    prefix = f"abstractcore_file_{url_hash}_{request_id}_"
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=extension, prefix=prefix) as temp_file:
-            temp_file.write(data)
-            temp_file_path = temp_file.name
+                    total = 0
+                    with tempfile.NamedTemporaryFile(delete=False, suffix=extension, prefix=prefix) as temp_file:
+                        for chunk in resp.iter_bytes():
+                            if not chunk:
+                                continue
+                            total += len(chunk)
+                            if total > max_bytes:
+                                raise ValueError("File too large (max 10MB)")
+                            temp_file.write(chunk)
+                        temp_file_path = temp_file.name
 
-        # Log the temporary file creation for debugging
-        logger.info(f"Downloaded file to temporary file: {temp_file_path} (size: {len(data)} bytes, type: {content_type})")
-        return temp_file_path
+                    logger.info(
+                        f"Downloaded file to temporary file: {temp_file_path} "
+                        f"(size: {total} bytes, type: {content_type or 'unknown'})"
+                    )
+                    return temp_file_path
 
+            raise ValueError("Too many redirects")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to download file from URL {url}: {e}")
         raise HTTPException(
             status_code=400,
-            detail={"error": {"message": f"Failed to download file: {e}", "type": "media_error"}}
-        )
+            detail={"error": {"message": f"Failed to download file: {e}", "type": "media_error"}},
+        ) from e
 
 def download_image_temporarily(url: str) -> str:
     """
@@ -2110,28 +2467,19 @@ def process_image_url_object(image_url_obj: Dict[str, Any]) -> Optional[str]:
     Returns:
         Local file path or None if processing failed
     """
-    try:
-        url = image_url_obj.get("url", "")
-        if not url:
-            return None
-
-        if url.startswith("data:"):
-            # Base64 encoded image
-            return handle_base64_image(url)
-        elif url.startswith(("http://", "https://")):
-            # Download from URL
-            return download_image_temporarily(url)
-        else:
-            # Assume local file path
-            if os.path.exists(url):
-                return url
-            else:
-                logger.warning(f"Local file not found: {url}")
-                return None
-
-    except Exception as e:
-        logger.error(f"Failed to process image URL object: {e}")
+    url = str(image_url_obj.get("url", "") or "").strip()
+    if not url:
         return None
+
+    if url.startswith("data:"):
+        return handle_base64_image(url)
+
+    if url.startswith(("http://", "https://")):
+        # SSRF protection is enforced in download_file_temporarily().
+        return download_image_temporarily(url)
+
+    # Local file paths are an explicit operator choice for HTTP requests.
+    return _resolve_local_media_path(url)
 
 def process_file_url_object(file_url_obj: Dict[str, Any]) -> Optional[str]:
     """
@@ -2152,6 +2500,8 @@ def process_file_url_object(file_url_obj: Dict[str, Any]) -> Optional[str]:
         # Reuse existing image URL processing logic - works perfectly for any file type
         return process_image_url_object(file_url_obj)
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to process file URL object: {e}")
         return None
@@ -2174,13 +2524,23 @@ def process_message_content(message: ChatMessage) -> Tuple[str, List[str]]:
         return "", []
 
     if isinstance(message.content, str):
-        # Legacy format: extract @filename references
-        clean_text, media_files = MessagePreprocessor.parse_file_attachments(
-            message.content,
-            validate_existence=True,
-            verbose=False
+        # Legacy format: optional @filename extraction (dangerous in HTTP server contexts).
+        #
+        # By default, treat "@file" as plain text. Operators can opt-in by setting:
+        # - ABSTRACTCORE_SERVER_MEDIA_ROOT (safe-root), and/or
+        # - ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1 (unsafe).
+        if _server_media_root() is None and not _server_allows_local_files():
+            return str(message.content or ""), []
+
+        clean_text, candidates = MessagePreprocessor.parse_file_attachments(
+            str(message.content or ""),
+            validate_existence=False,
+            verbose=False,
         )
-        return clean_text, media_files
+        resolved_files: List[str] = []
+        for f in candidates:
+            resolved_files.append(_resolve_local_media_path(f))
+        return clean_text, resolved_files
 
     elif isinstance(message.content, list):
         # OpenAI array format: extract image_url objects
@@ -2520,20 +2880,57 @@ async def process_chat_completion(
             # Enable trace capture (trace_id) without retaining full trace buffers by default.
             provider_kwargs["enable_tracing"] = True
             provider_kwargs.setdefault("max_traces", 0)
-        if request.api_key:
+        if request.api_key is not None:
             provider_kwargs["api_key"] = request.api_key
             logger.debug(
                 "🔑 Custom API Key Provided",
                 request_id=request_id,
-                provider=provider
+                provider=provider,
             )
-        if request.base_url:
-            provider_kwargs["base_url"] = request.base_url
-            logger.info(
-                "🔗 Custom Base URL",
-                request_id=request_id,
-                base_url=request.base_url
-            )
+        if isinstance(request.base_url, str) and request.base_url.strip():
+            base_url = request.base_url.strip()
+            if not _server_allows_request_base_url(base_url):
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": {
+                            "message": (
+                                "Request-level base_url overrides are restricted for security. "
+                                "By default only loopback URLs are allowed. "
+                                "To allow additional hosts/prefixes, set "
+                                "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+                            ),
+                            "type": "forbidden",
+                        }
+                    },
+                )
+
+            # Prevent accidental provider key exfiltration when the server has an env API key.
+            # If a client sets a non-loopback base_url and does not provide an explicit api_key,
+            # providers may fall back to server env keys and send them to the supplied endpoint.
+            parsed = urllib.parse.urlsplit(base_url)
+            host = str(parsed.hostname or "").strip()
+            if host and not _is_loopback_host(host):
+                env_var = _provider_api_key_env_var(provider)
+                env_key_present = bool(env_var and str(os.getenv(env_var) or "").strip())
+                explicit_key = bool(isinstance(request.api_key, str) and request.api_key.strip())
+                if env_key_present and not explicit_key:
+                    raise HTTPException(
+                        status_code=403,
+                        detail={
+                            "error": {
+                                "message": (
+                                    "Refusing request-level base_url override without an explicit api_key because the "
+                                    f"server has {env_var} set. Provide api_key in the request, or remove the server "
+                                    f"environment key. (provider={provider})"
+                                ),
+                                "type": "forbidden",
+                            }
+                        },
+                    )
+
+            provider_kwargs["base_url"] = base_url
+            logger.info("🔗 Custom Base URL", request_id=request_id, base_url=base_url)
         if request.timeout_s is not None:
             # Orchestrator policy: allow the caller to specify the provider timeout.
             # Note: BaseProvider treats non-positive values as "unlimited".
@@ -2559,7 +2956,10 @@ async def process_chat_completion(
         llm = create_llm(provider, model=model, **provider_kwargs)
         ollama_key: Optional[Tuple[str, str, str]] = None
         if provider_normalized == "ollama":
-            ollama_key = _ollama_inflight_key(provider, request.base_url, model)
+            base_url_for_key = provider_kwargs.get("base_url")
+            if not isinstance(base_url_for_key, str) or not base_url_for_key.strip():
+                base_url_for_key = request.base_url
+            ollama_key = _ollama_inflight_key(provider, base_url_for_key, model)
             _ollama_inflight_enter(ollama_key)
 
         # Convert messages

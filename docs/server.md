@@ -82,6 +82,22 @@ export ABSTRACTCORE_DEBUG=true
 
 # Dangerous (multi-tenant hazard): allow unload_after for providers that can unload shared server state (e.g. Ollama)
 export ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1
+
+# Server security controls (recommended)
+#
+# - Request-level base_url overrides are loopback-only by default. To allow additional hosts/prefixes:
+export ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST="https://api.openai.com,https://example.com/v1"
+#
+# - Remote URL fetches for attachments are blocked for private/loopback/link-local targets by default (SSRF protection).
+#   To allow specific hosts/prefixes:
+export ABSTRACTCORE_SERVER_URL_FETCH_ALLOWLIST="https://www.berkshirehathaway.com"
+#
+# - Local file paths in HTTP requests are disabled by default (including @/path/to/file in message strings).
+#   To allow local file paths safely, restrict them under a single directory:
+export ABSTRACTCORE_SERVER_MEDIA_ROOT="/srv/abstractcore-media"
+#
+# - Unsafe escape hatch: allow arbitrary local file paths from HTTP requests (not recommended)
+export ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1
 ```
 
 ### Startup Options
@@ -181,6 +197,10 @@ for chunk in stream:
 
 Route a provider to a specific endpoint (useful for remote OpenAI-compatible servers):
 
+Security notes:
+- Request-level `base_url` overrides are **loopback-only by default**. To allow additional hosts/prefixes, set `ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST`.
+- If the server has an environment provider key set (e.g. `OPENAI_API_KEY`) and you route to a **non-loopback** `base_url`, you must provide an explicit `api_key` in the request to avoid accidentally using the server’s env key.
+
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -276,6 +296,9 @@ If you want to “ask a model about an audio file”, prefer one of:
 
 AbstractCore server supports comprehensive file attachments using OpenAI-compatible multimodal message format, plus AbstractCore's convenient `@filename` syntax.
 
+Security note (HTTP server): local file paths are disabled by default (including `@/path/to/file` and `{"url": "/path/to/file"}`).
+Use `http(s)` URLs or `data:` base64, or enable local paths via `ABSTRACTCORE_SERVER_MEDIA_ROOT` (safe) / `ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1` (unsafe).
+
 #### Supported File Types
 
 - **Images**: PNG, JPEG, GIF, WEBP, BMP, TIFF
@@ -285,7 +308,7 @@ AbstractCore server supports comprehensive file attachments using OpenAI-compati
 
 #### Method 1: @filename Syntax (AbstractCore Extension)
 
-Simple syntax that works with all providers:
+Simple syntax that works with all providers (requires local paths enabled via `ABSTRACTCORE_SERVER_MEDIA_ROOT` or `ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1`):
 
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
@@ -366,6 +389,8 @@ AbstractCore supports OpenAI's planned file format with simplified structure (co
   }
 }
 ```
+
+Note: local file paths require `ABSTRACTCORE_SERVER_MEDIA_ROOT` (safe) or `ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1` (unsafe) on the server.
 
 **Base64 Data URL:**
 ```json
