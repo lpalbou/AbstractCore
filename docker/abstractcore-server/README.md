@@ -7,6 +7,8 @@ published PyPI package. It is intended for release images such as:
 ghcr.io/lpalbou/abstractcore-server:2.13.4
 ```
 
+Release images are published for `linux/amd64` and `linux/arm64`.
+
 The image installs:
 
 ```bash

@@ -1,0 +1,92 @@
+name: Publish GHCR Server Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Image version, with or without the leading v (example: 2.13.4)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: publish-ghcr-server-${{ github.event.inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Publish server image
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate version and PyPI release
+        id: meta
+        env:
+          VERSION_INPUT: ${{ github.event.inputs.version }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import time
+          import urllib.request
+          from pathlib import Path
+
+          raw_version = os.environ["VERSION_INPUT"].strip()
+          version = raw_version[1:] if raw_version.startswith("v") else raw_version
+          if not re.fullmatch(r"\d+\.\d+\.\d+(?:[a-zA-Z0-9.-]+)?", version):
+              raise SystemExit(f"Invalid image version: {raw_version!r}")
+
+          version_text = Path("abstractcore/utils/version.py").read_text()
+          package_match = re.search(r'__version__\s*=\s*"([^"]+)"', version_text)
+          if not package_match:
+              raise SystemExit("Could not find __version__ in abstractcore/utils/version.py")
+
+          package_version = package_match.group(1)
+          if package_version != version:
+              raise SystemExit(
+                  f"Workflow checkout is version {package_version!r}, not requested {version!r}"
+              )
+
+          url = f"https://pypi.org/pypi/abstractcore/{version}/json"
+          for attempt in range(1, 31):
+              try:
+                  with urllib.request.urlopen(url, timeout=10) as response:
+                      if response.status == 200:
+                          json.loads(response.read().decode("utf-8"))
+                          print(f"abstractcore {version} is available on PyPI")
+                          break
+              except Exception as exc:
+                  print(f"PyPI not ready yet (attempt {attempt}/30): {exc}")
+                  time.sleep(10)
+          else:
+              raise SystemExit(f"Timed out waiting for abstractcore {version} on PyPI")
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as fh:
+              print(f"version={version}", file=fh)
+          PY
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/abstractcore-server/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          provenance: false
+          push: true
+          build-args: |
+            ABSTRACTCORE_VERSION=${{ steps.meta.outputs.version }}
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/abstractcore-server:${{ steps.meta.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/abstractcore-server:latest
