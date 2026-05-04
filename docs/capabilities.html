@@ -120,7 +120,7 @@ llm = create_llm(&quot;ollama&quot;, model=&quot;qwen3:4b-instruct&quot;)
 response = llm.generate(&quot;Weather in Paris?&quot;, tools=tools, tool_call_tags=&quot;qwen3&quot;)
 # Output: &lt;|tool_call|&gt;{&quot;name&quot;: &quot;get_weather&quot;, &quot;arguments&quot;: {&quot;location&quot;: &quot;Paris&quot;}}&lt;/|tool_call|&gt;
 
-# For Crush CLI (LLaMA3 format)  
+# For Crush CLI (LLaMA3 format)
 response = llm.generate(&quot;Weather in Paris?&quot;, tools=tools, tool_call_tags=&quot;llama3&quot;)
 # Output: &lt;function_call&gt;{&quot;name&quot;: &quot;get_weather&quot;, &quot;arguments&quot;: {&quot;location&quot;: &quot;Paris&quot;}}&lt;/function_call&gt;
 

@@ -57,7 +57,7 @@
 - Automatic inheritance by all provider implementations</p>
 <h3 id="2-dry-dont-repeat-yourself">2. <strong>DRY (Don't Repeat Yourself)</strong></h3>
 <p>Common parameters are handled centrally to avoid:
-- Code duplication across 6 providers
+- Code duplication across providers
 - Inconsistent parameter handling
 - Maintenance overhead for parameter changes</p>
 <h3 id="3-graceful-degradation">3. <strong>Graceful Degradation</strong></h3>
@@ -129,18 +129,52 @@ if &quot;seed&quot; in params:
 <p>AbstractCore exposes a single best-effort parameter:</p>
 <div class="code-block"><pre><code class="language-python">response = llm.generate(&quot;Solve this&quot;, thinking=None)      # auto (provider/model default)
 response = llm.generate(&quot;Solve this&quot;, thinking=&quot;off&quot;)     # try to reduce/disable thinking
+response = llm.generate(&quot;Solve this&quot;, thinking=&quot;none&quot;)    # alias for &quot;off&quot;
 response = llm.generate(&quot;Solve this&quot;, thinking=&quot;on&quot;)      # enable thinking
-response = llm.generate(&quot;Solve this&quot;, thinking=&quot;high&quot;)    # set reasoning effort (when supported)
-print(response.metadata.get(&quot;reasoning&quot;))
+response = llm.generate(&quot;Solve this&quot;, thinking=&quot;low&quot;)     # lower effort / smaller budgets (when supported)
+response = llm.generate(&quot;Solve this&quot;, thinking=&quot;medium&quot;)  # balanced (when supported)
+response = llm.generate(&quot;Solve this&quot;, thinking=&quot;high&quot;)    # higher effort / larger budgets (when supported)
+print(response.reasoning)
 </code></pre></div>
-<p><strong>Accepted values</strong>: <code>None|"auto"|"on"|"off"|True|False|"low"|"medium"|"high"</code>.</p>
-<p><strong>Best-effort mappings (as of Jan 2026):</strong>
-- <strong>vLLM</strong>: <code>extra_body.chat_template_kwargs.enable_thinking</code> (commonly used by Qwen3 templates)
+<p><strong>Accepted values</strong>: <code>None|"auto"|"on"|"off"|"none"|True|False|"low"|"medium"|"high"</code> (legacy aliases: <code>"minimal"</code>, <code>"xhigh"</code>, <code>"extra high"</code>).</p>
+<p><strong>Best-effort mappings (as of Mar 2026):</strong>
+- <strong>OpenAI</strong> (<code>OpenAIProvider</code>): Chat Completions <code>reasoning_effort</code> (values come from <code>reasoning_levels</code> in <code>model_capabilities.json</code>). <code>thinking="off"</code> maps to <code>reasoning_effort="none"</code> when supported; otherwise it falls back to the minimum supported effort with a warning (e.g., <code>gpt-5.2-pro</code> → <code>"medium"</code>).
+- <strong>Anthropic</strong> (<code>AnthropicProvider</code>): Messages API <code>thinking</code> + (for Claude 4.6 adaptive thinking) <code>output_config.effort</code>.
+  - Unified levels map to effort: <code>low|medium|high|xhigh</code> → <code>low|medium|high|max</code> (when supported); <code>xhigh</code> falls back to <code>high</code> with a warning when <code>max</code> is unavailable.
+  - For older models, AbstractCore falls back to manual thinking budgets via <code>thinking: {type:\"enabled\", budget_tokens: ...}</code> (best-effort; newer models deprecate this).
+- <strong>LM Studio / OpenAI-compatible local servers</strong> (<code>LMStudioProvider</code>, <code>OpenAICompatibleProvider</code>):
+  - <strong>Qwen3 / Qwen3.5 / Nemotron</strong>: <code>chat_template_kwargs.enable_thinking</code> (and <code>enableThinking</code> for LM Studio’s custom-field naming).
+    - This is the “clean” LM Studio approach: it matches the model’s own <code>Enable Thinking</code> custom field and does <strong>not</strong> rely on system-prompt injection.
+    - <strong>LM Studio robustness note (Qwen3/Qwen3.5)</strong>: some LM Studio runtimes do not consistently honor <code>chat_template_kwargs</code> for all model formats. As a fallback for <code>thinking="off"/"none"</code>, AbstractCore can append an empty Qwen think block right before generation (<code>&lt;think&gt;\n\n&lt;/think&gt;\n\n</code>) to hard-disable thinking without polluting the system prompt.
+    - Qwen also supports a “soft” <code>/no_think</code> / <code>/think</code> instruction (stateful across turns), but AbstractCore prefers the stateless hard-switch where needed. See <code>docs/fallbacks.md</code>.
+    - <strong>Effort levels</strong>: for Qwen3/Qwen3.5 on LM Studio, <code>thinking="low|medium|high"</code> currently maps to “thinking enabled” (boolean). Most templates do not expose a stable per-effort budget knob, so effort scaling is best-effort and may be a no-op beyond on/off.
+    - <strong>Nemotron</strong>: <code>thinking="low"</code> additionally maps to <code>chat_template_kwargs.low_effort=True</code> when supported by the template.
+  - <strong>Seed‑OSS</strong>: <code>chat_template_kwargs.thinking_budget</code> (levels map to budgets: low=512, medium=1024, high=4096, xhigh=8192; <code>off</code> → 0).
+- <strong>HuggingFace (GGUF / llama-cpp-python)</strong> (<code>HuggingFaceProvider</code> with GGUF models):
+  - llama.cpp’s CLI/server supports template kwargs (e.g., <code>--chat-template-kwargs '{"enable_thinking":false}'</code>), but <code>llama-cpp-python</code>’s <code>Llama.create_chat_completion()</code> does not currently expose/forward per-request template kwargs like <code>enable_thinking</code>. As a result, Qwen3/Qwen3.5 <code>thinking="off"/"none"</code> uses the Qwen hard-switch marker (<code>&lt;think&gt;\n\n&lt;/think&gt;\n\n</code>) as a robust input-side control.
+  - <code>thinking="low|medium|high"</code> is treated as “thinking enabled” (best-effort) and may be a no-op beyond on/off for Qwen templates.
+  - <strong>Local context note</strong>: model cards may advertise extremely large context windows (e.g. 262k). For GGUF loads, AbstractCore will first try the advertised <code>max_tokens</code> (context window); if allocation fails locally it retries with smaller llama.cpp <code>n_ctx</code> values (best-effort). Pass <code>max_tokens=...</code> to <code>HuggingFaceProvider()</code> to explicitly control the runtime <code>n_ctx</code>.
+- <strong>vLLM</strong>: <code>extra_body.chat_template_kwargs.enable_thinking</code> (commonly used by Qwen3/Qwen3.5 templates)
+  - When <code>thinking</code> is a level (<code>low|medium|high|xhigh</code>), AbstractCore also sets <code>extra_body.thinking_token_budget</code> (vLLM reasoning-budget feature).
 - <strong>Ollama</strong>: request field <code>think</code> (bool for most models; <code>"low"|"medium"|"high"</code> for GPT‑OSS)
-- <strong>GPT‑OSS (Harmony)</strong>: inject system line <code>Reasoning: low|medium|high</code> (traces can’t be fully disabled; <code>"off"</code> maps to <code>"low"</code> with a warning)
-- <strong>LMStudio</strong>: reasoning is typically exposed as response fields (e.g., <code>message.reasoning</code> for GPT‑OSS) but LM Studio’s OpenAI-style <strong>chat completions</strong> API does not consistently expose request-side “reasoning effort” knobs; use <code>/v1/responses</code> or model-level prompt controls when available.</p>
+- <strong>GPT‑OSS (Harmony)</strong>: inject system line <code>Reasoning: low|medium|high</code> (traces can’t be fully disabled; <code>"off"</code> maps to <code>"low"</code> with a warning)</p>
 <p><strong>Output semantics</strong>: when a provider/model exposes reasoning, AbstractCore normalizes it into <code>GenerateResponse.metadata["reasoning"]</code> and keeps <code>GenerateResponse.content</code> clean using <code>abstractcore/architectures/response_postprocessing.py</code> (asset-driven via <code>assets/model_capabilities.json</code> + <code>assets/architecture_formats.json</code>).</p>
-<p>When a requested thinking mode is not supported by a model/provider, AbstractCore emits a <code>RuntimeWarning</code> (request may be ignored).</p>
+<p>When a requested thinking mode is not supported by a model/provider, AbstractCore emits a <code>RuntimeWarning</code> and applies a best-effort approximation:</p>
+<ul>
+<li>If the model advertises <code>reasoning_levels</code>, AbstractCore maps the requested level to the nearest supported level (generic ordering: <code>minimal &lt; low &lt; medium &lt; high &lt; xhigh</code>) and reports the effective level in the warning.</li>
+<li>If a provider/model can only toggle reasoning on/off (no effort scaling), AbstractCore still enables reasoning for level requests and warns that the requested effort level may be ignored.</li>
+</ul>
+<h3 id="observability-requested-vs-effective-thinking">Observability: requested vs effective thinking</h3>
+<p>When <code>thinking=</code> is provided, AbstractCore records the requested and effective thinking mode in <code>GenerateResponse.metadata</code>:</p>
+<ul>
+<li><code>thinking_requested</code>: normalized unified request (<code>"off"</code>, <code>"on"</code>, or a level like <code>"high"</code>)</li>
+<li><code>thinking_effective</code>: effective unified control after mappings (for example <code>"xhigh" → "high"</code> for a model that only supports up to <code>"high"</code>)</li>
+<li><code>thinking_level_requested</code> / <code>thinking_level_effective</code>: effort-level details when applicable</li>
+<li><code>thinking_handled_enable_disable</code> / <code>thinking_handled_level</code>: whether the provider/model actually implemented the on/off toggle and/or the effort scaling knob</li>
+<li><code>thinking_supported_levels</code>: model-advertised effort enum when available (from assets)</li>
+<li><code>thinking_supports_output</code> / <code>thinking_supports_control</code>: asset-driven capability split (model emits reasoning vs model exposes a request-side knob)</li>
+</ul>
+<p>These fields make it easier to debug best-effort fallbacks without relying only on warnings.</p>
 <h2 id="session-integration">Session Integration</h2>
 <p>Sessions maintain persistent parameters across conversations:</p>
 <div class="code-block"><pre><code class="language-python">session = BasicSession(
@@ -155,9 +189,15 @@ response1 = session.generate(&quot;Hello&quot;)
 # Override for specific message
 response2 = session.generate(&quot;Be creative!&quot;, temperature=0.9)
 </code></pre></div>
+<p>For prompt-cache-aware long chats, use <code>CachedSession</code> (see <code>docs/prompt-caching.md</code>):</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import CachedSession
+
+session = CachedSession(provider=llm, system_prompt=&quot;You are helpful.&quot;, prompt_cache_strategy=&quot;auto&quot;)
+session.generate(&quot;Hello&quot;)
+</code></pre></div>
 <h2 id="code-quality-benefits">Code Quality Benefits</h2>
 <h3 id="before-duplicated-code">Before (Duplicated Code)</h3>
-<div class="code-block"><pre><code class="language-python"># In each of 6 providers:
+<div class="code-block"><pre><code class="language-python"># In each provider:
 self.temperature = kwargs.get(&quot;temperature&quot;, 0.7)
 self.seed = kwargs.get(&quot;seed&quot;, None)
 # ... parameter extraction logic in each provider
@@ -207,7 +247,7 @@ still vary with backend settings, hardware, and model/server updates.</p>
 </code></pre></div>
 <p><strong>Provider-Specific Implementations</strong>:
 - <strong>OpenAI</strong>: Native <code>seed</code> parameter in API
-- <strong>MLX</strong>: <code>mx.random.seed()</code> before generation<br />
+- <strong>MLX</strong>: <code>mx.random.seed()</code> before generation
 - <strong>Ollama</strong>: <code>seed</code> in options payload
 - <strong>HuggingFace</strong>: <code>torch.manual_seed()</code> + GGUF native seed
 - <strong>LMStudio</strong>: OpenAI-compatible <code>seed</code> parameter
@@ -225,7 +265,7 @@ python tests/manual_seed_verification.py --provider openai
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

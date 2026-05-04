@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Getting Started - AbstractCore</title>
-    <meta name="description" content="AbstractCore is a unified Python interface for cloud + local LLM providers. The default install is lightweight; add features via extras.">
+    <meta name="description" content="AbstractCore is a unified Python interface for cloud, gateway, and local LLM providers. The default install is lightweight; add only the extras your…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -31,13 +31,15 @@
         <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Getting Started</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore is a unified Python interface for cloud + local LLM providers. The default install is lightweight; add features via extras.</p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore is a unified Python interface for cloud, gateway, and local LLM providers. The default install is lightweight; add only the extras your application needs.</p>
             </div>
 
             <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#prerequisites" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Prerequisites</a>
 <a href="#installation" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Installation</a>
 <a href="#providers-and-models" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Providers and models</a>
 <a href="#your-first-call" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Your first call</a>
+<a href="#sessions-multi-turn" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Sessions (multi-turn)</a>
+<a href="#thinking-reasoning-best-effort" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Thinking / reasoning (best-effort)</a>
 <a href="#streaming" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Streaming</a>
 <a href="#tool-calling" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Tool calling</a>
 <a href="#structured-output" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Structured output</a>
@@ -54,15 +56,21 @@
 <li><code>pip</code></li>
 </ul>
 <h2 id="installation">Installation</h2>
-<div class="code-block"><pre><code class="language-bash"># Core (small, lightweight default)
+<p>Extras compose. For example, <code>abstractcore[remote,media,tools]</code> installs hosted
+API SDKs plus document/media handling and built-in tools in one command.</p>
+<div class="code-block"><pre><code class="language-bash"># Core: local HTTP servers and gateways that need no SDK
+# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
 pip install abstractcore
 
-# Providers (install only what you use)
+# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
+pip install &quot;abstractcore[remote]&quot;
+
+# Individual provider SDKs / local runtimes
 pip install &quot;abstractcore[openai]&quot;       # OpenAI SDK
 pip install &quot;abstractcore[anthropic]&quot;    # Anthropic SDK
 pip install &quot;abstractcore[huggingface]&quot;  # Transformers / torch (heavy)
 pip install &quot;abstractcore[mlx]&quot;          # Apple Silicon local inference (heavy)
-pip install &quot;abstractcore[vllm]&quot;         # GPU inference server integrations (heavy)
+pip install &quot;abstractcore[vllm]&quot;         # NVIDIA CUDA / ROCm inference (heavy)
 
 # Optional features
 pip install &quot;abstractcore[tools]&quot;        # built-in tools (web/file/command helpers)
@@ -73,7 +81,11 @@ pip install &quot;abstractcore[tokens]&quot;       # precise token counting (tik
 pip install &quot;abstractcore[server]&quot;       # OpenAI-compatible HTTP gateway
 
 # Combine extras (zsh: keep quotes)
-pip install &quot;abstractcore[openai,media,tools]&quot;
+pip install &quot;abstractcore[remote,media,tools]&quot;
+
+# Turnkey local-runtime installs
+pip install &quot;abstractcore[all-apple]&quot;    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
+pip install &quot;abstractcore[all-gpu]&quot;      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
 </code></pre></div>
 <p>Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, LocalAI, etc.) work with the core install; you just point AbstractCore at the server base URL. See <a href="prerequisites.html">Prerequisites</a> for provider setup.</p>
 <p>Optional capability plugins (deterministic multimodal outputs):</p>
@@ -108,6 +120,38 @@ llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
 resp = llm.generate(&quot;What is the capital of France?&quot;)
 print(resp.content)
 </code></pre></div>
+<h2 id="sessions-multi-turn">Sessions (multi-turn)</h2>
+<p>Use a session to keep conversation state (system prompt + message history) across turns:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import BasicSession, create_llm
+
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+session = BasicSession(provider=llm, system_prompt=&quot;You are a helpful assistant.&quot;)
+
+print(session.generate(&quot;Hello!&quot;).content)
+print(session.generate(&quot;Now continue.&quot;).content)
+</code></pre></div>
+<p>For prompt-cache-aware long chats (reuse stable prefixes like system/tools/files), use <code>CachedSession</code>:
+- See <a href="prompt-caching.html">Prompt Caching</a>.</p>
+<h2 id="thinking-reasoning-best-effort">Thinking / reasoning (best-effort)</h2>
+<p>Many modern models can optionally emit a reasoning/thinking trace (sometimes in a separate channel, sometimes inline). AbstractCore exposes a single unified control:</p>
+<div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
+
+llm = create_llm(&quot;lmstudio&quot;, model=&quot;qwen3.5-27b@q4_k_m&quot;, base_url=&quot;http://localhost:1234/v1&quot;)
+
+# Disable thinking (tries to suppress any reasoning trace)
+resp = llm.generate(&quot;Compute 17*23 - 19*11. Reply with the integer only.&quot;, thinking=&quot;none&quot;)
+print(resp.content)
+
+# Enable thinking (levels are best-effort; not all backends support budgets)
+resp = llm.generate(&quot;Solve a hard logic puzzle.&quot;, thinking=&quot;high&quot;)
+print(resp.content)
+print(resp.metadata.get(&quot;reasoning&quot;))  # when the backend exposes it
+</code></pre></div>
+<p>Notes:
+- For <strong>Qwen3 / Qwen3.5 on LM Studio</strong>, AbstractCore uses LM Studio’s model template variables (<code>enable_thinking</code> / <code>enableThinking</code>) and a Qwen template “hard switch” for <code>thinking="none"</code> (empty <code>&lt;think&gt;&lt;/think&gt;</code>), rather than injecting “Reasoning effort …” text into the system prompt.
+- For <strong>Qwen3 / Qwen3.5 GGUF via HuggingFaceProvider (llama-cpp-python)</strong>, there is no template-kwargs knob exposed by llama-cpp-python today, so <code>thinking="none"</code> also uses the Qwen hard-switch marker. If GGUF loading fails due to huge advertised context windows, AbstractCore will retry with smaller <code>n_ctx</code> values (best-effort); you can also pass <code>max_tokens=...</code> when constructing <code>HuggingFaceProvider()</code> to explicitly control llama.cpp <code>n_ctx</code>.
+- For <strong>Ollama</strong>, enabling thinking may consume a lot of output tokens in the thinking channel; consider using a larger <code>max_output_tokens</code> when <code>thinking</code> is enabled.</p>
+<p>For server usage (OpenAI-compatible HTTP), see <a href="server.html">Server</a> and <a href="generation-parameters.html">Generation Parameters</a>.</p>
 <h2 id="streaming">Streaming</h2>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
@@ -132,6 +176,8 @@ print(resp.content)
 print(resp.tool_calls)
 </code></pre></div>
 <p>See <a href="tool-calling.html">Tool Calling</a> and <a href="tool-syntax-rewriting.html">Tool Syntax Rewriting</a> (<code>tool_call_tags</code>, server <code>agent_format</code>).</p>
+<p>Note:
+- If you pass both <code>tools=[...]</code> and <code>response_model=...</code> to <code>generate()</code>, AbstractCore uses a 2-pass hybrid flow (tool-capable call, then structured-output call). Streaming is not supported in this hybrid mode.</p>
 <h3 id="built-in-tools-optional">Built-in tools (optional)</h3>
 <p>If you want a ready-made toolset for agentic scripts, install:</p>
 <div class="code-block"><pre><code class="language-bash">pip install &quot;abstractcore[tools]&quot;
@@ -211,7 +257,7 @@ abstractcore-chat --provider openai --model gpt-4o-mini
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

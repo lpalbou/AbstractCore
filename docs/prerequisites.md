@@ -20,13 +20,18 @@ This guide walks you through setting up AbstractCore with different LLM provider
 
 ## Core Installation
 
-Install AbstractCore, then add the extras you need:
+Install AbstractCore, then add the extras you need. Extras compose, so a real
+application can use one command such as `pip install "abstractcore[remote,server,tools]"`.
 
 ```bash
-# Core (small default)
+# Core: local HTTP servers and gateways that need no SDK
+# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
 pip install abstractcore
 
-# Providers (only if you use them)
+# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
+pip install "abstractcore[remote]"
+
+# Individual provider SDKs / local runtimes
 pip install "abstractcore[openai]"       # OpenAI SDK
 pip install "abstractcore[anthropic]"    # Anthropic SDK
 pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
@@ -41,18 +46,18 @@ pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
 pip install "abstractcore[server]"      # OpenAI-compatible HTTP gateway
 pip install "abstractcore[compression]" # Glyph visual-text compression (Pillow renderer)
 
-# Turnkey "everything" installs (pick one)
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+# Turnkey local-runtime installs
+pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
+pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
 ```
 
 **Hardware Notes:**
 - `[mlx]` - Only works on Apple Silicon (M1/M2/M3/M4)
 - `[vllm]` - Only works with NVIDIA CUDA GPUs
-- `[all-apple]` - Best for Apple Silicon (includes MLX, excludes vLLM)
-- `[all-non-mlx]` - Best for Linux/Windows/Intel Mac (excludes MLX and vLLM)
-- `[all-gpu]` - Best for Linux NVIDIA GPU (includes vLLM, excludes MLX)
+- `[remote]` - Lightweight hosted SDK bundle for OpenAI + Anthropic; OpenRouter, Portkey, Ollama, LM Studio, and generic `/v1` endpoints need no extra dependency.
+- `[all-apple]` - Best for Apple Silicon local development (includes MLX, excludes vLLM)
+- `[all-gpu]` - Best for NVIDIA GPU local development (includes vLLM, excludes MLX)
+- For CPU-only or Intel machines, compose only what you need, for example `abstractcore[remote,huggingface,tools]`.
 
 ## Cloud Provider Setup
 
@@ -138,6 +143,8 @@ print(response.content)
 **Best for**: routing, observability/governance, and unified billing across multiple backends.
 
 Gateways expose an OpenAI-compatible `/v1` endpoint and forward your payload to the routed backend model. Because some backends are strict (for example OpenAI reasoning families like gpt-5/o1 reject unsupported parameters), AbstractCore’s gateway providers forward optional generation parameters (like `temperature`, `top_p`, `max_output_tokens`) **only when explicitly set**.
+
+No provider SDK extra is required for OpenRouter or Portkey; the core install uses AbstractCore's internal HTTP/OpenAI-compatible client.
 
 #### OpenRouter Setup
 
@@ -254,15 +261,25 @@ pip install "abstractcore[mlx]"
 
 #### 2. Download Models
 
-MLX models are automatically downloaded when first used. Popular options:
+AbstractCore is offline-first for local model weights. The MLX provider loads
+models from an explicit local path, the Hugging Face cache, or the LM Studio
+cache; it does not silently download weights during `create_llm(...)`.
+
+Download or prefetch a model first, for example:
+
+```bash
+huggingface-cli download mlx-community/Qwen3-4B
+```
+
+Then use the model ID, or pass a local model directory path:
 
 ```python
 from abstractcore import create_llm
 
-# Models are auto-downloaded on first use
-llm = create_llm("mlx", model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")  # 4.2GB
+# Uses a cached Hugging Face snapshot or a local directory path.
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
 # OR
-llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")      # 1.8GB
+llm = create_llm("mlx", model="/path/to/local/mlx-model")
 ```
 
 #### 3. Test Setup
@@ -270,8 +287,8 @@ llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")      #
 ```python
 from abstractcore import create_llm
 
-# Test with a good balance model
-llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
+# Test with a model you already downloaded/prefetched
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
 response = llm.generate("Explain machine learning briefly")
 print(response.content)
 ```

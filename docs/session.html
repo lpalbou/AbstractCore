@@ -51,6 +51,8 @@
 - Tool calls and their results (inline with conversation flow)
 - Session configuration and settings
 - Optional analytics: summary, assessment, and extracted facts</p>
+<p>For prompt-cache-aware long chats (reuse stable prefixes like system/tools/files), use <strong><code>CachedSession</code></strong>:
+- See <code>docs/prompt-caching.md</code>.</p>
 <h2 id="api-design-two-methods-for-different-purposes">API Design: Two Methods for Different Purposes</h2>
 <p>The <code>BasicSession</code> provides two main methods for managing conversation history:</p>
 <h3 id="generate-for-normal-conversations-recommended"><code>generate()</code> - For Normal Conversations (Recommended)</h3>
@@ -274,8 +276,12 @@ windowed = session.get_window(
 
 # Optional: persist local prompt/KV cache (MLX only)
 /cache save chat_cache
+/cache save chat_cache --q8
 /cache load chat_cache
 </code></pre></div>
+<p>Notes:
+- Prompt/KV cache save/load is currently supported only for <code>MLXProvider</code> and writes a <code>.safetensors</code> file.
+- Caches are model-locked; loading a cache resets the transcript and treats the KV cache as the context source of truth.</p>
 <h2 id="best-practices">Best Practices</h2>
 <h3 id="when-to-use-analytics">When to Use Analytics</h3>
 <ul>
@@ -309,7 +315,7 @@ windowed = session.get_window(
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

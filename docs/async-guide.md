@@ -601,7 +601,7 @@ results = await asyncio.gather(*[safe_task(p) for p in prompts])
 
 ## Learning Resources
 
-- **Educational Demo**: [examples/async_cli_demo.py](../examples/async_cli_demo.py) - 8 core async/await patterns
+- **Educational Demo**: [examples/cli/async_cli_demo.py](../examples/cli/async_cli_demo.py) - 8 core async/await patterns
 - **Test Suite**: `tests/async/test_async_providers.py` - real implementation examples
 - **Concurrency & Throughput**: [concurrency.md](concurrency.md) - practical guidance for local inference
 
@@ -618,5 +618,5 @@ results = await asyncio.gather(*[safe_task(p) for p in prompts])
 pip install abstractcore
 
 # Try the educational async demo
-python examples/async_cli_demo.py --provider ollama --model qwen3:4b
+python examples/cli/async_cli_demo.py --provider ollama --model qwen3:4b
 ```

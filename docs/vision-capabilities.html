@@ -61,7 +61,7 @@ resp = llm.generate(&quot;What is in this image?&quot;, media=[&quot;photo.jpg&q
 print(resp.content)
 </code></pre></div>
 <p>Support depends on the selected provider/model and is normalized via:
-- <code>abstractcore/assets/model_capabilities.json</code></p>
+- <code>abstractcore/assets/model_capabilities.json</code> (source of truth; update when new vision-capable models ship)</p>
 <p>Video attachments use the same <code>media=[...]</code> surface and are controlled by <code>video_policy</code> (see <code>abstractcore/providers/base.py</code>):</p>
 <div class="code-block"><pre><code class="language-python">resp = llm.generate(
     &quot;Summarize what happens in this clip.&quot;,
@@ -114,7 +114,7 @@ abstractcore --add-vision-fallback huggingface Salesforce/blip-image-captioning-
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

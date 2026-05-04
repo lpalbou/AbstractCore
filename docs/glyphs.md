@@ -436,7 +436,7 @@ config = GlyphConfig(
 
 For a comprehensive, runnable example that demonstrates all Glyph features, see:
 
-**[`examples/glyph_complete_example.py`](../examples/glyph_complete_example.py)**
+**[`examples/media/glyph_complete_example.py`](../examples/media/glyph_complete_example.py)**
 
 This complete example includes:
 

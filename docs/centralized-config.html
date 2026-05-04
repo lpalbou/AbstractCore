@@ -34,7 +34,8 @@
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore provides a unified configuration system that manages default models, cache directories, logging settings, and other package-wide preferences from a single location.</p>
             </div>
 
-            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#configuration-file-location" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configuration File Location</a>
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#quick-setup" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Setup</a>
+<a href="#configuration-file-location" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configuration File Location</a>
 <a href="#configuration-sections" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Configuration Sections</a>
 <a href="#priority-system" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Priority System</a>
 <a href="#debug-mode" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Debug Mode</a>
@@ -48,8 +49,22 @@
 
             <div class="doc-content">
 
+<h2 id="quick-setup">Quick Setup</h2>
+<div class="code-block"><pre><code class="language-bash"># Interactive guided setup (7 steps: model, vision, API keys, audio, video, embeddings, logging)
+abstractcore --config
+
+# Check readiness of all subsystems + download/install what's missing
+abstractcore --install
+
+# Auto-download everything missing (non-interactive)
+abstractcore --install --yes
+
+# View current configuration
+abstractcore --status
+</code></pre></div>
 <h2 id="configuration-file-location">Configuration File Location</h2>
 <p>Configuration is stored in: <code>~/.abstractcore/config/abstractcore.json</code></p>
+<p>API keys saved via <code>--config</code> or <code>--set-api-key</code> are persisted here and automatically injected into the process environment (e.g. <code>OPENAI_API_KEY</code>) at startup. Environment variables always take precedence over config-persisted keys.</p>
 <h2 id="configuration-sections">Configuration Sections</h2>
 <h3 id="application-defaults">Application Defaults</h3>
 <p>Set default providers and models for specific AbstractCore applications:</p>
@@ -145,18 +160,20 @@ abstractcore --disable-vision
 - <code>abstractcore --set-vision-caption ...</code> is deprecated but kept for compatibility.
 - Vision fallback is only used for <strong>image/video inputs</strong> when the <em>main</em> model is text-only.</p>
 <h3 id="audio-default-policy-optional-speech-to-text-fallback">Audio (default policy + optional speech-to-text fallback)</h3>
-<p>Audio attachments are controlled by <code>audio_policy</code> and are <strong>strict by default</strong> to avoid silent semantic changes:</p>
-<div class="code-block"><pre><code class="language-bash"># Enable speech-to-text fallback when audio is attached (requires an STT plugin backend)
+<p>Audio attachments are controlled by <code>audio_policy</code>. The default is <code>auto</code>: use native audio when supported, otherwise fall back to STT via <code>abstractvoice</code> (if installed). If <code>abstractvoice</code> is not installed, <code>auto</code> degrades gracefully to native-only behavior at runtime.</p>
+<div class="code-block"><pre><code class="language-bash"># STT fallback requires abstractvoice
 pip install abstractvoice
+
+# Override strategy explicitly (auto is the default)
 abstractcore --set-audio-strategy auto
 
 # Optional: set a language hint (e.g. en, fr)
 abstractcore --set-stt-language fr
 </code></pre></div>
 <p>Notes:
-- <code>audio_policy="native_only"</code> errors on text-only models (default).
+- <code>audio_policy="auto"</code> uses native audio when supported, otherwise STT when available (default).
 - <code>audio_policy="speech_to_text"</code> forces STT and injects a transcript into the request.
-- <code>audio_policy="auto"</code> uses native audio when supported, otherwise STT when available.</p>
+- <code>audio_policy="native_only"</code> errors on text-only models (no fallback).</p>
 <h3 id="video-native-vs-frames-fallback">Video (native vs frames fallback)</h3>
 <p>Video attachments are controlled by <code>video_policy</code>. By default (<code>auto</code>), AbstractCore uses native video input when supported, otherwise it samples frames via <code>ffmpeg</code> and routes them through image/vision handling.</p>
 <div class="code-block"><pre><code class="language-bash">abstractcore --set-video-strategy auto
@@ -570,7 +587,7 @@ abstractcore --disable-file-logging
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

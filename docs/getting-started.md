@@ -1,6 +1,6 @@
 # Getting Started
 
-AbstractCore is a unified Python interface for cloud + local LLM providers. The default install is lightweight; add features via extras.
+AbstractCore is a unified Python interface for cloud, gateway, and local LLM providers. The default install is lightweight; add only the extras your application needs.
 
 ## Prerequisites
 
@@ -9,16 +9,23 @@ AbstractCore is a unified Python interface for cloud + local LLM providers. The 
 
 ## Installation
 
+Extras compose. For example, `abstractcore[remote,media,tools]` installs hosted
+API SDKs plus document/media handling and built-in tools in one command.
+
 ```bash
-# Core (small, lightweight default)
+# Core: local HTTP servers and gateways that need no SDK
+# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
 pip install abstractcore
 
-# Providers (install only what you use)
+# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
+pip install "abstractcore[remote]"
+
+# Individual provider SDKs / local runtimes
 pip install "abstractcore[openai]"       # OpenAI SDK
 pip install "abstractcore[anthropic]"    # Anthropic SDK
 pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
 pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
-pip install "abstractcore[vllm]"         # GPU inference server integrations (heavy)
+pip install "abstractcore[vllm]"         # NVIDIA CUDA / ROCm inference (heavy)
 
 # Optional features
 pip install "abstractcore[tools]"        # built-in tools (web/file/command helpers)
@@ -29,7 +36,11 @@ pip install "abstractcore[tokens]"       # precise token counting (tiktoken)
 pip install "abstractcore[server]"       # OpenAI-compatible HTTP gateway
 
 # Combine extras (zsh: keep quotes)
-pip install "abstractcore[openai,media,tools]"
+pip install "abstractcore[remote,media,tools]"
+
+# Turnkey local-runtime installs
+pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
+pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
 ```
 
 Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, LocalAI, etc.) work with the core install; you just point AbstractCore at the server base URL. See [Prerequisites](prerequisites.md) for provider setup.
@@ -84,6 +95,49 @@ resp = llm.generate("What is the capital of France?")
 print(resp.content)
 ```
 
+## Sessions (multi-turn)
+
+Use a session to keep conversation state (system prompt + message history) across turns:
+
+```python
+from abstractcore import BasicSession, create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+session = BasicSession(provider=llm, system_prompt="You are a helpful assistant.")
+
+print(session.generate("Hello!").content)
+print(session.generate("Now continue.").content)
+```
+
+For prompt-cache-aware long chats (reuse stable prefixes like system/tools/files), use `CachedSession`:
+- See [Prompt Caching](prompt-caching.md).
+
+## Thinking / reasoning (best-effort)
+
+Many modern models can optionally emit a reasoning/thinking trace (sometimes in a separate channel, sometimes inline). AbstractCore exposes a single unified control:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("lmstudio", model="qwen3.5-27b@q4_k_m", base_url="http://localhost:1234/v1")
+
+# Disable thinking (tries to suppress any reasoning trace)
+resp = llm.generate("Compute 17*23 - 19*11. Reply with the integer only.", thinking="none")
+print(resp.content)
+
+# Enable thinking (levels are best-effort; not all backends support budgets)
+resp = llm.generate("Solve a hard logic puzzle.", thinking="high")
+print(resp.content)
+print(resp.metadata.get("reasoning"))  # when the backend exposes it
+```
+
+Notes:
+- For **Qwen3 / Qwen3.5 on LM Studio**, AbstractCore uses LM Studio’s model template variables (`enable_thinking` / `enableThinking`) and a Qwen template “hard switch” for `thinking="none"` (empty `<think></think>`), rather than injecting “Reasoning effort …” text into the system prompt.
+- For **Qwen3 / Qwen3.5 GGUF via HuggingFaceProvider (llama-cpp-python)**, there is no template-kwargs knob exposed by llama-cpp-python today, so `thinking="none"` also uses the Qwen hard-switch marker. If GGUF loading fails due to huge advertised context windows, AbstractCore will retry with smaller `n_ctx` values (best-effort); you can also pass `max_tokens=...` when constructing `HuggingFaceProvider()` to explicitly control llama.cpp `n_ctx`.
+- For **Ollama**, enabling thinking may consume a lot of output tokens in the thinking channel; consider using a larger `max_output_tokens` when `thinking` is enabled.
+
+For server usage (OpenAI-compatible HTTP), see [Server](server.md) and [Generation Parameters](generation-parameters.md).
+
 ## Streaming
 
 ```python
@@ -117,6 +171,9 @@ print(resp.tool_calls)
 ```
 
 See [Tool Calling](tool-calling.md) and [Tool Syntax Rewriting](tool-syntax-rewriting.md) (`tool_call_tags`, server `agent_format`).
+
+Note:
+- If you pass both `tools=[...]` and `response_model=...` to `generate()`, AbstractCore uses a 2-pass hybrid flow (tool-capable call, then structured-output call). Streaming is not supported in this hybrid mode.
 
 ### Built-in tools (optional)
 

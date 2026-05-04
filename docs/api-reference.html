@@ -132,7 +132,7 @@ llm = create_llm(&quot;ollama&quot;, model=&quot;qwen2.5-coder:7b&quot;, base_ur
 - <code>response_model</code> (BaseModel, optional): Pydantic model for structured output
 - <code>retry_strategy</code> (Retry, optional): Custom retry strategy for structured output
 - <code>stream</code> (bool): Enable streaming response
-- <code>thinking</code> (bool | str, optional): Unified thinking/reasoning control (<code>"auto"|"on"|"off"</code> or <code>"low"|"medium"|"high"</code> when supported)
+- <code>thinking</code> (bool | str, optional): Unified thinking/reasoning control (<code>"auto"|"on"|"off"|"none"</code> or <code>"low"|"medium"|"high"|"xhigh"</code> when supported). Note: <code>"none"</code> is treated as an alias for <code>"off"</code>.
 - <code>**kwargs</code>: Additional generation parameters</p>
 <p><strong>Returns:</strong>
 - If <code>stream=False</code>: GenerateResponse
@@ -786,7 +786,7 @@ on_global(EventType.RETRY_ATTEMPTED, production_monitor)
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

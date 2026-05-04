@@ -654,10 +654,12 @@ pip install &quot;abstractcore[media]&quot;
 </code></pre></div>
 <h3 id="full-installation">Full Installation</h3>
 <div class="code-block"><pre><code class="language-bash"># Media features (PDF + Office docs) are covered by `abstractcore[media]`.
-# If you want the full framework install (providers + tools + server + docs), pick one:
-pip install &quot;abstractcore[all-apple]&quot;    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install &quot;abstractcore[all-non-mlx]&quot;  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install &quot;abstractcore[all-gpu]&quot;      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+# Compose only what your app needs:
+pip install &quot;abstractcore[remote,media,tools]&quot;
+
+# Or choose a turnkey local-runtime install:
+pip install &quot;abstractcore[all-apple]&quot;    # Apple Silicon: HF/GGUF + MLX + features + server
+pip install &quot;abstractcore[all-gpu]&quot;      # NVIDIA GPU: HF/GGUF + vLLM + features + server
 </code></pre></div>
 <p>Advanced: If you prefer to install only the pieces you need (instead of <code>abstractcore[media]</code>),
 these are the main libraries AbstractCore uses:</p>
@@ -733,8 +735,8 @@ from abstractcore.media.capabilities import (
 <ul>
 <li><strong><a href="getting-started.html">Getting Started Guide</a></strong> - Complete AbstractCore tutorial</li>
 <li><strong><a href="api-reference.html">API Reference</a></strong> - Full Python API documentation</li>
-<li><strong><a href="../examples/glyph_complete_example.py">Glyph + Vision Example</a></strong> - End-to-end document analysis with a vision model</li>
-<li><strong><a href="../examples/list_supported_formats.py">Supported Formats Utility</a></strong> - Inspect available processors and supported formats</li>
+<li><strong><a href="../examples/media/glyph_complete_example.py">Glyph + Vision Example</a></strong> - End-to-end document analysis with a vision model</li>
+<li><strong><a href="../examples/media/list_supported_formats.py">Supported Formats Utility</a></strong> - Inspect available processors and supported formats</li>
 </ul>
 <hr />
 <p>The media handling system makes AbstractCore multimodal while maintaining the same "write once, run everywhere" philosophy. Focus on your application logic while AbstractCore handles the complexity of different provider APIs and media formats.</p>

@@ -381,6 +381,16 @@ result = llm.generate(
 print(f"{result.name} ({result.age}): {result.email}")
 ```
 
+### Tools + Structured Output (2-pass hybrid)
+
+If you pass both `tools=[...]` and `response_model=...` in the same `generate()` call, AbstractCore uses a 2-pass hybrid flow:
+1) a tool-capable call, then
+2) a structured-output call using the tool-context.
+
+Notes:
+- Streaming is not supported in this hybrid mode.
+- Tool execution is pass-through by default (`execute_tools=False`): your host/runtime should execute tool calls and feed results back as messages when building multi-step workflows.
+
 ### Using Enums
 
 Enums provide type-safe categorical values:

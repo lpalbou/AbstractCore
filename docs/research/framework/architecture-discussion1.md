@@ -1988,135 +1988,129 @@ to provide an informed opinion. Do not guess. Ultrathink
      Containerization platform
      CONTRIBUTING.md:91:- **Reliability**: Static version works in all
      deployment scenarios (development, installed packages, Docker, etc.)
-     examples/example_05_server/README.md:56:### Deployment Considerations
-     examples/example_05_server/README.md:64:Conclude your learning journey
-      with `example_06_production` to explore full production deployment
+     docs/server.md:1:# Server and API Integration
+     docs/architecture.md:1:# Architecture
+     docs/endpoint.md:1:# Endpoint
      strategies.
-     examples/complete_rag_example.py:137:        "Docker is a
+     examples/rag/complete_rag_example.py:137:        "Docker is a
      containerization platform that packages applications and their
      dependencies into lightweight, portable containers. It was first
      released in 2013 and revolutionized application deployment.",
-     examples/complete_rag_example.py:141:        "Kubernetes is an
+     examples/rag/complete_rag_example.py:141:        "Kubernetes is an
      open-source container orchestration platform originally developed by
      Google. It automates deployment, scaling, and management of
      containerized applications across clusters.",
-     examples/complete_rag_example.py:147:        "TensorFlow is an
+     examples/rag/complete_rag_example.py:147:        "TensorFlow is an
      open-source machine learning framework developed by Google. It
      provides tools for building and deploying machine learning models at
      scale."
-     examples/complete_rag_example.py:156:        "What are the main
+     examples/rag/complete_rag_example.py:156:        "What are the main
      benefits of Docker?",
-     examples/complete_rag_example.py:222:        print("• Scale up
+     examples/rag/complete_rag_example.py:222:        print("• Scale up
      knowledge base for production use")
-     examples/glyph_compression_demo.py:20:from abstractcore.compression
+     examples/media/glyph_compression_demo.py:20:from abstractcore.compression
      import GlyphConfig, CompressionOrchestrator
-     examples/glyph_compression_demo.py:33:including improvements in model
+     examples/media/glyph_compression_demo.py:33:including improvements in model
      efficiency, training methodologies, and deployment strategies.
-     examples/glyph_compression_demo.py:84:### Deployment and Optimization
-     examples/glyph_compression_demo.py:86:Practical deployment
+     examples/media/glyph_compression_demo.py:84:### Deployment and Optimization
+     examples/media/glyph_compression_demo.py:86:Practical deployment
      considerations have become increasingly important:
-     examples/glyph_compression_demo.py:89:  distillation have enabled
+     examples/media/glyph_compression_demo.py:89:  distillation have enabled
      deployment of large models on resource-constrained devices.
-     examples/glyph_compression_demo.py:95:  have enabled serving of
+     examples/media/glyph_compression_demo.py:95:  have enabled serving of
      extremely large models at scale.
-     examples/glyph_compression_demo.py:104:The scaled dot-product
+     examples/media/glyph_compression_demo.py:104:The scaled dot-product
      attention mechanism computes attention weights as:
-     examples/glyph_compression_demo.py:146:- **Edge Computing**:
+     examples/media/glyph_compression_demo.py:146:- **Edge Computing**:
      Deployment on mobile and IoT devices
-     examples/glyph_compression_demo.py:211:        # Initialize
+     examples/media/glyph_compression_demo.py:211:        # Initialize
      compression orchestrator
-     examples/glyph_compression_demo.py:212:        orchestrator =
+     examples/media/glyph_compression_demo.py:212:        orchestrator =
      CompressionOrchestrator()
-     examples/glyph_compression_demo.py:215:        recommendation =
+     examples/media/glyph_compression_demo.py:215:        recommendation =
      orchestrator.get_compression_recommendation(
      examples/README.md:49:6. **Production Deployment**
-     (`example_06_production`)
+     (`examples/learning_path/06_production_patterns.py`)
      examples/README.md:62:  - Docker
-     examples/embeddings_demo.py:76:            "Docker containers provide
+     examples/embeddings/embeddings_demo.py:76:            "Docker containers provide
      lightweight, portable environments for application deployment.",
-     examples/embeddings_demo.py:77:            "Kubernetes orchestrates
+     examples/embeddings/embeddings_demo.py:77:            "Kubernetes orchestrates
      containerized applications across distributed computing clusters.",
-     examples/embeddings_demo.py:85:            "container deployment
+     examples/embeddings/embeddings_demo.py:85:            "container deployment
      tools",
-     examples/progressive/example_6_production_patterns.py:460:    #
+     examples/learning_path/06_production_patterns.py:460:    #
      Strategy 1: Model Routing
-     examples/progressive/example_6_production_patterns.py:461:
+     examples/learning_path/06_production_patterns.py:461:
      print("\n1️⃣ Intelligent Model Routing:")
-     examples/progressive/example_6_production_patterns.py:776:
+     examples/learning_path/06_production_patterns.py:776:
      "Queue depth",
-     examples/progressive/example_5_server_agentic_cli.py:10:-
+     examples/learning_path/05_server_agentic_cli.py:10:-
      Multi-provider server deployment
-     examples/progressive/example_5_server_agentic_cli.py:125:    # Docker
+     examples/learning_path/05_server_agentic_cli.py:125:    # Docker
      deployment
-     examples/progressive/example_5_server_agentic_cli.py:126:
+     examples/learning_path/05_server_agentic_cli.py:126:
      print("\n4️⃣ Docker Deployment:")
-     examples/progressive/example_5_server_agentic_cli.py:127:    print("
+     examples/learning_path/05_server_agentic_cli.py:127:    print("
       ```dockerfile")
-     examples/progressive/example_5_server_agentic_cli.py:344:def
+     examples/learning_path/05_server_agentic_cli.py:344:def
      multi_provider_deployment():
-     examples/progressive/example_5_server_agentic_cli.py:346:
+     examples/learning_path/05_server_agentic_cli.py:346:
      Demonstrates multi-provider deployment patterns.
-     examples/progressive/example_5_server_agentic_cli.py:349:    - Load
+     examples/learning_path/05_server_agentic_cli.py:349:    - Load
      balancing across providers
-     examples/progressive/example_5_server_agentic_cli.py:354:
+     examples/learning_path/05_server_agentic_cli.py:354:
      print("Multi-Provider Deployment Patterns")
-     examples/progressive/example_5_server_agentic_cli.py:357:
+     examples/learning_path/05_server_agentic_cli.py:357:
      print("\n🌐 Deployment Architecture:")
-     examples/progressive/example_5_server_agentic_cli.py:360:
+     examples/learning_path/05_server_agentic_cli.py:360:
             │   Load Balancer     │
-     examples/progressive/example_5_server_agentic_cli.py:398:    print("
+     examples/learning_path/05_server_agentic_cli.py:398:    print("
       routing:")
-     examples/progressive/example_5_server_agentic_cli.py:403:    # Load
+     examples/learning_path/05_server_agentic_cli.py:403:    # Load
      balancing strategies
-     examples/progressive/example_5_server_agentic_cli.py:404:
+     examples/learning_path/05_server_agentic_cli.py:404:
      print("\n⚖️ Load Balancing Strategies:")
-     examples/progressive/example_5_server_agentic_cli.py:480:def
+     examples/learning_path/05_server_agentic_cli.py:480:def
      production_deployment_checklist():
-     examples/progressive/example_5_server_agentic_cli.py:482:    Provides
+     examples/learning_path/05_server_agentic_cli.py:482:    Provides
      a production deployment checklist.
-     examples/progressive/example_5_server_agentic_cli.py:490:
+     examples/learning_path/05_server_agentic_cli.py:490:
      print("Production Deployment Checklist")
-     examples/progressive/example_5_server_agentic_cli.py:524:
+     examples/learning_path/05_server_agentic_cli.py:524:
      "Horizontal scaling with load balancer",
-     examples/progressive/example_5_server_agentic_cli.py:534:    #
+     examples/learning_path/05_server_agentic_cli.py:534:    #
      Deployment
-     examples/progressive/example_5_server_agentic_cli.py:535:
+     examples/learning_path/05_server_agentic_cli.py:535:
      print("\n🚀 Deployment:")
-     examples/progressive/example_5_server_agentic_cli.py:536:
+     examples/learning_path/05_server_agentic_cli.py:536:
      deployment = [
-     examples/progressive/example_5_server_agentic_cli.py:537:
+     examples/learning_path/05_server_agentic_cli.py:537:
      "Docker containerization",
-     examples/progressive/example_5_server_agentic_cli.py:538:
+     examples/learning_path/05_server_agentic_cli.py:538:
      "Kubernetes orchestration",
-     examples/progressive/example_5_server_agentic_cli.py:540:
+     examples/learning_path/05_server_agentic_cli.py:540:
      "Blue-green deployment",
-     examples/progressive/example_5_server_agentic_cli.py:544:    for item
+     examples/learning_path/05_server_agentic_cli.py:544:    for item
      in deployment:
-     examples/progressive/example_5_server_agentic_cli.py:651:
+     examples/learning_path/05_server_agentic_cli.py:651:
      multi_provider_deployment()
-     examples/progressive/example_5_server_agentic_cli.py:653:
+     examples/learning_path/05_server_agentic_cli.py:653:
      production_deployment_checklist()
-     examples/progressive/example_5_server_agentic_cli.py:662:    print("•
+     examples/learning_path/05_server_agentic_cli.py:662:    print("•
      Production-ready deployment patterns")
-     examples/simple_embeddings_examples.py:85:        "Docker provides
+     examples/embeddings/simple_embeddings_examples.py:85:        "Docker provides
      containerization technology for packaging applications and
      dependencies.",
-     examples/simple_embeddings_examples.py:87:        "Kubernetes
+     examples/embeddings/simple_embeddings_examples.py:87:        "Kubernetes
      orchestrates containerized applications across distributed computing
      clusters.",
-     examples/simple_embeddings_examples.py:176:        "Docker was first
+     examples/embeddings/simple_embeddings_examples.py:176:        "Docker was first
      released in 2013 and revolutionized application deployment through
      containers.",
-     examples/simple_embeddings_examples.py:177:        "Kubernetes was
+     examples/embeddings/simple_embeddings_examples.py:177:        "Kubernetes was
      originally developed by Google and released in 2014 for container
      orchestration."
-     examples/example_06_production/README.md:1:# AbstractCore Core:
-     Production Deployment
-     examples/example_06_production/README.md:7:- 🔐 Create
-     enterprise-ready deployments
-     examples/example_06_production/README.md:22:- Enterprise deployment
-     strategies
-     examples/example_06_production/README.md:56:- Load balancing
+     examples/learning_path/06_production_patterns.py:1:Example 6: Production Patterns
 
 ⏺ Read(docs/architecture.md)
   ⎿  Read 855 lines

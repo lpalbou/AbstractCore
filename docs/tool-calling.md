@@ -45,7 +45,6 @@ response = llm.generate(
 )
 
 print(response.content)
-# Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.
 
 # By default (`execute_tools=False`), AbstractCore does not execute tools.
 # Instead, it returns structured tool calls (if the model chose to call tools).
@@ -179,7 +178,7 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 2. `skim_url(...)` → quickly decide what’s worth fetching
 3. `fetch_url(...)` → parse the selected URL(s); set `include_full_content=False` when you want a smaller output
 
-Tip: you can measure output footprint/latency locally with `python examples/skim_tools_benchmark.py --help`.
+Tip: you can measure output footprint/latency locally with `python examples/tools/skim_tools_benchmark.py --help`.
 
 ### Real-World Example
 
@@ -799,9 +798,9 @@ print(f"LLM result: {response.content}")
 
 See the [examples directory](../examples/) for comprehensive tool usage examples:
 
-- [Basic Tool Usage](../examples/tool_usage_basic.py)
-- [Advanced Tool Patterns](../examples/tool_usage_advanced.py)
-- [Tool Chaining Examples](../examples/progressive/example_3_tool_calling.py)
+- [Basic Tool Usage](../examples/tools/tool_usage_basic.py)
+- [Advanced Tool Patterns](../examples/tools/tool_usage_advanced.py)
+- [Tool Chaining Examples](../examples/learning_path/03_tool_calling.py)
 
 ## Related Documentation
 

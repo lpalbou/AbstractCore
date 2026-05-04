@@ -337,6 +337,13 @@ result = llm.generate(
 
 print(f&quot;{result.name} ({result.age}): {result.email}&quot;)
 </code></pre></div>
+<h3 id="tools-structured-output-2-pass-hybrid">Tools + Structured Output (2-pass hybrid)</h3>
+<p>If you pass both <code>tools=[...]</code> and <code>response_model=...</code> in the same <code>generate()</code> call, AbstractCore uses a 2-pass hybrid flow:
+1) a tool-capable call, then
+2) a structured-output call using the tool-context.</p>
+<p>Notes:
+- Streaming is not supported in this hybrid mode.
+- Tool execution is pass-through by default (<code>execute_tools=False</code>): your host/runtime should execute tool calls and feed results back as messages when building multi-step workflows.</p>
 <h3 id="using-enums">Using Enums</h3>
 <p>Enums provide type-safe categorical values:</p>
 <div class="code-block"><pre><code class="language-python">from enum import Enum
@@ -850,7 +857,7 @@ pytest -q
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

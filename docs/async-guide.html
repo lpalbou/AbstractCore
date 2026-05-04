@@ -582,7 +582,7 @@ results = await asyncio.gather(*[safe_task(p) for p in prompts])
 </code></pre></div>
 <h2 id="learning-resources">Learning Resources</h2>
 <ul>
-<li><strong>Educational Demo</strong>: <a href="../examples/async_cli_demo.py">examples/async_cli_demo.py</a> - 8 core async/await patterns</li>
+<li><strong>Educational Demo</strong>: <a href="../examples/cli/async_cli_demo.py">examples/cli/async_cli_demo.py</a> - 8 core async/await patterns</li>
 <li><strong>Test Suite</strong>: <code>tests/async/test_async_providers.py</code> - real implementation examples</li>
 <li><strong>Concurrency &amp; Throughput</strong>: <a href="concurrency.html">concurrency.md</a> - practical guidance for local inference</li>
 </ul>
@@ -598,7 +598,7 @@ results = await asyncio.gather(*[safe_task(p) for p in prompts])
 <div class="code-block"><pre><code class="language-bash">pip install abstractcore
 
 # Try the educational async demo
-python examples/async_cli_demo.py --provider ollama --model qwen3:4b
+python examples/cli/async_cli_demo.py --provider ollama --model qwen3:4b
 </code></pre></div>
 
             </div>
@@ -606,7 +606,7 @@ python examples/async_cli_demo.py --provider ollama --model qwen3:4b
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

@@ -5,6 +5,106 @@ All notable changes to AbstractCore will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [2.13.2] - 2026-05-03
+
+### Added
+- **Model registry refresh**: added capability entries and architecture detection for Gemma 4, Qwen3.6, Mistral Medium 3.5, Kimi K2.6, DeepSeek V4 Pro/Flash, NVIDIA Nemotron 3 Nano Omni, and IBM Granite 4.1 models.
+
+### Changed
+- **Package maturity metadata**: updated PyPI classifiers to `Development Status :: 5 - Production/Stable` and added Science/Research, Information Technology, and typed-package classifiers.
+- **Qwen3.6 thinking controls**: Qwen3.6 now uses the same `enable_thinking` request handling path as Qwen3 and Qwen3.5 in local/OpenAI-compatible providers.
+
+## [2.13.1] - 2026-05-03
+
+### Added
+- **Install extras for common deployment paths**: added `remote` as a lightweight hosted-SDK bundle (`openai` + `anthropic`) and explicit no-dependency extras for `openrouter`, `portkey`, and `openai-compatible` so installation commands are clearer and compose cleanly.
+- **Automated release workflow**: pushing a `vX.Y.Z` tag now validates the version/changelog, runs tests, builds docs, builds and checks distributions, publishes to PyPI via Trusted Publishing, and creates a GitHub Release with notes from `CHANGELOG.md`.
+- **GGUF streaming regression coverage**: added a focused unit test ensuring HuggingFace/GGUF streaming setup errors are returned as error responses with the original message.
+
+### Changed
+- **Version bumped to 2.13.1** for the install-quality and release-automation cleanup.
+- **Structured native test runtime**: simplified `tests/structured/test_comprehensive_native.py` so normal runs use a fast fake-native handler regression test, local provider inference is gated behind `ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1`, the three-level live matrix is opt-in with `ABSTRACTCORE_RUN_COMPREHENSIVE_NATIVE_STRUCTURED_TESTS=1`, and native structured skip output no longer prints huge local model inventories.
+- **Install guidance**: README and docs now emphasize the lightweight core install, `abstractcore[remote]` for hosted SDKs, composable extras, `all-apple` for Apple Silicon local stacks, and `all-gpu` for NVIDIA/vLLM stacks. The legacy `all-non-mlx` extra remains available but is no longer promoted as a primary install path.
+- **Product positioning**: README and comparison docs now present AbstractCore as an offline-capable, open-source-first provider layer that can run local, self-hosted, hosted, or hybrid deployments from the same `create_llm(...)` application code.
+- **Comparison guide**: refreshed `docs/comparison.md` with a clearer AbstractCore vs LiteLLM/LangChain/LangGraph/LlamaIndex distinction, including offline/self-hosted/remote deployment posture and AbstractFramework ecosystem positioning.
+- **Lint configuration**: updated Ruff settings to the current `[tool.ruff.lint]` / `[tool.ruff.lint.per-file-ignores]` layout.
+- **Formatting baseline**: removed the full-repo W293 blank-line-with-whitespace noise so focused lint checks can be more meaningful.
+- **System prompt alias compatibility**: provider `generate()`/`agenerate()` calls now accept `system=` as a warned alias for `system_prompt=`, prefer explicit `system_prompt=` when both are supplied, and remove the alias before provider-specific kwargs are dispatched.
+- **Structured output system alias**: direct `StructuredOutputHandler.generate_structured()` calls now apply the same warned `system=` alias handling.
+- **CI Python matrix**: GitHub CI now tests Python 3.9, 3.10, 3.11, 3.12, and 3.13; NumPy dependency markers allow NumPy 2.x on Python 3.13 while keeping the existing NumPy 1.x constraint on older supported Python versions.
+
+### Fixed
+- **Optional import hygiene**: provider/interface type-only media references now use `TYPE_CHECKING` so core/provider imports stay lightweight and do not pull optional media modules at runtime.
+- **HuggingFace/GGUF streaming errors**: streaming setup failures now preserve the original exception text in the returned error chunk instead of closing over an exception variable that Python clears after the `except` block.
+- **Glyph text renderer fallback**: PIL text-width fallback now uses the active font size when Pillow lacks `textbbox`/`textsize`.
+- **Server auth/provider credential routing**: `ABSTRACTCORE_SERVER_API_KEY` now acts as the server master key for all configured providers, `X-AbstractCore-Provider-API-Key` overrides only the requested upstream provider, and `Authorization` is forwarded as a provider key only when server auth is not configured. Body/query `api_key` fields remain disabled and secret-bearing headers/URLs are redacted.
+- **Server request hardening**: request-level `base_url` overrides now default to loopback or explicit allowlists, remote overrides cannot silently inherit server environment API keys, URL media fetches block non-public targets across redirects, and HTTP-request local media paths require an explicit safe root or unsafe opt-in.
+- **Server URL allowlists**: URL-based allowlist entries now parse and compare scheme, exact host, effective port, and path-segment prefixes to prevent host-confusion and path-prefix bypasses.
+- **CachedSession system alias safety**: prompt-cache key/KV modes now warn and strip per-call `system=` overrides in sync and async generation so cached session context cannot be silently desynced.
+- **LM Studio unload for reasoning REPL**: `LMStudioProvider.unload_model()` now uses LM Studio's native REST unload endpoint and resolves model keys/variants to loaded instance IDs so `examples/reasoning/qwen_thinking_repl.py` can free LM Studio models via `:unload` (automatic unload-on-switch remains HuggingFace-only).
+- **CI vs local provider test gating**: clarified and fixed the split between real implementation tests and GitHub CI. Most provider tests intentionally exercise real providers with real SDKs, API keys, local model servers, and model caches. GitHub CI does not have access to LLM provider credentials or local inference services, so credential/local-provider-dependent tests now skip in that environment instead of failing during provider construction, while still running normally in a configured local test environment.
+
+### Documentation
+- README badges now include GitHub Actions CI status and tested Python versions read from the CI matrix.
+- Clarified tool calling defaults (pass-through) and removed misleading “tools executed” wording from the quick start.
+- Documented `CachedSession` more consistently across core docs and `llms*.txt` (getting started, API map, sessions, structured output hybrid note).
+- Updated install examples across README, getting started, prerequisites, FAQ, troubleshooting, media docs, app docs, and contributing guidance.
+
+
+## [2.13.0] - 2026-05-02
+
+### Added
+- **Prompt caching sessions**: `CachedSession` selects the best prompt-cache strategy automatically (KV mode for MLX + HuggingFace transformers; otherwise stable `prompt_cache_key`).
+- **File “boxes” for large contexts**: `CachedSession.attach_files()` extracts text from attached files and appends one immutable transcript “box” per file (reused via KV/prefix caches).
+- **Prompt cache persistence + REPL demo**: providers expose `prompt_cache_save()` / `prompt_cache_load()` when supported (capability-gated); `examples/prompt_caching/prompt_cache_repl_demo.py` reports TTFT/TIFT + cache token counts.
+- **HuggingFace transformers KV reuse**: cross-call KV caching (`past_key_values` / `DynamicCache`) keyed by `prompt_cache_key`, including the local control plane (`prepare_modules`/`fork`/`update`) and `.safetensors` save/load.
+- **Memory blocs (persistent file ↔ bloc ↔ KV artifacts)**: `FileBlocStore` stores extracted text snapshots and optional per-(provider,model) KV artifacts; `generate_bloc_metadata_jsonld()` produces JSON-LD metadata using `abstractcore/assets/bloc-schema.jsonld`.
+- **Reasoning/thinking controls**: `GenerateResponse.reasoning` property, thinking/tag stripping in streaming, and expanded `thinking_support` / `reasoning_levels` coverage in model capability assets.
+- **Model registry expansion**: improved model/variant detection, new capability entries (incl. Gemma 4), and tooling to normalize vendor/model id variants.
+- **Telegram tooling**: expanded Telegram Bot API tools + tests, and improved tool transcript handling in the OpenAI provider.
+
+### Changed
+- **Capability-driven parameter filtering**: providers enforce `unsupported_parameters` and `token_param_name` from `model_capabilities.json` (reduces model-name heuristics).
+- **GGUF prompt caching**: stable-prefix control plane for supported chat formats (delta-only append/update to reduce prompt re-rendering for long sessions).
+- **Prompt-cache REPL observability**: clearer TTFT/TIFT + throughput reporting and attach timing breakdown (extract vs cache work).
+
+### Fixed
+- **Reasoning model token parameter mapping**: consistent `max_completion_tokens` vs `max_tokens` handling via `token_param_name`.
+- **MLX prompt cache persistence**: safetensors metadata is stringified to satisfy `mlx-lm`, and cache cloning handles newer cache layer variants.
+- **GGUF prompt cache persistence**: NumPy 2.x compatibility fixes for metadata encoding.
+
+### Documentation
+- Updated docs for prompt caching and memory blocs.
+
+## [2.12.0] - 2026-02-12
+
+### Added
+- **`--install` readiness check**: comprehensive check of all subsystems (default model, provider connectivity, embeddings model, vision fallback, STT/TTS models, ffmpeg, abstractvision, API keys). Reports ✅/⚠️/❌ for each area and offers to download/install missing models interactively. Use `--yes` (`-y`) to auto-accept all downloads for non-interactive environments (e.g. `abstractcore --install --yes`).
+- **Embeddings: 7 providers supported** (was 3). `EmbeddingManager` now accepts `openai`, `openrouter`, `portkey`, and `openai-compatible` in addition to the existing `huggingface`, `ollama`, and `lmstudio`. Added `OpenAIProvider.embed()` method; gateway providers (`OpenRouterProvider`, `PortkeyProvider`) already inherit `embed()` from `OpenAICompatibleProvider`. All server/cloud providers return embeddings in OpenAI-compatible format.
+- **Interactive config wizard (`--config`) — expanded to 7 steps**:
+  - Step 1: now asks for **base URL** when the selected provider is a local server (ollama, lmstudio, vllm, openai-compatible). Shows the env var name, current value if set, default URL, and prints the `export` command for shell persistence.
+  - Step 4 (NEW): **Audio strategy** — defaults to `auto` on Enter. Asks about `native_only` / `auto` / `speech_to_text` for audio attachment handling. Mentions `abstractvoice` dependency when needed.
+  - Step 5 (NEW): **Video strategy** — defaults to `auto` on Enter. Asks about `native_only` / `auto` / `frames_caption` for video attachment handling. Mentions `ffmpeg` dependency when needed.
+  - Step 6 (NEW): **Embeddings provider/model** — asks for embeddings configuration with examples across all 7 supported providers. Validates provider before saving.
+  - Step 7: Console logging verbosity (renumbered from step 4).
+
+### Changed
+- Interactive config wizard now covers all major configuration areas (model, base URL, vision, API keys, audio, video, embeddings, logging). Previously only covered model, vision, API keys, and logging.
+- **`--install` embeddings check**: now provider-aware — server-based providers (ollama, lmstudio, openai, openrouter, portkey, openai-compatible) check reachability or API key instead of trying to download via `sentence-transformers`. When `sentence-transformers` is missing, `--install` offers to `pip install "abstractcore[embeddings]"` and then download the model.
+
+### Fixed
+- **Audio strategy default changed from `native_only` to `auto`**: the `AudioConfig.strategy` default was `native_only`, which caused audio attachments to fail on text-only models unless the user explicitly configured it. Changed to `auto` (matching `VideoConfig.strategy` which was already `auto`). With `auto`, audio works seamlessly when `abstractvoice` is installed (STT fallback) and raises a clear error with install hints when it is not.
+- **Config-persisted API keys now injected into environment**: API keys saved via `abstractcore --set-api-key` (or `--config`) were stored in `~/.abstractcore/config/abstractcore.json` but providers only read from `os.environ` (e.g. `OPENAI_API_KEY`). Added `_apply_api_keys_to_env()` to bridge config-persisted keys into the environment at config load time. Environment variables always take precedence (config keys are injected only when the env var is absent).
+- **`--install` TTS/STT severity**: failed model downloads are now reported as `⚠️` (warning) instead of `❌` (critical) since TTS/STT are optional subsystems.
+- **`--install` TTS/STT verification**: download results are now verified by re-checking the filesystem instead of trusting the subprocess exit code (some prefetch commands exit 0 even on failure).
+
+## [2.11.9] - 2026-02-09
+
+### Changed
+- Documentation and internal improvements.
+
 ## [2.11.8] - 2026-02-08
 
 ### Added
@@ -53,7 +153,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.11.2] - 2026-02-04
 
 ### Added
-- **Skim tool benchmarks**: added `examples/skim_tools_benchmark.py` to measure output footprint and latency for `skim_websearch`/`web_search` and `skim_url`/`fetch_url`.
+- **Skim tool benchmarks**: added `examples/tools/skim_tools_benchmark.py` to measure output footprint and latency for `skim_websearch`/`web_search` and `skim_url`/`fetch_url`.
 - **Import-safety test**: added a test to ensure `import abstractcore` does not eagerly import optional deps (`requests`, `bs4`, `sentence_transformers`, `pymupdf*`, ...).
 
 ### Changed
@@ -87,7 +187,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.11.0] - 2026-01-28
 
 ### Added
-- **MLX throughput benchmarking**: `examples/mlx_concurrency_benchmark.py` to sweep concurrency with continuous batching (`mlx-lm`) and generate summary CSVs + PNG plots.
+- **MLX throughput benchmarking**: `examples/performance/mlx_concurrency_benchmark.py` to sweep concurrency with continuous batching (`mlx-lm`) and generate summary CSVs + PNG plots.
 
 ### Changed
 - **MLX install extras**: refreshed/clarified `mlx` + `mlx-bench` optional dependencies for Apple Silicon throughput benchmarking.
@@ -552,7 +652,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 ### Enhanced
 - **Async Documentation**:
   - Updated README.md with performance data and provider-specific details
-  - Educational [async CLI demo](examples/async_cli_demo.py) with 8 core async/await patterns
+  - Educational [async CLI demo](examples/cli/async_cli_demo.py) with 8 core async/await patterns
   - Created comprehensive async guide in docs/async-guide.md
   - Backlog documents: `async-mlx-hf.md` (investigation), `batching.md` (future enhancement)
 
@@ -579,7 +679,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 ### Documentation
 - [Async/Await Support](README.md#async) - Updated usage examples
 - [Async Guide](docs/async-guide.md) - Comprehensive examples and patterns
-- [Async CLI Demo](examples/async_cli_demo.py) - Educational reference for learning
+- [Async CLI Demo](examples/cli/async_cli_demo.py) - Educational reference for learning
 
 ## [2.5.4] - 2025-11-27
 

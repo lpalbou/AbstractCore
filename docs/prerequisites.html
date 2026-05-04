@@ -53,11 +53,16 @@
 <p><strong>Want a gateway/proxy?</strong> → <a href="#gateway-provider-setup-openrouter-portkey">Gateway Provider Setup</a> (OpenRouter/Portkey routing + governance)</p>
 <p><strong>Using a custom OpenAI-compatible <code>/v1</code> endpoint?</strong> → <a href="#openai-compatible-setup">OpenAI-Compatible Setup</a></p>
 <h2 id="core-installation">Core Installation</h2>
-<p>Install AbstractCore, then add the extras you need:</p>
-<div class="code-block"><pre><code class="language-bash"># Core (small default)
+<p>Install AbstractCore, then add the extras you need. Extras compose, so a real
+application can use one command such as <code>pip install "abstractcore[remote,server,tools]"</code>.</p>
+<div class="code-block"><pre><code class="language-bash"># Core: local HTTP servers and gateways that need no SDK
+# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
 pip install abstractcore
 
-# Providers (only if you use them)
+# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
+pip install &quot;abstractcore[remote]&quot;
+
+# Individual provider SDKs / local runtimes
 pip install &quot;abstractcore[openai]&quot;       # OpenAI SDK
 pip install &quot;abstractcore[anthropic]&quot;    # Anthropic SDK
 pip install &quot;abstractcore[huggingface]&quot;  # Transformers / torch (heavy)
@@ -72,17 +77,17 @@ pip install &quot;abstractcore[tokens]&quot;      # precise token counting (tikt
 pip install &quot;abstractcore[server]&quot;      # OpenAI-compatible HTTP gateway
 pip install &quot;abstractcore[compression]&quot; # Glyph visual-text compression (Pillow renderer)
 
-# Turnkey &quot;everything&quot; installs (pick one)
-pip install &quot;abstractcore[all-apple]&quot;    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install &quot;abstractcore[all-non-mlx]&quot;  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install &quot;abstractcore[all-gpu]&quot;      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+# Turnkey local-runtime installs
+pip install &quot;abstractcore[all-apple]&quot;    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
+pip install &quot;abstractcore[all-gpu]&quot;      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
 </code></pre></div>
 <p><strong>Hardware Notes:</strong>
 - <code>[mlx]</code> - Only works on Apple Silicon (M1/M2/M3/M4)
 - <code>[vllm]</code> - Only works with NVIDIA CUDA GPUs
-- <code>[all-apple]</code> - Best for Apple Silicon (includes MLX, excludes vLLM)
-- <code>[all-non-mlx]</code> - Best for Linux/Windows/Intel Mac (excludes MLX and vLLM)
-- <code>[all-gpu]</code> - Best for Linux NVIDIA GPU (includes vLLM, excludes MLX)</p>
+- <code>[remote]</code> - Lightweight hosted SDK bundle for OpenAI + Anthropic; OpenRouter, Portkey, Ollama, LM Studio, and generic <code>/v1</code> endpoints need no extra dependency.
+- <code>[all-apple]</code> - Best for Apple Silicon local development (includes MLX, excludes vLLM)
+- <code>[all-gpu]</code> - Best for NVIDIA GPU local development (includes vLLM, excludes MLX)
+- For CPU-only or Intel machines, compose only what you need, for example <code>abstractcore[remote,huggingface,tools]</code>.</p>
 <h2 id="cloud-provider-setup">Cloud Provider Setup</h2>
 <h3 id="openai-setup">OpenAI Setup</h3>
 <p><strong>Best for</strong>: Production applications and OpenAI’s hosted models</p>
@@ -146,6 +151,7 @@ print(response.content)
 <h3 id="gateway-provider-setup-openrouter-portkey">Gateway Provider Setup (OpenRouter, Portkey)</h3>
 <p><strong>Best for</strong>: routing, observability/governance, and unified billing across multiple backends.</p>
 <p>Gateways expose an OpenAI-compatible <code>/v1</code> endpoint and forward your payload to the routed backend model. Because some backends are strict (for example OpenAI reasoning families like gpt-5/o1 reject unsupported parameters), AbstractCore’s gateway providers forward optional generation parameters (like <code>temperature</code>, <code>top_p</code>, <code>max_output_tokens</code>) <strong>only when explicitly set</strong>.</p>
+<p>No provider SDK extra is required for OpenRouter or Portkey; the core install uses AbstractCore's internal HTTP/OpenAI-compatible client.</p>
 <h4 id="openrouter-setup">OpenRouter Setup</h4>
 <ol>
 <li>Create an API key: https://openrouter.ai/keys</li>
@@ -231,19 +237,25 @@ print(response.content)
 pip install &quot;abstractcore[mlx]&quot;
 </code></pre></div>
 <h4 id="2-download-models">2. Download Models</h4>
-<p>MLX models are automatically downloaded when first used. Popular options:</p>
+<p>AbstractCore is offline-first for local model weights. The MLX provider loads
+models from an explicit local path, the Hugging Face cache, or the LM Studio
+cache; it does not silently download weights during <code>create_llm(...)</code>.</p>
+<p>Download or prefetch a model first, for example:</p>
+<div class="code-block"><pre><code class="language-bash">huggingface-cli download mlx-community/Qwen3-4B
+</code></pre></div>
+<p>Then use the model ID, or pass a local model directory path:</p>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-# Models are auto-downloaded on first use
-llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen2.5-Coder-7B-Instruct-4bit&quot;)  # 4.2GB
+# Uses a cached Hugging Face snapshot or a local directory path.
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3-4B&quot;)
 # OR
-llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Llama-3.2-3B-Instruct-4bit&quot;)      # 1.8GB
+llm = create_llm(&quot;mlx&quot;, model=&quot;/path/to/local/mlx-model&quot;)
 </code></pre></div>
 <h4 id="3-test-setup_2">3. Test Setup</h4>
 <div class="code-block"><pre><code class="language-python">from abstractcore import create_llm
 
-# Test with a good balance model
-llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Llama-3.2-3B-Instruct-4bit&quot;)
+# Test with a model you already downloaded/prefetched
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3-4B&quot;)
 response = llm.generate(&quot;Explain machine learning briefly&quot;)
 print(response.content)
 </code></pre></div>
@@ -659,7 +671,7 @@ if __name__ == &quot;__main__&quot;:
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

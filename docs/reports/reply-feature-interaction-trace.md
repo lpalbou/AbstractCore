@@ -358,7 +358,7 @@ summarize_traces(traces) -> Dict[str, Any]
 ## Documentation
 
 - **Complete Guide**: `docs/interaction-tracing.md` (400+ lines)
-- **Example Script**: `examples/interaction_tracing_demo.py`
+- **Example Script**: `examples/observability/interaction_tracing_demo.py`
 - **Tests**: `tests/tracing/test_interaction_tracing.py` (23 test cases, all passing)
 
 ---
@@ -404,7 +404,7 @@ We deliberately **simplified** your original proposal to make it more practical:
 If you have any questions or need help integrating this:
 
 1. Check the docs: `docs/interaction-tracing.md`
-2. Run the demo: `python examples/interaction_tracing_demo.py`
+2. Run the demo: `python examples/observability/interaction_tracing_demo.py`
 3. Open an issue: [AbstractCore GitHub Issues](https://github.com/anthropics/abstractcore/issues)
 
 ---

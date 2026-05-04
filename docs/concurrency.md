@@ -19,7 +19,7 @@ If your goal is **measuring throughput vs concurrency on a single MLX model**, u
 
 ## MLX concurrency benchmark (recommended)
 
-Use `examples/mlx_concurrency_benchmark.py` to run *many distinct prompts* through a single MLX model and produce:
+Use `examples/performance/mlx_concurrency_benchmark.py` to run *many distinct prompts* through a single MLX model and produce:
 - realtime progress logs
 - a summary CSV (TOTAL tok/s)
 - a per-query CSV (per-query tok/s distribution)
@@ -34,7 +34,7 @@ python -m pip install -e ".[mlx,mlx-bench]"
 ### Run a sweep (custom concurrency levels)
 
 ```bash
-python examples/mlx_concurrency_benchmark.py \
+python examples/performance/mlx_concurrency_benchmark.py \
   --model lmstudio-community/Qwen3-4B-Instruct-2507-MLX-4bit \
   --queries 50 \
   --concurrency-levels 1 2 4 8 16 32 \
@@ -47,9 +47,9 @@ python examples/mlx_concurrency_benchmark.py \
 To compare *across runs and across models*, use a fixed prompt set file and keep it constant:
 
 ```bash
-python examples/mlx_concurrency_benchmark.py \
+python examples/performance/mlx_concurrency_benchmark.py \
   --model lmstudio-community/Qwen3-4B-Instruct-2507-MLX-4bit \
-  --prompts-file examples/assets/mlx_benchmark_prompts_128.json \
+  --prompts-file examples/performance/assets/mlx_benchmark_prompts_128.json \
   --queries 128 \
   --concurrency-levels 1 2 4 8 16 32 64 128 \
   --max-output-tokens 512 \
@@ -76,7 +76,7 @@ These runs were executed on a **MacBook Pro (M4 Max, 128GB)** with:
 - `--queries 128`
 - `--max-output-tokens 512` (so `total_out = 128 * 512 = 65536` output tokens per sweep point)
 - `--concurrency-levels 1 2 4 8 16 32 64 128`
-- prompt set: `examples/assets/mlx_benchmark_prompts_128.json`
+- prompt set: `examples/performance/assets/mlx_benchmark_prompts_128.json`
 
 Key takeaways:
 - **Throughput scales with concurrency** (continuous batching keeps the device busy).
@@ -157,5 +157,7 @@ conc | throughput(tok/s) | avg_ttft(s) | avg_decode(tok/s) | avg_query(tok/s)
 The benchmark script does **not** use prompt caching; it intentionally treats each query as an independent request.
 
 `MLXProvider` does support best-effort in-process prompt caching via `prompt_cache_key` (KV/prefix caches). This is mainly useful when *many calls share a long prefix* (system prompt, tool schema, long chat history). It is not “free”: KV caches consume memory, and reusing the same cache key across unrelated requests can contaminate context.
+
+The `abstractcore-chat` CLI can also persist MLX KV caches to disk via `/cache save|load` for fast multi-turn workflows on large contexts.
 
 For deeper research notes, see `docs/research/concurrency/`.

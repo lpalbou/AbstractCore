@@ -26,7 +26,7 @@ print(resp.content)
 ```
 
 Support depends on the selected provider/model and is normalized via:
-- `abstractcore/assets/model_capabilities.json`
+- `abstractcore/assets/model_capabilities.json` (source of truth; update when new vision-capable models ship)
 
 Video attachments use the same `media=[...]` surface and are controlled by `video_policy` (see `abstractcore/providers/base.py`):
 

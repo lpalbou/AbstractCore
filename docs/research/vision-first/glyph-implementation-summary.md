@@ -145,7 +145,7 @@ print(f"Token savings: {response.metadata.get('token_savings')}")
 - ✅ **Performance Tuning**: Optimization strategies for different use cases
 
 ### Practical Examples
-- ✅ **Basic Usage Demo**: Simple compression examples (`examples/glyph_compression_demo.py`)
+- ✅ **Basic Usage Demo**: Simple compression examples (`examples/media/glyph_compression_demo.py`)
 - ✅ **Advanced Configuration**: Custom settings and provider optimization
 - ✅ **Production Patterns**: Enterprise deployment and monitoring
 - ✅ **Error Handling**: Robust error handling and recovery strategies
@@ -207,4 +207,3 @@ This implementation positions AbstractCore as the **premier provider-agnostic LL
 ---
 
 **Next Steps**: User testing, feedback collection, and iterative improvements based on real-world usage patterns.
-

@@ -21,10 +21,12 @@ relationships = [item for item in result['@graph'] if item.get('@id', '').starts
 ## Installation & Setup
 
 ```bash
-# Install AbstractCore (pick one full install)
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+# Install AbstractCore. The default Ollama path works with the core install.
+pip install abstractcore
+
+# Optional turnkey local-runtime installs:
+pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
+pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
 
 # Default model requires Ollama (free, runs locally)
 # 1. Install Ollama: https://ollama.com/
@@ -32,7 +34,7 @@ pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excl
 # 3. Start Ollama service
 
 # Alternative: Use cloud providers
-pip install "abstractcore[openai,anthropic]"
+pip install "abstractcore[remote]"
 ```
 
 ### Model Performance Recommendations

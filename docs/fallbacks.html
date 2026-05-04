@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fallbacks - AbstractCore</title>
+    <meta name="description" content="This document describes best-effort fallbacks AbstractCore uses when a provider/runtime does not expose (or does not reliably honor) a model’s native control…">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Fallbacks</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">This document describes best-effort fallbacks AbstractCore uses when a provider/runtime does not expose (or does not reliably honor) a model’s native control surface.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#qwen3-qwen35-thinking-reasoning-toggle" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Qwen3 / Qwen3.5: thinking (“reasoning”) toggle</a></div>
+
+            <div class="doc-content">
+
+<p>The goal of a fallback is:</p>
+<ul>
+<li>Keep the public API stable (e.g. <code>thinking="none|low|medium|high"</code>)</li>
+<li>Prefer backend-native knobs when they exist</li>
+<li>Avoid “system prompt injection” where possible</li>
+<li>Be explicit about trade-offs and when behavior is only best-effort</li>
+</ul>
+<h2 id="qwen3-qwen35-thinking-reasoning-toggle">Qwen3 / Qwen3.5: thinking (“reasoning”) toggle</h2>
+<h3 id="what-upstream-qwen-recommends">What upstream Qwen recommends</h3>
+<p>Qwen3’s official docs describe <strong>two</strong> ways to switch between thinking and non-thinking modes:</p>
+<p>1) <strong>Stateless hard switch (recommended for reliability)</strong><br />
+   Append a final <strong>assistant</strong> message containing only:</p>
+<p>```text
+   <think></p>
+<p></think></p>
+<p>```</p>
+<p>This is <strong>stateless</strong> (applies to a single turn) and “strictly prevents” the model from generating thinking content.</p>
+<p>2) <strong>Stateful soft switch</strong><br />
+   Add <code>/no_think</code> or <code>/think</code> to a user (or system) message. The model follows the most recent instruction across turns.</p>
+<p>Reference: Qwen docs “Thinking &amp; Non-Thinking Mode”.<br />
+<code>https://qwen.readthedocs.io/en/stable/inference/transformers.html#thinking-non-thinking-mode</code></p>
+<h3 id="abstractcore-strategy">AbstractCore strategy</h3>
+<p>AbstractCore implements a layered approach for <code>thinking=...</code> on Qwen3/Qwen3.5:</p>
+<p>1) <strong>Backend-native knob (preferred)</strong><br />
+   When the serving stack supports template kwargs, we send:</p>
+<ul>
+<li><code>chat_template_kwargs.enable_thinking = true|false</code></li>
+<li>and a compatibility alias <code>enableThinking = true|false</code></li>
+</ul>
+<p>This is the “clean” approach because it aligns with Qwen’s chat templates and avoids injecting control tokens into the conversation.</p>
+<p>2) <strong>Robust fallback for <code>thinking="off"/"none"</code> (LM Studio + llama.cpp/GGUF)</strong><br />
+   Some local runtimes either:
+   - do not expose template kwargs via API (e.g. <code>llama-cpp-python</code> today), or
+   - may ignore <code>chat_template_kwargs</code> for some model formats (observed in some LM Studio builds)</p>
+<p>In those cases, AbstractCore uses Qwen’s <strong>stateless hard switch</strong> by appending a final assistant “prefill” message containing the empty think block:</p>
+<ul>
+<li>Implemented in <code>abstractcore/providers/base.py</code> (Qwen hard-switch marker injection).</li>
+<li>Used for Qwen3/Qwen3.5 on:<ul>
+<li><code>LMStudioProvider</code></li>
+<li><code>HuggingFaceProvider</code> when <code>model_type=="gguf"</code> (llama-cpp-python)</li>
+</ul>
+</li>
+</ul>
+<p>Note: this fallback adds an extra assistant turn <strong>in the outbound request only</strong>. Callers should not persist that marker message as part of the canonical chat history.</p>
+<p>3) <strong>Why we do not rely on <code>/no_think</code> as the primary switch</strong></p>
+<p><code>/no_think</code> is a “soft” instruction and can be unreliable when:</p>
+<ul>
+<li>The instruction is not placed in a position the model “sees” as authoritative</li>
+<li>The serving stack rewrites prompts or inserts additional wrapper text</li>
+<li>The runtime ignores or alters the chat template behavior</li>
+</ul>
+<p>The assistant-prefill hard switch is stateless and robust, and matches Qwen’s own documented method.</p>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

@@ -260,15 +260,16 @@ ModuleNotFoundError: No module named 'openai'
 <div class="code-block"><pre><code class="language-bash"># Install AbstractCore
 pip install abstractcore
 
-# Install with specific provider
+# Install hosted SDKs or a specific provider
+pip install &quot;abstractcore[remote]&quot;
 pip install &quot;abstractcore[openai]&quot;
 pip install &quot;abstractcore[anthropic]&quot;
-# Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, ...) work with the core install.
+# Local OpenAI-compatible servers and gateways (Ollama, LMStudio, OpenRouter,
+# Portkey, llama.cpp, ...) work with the core install.
 
-# Install the full feature set (pick one)
-pip install &quot;abstractcore[all-apple]&quot;    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install &quot;abstractcore[all-non-mlx]&quot;  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install &quot;abstractcore[all-gpu]&quot;      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+# Turnkey local-runtime installs
+pip install &quot;abstractcore[all-apple]&quot;    # Apple Silicon: HF/GGUF + MLX + features + server
+pip install &quot;abstractcore[all-gpu]&quot;      # NVIDIA GPU: HF/GGUF + vLLM + features + server
 
 # Verify installation
 pip list | grep abstract
@@ -286,9 +287,9 @@ source .venv/bin/activate  # Linux/Mac
 
 # Fresh install
 pip install --upgrade pip
-pip install &quot;abstractcore[all-apple]&quot;    # macOS/Apple Silicon
-# or: pip install &quot;abstractcore[all-non-mlx]&quot;  # Linux/Windows/Intel Mac
-# or: pip install &quot;abstractcore[all-gpu]&quot;      # Linux NVIDIA GPU
+pip install &quot;abstractcore[remote,tools,media]&quot;  # API-first app
+# or: pip install &quot;abstractcore[all-apple]&quot;     # Apple Silicon local stack
+# or: pip install &quot;abstractcore[all-gpu]&quot;       # NVIDIA GPU local stack
 
 # If still failing, try one provider at a time
 pip install &quot;abstractcore[openai]&quot;
@@ -877,7 +878,7 @@ cat debug_report.txt
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

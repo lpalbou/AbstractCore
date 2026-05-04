@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Memory Blocs (File → Bloc → KV Artifacts) - AbstractCore</title>
+    <meta name="description" content="AbstractCore can store memory blocs: content-addressed snapshots of extracted file text, plus optional derived artifacts.">
+    <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="../assets/css/main.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet">
+
+    <!-- Navbar Component -->
+    <script src="../assets/js/navbar-component.js"></script>
+</head>
+<body>
+    <!-- Navigation -->
+    <div class="navbar-placeholder"></div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            createNavbar({
+                basePath: '',
+                menuItems: [{'text': 'Features', 'href': '/docs/capabilities.html'}, {'text': 'Quick Start', 'href': '/docs/getting-started.html'}, {'text': 'Documentation', 'href': '/#docs'}, {'text': 'Examples', 'href': '/docs/examples.html'}, {'text': 'GitHub', 'href': 'https://github.com/lpalbou/abstractcore', 'target': '_blank', 'icon': 'github'}, {'text': 'PyPI', 'href': 'https://pypi.org/project/abstractcore/', 'target': '_blank', 'icon': 'pypi'}]
+            });
+        });
+    </script>
+
+    <!-- Main Content -->
+    <main style="padding-top: 5rem;">
+        <div class="container" style="max-width: 1100px;">
+            <div class="doc-header" style="margin-bottom: 3rem;">
+                <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Memory Blocs (File → Bloc → KV Artifacts)</h1>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore can store memory blocs: content-addressed snapshots of extracted file text, plus optional derived artifacts.</p>
+            </div>
+
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#what-is-a-bloc" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What is a “bloc”?</a>
+<a href="#on-disk-layout" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">On-disk layout</a>
+<a href="#minimal-usage-library" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Minimal usage (library)</a></div>
+
+            <div class="doc-content">
+
+<p>This is useful for apps that want:
+- durable, incremental “cached file text” across runs,
+- per-model prompt-cache/KV artifacts compiled from that text (so you don’t re-prefill the same file repeatedly),
+- stable selectors (<code>bloc_id</code>) for REPL/CLI workflows.</p>
+<h2 id="what-is-a-bloc">What is a “bloc”?</h2>
+<p>A <strong>bloc</strong> is an atomic extracted-text snapshot stored on disk. It is identified by a SHA256 of the <em>source file bytes</em> (or another stable content hash chosen by the app).</p>
+<p>The store persists:
+- <code>content.txt</code> — extracted text
+- <code>meta.json</code> — record metadata (path, size, timestamps, token estimate, etc.)
+- <code>meta.jsonld</code> (optional) — compact JSON-LD metadata for catalogs/search
+- <code>kv/…</code> (optional) — per-(provider, model) prompt-cache artifacts (derived)</p>
+<h2 id="on-disk-layout">On-disk layout</h2>
+<p>Default root:
+- <code>~/.abstractcore/blocs/</code></p>
+<p>Per-bloc directory:
+- <code>~/.abstractcore/blocs/files/&lt;sha256&gt;/</code>
+  - <code>content.txt</code>
+  - <code>meta.json</code>
+  - <code>meta.jsonld</code> (optional)
+  - <code>kv/&lt;provider+model-slug&gt;.safetensors</code> (optional)</p>
+<p><code>FileBlocStore.kv_cache_path(...)</code> defines the exact naming convention for KV artifact files.</p>
+<h2 id="minimal-usage-library">Minimal usage (library)</h2>
+<p><code>FileBlocStore</code> does not extract files by itself; it expects extracted content + file metadata from the caller.</p>
+<p>Typical flow:
+1. extract a file to text (e.g. via <code>extract_file_box()</code> or your own pipeline)
+2. write/update the bloc record + <code>content.txt</code> via <code>FileBlocStore.upsert(...)</code>
+3. (optional) compile a per-model KV artifact with your provider and save it under <code>kv/</code>
+4. (optional) generate JSON-LD metadata with <code>generate_bloc_metadata_jsonld(...)</code></p>
+<p>See:
+- <code>abstractcore/core/file_blocs.py</code> for the store and record schema
+- <code>abstractcore/core/bloc_metadata.py</code> for JSON-LD schema + metadata generator/parser</p>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- Scripts -->
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+    <script src="../assets/js/main.js"></script>
+</body>
+</html>

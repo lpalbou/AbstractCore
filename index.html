@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AbstractCore - Unified LLM Provider Interface</title>
-    <meta name="description" content="Open-source first LLM infrastructure for Python: run local models end-to-end or switch to cloud providers with identical code. Write once, run everywhere.">
+    <meta name="description" content="Open-source first LLM infrastructure for Python: run local models end-to-end or switch to cloud providers with identical code, prompt caching, secure auth, and an OpenAI-compatible gateway.">
     <meta name="keywords" content="LLM, AI, Python, Open Source LLM, Local LLM, OpenAI, Anthropic, Ollama, LMStudio, MLX, vLLM, HuggingFace, Machine Learning, API">
     <meta name="author" content="AbstractCore Team">
     
@@ -12,14 +12,14 @@
     <meta property="og:type" content="website">
     <meta property="og:url" content="https://www.abstractcore.ai/">
     <meta property="og:title" content="AbstractCore - Unified LLM Provider Interface">
-    <meta property="og:description" content="Open-source first LLM infrastructure for Python: run local models end-to-end or switch to cloud providers with identical code. Write once, run everywhere.">
+    <meta property="og:description" content="Open-source first LLM infrastructure for Python: run local models end-to-end or switch to cloud providers with identical code, prompt caching, secure auth, and an OpenAI-compatible gateway.">
     <meta property="og:image" content="https://www.abstractcore.ai/assets/logo.svg">
 
     <!-- Twitter -->
     <meta property="twitter:card" content="summary_large_image">
     <meta property="twitter:url" content="https://www.abstractcore.ai/">
     <meta property="twitter:title" content="AbstractCore - Unified LLM Provider Interface">
-    <meta property="twitter:description" content="Open-source first LLM infrastructure for Python: run local models end-to-end or switch to cloud providers with identical code. Write once, run everywhere.">
+    <meta property="twitter:description" content="Open-source first LLM infrastructure for Python: run local models end-to-end or switch to cloud providers with identical code, prompt caching, secure auth, and an OpenAI-compatible gateway.">
     <meta property="twitter:image" content="https://www.abstractcore.ai/assets/logo.svg">
 
     <!-- Favicon -->
@@ -105,7 +105,7 @@
                 <p class="hero-description">
                     Open-source first, provider-agnostic LLM infrastructure for Python — run local models to control the full stack end-to-end (software + models),
                     or switch to cloud providers when you need them. Code once, run everywhere across Ollama, LM Studio, MLX, HuggingFace, vLLM, OpenAI, Anthropic,
-                    and more with consistent APIs for tools, structured output, streaming, and media.
+                    and more with consistent APIs for tools, structured output, streaming, media, prompt caching, and secure OpenAI-compatible gateway deployment.
                 </p>
                 
                 <div class="hero-actions">
@@ -143,7 +143,7 @@
                         <div class="stat-label">Providers</div>
                     </div>
                     <div class="stat">
-                        <div class="stat-number">2.11.8</div>
+                        <div class="stat-number">2.13.2</div>
                         <div class="stat-label">Version</div>
                     </div>
                     <div class="stat">
@@ -255,9 +255,9 @@ llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
                             <path d="M3 12h6m6 0h6"/>
                         </svg>
                     </div>
-                    <h3 class="feature-title">Production Ready</h3>
+                    <h3 class="feature-title">Hardened Gateway Auth</h3>
                     <p class="feature-description">
-                        Built-in retry logic, circuit breakers, comprehensive error handling, and event-driven observability.
+                        Optional server master key, per-request upstream provider-key overrides, redacted secret-bearing headers, loopback-first <code>base_url</code> overrides, and disabled body/query <code>api_key</code> fields.
                     </p>
                 </div>
                 
@@ -323,9 +323,9 @@ llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
                             <path d="M21 15l-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/>
                         </svg>
                     </div>
-                    <h3 class="feature-title">Session Management + Analytics</h3>
+                    <h3 class="feature-title">CachedSession + File Boxes</h3>
                     <p class="feature-description">
-                        Persistent conversations with SOTA 2025 auto-compaction algorithm. Built-in analytics: summaries, assessments, fact extraction with complete serialization.
+                        Reuse stable system/tool/file prefixes with provider-aware prompt caching. KV-capable local providers can send only deltas, while remote providers receive stable <code>prompt_cache_key</code> hints.
                     </p>
                 </div>
                 
@@ -369,12 +369,14 @@ llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M")
                                 <pre><code class="language-bash"># Core (lightweight default)
 pip install abstractcore
 
-# Providers (install only what you use; zsh: keep quotes)
+# Hosted SDK bundle, or install only the SDK you use
+pip install "abstractcore[remote]"
 pip install "abstractcore[openai]"
 pip install "abstractcore[anthropic]"
 
 # Optional features
 pip install "abstractcore[media]"   # images, PDFs, Office docs
+pip install "abstractcore[tools]"   # built-in helper tools
 pip install "abstractcore[server]"  # OpenAI-compatible HTTP gateway</code></pre>
                             </div>
                         </div>
@@ -390,8 +392,11 @@ pip install "abstractcore[server]"  # OpenAI-compatible HTTP gateway</code></pre
 export OPENAI_API_KEY="your-key-here"
 export ANTHROPIC_API_KEY="your-key-here"
 
+# For the optional HTTP gateway
+export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
+
 # For local providers (no keys needed)
-# Install Ollama, LMStudio, or MLX</code></pre>
+# Install Ollama, LM Studio, or prefetch MLX/HF model weights</code></pre>
                             </div>
                         </div>
                     </div>
@@ -422,6 +427,7 @@ print(response.content)</code></pre>
                         <button class="tab-button" data-tab="vision">Vision Capabilities</button>
                         <button class="tab-button" data-tab="audio">Audio &amp; Voice</button>
                         <button class="tab-button" data-tab="tools">Tool Calling</button>
+                        <button class="tab-button" data-tab="cache">Prompt Caching</button>
                         <button class="tab-button" data-tab="deterministic">Deterministic Generation</button>
                         <button class="tab-button" data-tab="server">HTTP Server</button>
                     </div>
@@ -764,6 +770,72 @@ for chunk in llm.generate(
                                 </div>
                             </div>
                         </div>
+
+                        <div class="demo-panel" id="cache">
+                            <div class="code-window">
+                                <div class="code-header">
+                                    <div class="code-dots">
+                                        <span class="dot red"></span>
+                                        <span class="dot yellow"></span>
+                                        <span class="dot green"></span>
+                                    </div>
+                                    <div class="code-title">cached_session.py</div>
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="from abstractcore import CachedSession, create_llm
+
+llm = create_llm(&quot;mlx&quot;, model=&quot;mlx-community/Qwen3-4B&quot;)
+
+session = CachedSession(
+    provider=llm,
+    system_prompt=&quot;You are a careful code reviewer.&quot;,
+    prompt_cache_strategy=&quot;auto&quot;,
+)
+
+# Large files become reusable context boxes.
+session.attach_files([&quot;README.md&quot;, &quot;docs/server.md&quot;])
+
+resp = session.generate(&quot;Summarize the server auth model.&quot;)
+print(resp.content)
+
+# For remote providers, use a stable key hint.
+remote = create_llm(&quot;openai&quot;, model=&quot;gpt-4o-mini&quot;)
+remote.generate(
+    &quot;Use the cached system/tools prefix.&quot;,
+    prompt_cache_key=&quot;docs-review&quot;,
+)">
+                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                                            <path d="m5 15-4-4 4-4"></path>
+                                            <path d="M5 5a2 2 0 0 0-2 2v6c0 1.1.9 2 2 2h2"></path>
+                                        </svg>
+                                        Copy
+                                    </button>
+                                </div>
+                                <div class="code-content">
+                                    <pre><code class="language-python">from abstractcore import CachedSession, create_llm
+
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+
+session = CachedSession(
+    provider=llm,
+    system_prompt="You are a careful code reviewer.",
+    prompt_cache_strategy="auto",
+)
+
+# Large files become reusable context boxes.
+session.attach_files(["README.md", "docs/server.md"])
+
+resp = session.generate("Summarize the server auth model.")
+print(resp.content)
+
+# For remote providers, use a stable key hint.
+remote = create_llm("openai", model="gpt-4o-mini")
+remote.generate(
+    "Use the cached system/tools prefix.",
+    prompt_cache_key="docs-review",
+)</code></pre>
+                                </div>
+                            </div>
+                        </div>
                         
                         <div class="demo-panel" id="structured">
                             <div class="code-window">
@@ -956,36 +1028,32 @@ mlx_llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit", seed=42, temper
                                         <span class="dot green"></span>
                                     </div>
                                     <div class="code-title">http_server.py</div>
-                                    <button class="copy-button" onclick="copyCode(this)" data-code="# Start OpenAI-compatible server
-# uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
+                                    <button class="copy-button" onclick="copyCode(this)" data-code="# Start the OpenAI-compatible gateway
+# export ABSTRACTCORE_SERVER_API_KEY=&quot;acore-server-secret&quot;
+# export OPENAI_API_KEY=&quot;sk-...&quot;
+# python -m abstractcore.server.app --host 127.0.0.1 --port 8000
 
+import os
 import requests
 
-# NEW: OpenAI Responses API with native file support
-response = requests.post(
-    &quot;http://localhost:8000/v1/responses&quot;,
-    json={
-        &quot;model&quot;: &quot;gpt-4o&quot;,
-        &quot;input&quot;: [
-            {
-                &quot;role&quot;: &quot;user&quot;,
-                &quot;content&quot;: [
-                    {&quot;type&quot;: &quot;input_text&quot;, &quot;text&quot;: &quot;Analyze this document&quot;},
-                    {&quot;type&quot;: &quot;input_file&quot;, &quot;file_url&quot;: &quot;https://example.com/report.pdf&quot;}
-                ]
-            }
-        ],
-        &quot;stream&quot;: False  # Optional streaming
-    }
-)
+headers = {
+    &quot;Authorization&quot;: f&quot;Bearer {os.environ['ABSTRACTCORE_SERVER_API_KEY']}&quot;,
+    &quot;Content-Type&quot;: &quot;application/json&quot;,
+}
 
-# Or use standard chat completions with @filename syntax
-import openai
-client = openai.OpenAI(base_url=&quot;http://localhost:8000/v1&quot;, api_key=&quot;unused&quot;)
-response = client.chat.completions.create(
-    model=&quot;ollama/qwen3:4b-instruct&quot;,
-    messages=[{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Analyze @report.pdf&quot;}]
-)">
+response = requests.post(
+    &quot;http://localhost:8000/v1/chat/completions&quot;,
+    headers=headers,
+    json={
+        &quot;model&quot;: &quot;openai/gpt-4o-mini&quot;,
+        &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Summarize server auth.&quot;}],
+        &quot;prompt_cache_key&quot;: &quot;server-docs&quot;,
+    },
+)
+print(response.json()[&quot;choices&quot;][0][&quot;message&quot;][&quot;content&quot;])
+
+# Provider keys in body/query `api_key` are disabled.
+# Use server-side keys or X-AbstractCore-Provider-API-Key for one upstream override.">
                                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                             <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                                             <path d="m5 15-4-4 4-4"></path>
@@ -995,36 +1063,32 @@ response = client.chat.completions.create(
                                     </button>
                                 </div>
                                 <div class="code-content">
-                                    <pre><code class="language-python"># Start OpenAI-compatible server
-# uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
+                                    <pre><code class="language-python"># Start the OpenAI-compatible gateway
+# export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
+# export OPENAI_API_KEY="sk-..."
+# python -m abstractcore.server.app --host 127.0.0.1 --port 8000
 
+import os
 import requests
 
-# NEW: OpenAI Responses API with native file support
-response = requests.post(
-    "http://localhost:8000/v1/responses",
-    json={
-        "model": "gpt-4o",
-        "input": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "input_text", "text": "Analyze this document"},
-                    {"type": "input_file", "file_url": "https://example.com/report.pdf"}
-                ]
-            }
-        ],
-        "stream": False  # Optional streaming
-    }
-)
+headers = {
+    "Authorization": f"Bearer {os.environ['ABSTRACTCORE_SERVER_API_KEY']}",
+    "Content-Type": "application/json",
+}
 
-# Or use standard chat completions with @filename syntax
-import openai
-client = openai.OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
-response = client.chat.completions.create(
-    model="ollama/qwen3:4b-instruct",
-    messages=[{"role": "user", "content": "Analyze @report.pdf"}]
-)</code></pre>
+response = requests.post(
+    "http://localhost:8000/v1/chat/completions",
+    headers=headers,
+    json={
+        "model": "openai/gpt-4o-mini",
+        "messages": [{"role": "user", "content": "Summarize server auth."}],
+        "prompt_cache_key": "server-docs",
+    },
+)
+print(response.json()["choices"][0]["message"]["content"])
+
+# Provider keys in body/query `api_key` are disabled.
+# Use server-side keys or X-AbstractCore-Provider-API-Key for one upstream override.</code></pre>
                                 </div>
                             </div>
                         </div>
@@ -1286,7 +1350,11 @@ response = client.chat.completions.create(
                         </a>
                         <a href="docs/session.html" class="doc-link">
                             <span class="doc-title">Session Management</span>
-                            <span class="doc-description">Persistent conversations</span>
+                            <span class="doc-description">BasicSession, CachedSession, transcript state, and compaction</span>
+                        </a>
+                        <a href="docs/prompt-caching.html" class="doc-link">
+                            <span class="doc-title">Prompt Caching</span>
+                            <span class="doc-description">CachedSession, file boxes, cache keys, and local KV reuse</span>
                         </a>
                         <a href="docs/embeddings.html" class="doc-link">
                             <span class="doc-title">Vector Embeddings</span>
@@ -1300,7 +1368,7 @@ response = client.chat.completions.create(
                     <div class="doc-links">
                         <a href="docs/server.html" class="doc-link">
                             <span class="doc-title">HTTP Server Guide</span>
-                            <span class="doc-description">OpenAI-compatible REST API</span>
+                            <span class="doc-description">OpenAI-compatible REST API, auth routing, media safety, and extensions</span>
                         </a>
                         <a href="docs/endpoint.html" class="doc-link">
                             <span class="doc-title">Single-Model Endpoint</span>
@@ -1361,16 +1429,19 @@ response = client.chat.completions.create(
                         <span class="example-badge">Server</span>
                     </div>
                     <p class="example-description">
-                        Deploy a single OpenAI-compatible <code>/v1</code> gateway for chat + tools, and optionally add <code>/v1/images/*</code> and <code>/v1/audio/*</code> via capability plugins.
+                        Deploy a single OpenAI-compatible <code>/v1</code> gateway for chat + tools with explicit server auth, provider-key routing, and optional images/audio endpoints via capability plugins.
                     </p>
                     <div class="example-code">
                         <pre><code class="language-bash"># Start server
+export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
 python -m abstractcore.server.app --port 8000
 
 # Route by changing model:
 #   ollama/qwen3:4b-instruct
 #   openai/gpt-4o-mini
 curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "Content-Type: application/json" \
   -d '{"model":"ollama/qwen3:4b-instruct","messages":[...]}'</code></pre>
                     </div>
                     <a href="docs/server.html" class="example-link">View Full Example →</a>
@@ -1466,22 +1537,23 @@ similarity = embedder.compute_similarity(query, docs[0])</code></pre>
 
                 <div class="example-card">
                     <div class="example-header">
-                        <h3 class="example-title">CLI Apps & Debug Mode</h3>
-                        <span class="example-badge">New</span>
+                        <h3 class="example-title">CachedSession for Large Context</h3>
+                        <span class="example-badge">Cache</span>
                     </div>
                     <p class="example-description">
-                        Ready-to-use terminal tools with debug capabilities and focus areas for targeted processing.
+                        Keep stable system prompts, tools, and file attachments reusable across turns with provider-aware prompt caching.
                     </p>
                     <div class="example-code">
-                        <pre><code class="language-bash"># Extract knowledge with debug mode
-extractor document.pdf --format json-ld --debug --iterate 3
+                        <pre><code class="language-python">from abstractcore import CachedSession, create_llm
 
-# Evaluate with focus areas
-judge README.md --focus "examples, completeness" --debug
+llm = create_llm("openai", model="gpt-4o-mini")
+session = CachedSession(llm, system_prompt="You are precise.")
 
-# Self-healing JSON handles truncated responses automatically</code></pre>
+session.attach_files(["docs/server.md", "CHANGELOG.md"])
+resp = session.generate("What changed in server auth?")
+print(resp.content)</code></pre>
                     </div>
-                    <a href="docs/apps.html" class="example-link">View CLI Docs →</a>
+                    <a href="docs/prompt-caching.html" class="example-link">View Prompt Caching →</a>
                 </div>
             </div>
             
@@ -1554,7 +1626,7 @@ judge README.md --focus "examples, completeness" --debug
             
             <div class="footer-bottom">
                 <div class="footer-copyright">
-                    <p>&copy; 2026 AbstractCore (v2.11.8). Licensed under MIT License.</p>
+                    <p>&copy; 2026 AbstractCore (v2.13.2). Licensed under MIT License.</p>
                 </div>
                 <div class="footer-meta">
                     <span>Made with ❤️ for the AI community</span>

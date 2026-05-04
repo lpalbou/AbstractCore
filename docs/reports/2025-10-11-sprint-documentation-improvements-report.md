@@ -42,8 +42,8 @@ Successfully completed a comprehensive documentation improvement sprint for Abst
 **Status**: COMPLETED - Production Ready
 
 **Delivered:**
-- `examples/progressive/` directory with 6 complete examples
-- Progressive learning path from basic to advanced patterns
+- `examples/learning_path/` directory with 6 complete examples
+- Learning path from basic to advanced patterns
 - 3,039 total lines of documented, executable code
 - Comprehensive README with learning objectives
 
@@ -56,7 +56,7 @@ Successfully completed a comprehensive documentation improvement sprint for Abst
 6. **Production Patterns** (575 lines) - Enterprise best practices
 
 **Quality Achievements:**
-- ✅ All examples executable with `python example_X.py`
+- ✅ All examples executable with `python examples/learning_path/01_basic_generation.py` (then run in order)
 - ✅ Provider fallback support for safe testing
 - ✅ Progressive complexity validated
 - ✅ Architecture concepts properly demonstrated

@@ -34,7 +34,13 @@
                 <p style="font-size: 1.25rem; color: var(--text-secondary);">All notable changes to AbstractCore will be documented in this file.</p>
             </div>
 
-            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#2118-2026-02-08" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[2.11.8] - 2026-02-08</a>
+            <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#unreleased" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[Unreleased]</a>
+<a href="#2132-2026-05-03" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[2.13.2] - 2026-05-03</a>
+<a href="#2131-2026-05-03" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[2.13.1] - 2026-05-03</a>
+<a href="#2130-2026-05-02" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[2.13.0] - 2026-05-02</a>
+<a href="#2120-2026-02-12" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[2.12.0] - 2026-02-12</a>
+<a href="#2119-2026-02-09" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[2.11.9] - 2026-02-09</a>
+<a href="#2118-2026-02-08" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[2.11.8] - 2026-02-08</a>
 <a href="#2116-2026-02-06" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[2.11.6] - 2026-02-06</a>
 <a href="#2115-2026-02-06" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[2.11.5] - 2026-02-06</a>
 <a href="#2113-2026-02-04" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">[2.11.3] - 2026-02-04</a>
@@ -86,16 +92,122 @@
 
             <div class="doc-content">
 
-
 <p>The format is based on <a href="https://keepachangelog.com/en/1.0.0/">Keep a Changelog</a>,
 and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semantic Versioning</a>.</p>
-<h2 id="2118-2026-02-08">[2.11.8] - 2026-02-08</h2>
+<h2 id="unreleased">[Unreleased]</h2>
+<h2 id="2132-2026-05-03">[2.13.2] - 2026-05-03</h2>
 <h3 id="added">Added</h3>
+<ul>
+<li><strong>Model registry refresh</strong>: added capability entries and architecture detection for Gemma 4, Qwen3.6, Mistral Medium 3.5, Kimi K2.6, DeepSeek V4 Pro/Flash, NVIDIA Nemotron 3 Nano Omni, and IBM Granite 4.1 models.</li>
+</ul>
+<h3 id="changed">Changed</h3>
+<ul>
+<li><strong>Package maturity metadata</strong>: updated PyPI classifiers to <code>Development Status :: 5 - Production/Stable</code> and added Science/Research, Information Technology, and typed-package classifiers.</li>
+<li><strong>Qwen3.6 thinking controls</strong>: Qwen3.6 now uses the same <code>enable_thinking</code> request handling path as Qwen3 and Qwen3.5 in local/OpenAI-compatible providers.</li>
+</ul>
+<h2 id="2131-2026-05-03">[2.13.1] - 2026-05-03</h2>
+<h3 id="added_1">Added</h3>
+<ul>
+<li><strong>Install extras for common deployment paths</strong>: added <code>remote</code> as a lightweight hosted-SDK bundle (<code>openai</code> + <code>anthropic</code>) and explicit no-dependency extras for <code>openrouter</code>, <code>portkey</code>, and <code>openai-compatible</code> so installation commands are clearer and compose cleanly.</li>
+<li><strong>Automated release workflow</strong>: pushing a <code>vX.Y.Z</code> tag now validates the version/changelog, runs tests, builds docs, builds and checks distributions, publishes to PyPI via Trusted Publishing, and creates a GitHub Release with notes from <code>CHANGELOG.md</code>.</li>
+<li><strong>GGUF streaming regression coverage</strong>: added a focused unit test ensuring HuggingFace/GGUF streaming setup errors are returned as error responses with the original message.</li>
+</ul>
+<h3 id="changed_1">Changed</h3>
+<ul>
+<li><strong>Version bumped to 2.13.1</strong> for the install-quality and release-automation cleanup.</li>
+<li><strong>Structured native test runtime</strong>: simplified <code>tests/structured/test_comprehensive_native.py</code> so normal runs use a fast fake-native handler regression test, local provider inference is gated behind <code>ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1</code>, the three-level live matrix is opt-in with <code>ABSTRACTCORE_RUN_COMPREHENSIVE_NATIVE_STRUCTURED_TESTS=1</code>, and native structured skip output no longer prints huge local model inventories.</li>
+<li><strong>Install guidance</strong>: README and docs now emphasize the lightweight core install, <code>abstractcore[remote]</code> for hosted SDKs, composable extras, <code>all-apple</code> for Apple Silicon local stacks, and <code>all-gpu</code> for NVIDIA/vLLM stacks. The legacy <code>all-non-mlx</code> extra remains available but is no longer promoted as a primary install path.</li>
+<li><strong>Product positioning</strong>: README and comparison docs now present AbstractCore as an offline-capable, open-source-first provider layer that can run local, self-hosted, hosted, or hybrid deployments from the same <code>create_llm(...)</code> application code.</li>
+<li><strong>Comparison guide</strong>: refreshed <code>docs/comparison.md</code> with a clearer AbstractCore vs LiteLLM/LangChain/LangGraph/LlamaIndex distinction, including offline/self-hosted/remote deployment posture and AbstractFramework ecosystem positioning.</li>
+<li><strong>Lint configuration</strong>: updated Ruff settings to the current <code>[tool.ruff.lint]</code> / <code>[tool.ruff.lint.per-file-ignores]</code> layout.</li>
+<li><strong>Formatting baseline</strong>: removed the full-repo W293 blank-line-with-whitespace noise so focused lint checks can be more meaningful.</li>
+<li><strong>System prompt alias compatibility</strong>: provider <code>generate()</code>/<code>agenerate()</code> calls now accept <code>system=</code> as a warned alias for <code>system_prompt=</code>, prefer explicit <code>system_prompt=</code> when both are supplied, and remove the alias before provider-specific kwargs are dispatched.</li>
+<li><strong>Structured output system alias</strong>: direct <code>StructuredOutputHandler.generate_structured()</code> calls now apply the same warned <code>system=</code> alias handling.</li>
+<li><strong>CI Python matrix</strong>: GitHub CI now tests Python 3.9, 3.10, 3.11, 3.12, and 3.13; NumPy dependency markers allow NumPy 2.x on Python 3.13 while keeping the existing NumPy 1.x constraint on older supported Python versions.</li>
+</ul>
+<h3 id="fixed">Fixed</h3>
+<ul>
+<li><strong>Optional import hygiene</strong>: provider/interface type-only media references now use <code>TYPE_CHECKING</code> so core/provider imports stay lightweight and do not pull optional media modules at runtime.</li>
+<li><strong>HuggingFace/GGUF streaming errors</strong>: streaming setup failures now preserve the original exception text in the returned error chunk instead of closing over an exception variable that Python clears after the <code>except</code> block.</li>
+<li><strong>Glyph text renderer fallback</strong>: PIL text-width fallback now uses the active font size when Pillow lacks <code>textbbox</code>/<code>textsize</code>.</li>
+<li><strong>Server auth/provider credential routing</strong>: <code>ABSTRACTCORE_SERVER_API_KEY</code> now acts as the server master key for all configured providers, <code>X-AbstractCore-Provider-API-Key</code> overrides only the requested upstream provider, and <code>Authorization</code> is forwarded as a provider key only when server auth is not configured. Body/query <code>api_key</code> fields remain disabled and secret-bearing headers/URLs are redacted.</li>
+<li><strong>Server request hardening</strong>: request-level <code>base_url</code> overrides now default to loopback or explicit allowlists, remote overrides cannot silently inherit server environment API keys, URL media fetches block non-public targets across redirects, and HTTP-request local media paths require an explicit safe root or unsafe opt-in.</li>
+<li><strong>Server URL allowlists</strong>: URL-based allowlist entries now parse and compare scheme, exact host, effective port, and path-segment prefixes to prevent host-confusion and path-prefix bypasses.</li>
+<li><strong>CachedSession system alias safety</strong>: prompt-cache key/KV modes now warn and strip per-call <code>system=</code> overrides in sync and async generation so cached session context cannot be silently desynced.</li>
+<li><strong>LM Studio unload for reasoning REPL</strong>: <code>LMStudioProvider.unload_model()</code> now uses LM Studio's native REST unload endpoint and resolves model keys/variants to loaded instance IDs so <code>examples/reasoning/qwen_thinking_repl.py</code> can free LM Studio models via <code>:unload</code> (automatic unload-on-switch remains HuggingFace-only).</li>
+<li><strong>CI vs local provider test gating</strong>: clarified and fixed the split between real implementation tests and GitHub CI. Most provider tests intentionally exercise real providers with real SDKs, API keys, local model servers, and model caches. GitHub CI does not have access to LLM provider credentials or local inference services, so credential/local-provider-dependent tests now skip in that environment instead of failing during provider construction, while still running normally in a configured local test environment.</li>
+</ul>
+<h3 id="documentation">Documentation</h3>
+<ul>
+<li>README badges now include GitHub Actions CI status and tested Python versions read from the CI matrix.</li>
+<li>Clarified tool calling defaults (pass-through) and removed misleading “tools executed” wording from the quick start.</li>
+<li>Documented <code>CachedSession</code> more consistently across core docs and <code>llms*.txt</code> (getting started, API map, sessions, structured output hybrid note).</li>
+<li>Updated install examples across README, getting started, prerequisites, FAQ, troubleshooting, media docs, app docs, and contributing guidance.</li>
+</ul>
+<h2 id="2130-2026-05-02">[2.13.0] - 2026-05-02</h2>
+<h3 id="added_2">Added</h3>
+<ul>
+<li><strong>Prompt caching sessions</strong>: <code>CachedSession</code> selects the best prompt-cache strategy automatically (KV mode for MLX + HuggingFace transformers; otherwise stable <code>prompt_cache_key</code>).</li>
+<li><strong>File “boxes” for large contexts</strong>: <code>CachedSession.attach_files()</code> extracts text from attached files and appends one immutable transcript “box” per file (reused via KV/prefix caches).</li>
+<li><strong>Prompt cache persistence + REPL demo</strong>: providers expose <code>prompt_cache_save()</code> / <code>prompt_cache_load()</code> when supported (capability-gated); <code>examples/prompt_caching/prompt_cache_repl_demo.py</code> reports TTFT/TIFT + cache token counts.</li>
+<li><strong>HuggingFace transformers KV reuse</strong>: cross-call KV caching (<code>past_key_values</code> / <code>DynamicCache</code>) keyed by <code>prompt_cache_key</code>, including the local control plane (<code>prepare_modules</code>/<code>fork</code>/<code>update</code>) and <code>.safetensors</code> save/load.</li>
+<li><strong>Memory blocs (persistent file ↔ bloc ↔ KV artifacts)</strong>: <code>FileBlocStore</code> stores extracted text snapshots and optional per-(provider,model) KV artifacts; <code>generate_bloc_metadata_jsonld()</code> produces JSON-LD metadata using <code>abstractcore/assets/bloc-schema.jsonld</code>.</li>
+<li><strong>Reasoning/thinking controls</strong>: <code>GenerateResponse.reasoning</code> property, thinking/tag stripping in streaming, and expanded <code>thinking_support</code> / <code>reasoning_levels</code> coverage in model capability assets.</li>
+<li><strong>Model registry expansion</strong>: improved model/variant detection, new capability entries (incl. Gemma 4), and tooling to normalize vendor/model id variants.</li>
+<li><strong>Telegram tooling</strong>: expanded Telegram Bot API tools + tests, and improved tool transcript handling in the OpenAI provider.</li>
+</ul>
+<h3 id="changed_2">Changed</h3>
+<ul>
+<li><strong>Capability-driven parameter filtering</strong>: providers enforce <code>unsupported_parameters</code> and <code>token_param_name</code> from <code>model_capabilities.json</code> (reduces model-name heuristics).</li>
+<li><strong>GGUF prompt caching</strong>: stable-prefix control plane for supported chat formats (delta-only append/update to reduce prompt re-rendering for long sessions).</li>
+<li><strong>Prompt-cache REPL observability</strong>: clearer TTFT/TIFT + throughput reporting and attach timing breakdown (extract vs cache work).</li>
+</ul>
+<h3 id="fixed_1">Fixed</h3>
+<ul>
+<li><strong>Reasoning model token parameter mapping</strong>: consistent <code>max_completion_tokens</code> vs <code>max_tokens</code> handling via <code>token_param_name</code>.</li>
+<li><strong>MLX prompt cache persistence</strong>: safetensors metadata is stringified to satisfy <code>mlx-lm</code>, and cache cloning handles newer cache layer variants.</li>
+<li><strong>GGUF prompt cache persistence</strong>: NumPy 2.x compatibility fixes for metadata encoding.</li>
+</ul>
+<h3 id="documentation_1">Documentation</h3>
+<ul>
+<li>Updated docs for prompt caching and memory blocs.</li>
+</ul>
+<h2 id="2120-2026-02-12">[2.12.0] - 2026-02-12</h2>
+<h3 id="added_3">Added</h3>
+<ul>
+<li><strong><code>--install</code> readiness check</strong>: comprehensive check of all subsystems (default model, provider connectivity, embeddings model, vision fallback, STT/TTS models, ffmpeg, abstractvision, API keys). Reports ✅/⚠️/❌ for each area and offers to download/install missing models interactively. Use <code>--yes</code> (<code>-y</code>) to auto-accept all downloads for non-interactive environments (e.g. <code>abstractcore --install --yes</code>).</li>
+<li><strong>Embeddings: 7 providers supported</strong> (was 3). <code>EmbeddingManager</code> now accepts <code>openai</code>, <code>openrouter</code>, <code>portkey</code>, and <code>openai-compatible</code> in addition to the existing <code>huggingface</code>, <code>ollama</code>, and <code>lmstudio</code>. Added <code>OpenAIProvider.embed()</code> method; gateway providers (<code>OpenRouterProvider</code>, <code>PortkeyProvider</code>) already inherit <code>embed()</code> from <code>OpenAICompatibleProvider</code>. All server/cloud providers return embeddings in OpenAI-compatible format.</li>
+<li><strong>Interactive config wizard (<code>--config</code>) — expanded to 7 steps</strong>:</li>
+<li>Step 1: now asks for <strong>base URL</strong> when the selected provider is a local server (ollama, lmstudio, vllm, openai-compatible). Shows the env var name, current value if set, default URL, and prints the <code>export</code> command for shell persistence.</li>
+<li>Step 4 (NEW): <strong>Audio strategy</strong> — defaults to <code>auto</code> on Enter. Asks about <code>native_only</code> / <code>auto</code> / <code>speech_to_text</code> for audio attachment handling. Mentions <code>abstractvoice</code> dependency when needed.</li>
+<li>Step 5 (NEW): <strong>Video strategy</strong> — defaults to <code>auto</code> on Enter. Asks about <code>native_only</code> / <code>auto</code> / <code>frames_caption</code> for video attachment handling. Mentions <code>ffmpeg</code> dependency when needed.</li>
+<li>Step 6 (NEW): <strong>Embeddings provider/model</strong> — asks for embeddings configuration with examples across all 7 supported providers. Validates provider before saving.</li>
+<li>Step 7: Console logging verbosity (renumbered from step 4).</li>
+</ul>
+<h3 id="changed_3">Changed</h3>
+<ul>
+<li>Interactive config wizard now covers all major configuration areas (model, base URL, vision, API keys, audio, video, embeddings, logging). Previously only covered model, vision, API keys, and logging.</li>
+<li><strong><code>--install</code> embeddings check</strong>: now provider-aware — server-based providers (ollama, lmstudio, openai, openrouter, portkey, openai-compatible) check reachability or API key instead of trying to download via <code>sentence-transformers</code>. When <code>sentence-transformers</code> is missing, <code>--install</code> offers to <code>pip install "abstractcore[embeddings]"</code> and then download the model.</li>
+</ul>
+<h3 id="fixed_2">Fixed</h3>
+<ul>
+<li><strong>Audio strategy default changed from <code>native_only</code> to <code>auto</code></strong>: the <code>AudioConfig.strategy</code> default was <code>native_only</code>, which caused audio attachments to fail on text-only models unless the user explicitly configured it. Changed to <code>auto</code> (matching <code>VideoConfig.strategy</code> which was already <code>auto</code>). With <code>auto</code>, audio works seamlessly when <code>abstractvoice</code> is installed (STT fallback) and raises a clear error with install hints when it is not.</li>
+<li><strong>Config-persisted API keys now injected into environment</strong>: API keys saved via <code>abstractcore --set-api-key</code> (or <code>--config</code>) were stored in <code>~/.abstractcore/config/abstractcore.json</code> but providers only read from <code>os.environ</code> (e.g. <code>OPENAI_API_KEY</code>). Added <code>_apply_api_keys_to_env()</code> to bridge config-persisted keys into the environment at config load time. Environment variables always take precedence (config keys are injected only when the env var is absent).</li>
+<li><strong><code>--install</code> TTS/STT severity</strong>: failed model downloads are now reported as <code>⚠️</code> (warning) instead of <code>❌</code> (critical) since TTS/STT are optional subsystems.</li>
+<li><strong><code>--install</code> TTS/STT verification</strong>: download results are now verified by re-checking the filesystem instead of trusting the subprocess exit code (some prefetch commands exit 0 even on failure).</li>
+</ul>
+<h2 id="2119-2026-02-09">[2.11.9] - 2026-02-09</h2>
+<h3 id="changed_4">Changed</h3>
+<ul>
+<li>Documentation and internal improvements.</li>
+</ul>
+<h2 id="2118-2026-02-08">[2.11.8] - 2026-02-08</h2>
+<h3 id="added_4">Added</h3>
 <ul>
 <li><strong>Portkey provider</strong>: OpenAI-compatible gateway with config-based routing (env: <code>PORTKEY_API_KEY</code>, <code>PORTKEY_CONFIG</code>; optional <code>PORTKEY_BASE_URL</code>).</li>
 <li><strong>Tests</strong>: Portkey provider payload adaptation, reasoning model restrictions, explicit-None handling, and base URL validation.</li>
 </ul>
-<h3 id="changed">Changed</h3>
+<h3 id="changed_5">Changed</h3>
 <ul>
 <li><strong>Portkey payload hygiene</strong>: forward optional generation parameters only when explicitly set.</li>
 <li><strong>Token parameter mapping</strong>: use <code>max_completion_tokens</code> for OpenAI reasoning families (gpt-5/o1); keep legacy <code>max_tokens</code> for other backends.</li>
@@ -105,45 +217,45 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li><strong>Server UX</strong>: print internal/external access URLs outside logging on startup.</li>
 <li><strong>OpenAPI schema</strong>: normalize request examples to prevent <code>/openapi.json</code> validation failures.</li>
 </ul>
-<h3 id="fixed">Fixed</h3>
+<h3 id="fixed_3">Fixed</h3>
 <ul>
 <li>Config CLI: interactive vision fallback now accepts any provider/model and uses provider-agnostic guidance.</li>
 <li>Config CLI: interactive console logging default now uses ERROR to match package defaults.</li>
 </ul>
-<h3 id="documentation">Documentation</h3>
+<h3 id="documentation_2">Documentation</h3>
 <ul>
 <li>Portkey usage guidance added across core docs.</li>
 <li>Media docs: clarified vision fallback examples as provider-agnostic.</li>
 <li>Server docs: moved interactive API docs links to the top of the page.</li>
 </ul>
 <h2 id="2116-2026-02-06">[2.11.6] - 2026-02-06</h2>
-<h3 id="added_1">Added</h3>
+<h3 id="added_5">Added</h3>
 <ul>
 <li>Config CLI: video defaults (<code>--set-video-*</code>) and <code>--config</code> alias for interactive setup.</li>
 </ul>
-<h3 id="changed_1">Changed</h3>
+<h3 id="changed_6">Changed</h3>
 <ul>
 <li>Faster CLI startup by lazily importing optional web parsing deps in <code>abstractcore.tools.common_tools</code>.</li>
 <li>Docs: clarified requirements and configuration for image/video/audio fallbacks (including <code>abstractcore --config</code>).</li>
 </ul>
 <h2 id="2115-2026-02-06">[2.11.5] - 2026-02-06</h2>
-<h3 id="changed_2">Changed</h3>
+<h3 id="changed_7">Changed</h3>
 <ul>
 <li>STT fallback when abstractvoice is installed</li>
 <li>faster utils.cli with lazy loading of the providers</li>
 </ul>
 <h2 id="2113-2026-02-04">[2.11.3] - 2026-02-04</h2>
-<h3 id="changed_3">Changed</h3>
+<h3 id="changed_8">Changed</h3>
 <ul>
 <li>Updated the timeout settings (abstractcore config 3600s)</li>
 </ul>
 <h2 id="2112-2026-02-04">[2.11.2] - 2026-02-04</h2>
-<h3 id="added_2">Added</h3>
+<h3 id="added_6">Added</h3>
 <ul>
-<li><strong>Skim tool benchmarks</strong>: added <code>examples/skim_tools_benchmark.py</code> to measure output footprint and latency for <code>skim_websearch</code>/<code>web_search</code> and <code>skim_url</code>/<code>fetch_url</code>.</li>
+<li><strong>Skim tool benchmarks</strong>: added <code>examples/tools/skim_tools_benchmark.py</code> to measure output footprint and latency for <code>skim_websearch</code>/<code>web_search</code> and <code>skim_url</code>/<code>fetch_url</code>.</li>
 <li><strong>Import-safety test</strong>: added a test to ensure <code>import abstractcore</code> does not eagerly import optional deps (<code>requests</code>, <code>bs4</code>, <code>sentence_transformers</code>, <code>pymupdf*</code>, ...).</li>
 </ul>
-<h3 id="changed_4">Changed</h3>
+<h3 id="changed_9">Changed</h3>
 <ul>
 <li><strong>Skim outputs stay compact</strong>: <code>skim_websearch</code> now truncates long titles/snippets to keep tool outputs prompt-friendly by default.</li>
 <li><strong>Tool guidance for prompted models</strong>: tool prompts now render short <code>when_to_use</code> hints for small tool sets and a few high-impact tools (edit/write/execute + web triage tools).</li>
@@ -152,7 +264,7 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li><strong>Docs accuracy</strong>: clarified <code>fetch_url</code> behavior for PDFs/binaries and documented the recommended <code>skim_*</code> → <code>fetch_*</code> workflow in the docs entry points.</li>
 </ul>
 <h2 id="2111-2026-02-04">[2.11.1] - 2026-02-04</h2>
-<h3 id="added_3">Added</h3>
+<h3 id="added_7">Added</h3>
 <ul>
 <li><strong>Security policy</strong>: added <code>SECURITY.md</code> with responsible disclosure guidance.</li>
 <li><strong>API overview doc</strong>: added <code>docs/api.md</code> as a user-facing map of the public Python API.</li>
@@ -160,7 +272,7 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li><strong>Events + logging docs</strong>: added <code>docs/events.md</code> and <code>docs/structured-logging.md</code>.</li>
 <li><strong>Skim tools</strong>: added <code>skim_url</code> (fast URL triage) and <code>skim_websearch</code> (compact/filtered search) to keep agent prompts smaller when you only need “what is this about?”.</li>
 </ul>
-<h3 id="changed_5">Changed</h3>
+<h3 id="changed_10">Changed</h3>
 <ul>
 <li><strong>Install composition (default stays small)</strong>: docs and packaging emphasize a lightweight core install, with heavy features enabled via explicit extras (<code>tools</code>, <code>media</code>, <code>embeddings</code>, <code>server</code>, provider SDKs).</li>
 <li><strong>Dependency compatibility</strong>: relaxed <code>abstractcore[huggingface]</code> <code>transformers</code> upper bound to <code>&lt;6</code> so it can co-install with <code>abstractcore[mlx]</code> (as <code>mlx-lm</code> currently pins <code>transformers==5.0.0rc*</code>).</li>
@@ -168,66 +280,66 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li><strong>Skim output footprint</strong>: tuned <code>skim_url</code> defaults (smaller preview/headings) and made <code>skim_websearch</code> JSON compact so tool outputs are more token-efficient by default.</li>
 <li><strong>Web search URLs</strong>: <code>web_search</code> now unwraps DuckDuckGo redirect URLs (more readable links; smaller tool outputs).</li>
 </ul>
-<h3 id="fixed_1">Fixed</h3>
+<h3 id="fixed_4">Fixed</h3>
 <ul>
 <li><strong>Docs accuracy</strong>: aligned event fields and examples with the current codebase (events, telemetry, and usage data).</li>
 <li><strong>Optional imports</strong>: made Telegram Bot API tools import-safe when <code>requests</code> is not installed (returns a clear <code>abstractcore[tools]</code> install hint when used).</li>
 <li><strong>HTML extraction edge cases</strong>: improved main-content selection/pruning so <code>fetch_url</code>/<code>skim_url</code> previews don’t get wiped by over-aggressive boilerplate removal on some pages.</li>
 </ul>
 <h2 id="2110-2026-01-28">[2.11.0] - 2026-01-28</h2>
-<h3 id="added_4">Added</h3>
+<h3 id="added_8">Added</h3>
 <ul>
-<li><strong>MLX throughput benchmarking</strong>: <code>examples/mlx_concurrency_benchmark.py</code> to sweep concurrency with continuous batching (<code>mlx-lm</code>) and generate summary CSVs + PNG plots.</li>
+<li><strong>MLX throughput benchmarking</strong>: <code>examples/performance/mlx_concurrency_benchmark.py</code> to sweep concurrency with continuous batching (<code>mlx-lm</code>) and generate summary CSVs + PNG plots.</li>
 </ul>
-<h3 id="changed_6">Changed</h3>
+<h3 id="changed_11">Changed</h3>
 <ul>
 <li><strong>MLX install extras</strong>: refreshed/clarified <code>mlx</code> + <code>mlx-bench</code> optional dependencies for Apple Silicon throughput benchmarking.</li>
 </ul>
-<h3 id="fixed_2">Fixed</h3>
+<h3 id="fixed_5">Fixed</h3>
 <ul>
 <li><strong>Embedding model detection</strong>: treat <code>model_type: "embedding"</code> as the canonical signal; add <code>nomic-embed-text-v1.5</code> (incl. LMStudio alias <code>text-embedding-nomic-embed-text-v1.5@q6_k</code>) to <code>assets/model_capabilities.json</code>.</li>
 <li><strong>MLX model discovery</strong>: <code>MLXProvider.list_available_models()</code> now also scans LM Studio's local cache (<code>~/.lmstudio/models</code>) (including <code>lmstudio-community/*</code> and <code>mlx-community/*</code>) and loads from those local directories when present.</li>
 <li><strong>GPT-OSS (Harmony) on MLX</strong>: improved prompt formatting (prefers tokenizer chat templates), extracts Harmony transcripts into clean <code>content</code> (stores reasoning in <code>metadata.reasoning</code>), and propagates correct <code>finish_reason</code> (<code>stop</code>/<code>length</code>) for truncation handling.</li>
 </ul>
-<h3 id="documentation_1">Documentation</h3>
+<h3 id="documentation_3">Documentation</h3>
 <ul>
 <li><strong>Concurrency guide</strong>: added MLX concurrency benchmarking notes and tracked benchmark plots/CSVs under <code>docs/assets/</code> so docs don't depend on the ignored <code>test_results/</code> folder.</li>
 </ul>
 <h2 id="2101-2026-01-11">[2.10.1] - 2026-01-11</h2>
-<h3 id="fixed_3">Fixed</h3>
+<h3 id="fixed_6">Fixed</h3>
 <ul>
 <li><strong>Config CLI parity</strong>: implemented missing <code>ConfigurationManager</code> methods used by <code>abstractcore</code> config commands (streaming defaults, embeddings config, cache dirs, logging controls, vision fallback chain).</li>
 <li><strong>OpenAI-compatible auth</strong>: <code>openai-compatible</code> provider now reads <code>OPENAI_COMPATIBLE_API_KEY</code> when set.</li>
 <li><strong>CLI provider selection</strong>: <code>abstractcore.utils.cli</code> now exposes <code>openrouter</code>, <code>openai-compatible</code>, and <code>vllm</code> in <code>--provider</code> choices (and updates usage examples).</li>
 <li><strong>CLI token controls</strong>: <code>abstractcore.utils.cli</code> now supports <code>--max-output-tokens</code> and interactive <code>/max-tokens</code> + <code>/max-output-tokens</code>.</li>
 </ul>
-<h3 id="documentation_2">Documentation</h3>
+<h3 id="documentation_4">Documentation</h3>
 <ul>
 <li>Updated provider/config/CLI/server docs to reflect OpenAI-compatible consolidation, OpenRouter usage, current Claude model naming, and <code>base_url</code> usage for OpenAI-compatible endpoints.</li>
 </ul>
 <h2 id="2100-2026-01-10">[2.10.0] - 2026-01-10</h2>
-<h3 id="added_5">Added</h3>
+<h3 id="added_9">Added</h3>
 <ul>
 <li><strong>OpenRouter provider</strong>: <code>create_llm("openrouter", ...)</code> via the OpenAI-compatible API (<code>https://openrouter.ai/api/v1</code>), with config support for <code>OPENROUTER_API_KEY</code>.</li>
 </ul>
-<h3 id="changed_7">Changed</h3>
+<h3 id="changed_12">Changed</h3>
 <ul>
 <li><strong>OpenAI-compatible consolidation</strong>: refactored <code>OpenAICompatibleProvider</code> into the shared implementation and made <code>LMStudioProvider</code> / <code>VLLMProvider</code> thin subclasses.</li>
 <li><strong>Config</strong>: added <code>api_keys.openrouter</code> support and wiring for <code>abstractcore --set-api-key openrouter ...</code>.</li>
 <li><strong>Defaults</strong>: updated Anthropic default model to <code>claude-haiku-4-5</code>.</li>
 </ul>
-<h3 id="fixed_4">Fixed</h3>
+<h3 id="fixed_7">Fixed</h3>
 <ul>
 <li><strong>Test stability</strong>: live-network and local-server provider tests are consistently opt-in via env flags; tracing tests no longer require a running Ollama server.</li>
 <li><strong>Media validation</strong>: <code>AnthropicMediaHandler.validate_media_for_model()</code> now relies on centralized vision capability detection for newer Claude naming (e.g. <code>claude-haiku-4-5</code>).</li>
 </ul>
 <h2 id="291-2026-01-07">[2.9.1] - 2026-01-07</h2>
-<h3 id="fixed_5">Fixed</h3>
+<h3 id="fixed_8">Fixed</h3>
 <ul>
 <li><strong>Packaging / installability</strong>: <code>pip install abstractcore</code> now includes <code>beautifulsoup4</code> so <code>import abstractcore</code> does not fail due to <code>ModuleNotFoundError: bs4</code>.</li>
 </ul>
 <h2 id="290-2025-01-06">[2.9.0] - 2025-01-06</h2>
-<h3 id="added_6">Added</h3>
+<h3 id="added_10">Added</h3>
 <ul>
 <li><strong>MCP (Model Context Protocol) Integration</strong>: First-class support for MCP servers</li>
 <li>New <code>abstractcore.mcp</code> package with HTTP and stdio client implementations</li>
@@ -270,7 +382,7 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li>Enhanced <code>docs/tool-calling.md</code> with best practices</li>
 <li>Backlog organization with <code>docs/backlog/README.md</code> and completed items moved to subdirectory</li>
 </ul>
-<h3 id="changed_8">Changed</h3>
+<h3 id="changed_13">Changed</h3>
 <ul>
 <li><strong>Tool Output Format</strong> (Breaking): Core tools now return structured JSON</li>
 <li><code>execute_command</code>: Returns <code>{success, return_code, stdout, stderr, rendered}</code> dict</li>
@@ -296,7 +408,7 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li><code>list_files</code> now includes directories and uses relative paths</li>
 <li><code>edit_file</code> enhanced with idempotent insertion behavior, better error messages, diff observability</li>
 </ul>
-<h3 id="fixed_6">Fixed</h3>
+<h3 id="fixed_9">Fixed</h3>
 <ul>
 <li><strong>Provider Fixes</strong>:</li>
 <li><strong>Anthropic</strong>: Unknown <code>claude*</code> models default to native tool calling; <code>claude-haiku-4-5</code> and <code>claude-opus-4-5</code> properly recognized; <code>role="tool"</code> messages converted to <code>tool_result</code> content blocks</li>
@@ -352,14 +464,14 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li><strong>21,385 total lines changed</strong> across the codebase</li>
 </ul>
 <h2 id="281-2025-12-21">[2.8.1 - 2025-12-21</h2>
-<h3 id="added_7">Added</h3>
+<h3 id="added_11">Added</h3>
 <p>Add workflow event types: Introduce new event types for workflow progress tracking</p>
 <ul>
 <li>Added EVENT_TYPE constants for workflow steps: WORKFLOW_STEP_STARTED, WORKFLOW_STEP_COMPLETED, WORKFLOW_STEP_WAITING, and WORKFLOW_STEP_FAILED.</li>
 <li>Enhances event tracking capabilities for durable execution processes.</li>
 </ul>
 <h2 id="280-2025-12-18">[2.8.0] - 2025-12-18</h2>
-<h3 id="added_8">Added</h3>
+<h3 id="added_12">Added</h3>
 <ul>
 <li><strong>Model Support</strong>: Added 15+ new models including GLM-4.6V, Qwen3-VL series, Devstral, GPT-OSS, MiniMax-M2, and Granite-4.0-H</li>
 <li>Vision models with enhanced OCR (32 languages) and visual agent capabilities</li>
@@ -389,7 +501,7 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li>Preserves file's original indentation style</li>
 <li><strong>Error Handling</strong>: Added fallback strategies throughout for improved reliability</li>
 </ul>
-<h3 id="fixed_7">Fixed</h3>
+<h3 id="fixed_10">Fixed</h3>
 <ul>
 <li><strong>Async Trace Capture</strong>: Improved reliability of trace capture in <code>agenerate()</code> for async LLM calls</li>
 </ul>
@@ -401,7 +513,7 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li>Added deprecation warnings for <code>execute_tools</code> parameter</li>
 </ul>
 <h2 id="267-2025-12-13">[2.6.7] - 2025-12-13</h2>
-<h3 id="fixed_8">Fixed</h3>
+<h3 id="fixed_11">Fixed</h3>
 <ul>
 <li>Made PIL/Pillow a required core dependency</li>
 <li>Providers need media handling, so PIL cannot be optional</li>
@@ -409,7 +521,7 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li>Modified files: <code>pyproject.toml</code>, <code>abstractcore/media/utils/image_scaler.py</code>, <code>abstractcore/utils/vlm_token_calculator.py</code></li>
 </ul>
 <h2 id="266-2025-12-13">[2.6.6] - 2025-12-13</h2>
-<h3 id="fixed_9">Fixed</h3>
+<h3 id="fixed_12">Fixed</h3>
 <ul>
 <li>Fixed <code>NameError: name 'Image' is not defined</code> when importing tools module without PIL/Pillow installed</li>
 <li><code>image_scaler.py</code> used PIL types in annotations but imported conditionally, causing NameError instead of ImportError</li>
@@ -426,7 +538,7 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 </li>
 </ul>
 <h2 id="265-2025-12-10">[2.6.5] - 2025-12-10</h2>
-<h3 id="added_9">Added</h3>
+<h3 id="added_13">Added</h3>
 <ul>
 <li><strong>Dynamic Base URL Support for Server Endpoint</strong>: POST parameter for runtime base_url configuration</li>
 <li><strong>New Parameter</strong>: <code>base_url</code> field in <code>/v1/chat/completions</code> request body</li>
@@ -437,7 +549,7 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li><strong>Priority</strong>: POST parameter &gt; environment variable &gt; provider default</li>
 <li><strong>Zero Breaking Changes</strong>: Optional parameter, existing code unchanged</li>
 </ul>
-<h3 id="fixed_10">Fixed</h3>
+<h3 id="fixed_13">Fixed</h3>
 <ul>
 <li><strong>OpenAI-Compatible Provider Model Listing</strong>: Fixed <code>/v1/models?provider=openai-compatible</code> endpoint</li>
 <li><strong>Root Cause</strong>: Provider validation rejected "default" placeholder model used by registry for model discovery</li>
@@ -466,20 +578,20 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <h3 id="usage-examples">Usage Examples</h3>
 <div class="code-block"><pre><code class="language-bash"># POST with dynamic base_url parameter (NEW in v2.6.5)
 curl -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
+  -H &quot;Content-Type: application/json&quot; \
   -d '{
-    "model": "openai-compatible/qwen/qwen3-next-80b",
-    "messages": [{"role": "user", "content": "Hello"}],
-    "base_url": "http://localhost:1234/v1"
+    &quot;model&quot;: &quot;openai-compatible/qwen/qwen3-next-80b&quot;,
+    &quot;messages&quot;: [{&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Hello&quot;}],
+    &quot;base_url&quot;: &quot;http://localhost:1234/v1&quot;
   }'
 
 # List models with environment variable (FIXED in v2.6.5)
-export OPENAI_COMPATIBLE_BASE_URL="http://localhost:1234/v1"
+export OPENAI_COMPATIBLE_BASE_URL=&quot;http://localhost:1234/v1&quot;
 curl http://localhost:8080/v1/models?provider=openai-compatible
 # Returns all 27 models with openai-compatible/ prefix
 </code></pre></div>
 <h2 id="264-2025-12-10">[2.6.4] - 2025-12-10</h2>
-<h3 id="added_10">Added</h3>
+<h3 id="added_14">Added</h3>
 <ul>
 <li><strong>vLLM Provider</strong>: Dedicated provider for high-throughput GPU inference on NVIDIA CUDA hardware</li>
 <li><strong>Native vLLM Features</strong>: Exposes guided decoding, Multi-LoRA, and beam search capabilities</li>
@@ -510,7 +622,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li><strong>Use Cases</strong>: llama.cpp local servers, text-generation-webui deployments, OpenAI-compatible proxies, custom endpoints</li>
 <li><strong>Future Enhancement</strong>: Planned refactoring to create base class for vLLM/LMStudio to reduce code duplication (see <code>docs/backlog/</code>)</li>
 </ul>
-<h3 id="documentation_3">Documentation</h3>
+<h3 id="documentation_5">Documentation</h3>
 <ul>
 <li><strong>Hardware Requirements</strong>: Updated README.md and docs/prerequisites.md with hardware compatibility warnings</li>
 <li>Added "Hardware" column to provider table (MLX: Apple Silicon only, vLLM: NVIDIA CUDA only)</li>
@@ -548,7 +660,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li><strong>Branch</strong>: <code>vllm-provider</code> (pending merge to main)</li>
 </ul>
 <h2 id="263-2025-12-10">[2.6.3] - 2025-12-10</h2>
-<h3 id="changed_9">Changed</h3>
+<h3 id="changed_14">Changed</h3>
 <ul>
 <li><strong>More Stringent Assessment Scoring</strong>: BasicJudge now applies rigorous, context-aware scoring to prevent grade inflation (2025-12-10)</li>
 <li><strong>Anti-Grade-Inflation</strong>: Explicit guidance to avoid defaulting to high scores (3-4) for adequate work</li>
@@ -559,7 +671,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li><strong>Example</strong>: Basic arithmetic now correctly scores innovation=1-2 (routine formula), not 3 (adequate innovation)</li>
 <li><strong>Zero Breaking Changes</strong>: Assessment API unchanged, only internal scoring logic improved</li>
 </ul>
-<h3 id="added_11">Added</h3>
+<h3 id="added_15">Added</h3>
 <ul>
 <li><strong>Complete Score Visibility</strong>: <code>session.generate_assessment()</code> now returns all predefined criterion scores in structured format</li>
 <li><strong>New Field</strong>: <code>scores</code> dict containing clarity, simplicity, actionability, soundness, innovation, effectiveness, relevance, completeness, coherence</li>
@@ -575,7 +687,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li><strong>Implementation</strong>: ~15 lines added to scoring rubric, ~10 lines to session assessment storage</li>
 </ul>
 <h2 id="262-2025-12-01">[2.6.2] - 2025-12-01</h2>
-<h3 id="added_12">Added</h3>
+<h3 id="added_16">Added</h3>
 <ul>
 <li><strong>Programmatic Provider Configuration</strong>: Runtime configuration API for provider settings without environment variables (2025-12-01)</li>
 <li><strong>Simple API</strong>: <code>configure_provider()</code>, <code>get_provider_config()</code>, <code>clear_provider_config()</code> functions</li>
@@ -595,7 +707,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li><strong>Zero Breaking Changes</strong>: Optional runtime configuration, all existing code works unchanged</li>
 <li><strong>Feature Request</strong>: Extension of Digital Article team's base URL configuration request</li>
 </ul>
-<h3 id="documentation_4">Documentation</h3>
+<h3 id="documentation_6">Documentation</h3>
 <ul>
 <li><strong>README.md</strong>: Added Programmatic Configuration section with use cases and priority system</li>
 <li><strong>llms.txt</strong>: Added feature line for v2.6.2</li>
@@ -611,7 +723,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li><strong>Test Coverage</strong>: Unit tests for config methods, provider creation, precedence, and registry integration</li>
 </ul>
 <h2 id="261-2025-12-01">[2.6.1] - 2025-12-01</h2>
-<h3 id="added_13">Added</h3>
+<h3 id="added_17">Added</h3>
 <ul>
 <li><strong>Environment Variable Support for Provider Base URLs</strong>: Ollama and LMStudio providers now respect environment variables for custom base URLs (2025-12-01)</li>
 <li><strong>Ollama Provider</strong>: Supports <code>OLLAMA_BASE_URL</code> and <code>OLLAMA_HOST</code> environment variables</li>
@@ -630,7 +742,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li><strong>Zero Breaking Changes</strong>: Optional environment variables, defaults unchanged, fully backward compatible</li>
 <li><strong>Feature Request</strong>: Submitted by Digital Article team for computational notebook deployment</li>
 </ul>
-<h3 id="documentation_5">Documentation</h3>
+<h3 id="documentation_7">Documentation</h3>
 <ul>
 <li><strong>README.md</strong>: Added Environment Variables section with examples for all providers</li>
 <li><strong>llms.txt</strong>: Added feature line for v2.6.1</li>
@@ -644,7 +756,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li><strong>Test Coverage</strong>: Unit tests for env var reading, precedence, defaults, and integration with provider registry</li>
 </ul>
 <h2 id="260-2025-12-01">[2.6.0] - 2025-12-01</h2>
-<h3 id="added_14">Added</h3>
+<h3 id="added_18">Added</h3>
 <ul>
 <li><strong>Model Download API</strong>: Provider-agnostic async model download with progress reporting (2025-12-01)</li>
 <li><strong>Top-Level Function</strong>: <code>from abstractcore import download_model</code> - simple, discoverable API</li>
@@ -713,7 +825,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <ul>
 <li><strong>Async Documentation</strong>:</li>
 <li>Updated README.md with performance data and provider-specific details</li>
-<li>Educational <a href="examples/async_cli_demo.py">async CLI demo</a> with 8 core async/await patterns</li>
+<li>Educational <a href="examples/cli/async_cli_demo.py">async CLI demo</a> with 8 core async/await patterns</li>
 <li>Created comprehensive async guide in docs/async-guide.md</li>
 <li>
 <p>Backlog documents: <code>async-mlx-hf.md</code> (investigation), <code>batching.md</code> (future enhancement)</p>
@@ -742,14 +854,14 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li><strong>Real Concurrency</strong>: True async I/O overlap for network providers (HTTP client/server architecture)</li>
 <li><strong>Fallback Efficiency</strong>: MLX/HF keep event loop responsive for mixing with async I/O operations</li>
 </ul>
-<h3 id="documentation_6">Documentation</h3>
+<h3 id="documentation_8">Documentation</h3>
 <ul>
-<li><a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/README.md#async">Async/Await Support</a> - Updated usage examples</li>
-<li><a href="async-guide.html">Async Guide</a> - Comprehensive examples and patterns</li>
-<li><a href="examples/async_cli_demo.py">Async CLI Demo</a> - Educational reference for learning</li>
+<li><a href="README.html#async">Async/Await Support</a> - Updated usage examples</li>
+<li><a href="docs/async-guide.md">Async Guide</a> - Comprehensive examples and patterns</li>
+<li><a href="examples/cli/async_cli_demo.py">Async CLI Demo</a> - Educational reference for learning</li>
 </ul>
 <h2 id="254-2025-11-27">[2.5.4] - 2025-11-27</h2>
-<h3 id="added_15">Added</h3>
+<h3 id="added_19">Added</h3>
 <ul>
 <li><strong>Async/Await Support</strong>: Native async API for concurrent LLM requests with 3-10x performance improvement</li>
 <li><strong><code>agenerate()</code> Method</strong>: Async version of <code>generate()</code> works with all 6 providers (OpenAI, Anthropic, Ollama, LMStudio, MLX, HuggingFace)</li>
@@ -784,7 +896,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li><strong>llms.txt</strong>: Added async code examples and capabilities for AI consumption</li>
 <li><strong>llms-full.txt</strong>: Comprehensive async section with 4 subsections (basic, streaming, session, multi-provider)</li>
 </ul>
-<h3 id="fixed_11">Fixed</h3>
+<h3 id="fixed_14">Fixed</h3>
 <ul>
 <li><strong>Platform Compatibility</strong>: <code>pip install abstractcore[all]</code> no longer fails on Linux/Windows</li>
 <li>Previously, <code>abstractcore[all]</code> would fail on non-macOS systems due to MLX dependencies</li>
@@ -815,7 +927,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li>High-throughput API endpoints</li>
 </ul>
 <h2 id="253-2025-11-10">[2.5.3] - 2025-11-10</h2>
-<h3 id="added_16">Added</h3>
+<h3 id="added_20">Added</h3>
 <ul>
 <li>Added programmatic interaction tracing to capture complete LLM interaction history, enabling debugging, compliance, and performance analysis.</li>
 <li>Introduced provider-level and session-level tracing with customizable metadata and automatic trace collection.</li>
@@ -902,7 +1014,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li>Ollama uses LocalMediaHandler with custom image array format</li>
 <li>Added comprehensive architecture documentation and diagrams</li>
 </ul>
-<h3 id="fixed_12">Fixed</h3>
+<h3 id="fixed_15">Fixed</h3>
 <ul>
 <li><strong>Cache Creation</strong>: Automatic directory creation with proper error handling</li>
 <li><strong>Dependency Validation</strong>: Structured logging for missing libraries  </li>
@@ -921,7 +1033,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li>Quality assessment heuristics may be overly conservative for some document types</li>
 </ul>
 <h2 id="252-2025-10-26">[2.5.2] - 2025-10-26</h2>
-<h3 id="added_17">Added</h3>
+<h3 id="added_21">Added</h3>
 <ul>
 <li><strong>Native Structured Output Support for HuggingFace GGUF Models</strong>: HuggingFace provider now supports server-side schema enforcement for GGUF models via llama-cpp-python's <code>response_format</code> parameter</li>
 <li>GGUF models loaded through HuggingFace provider automatically get native structured output support</li>
@@ -944,7 +1056,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li>Optimized for Apple M-series processors</li>
 <li>Zero validation retries required</li>
 </ul>
-<h3 id="changed_10">Changed</h3>
+<h3 id="changed_15">Changed</h3>
 <ul>
 <li><strong>StructuredOutputHandler</strong>: Enhanced provider detection to identify HuggingFace GGUF models, Transformers with Outlines, and MLX with Outlines as having native support</li>
 <li>Checks for <code>model_type == "gguf"</code> to determine GGUF native support</li>
@@ -967,7 +1079,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li><code>pip install abstractcore[mlx]</code> now includes Outlines for native structured output</li>
 <li>Base installation remains lightweight - Outlines only installed when needed</li>
 </ul>
-<h3 id="fixed_13">Fixed</h3>
+<h3 id="fixed_16">Fixed</h3>
 <ul>
 <li><strong>HuggingFace Provider</strong>: Added missing <code>response_model</code> parameter propagation through internal generation methods</li>
 <li>Fixed <code>_generate_internal()</code> to pass <code>response_model</code> to both GGUF and transformers backends</li>
@@ -990,7 +1102,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 - The <code>"auto"</code> setting uses Outlines if installed, which may impact performance without improving reliability</p>
 <p>This finding suggests that for these specific models and use cases, the overhead of constrained decoding outweighs its benefits when client-side validation already achieves 100% success.</p>
 <h2 id="251-2025-10-24">[2.5.1] - 2025-10-24</h2>
-<h3 id="added_18">Added</h3>
+<h3 id="added_22">Added</h3>
 <ul>
 <li>New <code>intent</code> CLI application for analyzing conversation intents and detecting deception patterns</li>
 <li><code>/intent</code> command in interactive CLI to analyze participant motivations in real-time conversations</li>
@@ -1000,7 +1112,7 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li>Works seamlessly with Pydantic models through the existing <code>response_model</code> parameter</li>
 <li>Provider registry updated to advertise structured output capability</li>
 </ul>
-<h3 id="changed_11">Changed</h3>
+<h3 id="changed_16">Changed</h3>
 <ul>
 <li>Renamed "Internal CLI" to "AbstractCore CLI" throughout documentation</li>
 <li>File renamed: <code>docs/internal-cli.md</code> → <code>docs/acore-cli.md</code></li>
@@ -1008,14 +1120,14 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li>This reflects the actual server-side schema enforcement capabilities these models have when used with Ollama</li>
 <li><strong>Provider Registry</strong>: Added <code>"structured_output"</code> to supported features for both Ollama and LMStudio providers</li>
 </ul>
-<h3 id="fixed_14">Fixed</h3>
+<h3 id="fixed_17">Fixed</h3>
 <ul>
 <li>Updated all documentation cross-references to use new CLI naming</li>
 <li><strong>Ollama Provider</strong>: Improved documentation of native structured output implementation (was already correct, now better documented)</li>
 <li><strong>StructuredOutputHandler</strong>: Enhanced provider detection logic to correctly identify Ollama and LMStudio as having native support regardless of configuration</li>
 </ul>
 <h2 id="249-2025-10-21">[2.4.9] - 2025-10-21</h2>
-<h3 id="fixed_15">Fixed</h3>
+<h3 id="fixed_18">Fixed</h3>
 <ul>
 <li><strong>Configuration System</strong>: Fixed missing configuration module that caused <code>'NoneType' object is not callable</code> error</li>
 <li>Renamed <code>abstractcore/cli</code> to <code>abstractcore/config</code> to match expected import path</li>
@@ -1023,11 +1135,11 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li>Fixed <code>abstractcore --set-vision-provider</code> and all other configuration commands</li>
 </ul>
 <h2 id="247-2025-10-21">[2.4.7] - 2025-10-21</h2>
-<h3 id="fixed_16">Fixed</h3>
+<h3 id="fixed_19">Fixed</h3>
 <ul>
 <li><strong>Tools Dependencies</strong>: Added missing <code>requests</code> dependency to core requirements and created <code>tools</code> optional extra for enhanced functionality</li>
 </ul>
-<h3 id="added_19">Added</h3>
+<h3 id="added_23">Added</h3>
 <h4 id="consistent-token-terminology">Consistent Token Terminology</h4>
 <ul>
 <li><strong>Unified Token Naming</strong>: Standardized token terminology across AbstractCore to match input parameter naming</li>
@@ -1055,8 +1167,8 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 <li><strong>Summary Integration</strong>: Generation time automatically included in <code>response.get_summary()</code> output</li>
 </ul>
 <h2 id="246-2025-10-21">[2.4.6] - 2025-10-21</h2>
-<h3 id="added_20">Added</h3>
-<h4 id="enhanced-fetchurl-tool-performance">Enhanced fetch_url Tool Performance</h4>
+<h3 id="added_24">Added</h3>
+<h4 id="enhanced-fetch_url-tool-performance">Enhanced fetch_url Tool Performance</h4>
 <ul>
 <li><strong>Optimized HTML Parsing</strong>: Added lxml parser support for 2-3x faster HTML processing (with html.parser fallback)</li>
 <li><strong>Session-Based Connection Reuse</strong>: Improved network performance through connection pooling</li>
@@ -1121,13 +1233,13 @@ curl http://localhost:8080/v1/models?provider=openai-compatible
 </ul>
 <h4 id="usage-examples_1">Usage Examples</h4>
 <div class="code-block"><pre><code class="language-python"># Provider-level parameters
-llm = create_llm("openai", model="gpt-4", temperature=0.3, seed=42)
-response = llm.generate("Hello", temperature=0.8)  # Override temperature for this call
+llm = create_llm(&quot;openai&quot;, model=&quot;gpt-4&quot;, temperature=0.3, seed=42)
+response = llm.generate(&quot;Hello&quot;, temperature=0.8)  # Override temperature for this call
 
 # Session-level parameters
 session = BasicSession(provider=llm, temperature=0.5, seed=123)
-response1 = session.generate("First message")  # Uses session temperature=0.5, seed=123
-response2 = session.generate("Second message", temperature=0.9)  # Override temperature, keep seed
+response1 = session.generate(&quot;First message&quot;)  # Uses session temperature=0.5, seed=123
+response2 = session.generate(&quot;Second message&quot;, temperature=0.9)  # Override temperature, keep seed
 </code></pre></div>
 <h3 id="architecture-review-summary">Architecture Review Summary</h3>
 <p>After independent analysis, the implementation was <strong>refactored for maximum elegance and maintainability</strong>:</p>
@@ -1153,7 +1265,7 @@ response2 = session.generate("Second message", temperature=0.9)  # Override temp
 <li><strong>Consistency</strong>: 100% uniform parameter handling across all 6 providers</li>
 <li><strong>Extensibility</strong>: New parameters can be added with 2 lines instead of 12</li>
 </ul>
-<p>See <a href="https://github.com/lpalbou/AbstractCore/blob/main/docs/generation-parameters.md">Generation Parameters Architecture</a> for detailed technical analysis.</p>
+<p>See <a href="docs/generation-parameters.md">Generation Parameters Architecture</a> for detailed technical analysis.</p>
 <h3 id="testing-verification">Testing &amp; Verification</h3>
 <h4 id="comprehensive-test-suite">Comprehensive Test Suite</h4>
 <ul>
@@ -1175,7 +1287,7 @@ response2 = session.generate("Second message", temperature=0.9)  # Override temp
 <p><strong>Empirically Verified</strong>: All providers except Anthropic achieve true determinism with <code>seed + temperature=0</code>:</p>
 <div class="code-block"><pre><code class="language-bash"># Verified deterministic behavior (100% success rate):
 ✅ OpenAI (gpt-3.5-turbo): Same seed → Identical outputs
-✅ Ollama (gemma3:1b): Same seed → Identical outputs  
+✅ Ollama (gemma3:1b): Same seed → Identical outputs
 ✅ MLX (Qwen3-4B): Same seed → Identical outputs
 ⚠️ Anthropic (claude-3-haiku): temperature=0 → Consistent outputs (no seed support)
 </code></pre></div>
@@ -1184,10 +1296,10 @@ response2 = session.generate("Second message", temperature=0.9)  # Override temp
 python tests/manual_seed_verification.py
 
 # Test specific provider determinism
-python tests/manual_seed_verification.py --provider openai --prompt "Count to 5"
+python tests/manual_seed_verification.py --provider openai --prompt &quot;Count to 5&quot;
 </code></pre></div>
 <h2 id="245-2025-10-21">[2.4.5] - 2025-10-21</h2>
-<h3 id="fixed_17">Fixed</h3>
+<h3 id="fixed_20">Fixed</h3>
 <h4 id="critical-package-distribution-bug">Critical Package Distribution Bug</h4>
 <ul>
 <li><strong>Missing Media Subpackages</strong>: Fixed critical package installation bug where media subpackages were not included in distribution</li>
@@ -1211,7 +1323,7 @@ python tests/manual_seed_verification.py --provider openai --prompt "Count to 5"
 <li><strong>Impact</strong>: Configuration CLI commands would fail after installation from PyPI</li>
 <li><strong>Solution</strong>: Added <code>abstractcore.cli</code> to packages list in <code>pyproject.toml</code></li>
 </ul>
-<h3 id="added_21">Added</h3>
+<h3 id="added_25">Added</h3>
 <h4 id="cli-entry-point-improvements">CLI Entry Point Improvements</h4>
 <ul>
 <li><strong>New Entry Points</strong>: Added convenient aliases to clarify CLI purpose and improve user experience</li>
@@ -1248,12 +1360,12 @@ python tests/manual_seed_verification.py --provider openai --prompt "Count to 5"
 <ol>
 <li><strong>Upgrade</strong>: <code>pip install --upgrade abstractcore</code></li>
 <li><strong>Verify</strong>: <code>python -c "from abstractcore import create_llm; print('✅ Works!')"</code></li>
-<li><strong>Use new CLI aliases</strong> (optional):
-   - <code>abstractcore-config --status</code> instead of <code>abstractcore --status</code>
-   - <code>abstractcore-chat</code> instead of <code>python -m abstractcore.utils.cli</code></li>
+<li><strong>Use new CLI aliases</strong> (optional):</li>
+<li><code>abstractcore-config --status</code> instead of <code>abstractcore --status</code></li>
+<li><code>abstractcore-chat</code> instead of <code>python -m abstractcore.utils.cli</code></li>
 </ol>
 <h2 id="244-2025-10-21">[2.4.4] - 2025-10-21</h2>
-<h3 id="added_22">Added</h3>
+<h3 id="added_26">Added</h3>
 <h4 id="provider-health-check-system">Provider Health Check System</h4>
 <ul>
 <li><strong>NEW <code>.health()</code> Method</strong>: Unified health check interface for all providers</li>
@@ -1267,15 +1379,15 @@ python tests/manual_seed_verification.py --provider openai --prompt "Count to 5"
 </ul>
 <h4 id="health-check-response-structure">Health Check Response Structure</h4>
 <div class="code-block"><pre><code class="language-python">{
-    "status": bool,              # True if provider is healthy/online
-    "provider": str,             # Provider class name (e.g., "OllamaProvider")
-    "models": List[str] | None,  # Available models if online, None if offline
-    "model_count": int,          # Number of models available (0 if offline)
-    "error": str | None,         # Error message if offline, None if healthy
-    "latency_ms": float          # Health check duration in milliseconds
+    &quot;status&quot;: bool,              # True if provider is healthy/online
+    &quot;provider&quot;: str,             # Provider class name (e.g., &quot;OllamaProvider&quot;)
+    &quot;models&quot;: List[str] | None,  # Available models if online, None if offline
+    &quot;model_count&quot;: int,          # Number of models available (0 if offline)
+    &quot;error&quot;: str | None,         # Error message if offline, None if healthy
+    &quot;latency_ms&quot;: float          # Health check duration in milliseconds
 }
 </code></pre></div>
-<h3 id="fixed_18">Fixed</h3>
+<h3 id="fixed_21">Fixed</h3>
 <h4 id="huggingface-token-counting-consistency">HuggingFace Token Counting Consistency</h4>
 <ul>
 <li><strong>Centralized Token Counter</strong>: Fixed HuggingFace provider to use centralized <code>TokenUtils</code> for consistency</li>
@@ -1330,16 +1442,16 @@ python tests/manual_seed_verification.py --provider openai --prompt "Count to 5"
 <div class="code-block"><pre><code class="language-python">from abstractcore.core.factory import create_llm
 
 # Check single provider
-provider = create_llm("ollama", model="llama2")
+provider = create_llm(&quot;ollama&quot;, model=&quot;llama2&quot;)
 health = provider.health(timeout=3.0)
 
-if health["status"]:
-    print(f"✅ {health['provider']} is healthy!")
-    print(f"   📦 {health['model_count']} models available")
-    print(f"   ⏱️  {health['latency_ms']}ms response time")
+if health[&quot;status&quot;]:
+    print(f&quot;✅ {health['provider']} is healthy!&quot;)
+    print(f&quot;   📦 {health['model_count']} models available&quot;)
+    print(f&quot;   ⏱️  {health['latency_ms']}ms response time&quot;)
 else:
-    print(f"❌ {health['provider']} is offline")
-    print(f"   Error: {health['error']}")
+    print(f&quot;❌ {health['provider']} is offline&quot;)
+    print(f&quot;   Error: {health['error']}&quot;)
 </code></pre></div>
 <h4 id="for-token-counting">For Token Counting</h4>
 <p>No changes required - all existing code continues to work. HuggingFace provider now uses the same centralized token counting infrastructure as other local providers, improving consistency and accuracy.</p>
@@ -1422,7 +1534,7 @@ else:
 <li><strong>Cleanup Logic</strong>: Automatic temporary file cleanup for <code>abstractcore_img_*</code>, <code>abstractcore_file_*</code>, and <code>abstractcore_b64_*</code> prefixes</li>
 <li><strong>Prompt Adaptation</strong>: Intelligent prompt adaptation based on file types to avoid confusion</li>
 </ul>
-<h3 id="fixed_19">Fixed</h3>
+<h3 id="fixed_22">Fixed</h3>
 <h4 id="critical-runtime-issues">Critical Runtime Issues</h4>
 <ul>
 <li><strong>Time Module Scoping</strong>: Removed redundant local <code>import time</code> statements causing "cannot access local variable" errors</li>
@@ -1473,7 +1585,7 @@ else:
 <li>Model download commands</li>
 <li>Status checking and validation</li>
 </ul>
-<h4 id="documentation_7">Documentation</h4>
+<h4 id="documentation_9">Documentation</h4>
 <ul>
 <li><strong>Centralized Configuration</strong>: Created <code>docs/centralized-config.md</code> with complete configuration system documentation</li>
 <li>All available commands with examples</li>
@@ -1544,26 +1656,26 @@ else:
 <p>The <code>/v1/responses</code> endpoint now accepts both OpenAI's <code>input</code> format and our legacy <code>messages</code> format:</p>
 <p><strong>OpenAI Responses API Format (Recommended):</strong></p>
 <div class="code-block"><pre><code class="language-json">{
-  "model": "gpt-4o",
-  "input": [
+  &quot;model&quot;: &quot;gpt-4o&quot;,
+  &quot;input&quot;: [
     {
-      "role": "user",
-      "content": [
-        {"type": "input_text", "text": "Analyze this document"},
-        {"type": "input_file", "file_url": "https://example.com/doc.pdf"}
+      &quot;role&quot;: &quot;user&quot;,
+      &quot;content&quot;: [
+        {&quot;type&quot;: &quot;input_text&quot;, &quot;text&quot;: &quot;Analyze this document&quot;},
+        {&quot;type&quot;: &quot;input_file&quot;, &quot;file_url&quot;: &quot;https://example.com/doc.pdf&quot;}
       ]
     }
   ],
-  "stream": false
+  &quot;stream&quot;: false
 }
 </code></pre></div>
 <p><strong>Legacy Format (Still Supported):</strong></p>
 <div class="code-block"><pre><code class="language-json">{
-  "model": "openai/gpt-4",
-  "messages": [
-    {"role": "user", "content": "Tell me a story"}
+  &quot;model&quot;: &quot;openai/gpt-4&quot;,
+  &quot;messages&quot;: [
+    {&quot;role&quot;: &quot;user&quot;, &quot;content&quot;: &quot;Tell me a story&quot;}
   ],
-  "stream": false
+  &quot;stream&quot;: false
 }
 </code></pre></div>
 <p><strong>Note</strong>: Streaming is now opt-in (set <code>"stream": true</code>) instead of automatic, matching OpenAI's behavior.</p>
@@ -1591,22 +1703,22 @@ abstractcore --status
 <h4 id="for-media-processing-users">For Media Processing Users</h4>
 <p>Media processing now supports explicit file types:</p>
 <p><strong>CLI (Using @filename syntax):</strong></p>
-<div class="code-block"><pre><code class="language-bash">python -m abstractcore.utils.cli --prompt "Analyze @report.pdf and @chart.png"
+<div class="code-block"><pre><code class="language-bash">python -m abstractcore.utils.cli --prompt &quot;Analyze @report.pdf and @chart.png&quot;
 </code></pre></div>
 <p><strong>Python API:</strong></p>
 <div class="code-block"><pre><code class="language-python">response = llm.generate(
-    "Analyze these documents",
-    media=["report.pdf", "chart.png", "data.xlsx"]
+    &quot;Analyze these documents&quot;,
+    media=[&quot;report.pdf&quot;, &quot;chart.png&quot;, &quot;data.xlsx&quot;]
 )
 </code></pre></div>
 <p><strong>Server API (New type="file"):</strong></p>
 <div class="code-block"><pre><code class="language-json">{
-  "messages": [
+  &quot;messages&quot;: [
     {
-      "role": "user",
-      "content": [
-        {"type": "text", "text": "Analyze this file"},
-        {"type": "file", "file_url": {"url": "https://example.com/doc.pdf"}}
+      &quot;role&quot;: &quot;user&quot;,
+      &quot;content&quot;: [
+        {&quot;type&quot;: &quot;text&quot;, &quot;text&quot;: &quot;Analyze this file&quot;},
+        {&quot;type&quot;: &quot;file&quot;, &quot;file_url&quot;: {&quot;url&quot;: &quot;https://example.com/doc.pdf&quot;}}
       ]
     }
   ]
@@ -1629,7 +1741,7 @@ abstractcore --status
 <li><strong>Configuration</strong>: Single source of truth for all package-wide preferences and defaults</li>
 </ul>
 <h2 id="243-2025-10-19">[2.4.3] - 2025-10-19</h2>
-<h3 id="fixed_20">Fixed</h3>
+<h3 id="fixed_23">Fixed</h3>
 <ul>
 <li><strong>Media System Critical Fixes</strong>: Resolved implementation issues preventing full media processing functionality</li>
 <li><strong>PDF Processing</strong>: Fixed <code>output_format</code> parameter conflict in <code>PDFProcessor._create_media_content()</code> call (line 128) causing "got multiple values for keyword argument" error</li>
@@ -1663,7 +1775,7 @@ abstractcore --status
 <li>Cross-provider compatibility verified with OpenAI, Anthropic, and LMStudio providers</li>
 <li>All examples documented in <code>docs/media-handling-system.md</code> are production-tested and working</li>
 </ul>
-<h3 id="documentation_8">Documentation</h3>
+<h3 id="documentation_10">Documentation</h3>
 <ul>
 <li><strong>Comprehensive Media System Documentation</strong>: Completely rewrote <code>docs/media-handling-system.md</code> to reflect actual implementation</li>
 <li>Added detailed "How It Works Behind the Scenes" section explaining the multi-layer architecture</li>
@@ -1694,7 +1806,7 @@ abstractcore --status
 <li><strong>CLI</strong>: Simple file attachment workflow that works with all supported file formats</li>
 </ul>
 <h2 id="242-2025-10-16">[2.4.2] - 2025-10-16</h2>
-<h3 id="added_23">Added</h3>
+<h3 id="added_27">Added</h3>
 <ul>
 <li><strong>Centralized Provider Registry System</strong>: Unified provider discovery and metadata management</li>
 <li><strong>Single Source of Truth</strong>: Created <code>abstractcore/providers/registry.py</code> with <code>ProviderRegistry</code> class for centralized provider management</li>
@@ -1711,7 +1823,7 @@ abstractcore --status
 <li><strong>Documentation</strong>: Added "Provider Discovery" section to both <code>llms.txt</code> and <code>llms-full.txt</code> with Python API and HTTP API examples</li>
 <li><strong>Error Messages</strong>: Improved error messages with dynamic provider lists from registry</li>
 </ul>
-<h3 id="fixed_21">Fixed</h3>
+<h3 id="fixed_24">Fixed</h3>
 <ul>
 <li><strong>Manual Provider Synchronization</strong>: Eliminated need to manually update provider lists across factory.py, server/app.py, and documentation</li>
 <li><strong>Model List Truncation</strong>: Fixed "... and X more" truncation - now returns complete model lists for all providers</li>
@@ -1732,7 +1844,7 @@ abstractcore --status
 <li><strong>Documentation</strong>: Always up-to-date provider information in docs</li>
 </ul>
 <h2 id="241-2025-10-16">[2.4.1] - 2025-10-16</h2>
-<h3 id="fixed_22">Fixed</h3>
+<h3 id="fixed_25">Fixed</h3>
 <ul>
 <li><strong>Critical Package Distribution Fix</strong>: Fixed <code>ModuleNotFoundError: No module named 'abstractcore.exceptions'</code> that occurred when installing from PyPI</li>
 <li>Added missing <code>abstractcore.exceptions</code> and <code>abstractcore.media</code> packages to the setuptools configuration in <code>pyproject.toml</code></li>
@@ -1765,11 +1877,11 @@ from abstractllm.embeddings import EmbeddingManager
 
 # After (2.4.0+)
 from abstractcore import create_llm
-from abstractcore.processing import BasicSummarizer  
+from abstractcore.processing import BasicSummarizer
 from abstractcore.embeddings import EmbeddingManager
 </code></pre></div>
 <p><strong>2. Interface Names:</strong></p>
-<div class="code-block"><pre><code class="language-python"># Before (2.3.x) 
+<div class="code-block"><pre><code class="language-python"># Before (2.3.x)
 from abstractllm.core.interface import AbstractLLMInterface
 
 # After (2.4.0+)
@@ -1794,7 +1906,7 @@ Console scripts remain the same (both <code>summarizer</code> and <code>abstract
 <li><strong>Tests</strong>: Updated all test imports and references throughout test suite</li>
 </ul>
 <h2 id="239-2025-10-25">[2.3.9] - 2025-10-25</h2>
-<h3 id="fixed_23">Fixed</h3>
+<h3 id="fixed_26">Fixed</h3>
 <ul>
 <li><strong>Timeout Handling</strong>: Comprehensive timeout parameter handling across all providers</li>
 <li>All providers now properly handle <code>timeout=None</code> (infinity) as the default</li>
@@ -1806,12 +1918,12 @@ Console scripts remain the same (both <code>summarizer</code> and <code>abstract
 <li>Setting timeout default to None (infinity)</li>
 </ul>
 <h2 id="238-2025-10-25">[2.3.8] - 2025-10-25</h2>
-<h3 id="fixed_24">Fixed</h3>
+<h3 id="fixed_27">Fixed</h3>
 <ul>
 <li>Issue with the version</li>
 </ul>
 <h2 id="237-2025-10-25">[2.3.7] - 2025-10-25</h2>
-<h3 id="fixed_25">Fixed</h3>
+<h3 id="fixed_28">Fixed</h3>
 <ul>
 <li><strong>Syntax Warning</strong>: Fixed invalid escape sequence <code>\(</code> in <code>common_tools.py</code> docstring example</li>
 <li><strong>CLI Enhancement</strong>: Added optional focus parameter to <code>/compact</code> command for targeted conversation summarization</li>
@@ -1820,7 +1932,7 @@ Console scripts remain the same (both <code>summarizer</code> and <code>abstract
 <li>Maintains backward compatibility (no focus = default behavior)</li>
 </ul>
 <h2 id="236-2025-10-14">[2.3.6] - 2025-10-14</h2>
-<h3 id="added_24">Added</h3>
+<h3 id="added_28">Added</h3>
 <ul>
 <li><strong>Vector Embeddings</strong>: SOTA open-source models with EmbeddingGemma as default, ONNX optimization, multi-provider support (HuggingFace, Ollama, LMStudio)</li>
 <li><strong>Processing Applications</strong>: BasicSummarizer, BasicExtractor, BasicJudge with CLI tools and structured output</li>
@@ -1830,7 +1942,7 @@ Console scripts remain the same (both <code>summarizer</code> and <code>abstract
 <li><strong>Session Management</strong>: Complete serialization with analytics (summary, assessment, facts)</li>
 <li><strong>CLI Enhancements</strong>: Interactive REPL with tool integration, session persistence, and comprehensive help system</li>
 </ul>
-<h3 id="fixed_26">Fixed</h3>
+<h3 id="fixed_29">Fixed</h3>
 <ul>
 <li><strong>Critical Tool Compatibility</strong>: Tools + structured output now work together with sequential execution pattern</li>
 <li><strong>Ollama Endpoint Selection</strong>: Fixed verbose responses by using correct <code>/api/chat</code> endpoint</li>
@@ -1856,7 +1968,7 @@ Console scripts remain the same (both <code>summarizer</code> and <code>abstract
 <li><strong>Model Discovery</strong>: Heuristic-based filtering and provider-specific routing</li>
 </ul>
 <h2 id="235-2025-10-14">[2.3.5] - 2025-10-14</h2>
-<h3 id="fixed_27">Fixed</h3>
+<h3 id="fixed_30">Fixed</h3>
 <h4 id="critical-tools-structured-output-compatibility">CRITICAL: Tools + Structured Output Compatibility</h4>
 <ul>
 <li><strong>Problem</strong>: AbstractCore's <code>tools</code> and <code>response_model</code> parameters were mutually exclusive, preventing users from combining function calling with structured output validation</li>
@@ -1887,13 +1999,13 @@ Console scripts remain the same (both <code>summarizer</code> and <code>abstract
 <li>Clean error handling with descriptive messages for unsupported combinations</li>
 </ul>
 <h4 id="test-results">Test Results</h4>
-<p>✅ Tools-only mode: Works correctly<br/>
-✅ Structured output-only mode: Works correctly<br/>
-✅ <strong>NEW</strong>: Hybrid mode (tools + structured output): Now works correctly<br/>
-✅ Backward compatibility: All existing functionality preserved<br/>
+<p>✅ Tools-only mode: Works correctly<br />
+✅ Structured output-only mode: Works correctly<br />
+✅ <strong>NEW</strong>: Hybrid mode (tools + structured output): Now works correctly<br />
+✅ Backward compatibility: All existing functionality preserved<br />
 ✅ Error handling: Clear messages for unsupported streaming + hybrid combination</p>
 <h2 id="234-2025-10-14">[2.3.4] - 2025-10-14</h2>
-<h3 id="added_25">Added</h3>
+<h3 id="added_29">Added</h3>
 <h4 id="state-of-the-art-github-pages-website">State-of-the-Art GitHub Pages Website</h4>
 <ul>
 <li><strong>Professional Website</strong>: Created comprehensive GitHub Pages website at <code>https://lpalbou.github.io/AbstractCore/</code></li>
@@ -1961,7 +2073,7 @@ Console scripts remain the same (both <code>summarizer</code> and <code>abstract
 <li><strong>Comprehensive Tool Documentation</strong>: Complete coverage of tool calling system with practical examples and architecture details</li>
 </ul>
 <h2 id="233-2025-10-14">[2.3.3] - 2025-10-14</h2>
-<h3 id="fixed_28">Fixed</h3>
+<h3 id="fixed_31">Fixed</h3>
 <h4 id="onnx-runtime-warning-suppression">ONNX Runtime Warning Suppression</h4>
 <ul>
 <li><strong>Problem</strong>: ONNX Runtime displayed verbose CoreML execution provider warnings on macOS during embedding model initialization</li>
@@ -1971,7 +2083,7 @@ Console scripts remain the same (both <code>summarizer</code> and <code>abstract
 <li><strong>Technical</strong>: Set <code>onnxruntime.set_default_logger_severity(3)</code> to suppress warnings that don't affect performance or quality</li>
 </ul>
 <h2 id="232-2025-10-14">[2.3.2] - 2025-10-14</h2>
-<h3 id="fixed_29">Fixed</h3>
+<h3 id="fixed_32">Fixed</h3>
 <h4 id="critical-ollama-endpoint-selection-bug">Critical Ollama Endpoint Selection Bug</h4>
 <ul>
 <li><strong>Problem</strong>: Ollama provider was generating excessively verbose responses (1000+ characters for simple questions like "What is 2+2?")</li>
@@ -2036,11 +2148,11 @@ Console scripts remain the same (both <code>summarizer</code> and <code>abstract
 <li><code>docs/session.md</code>: New documentation explaining session management and serialization benefits</li>
 </ul>
 <h4 id="test-results_1">Test Results</h4>
-<p>✅ Ollama responses now concise (15 chars vs 977+ chars previously)<br/>
-✅ Session serialization preserves complete state including analytics<br/>
-✅ Tool execution results properly integrated into live chat history<br/>
-✅ Parameter consistency across all session methods<br/>
-✅ Defensive tool parameter handling prevents type errors<br/>
+<p>✅ Ollama responses now concise (15 chars vs 977+ chars previously)<br />
+✅ Session serialization preserves complete state including analytics<br />
+✅ Tool execution results properly integrated into live chat history<br />
+✅ Parameter consistency across all session methods<br />
+✅ Defensive tool parameter handling prevents type errors<br />
 ✅ Backward compatibility maintained for existing session files</p>
 <h2 id="230-2025-10-12">[2.3.0] - 2025-10-12</h2>
 <h3 id="major-changes">Major Changes</h3>
@@ -2179,13 +2291,13 @@ Console scripts remain the same (both <code>summarizer</code> and <code>abstract
 <div class="code-block"><pre><code class="language-python">from abstractcore.embeddings import EmbeddingManager
 
 # HuggingFace (default, unchanged)
-embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
+embedder = EmbeddingManager(model=&quot;sentence-transformers/all-MiniLM-L6-v2&quot;)
 
 # Ollama (new)
-embedder = EmbeddingManager(model="granite-embedding:278m", provider="ollama")
+embedder = EmbeddingManager(model=&quot;granite-embedding:278m&quot;, provider=&quot;ollama&quot;)
 
 # LMStudio (new)
-embedder = EmbeddingManager(model="text-embedding-all-minilm-l6-v2-embedding", provider="lmstudio")
+embedder = EmbeddingManager(model=&quot;text-embedding-all-minilm-l6-v2-embedding&quot;, provider=&quot;lmstudio&quot;)
 </code></pre></div>
 <h4 id="for-server-users_1">For Server Users</h4>
 <p>Server API endpoints remain compatible. New features:
@@ -2200,7 +2312,7 @@ embedder = EmbeddingManager(model="text-embedding-all-minilm-l6-v2-embedding", p
 <li>Reference <code>prerequisites.md</code> instead of deleted <code>providers.md</code></li>
 </ul>
 <h2 id="224-2025-10-10">[2.2.4] - 2025-10-10</h2>
-<h3 id="fixed_30">Fixed</h3>
+<h3 id="fixed_33">Fixed</h3>
 <ul>
 <li><strong>ONNX Optimization and Warning Management</strong>: Improved embedding performance and user experience</li>
 <li><strong>Smart ONNX Model Selection</strong>: EmbeddingManager now automatically selects optimized <code>model_O3.onnx</code> for better performance</li>
@@ -2217,7 +2329,7 @@ embedder = EmbeddingManager(model="text-embedding-all-minilm-l6-v2-embedding", p
 <li>Zero breaking changes - all improvements are additive with sensible defaults</li>
 </ul>
 <h2 id="223-2025-10-10">[2.2.3] - 2025-10-10</h2>
-<h3 id="fixed_31">Fixed</h3>
+<h3 id="fixed_34">Fixed</h3>
 <ul>
 <li><strong>Installation Package [all] Extra</strong>: Fixed <code>pip install abstractcore[all]</code> to truly install ALL modules</li>
 <li><strong>Issue</strong>: The <code>[all]</code> extra was missing development dependencies (dev, test, docs)</li>
@@ -2237,7 +2349,7 @@ embedder = EmbeddingManager(model="text-embedding-all-minilm-l6-v2-embedding", p
 <li><strong>Verified Configuration</strong>: All referenced extras exist and are properly defined with no circular dependencies</li>
 </ul>
 <h2 id="222-2025-10-10">[2.2.2] - 2025-10-10</h2>
-<h3 id="added_26">Added</h3>
+<h3 id="added_30">Added</h3>
 <ul>
 <li><strong>LLM-as-a-Judge</strong>: Production-ready objective evaluation with structured assessments</li>
 <li><strong>BasicJudge</strong> class for critical assessment with constructive skepticism</li>
@@ -2257,7 +2369,7 @@ embedder = EmbeddingManager(model="text-embedding-all-minilm-l6-v2-embedding", p
 <li><strong>Custom criteria support</strong> and reference-based evaluation for specialized assessment needs</li>
 <li><strong>Comprehensive error handling</strong> with graceful fallbacks and detailed diagnostics</li>
 </ul>
-<h3 id="documentation_9">Documentation</h3>
+<h3 id="documentation_11">Documentation</h3>
 <ul>
 <li><strong>Complete BasicJudge documentation</strong>: Enhanced <code>docs/basic-judge.md</code> with API reference, examples, and best practices</li>
 <li><strong>Real-world examples</strong>: Code review, documentation assessment, academic writing evaluation, multiple file scenarios</li>
@@ -2291,7 +2403,7 @@ embedder = EmbeddingManager(model="text-embedding-all-minilm-l6-v2-embedding", p
 <li>Improved error messages for timeout validation</li>
 <li>Better support for processing large documents with resource-intensive models</li>
 </ul>
-<h3 id="fixed_32">Fixed</h3>
+<h3 id="fixed_35">Fixed</h3>
 <ul>
 <li><strong>BasicExtractor JSON-LD Consistency</strong>: Resolved structural inconsistencies in knowledge graph output</li>
 <li>Fixed JSON-LD reference normalization where some providers generated string references instead of proper object format</li>
@@ -2315,7 +2427,7 @@ embedder = EmbeddingManager(model="text-embedding-all-minilm-l6-v2-embedding", p
 <li>No hardcoded timeout values remain in provider implementations</li>
 <li>Consistent 300-second default across HTTP clients, tool execution, and embeddings</li>
 </ul>
-<h3 id="documentation_10">Documentation</h3>
+<h3 id="documentation_12">Documentation</h3>
 <ul>
 <li><strong>Updated Model References</strong>: Modernized documentation to use current recommended models</li>
 <li>Updated <code>docs/getting-started.md</code> to use <code>qwen3:4b-instruct-2507-q4_K_M</code> (default) and <code>qwen3-coder:30b</code> (premium)</li>
@@ -2333,11 +2445,13 @@ embedder = EmbeddingManager(model="text-embedding-all-minilm-l6-v2-embedding", p
 </ul>
 <h2 id="previous-versions">Previous Versions</h2>
 <p>Previous version history is available in the git commit log.</p>
+
             </div>
         </div>
     </main>
 
     <!-- Scripts -->
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

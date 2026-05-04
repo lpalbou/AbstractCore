@@ -111,6 +111,7 @@ curl -s http://localhost:8000/v1/images/generations \
 Notes:
 - For some older SD1.x repos, a `variant=fp16` may not exist. If you see a `variant=fp16` error on Apple Silicon, set `ABSTRACTCORE_VISION_TORCH_DTYPE=float32` (or run on CPU).
 - Very low step counts can trigger the safety checker and yield all-black outputs; use a reasonable `steps` value (e.g. `8+` for smoke tests).
+- If you get a `501` saying “failed to import: diffusers” but `diffusers` is installed, it’s usually a transitive import failure (often a `torch`/`torchvision` mismatch). Verify `python -c "import torchvision"` works and reinstall a compatible `torchvision` if needed.
 
 ## Notes / expectations
 

@@ -2,9 +2,27 @@
 
 AbstractCore provides a unified configuration system that manages default models, cache directories, logging settings, and other package-wide preferences from a single location.
 
+## Quick Setup
+
+```bash
+# Interactive guided setup (7 steps: model, vision, API keys, audio, video, embeddings, logging)
+abstractcore --config
+
+# Check readiness of all subsystems + download/install what's missing
+abstractcore --install
+
+# Auto-download everything missing (non-interactive)
+abstractcore --install --yes
+
+# View current configuration
+abstractcore --status
+```
+
 ## Configuration File Location
 
 Configuration is stored in: `~/.abstractcore/config/abstractcore.json`
+
+API keys saved via `--config` or `--set-api-key` are persisted here and automatically injected into the process environment (e.g. `OPENAI_API_KEY`) at startup. Environment variables always take precedence over config-persisted keys.
 
 ## Configuration Sections
 
@@ -135,11 +153,13 @@ Notes:
 
 ### Audio (default policy + optional speech-to-text fallback)
 
-Audio attachments are controlled by `audio_policy` and are **strict by default** to avoid silent semantic changes:
+Audio attachments are controlled by `audio_policy`. The default is `auto`: use native audio when supported, otherwise fall back to STT via `abstractvoice` (if installed). If `abstractvoice` is not installed, `auto` degrades gracefully to native-only behavior at runtime.
 
 ```bash
-# Enable speech-to-text fallback when audio is attached (requires an STT plugin backend)
+# STT fallback requires abstractvoice
 pip install abstractvoice
+
+# Override strategy explicitly (auto is the default)
 abstractcore --set-audio-strategy auto
 
 # Optional: set a language hint (e.g. en, fr)
@@ -147,9 +167,9 @@ abstractcore --set-stt-language fr
 ```
 
 Notes:
-- `audio_policy="native_only"` errors on text-only models (default).
+- `audio_policy="auto"` uses native audio when supported, otherwise STT when available (default).
 - `audio_policy="speech_to_text"` forces STT and injects a transcript into the request.
-- `audio_policy="auto"` uses native audio when supported, otherwise STT when available.
+- `audio_policy="native_only"` errors on text-only models (no fallback).
 
 ### Video (native vs frames fallback)
 

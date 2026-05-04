@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
+requires = ["setuptools>=77.0.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,7 +7,8 @@ name = "abstractcore"
 dynamic = ["version"]
 description = "Unified interface to all LLM providers with essential infrastructure for tool calling, streaming, and model management"
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "Laurent-Philippe Albou", email = "contact@abstractcore.ai"}
 ]
@@ -29,18 +30,21 @@ keywords = [
     "streaming"
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "Intended Audience :: Information Technology",
+    "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Internet :: WWW/HTTP :: HTTP Servers",
+    "Typing :: Typed",
 ]
 requires-python = ">=3.9"
 
@@ -83,13 +87,33 @@ deepsearch = "abstractcore.apps.deepsearch:main"
 abstractcore-deepsearch = "abstractcore.apps.deepsearch:main"
 
 [project.optional-dependencies]
-# Individual providers
+# Provider extras
 openai = [
     "openai>=1.0.0,<2.0.0",
 ]
 
 anthropic = [
     "anthropic>=0.25.0,<1.0.0",
+]
+
+remote = [
+    # Lightweight hosted/API provider bundle. OpenRouter, Portkey, Ollama,
+    # LMStudio, and generic OpenAI-compatible endpoints use core httpx and do
+    # not need SDK dependencies.
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
+]
+
+openrouter = [
+    # No additional dependencies - uses core httpx via OpenAI-compatible API.
+]
+
+portkey = [
+    # No additional dependencies - uses core httpx via OpenAI-compatible API.
+]
+
+openai-compatible = [
+    # No additional dependencies - uses core httpx.
 ]
 
 ollama = [
@@ -121,7 +145,7 @@ mlx = [
 ]
 
 mlx-bench = [
-    # Used by `examples/mlx_concurrency_benchmark.py` to generate the PNG graph.
+    # Used by `examples/performance/mlx_concurrency_benchmark.py` to generate the PNG graph.
     "matplotlib>=3.8.0,<4.0.0",
 ]
 
@@ -131,7 +155,8 @@ vllm = [
 
 embeddings = [
     "sentence-transformers>=5.1.0,<6.0.0",  # Required for EmbeddingGemma model support
-    "numpy>=1.20.0,<2.0.0",
+    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
 ]
 
 tokens = [
@@ -177,10 +202,11 @@ compression = [
     "Pillow>=10.0.0,<12.0.0",
 ]
 
-# Turnkey installs (end-user focused). Prefer these in docs.
+# Turnkey installs.
 # Notes:
-# - `ollama` / `lmstudio` / `openai-compatible` / `openrouter` use only core deps.
-# - `all` includes both MLX (Apple Silicon) and vLLM (CUDA) and may not install everywhere.
+# - Prefer `remote`, explicit composed extras, `all-apple`, or `all-gpu` in docs.
+# - `ollama`, `lmstudio`, `openai-compatible`, `openrouter`, and `portkey` use only core deps.
+# - `all` includes both MLX (Apple Silicon) and vLLM (CUDA/ROCm) and may not install everywhere.
 all = [
     # Providers
     "openai>=1.0.0,<2.0.0",
@@ -199,7 +225,8 @@ all = [
     "vllm>=0.6.0,<1.0.0",
     # Features
     "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<2.0.0",
+    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     "tiktoken>=0.5.0,<1.0.0",
     "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
@@ -234,7 +261,8 @@ all-apple = [
     "mlx-lm>=0.30.0,<1.0.0",
     # Features
     "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<2.0.0",
+    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     "tiktoken>=0.5.0,<1.0.0",
     "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
@@ -268,7 +296,8 @@ all-gpu = [
     "vllm>=0.6.0,<1.0.0",
     # Features
     "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<2.0.0",
+    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     "tiktoken>=0.5.0,<1.0.0",
     "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
@@ -289,6 +318,8 @@ all-gpu = [
     "abstractvision>=0.2.0",
 ]
 
+# Legacy broad bundle kept for existing users. New installs should usually
+# compose explicit extras or choose `all-apple` / `all-gpu`.
 all-non-mlx = [
     # Providers
     "openai>=1.0.0,<2.0.0",
@@ -301,7 +332,8 @@ all-non-mlx = [
     "outlines>=0.1.0",
     # Features
     "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<2.0.0",
+    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     "tiktoken>=0.5.0,<1.0.0",
     "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
@@ -370,6 +402,20 @@ test = [
     "pytest-cov>=4.0.0",
     "responses>=0.23.0",
     "httpx>=0.24.0",
+    "tomli>=2.0.0; python_version < '3.11'",
+    # These are imported unconditionally by parts of the test suite.
+    "openai>=1.0.0,<2.0.0",
+    "anthropic>=0.25.0,<1.0.0",
+    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
+    "Pillow>=10.0.0,<12.0.0",
+    "fastapi>=0.100.0,<1.0.0",
+    "python-multipart>=0.0.6,<1.0.0",
+    "uvicorn>=0.23.0,<1.0.0",
+    # Tools HTML parsing tests expect these to be installed.
+    "requests>=2.25.0,<3.0.0",
+    "beautifulsoup4>=4.12.0,<5.0.0",
+    "lxml>=4.9.0,<6.0.0",
 ]
 
 # Documentation dependencies
@@ -395,7 +441,8 @@ full-dev = [
     "mlx-lm>=0.30.0,<1.0.0",
     "vllm>=0.6.0,<1.0.0",
     "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<2.0.0",
+    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     "tiktoken>=0.5.0,<1.0.0",
     "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
@@ -465,6 +512,9 @@ version = {attr = "abstractcore.utils.version.__version__"}
 [tool.setuptools.package-data]
 abstractcore = [
     "assets/*.json",
+    "assets/*.jsonld",
+    "assets/*.md",
+    "assets/*.ttf",
     "py.typed",
 ]
 
@@ -528,6 +578,8 @@ ignore_missing_imports = true
 [tool.ruff]
 target-version = "py39"
 line-length = 100
+
+[tool.ruff.lint]
 select = [
     "E",  # pycodestyle errors
     "W",  # pycodestyle warnings
@@ -543,23 +595,36 @@ ignore = [
     "B904",  # Within an except clause, raise exceptions with raise ... from err
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "tests/**/*" = ["B011"]
 
 # Pytest configuration
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-ra -v --strict-markers --strict-config --tb=short"
+addopts = "-ra --tb=short --strict-markers --strict-config --disable-warnings -p no:cacheprovider"
 testpaths = ["tests"]
-python_files = ["test_*.py", "*_test.py"]
+python_files = ["test_*.py"]
 python_functions = ["test_*"]
 python_classes = ["Test*"]
 markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "integration: marks tests as integration tests",
-    "unit: marks tests as unit tests",
-    "provider: marks tests that require specific providers",
+    "basic: Level A (contract/unit) tests",
+    "vision: Tests requiring vision capabilities",
+    "provider: Tests for specific provider functionality",
+    "provider_required: Tests requiring specific provider availability",
+    "slow: Slow-running tests (use -m \"not slow\" to skip)",
+    "comprehensive: Comprehensive vision tests across all models/images",
+    "smoke: Quick smoke tests for basic functionality",
+    "integration: Integration tests that test multiple components",
+    "e2e: Level C (end-to-end/real infra) tests (opt-in)",
+    "unit: Unit tests for individual components",
+    "phase1: Phase 1 development tests (core integration)",
+    "phase2: Phase 2 development tests (documentation accuracy)",
+    "phase3: Phase 3 development tests (advanced features)",
+    "performance: Performance and benchmark tests",
+    "large_files: Tests requiring large test files",
+    "requires_deps: Tests requiring optional dependencies",
+    "asyncio: Async tests (pytest-asyncio)",
 ]
 
 # Coverage configuration

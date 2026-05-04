@@ -67,7 +67,10 @@
 <li><strong><a href="tool-syntax-rewriting.html">Tool Syntax Rewriting</a></strong> — normalize tool-call markup for different runtimes/clients</li>
 <li><strong><a href="structured-output.html">Structured Output</a></strong> — <code>response_model=...</code> strategies and limitations</li>
 <li><strong><a href="session.html">Session Management</a></strong> — conversation state, persistence, compaction</li>
+<li><strong><a href="prompt-caching.html">Prompt Caching</a></strong> — <code>prompt_cache_key</code>, KV/prefix caches, and persistence (MLX)</li>
 <li><strong><a href="generation-parameters.html">Generation Parameters</a></strong> — unified parameter vocabulary + provider quirks</li>
+<li><strong><a href="memory-blocs.html">Memory Blocs</a></strong> — persistent extracted text snapshots + per-model KV artifacts</li>
+<li><strong>Model/architecture registries (source of truth)</strong> — <code>abstractcore/assets/model_capabilities.json</code> + <code>abstractcore/assets/architecture_formats.json</code> (see <code>abstractcore/assets/README.md</code>)</li>
 <li><strong><a href="centralized-config.html">Centralized Config</a></strong> — config file + config CLI (<code>abstractcore --config</code>)</li>
 <li><strong><a href="events.html">Events</a></strong> and <strong><a href="structured-logging.html">Structured Logging</a></strong> — observability hooks</li>
 <li><strong><a href="interaction-tracing.html">Interaction Tracing</a></strong> — record prompts/responses/usage for debugging</li>
@@ -124,7 +127,7 @@
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

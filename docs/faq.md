@@ -8,22 +8,24 @@ Anything heavy (provider SDKs, torch/transformers, PDF parsing, embeddings model
 
 ## Which extra do I need for my provider?
 
+- Hosted SDK bundle: `pip install "abstractcore[remote]"` installs OpenAI + Anthropic.
 - OpenAI: `pip install "abstractcore[openai]"`
 - Anthropic: `pip install "abstractcore[anthropic]"`
+- OpenRouter, Portkey, Ollama, LM Studio, and generic OpenAI-compatible `/v1` endpoints: core install is enough (`pip install abstractcore`).
 - HuggingFace (transformers/torch; heavy): `pip install "abstractcore[huggingface]"`
 - MLX (Apple Silicon; heavy): `pip install "abstractcore[mlx]"`
 - vLLM integration (GPU; heavy): `pip install "abstractcore[vllm]"`
 
-These providers work with the core install (no provider extra): `ollama`, `lmstudio`, `openrouter`, `openai-compatible`.
+These providers work with the core install (no provider extra): `ollama`, `lmstudio`, `openrouter`, `portkey`, `openai-compatible`.
 
 ## How do I combine extras?
 
 ```bash
 # zsh: keep quotes
-pip install "abstractcore[openai,media,tools]"
+pip install "abstractcore[remote,media,tools]"
 ```
 
-For “turnkey” installs, see `README.md` (`all-apple`, `all-non-mlx`, `all-gpu`).
+For “turnkey” local-runtime installs, see `README.md` (`all-apple` for Apple Silicon, `all-gpu` for NVIDIA GPU).
 
 ## Why did my install pull `torch` / take a long time?
 
@@ -101,6 +103,14 @@ abstractcore --status
 ```
 
 Config is stored in `~/.abstractcore/config/abstractcore.json`. See [Centralized Config](centralized-config.md).
+
+## Can I use the HTTP server with only provider API keys?
+
+Yes. You do not have to give a client the AbstractCore server master key. If `ABSTRACTCORE_SERVER_API_KEY` is not configured, a client can bring its own upstream provider key, for example an Anthropic, OpenRouter, or Portkey key, by sending it as `Authorization: Bearer <provider-key>` or `X-AbstractCore-Provider-API-Key`.
+
+That key is forwarded only to the provider requested by the model route, such as `anthropic/...`, `openrouter/...`, or `portkey/...`. It does not unlock other server-configured provider keys, and it does not grant access to providers the client did not supply credentials for.
+
+If `ABSTRACTCORE_SERVER_API_KEY` is configured, `Authorization` is reserved for the AbstractCore server key. In that mode, use `X-AbstractCore-Provider-API-Key` only when you want to override the upstream provider key for a single request. Provider keys in request bodies or query strings are disabled.
 
 ## Why aren’t tools executed automatically?
 

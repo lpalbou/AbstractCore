@@ -51,8 +51,8 @@
 <p>⚠️ <strong>For developers learning async patterns in AbstractCore</strong></p>
 <p>AbstractCore includes an educational async CLI demo that illustrates 8 core async/await patterns:</p>
 <div class="code-block"><pre><code class="language-bash"># Run the async demo (educational only)
-python examples/async_cli_demo.py --provider ollama --model qwen3:4b
-python examples/async_cli_demo.py --provider lmstudio --model qwen/qwen3-vl-30b --stream
+python examples/cli/async_cli_demo.py --provider ollama --model qwen3:4b
+python examples/cli/async_cli_demo.py --provider lmstudio --model qwen/qwen3-vl-30b --stream
 </code></pre></div>
 <p><strong>What it demonstrates:</strong>
 1. Event-driven progress (GlobalEventBus)
@@ -70,7 +70,7 @@ python examples/async_cli_demo.py --provider lmstudio --model qwen/qwen3-vl-30b 
 - ✅ Event-driven progress feedback
 - ✅ Extensively commented code explaining each pattern</p>
 <p><strong>This is for LEARNING ONLY.</strong> For production use, stick with the standard CLI below.</p>
-<p><a href="../examples/async_cli_demo.py">View the demo code →</a></p>
+<p><a href="../examples/cli/async_cli_demo.py">View the demo code →</a></p>
 <h2 id="quick-start">Quick Start</h2>
 <div class="code-block"><pre><code class="language-bash"># Start the internal CLI (installed as `abstractcore-chat`)
 abstractcore-chat --provider ollama --model qwen3-coder:30b
@@ -130,13 +130,26 @@ abstractcore --set-video-strategy auto            # frames fallback requires ffm
 <div class="code-block"><pre><code class="language-bash">/thinking auto
 /thinking on
 /thinking off
+/thinking none
 /thinking low
 /thinking medium
 /thinking high
+/thinking xhigh
 </code></pre></div>
 <p>Notes:
 - Not every provider/model supports request-side control; unsupported requests may warn and be ignored.
 - Some models expose reasoning in <code>response.metadata["reasoning"]</code> (and AbstractCore normalizes/strips it from visible content when configured).</p>
+<h3 id="prompt-kv-cache-cache">Prompt / KV Cache (<code>/cache</code>)</h3>
+<p>Persist or clear the local prompt/KV cache (currently <strong>MLX only</strong>; caches are <strong>model-locked</strong>):</p>
+<div class="code-block"><pre><code class="language-bash">/cache save chat_cache
+/cache save chat_cache --q8
+/cache load chat_cache
+/cache clear
+</code></pre></div>
+<p>Notes:
+- <code>save</code>/<code>load</code> read/write a <code>.safetensors</code> file (stored under the CLI cache directory).
+- Loading a cache resets the visible transcript; the KV cache becomes the source of truth for context.
+- <code>--q8</code> quantizes the cache before saving (smaller, lossy).</p>
 <h3 id="reasoning-display-show-reasoning">Reasoning Display (<code>/show-reasoning</code>)</h3>
 <p>Control whether <code>abstractcore-chat</code> displays captured reasoning separately from the assistant answer.</p>
 <div class="code-block"><pre><code class="language-bash">/show-reasoning auto
@@ -574,7 +587,7 @@ Assistant: Assistant: I am an AI assistant. [No tool calls]
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

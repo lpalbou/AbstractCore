@@ -243,7 +243,7 @@ def render_html_page(doc: RenderedDoc) -> str:
     doc_description = html.escape(doc.description_text)
     meta_description = html.escape(truncate_meta(doc.description_text))
 
-    return DOC_TEMPLATE.format(
+    html_text = DOC_TEMPLATE.format(
         page_title=html.escape(doc.title),
         meta_description=meta_description,
         menu_items=MENU_ITEMS_JS,
@@ -253,6 +253,7 @@ def render_html_page(doc: RenderedDoc) -> str:
         doc_body=doc.body_html.strip() + "\n",
         mermaid_scripts=mermaid_scripts,
     )
+    return "\n".join(line.rstrip() for line in html_text.splitlines()) + "\n"
 
 
 def copy_markdown_assets(source_repo: Path, site_root: Path) -> None:
@@ -322,6 +323,20 @@ def main() -> int:
         html_out = render_html_page(rendered)
         out_path = out_docs / f"{md_path.stem}.html"
         out_path.write_text(html_out, encoding="utf-8")
+        generated += 1
+
+    root_docs = {
+        "CHANGELOG.md": "changelog.html",
+        "SECURITY.md": "security.html",
+    }
+    for source_name, output_name in root_docs.items():
+        md_path = source_repo / source_name
+        if not md_path.exists():
+            continue
+        fallback_title = md_path.stem.replace("-", " ").replace("_", " ").title()
+        rendered = render_markdown_doc(md_path.read_text(encoding="utf-8"), fallback_title=fallback_title)
+        html_out = render_html_page(rendered)
+        (out_docs / output_name).write_text(html_out, encoding="utf-8")
         generated += 1
 
     print(f"Generated {generated} docs pages into {out_docs}")

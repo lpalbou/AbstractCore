@@ -7,6 +7,7 @@ New to AbstractCore? Start with **[Getting Started](getting-started.md)**.
 Implementation pointers (source of truth):
 - `create_llm`: `abstractcore/core/factory.py` → `abstractcore/providers/registry.py`
 - `BasicSession`: `abstractcore/core/session.py`
+- `CachedSession`: `abstractcore/core/cached_session.py` (prompt caching; see `docs/prompt-caching.md`)
 - Response/types: `abstractcore/core/types.py`
 - Tool decorator: `abstractcore/tools/core.py`
 
@@ -51,6 +52,21 @@ session = BasicSession(create_llm("anthropic", model="claude-haiku-4-5"))  # req
 print(session.generate("Give me 3 name ideas.").content)
 print(session.generate("Pick the best one.").content)
 ```
+
+### `CachedSession` (prompt caching)
+
+For prompt-cache-aware long chats (reuse stable prefixes like system/tools/files), use `CachedSession`:
+
+```python
+from abstractcore import CachedSession, create_llm
+
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B")  # requires: abstractcore[mlx]
+session = CachedSession(provider=llm, system_prompt="You are helpful.", prompt_cache_strategy="auto")
+session.attach_files(["/path/to/large_context.md"])
+print(session.generate("Summarize the attached file.").content)
+```
+
+See **[Prompt Caching](prompt-caching.md)**.
 
 ### `tool` (decorator)
 

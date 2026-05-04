@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Vector Embeddings Guide - AbstractCore</title>
-    <meta name="description" content="AbstractCore includes built-in support for vector embeddings with multiple providers (HuggingFace, Ollama, LMStudio). This guide shows you how to use…">
+    <meta name="description" content="AbstractCore includes built-in support for vector embeddings with 7 providers: HuggingFace (local), Ollama, LMStudio, OpenAI, OpenRouter, Portkey, and any…">
     <link rel="icon" type="image/svg+xml" href="../assets/logo.svg">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="../assets/css/main.css">
@@ -31,7 +31,7 @@
         <div class="container" style="max-width: 1100px;">
             <div class="doc-header" style="margin-bottom: 3rem;">
                 <h1 style="font-size: 2.5rem; margin-bottom: 1rem;">Vector Embeddings Guide</h1>
-                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore includes built-in support for vector embeddings with multiple providers (HuggingFace, Ollama, LMStudio). This guide shows you how to use embeddings for semantic search, RAG applications, and similarity analysis.</p>
+                <p style="font-size: 1.25rem; color: var(--text-secondary);">AbstractCore includes built-in support for vector embeddings with 7 providers: HuggingFace (local), Ollama, LMStudio, OpenAI, OpenRouter, Portkey, and any OpenAI-compatible endpoint. This guide shows you how to use embeddings for semantic search, RAG applications, and similarity analysis.</p>
             </div>
 
             <div style="background: var(--background-secondary); padding: 2rem; border-radius: 0.75rem; margin-bottom: 3rem;"><h2 style="margin: 0 0 1rem 0;">Table of Contents</h2><a href="#quick-start" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Quick Start</a>
@@ -168,6 +168,40 @@ embedder = EmbeddingManager(
     model=&quot;text-embedding-all-minilm-l6-v2&quot;
 )
 </code></pre></div>
+<h3 id="openai-provider">OpenAI Provider</h3>
+<p>Cloud embedding models via the OpenAI API. Requires <code>OPENAI_API_KEY</code>.</p>
+<div class="code-block"><pre><code class="language-python"># Use OpenAI text-embedding-3-small (1536 dimensions)
+embedder = EmbeddingManager(
+    provider=&quot;openai&quot;,
+    model=&quot;text-embedding-3-small&quot;
+)
+
+# Or text-embedding-3-large (3072 dimensions, higher quality)
+embedder = EmbeddingManager(
+    provider=&quot;openai&quot;,
+    model=&quot;text-embedding-3-large&quot;
+)
+</code></pre></div>
+<h3 id="gateway-providers-openrouter-portkey-openai-compatible">Gateway Providers (OpenRouter, Portkey, OpenAI-compatible)</h3>
+<p>Route embedding requests through gateway/proxy providers. Useful for cost tracking, rate limiting, or unified billing.</p>
+<div class="code-block"><pre><code class="language-python"># Via OpenRouter gateway (requires OPENROUTER_API_KEY)
+embedder = EmbeddingManager(
+    provider=&quot;openrouter&quot;,
+    model=&quot;openai/text-embedding-3-small&quot;
+)
+
+# Via Portkey AI gateway (requires PORTKEY_API_KEY)
+embedder = EmbeddingManager(
+    provider=&quot;portkey&quot;,
+    model=&quot;text-embedding-3-small&quot;
+)
+
+# Via any OpenAI-compatible endpoint
+embedder = EmbeddingManager(
+    provider=&quot;openai-compatible&quot;,
+    model=&quot;my-embedding-model&quot;
+)
+</code></pre></div>
 <h3 id="provider-comparison">Provider Comparison</h3>
 <table>
 <thead>
@@ -204,6 +238,38 @@ embedder = EmbeddingManager(
 <td>Full</td>
 <td>Free</td>
 <td>GUI management, testing</td>
+</tr>
+<tr>
+<td><strong>OpenAI</strong></td>
+<td>Fast</td>
+<td>API key</td>
+<td>Cloud</td>
+<td>Paid</td>
+<td>High-quality cloud embeddings</td>
+</tr>
+<tr>
+<td><strong>OpenRouter</strong></td>
+<td>Fast</td>
+<td>API key</td>
+<td>Cloud</td>
+<td>Paid</td>
+<td>Gateway routing, cost tracking</td>
+</tr>
+<tr>
+<td><strong>Portkey</strong></td>
+<td>Fast</td>
+<td>API key</td>
+<td>Cloud</td>
+<td>Paid</td>
+<td>Gateway routing, unified billing</td>
+</tr>
+<tr>
+<td><strong>OpenAI-compatible</strong></td>
+<td>Varies</td>
+<td>URL</td>
+<td>Varies</td>
+<td>Varies</td>
+<td>Custom endpoints, self-hosted</td>
 </tr>
 </tbody>
 </table>
@@ -651,7 +717,7 @@ python -m abstractcore.server.app
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

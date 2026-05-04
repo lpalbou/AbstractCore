@@ -71,7 +71,7 @@
 <div class="code-block"><pre><code>Traditional Approach:
 Long Text (1M tokens) → Tokenization → Sequential Processing → Context Overflow
 
-Glyph Approach:  
+Glyph Approach:
 Long Text (1M tokens) → Visual Rendering → Image Processing (250K tokens) → VLM Interpretation
 </code></pre></div>
 <p>The Glyph pipeline transforms text through these stages:</p>
@@ -447,7 +447,7 @@ config = GlyphConfig(
 </code></pre></div>
 <h2 id="complete-working-example">Complete Working Example</h2>
 <p>For a comprehensive, runnable example that demonstrates all Glyph features, see:</p>
-<p><strong><a href="../examples/glyph_complete_example.py"><code>examples/glyph_complete_example.py</code></a></strong></p>
+<p><strong><a href="../examples/media/glyph_complete_example.py"><code>examples/media/glyph_complete_example.py</code></a></strong></p>
 <p>This complete example includes:</p>
 <div class="code-block"><pre><code class="language-python">#!/usr/bin/env python3
 &quot;&quot;&quot;
@@ -495,7 +495,7 @@ def benchmark_comparison():
     # Test with compression
     start = time.time()
     response_glyph = llm.generate(
-        &quot;Analyze this document&quot;, 
+        &quot;Analyze this document&quot;,
         media=[&quot;large_document.pdf&quot;],
         glyph_compression=&quot;always&quot;
     )
@@ -537,7 +537,7 @@ if __name__ == &quot;__main__&quot;:
     # Basic usage
     basic_response = basic_glyph_example()
 
-    # Performance benchmark  
+    # Performance benchmark
     benchmark_comparison()
 
     # Custom configuration
@@ -579,7 +579,7 @@ python glyph_complete_example.py
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

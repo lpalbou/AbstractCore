@@ -187,6 +187,11 @@ llm_portkey = create_llm(&quot;portkey&quot;, model=&quot;gpt-4o-mini&quot;, con
 - These artifacts are <strong>model/template-specific</strong>, not provider-specific (the same model can be served via Ollama, vLLM, LMStudio, HF, or MLX)
 - In streaming mode, wrappers often appear in the first/last chunks; stripping them incrementally avoids leaking markup into UIs and tool parsers without buffering the full response</p>
 <p>Configuration comes from <code>abstractcore/assets/architecture_formats.json</code> and <code>abstractcore/assets/model_capabilities.json</code>; implementation lives in <code>abstractcore/architectures/response_postprocessing.py</code>.</p>
+<h4 id="model-metadata-registry-source-of-truth">Model Metadata Registry (Source of Truth)</h4>
+<p>AbstractCore's model capability routing and architecture formatting are driven by two canonical JSON registries:
+- <code>abstractcore/assets/model_capabilities.json</code> — model limits, tool/structured output flags, multimodal support, aliases
+- <code>abstractcore/assets/architecture_formats.json</code> — message formats, tool call syntax, response wrappers, detection patterns</p>
+<p>When a new model or architecture is released (or an existing one changes), update these files first. See <code>abstractcore/assets/README.md</code> for field requirements and update rules.</p>
 <h4 id="memory-management">Memory Management</h4>
 <p>The <code>unload_model(model_name)</code> method is a <strong>best-effort resource cleanup hook</strong>.</p>
 <ul>

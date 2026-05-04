@@ -55,7 +55,7 @@ For local providers (MLX/HuggingFace), concurrency is <strong>compute bound</str
 </ul>
 <p>If your goal is <strong>measuring throughput vs concurrency on a single MLX model</strong>, use continuous batching via <code>mlx-lm</code> (next section).</p>
 <h2 id="mlx-concurrency-benchmark-recommended">MLX concurrency benchmark (recommended)</h2>
-<p>Use <code>examples/mlx_concurrency_benchmark.py</code> to run <em>many distinct prompts</em> through a single MLX model and produce:
+<p>Use <code>examples/performance/mlx_concurrency_benchmark.py</code> to run <em>many distinct prompts</em> through a single MLX model and produce:
 - realtime progress logs
 - a summary CSV (TOTAL tok/s)
 - a per-query CSV (per-query tok/s distribution)
@@ -64,7 +64,7 @@ For local providers (MLX/HuggingFace), concurrency is <strong>compute bound</str
 <div class="code-block"><pre><code class="language-bash">python -m pip install -e &quot;.[mlx,mlx-bench]&quot;
 </code></pre></div>
 <h3 id="run-a-sweep-custom-concurrency-levels">Run a sweep (custom concurrency levels)</h3>
-<div class="code-block"><pre><code class="language-bash">python examples/mlx_concurrency_benchmark.py \
+<div class="code-block"><pre><code class="language-bash">python examples/performance/mlx_concurrency_benchmark.py \
   --model lmstudio-community/Qwen3-4B-Instruct-2507-MLX-4bit \
   --queries 50 \
   --concurrency-levels 1 2 4 8 16 32 \
@@ -73,9 +73,9 @@ For local providers (MLX/HuggingFace), concurrency is <strong>compute bound</str
 </code></pre></div>
 <h3 id="stable-prompt-sets-recommended-for-comparing-models">Stable prompt sets (recommended for comparing models)</h3>
 <p>To compare <em>across runs and across models</em>, use a fixed prompt set file and keep it constant:</p>
-<div class="code-block"><pre><code class="language-bash">python examples/mlx_concurrency_benchmark.py \
+<div class="code-block"><pre><code class="language-bash">python examples/performance/mlx_concurrency_benchmark.py \
   --model lmstudio-community/Qwen3-4B-Instruct-2507-MLX-4bit \
-  --prompts-file examples/assets/mlx_benchmark_prompts_128.json \
+  --prompts-file examples/performance/assets/mlx_benchmark_prompts_128.json \
   --queries 128 \
   --concurrency-levels 1 2 4 8 16 32 64 128 \
   --max-output-tokens 512 \
@@ -98,7 +98,7 @@ For local providers (MLX/HuggingFace), concurrency is <strong>compute bound</str
 - <code>--queries 128</code>
 - <code>--max-output-tokens 512</code> (so <code>total_out = 128 * 512 = 65536</code> output tokens per sweep point)
 - <code>--concurrency-levels 1 2 4 8 16 32 64 128</code>
-- prompt set: <code>examples/assets/mlx_benchmark_prompts_128.json</code></p>
+- prompt set: <code>examples/performance/assets/mlx_benchmark_prompts_128.json</code></p>
 <p>Key takeaways:
 - <strong>Throughput scales with concurrency</strong> (continuous batching keeps the device busy).
 - <strong>Interactivity degrades with concurrency</strong>: TTFT rises sharply as concurrency increases (especially for larger models).
@@ -157,6 +157,7 @@ For local providers (MLX/HuggingFace), concurrency is <strong>compute bound</str
 <h2 id="prompt-caching-separate-concern">Prompt caching (separate concern)</h2>
 <p>The benchmark script does <strong>not</strong> use prompt caching; it intentionally treats each query as an independent request.</p>
 <p><code>MLXProvider</code> does support best-effort in-process prompt caching via <code>prompt_cache_key</code> (KV/prefix caches). This is mainly useful when <em>many calls share a long prefix</em> (system prompt, tool schema, long chat history). It is not “free”: KV caches consume memory, and reusing the same cache key across unrelated requests can contaminate context.</p>
+<p>The <code>abstractcore-chat</code> CLI can also persist MLX KV caches to disk via <code>/cache save|load</code> for fast multi-turn workflows on large contexts.</p>
 <p>For deeper research notes, see <code>docs/research/concurrency/</code>.</p>
 
             </div>
@@ -164,7 +165,7 @@ For local providers (MLX/HuggingFace), concurrency is <strong>compute bound</str
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>

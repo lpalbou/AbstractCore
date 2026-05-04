@@ -42,6 +42,7 @@
 <a href="#how-do-i-connect-to-a-local-server-ollama-lmstudio-vllm-llamacpp-localai" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I connect to a local server (Ollama / LMStudio / vLLM / llama.cpp / LocalAI)?</a>
 <a href="#why-do-gateway-providers-return-unsupported-parameter-errors-temperaturemax_tokens" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Why do gateway providers return “unsupported parameter” errors (temperature/max_tokens)?</a>
 <a href="#how-do-i-set-api-keys-and-defaults" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I set API keys and defaults?</a>
+<a href="#can-i-use-the-http-server-with-only-provider-api-keys" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Can I use the HTTP server with only provider API keys?</a>
 <a href="#why-arent-tools-executed-automatically" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">Why aren’t tools executed automatically?</a>
 <a href="#whats-the-difference-between-web_search-skim_websearch-skim_url-and-fetch_url" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">What’s the difference between web_search, skim_websearch, skim_url, and fetch_url?</a>
 <a href="#how-do-i-preserve-tool-call-markup-in-responsecontent-for-agentic-clis" style="display: block; padding: 0.4rem 0; color: var(--primary-color);">How do I preserve tool-call markup in response.content for agentic CLIs?</a>
@@ -65,18 +66,20 @@
 <p>Anything heavy (provider SDKs, torch/transformers, PDF parsing, embeddings models, web scraping deps, the HTTP server) is behind install extras. See <a href="getting-started.html">Getting Started</a> and <a href="prerequisites.html">Prerequisites</a>.</p>
 <h2 id="which-extra-do-i-need-for-my-provider">Which extra do I need for my provider?</h2>
 <ul>
+<li>Hosted SDK bundle: <code>pip install "abstractcore[remote]"</code> installs OpenAI + Anthropic.</li>
 <li>OpenAI: <code>pip install "abstractcore[openai]"</code></li>
 <li>Anthropic: <code>pip install "abstractcore[anthropic]"</code></li>
+<li>OpenRouter, Portkey, Ollama, LM Studio, and generic OpenAI-compatible <code>/v1</code> endpoints: core install is enough (<code>pip install abstractcore</code>).</li>
 <li>HuggingFace (transformers/torch; heavy): <code>pip install "abstractcore[huggingface]"</code></li>
 <li>MLX (Apple Silicon; heavy): <code>pip install "abstractcore[mlx]"</code></li>
 <li>vLLM integration (GPU; heavy): <code>pip install "abstractcore[vllm]"</code></li>
 </ul>
-<p>These providers work with the core install (no provider extra): <code>ollama</code>, <code>lmstudio</code>, <code>openrouter</code>, <code>openai-compatible</code>.</p>
+<p>These providers work with the core install (no provider extra): <code>ollama</code>, <code>lmstudio</code>, <code>openrouter</code>, <code>portkey</code>, <code>openai-compatible</code>.</p>
 <h2 id="how-do-i-combine-extras">How do I combine extras?</h2>
 <div class="code-block"><pre><code class="language-bash"># zsh: keep quotes
-pip install &quot;abstractcore[openai,media,tools]&quot;
+pip install &quot;abstractcore[remote,media,tools]&quot;
 </code></pre></div>
-<p>For “turnkey” installs, see <code>README.md</code> (<code>all-apple</code>, <code>all-non-mlx</code>, <code>all-gpu</code>).</p>
+<p>For “turnkey” local-runtime installs, see <code>README.md</code> (<code>all-apple</code> for Apple Silicon, <code>all-gpu</code> for NVIDIA GPU).</p>
 <h2 id="why-did-my-install-pull-torch-take-a-long-time">Why did my install pull <code>torch</code> / take a long time?</h2>
 <p>You probably installed a heavy extra (most commonly <code>abstractcore[huggingface]</code>, <code>abstractcore[mlx]</code>, or <code>abstractcore[all-*]</code>). The core install (<code>pip install abstractcore</code>) does not include torch/transformers.</p>
 <h2 id="whats-the-difference-between-provider-and-model">What’s the difference between “provider” and “model”?</h2>
@@ -129,6 +132,10 @@ abstractcore --set-api-key anthropic sk-ant-...
 abstractcore --status
 </code></pre></div>
 <p>Config is stored in <code>~/.abstractcore/config/abstractcore.json</code>. See <a href="centralized-config.html">Centralized Config</a>.</p>
+<h2 id="can-i-use-the-http-server-with-only-provider-api-keys">Can I use the HTTP server with only provider API keys?</h2>
+<p>Yes. You do not have to give a client the AbstractCore server master key. If <code>ABSTRACTCORE_SERVER_API_KEY</code> is not configured, a client can bring its own upstream provider key, for example an Anthropic, OpenRouter, or Portkey key, by sending it as <code>Authorization: Bearer &lt;provider-key&gt;</code> or <code>X-AbstractCore-Provider-API-Key</code>.</p>
+<p>That key is forwarded only to the provider requested by the model route, such as <code>anthropic/...</code>, <code>openrouter/...</code>, or <code>portkey/...</code>. It does not unlock other server-configured provider keys, and it does not grant access to providers the client did not supply credentials for.</p>
+<p>If <code>ABSTRACTCORE_SERVER_API_KEY</code> is configured, <code>Authorization</code> is reserved for the AbstractCore server key. In that mode, use <code>X-AbstractCore-Provider-API-Key</code> only when you want to override the upstream provider key for a single request. Provider keys in request bodies or query strings are disabled.</p>
 <h2 id="why-arent-tools-executed-automatically">Why aren’t tools executed automatically?</h2>
 <p>By default, AbstractCore runs in <strong>pass-through</strong> mode (<code>execute_tools=False</code>): it returns tool calls in <code>resp.tool_calls</code>, and your host/runtime decides whether/how to execute them.</p>
 <p>Automatic execution (<code>execute_tools=True</code>) exists but is deprecated for most use cases. See <a href="tool-calling.html">Tool Calling</a>.</p>
@@ -269,7 +276,7 @@ python -m abstractcore.server.app
     </main>
 
     <!-- Scripts -->
-    
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
     <script src="../assets/js/main.js"></script>
