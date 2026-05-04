@@ -332,6 +332,8 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
         if "-" in head:
             out.append(head)
             return out
+        if "-" in rest:
+            out.append(f"{head}-{rest}")
         if first:
             out.append(f"{head}:{first}")
             out.append(f"{head}-{first}")

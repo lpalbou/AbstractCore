@@ -70,7 +70,7 @@ These rankings are deliberately scenario-specific. There is no single winner acr
 | Durable execution | Sessions and prompt caches only | Core feature via AbstractRuntime | Not the main role | Via external components | Core strength | Not the main role |
 | Memory | Basic sessions, embeddings | AbstractMemory/semantics plus runtime state | Not the main role | Memory abstractions | Checkpoint/state persistence | Index/storage abstractions |
 | Gateway/server | Optional OpenAI-compatible server | AbstractGateway run gateway plus Core server | Core strength | Not the main role | Not the main role | Not the main role |
-| Ecosystem maturity | Beta but substantial | Emerging/pre-1.0 stack | Mature and widely used | Mature and widely used | Mature and widely used | Mature and widely used |
+| Ecosystem maturity | Production/stable provider layer with a smaller public community | Emerging/pre-1.0 stack | Mature and widely used | Mature and widely used | Mature and widely used | Mature and widely used |
 
 ## What AbstractCore Is
 
@@ -79,7 +79,7 @@ AbstractCore is best understood as an **LLM I/O layer**:
 - one `create_llm(...)` interface for local, self-hosted, cloud, gateway, and OpenAI-compatible backends
 - 10 registered provider/backend adapters: OpenAI, Anthropic, Ollama, LM Studio, MLX, HuggingFace, vLLM, OpenAI-compatible, OpenRouter, Portkey
 - about 79k physical Python lines in the package source
-- 213 model capability entries and 48 architecture format entries
+- 225 model capability entries and 51 architecture format entries
 - a default install with only `pydantic` and `httpx`; heavy features are optional extras
 - offline-capable local operation through explicit model setup, local server backends, and cache/local-files-only behavior for in-process local runtimes
 - remote operation through hosted APIs, hosted gateways, and arbitrary OpenAI-compatible endpoints

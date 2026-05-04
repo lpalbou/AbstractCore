@@ -251,7 +251,7 @@ class OpenAICompatibleProvider(BaseProvider):
         # Some backends do not interpret prompt-level control tokens (e.g. "/no_think") as
         # actual switches for these templates; a backend-native knob is more reliable when
         # supported.
-        if architecture in {"qwen3", "qwen3_5", "nemotron_hybrid_moe"}:
+        if architecture in {"qwen3", "qwen3_5", "qwen3_6", "nemotron_hybrid_moe"}:
             requested = enabled if enabled is not None else (level is not None)
             new_kwargs = dict(kwargs)
             ctk = new_kwargs.get("chat_template_kwargs")

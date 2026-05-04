@@ -300,6 +300,24 @@ def test_lmstudio_qwen3_5_thinking_off_sets_chat_template_enable_thinking_false(
     assert payload["chat_template_kwargs"]["enable_thinking"] is False
 
 
+def test_lmstudio_qwen3_6_thinking_off_sets_chat_template_enable_thinking_false(monkeypatch) -> None:
+    monkeypatch.setattr(LMStudioProvider, "_validate_model", lambda self: None)
+    provider = LMStudioProvider(model="Qwen/Qwen3.6-27B", base_url="http://localhost:1234/v1")
+
+    captured = {}
+
+    def _capture_single_generate(payload):
+        captured["payload"] = payload
+        return GenerateResponse(content="ok", model=provider.model, finish_reason="stop")
+
+    monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
+
+    provider.generate("hi", thinking="off", temperature=0)
+
+    payload = captured["payload"]
+    assert payload["chat_template_kwargs"]["enable_thinking"] is False
+
+
 def test_lmstudio_seed_oss_thinking_high_sets_chat_template_thinking_budget(monkeypatch) -> None:
     monkeypatch.setattr(LMStudioProvider, "_validate_model", lambda self: None)
     provider = LMStudioProvider(model="seed-oss-36b", base_url="http://localhost:1234/v1")

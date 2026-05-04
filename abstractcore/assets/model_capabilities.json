@@ -1391,6 +1391,53 @@
       "max_tools": -1,
       "video_input_mode": "none"
     },
+    "mistral-medium-3.5-128b": {
+      "max_output_tokens": 32768,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_control": "reasoning_effort",
+      "reasoning_levels": [
+        "none",
+        "high"
+      ],
+      "architecture": "mistral3",
+      "total_parameters": "128B",
+      "image_resolutions": [
+        "variable"
+      ],
+      "languages": [
+        "English",
+        "French",
+        "German",
+        "Spanish",
+        "Portuguese",
+        "Italian",
+        "Japanese",
+        "Korean",
+        "Russian",
+        "Chinese",
+        "Arabic",
+        "Hindi",
+        "Vietnamese"
+      ],
+      "notes": "Mistral Medium 3.5 dense 128B multimodal instruction/reasoning model with 256K context, image input, native function calling, JSON output, and per-request reasoning_effort values none/high. The model card recommends vLLM/SGLang for local production inference.",
+      "source": "Hugging Face model card and config (mistralai/Mistral-Medium-3.5-128B, accessed 2026-05-03)",
+      "canonical_name": "mistral-medium-3.5-128b",
+      "aliases": [
+        "mistralai/Mistral-Medium-3.5-128B",
+        "Mistral-Medium-3.5-128B"
+      ],
+      "max_tokens": 262144,
+      "release_date": "2026-05",
+      "license": "modified-mit",
+      "max_tools": -1,
+      "video_input_mode": "frames"
+    },
     "mistral-large": {
       "max_output_tokens": 128000,
       "tool_support": "native",
@@ -1949,6 +1996,125 @@
       "max_tools": -1,
       "video_input_mode": "none"
     },
+    "deepseek-v4-pro": {
+      "max_output_tokens": 65536,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_output_field": "reasoning_content",
+      "reasoning_levels": [
+        "none",
+        "high",
+        "xhigh"
+      ],
+      "max_effort_supported": true,
+      "architecture": "deepseek_v4",
+      "total_parameters": "1.6T",
+      "active_parameters": "49B",
+      "experts": 384,
+      "experts_activated": 6,
+      "shared_experts": 1,
+      "attention_mechanism": "hybrid compressed sparse attention",
+      "quantization_method": "FP4+FP8 mixed",
+      "notes": "DeepSeek-V4-Pro preview MoE language model with 1.6T total/49B activated parameters, one-million-token context, hybrid compressed sparse attention, and non-thinking/high/max reasoning modes. The model card documents DSML-style prompted tool use and reasoning summaries in <think>...</think> blocks.",
+      "source": "Hugging Face model card and config (deepseek-ai/DeepSeek-V4-Pro, accessed 2026-05-03)",
+      "canonical_name": "deepseek-v4-pro",
+      "aliases": [
+        "deepseek-ai/DeepSeek-V4-Pro",
+        "DeepSeek-V4-Pro",
+        "deepseek-v4-pro-max"
+      ],
+      "max_tokens": 1048576,
+      "release_date": "2026-04",
+      "license": "MIT",
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
+    "deepseek-v4-flash": {
+      "max_output_tokens": 65536,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_output_field": "reasoning_content",
+      "reasoning_levels": [
+        "none",
+        "high",
+        "xhigh"
+      ],
+      "max_effort_supported": true,
+      "architecture": "deepseek_v4",
+      "total_parameters": "284B",
+      "active_parameters": "13B",
+      "experts": 256,
+      "experts_activated": 6,
+      "shared_experts": 1,
+      "attention_mechanism": "hybrid compressed sparse attention",
+      "quantization_method": "FP4+FP8 mixed",
+      "notes": "DeepSeek-V4-Flash preview MoE language model with 284B total/13B activated parameters, one-million-token context, hybrid compressed sparse attention, and non-thinking/high/max reasoning modes. The model card documents DSML-style prompted tool use and reasoning summaries in <think>...</think> blocks.",
+      "source": "Hugging Face model card and config (deepseek-ai/DeepSeek-V4-Flash, accessed 2026-05-03)",
+      "canonical_name": "deepseek-v4-flash",
+      "aliases": [
+        "deepseek-ai/DeepSeek-V4-Flash",
+        "DeepSeek-V4-Flash",
+        "deepseek-v4-flash-max"
+      ],
+      "max_tokens": 1048576,
+      "release_date": "2026-04",
+      "license": "MIT",
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
+    "kimi-k2.6": {
+      "max_output_tokens": 98304,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_output_field": "reasoning",
+      "thinking_control": "thinking",
+      "architecture": "kimi_k2",
+      "total_parameters": "1T",
+      "active_parameters": "32B",
+      "experts": 384,
+      "experts_activated": 8,
+      "shared_experts": 1,
+      "expert_hidden_size": 2048,
+      "attention_mechanism": "MLA",
+      "vision_encoder": "MoonViT",
+      "notes": "Kimi K2.6 MoE multimodal reasoning model with 1T total/32B activated parameters, 256K context, MoonViT image encoder, official API thinking/instant modes, reasoning output in the 'reasoning' field, and strong tool-augmented/agentic benchmark coverage. Video chat is documented as experimental and official-API-only, so this registry treats generic video input as frame-based vision rather than native video.",
+      "source": "Hugging Face model card and config (moonshotai/Kimi-K2.6, accessed 2026-05-03)",
+      "canonical_name": "kimi-k2.6",
+      "aliases": [
+        "moonshotai/Kimi-K2.6",
+        "Kimi-K2.6",
+        "kimi-k2-6",
+        "kimi_k25"
+      ],
+      "max_tokens": 262144,
+      "release_date": "2026-04",
+      "license": "modified-mit",
+      "max_tools": -1,
+      "video_input_mode": "frames"
+    },
     "qwen3": {
       "max_output_tokens": 8192,
       "tool_support": "native",
@@ -2144,6 +2310,148 @@
       "video_support": false,
       "max_tools": -1,
       "video_input_mode": "frames"
+    },
+    "qwen3.6-27b": {
+      "max_output_tokens": 81920,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "thinking_support": true,
+      "thinking_control": "enable_thinking",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "architecture": "qwen3_6",
+      "total_parameters": "27B",
+      "vision_encoder": "Qwen3.6 vision encoder",
+      "image_resolutions": [
+        "variable"
+      ],
+      "notes": "Qwen3.6-27B dense multimodal reasoning model with 262,144-token native context, optional YaRN extension to about 1,010,000 tokens, image/video input examples, 81,920-token complex-query output examples, thinking enabled by default, and Qwen3/Qwen3-Coder reasoning/tool parsers in vLLM/SGLang.",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.6-27B, accessed 2026-05-03)",
+      "canonical_name": "qwen3.6-27b",
+      "aliases": [
+        "Qwen/Qwen3.6-27B",
+        "qwen3.6:27b"
+      ],
+      "max_tokens": 262144,
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "native"
+    },
+    "qwen3.6-27b-fp8": {
+      "max_output_tokens": 81920,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "thinking_support": true,
+      "thinking_control": "enable_thinking",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "architecture": "qwen3_6",
+      "total_parameters": "27B",
+      "tensor_type": "FP8",
+      "quantization_method": "FP8",
+      "vision_encoder": "Qwen3.6 vision encoder",
+      "image_resolutions": [
+        "variable"
+      ],
+      "notes": "FP8-quantized Qwen3.6-27B checkpoint with the same 262,144-token native context, multimodal input support, thinking behavior, and serving parser recommendations as the BF16 release.",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.6-27B-FP8, accessed 2026-05-03)",
+      "canonical_name": "qwen3.6-27b-fp8",
+      "aliases": [
+        "Qwen/Qwen3.6-27B-FP8",
+        "qwen3.6:27b-fp8"
+      ],
+      "max_tokens": 262144,
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "native"
+    },
+    "qwen3.6-35b-a3b": {
+      "max_output_tokens": 81920,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "thinking_support": true,
+      "thinking_control": "enable_thinking",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "architecture": "qwen3_6",
+      "total_parameters": "35B",
+      "active_parameters": "3B",
+      "experts": 256,
+      "experts_activated": 8,
+      "shared_experts": 1,
+      "expert_hidden_size": 512,
+      "vision_encoder": "Qwen3.6 vision encoder",
+      "image_resolutions": [
+        "variable"
+      ],
+      "notes": "Qwen3.6-35B-A3B multimodal MoE reasoning model with 35B total/3B active parameters, 256 routed experts plus 1 shared expert, 262,144-token native context, optional YaRN extension to about 1,010,000 tokens, image/video input examples, and Qwen3/Qwen3-Coder reasoning/tool parsers in vLLM/SGLang.",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.6-35B-A3B, accessed 2026-05-03)",
+      "canonical_name": "qwen3.6-35b-a3b",
+      "aliases": [
+        "Qwen/Qwen3.6-35B-A3B",
+        "qwen3.6:35b"
+      ],
+      "max_tokens": 262144,
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "native"
+    },
+    "qwen3.6-35b-a3b-fp8": {
+      "max_output_tokens": 81920,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "thinking_support": true,
+      "thinking_control": "enable_thinking",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "architecture": "qwen3_6",
+      "total_parameters": "35B",
+      "active_parameters": "3B",
+      "experts": 256,
+      "experts_activated": 8,
+      "shared_experts": 1,
+      "expert_hidden_size": 512,
+      "tensor_type": "FP8",
+      "quantization_method": "FP8",
+      "vision_encoder": "Qwen3.6 vision encoder",
+      "image_resolutions": [
+        "variable"
+      ],
+      "notes": "FP8-quantized Qwen3.6-35B-A3B checkpoint with the same multimodal MoE architecture and 262,144-token native context as the BF16 release.",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.6-35B-A3B-FP8, accessed 2026-05-03)",
+      "canonical_name": "qwen3.6-35b-a3b-fp8",
+      "aliases": [
+        "Qwen/Qwen3.6-35B-A3B-FP8",
+        "qwen3.6:35b-fp8"
+      ],
+      "max_tokens": 262144,
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "native"
     },
     "qwen3-14b": {
       "max_output_tokens": 8192,
@@ -4199,6 +4507,87 @@
       "max_tools": -1,
       "video_input_mode": "none"
     },
+    "granite-4.1-3b": {
+      "max_output_tokens": 16384,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "architecture": "granitemoehybrid",
+      "total_parameters": "3B",
+      "transformer_layers": 40,
+      "attention_mechanism": "transformer",
+      "notes": "Granite 4.1 3B long-context instruct model with 128K context, improved post-training, enhanced tool calling, instruction following, and chat capabilities. The model card documents OpenAI-style function schemas rendered through the Granite role-token chat template with <tool_call> JSON blocks.",
+      "source": "Hugging Face model card and config (ibm-granite/granite-4.1-3b, accessed 2026-05-03)",
+      "canonical_name": "granite-4.1-3b",
+      "aliases": [
+        "ibm-granite/granite-4.1-3b",
+        "granite-4.1-3B",
+        "granite4.1:3b",
+        "granite4.1-3b"
+      ],
+      "max_tokens": 131072,
+      "release_date": "2026-04",
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
+    "granite-4.1-8b": {
+      "max_output_tokens": 16384,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "architecture": "granitemoehybrid",
+      "total_parameters": "8B",
+      "transformer_layers": 40,
+      "attention_mechanism": "transformer",
+      "notes": "Granite 4.1 8B long-context instruct model with 128K context, improved post-training, enhanced tool calling, instruction following, and chat capabilities. The model card documents OpenAI-style function schemas rendered through the Granite role-token chat template with <tool_call> JSON blocks.",
+      "source": "Hugging Face model card and config (ibm-granite/granite-4.1-8b, accessed 2026-05-03)",
+      "canonical_name": "granite-4.1-8b",
+      "aliases": [
+        "ibm-granite/granite-4.1-8b",
+        "granite-4.1-8B",
+        "granite4.1:8b",
+        "granite4.1-8b"
+      ],
+      "max_tokens": 131072,
+      "release_date": "2026-04",
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
+    "granite-4.1-30b": {
+      "max_output_tokens": 16384,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "architecture": "granitemoehybrid",
+      "total_parameters": "30B",
+      "transformer_layers": 64,
+      "attention_mechanism": "transformer",
+      "notes": "Granite 4.1 30B long-context instruct model with 128K context, improved post-training, enhanced tool calling, instruction following, and chat capabilities. The model card documents OpenAI-style function schemas rendered through the Granite role-token chat template with <tool_call> JSON blocks.",
+      "source": "Hugging Face model card and config (ibm-granite/granite-4.1-30b, accessed 2026-05-03)",
+      "canonical_name": "granite-4.1-30b",
+      "aliases": [
+        "ibm-granite/granite-4.1-30b",
+        "granite-4.1-30B",
+        "granite4.1:30b",
+        "granite4.1-30b"
+      ],
+      "max_tokens": 131072,
+      "release_date": "2026-04",
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "none"
+    },
     "granite-4.0-h-tiny": {
       "max_output_tokens": 16384,
       "tool_support": "native",
@@ -4725,6 +5114,49 @@
       "release_date": "2025-05",
       "arxiv": "2505.09388",
       "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "native"
+    },
+    "nemotron-3-nano-omni-30b-a3b-reasoning-bf16": {
+      "max_output_tokens": 20480,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": true,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "thinking_control": "enable_thinking",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "architecture": "nemotron_hybrid_moe",
+      "total_parameters": "31B",
+      "active_parameters": "3B",
+      "tensor_type": "BF16",
+      "vision_encoder": "C-RADIO v4-H",
+      "reasoning_paradigm": "unified_reasoning_response",
+      "reasoning_configurable": true,
+      "agentic_capabilities": true,
+      "function_calling": true,
+      "tool_calling_format": "xml",
+      "document_understanding": true,
+      "visual_agent": true,
+      "ocr_languages": 32,
+      "notes": "NVIDIA Nemotron 3 Nano Omni multimodal reasoning model with a Nemotron 3 Nano 30B-A3B hybrid MoE backbone, video/audio/image/text inputs, 256K context, thinking enabled by default via enable_thinking, reasoning-budget style controls, OCR/document intelligence, GUI/agentic workflows, ASR, and documented tool calling.",
+      "source": "Hugging Face model card and config (nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16, accessed 2026-05-03)",
+      "canonical_name": "nemotron-3-nano-omni-30b-a3b-reasoning-bf16",
+      "aliases": [
+        "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16",
+        "Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16",
+        "nemotron-3-nano-omni-30b-a3b-reasoning",
+        "nemotron-3-nano-omni"
+      ],
+      "max_tokens": 262144,
+      "release_date": "2026-04",
+      "license": "nvidia-open-model-agreement",
       "max_tools": -1,
       "video_input_mode": "native"
     },

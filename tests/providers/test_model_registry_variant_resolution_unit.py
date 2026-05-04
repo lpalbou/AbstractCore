@@ -64,6 +64,9 @@ def test_new_family_entries_are_resolved_with_expected_architectures() -> None:
     assert detect_architecture("Qwen/Qwen3-Coder-Next") == "qwen3_next"
     assert detect_architecture("LiquidAI/LFM2-24B-A2B-GGUF") == "lfm2"
     assert detect_architecture("Tesslate/OmniCoder-9B") == "omnicoder"
+    assert detect_architecture("Qwen/Qwen3.6-35B-A3B") == "qwen3_6"
+    assert detect_architecture("moonshotai/Kimi-K2.6") == "kimi_k2"
+    assert detect_architecture("deepseek-ai/DeepSeek-V4-Pro") == "deepseek_v4"
 
 
 def test_new_model_entries_expose_verified_capabilities() -> None:
@@ -130,6 +133,36 @@ def test_recent_mistral_granite_and_nemotron_variants_resolve_to_expected_famili
     assert nemotron.get("architecture") == "nemotron_hybrid_moe"
     assert nemotron.get("quantization_method") == "NVFP4"
     assert nemotron.get("max_tokens") == 1000000
+
+
+def test_2026_frontier_model_entries_expose_expected_capabilities() -> None:
+    qwen = get_model_capabilities("Qwen/Qwen3.6-35B-A3B")
+    assert qwen.get("architecture") == "qwen3_6"
+    assert qwen.get("max_tokens") == 262144
+    assert qwen.get("vision_support") is True
+    assert qwen.get("video_support") is True
+
+    kimi = get_model_capabilities("moonshotai/Kimi-K2.6")
+    assert kimi.get("architecture") == "kimi_k2"
+    assert kimi.get("max_tokens") == 262144
+    assert kimi.get("vision_support") is True
+    assert kimi.get("thinking_output_field") == "reasoning"
+
+    deepseek = get_model_capabilities("deepseek-ai/DeepSeek-V4-Pro")
+    assert deepseek.get("architecture") == "deepseek_v4"
+    assert deepseek.get("max_tokens") == 1048576
+    assert deepseek.get("total_parameters") == "1.6T"
+
+    granite = get_model_capabilities("ibm-granite/granite-4.1-8b")
+    assert granite.get("architecture") == "granitemoehybrid"
+    assert granite.get("max_tokens") == 131072
+    assert granite.get("tool_support") == "native"
+
+    omni = get_model_capabilities("nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16")
+    assert omni.get("architecture") == "nemotron_hybrid_moe"
+    assert omni.get("vision_support") is True
+    assert omni.get("audio_support") is True
+    assert omni.get("video_support") is True
 
 
 def test_granite_and_nemotron_architecture_formats_match_upstream_tool_transcripts() -> None:

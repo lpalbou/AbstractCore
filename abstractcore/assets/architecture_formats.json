@@ -189,6 +189,32 @@
         "jackrong/qwopus3.5-"
       ]
     },
+    "qwen3_6": {
+      "description": "Alibaba's Qwen3.6 multimodal reasoning architecture family",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "output_wrappers": {
+        "end": "<|im_end|>"
+      },
+      "tool_format": "xml",
+      "tool_prefix": "<tool_call>",
+      "tool_calling_format": "qwen3_coder",
+      "thinking_tags": ["<think>", "</think>"],
+      "thinking_control": "enable_thinking",
+      "reasoning_support": true,
+      "patterns": [
+        "qwen3.6-",
+        "qwen3.6:",
+        "qwen3_6-",
+        "qwen3_6:",
+        "qwen/qwen3.6-"
+      ]
+    },
     "omnicoder": {
       "description": "Tesslate OmniCoder chat template on top of Qwen3.5 with XML tool calls",
       "message_format": "im_start_end",
@@ -308,8 +334,11 @@
       "patterns": [
         "mistral-small-3",
         "mistral-small-4",
+        "mistral-medium-3.5",
+        "mistral-medium-3.5-128b",
         "mistralai/mistral-small-3",
         "mistralai/mistral-small-4",
+        "mistralai/mistral-medium-3.5",
         "devstral-small-2"
       ]
     },
@@ -505,8 +534,33 @@
         "assistant_suffix": "<|end_of_text|>",
         "tool_format": "xml",
         "tool_prefix": "<tool_call>",
-        "patterns": ["granite-4.0", "granite-4.0-h", "granite-h-tiny", "granite-h-micro"]
+        "patterns": ["granite-4.1", "granite-4.0", "granite-4.0-h", "granite-h-tiny", "granite-h-micro"]
       },
+    "deepseek_v4": {
+      "description": "DeepSeek V4 million-token MoE architecture with DSML tool-call encoding",
+      "message_format": "special_tokens",
+      "system_prefix": "<\uff5cbegin\u2581of\u2581sentence\uff5c>",
+      "system_suffix": "",
+      "user_prefix": "<\uff5cUser\uff5c>",
+      "user_suffix": "",
+      "assistant_prefix": "<\uff5cAssistant\uff5c>",
+      "assistant_suffix": "<\uff5cend\u2581of\u2581sentence\uff5c>",
+      "tool_format": "prompted",
+      "tool_prefix": "<\uff5cDSML\uff5ctool_calls>",
+      "tool_calling_format": "dsml",
+      "thinking_tags": ["<think>", "</think>"],
+      "reasoning_support": true,
+      "patterns": ["deepseek-v4", "deepseek-ai/deepseek-v4"]
+    },
+    "kimi_k2": {
+      "description": "Moonshot AI Kimi K2.6 multimodal agentic reasoning architecture",
+      "message_format": "openai_chat",
+      "tool_format": "native",
+      "default_tool_support": "native",
+      "thinking_output_field": "reasoning",
+      "reasoning_support": true,
+      "patterns": ["kimi-k2.6", "moonshotai/kimi-k2.6", "kimi-k2", "kimi_k25"]
+    },
     "deepseek": {
       "description": "DeepSeek architecture family",
       "message_format": "im_start_end",
@@ -628,6 +682,7 @@
       "thinking_tags": ["<think>", "</think>"],
       "patterns": [
         "nemotron-3-nano",
+        "nemotron-3-nano-omni",
         "nemotron-nano",
         "nemotron-3-super",
         "nemotron-cascade-2",

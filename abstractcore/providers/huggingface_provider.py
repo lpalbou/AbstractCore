@@ -229,7 +229,7 @@ class HuggingFaceProvider(BaseProvider):
         kwargs: Dict[str, Any],
     ) -> tuple[Dict[str, Any], ThinkingControlHandling]:
         # llama-cpp-python (GGUF) does not currently expose chat-template kwargs such as
-        # `enable_thinking` / `thinking_budget`. For Qwen3/Qwen3.5 GGUF models, we treat
+        # `enable_thinking` / `thinking_budget`. For Qwen3/Qwen3.5/Qwen3.6 GGUF models, we treat
         # thinking levels as a best-effort "enable thinking" request and rely on BaseProvider's
         # Qwen hard-switch marker for disabling thinking.
         #
@@ -239,7 +239,7 @@ class HuggingFaceProvider(BaseProvider):
         # directly to `enable_thinking` instead of relying on the `<think>\n\n</think>\n\n` marker.
         # See: `docs/backlog/planned/2026-03-30_llama-cpp-python_expose_chat_template_kwargs.md`.
         model_type = str(getattr(self, "model_type", "") or "").strip().lower()
-        if model_type == "gguf" and self.architecture in {"qwen3", "qwen3_5"}:
+        if model_type == "gguf" and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
             if enabled is True or level is not None:
                 return kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
         return kwargs, ThinkingControlHandling()

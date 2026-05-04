@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.2] - 2026-05-03
+
+### Added
+- **Model registry refresh**: added capability entries and architecture detection for Gemma 4, Qwen3.6, Mistral Medium 3.5, Kimi K2.6, DeepSeek V4 Pro/Flash, NVIDIA Nemotron 3 Nano Omni, and IBM Granite 4.1 models.
+
+### Changed
+- **Package maturity metadata**: updated PyPI classifiers to `Development Status :: 5 - Production/Stable` and added Science/Research, Information Technology, and typed-package classifiers.
+- **Qwen3.6 thinking controls**: Qwen3.6 now uses the same `enable_thinking` request handling path as Qwen3 and Qwen3.5 in local/OpenAI-compatible providers.
+
 ## [2.13.1] - 2026-05-03
 
 ### Added
