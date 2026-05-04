@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.3] - 2026-05-04
+
 ### Added
 - **Centralized server auth config**: `abstractcore --config` and direct config commands now cover the hardened HTTP server auth model. Users can persist the AbstractCore server master key, unauthenticated local/dev mode, `base_url` and URL-fetch allowlists, safe media root, local-file toggle, and default server bind host/port.
 
