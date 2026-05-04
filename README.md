@@ -223,6 +223,7 @@ You can also persist settings (including API keys) via the config CLI:
 - `abstractcore --status`
 - `abstractcore --configure` (alias: `--config`)
 - `abstractcore --set-api-key openai sk-...`
+- `abstractcore --set-server-api-key acore-server-secret`
 
 ## What’s inside (quick tour)
 

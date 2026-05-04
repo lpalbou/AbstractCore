@@ -50,7 +50,7 @@
             <div class="doc-content">
 
 <h2 id="quick-setup">Quick Setup</h2>
-<div class="code-block"><pre><code class="language-bash"># Interactive guided setup (7 steps: model, vision, API keys, audio, video, embeddings, logging)
+<div class="code-block"><pre><code class="language-bash"># Interactive guided setup (8 steps: model, vision, API keys, server auth, audio, video, embeddings, logging)
 abstractcore --config
 
 # Check readiness of all subsystems + download/install what's missing
@@ -65,6 +65,7 @@ abstractcore --status
 <h2 id="configuration-file-location">Configuration File Location</h2>
 <p>Configuration is stored in: <code>~/.abstractcore/config/abstractcore.json</code></p>
 <p>API keys saved via <code>--config</code> or <code>--set-api-key</code> are persisted here and automatically injected into the process environment (e.g. <code>OPENAI_API_KEY</code>) at startup. Environment variables always take precedence over config-persisted keys.</p>
+<p>HTTP server settings saved via <code>--config</code> or the <code>--set-server-*</code> commands are also injected into the corresponding <code>ABSTRACTCORE_SERVER_*</code>, <code>HOST</code>, and <code>PORT</code> environment variables when those variables are not already set.</p>
 <h2 id="configuration-sections">Configuration Sections</h2>
 <h3 id="application-defaults">Application Defaults</h3>
 <p>Set default providers and models for specific AbstractCore applications:</p>
@@ -190,10 +191,48 @@ abstractcore --set-video-max-frame-side 1024
 abstractcore --set-api-key openai sk-your-key-here
 abstractcore --set-api-key anthropic your-anthropic-key
 abstractcore --set-api-key openrouter your-openrouter-key
+abstractcore --set-api-key portkey your-portkey-key
+abstractcore --set-api-key openai-compatible your-endpoint-key
+abstractcore --set-api-key vllm your-vllm-key
 
 # List API key status
 abstractcore --list-api-keys
 </code></pre></div>
+<p>Supported provider key names include <code>openai</code>, <code>anthropic</code>, <code>openrouter</code>, <code>portkey</code>, <code>openai-compatible</code>, <code>vllm</code>, and <code>google</code>.</p>
+<h3 id="http-server-gateway-auth">HTTP Server Gateway Auth</h3>
+<p>The optional OpenAI-compatible HTTP server has its own inbound server key. This is separate from upstream provider keys.</p>
+<div class="code-block"><pre><code class="language-bash"># Set the AbstractCore server master key
+abstractcore --set-server-api-key acore-server-secret
+
+# Start the server; clients now authenticate with:
+# Authorization: Bearer acore-server-secret
+python -m abstractcore.server.app
+</code></pre></div>
+<p>When a server master key is configured, authenticated clients can use provider keys configured on the server through <code>abstractcore --set-api-key ...</code> or environment variables. To override one upstream provider for one request, clients can send <code>X-AbstractCore-Provider-API-Key</code>.</p>
+<p>When no server master key is configured, clients may bring their own upstream provider key with <code>Authorization: Bearer &lt;provider-key&gt;</code> or <code>X-AbstractCore-Provider-API-Key</code>, but they cannot use server-held provider keys. Provider keys in request bodies or query strings are disabled.</p>
+<p>Server hardening commands:</p>
+<div class="code-block"><pre><code class="language-bash"># Local/dev only escape hatch
+abstractcore --allow-unauthenticated-server
+abstractcore --disallow-unauthenticated-server
+
+# Allow non-loopback per-request base_url overrides
+abstractcore --set-server-base-url-allowlist &quot;https://example.com/v1,api.internal.local&quot;
+
+# Allow URL media fetches for otherwise blocked targets
+abstractcore --set-server-url-fetch-allowlist &quot;https://files.example.com&quot;
+
+# Safe local file path support for HTTP media attachments
+abstractcore --set-server-media-root /srv/abstractcore-media
+
+# Unsafe unrestricted local file support
+abstractcore --allow-server-local-files
+abstractcore --disallow-server-local-files
+
+# Defaults for `python -m abstractcore.server.app`
+abstractcore --set-server-host 127.0.0.1
+abstractcore --set-server-port 8000
+</code></pre></div>
+<p>The interactive wizard (<code>abstractcore --config</code>) asks for the same persisted server security surface: server master key, unauthenticated local/dev mode, request <code>base_url</code> allowlist, URL media-fetch allowlist, safe media root, unrestricted local-file toggle, and default server host/port. It can generate a server key and accepts <code>clear</code> for the key, allowlists, and media root.</p>
 <h3 id="streaming-configuration">Streaming Configuration</h3>
 <p>Configure default streaming behavior for CLI:</p>
 <div class="code-block"><pre><code class="language-bash"># Set streaming behavior
@@ -253,6 +292,7 @@ extractor data.txt --debug
 - Vision configuration
 - Embeddings settings
 - API key status
+- HTTP server gateway auth/hardening status
 - Cache directories
 - Logging configuration
 - Configuration file location</p>
@@ -263,7 +303,11 @@ extractor data.txt --debug
 <p>This guides you through:
 - Default model selection
 - Vision fallback setup
-- API key configuration</p>
+- API key configuration
+- HTTP server gateway auth/hardening
+- Audio/video fallback policies
+- Embeddings setup
+- Console logging verbosity</p>
 <h2 id="example-workflows">Example Workflows</h2>
 <h3 id="initial-setup">Initial Setup</h3>
 <div class="code-block"><pre><code class="language-bash"># 1. Check current status
@@ -282,15 +326,21 @@ abstractcore --set-api-key openai sk-your-key-here
 abstractcore --set-api-key anthropic your-anthropic-key
 # Optional (only if you plan to use the OpenRouter provider):
 abstractcore --set-api-key openrouter your-openrouter-key
+abstractcore --set-api-key openai-compatible your-endpoint-key
+abstractcore --set-api-key vllm your-vllm-key
 
-# 5. Configure logging for development
+# 5. Optional: configure the OpenAI-compatible HTTP server gateway
+abstractcore --set-server-api-key acore-server-secret
+abstractcore --set-server-base-url-allowlist &quot;https://example.com/v1&quot;
+
+# 6. Configure logging for development
 abstractcore --enable-debug-logging
 abstractcore --enable-file-logging
 
-# 6. Enable streaming for interactive CLI
+# 7. Enable streaming for interactive CLI
 abstractcore --stream on
 
-# 7. Verify configuration
+# 8. Verify configuration
 abstractcore --status
 </code></pre></div>
 <h3 id="development-environment">Development Environment</h3>
@@ -372,7 +422,20 @@ abstractcore --set-log-base-dir /var/log/abstractcore
     &quot;openai&quot;: null,
     &quot;anthropic&quot;: null,
     &quot;openrouter&quot;: null,
+    &quot;portkey&quot;: null,
+    &quot;openai_compatible&quot;: null,
+    &quot;vllm&quot;: null,
     &quot;google&quot;: null
+  },
+  &quot;server&quot;: {
+    &quot;api_key&quot;: null,
+    &quot;allow_unauthenticated&quot;: false,
+    &quot;base_url_allowlist&quot;: null,
+    &quot;url_fetch_allowlist&quot;: null,
+    &quot;media_root&quot;: null,
+    &quot;allow_local_files&quot;: false,
+    &quot;host&quot;: null,
+    &quot;port&quot;: null
   },
   &quot;cache&quot;: {
     &quot;default_cache_dir&quot;: &quot;~/.cache/abstractcore&quot;,
@@ -453,7 +516,19 @@ abstractcore --set-log-base-dir /var/log/abstractcore
 <li><strong>anthropic</strong>: Anthropic API key</li>
 <li><strong>openrouter</strong>: OpenRouter API key</li>
 <li><strong>portkey</strong>: Portkey API key</li>
+<li><strong>openai-compatible</strong>: Generic OpenAI-compatible endpoint API key</li>
+<li><strong>vllm</strong>: vLLM OpenAI-compatible server API key</li>
 <li><strong>google</strong>: Google API key (reserved for future integrations; not required for current built-in providers)</li>
+</ul>
+<h3 id="server-section">Server Section</h3>
+<ul>
+<li><strong>api_key</strong>: AbstractCore server master key for inbound client authentication</li>
+<li><strong>allow_unauthenticated</strong>: Local/dev escape hatch for unauthenticated HTTP server requests</li>
+<li><strong>base_url_allowlist</strong>: Additional non-loopback <code>base_url</code> override allowlist</li>
+<li><strong>url_fetch_allowlist</strong>: URL media fetch allowlist for otherwise blocked targets</li>
+<li><strong>media_root</strong>: Safe root for local media file paths accepted by the HTTP server</li>
+<li><strong>allow_local_files</strong>: Unsafe unrestricted local file toggle</li>
+<li><strong>host</strong> / <strong>port</strong>: Defaults for <code>python -m abstractcore.server.app</code></li>
 </ul>
 <h3 id="cache-section">Cache Section</h3>
 <ul>

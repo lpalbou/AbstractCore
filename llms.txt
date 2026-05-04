@@ -48,7 +48,7 @@ Quick start:
 - [Tool syntax rewriting](docs/tool-syntax-rewriting.md): preserve tool-call markup (`tool_call_tags`, server `agent_format`)
 - [Structured output](docs/structured-output.md): `response_model=...`, native vs prompted, validation/retry behavior
 - [Media handling](docs/media-handling-system.md): `media=[...]`, audio/video policies, vision fallback and plugins
-- [Centralized config](docs/centralized-config.md): `abstractcore --config`, defaults, keys, logging, vision/audio/video strategies
+- [Centralized config](docs/centralized-config.md): `abstractcore --config`, defaults, provider keys, HTTP server auth/hardening, logging, vision/audio/video strategies
 
 ## Providers (IDs + setup)
 

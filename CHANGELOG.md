@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Centralized server auth config**: `abstractcore --config` and direct config commands now cover the hardened HTTP server auth model. Users can persist the AbstractCore server master key, unauthenticated local/dev mode, `base_url` and URL-fetch allowlists, safe media root, local-file toggle, and default server bind host/port.
+
+### Changed
+- **Provider key config coverage**: centralized API-key storage now includes `openai-compatible` and `vllm` in addition to OpenAI, Anthropic, OpenRouter, Portkey, and Google. Persisted provider and server settings are injected into environment variables only when deployment env vars are absent.
+- **Configuration wizard coverage**: the interactive wizard's HTTP server step now covers the full persisted server security surface, including URL-fetch allowlists, unsafe local-file toggles, and default bind host/port.
+
 ## [2.13.2] - 2026-05-03
 
 ### Added
