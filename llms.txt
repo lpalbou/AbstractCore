@@ -2,6 +2,8 @@
 
 > Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media handling (images/audio/video + documents), embeddings, and an optional OpenAI-compatible HTTP server. Default install stays lightweight; features are enabled via extras.
 
+Last reviewed against source: 2026-05-04. Package version in source: 2.13.2. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
+
 This is the curated, high-signal index for agents. For a self-contained handbook with the important details inlined, read `llms-full.txt`.
 
 Important notes:
@@ -14,6 +16,7 @@ Ecosystem note:
 
 Quick start:
 - Install: `pip install abstractcore`
+- Hosted SDK bundle: `pip install "abstractcore[remote]"` (OpenAI + Anthropic SDKs; OpenRouter/Portkey/local `/v1` providers use core HTTP dependencies)
 - First steps: `docs/getting-started.md` -> `docs/prerequisites.md`
 - Run the gateway server: `pip install "abstractcore[server]"` then `python -m abstractcore.server.app`
 - Run the single-model endpoint: `pip install "abstractcore[server]"` then `abstractcore-endpoint --help` (see `docs/endpoint.md`)
@@ -54,7 +57,7 @@ Quick start:
 
 ## Server (OpenAI-compatible `/v1`)
 
-- [Server docs](docs/server.md): run + env vars + endpoints and extensions (`api_key`, `base_url`, `agent_format`)
+- [Server docs](docs/server.md): run + env vars + auth + endpoints and extensions (`base_url`, `agent_format`, `thinking`, `prompt_cache_key`). Request body/query `api_key` is disabled; use server-side provider config, `X-AbstractCore-Provider-API-Key`, or `Authorization` only when server auth is not configured.
 - [Server implementation](abstractcore/server/app.py): FastAPI gateway source
 - [Endpoint docs](docs/endpoint.md): single-model OpenAI-compatible endpoint (`abstractcore-endpoint`)
 - [Endpoint implementation](abstractcore/endpoint/app.py): endpoint server source

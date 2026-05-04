@@ -261,15 +261,25 @@ pip install "abstractcore[mlx]"
 
 #### 2. Download Models
 
-MLX models are automatically downloaded when first used. Popular options:
+AbstractCore is offline-first for local model weights. The MLX provider loads
+models from an explicit local path, the Hugging Face cache, or the LM Studio
+cache; it does not silently download weights during `create_llm(...)`.
+
+Download or prefetch a model first, for example:
+
+```bash
+huggingface-cli download mlx-community/Qwen3-4B
+```
+
+Then use the model ID, or pass a local model directory path:
 
 ```python
 from abstractcore import create_llm
 
-# Models are auto-downloaded on first use
-llm = create_llm("mlx", model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")  # 4.2GB
+# Uses a cached Hugging Face snapshot or a local directory path.
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
 # OR
-llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")      # 1.8GB
+llm = create_llm("mlx", model="/path/to/local/mlx-model")
 ```
 
 #### 3. Test Setup
@@ -277,8 +287,8 @@ llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")      #
 ```python
 from abstractcore import create_llm
 
-# Test with a good balance model
-llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
+# Test with a model you already downloaded/prefetched
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
 response = llm.generate("Explain machine learning briefly")
 print(response.content)
 ```

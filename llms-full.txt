@@ -2,8 +2,9 @@
 
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
-Last updated: 2026-05-02  
-Package version: 2.13.0
+Last updated: 2026-05-04
+Package version: 2.13.2
+Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
 
@@ -124,9 +125,14 @@ Anything heavy must be behind install extras and imported lazily inside the code
 pip install abstractcore
 ```
 
-### Provider SDK extras (install only what you use)
+Core includes local HTTP/gateway providers that need no SDK: `ollama`,
+`lmstudio`, `openrouter`, `portkey`, and generic `openai-compatible` `/v1`
+endpoints.
+
+### Hosted SDK / provider extras (install only what you use)
 
 ```bash
+pip install "abstractcore[remote]"      # OpenAI + Anthropic SDKs
 pip install "abstractcore[openai]"
 pip install "abstractcore[anthropic]"
 pip install "abstractcore[huggingface]"  # transformers/torch (heavy)
@@ -136,6 +142,7 @@ pip install "abstractcore[vllm]"         # NVIDIA GPU inference server integrati
 
 Notes:
 - `ollama`, `lmstudio`, `openrouter`, `portkey`, and `openai-compatible` use only core deps (they speak HTTP).
+- `openrouter`, `portkey`, and `openai-compatible` also have explicit no-dependency extras for clarity/composability.
 
 ### Optional feature extras
 
@@ -154,13 +161,13 @@ Compatibility note:
 ### Turnkey installs (pick one)
 
 ```bash
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
+pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
 ```
 
 Shell tip:
 - In zsh, always quote extras: `pip install "abstractcore[media]"`.
+- `all-non-mlx` remains as a legacy broad bundle, but new installs should usually compose explicit extras or choose `all-apple` / `all-gpu`.
 
 ---
 
@@ -392,7 +399,7 @@ llm = create_llm("openai", model="gpt-4o-mini", temperature=0.2)
 Common kwargs (best-effort across providers):
 - `temperature`
 - `seed`
-- `thinking` (`None|"auto"|"on"|"off"|True|False|"low"|"medium"|"high"`)
+- `thinking` (`None|"auto"|"on"|"off"|"none"|True|False|"minimal"|"low"|"medium"|"high"|"xhigh"`)
 
 ### `generate(prompt_or_messages, ...)`
 
@@ -745,6 +752,7 @@ Requests use `provider/model`:
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \\
   -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \\
   -d '{
     "model": "openai/gpt-4o-mini",
     "messages": [{"role": "user", "content": "Hello!"}]
@@ -755,17 +763,25 @@ curl -X POST http://localhost:8000/v1/chat/completions \\
 
 The server supports a few non-OpenAI fields to make multi-provider routing practical:
 
-- `api_key`: per-request provider key (useful for multi-tenant scenarios)
-- `base_url`: per-request provider base URL override (include `/v1` for OpenAI-compatible servers)
-- `thinking`: unified thinking/reasoning control (`null|"auto"|"on"|"off"|...`)
+- `agent_format`: tool-call syntax output format for agentic clients (`auto|openai|codex|qwen3|llama3|gemma|xml|passthrough`)
+- `base_url`: per-request provider base URL override (loopback-only by default; non-loopback hosts require `ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST`)
+- `thinking`: unified thinking/reasoning control (`null|"auto"|"on"|"off"|"none"|...`)
+- `prompt_cache_key` / `prompt_cache_retention`: best-effort provider prompt-cache controls
 - `unload_after`: best-effort model unload after request (dangerous in multi-tenant environments)
-- `agent_format`: tool-call syntax rewriting (preserve tool markup)
+
+Provider keys are not accepted in request bodies or query strings. Configure
+provider keys on the server, send `X-AbstractCore-Provider-API-Key` as a
+per-request upstream override, or use `Authorization: Bearer <provider-key>`
+only when `ABSTRACTCORE_SERVER_API_KEY` is not configured. When server auth is
+configured, `Authorization` is the AbstractCore server key and is not forwarded
+upstream.
 
 ### Provider base_url override example
 
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \\
   -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \\
   -d '{
     "model": "lmstudio/qwen/qwen3-4b-2507",
     "base_url": "http://localhost:1234/v1",
@@ -897,11 +913,9 @@ Expected default: pass-through. Execute tool calls in your host/runtime, or expl
 
 ---
 
-## Appendix A) Inlined canonical docs (de-hyperlinked)
+## Appendix A) Inlined canonical docs snapshot
 
-This appendix inlines key docs so `llms-full.txt` is self-contained and can be used offline.
-For LLM/agent consumption, markdown link targets are removed (link text is preserved).
-If you're token-limited, prefer sections 1-13 above and only pull the specific inlined doc(s) you need.
+> Generated from the current files in `docs/` on 2026-05-04. The source code remains the final truth for behavior; this appendix is here so agents can answer usage questions without following links.
 
 ---
 
@@ -909,7 +923,7 @@ If you're token-limited, prefer sections 1-13 above and only pull the specific i
 
 # Getting Started
 
-AbstractCore is a unified Python interface for cloud + local LLM providers. The default install is lightweight; add features via extras.
+AbstractCore is a unified Python interface for cloud, gateway, and local LLM providers. The default install is lightweight; add only the extras your application needs.
 
 ## Prerequisites
 
@@ -918,16 +932,23 @@ AbstractCore is a unified Python interface for cloud + local LLM providers. The 
 
 ## Installation
 
+Extras compose. For example, `abstractcore[remote,media,tools]` installs hosted
+API SDKs plus document/media handling and built-in tools in one command.
+
 ```bash
-# Core (small, lightweight default)
+# Core: local HTTP servers and gateways that need no SDK
+# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
 pip install abstractcore
 
-# Providers (install only what you use)
+# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
+pip install "abstractcore[remote]"
+
+# Individual provider SDKs / local runtimes
 pip install "abstractcore[openai]"       # OpenAI SDK
 pip install "abstractcore[anthropic]"    # Anthropic SDK
 pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
 pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
-pip install "abstractcore[vllm]"         # GPU inference server integrations (heavy)
+pip install "abstractcore[vllm]"         # NVIDIA CUDA / ROCm inference (heavy)
 
 # Optional features
 pip install "abstractcore[tools]"        # built-in tools (web/file/command helpers)
@@ -938,10 +959,14 @@ pip install "abstractcore[tokens]"       # precise token counting (tiktoken)
 pip install "abstractcore[server]"       # OpenAI-compatible HTTP gateway
 
 # Combine extras (zsh: keep quotes)
-pip install "abstractcore[openai,media,tools]"
+pip install "abstractcore[remote,media,tools]"
+
+# Turnkey local-runtime installs
+pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
+pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
 ```
 
-Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, LocalAI, etc.) work with the core install; you just point AbstractCore at the server base URL. See Prerequisites for provider setup.
+Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, LocalAI, etc.) work with the core install; you just point AbstractCore at the server base URL. See [Prerequisites](prerequisites.md) for provider setup.
 
 Optional capability plugins (deterministic multimodal outputs):
 
@@ -950,7 +975,7 @@ pip install abstractvoice   # enables llm.voice / llm.audio (TTS/STT)
 pip install abstractvision  # enables llm.vision (generative vision; typically via an OpenAI-compatible images endpoint)
 ```
 
-See: Capabilities and Server.
+See: [Capabilities](capabilities.md) and [Server](server.md).
 
 ## Providers and models
 
@@ -993,6 +1018,49 @@ resp = llm.generate("What is the capital of France?")
 print(resp.content)
 ```
 
+## Sessions (multi-turn)
+
+Use a session to keep conversation state (system prompt + message history) across turns:
+
+```python
+from abstractcore import BasicSession, create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+session = BasicSession(provider=llm, system_prompt="You are a helpful assistant.")
+
+print(session.generate("Hello!").content)
+print(session.generate("Now continue.").content)
+```
+
+For prompt-cache-aware long chats (reuse stable prefixes like system/tools/files), use `CachedSession`:
+- See [Prompt Caching](prompt-caching.md).
+
+## Thinking / reasoning (best-effort)
+
+Many modern models can optionally emit a reasoning/thinking trace (sometimes in a separate channel, sometimes inline). AbstractCore exposes a single unified control:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("lmstudio", model="qwen3.5-27b@q4_k_m", base_url="http://localhost:1234/v1")
+
+# Disable thinking (tries to suppress any reasoning trace)
+resp = llm.generate("Compute 17*23 - 19*11. Reply with the integer only.", thinking="none")
+print(resp.content)
+
+# Enable thinking (levels are best-effort; not all backends support budgets)
+resp = llm.generate("Solve a hard logic puzzle.", thinking="high")
+print(resp.content)
+print(resp.metadata.get("reasoning"))  # when the backend exposes it
+```
+
+Notes:
+- For **Qwen3 / Qwen3.5 on LM Studio**, AbstractCore uses LM Studio’s model template variables (`enable_thinking` / `enableThinking`) and a Qwen template “hard switch” for `thinking="none"` (empty `<think></think>`), rather than injecting “Reasoning effort …” text into the system prompt.
+- For **Qwen3 / Qwen3.5 GGUF via HuggingFaceProvider (llama-cpp-python)**, there is no template-kwargs knob exposed by llama-cpp-python today, so `thinking="none"` also uses the Qwen hard-switch marker. If GGUF loading fails due to huge advertised context windows, AbstractCore will retry with smaller `n_ctx` values (best-effort); you can also pass `max_tokens=...` when constructing `HuggingFaceProvider()` to explicitly control llama.cpp `n_ctx`.
+- For **Ollama**, enabling thinking may consume a lot of output tokens in the thinking channel; consider using a larger `max_output_tokens` when `thinking` is enabled.
+
+For server usage (OpenAI-compatible HTTP), see [Server](server.md) and [Generation Parameters](generation-parameters.md).
+
 ## Streaming
 
 ```python
@@ -1009,7 +1077,7 @@ AbstractCore supports native tool calling (when the provider supports it) and pr
 
 By default, tool execution is pass-through (`execute_tools=False`): you get tool calls in `resp.tool_calls`, and your host/runtime decides how to execute them.
 
-In the AbstractFramework ecosystem, **AbstractRuntime** is the recommended runtime for executing tool calls durably (policy, retries, persistence). See Architecture and Tool Calling.
+In the AbstractFramework ecosystem, **AbstractRuntime** is the recommended runtime for executing tool calls durably (policy, retries, persistence). See [Architecture](architecture.md) and [Tool Calling](tool-calling.md).
 
 ```python
 from abstractcore import create_llm, tool
@@ -1025,7 +1093,10 @@ print(resp.content)
 print(resp.tool_calls)
 ```
 
-See Tool Calling and Tool Syntax Rewriting (`tool_call_tags`, server `agent_format`).
+See [Tool Calling](tool-calling.md) and [Tool Syntax Rewriting](tool-syntax-rewriting.md) (`tool_call_tags`, server `agent_format`).
+
+Note:
+- If you pass both `tools=[...]` and `response_model=...` to `generate()`, AbstractCore uses a 2-pass hybrid flow (tool-capable call, then structured-output call). Streaming is not supported in this hybrid mode.
 
 ### Built-in tools (optional)
 
@@ -1040,7 +1111,7 @@ Then import from `abstractcore.tools.common_tools`:
 - `skim_websearch` vs `web_search`: compact/filtered links vs full results
 - `skim_url` vs `fetch_url`: fast URL triage (small output) vs full fetch + parsing for text-first types (HTML/JSON/text)
 
-See Tool Calling for a recommended workflow and the full built-in tool list.
+See [Tool Calling](tool-calling.md) for a recommended workflow and the full built-in tool list.
 
 ## Structured output
 
@@ -1059,7 +1130,7 @@ answer = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
 print(answer.bullets)
 ```
 
-See Structured Output for strategy details and limitations.
+See [Structured Output](structured-output.md) for strategy details and limitations.
 
 ## Media input (images/audio/video + documents)
 
@@ -1084,11 +1155,11 @@ What you need (quick checklist):
 - **Video**: `ffmpeg`/`ffprobe` on `PATH` + either a vision-capable model **or** configured vision fallback (for frame sampling). Native video input is model/provider dependent.
 - **Audio**: either an audio-capable model **or** speech-to-text fallback via `abstractvoice` + `audio_policy="auto"`/`"speech_to_text"`.
 
-Defaults can be configured via the config CLI (`abstractcore --config`, `abstractcore --status`). See Centralized Config.
+Defaults can be configured via the config CLI (`abstractcore --config`, `abstractcore --status`). See [Centralized Config](centralized-config.md).
 
-If your main model is text-only, you can configure vision fallback (two-stage captioning) so images are automatically described and injected as short observations. See Media Handling, Vision Capabilities, and Centralized Config.
+If your main model is text-only, you can configure vision fallback (two-stage captioning) so images are automatically described and injected as short observations. See [Media Handling](media-handling-system.md), [Vision Capabilities](vision-capabilities.md), and [Centralized Config](centralized-config.md).
 
-For long documents, AbstractCore can optionally apply Glyph visual-text compression. Install `pip install "abstractcore[compression]"` (and `pip install "abstractcore[media]"` for PDFs) and see Glyph Visual-Text Compression.
+For long documents, AbstractCore can optionally apply Glyph visual-text compression. Install `pip install "abstractcore[compression]"` (and `pip install "abstractcore[media]"` for PDFs) and see [Glyph Visual-Text Compression](glyphs.md).
 
 ## Async
 
@@ -1117,14 +1188,14 @@ abstractcore-chat --provider openai --model gpt-4o-mini
 
 ## Next steps
 
-- Prerequisites — provider setup (keys, base URLs, hardware notes)
-- FAQ — common questions and setup gotchas
-- Examples — end-to-end patterns and recipes
-- API (Python) — public API map and common patterns
-- API Reference — complete function/class listing
-- Troubleshooting — common errors and fixes
-- Server — OpenAI-compatible HTTP gateway
-- Endpoint — single-model OpenAI-compatible endpoint (one provider/model per worker)
+- [Prerequisites](prerequisites.md) — provider setup (keys, base URLs, hardware notes)
+- [FAQ](faq.md) — common questions and setup gotchas
+- [Examples](examples.md) — end-to-end patterns and recipes
+- [API (Python)](api.md) — public API map and common patterns
+- [API Reference](api-reference.md) — complete function/class listing
+- [Troubleshooting](troubleshooting.md) — common errors and fixes
+- [Server](server.md) — OpenAI-compatible HTTP gateway
+- [Endpoint](endpoint.md) — single-model OpenAI-compatible endpoint (one provider/model per worker)
 
 ---
 
@@ -1136,29 +1207,34 @@ This guide walks you through setting up AbstractCore with different LLM provider
 
 ## Quick Decision Guide
 
-**Want to get started immediately?** → OpenAI Setup (requires API key)
+**Want to get started immediately?** → [OpenAI Setup](#openai-setup) (requires API key)
 
-**Want free local models?** → Ollama Setup (free, runs on your machine)
+**Want free local models?** → [Ollama Setup](#ollama-setup) (free, runs on your machine)
 
-**Have Apple Silicon Mac?** → MLX Setup (optimized for M1/M2/M3/M4 chips)
+**Have Apple Silicon Mac?** → [MLX Setup](#mlx-setup) (optimized for M1/M2/M3/M4 chips)
 
-**Have NVIDIA GPU?** → vLLM Setup (production GPU inference; NVIDIA CUDA only)
+**Have NVIDIA GPU?** → [vLLM Setup](#vllm-setup) (production GPU inference; NVIDIA CUDA only)
 
-**Want a GUI for local models?** → LMStudio Setup (easiest local setup)
+**Want a GUI for local models?** → [LMStudio Setup](#lmstudio-setup) (easiest local setup)
 
-**Want a gateway/proxy?** → Gateway Provider Setup (OpenRouter/Portkey routing + governance)
+**Want a gateway/proxy?** → [Gateway Provider Setup](#gateway-provider-setup-openrouter-portkey) (OpenRouter/Portkey routing + governance)
 
-**Using a custom OpenAI-compatible `/v1` endpoint?** → OpenAI-Compatible Setup
+**Using a custom OpenAI-compatible `/v1` endpoint?** → [OpenAI-Compatible Setup](#openai-compatible-setup)
 
 ## Core Installation
 
-Install AbstractCore, then add the extras you need:
+Install AbstractCore, then add the extras you need. Extras compose, so a real
+application can use one command such as `pip install "abstractcore[remote,server,tools]"`.
 
 ```bash
-# Core (small default)
+# Core: local HTTP servers and gateways that need no SDK
+# Includes Ollama, LM Studio, OpenRouter, Portkey, and OpenAI-compatible /v1 endpoints
 pip install abstractcore
 
-# Providers (only if you use them)
+# Hosted API SDKs (OpenAI + Anthropic). OpenRouter/Portkey still work from core.
+pip install "abstractcore[remote]"
+
+# Individual provider SDKs / local runtimes
 pip install "abstractcore[openai]"       # OpenAI SDK
 pip install "abstractcore[anthropic]"    # Anthropic SDK
 pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
@@ -1173,18 +1249,18 @@ pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
 pip install "abstractcore[server]"      # OpenAI-compatible HTTP gateway
 pip install "abstractcore[compression]" # Glyph visual-text compression (Pillow renderer)
 
-# Turnkey "everything" installs (pick one)
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+# Turnkey local-runtime installs
+pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
+pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
 ```
 
 **Hardware Notes:**
 - `[mlx]` - Only works on Apple Silicon (M1/M2/M3/M4)
 - `[vllm]` - Only works with NVIDIA CUDA GPUs
-- `[all-apple]` - Best for Apple Silicon (includes MLX, excludes vLLM)
-- `[all-non-mlx]` - Best for Linux/Windows/Intel Mac (excludes MLX and vLLM)
-- `[all-gpu]` - Best for Linux NVIDIA GPU (includes vLLM, excludes MLX)
+- `[remote]` - Lightweight hosted SDK bundle for OpenAI + Anthropic; OpenRouter, Portkey, Ollama, LM Studio, and generic `/v1` endpoints need no extra dependency.
+- `[all-apple]` - Best for Apple Silicon local development (includes MLX, excludes vLLM)
+- `[all-gpu]` - Best for NVIDIA GPU local development (includes vLLM, excludes MLX)
+- For CPU-only or Intel machines, compose only what you need, for example `abstractcore[remote,huggingface,tools]`.
 
 ## Cloud Provider Setup
 
@@ -1194,7 +1270,7 @@ pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excl
 
 #### 1. Get API Key
 
-1. Go to OpenAI API Dashboard
+1. Go to [OpenAI API Dashboard](https://platform.openai.com/api-keys)
 2. Create account or sign in
 3. Click "Create new secret key"
 4. Copy the key (starts with `sk-`)
@@ -1232,7 +1308,7 @@ print(response.content)  # Should output: "Bonjour!"
 
 #### 1. Get API Key
 
-1. Go to Anthropic Console
+1. Go to [Anthropic Console](https://console.anthropic.com/)
 2. Create account or sign in
 3. Go to "API Keys" section
 4. Click "Create Key"
@@ -1270,6 +1346,8 @@ print(response.content)
 **Best for**: routing, observability/governance, and unified billing across multiple backends.
 
 Gateways expose an OpenAI-compatible `/v1` endpoint and forward your payload to the routed backend model. Because some backends are strict (for example OpenAI reasoning families like gpt-5/o1 reject unsupported parameters), AbstractCore’s gateway providers forward optional generation parameters (like `temperature`, `top_p`, `max_output_tokens`) **only when explicitly set**.
+
+No provider SDK extra is required for OpenRouter or Portkey; the core install uses AbstractCore's internal HTTP/OpenAI-compatible client.
 
 #### OpenRouter Setup
 
@@ -1341,7 +1419,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 ```
 
 **Windows:**
-1. Download installer from ollama.com/download
+1. Download installer from [ollama.com/download](https://ollama.com/download)
 2. Run the installer
 3. Restart terminal
 
@@ -1386,15 +1464,25 @@ pip install "abstractcore[mlx]"
 
 #### 2. Download Models
 
-MLX models are automatically downloaded when first used. Popular options:
+AbstractCore is offline-first for local model weights. The MLX provider loads
+models from an explicit local path, the Hugging Face cache, or the LM Studio
+cache; it does not silently download weights during `create_llm(...)`.
+
+Download or prefetch a model first, for example:
+
+```bash
+huggingface-cli download mlx-community/Qwen3-4B
+```
+
+Then use the model ID, or pass a local model directory path:
 
 ```python
 from abstractcore import create_llm
 
-# Models are auto-downloaded on first use
-llm = create_llm("mlx", model="mlx-community/Qwen2.5-Coder-7B-Instruct-4bit")  # 4.2GB
+# Uses a cached Hugging Face snapshot or a local directory path.
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
 # OR
-llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")      # 1.8GB
+llm = create_llm("mlx", model="/path/to/local/mlx-model")
 ```
 
 #### 3. Test Setup
@@ -1402,8 +1490,8 @@ llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")      #
 ```python
 from abstractcore import create_llm
 
-# Test with a good balance model
-llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
+# Test with a model you already downloaded/prefetched
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
 response = llm.generate("Explain machine learning briefly")
 print(response.content)
 ```
@@ -1421,7 +1509,7 @@ print(response.content)
 
 #### 1. Install LMStudio
 
-1. Download from lmstudio.ai
+1. Download from [lmstudio.ai](https://lmstudio.ai/)
 2. Install the application
 3. Launch LMStudio
 
@@ -1470,7 +1558,7 @@ pip install "abstractcore[huggingface]"
 
 For private models or higher rate limits:
 
-1. Go to huggingface.co/settings/tokens
+1. Go to [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens)
 2. Create a "Read" token
 3. Set environment variable:
 
@@ -1779,12 +1867,12 @@ llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
 ### API Key Issues
 
 #### OpenAI billing issues
-1. Check your billing dashboard
+1. Check your [billing dashboard](https://platform.openai.com/account/billing)
 2. Add payment method if needed
 3. Check usage limits
 
 #### Anthropic rate limits
-1. Check your console
+1. Check your [console](https://console.anthropic.com/)
 2. Upgrade to higher tier if needed
 3. Implement retry logic in your code
 
@@ -1913,13 +2001,14 @@ This setup guide should get you running with any AbstractCore provider. Choose w
 
 # API (Python)
 
-This page is a user-facing map of the **public Python API** exposed from `abstractcore` (see `abstractcore/__init__.py`). For a complete listing of functions/classes (including events), see **API Reference**.
+This page is a user-facing map of the **public Python API** exposed from `abstractcore` (see `abstractcore/__init__.py`). For a complete listing of functions/classes (including events), see **[API Reference](api-reference.md)**.
 
-New to AbstractCore? Start with **Getting Started**.
+New to AbstractCore? Start with **[Getting Started](getting-started.md)**.
 
 Implementation pointers (source of truth):
 - `create_llm`: `abstractcore/core/factory.py` → `abstractcore/providers/registry.py`
 - `BasicSession`: `abstractcore/core/session.py`
+- `CachedSession`: `abstractcore/core/cached_session.py` (prompt caching; see `docs/prompt-caching.md`)
 - Response/types: `abstractcore/core/types.py`
 - Tool decorator: `abstractcore/tools/core.py`
 
@@ -1964,6 +2053,21 @@ session = BasicSession(create_llm("anthropic", model="claude-haiku-4-5"))  # req
 print(session.generate("Give me 3 name ideas.").content)
 print(session.generate("Pick the best one.").content)
 ```
+
+### `CachedSession` (prompt caching)
+
+For prompt-cache-aware long chats (reuse stable prefixes like system/tools/files), use `CachedSession`:
+
+```python
+from abstractcore import CachedSession, create_llm
+
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B")  # requires: abstractcore[mlx]
+session = CachedSession(provider=llm, system_prompt="You are helpful.", prompt_cache_strategy="auto")
+session.attach_files(["/path/to/large_context.md"])
+print(session.generate("Summarize the attached file.").content)
+```
+
+See **[Prompt Caching](prompt-caching.md)**.
 
 ### `tool` (decorator)
 
@@ -2011,7 +2115,7 @@ async def main():
 asyncio.run(main())
 ```
 
-Implementation: `abstractcore/download.py`. For provider setup and base URLs, see Prerequisites.
+Implementation: `abstractcore/download.py`. For provider setup and base URLs, see [Prerequisites](prerequisites.md).
 
 ## Tool calling
 
@@ -2029,7 +2133,7 @@ resp = llm.generate("Use the tool.", tools=[get_weather])
 print(resp.tool_calls)
 ```
 
-See **Tool Calling** and **Tool Syntax Rewriting**.
+See **[Tool Calling](tool-calling.md)** and **[Tool Syntax Rewriting](tool-syntax-rewriting.md)**.
 
 ### Built-in tools (optional)
 
@@ -2039,7 +2143,7 @@ If you want a ready-made toolset (web + filesystem helpers), install:
 pip install "abstractcore[tools]"
 ```
 
-Then import from `abstractcore.tools.common_tools` (for example `web_search`, `skim_websearch`, `skim_url`, `fetch_url`). See **Tool Calling** for usage patterns and when to use `skim_*` vs `fetch_*`.
+Then import from `abstractcore.tools.common_tools` (for example `web_search`, `skim_websearch`, `skim_url`, `fetch_url`). See **[Tool Calling](tool-calling.md)** for usage patterns and when to use `skim_*` vs `fetch_*`.
 
 ## Structured output
 
@@ -2058,7 +2162,7 @@ result = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
 print(result.bullets)
 ```
 
-See **Structured Output**.
+See **[Structured Output](structured-output.md)**.
 
 ## Media input
 
@@ -2074,7 +2178,7 @@ Then pass `media=[...]` to `generate()` / `agenerate()` (or use the media pipeli
 - Video: controlled by `video_policy` (native when supported; otherwise frame sampling via `ffmpeg` + vision handling).
 - Audio: controlled by `audio_policy` (native when supported; otherwise optional speech-to-text via `abstractvoice`).
 
-See **Media Handling**, **Vision Capabilities**, and **Centralized Config**.
+See **[Media Handling](media-handling-system.md)**, **[Vision Capabilities](vision-capabilities.md)**, and **[Centralized Config](centralized-config.md)**.
 
 ## HTTP API (optional)
 
@@ -2085,7 +2189,7 @@ pip install "abstractcore[server]"
 python -m abstractcore.server.app
 ```
 
-See **Server**.
+See **[Server](server.md)**.
 
 ---
 
@@ -2102,6 +2206,9 @@ A **BasicSession** represents a complete conversation with an LLM, including:
 - Tool calls and their results (inline with conversation flow)
 - Session configuration and settings
 - Optional analytics: summary, assessment, and extracted facts
+
+For prompt-cache-aware long chats (reuse stable prefixes like system/tools/files), use **`CachedSession`**:
+- See `docs/prompt-caching.md`.
 
 ## API Design: Two Methods for Different Purposes
 
@@ -2364,8 +2471,13 @@ The CLI provides convenient commands for session management:
 
 # Optional: persist local prompt/KV cache (MLX only)
 /cache save chat_cache
+/cache save chat_cache --q8
 /cache load chat_cache
 ```
+
+Notes:
+- Prompt/KV cache save/load is currently supported only for `MLXProvider` and writes a `.safetensors` file.
+- Caches are model-locked; loading a cache resets the transcript and treats the KV cache as the context source of truth.
 
 ## Best Practices
 
@@ -3005,9 +3117,9 @@ results = await asyncio.gather(*[safe_task(p) for p in prompts])
 
 ## Learning Resources
 
-- **Educational Demo**: examples/cli/async_cli_demo.py - async/await + streaming + tool events patterns
+- **Educational Demo**: [examples/cli/async_cli_demo.py](../examples/cli/async_cli_demo.py) - 8 core async/await patterns
 - **Test Suite**: `tests/async/test_async_providers.py` - real implementation examples
-- **Concurrency & Throughput**: concurrency.md - practical guidance for local inference
+- **Concurrency & Throughput**: [concurrency.md](concurrency.md) - practical guidance for local inference
 
 ## Summary
 
@@ -3035,16 +3147,16 @@ AbstractCore provides a universal tool calling system that works across all LLM 
 
 ## Table of Contents
 
-- Quick Start
-- The @tool Decorator
-- Universal Tool Support
-- Tool Definition
-- Tool Execution
-- Advanced Patterns
-- Error Handling
-- Performance Optimization
-- Tool Syntax Rewriting
-- Event System Integration
+- [Quick Start](#quick-start)
+- [The @tool Decorator](#the-tool-decorator)
+- [Universal Tool Support](#universal-tool-support)
+- [Tool Definition](#tool-definition)
+- [Tool Execution](#tool-execution)
+- [Advanced Patterns](#advanced-patterns)
+- [Error Handling](#error-handling)
+- [Performance Optimization](#performance-optimization)
+- [Tool Syntax Rewriting](#tool-syntax-rewriting)
+- [Event System Integration](#event-system-integration)
 
 ## Quick Start
 
@@ -3076,7 +3188,6 @@ response = llm.generate(
 )
 
 print(response.content)
-# Output: The weather in Tokyo is sunny, 72°F and 15 * 23 = 345.
 
 # By default (`execute_tools=False`), AbstractCore does not execute tools.
 # Instead, it returns structured tool calls (if the model chose to call tools).
@@ -3656,7 +3767,7 @@ AbstractCore can rewrite tool-call syntax for downstream agents/clients:
 - **Python API**: pass `tool_call_tags=...` to `generate()` / `agenerate()` / `BasicSession.generate()` to preserve and rewrite tool-call markup in `content`.
 - **HTTP server**: set the `agent_format` request field (or rely on auto-detection based on `User-Agent` + model name).
 
-See: Tool Call Syntax Rewriting
+See: [Tool Call Syntax Rewriting](tool-syntax-rewriting.md)
 
 ## Event System Integration
 
@@ -3828,19 +3939,19 @@ print(f"LLM result: {response.content}")
 
 ## Examples
 
-See the examples directory for comprehensive tool usage examples:
+See the [examples directory](../examples/) for comprehensive tool usage examples:
 
-- Basic Tool Usage
-- Advanced Tool Patterns
-- Tool Chaining Examples
+- [Basic Tool Usage](../examples/tools/tool_usage_basic.py)
+- [Advanced Tool Patterns](../examples/tools/tool_usage_advanced.py)
+- [Tool Chaining Examples](../examples/learning_path/03_tool_calling.py)
 
 ## Related Documentation
 
-- API Reference - Complete API documentation
-- Event System - Event-driven tool control
-- Architecture - System design and tool execution flow
-- Server Guide - HTTP server and REST API
-- Getting Started - Quick start guide
+- [API Reference](api-reference.md) - Complete API documentation
+- [Event System](api-reference.md#event-system) - Event-driven tool control
+- [Architecture](architecture.md) - System design and tool execution flow
+- [Server Guide](server.md) - HTTP server and REST API
+- [Getting Started](getting-started.md) - Quick start guide
 
 ---
 
@@ -3981,15 +4092,15 @@ AbstractCore implements structured output generation using Pydantic models with 
 
 ## Table of Contents
 
-1. Overview
-2. Architecture
-3. Provider Implementation
-4. Usage Guide
-5. Schema Design
-6. Performance Characteristics
-7. Error Handling
-8. Production Deployment
-9. API Reference
+1. [Overview](#overview)
+2. [Architecture](#architecture)
+3. [Provider Implementation](#provider-implementation)
+4. [Usage Guide](#usage-guide)
+5. [Schema Design](#schema-design)
+6. [Performance Characteristics](#performance-characteristics)
+7. [Error Handling](#error-handling)
+8. [Production Deployment](#production-deployment)
+9. [API Reference](#api-reference)
 
 ---
 
@@ -4123,7 +4234,7 @@ payload["response_format"] = {
 - gpt-4-turbo
 - gpt-3.5-turbo
 
-**Reference**: OpenAI Structured Outputs Documentation
+**Reference**: [OpenAI Structured Outputs Documentation](https://platform.openai.com/docs/guides/structured-outputs)
 
 ---
 
@@ -4138,7 +4249,7 @@ The provider forces execution of a tool whose input schema matches the desired o
 - claude-sonnet-4-5
 - claude-opus-4-5
 
-**Reference**: Anthropic API Documentation
+**Reference**: [Anthropic API Documentation](https://docs.anthropic.com/)
 
 ---
 
@@ -4168,7 +4279,7 @@ if response_model and PYDANTIC_AVAILABLE:
 - Gemma 2b, 7b, gemma2, gemma3
 - Mistral, Phi-3, Phi-4, GLM-4, DeepSeek-R1
 
-**Reference**: Ollama API Documentation
+**Reference**: [Ollama API Documentation](https://github.com/ollama/ollama/blob/main/docs/api.md)
 
 ---
 
@@ -4198,7 +4309,7 @@ if response_model and PYDANTIC_AVAILABLE:
 - Behavior depends on the LMStudio server version and underlying model/runtime.
 - For example coverage, see `tests/structured/`.
 
-**Reference**: LMStudio Documentation
+**Reference**: [LMStudio Documentation](https://lmstudio.ai/docs)
 
 ---
 
@@ -4355,6 +4466,16 @@ result = llm.generate(
 
 print(f"{result.name} ({result.age}): {result.email}")
 ```
+
+### Tools + Structured Output (2-pass hybrid)
+
+If you pass both `tools=[...]` and `response_model=...` in the same `generate()` call, AbstractCore uses a 2-pass hybrid flow:
+1) a tool-capable call, then
+2) a structured-output call using the tool-context.
+
+Notes:
+- Streaming is not supported in this hybrid mode.
+- Tool execution is pass-through by default (`execute_tools=False`): your host/runtime should execute tool calls and feed results back as messages when building multi-step workflows.
 
 ### Using Enums
 
@@ -4965,20 +5086,20 @@ retry = FeedbackRetry(max_attempts=3)
 
 ## Related Documentation
 
-- Getting Started - Quick introduction
-- API Reference - Complete API documentation
-- Examples - Real-world usage patterns
-- Response Model Parameter Analysis - Why `response_model`
-- Native Implementation Test Results - Detailed test data
+- [Getting Started](getting-started.md#structured-output) - Quick introduction
+- [API Reference](api-reference.md) - Complete API documentation
+- [Examples](examples.md#structured-output-examples) - Real-world usage patterns
+- [Response Model Parameter Analysis](archive/structured-response-keyword.md) - Why `response_model`
+- [Native Implementation Test Results](archive/improved-structured-response.md) - Detailed test data
 
 ---
 
 ## References
 
-- OpenAI Structured Outputs
-- Anthropic API Documentation
-- Ollama API Documentation
-- Pydantic Documentation
+- [OpenAI Structured Outputs](https://platform.openai.com/docs/guides/structured-outputs)
+- [Anthropic API Documentation](https://docs.anthropic.com/)
+- [Ollama API Documentation](https://github.com/ollama/ollama/blob/main/docs/api.md)
+- [Pydantic Documentation](https://docs.pydantic.dev/)
 
 ---
 
@@ -5699,10 +5820,12 @@ pip install "abstractcore[media]"
 
 ```bash
 # Media features (PDF + Office docs) are covered by `abstractcore[media]`.
-# If you want the full framework install (providers + tools + server + docs), pick one:
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+# Compose only what your app needs:
+pip install "abstractcore[remote,media,tools]"
+
+# Or choose a turnkey local-runtime install:
+pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
+pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
 ```
 
 Advanced: If you prefer to install only the pieces you need (instead of `abstractcore[media]`),
@@ -5798,10 +5921,10 @@ from abstractcore.media.processors import (
 
 ## Next Steps
 
-- **Getting Started Guide** - Complete AbstractCore tutorial
-- **API Reference** - Full Python API documentation
-- **Glyph + Vision Example** - End-to-end document analysis with a vision model
-- **Supported Formats Utility** - Inspect available processors and supported formats
+- **[Getting Started Guide](getting-started.md)** - Complete AbstractCore tutorial
+- **[API Reference](api-reference.md)** - Full Python API documentation
+- **[Glyph + Vision Example](../examples/media/glyph_complete_example.py)** - End-to-end document analysis with a vision model
+- **[Supported Formats Utility](../examples/media/list_supported_formats.py)** - Inspect available processors and supported formats
 
 ---
 
@@ -5813,11 +5936,11 @@ The media handling system makes AbstractCore multimodal while maintaining the sa
 
 # Vector Embeddings Guide
 
-AbstractCore includes built-in support for vector embeddings with **multiple providers** (HuggingFace, Ollama, LMStudio). This guide shows you how to use embeddings for semantic search, RAG applications, and similarity analysis.
+AbstractCore includes built-in support for vector embeddings with **7 providers**: HuggingFace (local), Ollama, LMStudio, OpenAI, OpenRouter, Portkey, and any OpenAI-compatible endpoint. This guide shows you how to use embeddings for semantic search, RAG applications, and similarity analysis.
 
 **Two ways to use embeddings:**
 1. **Python Library** (this guide) - Direct programmatic usage via `EmbeddingManager`
-2. **REST API** - HTTP endpoints via AbstractCore server (see Server API Reference)
+2. **REST API** - HTTP endpoints via AbstractCore server (see [Server API Reference](server.md#embeddings))
 
 ## Quick Start
 
@@ -5922,6 +6045,48 @@ embedder = EmbeddingManager(
 )
 ```
 
+### OpenAI Provider
+
+Cloud embedding models via the OpenAI API. Requires `OPENAI_API_KEY`.
+
+```python
+# Use OpenAI text-embedding-3-small (1536 dimensions)
+embedder = EmbeddingManager(
+    provider="openai",
+    model="text-embedding-3-small"
+)
+
+# Or text-embedding-3-large (3072 dimensions, higher quality)
+embedder = EmbeddingManager(
+    provider="openai",
+    model="text-embedding-3-large"
+)
+```
+
+### Gateway Providers (OpenRouter, Portkey, OpenAI-compatible)
+
+Route embedding requests through gateway/proxy providers. Useful for cost tracking, rate limiting, or unified billing.
+
+```python
+# Via OpenRouter gateway (requires OPENROUTER_API_KEY)
+embedder = EmbeddingManager(
+    provider="openrouter",
+    model="openai/text-embedding-3-small"
+)
+
+# Via Portkey AI gateway (requires PORTKEY_API_KEY)
+embedder = EmbeddingManager(
+    provider="portkey",
+    model="text-embedding-3-small"
+)
+
+# Via any OpenAI-compatible endpoint
+embedder = EmbeddingManager(
+    provider="openai-compatible",
+    model="my-embedding-model"
+)
+```
+
 ### Provider Comparison
 
 | Provider | Speed | Setup | Privacy | Cost | Primary Use Cases |
@@ -5929,6 +6094,10 @@ embedder = EmbeddingManager(
 | **HuggingFace** | Fast | Easy | Full | Free | Development, production |
 | **Ollama** | Medium | Medium | Full | Free | Privacy, custom models |
 | **LMStudio** | Medium | Easy (GUI) | Full | Free | GUI management, testing |
+| **OpenAI** | Fast | API key | Cloud | Paid | High-quality cloud embeddings |
+| **OpenRouter** | Fast | API key | Cloud | Paid | Gateway routing, cost tracking |
+| **Portkey** | Fast | API key | Cloud | Paid | Gateway routing, unified billing |
+| **OpenAI-compatible** | Varies | URL | Varies | Varies | Custom endpoints, self-hosted |
 
 ## Core Features
 
@@ -6381,7 +6550,7 @@ curl -X POST http://localhost:8000/v1/embeddings \
 - `ollama/model-name`
 - `lmstudio/model-name`
 
-**Complete REST API documentation:** Server API Reference
+**Complete REST API documentation:** [Server API Reference](server.md#embeddings)
 
 ## Provider-Specific Features
 
@@ -6411,14 +6580,14 @@ curl -X POST http://localhost:8000/v1/embeddings \
 ## Related Documentation
 
 **Core Library:**
-- **Python API Reference** - Complete EmbeddingManager API
-- **Getting Started** - Basic AbstractCore setup
-- **Examples** - More practical examples
+- **[Python API Reference](api-reference.md)** - Complete EmbeddingManager API
+- **[Getting Started](getting-started.md)** - Basic AbstractCore setup
+- **[Examples](examples.md)** - More practical examples
 
 **Server (REST API):**
-- **Server Guide** - Server setup and deployment
-- **Server API Reference** - REST API endpoints including embeddings
-- **Troubleshooting** - Common embedding issues
+- **[Server Guide](server.md)** - Server setup and deployment
+- **[Server API Reference](server.md)** - REST API endpoints including embeddings
+- **[Troubleshooting](troubleshooting.md)** - Common embedding issues
 
 ---
 
@@ -6432,9 +6601,27 @@ curl -X POST http://localhost:8000/v1/embeddings \
 
 AbstractCore provides a unified configuration system that manages default models, cache directories, logging settings, and other package-wide preferences from a single location.
 
+## Quick Setup
+
+```bash
+# Interactive guided setup (7 steps: model, vision, API keys, audio, video, embeddings, logging)
+abstractcore --config
+
+# Check readiness of all subsystems + download/install what's missing
+abstractcore --install
+
+# Auto-download everything missing (non-interactive)
+abstractcore --install --yes
+
+# View current configuration
+abstractcore --status
+```
+
 ## Configuration File Location
 
 Configuration is stored in: `~/.abstractcore/config/abstractcore.json`
+
+API keys saved via `--config` or `--set-api-key` are persisted here and automatically injected into the process environment (e.g. `OPENAI_API_KEY`) at startup. Environment variables always take precedence over config-persisted keys.
 
 ## Configuration Sections
 
@@ -6565,11 +6752,13 @@ Notes:
 
 ### Audio (default policy + optional speech-to-text fallback)
 
-Audio attachments are controlled by `audio_policy` and are **strict by default** to avoid silent semantic changes:
+Audio attachments are controlled by `audio_policy`. The default is `auto`: use native audio when supported, otherwise fall back to STT via `abstractvoice` (if installed). If `abstractvoice` is not installed, `auto` degrades gracefully to native-only behavior at runtime.
 
 ```bash
-# Enable speech-to-text fallback when audio is attached (requires an STT plugin backend)
+# STT fallback requires abstractvoice
 pip install abstractvoice
+
+# Override strategy explicitly (auto is the default)
 abstractcore --set-audio-strategy auto
 
 # Optional: set a language hint (e.g. en, fr)
@@ -6577,9 +6766,9 @@ abstractcore --set-stt-language fr
 ```
 
 Notes:
-- `audio_policy="native_only"` errors on text-only models (default).
+- `audio_policy="auto"` uses native audio when supported, otherwise STT when available (default).
 - `audio_policy="speech_to_text"` forces STT and injects a transcript into the request.
-- `audio_policy="auto"` uses native audio when supported, otherwise STT when available.
+- `audio_policy="native_only"` errors on text-only models (no fallback).
 
 ### Video (native vs frames fallback)
 
@@ -7053,7 +7242,7 @@ This shows:
 
 Transform AbstractCore into an OpenAI-compatible API server. One server, all models, any client.
 
-If you want a dedicated **single-model** `/v1` server (one provider/model per worker), see Endpoint.
+If you want a dedicated **single-model** `/v1` server (one provider/model per worker), see [Endpoint](endpoint.md).
 
 ## Interactive API docs (start here)
 
@@ -7068,6 +7257,10 @@ Visit while the server is running:
 ```bash
 # Install
 pip install "abstractcore[server]"
+
+# Configure server auth and provider keys
+export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
+export OPENAI_API_KEY="sk-..."
 
 # Start server
 python -m abstractcore.server.app
@@ -7085,6 +7278,7 @@ curl http://localhost:8000/health
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
   -d '{
     "model": "openai/gpt-4o-mini",
     "messages": [{"role": "user", "content": "Hello!"}]
@@ -7094,9 +7288,10 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 Or with Python:
 
 ```python
+import os
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"])
 
 response = client.chat.completions.create(
     model="anthropic/claude-haiku-4-5",
@@ -7119,6 +7314,9 @@ export OPENROUTER_API_KEY="sk-or-..."
 export PORTKEY_API_KEY="pk_..."         # optional (Portkey)
 export PORTKEY_CONFIG="pcfg_..."        # required for Portkey routing
 
+# Server master key. Authenticated clients can use all server-configured providers.
+export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
+
 # Local providers
 export OLLAMA_BASE_URL="http://localhost:11434"          # (or legacy: OLLAMA_HOST)
 export LMSTUDIO_BASE_URL="http://localhost:1234/v1"
@@ -7133,6 +7331,24 @@ export ABSTRACTCORE_DEBUG=true
 
 # Dangerous (multi-tenant hazard): allow unload_after for providers that can unload shared server state (e.g. Ollama)
 export ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1
+
+# Server security controls (recommended)
+#
+# - Request-level base_url overrides are loopback-only by default.
+#   URL entries match scheme + exact host + default/explicit port + path-segment prefix.
+#   Bare entries match hostname globs, e.g. "*.example.com".
+export ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST="https://api.openai.com,https://example.com/v1"
+#
+# - Remote URL fetches for attachments are blocked for private/loopback/link-local targets by default (SSRF protection).
+#   To allow specific hosts/prefixes, use the same structured allowlist syntax:
+export ABSTRACTCORE_SERVER_URL_FETCH_ALLOWLIST="https://www.berkshirehathaway.com"
+#
+# - Local file paths in HTTP requests are disabled by default (including @/path/to/file in message strings).
+#   To allow local file paths safely, restrict them under a single directory:
+export ABSTRACTCORE_SERVER_MEDIA_ROOT="/srv/abstractcore-media"
+#
+# - Unsafe escape hatch: allow arbitrary local file paths from HTTP requests (not recommended)
+export ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1
 ```
 
 ### Startup Options
@@ -7160,6 +7376,15 @@ uvicorn abstractcore.server.app:app --port 3000             # Custom port
 
 Standard OpenAI-compatible endpoint. Works with all providers.
 
+Server auth:
+- If `ABSTRACTCORE_SERVER_API_KEY` is configured, every non-health endpoint requires
+  `Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY`. Authenticated clients can use all
+  provider keys/endpoints configured on the server.
+- If `ABSTRACTCORE_SERVER_API_KEY` is not configured, `Authorization: Bearer <provider-key>`
+  may be used as a bring-your-own upstream provider key. That key is forwarded only to the
+  requested provider and never unlocks server-configured provider keys.
+- Health checks (`GET /health`) are always unauthenticated.
+
 **Request:**
 ```json
 {
@@ -7180,18 +7405,43 @@ Standard OpenAI-compatible endpoint. Works with all providers.
 - `stream` (optional): Enable streaming responses
 - `tools` (optional): Tools for function calling
 - `agent_format` (optional, AbstractCore extension): Tool-call syntax output format for agentic clients (`"auto"|"openai"|"codex"|"qwen3"|"llama3"|"gemma"|"xml"|"passthrough"`). When omitted, the server auto-detects from user-agent + model heuristics.
-- `api_key` (optional, AbstractCore extension): Provider API key for per-request authentication. Falls back to environment variables (e.g., `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `OPENROUTER_API_KEY`, `PORTKEY_API_KEY`)
+- `api_key` (deprecated/disabled, AbstractCore extension): Provider API keys are no longer accepted in request bodies or query strings. Configure provider keys on the server, use `X-AbstractCore-Provider-API-Key` for a per-request provider override, or use `Authorization` as a provider key only when `ABSTRACTCORE_SERVER_API_KEY` is not configured.
 - `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
 - `unload_after` (optional, AbstractCore extension): If `true`, calls `llm.unload_model(model)` after the request completes. Disabled for `ollama/*` unless `ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1`.
-- `thinking` (optional, AbstractCore extension): Unified thinking/reasoning control (`null|"auto"|"on"|"off"` or `"low"|"medium"|"high"` when supported)
+- `prompt_cache_key` (optional, AbstractCore extension): Best-effort prompt caching key (semantics depend on provider/backend). See `docs/prompt-caching.md`.
+- `prompt_cache_retention` (optional, AbstractCore extension): Prompt cache retention policy (OpenAI: `"in_memory"` or `"24h"`; ignored by other providers). See `docs/prompt-caching.md`.
+- `thinking` (optional, AbstractCore extension): Unified thinking/reasoning control (`null|"auto"|"on"|"off"|"none"` or `"low"|"medium"|"high"|"xhigh"` when supported). Note: `"none"` is treated as an alias for `"off"`.
 - `temperature`, `max_tokens`, `top_p`: Standard LLM parameters
+
+#### Thinking (AbstractCore extension)
+
+The server forwards `thinking` to the underlying provider using AbstractCore’s unified thinking mapping (see [Generation Parameters](generation-parameters.md)).
+
+Example (route to LM Studio + Qwen3.5, disable thinking):
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "lmstudio/qwen3.5-27b@q4_k_m",
+    "base_url": "http://localhost:1234/v1",
+    "messages": [{"role": "user", "content": "Compute 17*23 - 19*11. Reply with the integer only."}],
+    "thinking": "none",
+    "max_tokens": 64
+  }'
+```
+
+Notes:
+- For **Qwen3 / Qwen3.5 on LM Studio**, `thinking="none"` maps to LM Studio’s template variables (`enable_thinking` / `enableThinking`) plus a Qwen template “hard switch” fallback (empty `<think></think>`) when needed. This avoids injecting “reasoning effort” instructions into the system prompt.
+- Not every backend supports per-effort budgets for `low|medium|high`; when unavailable, levels degrade to “thinking enabled”.
 
 **Example with streaming:**
 
 ```python
+import os
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"])
 
 stream = client.chat.completions.create(
     model="ollama/qwen3-coder:30b",
@@ -7208,6 +7458,12 @@ for chunk in stream:
 
 Route a provider to a specific endpoint (useful for remote OpenAI-compatible servers):
 
+Security notes:
+- Request-level `base_url` overrides are **loopback-only by default**. To allow additional
+  origins or host globs, set `ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST`. URL entries are parsed
+  and matched on scheme, exact host, effective port, and path-segment prefix.
+- If the server has an environment provider key set (e.g. `OPENAI_API_KEY`) and you route to a **non-loopback** `base_url`, the request is refused unless the provider key was supplied explicitly with `X-AbstractCore-Provider-API-Key`, or with `Authorization` when server auth is disabled.
+
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
@@ -7218,32 +7474,39 @@ curl -X POST http://localhost:8000/v1/chat/completions \
   }'
 ```
 
-#### Per-request `api_key` (AbstractCore extension)
+#### Provider Authentication
 
-Pass API keys directly in requests (useful for multi-tenant scenarios or OpenRouter):
+Do not put provider keys in request bodies or query strings. Those fields are disabled because
+they leak through logs, shell history, browser history, and reverse proxies.
 
 ```bash
-# OpenRouter with per-request API key
+# Preferred: configure provider keys on the server and authenticate to AbstractCore.
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
   -d '{
-    "model": "openrouter/anthropic/claude-3.5-sonnet",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "api_key": "sk-or-v1-your-openrouter-key"
-  }'
-
-# OpenAI-compatible endpoint with custom auth
-curl -X POST http://localhost:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "openai-compatible/my-model",
-    "messages": [{"role": "user", "content": "Hello!"}],
-    "api_key": "your-api-key",
-    "base_url": "https://my-custom-endpoint.com/v1"
+    "model": "openai/gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
 
-If `api_key` is not provided, AbstractCore falls back to environment variables.
+When `ABSTRACTCORE_SERVER_API_KEY` is not configured, `Authorization: Bearer <provider-key>` may
+be used as an upstream provider key. Once server auth is enabled, `Authorization` is reserved for
+the AbstractCore server key and is never forwarded upstream.
+
+To override a single upstream provider while still using the server master key, send the provider
+key in `X-AbstractCore-Provider-API-Key`. The override applies only to the requested provider:
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "X-AbstractCore-Provider-API-Key: $ANTHROPIC_API_KEY" \
+  -d '{
+    "model": "anthropic/claude-haiku-4-5",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
 
 ### Media generation endpoints (optional)
 
@@ -7303,6 +7566,9 @@ If you want to “ask a model about an audio file”, prefer one of:
 
 AbstractCore server supports comprehensive file attachments using OpenAI-compatible multimodal message format, plus AbstractCore's convenient `@filename` syntax.
 
+Security note (HTTP server): local file paths are disabled by default (including `@/path/to/file` and `{"url": "/path/to/file"}`).
+Use `http(s)` URLs or `data:` base64, or enable local paths via `ABSTRACTCORE_SERVER_MEDIA_ROOT` (safe) / `ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1` (unsafe).
+
 #### Supported File Types
 
 - **Images**: PNG, JPEG, GIF, WEBP, BMP, TIFF
@@ -7312,7 +7578,7 @@ AbstractCore server supports comprehensive file attachments using OpenAI-compati
 
 #### Method 1: @filename Syntax (AbstractCore Extension)
 
-Simple syntax that works with all providers:
+Simple syntax that works with all providers (requires local paths enabled via `ABSTRACTCORE_SERVER_MEDIA_ROOT` or `ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1`):
 
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
@@ -7394,6 +7660,8 @@ AbstractCore supports OpenAI's planned file format with simplified structure (co
 }
 ```
 
+Note: local file paths require `ABSTRACTCORE_SERVER_MEDIA_ROOT` (safe) or `ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1` (unsafe) on the server.
+
 **Base64 Data URL:**
 ```json
 {
@@ -7440,10 +7708,11 @@ Combine text, images, and documents in a single request:
 
 **Using OpenAI Client:**
 ```python
+import os
 from openai import OpenAI
 import base64
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"])
 
 # Method 1: @filename syntax
 response = client.chat.completions.create(
@@ -7681,9 +7950,10 @@ All file types supported via URL, local path, or base64:
 #### Python Client Example
 
 ```python
+import os
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"])
 
 # Direct request to /v1/responses endpoint
 import requests
@@ -7869,7 +8139,10 @@ CMD ["uvicorn", "abstractcore.server.app:app", "--host", "0.0.0.0", "--port", "8
 **Run:**
 ```bash
 docker build -t abstractcore-server .
-docker run -p 8000:8000 -e OPENAI_API_KEY=$OPENAI_API_KEY abstractcore-server
+docker run -p 8000:8000 \
+  -e ABSTRACTCORE_SERVER_API_KEY=$ABSTRACTCORE_SERVER_API_KEY \
+  -e OPENAI_API_KEY=$OPENAI_API_KEY \
+  abstractcore-server
 ```
 
 ### Docker Compose
@@ -7883,6 +8156,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - ABSTRACTCORE_SERVER_API_KEY=${ABSTRACTCORE_SERVER_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     restart: unless-stopped
@@ -8035,6 +8309,7 @@ ollama list
 
 ```bash
 # Set API keys
+export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 
@@ -8057,11 +8332,11 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 ## Related Documentation
 
-- **Getting Started** - Core library quick start
-- **Architecture** - System architecture including server
-- **Python API Reference** - Core library API
-- **Embeddings Guide** - Embeddings deep dive
-- **Troubleshooting** - Common issues and solutions
+- **[Getting Started](getting-started.md)** - Core library quick start
+- **[Architecture](architecture.md)** - System architecture including server
+- **[Python API Reference](api-reference.md)** - Core library API
+- **[Embeddings Guide](embeddings.md)** - Embeddings deep dive
+- **[Troubleshooting](troubleshooting.md)** - Common issues and solutions
 
 ---
 
@@ -8075,13 +8350,13 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 `abstractcore-endpoint` runs a **single-model** OpenAI-compatible server.
 
-Unlike the multi-provider gateway (Server), this endpoint loads **one** `provider+model` once per worker process and reuses it across requests. It’s useful when you want to host a local backend (for example HF GGUF or MLX) as a stable `/v1` endpoint.
+Unlike the multi-provider gateway ([Server](server.md)), this endpoint loads **one** `provider+model` once per worker process and reuses it across requests. It’s useful when you want to host a local backend (for example HF GGUF or MLX) as a stable `/v1` endpoint.
 
 Source: `abstractcore/endpoint/app.py` (entrypoint: `abstractcore-endpoint`).
 
 ## When to use this vs the gateway
 
-- Use **Server** when you want `model="provider/model"` routing across many providers/models from one gateway process.
+- Use **[Server](server.md)** when you want `model="provider/model"` routing across many providers/models from one gateway process.
 - Use **Endpoint** when you want a dedicated “one worker = one model” process (simpler performance characteristics; fewer per-request initialization costs).
 
 ## Install
@@ -8135,13 +8410,25 @@ print(resp.choices[0].message.content)
 If the underlying provider exposes prompt-cache controls, the endpoint also exposes a small control plane under `/acore/prompt_cache/*` (see `abstractcore/endpoint/app.py`):
 
 - `GET /acore/prompt_cache/stats`
+- `GET /acore/prompt_cache/capabilities`
 - `POST /acore/prompt_cache/set`
 - `POST /acore/prompt_cache/update`
 - `POST /acore/prompt_cache/fork`
 - `POST /acore/prompt_cache/clear`
 - `POST /acore/prompt_cache/prepare_modules`
 
-For caching concepts, see Session Management and Architecture.
+Response contract:
+
+- `GET /acore/prompt_cache/capabilities` always returns the provider capability profile (`supported`, `operation="capabilities"`, `capabilities`).
+- Other prompt-cache routes return structured payloads instead of ambiguous booleans:
+  - success: `supported=true`
+  - unsupported operation: `supported=false`, `code="prompt_cache_unsupported"`
+  - runtime/provider failure: `supported=false`, `code="prompt_cache_error"`
+
+The `capabilities` object is always included on prompt-cache control-plane responses so callers can branch on `mode` / `supports_*` flags without re-probing the provider.
+
+For caching concepts, see [Session Management](session.md) and [Architecture](architecture.md).
+For a dedicated overview, see [Prompt Caching](prompt-caching.md).
 
 ---
 
@@ -8153,15 +8440,15 @@ Complete troubleshooting guide for AbstractCore core library and server, includi
 
 ## Table of Contents
 
-- Common Mistakes to Avoid
-- Quick Diagnosis
-- Installation Issues
-- Core Library Issues
-- Server Issues
-- Provider-Specific Issues
-- Performance Issues
-- Best Practices
-- Debug Techniques
+- [Common Mistakes to Avoid](#common-mistakes-to-avoid)
+- [Quick Diagnosis](#quick-diagnosis)
+- [Installation Issues](#installation-issues)
+- [Core Library Issues](#core-library-issues)
+- [Server Issues](#server-issues)
+- [Provider-Specific Issues](#provider-specific-issues)
+- [Performance Issues](#performance-issues)
+- [Best Practices](#best-practices)
+- [Debug Techniques](#debug-techniques)
 
 ---
 
@@ -8174,27 +8461,27 @@ Understanding common pitfalls helps prevent issues before they occur.
 1. **Incorrect provider configuration**
    - *Symptom*: Authentication failures, no model response
    - *Quick Fix*: Set API keys via environment variables (or persist them with `abstractcore --set-api-key ...`)
-   - See: Authentication Errors
+   - See: [Authentication Errors](#issue-authentication-errors)
 
 2. **Not handling tool calls**
    - *Symptom*: Tools not executing, streaming interruptions
    - *Quick Fix*: Use `@tool` decorator and handle tool calls properly
-   - See: Tool Calls Not Working
+   - See: [Tool Calls Not Working](#issue-tool-calls-not-working)
 
 3. **Missing provider extras**
    - *Symptom*: `ModuleNotFoundError` for providers
    - *Quick Fix*: Install provider-specific packages with `pip install "abstractcore[provider]"`
-   - See: ModuleNotFoundError
+   - See: [ModuleNotFoundError](#issue-modulenotfounderror)
 
 4. **LM Studio server not enabled**
    - *Symptom*: Connection refused, no response from LM Studio
    - *Quick Fix*: Enable "Status: Running" toggle in LM Studio GUI
-   - See: LM Studio Server Not Enabled
+   - See: [LM Studio Server Not Enabled](#issue-lm-studio-server-not-enabled)
 
 5. **Context length too small (LM Studio/Ollama)**
    - *Symptom*: 400 Bad Request, truncated responses, errors with long inputs
    - *Quick Fix*: Set "Default Context Length" to "Model Maximum" in LM Studio
-   - See: Context Length Too Small
+   - See: [Context Length Too Small](#issue-context-length-too-small-400-bad-request-truncated-responses)
 
 ### Common Mistake Patterns
 
@@ -8210,7 +8497,7 @@ Understanding common pitfalls helps prevent issues before they occur.
 - Whitespace or copying errors in key
 - Incorrect key permissions or expired credentials
 
-**Solution:** See Authentication Errors for complete fix.
+**Solution:** See [Authentication Errors](#issue-authentication-errors) for complete fix.
 
 **Prevention:**
 - Use environment variables for sensitive credentials
@@ -8252,7 +8539,7 @@ response = llm.generate(
 - Use type hints for all parameters
 - Add clear docstrings for tool descriptions
 - Handle tool execution errors gracefully
-- See: Tool Calls Not Working
+- See: [Tool Calls Not Working](#issue-tool-calls-not-working)
 
 #### Mistake: Overlooking Error Handling
 
@@ -8321,7 +8608,7 @@ response = llm.generate(
 - Always set `max_tokens`
 - Use streaming for long responses
 - Monitor memory usage in production
-- See: Performance Issues
+- See: [Performance Issues](#performance-issues)
 
 #### Mistake: Hardcoding Credentials
 
@@ -8394,15 +8681,16 @@ ModuleNotFoundError: No module named 'openai'
 # Install AbstractCore
 pip install abstractcore
 
-# Install with specific provider
+# Install hosted SDKs or a specific provider
+pip install "abstractcore[remote]"
 pip install "abstractcore[openai]"
 pip install "abstractcore[anthropic]"
-# Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, ...) work with the core install.
+# Local OpenAI-compatible servers and gateways (Ollama, LMStudio, OpenRouter,
+# Portkey, llama.cpp, ...) work with the core install.
 
-# Install the full feature set (pick one)
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon (includes MLX, excludes vLLM)
-pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac (excludes MLX and vLLM)
-pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU (includes vLLM, excludes MLX)
+# Turnkey local-runtime installs
+pip install "abstractcore[all-apple]"    # Apple Silicon: HF/GGUF + MLX + features + server
+pip install "abstractcore[all-gpu]"      # NVIDIA GPU: HF/GGUF + vLLM + features + server
 
 # Verify installation
 pip list | grep abstract
@@ -8425,9 +8713,9 @@ source .venv/bin/activate  # Linux/Mac
 
 # Fresh install
 pip install --upgrade pip
-pip install "abstractcore[all-apple]"    # macOS/Apple Silicon
-# or: pip install "abstractcore[all-non-mlx]"  # Linux/Windows/Intel Mac
-# or: pip install "abstractcore[all-gpu]"      # Linux NVIDIA GPU
+pip install "abstractcore[remote,tools,media]"  # API-first app
+# or: pip install "abstractcore[all-apple]"     # Apple Silicon local stack
+# or: pip install "abstractcore[all-gpu]"       # NVIDIA GPU local stack
 
 # If still failing, try one provider at a time
 pip install "abstractcore[openai]"
@@ -8710,7 +8998,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \
   }'
 ```
 
-See Server (agentic CLI integration) for details and supported formats.
+See [Server](server.md#agentic-cli-integration) for details and supported formats.
 
 ---
 
@@ -9053,11 +9341,11 @@ cat debug_report.txt
 If you're still stuck:
 
 1. **Check Documentation:**
-   - Getting Started - Core library quick start
-   - Prerequisites - Provider setup
-   - Python API Reference - Core library API
-   - Server Guide - Server setup
-   - Server API Reference - REST API endpoints
+   - [Getting Started](getting-started.md) - Core library quick start
+   - [Prerequisites](prerequisites.md) - Provider setup
+   - [Python API Reference](api-reference.md) - Core library API
+   - [Server Guide](server.md) - Server setup
+   - [Server API Reference](server.md) - REST API endpoints
 
 2. **Enable Debug Mode:**
    ```bash
@@ -9071,8 +9359,8 @@ If you're still stuck:
    - Steps to reproduce
 
 4. **Community Support:**
-   - GitHub Issues: github.com/lpalbou/AbstractCore/issues
-   - GitHub Discussions: github.com/lpalbou/AbstractCore/discussions
+   - GitHub Issues: [github.com/lpalbou/AbstractCore/issues](https://github.com/lpalbou/AbstractCore/issues)
+   - GitHub Discussions: [github.com/lpalbou/AbstractCore/discussions](https://github.com/lpalbou/AbstractCore/discussions)
 
 ---
 
@@ -9088,26 +9376,28 @@ If you're still stuck:
 
 The default install is intentionally lightweight. It includes the core API (`create_llm`, `BasicSession`, tool definitions, structured output plumbing) and uses only small dependencies (`pydantic`, `httpx`).
 
-Anything heavy (provider SDKs, torch/transformers, PDF parsing, embeddings models, web scraping deps, the HTTP server) is behind install extras. See Getting Started and Prerequisites.
+Anything heavy (provider SDKs, torch/transformers, PDF parsing, embeddings models, web scraping deps, the HTTP server) is behind install extras. See [Getting Started](getting-started.md) and [Prerequisites](prerequisites.md).
 
 ## Which extra do I need for my provider?
 
+- Hosted SDK bundle: `pip install "abstractcore[remote]"` installs OpenAI + Anthropic.
 - OpenAI: `pip install "abstractcore[openai]"`
 - Anthropic: `pip install "abstractcore[anthropic]"`
+- OpenRouter, Portkey, Ollama, LM Studio, and generic OpenAI-compatible `/v1` endpoints: core install is enough (`pip install abstractcore`).
 - HuggingFace (transformers/torch; heavy): `pip install "abstractcore[huggingface]"`
 - MLX (Apple Silicon; heavy): `pip install "abstractcore[mlx]"`
 - vLLM integration (GPU; heavy): `pip install "abstractcore[vllm]"`
 
-These providers work with the core install (no provider extra): `ollama`, `lmstudio`, `openrouter`, `openai-compatible`.
+These providers work with the core install (no provider extra): `ollama`, `lmstudio`, `openrouter`, `portkey`, `openai-compatible`.
 
 ## How do I combine extras?
 
 ```bash
 # zsh: keep quotes
-pip install "abstractcore[openai,media,tools]"
+pip install "abstractcore[remote,media,tools]"
 ```
 
-For “turnkey” installs, see `README.md` (`all-apple`, `all-non-mlx`, `all-gpu`).
+For “turnkey” local-runtime installs, see `README.md` (`all-apple` for Apple Silicon, `all-gpu` for NVIDIA GPU).
 
 ## Why did my install pull `torch` / take a long time?
 
@@ -9135,7 +9425,7 @@ AbstractCore is usable standalone. In the ecosystem, the common pattern is:
 - AbstractCore produces `resp.content` + `resp.tool_calls`
 - a runtime (for example AbstractRuntime) decides whether/how to execute tools (policy, sandboxing, retries, persistence)
 
-See Architecture and Tool Calling.
+See [Architecture](architecture.md) and [Tool Calling](tool-calling.md).
 
 ## How do I connect to a local server (Ollama / LMStudio / vLLM / llama.cpp / LocalAI)?
 
@@ -9158,7 +9448,7 @@ For a generic OpenAI-compatible endpoint, use `openai-compatible`:
 llm = create_llm("openai-compatible", model="my-model", base_url="http://localhost:1234/v1")
 ```
 
-See Prerequisites for setup details and env var names.
+See [Prerequisites](prerequisites.md) for setup details and env var names.
 
 ## Why do gateway providers return “unsupported parameter” errors (temperature/max_tokens)?
 
@@ -9184,13 +9474,21 @@ abstractcore --set-api-key anthropic sk-ant-...
 abstractcore --status
 ```
 
-Config is stored in `~/.abstractcore/config/abstractcore.json`. See Centralized Config.
+Config is stored in `~/.abstractcore/config/abstractcore.json`. See [Centralized Config](centralized-config.md).
+
+## Can I use the HTTP server with only provider API keys?
+
+Yes. You do not have to give a client the AbstractCore server master key. If `ABSTRACTCORE_SERVER_API_KEY` is not configured, a client can bring its own upstream provider key, for example an Anthropic, OpenRouter, or Portkey key, by sending it as `Authorization: Bearer <provider-key>` or `X-AbstractCore-Provider-API-Key`.
+
+That key is forwarded only to the provider requested by the model route, such as `anthropic/...`, `openrouter/...`, or `portkey/...`. It does not unlock other server-configured provider keys, and it does not grant access to providers the client did not supply credentials for.
+
+If `ABSTRACTCORE_SERVER_API_KEY` is configured, `Authorization` is reserved for the AbstractCore server key. In that mode, use `X-AbstractCore-Provider-API-Key` only when you want to override the upstream provider key for a single request. Provider keys in request bodies or query strings are disabled.
 
 ## Why aren’t tools executed automatically?
 
 By default, AbstractCore runs in **pass-through** mode (`execute_tools=False`): it returns tool calls in `resp.tool_calls`, and your host/runtime decides whether/how to execute them.
 
-Automatic execution (`execute_tools=True`) exists but is deprecated for most use cases. See Tool Calling.
+Automatic execution (`execute_tools=True`) exists but is deprecated for most use cases. See [Tool Calling](tool-calling.md).
 
 ## What’s the difference between `web_search`, `skim_websearch`, `skim_url`, and `fetch_url`?
 
@@ -9214,7 +9512,7 @@ Use tool-call syntax rewriting:
 - Python: pass `tool_call_tags=...` to `generate()` / `agenerate()`
 - Server: set `agent_format` in requests
 
-See Tool Syntax Rewriting.
+See [Tool Syntax Rewriting](tool-syntax-rewriting.md).
 
 ## How do I get structured output (typed objects) instead of parsing JSON?
 
@@ -9232,7 +9530,7 @@ llm = create_llm("openai", model="gpt-4o-mini")
 result = llm.generate("Summarize HTTP/3 in 3 bullets.", response_model=Answer)
 ```
 
-See Structured Output.
+See [Structured Output](structured-output.md).
 
 ## Why does structured output retry or fail validation?
 
@@ -9242,7 +9540,7 @@ Structured output is validated against your schema. If validation fails, Abstrac
 - tighten prompts (be explicit about allowed values and ranges)
 - increase timeouts for slow backends
 
-See Structured Output and Troubleshooting.
+See [Structured Output](structured-output.md) and [Troubleshooting](troubleshooting.md).
 
 ## Why do PDFs / Office docs / images not work?
 
@@ -9252,7 +9550,7 @@ Those require the media extra:
 pip install "abstractcore[media]"
 ```
 
-Then pass `media=[...]` to `generate()` or use the media pipeline. See Media Handling.
+Then pass `media=[...]` to `generate()` or use the media pipeline. See [Media Handling](media-handling-system.md).
 
 ## How do I attach audio or video?
 
@@ -9272,8 +9570,8 @@ abstractcore --set-video-max-frames 6
 ```
 
 See:
-- Media Handling (policies + fallbacks)
-- Vision Capabilities (image/video input + fallback behavior)
+- [Media Handling](media-handling-system.md) (policies + fallbacks)
+- [Vision Capabilities](vision-capabilities.md) (image/video input + fallback behavior)
 
 ## How do I do speech-to-text (STT) or text-to-speech (TTS)?
 
@@ -9299,7 +9597,7 @@ If you run the optional HTTP server, you can also use OpenAI-compatible endpoint
 - `POST /v1/audio/transcriptions`
 - `POST /v1/audio/speech`
 
-See: Server and Capabilities.
+See: [Server](server.md) and [Capabilities](capabilities.md).
 
 ## How do I generate or edit images?
 
@@ -9313,7 +9611,7 @@ You can use it through AbstractCore’s `llm.vision.*` capability plugin surface
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
 
-See: Server, Capabilities, and `abstractvision/docs/reference/abstractcore-integration.md` (in the AbstractVision repo).
+See: [Server](server.md), [Capabilities](capabilities.md), and `abstractvision/docs/reference/abstractcore-integration.md` (in the AbstractVision repo).
 
 ## What are “glyphs” and what do they require?
 
@@ -9322,7 +9620,7 @@ Glyph visual-text compression is an optional feature for long documents. Install
 - `pip install "abstractcore[compression]"` (renderer)
 - plus `pip install "abstractcore[media]"` if you want PDF extraction support
 
-See Glyph Visual-Text Compression.
+See [Glyph Visual-Text Compression](glyphs.md).
 
 ## How do I use embeddings?
 
@@ -9338,7 +9636,7 @@ Then import from the embeddings module:
 from abstractcore.embeddings import EmbeddingManager
 ```
 
-See Embeddings.
+See [Embeddings](embeddings.md).
 
 ## Do I need the HTTP server?
 
@@ -9354,12 +9652,12 @@ pip install "abstractcore[server]"
 python -m abstractcore.server.app
 ```
 
-See Server.
+See [Server](server.md).
 
 ## Where are logs and traces?
 
-- Logging (console/file) is configured via the config CLI and config file. See Structured Logging.
-- Interaction tracing is opt-in (`enable_tracing=True`). See Interaction Tracing.
+- Logging (console/file) is configured via the config CLI and config file. See [Structured Logging](structured-logging.md).
+- Interaction tracing is opt-in (`enable_tracing=True`). See [Interaction Tracing](interaction-tracing.md).
 
 ## I’m getting HTTP timeouts. What should I change?
 
@@ -9367,7 +9665,7 @@ See Server.
 - Process-wide default: set `abstractcore --set-default-timeout 0` (0 = unlimited), or set a larger value.
 - Some CLI apps have their own `--timeout` flags; run `--help` for the exact behavior.
 
-See Troubleshooting and Centralized Config.
+See [Troubleshooting](troubleshooting.md) and [Centralized Config](centralized-config.md).
 
 ## HuggingFace won’t download models — why?
 
@@ -9380,7 +9678,7 @@ Restart your Python process after changing this (the provider reads these settin
 
 ## Is AbstractCore a full agent/RAG framework?
 
-AbstractCore focuses on provider abstraction + infrastructure (tools, structured output, media handling, tracing). It does not ship a full RAG pipeline or multi-step agent orchestration. See Capabilities.
+AbstractCore focuses on provider abstraction + infrastructure (tools, structured output, media handling, tracing). It does not ship a full RAG pipeline or multi-step agent orchestration. See [Capabilities](capabilities.md).
 
 ---
 
@@ -9556,6 +9854,13 @@ This ensures:
 - In streaming mode, wrappers often appear in the first/last chunks; stripping them incrementally avoids leaking markup into UIs and tool parsers without buffering the full response
 
 Configuration comes from `abstractcore/assets/architecture_formats.json` and `abstractcore/assets/model_capabilities.json`; implementation lives in `abstractcore/architectures/response_postprocessing.py`.
+
+#### Model Metadata Registry (Source of Truth)
+AbstractCore's model capability routing and architecture formatting are driven by two canonical JSON registries:
+- `abstractcore/assets/model_capabilities.json` — model limits, tool/structured output flags, multimodal support, aliases
+- `abstractcore/assets/architecture_formats.json` — message formats, tool call syntax, response wrappers, detection patterns
+
+When a new model or architecture is released (or an existing one changes), update these files first. See `abstractcore/assets/README.md` for field requirements and update rules.
 
 #### Memory Management
 
@@ -10323,16 +10628,16 @@ This guide shows real-world use cases for AbstractCore with complete, copy-paste
 
 ## Table of Contents
 
-- Basic Usage
-- Glyph Visual-Text Compression
-- Tool Calling Examples
-- Tool Call Syntax Rewriting Examples
-- Structured Output Examples
-- Streaming Examples
-- Session Management
-- Interaction Tracing (Observability)
-- Production Patterns
-- Integration Examples
+- [Basic Usage](#basic-usage)
+- [Glyph Visual-Text Compression](#glyph-visual-text-compression)
+- [Tool Calling Examples](#tool-calling-examples)
+- [Tool Call Syntax Rewriting Examples](#tool-call-syntax-rewriting-examples)
+- [Structured Output Examples](#structured-output-examples)
+- [Streaming Examples](#streaming-examples)
+- [Session Management](#session-management)
+- [Interaction Tracing (Observability)](#interaction-tracing-observability)
+- [Production Patterns](#production-patterns)
+- [Integration Examples](#integration-examples)
 
 ## Basic Usage
 
@@ -10584,7 +10889,7 @@ for provider, model in models_to_test:
 - **Quality preservation**: No loss of analytical accuracy
 - **Provider flexibility**: Works across Ollama, LMStudio, and other vision providers
 
-Learn more about Glyph configuration and advanced features
+[Learn more about Glyph configuration and advanced features](glyphs.md)
 
 ## Tool Calling Examples
 
@@ -10783,7 +11088,7 @@ print(response.tool_calls)  # Structured tool call requests (host/runtime execut
 
 Tool call syntax rewriting enables AbstractCore to work seamlessly with any agentic CLI by converting tool calls to the expected format in real-time. This happens automatically during generation, including streaming.
 
-> **Related**: Tool Call Syntax Rewriting Guide
+> **Related**: [Tool Call Syntax Rewriting Guide](tool-syntax-rewriting.md)
 
 ### Codex CLI Integration (Qwen3 Tags)
 
@@ -10968,11 +11273,11 @@ for format_name in ["qwen3", "llama3", "xml"]:
 - Streaming compatible: Works with streaming mode
 - Format flexibility: Predefined formats plus custom tags
 
-> **Related**: Tool Call Syntax Rewriting Guide | Unified Streaming Architecture
+> **Related**: [Tool Call Syntax Rewriting Guide](tool-syntax-rewriting.md) | [Unified Streaming Architecture](architecture.md#unified-streaming-architecture)
 
 ## Structured Output Examples
 
-> **Complete Guide**: Structured Output Documentation - Native vs prompted strategies, provider support, schema design best practices
+> **Complete Guide**: [Structured Output Documentation](structured-output.md) - Native vs prompted strategies, provider support, schema design best practices
 
 ### User Profile Extraction
 
@@ -11603,7 +11908,7 @@ trace = llm.get_traces(trace_id=trace_id)
 print(f"Specific trace: {trace['prompt']}")
 ```
 
-Learn more about Interaction Tracing
+[Learn more about Interaction Tracing](interaction-tracing.md)
 
 ## Production Patterns
 
@@ -12077,10 +12382,10 @@ These examples show AbstractCore's versatility across different use cases. To co
 5. **Build apps** - Use the integration examples as starting points
 
 For more information:
-- Getting Started - Basic setup and usage
-- Capabilities - What AbstractCore can do
-- Prerequisites - Provider setup and configuration
-- API Reference - Complete API documentation
+- [Getting Started](getting-started.md) - Basic setup and usage
+- [Capabilities](capabilities.md) - What AbstractCore can do
+- [Prerequisites](prerequisites.md) - Provider setup and configuration
+- [API Reference](api-reference.md) - Complete API documentation
 
 ---
 
@@ -12116,7 +12421,7 @@ Each returned tool spec is an AbstractCore-compatible dict you can pass to `tool
 
 `mcp::<server_id>::<tool_name>`
 
-See `abstractcore/mcp/naming.py`.
+See `abstractcore/abstractcore/mcp/naming.py`.
 
 ### 2) Execute MCP tools in your host/runtime
 
@@ -12148,14 +12453,14 @@ def execute_mcp_tool_call(call: dict) -> dict:
 with streamable HTTP (`application/json, text/event-stream`) and will capture `MCP-Session-Id`
 responses when provided.
 
-See `abstractcore/mcp/client.py`.
+See `abstractcore/abstractcore/mcp/client.py`.
 
 ### stdio
 
 `McpStdioClient` spawns an MCP server subprocess and communicates over stdin/stdout with JSON-RPC,
 including a best-effort initialization handshake.
 
-See `abstractcore/mcp/stdio_client.py`.
+See `abstractcore/abstractcore/mcp/stdio_client.py`.
 
 ## Configuration helpers
 
@@ -12168,7 +12473,7 @@ client = create_mcp_client(config={"url": "http://localhost:3000"})
 client = create_mcp_client(config={"transport": "stdio", "command": ["my-mcp-server", "--stdio"]})
 ```
 
-See `abstractcore/mcp/factory.py`.
+See `abstractcore/abstractcore/mcp/factory.py`.
 
 ## Current limitations
 
@@ -12209,7 +12514,7 @@ abstractcore --enable-debug-logging
 abstractcore --disable-console-logging
 ```
 
-Logging defaults live in `~/.abstractcore/config/abstractcore.json`. See Centralized Config for the schema.
+Logging defaults live in `~/.abstractcore/config/abstractcore.json`. See [Centralized Config](centralized-config.md) for the schema.
 
 ## Verbatim capture (prompts/responses)
 
@@ -12234,18 +12539,18 @@ Complete reference for the AbstractCore API. All examples work across any provid
 
 ## Table of Contents
 
-- Core Functions
-- Classes
-  - AbstractCoreInterface
-    - generate()
-    - agenerate()
-  - BasicSession
-    - generate()
-    - agenerate()
-- Event System
-- Retry Configuration
-- Embeddings
-- Exceptions
+- [Core Functions](#core-functions)
+- [Classes](#classes)
+  - [AbstractCoreInterface](#abstractcoreinterface)
+    - [generate()](#generate)
+    - [agenerate()](#agenerate)
+  - [BasicSession](#basicsession)
+    - [generate()](#generate-1)
+    - [agenerate()](#agenerate-1)
+- [Event System](#event-system)
+- [Retry Configuration](#retry-configuration)
+- [Embeddings](#embeddings)
+- [Exceptions](#exceptions)
 
 ## Core Functions
 
@@ -12332,7 +12637,7 @@ def generate(
 - `response_model` (BaseModel, optional): Pydantic model for structured output
 - `retry_strategy` (Retry, optional): Custom retry strategy for structured output
 - `stream` (bool): Enable streaming response
-- `thinking` (bool | str, optional): Unified thinking/reasoning control (`"auto"|"on"|"off"` or `"low"|"medium"|"high"` when supported)
+- `thinking` (bool | str, optional): Unified thinking/reasoning control (`"auto"|"on"|"off"|"none"` or `"low"|"medium"|"high"|"xhigh"` when supported). Note: `"none"` is treated as an alias for `"off"`.
 - `**kwargs`: Additional generation parameters
 
 **Returns:**
@@ -12370,7 +12675,7 @@ person = llm.generate(
 print(f"{person.name}, age {person.age}")
 ```
 
-> **See**: Structured Output Guide for comprehensive documentation
+> **See**: [Structured Output Guide](structured-output.md) for comprehensive documentation
 
 **Tool Calling:**
 ```python
@@ -12409,7 +12714,7 @@ for chunk in llm.generate(
 **Streaming notes**:
 - Streaming uses a unified processor across providers; exact chunking behavior depends on the backend.
 - Tool calls are surfaced as structured dicts in `chunk.tool_calls`; execute them in your host/runtime (pass-through by default).
-- If you need tool-call markup preserved/re-written in `chunk.content`, pass `tool_call_tags=...` (see Tool Call Syntax Rewriting).
+- If you need tool-call markup preserved/re-written in `chunk.content`, pass `tool_call_tags=...` (see [Tool Call Syntax Rewriting](tool-syntax-rewriting.md)).
 - In streaming mode, AbstractCore records a best-effort TTFT metric in `chunk.metadata["_timing"]["ttft_ms"]` when available (for debugging/observability).
 
 #### agenerate()
@@ -12608,7 +12913,7 @@ print(f"Usage details: {response.usage}")
 
 **Token Count Sources:**
 - **Provider APIs**: OpenAI, Anthropic, LMStudio (native API token counts)
-- **AbstractCore Calculation**: MLX, HuggingFace (using `abstractcore/utils/token_utils.py`)
+- **AbstractCore Calculation**: MLX, HuggingFace (using `token_utils.py`)
 - **Mixed Sources**: Ollama (combination of provider and calculated tokens)
 
 **Backward Compatibility**: Legacy `prompt_tokens` and `completion_tokens` keys remain available in `response.usage` dictionary.
@@ -13140,7 +13445,7 @@ on_global(EventType.RETRY_ATTEMPTED, production_monitor)
 ---
 
 For more examples and use cases, see:
-- Getting Started - Basic setup and usage
-- Examples - Practical use cases
-- Prerequisites - Provider setup and configuration
-- Capabilities - What AbstractCore can do
+- [Getting Started](getting-started.md) - Basic setup and usage
+- [Examples](examples.md) - Practical use cases
+- [Prerequisites](prerequisites.md) - Provider setup and configuration
+- [Capabilities](capabilities.md) - What AbstractCore can do
