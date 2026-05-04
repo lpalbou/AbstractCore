@@ -2,6 +2,10 @@
 
 This folder contains the **canonical user documentation** for AbstractCore. The codebase is the source of truth; if you spot a mismatch, please open an issue.
 
+AI assistants and documentation indexers can use the repository-level
+`llms.txt` and `llms-full.txt` files. MCP clients such as Context7 can also
+query the public documentation directly.
+
 ## AbstractFramework ecosystem
 
 AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:

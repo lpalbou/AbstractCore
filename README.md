@@ -50,6 +50,10 @@ First-class support for:
 
 Docs: [Getting Started](docs/getting-started.md) · [FAQ](docs/faq.md) · [Docs Index](docs/README.md) · https://lpalbou.github.io/AbstractCore
 
+For AI assistants and doc-indexing tools, this repository also publishes
+[`llms.txt`](llms.txt) and [`llms-full.txt`](llms-full.txt). MCP clients such as
+Context7 can query the public documentation directly as well.
+
 ## Why AbstractCore
 
 Many libraries can call an LLM. AbstractCore is for the messy middle of real

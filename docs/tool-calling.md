@@ -407,6 +407,68 @@ AbstractCore automatically detects model architecture and uses the appropriate t
 
 In passthrough mode, `response.tool_calls` are tool call *requests*. Execute them in your host/runtime (and apply your own safety policy) before sending tool results back to the model in a follow-up turn.
 
+### Agent Runtime Boundary
+
+AbstractCore is the provider layer: it formats tools for each model/backend,
+normalizes returned tool calls, and exposes them as `response.tool_calls`.
+It does not own the durable execution loop for sophisticated agents.
+
+A production host/runtime should decide:
+
+- which requested tools are allowed for this user/session
+- which calls require approval or sandboxing
+- whether calls can run in parallel
+- how to retry idempotent failures
+- how to persist state across crashes or long pauses
+- how to append tool results and continue the next model turn
+
+For durable workflows, state persistence, effect execution, and larger agent or
+flow orchestration, use your host application or the wider
+AbstractFramework stack. AbstractRuntime is the recommended runtime layer for
+executing `response.tool_calls` with policy, persistence, and recovery.
+
+Minimal host-runtime loop:
+
+```python
+import json
+
+messages = [{"role": "user", "content": "Find the weather in Paris and summarize it."}]
+
+while True:
+    response = llm.generate(prompt="", messages=messages, tools=[get_weather, summarize_weather])
+
+    calls = response.tool_calls or []
+    if not calls:
+        print(response.content)
+        break
+
+    messages.append(
+        {
+            "role": "assistant",
+            "content": response.content or "",
+            "tool_calls": calls,
+        }
+    )
+
+    for call in calls:
+        name = call.get("name")
+        args = call.get("arguments") or {}
+
+        if not runtime_policy.allows(name, args):
+            result = {"error": "tool call denied by runtime policy"}
+        else:
+            result = runtime.execute_tool(name, args)
+
+        messages.append(
+            {
+                "role": "tool",
+                "tool_call_id": call.get("call_id") or call.get("id"),
+                "name": name,
+                "content": json.dumps(result),
+            }
+        )
+```
+
 ## Advanced Patterns
 
 ### Tool Chaining
