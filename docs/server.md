@@ -64,6 +64,24 @@ print(response.choices[0].message.content)
 
 ## Configuration
 
+You can configure the server through environment variables or through AbstractCore's centralized config. Environment variables always take precedence over config-persisted values.
+
+```bash
+# Persisted local/server config
+abstractcore --set-server-api-key acore-server-secret
+abstractcore --set-api-key openai sk-...
+abstractcore --set-api-key anthropic sk-ant-...
+abstractcore --set-api-key openrouter sk-or-...
+abstractcore --set-api-key portkey pk_...
+
+# Optional hardening/defaults
+abstractcore --set-server-base-url-allowlist "https://example.com/v1"
+abstractcore --set-server-url-fetch-allowlist "https://files.example.com"
+abstractcore --set-server-media-root /srv/abstractcore-media
+abstractcore --set-server-host 127.0.0.1
+abstractcore --set-server-port 8000
+```
+
 ### Environment Variables
 
 ```bash

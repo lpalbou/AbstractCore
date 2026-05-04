@@ -145,7 +145,34 @@ class ApiKeysConfig:
     anthropic: Optional[str] = None
     openrouter: Optional[str] = None
     portkey: Optional[str] = None
+    openai_compatible: Optional[str] = None
+    vllm: Optional[str] = None
     google: Optional[str] = None
+
+
+@dataclass
+class ServerConfig:
+    """OpenAI-compatible HTTP gateway configuration."""
+
+    # Inbound server master key. When set, clients authenticate with
+    # `Authorization: Bearer <api_key>` and can use provider keys configured on
+    # the server.
+    api_key: Optional[str] = None
+
+    # Dangerous local/dev escape hatch. Production should keep this false.
+    allow_unauthenticated: bool = False
+
+    # Comma-separated allowlists matching the corresponding server env vars.
+    base_url_allowlist: Optional[str] = None
+    url_fetch_allowlist: Optional[str] = None
+
+    # Local HTTP media path controls.
+    media_root: Optional[str] = None
+    allow_local_files: bool = False
+
+    # Optional default bind for `python -m abstractcore.server.app`.
+    host: Optional[str] = None
+    port: Optional[int] = None
 
 
 @dataclass
@@ -202,6 +229,7 @@ class AbstractCoreConfig:
     app_defaults: AppDefaults
     default_models: DefaultModels
     api_keys: ApiKeysConfig
+    server: ServerConfig
     cache: CacheConfig
     logging: LoggingConfig
     streaming: StreamingConfig
@@ -221,6 +249,7 @@ class AbstractCoreConfig:
             app_defaults=AppDefaults(),
             default_models=DefaultModels(),
             api_keys=ApiKeysConfig(),
+            server=ServerConfig(),
             cache=CacheConfig(),
             logging=LoggingConfig(),
             streaming=StreamingConfig(),
@@ -243,6 +272,7 @@ class ConfigurationManager:
         self.config = self._load_config()
         self._apply_smart_defaults()
         self._apply_api_keys_to_env()
+        self._apply_server_config_to_env()
         self._provider_config: Dict[str, Dict[str, Any]] = {}  # Runtime config (not persisted)
 
     def _filter_dataclass_kwargs(self, cls, data: Any) -> Dict[str, Any]:
@@ -299,6 +329,8 @@ class ConfigurationManager:
             "anthropic": "ANTHROPIC_API_KEY",
             "openrouter": "OPENROUTER_API_KEY",
             "portkey": "PORTKEY_API_KEY",
+            "openai_compatible": "OPENAI_COMPATIBLE_API_KEY",
+            "vllm": "VLLM_API_KEY",
             "google": "GOOGLE_API_KEY",
         }
         try:
@@ -307,6 +339,36 @@ class ConfigurationManager:
                 key = getattr(api_keys, attr, None)
                 if key and not os.environ.get(env_var):
                     os.environ[env_var] = key
+        except Exception:
+            # Never fail config initialization.
+            pass
+
+    def _apply_server_config_to_env(self) -> None:
+        """Inject persisted server settings into os.environ when env vars are absent.
+
+        Environment variables always win. This lets deployments override local
+        config through Docker/Kubernetes/secrets managers while still making
+        `abstractcore --config` useful for local server runs.
+        """
+        try:
+            server = self.config.server
+
+            value_map = {
+                "ABSTRACTCORE_SERVER_API_KEY": server.api_key,
+                "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST": server.base_url_allowlist,
+                "ABSTRACTCORE_SERVER_URL_FETCH_ALLOWLIST": server.url_fetch_allowlist,
+                "ABSTRACTCORE_SERVER_MEDIA_ROOT": server.media_root,
+                "HOST": server.host,
+                "PORT": str(server.port) if server.port is not None else None,
+            }
+            for env_var, value in value_map.items():
+                if value is not None and str(value).strip() and not os.environ.get(env_var):
+                    os.environ[env_var] = str(value).strip()
+
+            if server.allow_unauthenticated and not os.environ.get("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED"):
+                os.environ["ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED"] = "1"
+            if server.allow_local_files and not os.environ.get("ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES"):
+                os.environ["ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES"] = "1"
         except Exception:
             # Never fail config initialization.
             pass
@@ -342,6 +404,7 @@ class ConfigurationManager:
         app_defaults = AppDefaults(**self._filter_dataclass_kwargs(AppDefaults, data.get('app_defaults', {})))
         default_models = DefaultModels(**self._filter_dataclass_kwargs(DefaultModels, data.get('default_models', {})))
         api_keys = ApiKeysConfig(**self._filter_dataclass_kwargs(ApiKeysConfig, data.get('api_keys', {})))
+        server = ServerConfig(**self._filter_dataclass_kwargs(ServerConfig, data.get('server', {})))
         cache = CacheConfig(**self._filter_dataclass_kwargs(CacheConfig, data.get('cache', {})))
         logging = LoggingConfig(**self._filter_dataclass_kwargs(LoggingConfig, data.get('logging', {})))
         streaming = StreamingConfig(**self._filter_dataclass_kwargs(StreamingConfig, data.get('streaming', {})))
@@ -358,6 +421,7 @@ class ConfigurationManager:
             app_defaults=app_defaults,
             default_models=default_models,
             api_keys=api_keys,
+            server=server,
             cache=cache,
             logging=logging,
             streaming=streaming,
@@ -382,12 +446,14 @@ class ConfigurationManager:
             'app_defaults': asdict(self.config.app_defaults),
             'default_models': asdict(self.config.default_models),
             'api_keys': asdict(self.config.api_keys),
+            'server': asdict(self.config.server),
             'cache': asdict(self.config.cache),
             'logging': asdict(self.config.logging),
             'streaming': asdict(self.config.streaming),
             'timeouts': asdict(self.config.timeouts),
             'offline': asdict(self.config.offline),
             'maintenance': asdict(self.config.maintenance),
+            'email': asdict(self.config.email),
         }
 
         with open(self.config_file, 'w') as f:
@@ -651,7 +717,24 @@ class ConfigurationManager:
                 "anthropic": "✅ Set" if self.config.api_keys.anthropic else "❌ Not set",
                 "openrouter": "✅ Set" if self.config.api_keys.openrouter else "❌ Not set",
                 "portkey": "✅ Set" if self.config.api_keys.portkey else "❌ Not set",
+                "openai-compatible": "✅ Set" if self.config.api_keys.openai_compatible else "❌ Not set",
+                "vllm": "✅ Set" if self.config.api_keys.vllm else "❌ Not set",
                 "google": "✅ Set" if self.config.api_keys.google else "❌ Not set"
+            },
+            "server": {
+                "api_key": "✅ Set" if self.config.server.api_key else "❌ Not set",
+                "allow_unauthenticated": bool(self.config.server.allow_unauthenticated),
+                "auth_mode": (
+                    "server_key"
+                    if self.config.server.api_key
+                    else ("unauthenticated_dev" if self.config.server.allow_unauthenticated else "provider_key_only")
+                ),
+                "base_url_allowlist": self.config.server.base_url_allowlist,
+                "url_fetch_allowlist": self.config.server.url_fetch_allowlist,
+                "media_root": self.config.server.media_root,
+                "allow_local_files": bool(self.config.server.allow_local_files),
+                "host": self.config.server.host,
+                "port": self.config.server.port,
             },
             "offline": {
                 "offline_first": self.config.offline.offline_first,
@@ -956,20 +1039,94 @@ class ConfigurationManager:
     def set_api_key(self, provider: str, key: str) -> bool:
         """Set API key for a provider."""
         try:
-            if provider == "openai":
-                self.config.api_keys.openai = key
-            elif provider == "anthropic":
-                self.config.api_keys.anthropic = key
-            elif provider == "openrouter":
-                self.config.api_keys.openrouter = key
-            elif provider == "portkey":
-                self.config.api_keys.portkey = key
-            elif provider == "google":
-                self.config.api_keys.google = key
-            else:
+            provider_key = str(provider or "").strip().lower().replace("-", "_")
+            if provider_key not in {f.name for f in fields(ApiKeysConfig)}:
                 return False
+            setattr(self.config.api_keys, provider_key, key)
 
             self._save_config()
+            self._apply_api_keys_to_env()
+            return True
+        except Exception:
+            return False
+
+    def set_server_api_key(self, key: Optional[str]) -> bool:
+        """Set or clear the HTTP server master API key."""
+        try:
+            value = str(key or "").strip()
+            self.config.server.api_key = value or None
+            self._save_config()
+            self._apply_server_config_to_env()
+            return True
+        except Exception:
+            return False
+
+    def set_server_allow_unauthenticated(self, enabled: bool) -> bool:
+        """Allow unauthenticated HTTP server requests for explicit local/dev use."""
+        try:
+            self.config.server.allow_unauthenticated = bool(enabled)
+            self._save_config()
+            self._apply_server_config_to_env()
+            return True
+        except Exception:
+            return False
+
+    def set_server_base_url_allowlist(self, allowlist: Optional[str]) -> bool:
+        """Set request-level provider base_url override allowlist."""
+        try:
+            value = str(allowlist or "").strip()
+            self.config.server.base_url_allowlist = value or None
+            self._save_config()
+            self._apply_server_config_to_env()
+            return True
+        except Exception:
+            return False
+
+    def set_server_url_fetch_allowlist(self, allowlist: Optional[str]) -> bool:
+        """Set URL media fetch allowlist for otherwise blocked non-public targets."""
+        try:
+            value = str(allowlist or "").strip()
+            self.config.server.url_fetch_allowlist = value or None
+            self._save_config()
+            self._apply_server_config_to_env()
+            return True
+        except Exception:
+            return False
+
+    def set_server_media_root(self, path: Optional[str]) -> bool:
+        """Set the safe local media root for HTTP requests."""
+        try:
+            value = str(path or "").strip()
+            self.config.server.media_root = value or None
+            self._save_config()
+            self._apply_server_config_to_env()
+            return True
+        except Exception:
+            return False
+
+    def set_server_allow_local_files(self, enabled: bool) -> bool:
+        """Enable or disable unsafe unrestricted local file access for HTTP requests."""
+        try:
+            self.config.server.allow_local_files = bool(enabled)
+            self._save_config()
+            self._apply_server_config_to_env()
+            return True
+        except Exception:
+            return False
+
+    def set_server_bind(self, host: Optional[str] = None, port: Optional[int] = None) -> bool:
+        """Set default bind host/port for `python -m abstractcore.server.app`."""
+        try:
+            if host is not None:
+                host_value = str(host or "").strip()
+                self.config.server.host = host_value or None
+            if port is not None:
+                port_i = int(port)
+                if port_i < 1 or port_i > 65535:
+                    return False
+                self.config.server.port = port_i
+            self._save_config()
+            self._apply_server_config_to_env()
             return True
         except Exception:
             return False

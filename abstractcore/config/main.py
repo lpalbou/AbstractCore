@@ -34,6 +34,10 @@ Usage:
     abstractcore --set-api-key openai sk-...
     abstractcore --set-api-key anthropic ant_...
     abstractcore --set-api-key portkey pk_...
+
+    # HTTP server auth/hardening
+    abstractcore --set-server-api-key acore-secret
+    abstractcore --set-server-base-url-allowlist https://example.com/v1
 """
 
 import os
@@ -42,6 +46,7 @@ import argparse
 import logging
 import shutil
 import subprocess
+import secrets
 from pathlib import Path
 from typing import List, Optional
 
@@ -218,9 +223,34 @@ def add_arguments(parser: argparse.ArgumentParser):
     # Authentication group
     auth_group = parser.add_argument_group('Authentication')
     auth_group.add_argument("--set-api-key", nargs=2, metavar=("PROVIDER", "KEY"),
-                           help="Set API key for cloud providers (openai, anthropic, openrouter, portkey, google, etc.)")
+                           help="Set API key for providers (openai, anthropic, openrouter, portkey, openai-compatible, vllm, google, etc.)")
     auth_group.add_argument("--list-api-keys", action="store_true",
                            help="Show which providers have API keys configured")
+
+    # HTTP server configuration group
+    server_group = parser.add_argument_group('HTTP Server Configuration')
+    server_group.add_argument("--set-server-api-key", metavar="KEY",
+                             help="Set the AbstractCore HTTP server master key")
+    server_group.add_argument("--clear-server-api-key", action="store_true",
+                             help="Clear the persisted AbstractCore HTTP server master key")
+    server_group.add_argument("--allow-unauthenticated-server", action="store_true",
+                             help="Allow unauthenticated HTTP server requests (local/dev only)")
+    server_group.add_argument("--disallow-unauthenticated-server", action="store_true",
+                             help="Require server auth or explicit provider keys for HTTP server requests")
+    server_group.add_argument("--set-server-base-url-allowlist", metavar="CSV",
+                             help="Set server base_url override allowlist (comma-separated URLs/hosts/globs; blank clears)")
+    server_group.add_argument("--set-server-url-fetch-allowlist", metavar="CSV",
+                             help="Set server URL media fetch allowlist (comma-separated URLs/hosts/globs; blank clears)")
+    server_group.add_argument("--set-server-media-root", metavar="PATH",
+                             help="Set safe local media root for HTTP requests (blank clears)")
+    server_group.add_argument("--allow-server-local-files", action="store_true",
+                             help="Allow unrestricted local file paths in HTTP requests (unsafe)")
+    server_group.add_argument("--disallow-server-local-files", action="store_true",
+                             help="Disable unrestricted local file paths in HTTP requests")
+    server_group.add_argument("--set-server-host", metavar="HOST",
+                             help="Set default bind host for `python -m abstractcore.server.app`")
+    server_group.add_argument("--set-server-port", type=int, metavar="PORT",
+                             help="Set default bind port for `python -m abstractcore.server.app`")
 
     # Media processing group
     media_group = parser.add_argument_group('Media & Vision Configuration')
@@ -417,6 +447,32 @@ def print_status():
     if missing_keys:
         print(f"│     ⚠️  Missing keys     {', '.join(missing_keys)}")
 
+    # HTTP server auth/gateway posture
+    print("│")
+    print("│  🛡️  HTTP Server Gateway")
+    server = status.get("server", {})
+    if "✅" in str(server.get("api_key", "")):
+        print("│     ✅ Server auth     Master key configured")
+        print("│     🔐 Provider keys   Server-configured keys are available to authenticated clients")
+    elif server.get("allow_unauthenticated"):
+        print("│     ⚠️  Server auth     Unauthenticated local/dev mode enabled")
+        print("│     🔑 Provider keys   Clients must bring provider keys for server-held providers")
+    else:
+        print("│     ⚠️  Server auth     No master key configured")
+        print("│     🔑 Provider keys   Clients can bring keys via Authorization/X-AbstractCore-Provider-API-Key")
+    if server.get("base_url_allowlist"):
+        print(f"│     🌐 base_url list   {server['base_url_allowlist']}")
+    if server.get("url_fetch_allowlist"):
+        print(f"│     🌐 URL fetch list  {server['url_fetch_allowlist']}")
+    if server.get("media_root"):
+        print(f"│     📁 Media root      {server['media_root']}")
+    if server.get("allow_local_files"):
+        print("│     ⚠️  Local files     Unrestricted local files enabled")
+    if server.get("host") or server.get("port"):
+        host = server.get("host") or "<runtime default>"
+        port = server.get("port") or "<runtime default>"
+        print(f"│     🖥️  Bind default   {host}:{port}")
+
     print("└─")
 
     # SECONDARY SECTION - Important but less frequently changed
@@ -592,6 +648,7 @@ def print_status():
     print("│     abstractcore --set-global-default PROVIDER/MODEL")
     print("│     abstractcore --set-app-default APPNAME PROVIDER MODEL")
     print("│     abstractcore --set-api-key PROVIDER YOUR_KEY")
+    print("│     abstractcore --set-server-api-key SERVER_KEY")
     print("│")
     print("│  🔧 Media & Behavior")
     print("│     abstractcore --set-vision-provider PROVIDER MODEL")
@@ -623,6 +680,7 @@ def print_status():
     print("│     abstractcore --configure / --config  (interactive setup)")
     print("│     abstractcore --reset  (reset to defaults)")
     print("│     abstractcore --list-api-keys  (check API status)")
+    print("│     abstractcore --set-server-base-url-allowlist CSV")
     print("│")
     print("│  📖 More Help")
     print("│     abstractcore --help")
@@ -705,14 +763,91 @@ def interactive_configure():
     print("\n3. API Keys Setup")
     api_choice = input("Configure API keys? [y/N]: ").lower().strip()
     if api_choice == 'y':
-        for provider in ["openai", "anthropic", "openrouter", "portkey", "google"]:
+        for provider in ["openai", "anthropic", "openrouter", "portkey", "openai-compatible", "vllm", "google"]:
             key = input(f"Enter {provider} API key (or press Enter to skip): ").strip()
             if key:
                 config_manager.set_api_key(provider, key)
                 print(f"✅ Set {provider} API key")
 
+    # Ask about HTTP server auth and hardening.
+    print("\n4. HTTP Server / Gateway Auth")
+    print("The optional OpenAI-compatible server can use provider keys saved above.")
+    print("With a server master key, clients authenticate to AbstractCore and can use server-configured provider keys.")
+    print("Without a server master key, clients must bring provider keys via Authorization or X-AbstractCore-Provider-API-Key.")
+    print("Provider keys in request bodies or query strings are disabled.")
+    server_choice = input("Configure HTTP server auth/hardening? [y/N]: ").lower().strip()
+    if server_choice == 'y':
+        server_key = input("Server master key (blank to skip, 'generate' to create one, 'clear' to remove): ").strip()
+        server_key_lower = server_key.lower()
+        if server_key_lower == "generate":
+            server_key = secrets.token_urlsafe(32)
+            print(f"Generated server key: {server_key}")
+        if server_key_lower == "clear":
+            config_manager.set_server_api_key(None)
+            print("✅ Cleared AbstractCore server master key")
+        elif server_key:
+            config_manager.set_server_api_key(server_key)
+            print("✅ Set AbstractCore server master key")
+
+        unauth = input("Allow unauthenticated local/dev server requests? [y/N]: ").lower().strip()
+        if unauth in ("y", "yes"):
+            config_manager.set_server_allow_unauthenticated(True)
+            print("⚠️  Enabled unauthenticated server mode (local/dev only)")
+        elif unauth in ("n", "no", ""):
+            config_manager.set_server_allow_unauthenticated(False)
+
+        base_url_allowlist = input("Additional base_url allowlist CSV (blank = loopback only, 'clear' to remove): ").strip()
+        if base_url_allowlist.lower() == "clear":
+            config_manager.set_server_base_url_allowlist(None)
+            print("✅ Cleared server base_url allowlist")
+        elif base_url_allowlist:
+            config_manager.set_server_base_url_allowlist(base_url_allowlist)
+            print(f"✅ Set server base_url allowlist: {base_url_allowlist}")
+
+        url_fetch_allowlist = input("URL media fetch allowlist CSV (blank = public URLs only, 'clear' to remove): ").strip()
+        if url_fetch_allowlist.lower() == "clear":
+            config_manager.set_server_url_fetch_allowlist(None)
+            print("✅ Cleared server URL fetch allowlist")
+        elif url_fetch_allowlist:
+            config_manager.set_server_url_fetch_allowlist(url_fetch_allowlist)
+            print(f"✅ Set server URL fetch allowlist: {url_fetch_allowlist}")
+
+        media_root = input("Safe local media root for HTTP file paths (blank to skip, 'clear' to remove): ").strip()
+        if media_root.lower() == "clear":
+            config_manager.set_server_media_root(None)
+            print("✅ Cleared server media root")
+        elif media_root:
+            config_manager.set_server_media_root(media_root)
+            print(f"✅ Set server media root: {media_root}")
+
+        allow_local_files = input("Allow unrestricted local file paths? [y/N]: ").lower().strip()
+        if allow_local_files in ("y", "yes"):
+            config_manager.set_server_allow_local_files(True)
+            print("⚠️  Enabled unrestricted local file paths for HTTP requests")
+        elif allow_local_files in ("n", "no", ""):
+            config_manager.set_server_allow_local_files(False)
+
+        host = input("Default server host (blank = runtime default): ").strip()
+        if host:
+            if config_manager.set_server_bind(host=host):
+                print(f"✅ Set server host: {host}")
+            else:
+                print(f"⚠️  Invalid server host: {host}")
+
+        port_raw = input("Default server port (blank = runtime default): ").strip()
+        if port_raw:
+            try:
+                port = int(port_raw)
+            except ValueError:
+                print(f"⚠️  Invalid server port: {port_raw}")
+            else:
+                if config_manager.set_server_bind(port=port):
+                    print(f"✅ Set server port: {port}")
+                else:
+                    print(f"⚠️  Invalid server port: {port_raw}")
+
     # Ask about audio strategy (voice/STT fallback for audio attachments)
-    print("\n4. Audio Strategy (voice/STT fallback)")
+    print("\n5. Audio Strategy (voice/STT fallback)")
     print("How should AbstractCore handle audio attachments with text-only models?")
     print("  auto           — native when supported, otherwise STT via abstractvoice (recommended)")
     print("  speech_to_text — always transcribe via abstractvoice")
@@ -729,7 +864,7 @@ def interactive_configure():
         print("⚠️  Invalid choice; keeping existing audio strategy.")
 
     # Ask about video strategy (frame fallback for video attachments)
-    print("\n5. Video Strategy (frame fallback)")
+    print("\n6. Video Strategy (frame fallback)")
     print("How should AbstractCore handle video attachments?")
     print("  auto           — native when supported, otherwise sample frames via ffmpeg (recommended)")
     print("  frames_caption — always sample frames via ffmpeg")
@@ -746,7 +881,7 @@ def interactive_configure():
         print("⚠️  Invalid choice; keeping existing video strategy.")
 
     # Ask about embeddings provider/model
-    print("\n6. Embeddings Setup")
+    print("\n7. Embeddings Setup")
     print("Embeddings are used for semantic search, RAG pipelines, and knowledge graph retrieval.")
     print("Supported: huggingface (local), ollama, lmstudio, openai, openrouter, portkey, openai-compatible.")
     emb_choice = input("Configure embeddings provider/model? [y/N]: ").lower().strip()
@@ -780,7 +915,7 @@ def interactive_configure():
             print("   ✅ Keeping default: huggingface/all-minilm-l6-v2")
 
     # Ask about console log verbosity
-    print("\n7. Console Logging Verbosity")
+    print("\n8. Console Logging Verbosity")
     print("Choose console verbosity level:")
     print("  none | error | warning | info | debug")
     level = input("Console log level [error]: ").strip().lower()
@@ -1179,7 +1314,7 @@ def install_check(auto_accept: bool = False) -> None:
         else:
             _warn(f"{prov} key", "not set")
     if not has_any_key:
-        print("     ℹ️  No cloud API keys configured (local-only usage is fine)")
+        print("     ℹ️  No provider API keys configured (local-only usage is fine)")
         print("     💡 Fix: abstractcore --set-api-key <provider> <key>")
 
     # ------------------------------------------------------------------
@@ -1410,8 +1545,11 @@ def handle_commands(args) -> bool:
     # API keys
     if args.set_api_key:
         provider, key = args.set_api_key
-        config_manager.set_api_key(provider, key)
-        print(f"✅ Set API key for: {provider}")
+        ok = config_manager.set_api_key(provider, key)
+        if ok:
+            print(f"✅ Set API key for: {provider}")
+        else:
+            print(f"❌ Error: Unsupported API key provider: {provider}")
         handled = True
 
     if args.list_api_keys:
@@ -1419,6 +1557,77 @@ def handle_commands(args) -> bool:
         print("🔑 API Key Status:")
         for provider, status_text in status["api_keys"].items():
             print(f"   {provider}: {status_text}")
+        handled = True
+
+    # HTTP server configuration
+    if getattr(args, "set_server_api_key", None):
+        config_manager.set_server_api_key(args.set_server_api_key)
+        print("✅ Set AbstractCore server master key")
+        handled = True
+
+    if getattr(args, "clear_server_api_key", False):
+        config_manager.set_server_api_key(None)
+        print("✅ Cleared AbstractCore server master key")
+        handled = True
+
+    if getattr(args, "allow_unauthenticated_server", False):
+        config_manager.set_server_allow_unauthenticated(True)
+        print("⚠️  Enabled unauthenticated HTTP server mode (local/dev only)")
+        handled = True
+
+    if getattr(args, "disallow_unauthenticated_server", False):
+        config_manager.set_server_allow_unauthenticated(False)
+        print("✅ Disabled unauthenticated HTTP server mode")
+        handled = True
+
+    if getattr(args, "set_server_base_url_allowlist", None) is not None:
+        config_manager.set_server_base_url_allowlist(args.set_server_base_url_allowlist)
+        if args.set_server_base_url_allowlist:
+            print(f"✅ Set server base_url allowlist to: {args.set_server_base_url_allowlist}")
+        else:
+            print("✅ Cleared server base_url allowlist")
+        handled = True
+
+    if getattr(args, "set_server_url_fetch_allowlist", None) is not None:
+        config_manager.set_server_url_fetch_allowlist(args.set_server_url_fetch_allowlist)
+        if args.set_server_url_fetch_allowlist:
+            print(f"✅ Set server URL fetch allowlist to: {args.set_server_url_fetch_allowlist}")
+        else:
+            print("✅ Cleared server URL fetch allowlist")
+        handled = True
+
+    if getattr(args, "set_server_media_root", None) is not None:
+        config_manager.set_server_media_root(args.set_server_media_root)
+        if args.set_server_media_root:
+            print(f"✅ Set server media root to: {args.set_server_media_root}")
+        else:
+            print("✅ Cleared server media root")
+        handled = True
+
+    if getattr(args, "allow_server_local_files", False):
+        config_manager.set_server_allow_local_files(True)
+        print("⚠️  Enabled unrestricted local file paths for HTTP server requests")
+        handled = True
+
+    if getattr(args, "disallow_server_local_files", False):
+        config_manager.set_server_allow_local_files(False)
+        print("✅ Disabled unrestricted local file paths for HTTP server requests")
+        handled = True
+
+    if getattr(args, "set_server_host", None) is not None:
+        ok = config_manager.set_server_bind(host=args.set_server_host)
+        if ok:
+            print(f"✅ Set server host to: {args.set_server_host}")
+        else:
+            print(f"❌ Error: Invalid server host: {args.set_server_host}")
+        handled = True
+
+    if getattr(args, "set_server_port", None) is not None:
+        ok = config_manager.set_server_bind(port=args.set_server_port)
+        if ok:
+            print(f"✅ Set server port to: {args.set_server_port}")
+        else:
+            print(f"❌ Error: Invalid server port: {args.set_server_port}")
         handled = True
 
     # Cache configuration
@@ -1546,7 +1755,7 @@ def main(argv: List[str] = None):
         epilog="""
 QUICK START:
   abstractcore --status                           # Show current configuration
-  abstractcore --configure                       # Interactive guided setup (7 steps)
+  abstractcore --configure                       # Interactive guided setup (8 steps)
   abstractcore --install                          # Check & install missing models/deps
   abstractcore --install --yes                   # Auto-download everything that's missing
 
@@ -1562,6 +1771,11 @@ COMMON TASKS:
   # Configure API keys
   abstractcore --set-api-key openai sk-your-key-here
   abstractcore --set-api-key anthropic your-anthropic-key
+  abstractcore --set-api-key openai-compatible endpoint-key
+
+  # Configure HTTP server auth/gateway behavior
+  abstractcore --set-server-api-key acore-server-secret
+  abstractcore --set-server-base-url-allowlist https://example.com/v1
 
   # Setup vision for images (with text-only models)
   abstractcore --set-vision-provider ollama qwen2.5vl:7b

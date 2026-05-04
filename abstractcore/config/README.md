@@ -5,7 +5,8 @@
 The `abstractcore/config/` module provides centralized configuration management for AbstractCore, enabling users to:
 
 - Set default models and providers for all applications
-- Configure API keys for cloud providers
+- Configure API keys for cloud, gateway, and OpenAI-compatible providers
+- Configure hardened HTTP server gateway auth and request allowlists
 - Manage vision fallback for text-only models with images
 - Control embeddings settings for semantic search
 - Configure logging, caching, and timeout behaviors
@@ -36,6 +37,7 @@ Providers  Media  Processing  Apps
 - `abstractcore/cli/main.py` - CLI command interface
 - `abstractcore/apps/*` - All applications (summarizer, extractor, judge, intent)
 - `abstractcore/providers/*` - Provider initialization with API keys
+- `abstractcore/server/app.py` - Server auth, provider key, and hardening defaults
 - `abstractcore/media/auto_handler.py` - Vision fallback configuration
 - `abstractcore/utils/cli.py` - Interactive CLI defaults
 
@@ -118,10 +120,26 @@ class DefaultModels:
 
 @dataclass
 class ApiKeysConfig:
-    """API keys for cloud providers."""
+    """API keys for cloud/gateway/OpenAI-compatible providers."""
     openai: Optional[str] = None
     anthropic: Optional[str] = None
+    openrouter: Optional[str] = None
+    portkey: Optional[str] = None
+    openai_compatible: Optional[str] = None
+    vllm: Optional[str] = None
     google: Optional[str] = None
+
+@dataclass
+class ServerConfig:
+    """OpenAI-compatible HTTP gateway configuration."""
+    api_key: Optional[str] = None
+    allow_unauthenticated: bool = False
+    base_url_allowlist: Optional[str] = None
+    url_fetch_allowlist: Optional[str] = None
+    media_root: Optional[str] = None
+    allow_local_files: bool = False
+    host: Optional[str] = None
+    port: Optional[int] = None
 
 @dataclass
 class CacheConfig:
@@ -181,6 +199,9 @@ def get_config_manager() -> ConfigurationManager:
 - `set_app_default(app_name, provider, model)` - Set app-specific default
 - `get_app_default(app_name)` - Retrieve app defaults
 - `set_api_key(provider, key)` - Store API key
+- `set_server_api_key(key)` - Store or clear the HTTP server master key
+- `set_server_base_url_allowlist(allowlist)` - Configure safe request-level provider endpoint overrides
+- `set_server_media_root(path)` - Configure safe local media file access for the HTTP server
 - `get_status()` - Return comprehensive configuration status
 - `set_default_timeout(timeout)` - Configure HTTP timeout
 - `set_tool_timeout(timeout)` - Configure tool execution timeout
@@ -216,28 +237,37 @@ Defines all CLI configuration arguments organized into groups:
    - `--set-api-key PROVIDER KEY` - Configure API keys
    - `--list-api-keys` - Show API key status
 
-4. **Media & Vision Configuration**:
+4. **HTTP Server Configuration**:
+   - `--set-server-api-key KEY` / `--clear-server-api-key` - Configure inbound server auth
+   - `--allow-unauthenticated-server` / `--disallow-unauthenticated-server` - Local/dev auth escape hatch
+   - `--set-server-base-url-allowlist CSV` - Allow non-loopback request `base_url` overrides
+   - `--set-server-url-fetch-allowlist CSV` - Allow URL media fetch targets
+   - `--set-server-media-root PATH` - Safe local HTTP media root
+   - `--allow-server-local-files` / `--disallow-server-local-files` - Unsafe unrestricted local-file toggle
+   - `--set-server-host HOST` / `--set-server-port PORT` - Server bind defaults
+
+5. **Media & Vision Configuration**:
    - `--set-vision-provider PROVIDER MODEL` - Configure vision fallback
    - `--add-vision-fallback PROVIDER MODEL` - Add backup vision provider
    - `--download-vision-model [MODEL]` - Download local vision model
    - `--disable-vision` - Disable vision fallback
 
-5. **Embeddings Configuration**:
+6. **Embeddings Configuration**:
    - `--set-embeddings-model MODEL` - Configure embeddings
    - `--set-embeddings-provider PROVIDER` - Set embeddings provider
 
-6. **Storage & Logging**:
+7. **Storage & Logging**:
    - `--set-default-cache-dir PATH` - Set cache directory
    - `--set-console-log-level LEVEL` - Console logging level
    - `--set-file-log-level LEVEL` - File logging level
    - `--enable-debug-logging` - Enable debug mode
    - `--enable-file-logging` / `--disable-file-logging` - Toggle file logs
 
-7. **Streaming Configuration**:
+8. **Streaming Configuration**:
    - `--stream on/off` - Set streaming behavior
    - `--enable-streaming` / `--disable-streaming` - Toggle streaming
 
-8. **Timeout Configuration**:
+9. **Timeout Configuration**:
    - `--set-default-timeout SECONDS` - HTTP request timeout
    - `--set-tool-timeout SECONDS` - Tool execution timeout
 
@@ -312,6 +342,11 @@ def interactive_configure():
     # 1. Default model setup
     # 2. Vision fallback configuration
     # 3. API keys setup
+    # 4. HTTP server gateway auth/hardening
+    # 5. Audio fallback policy
+    # 6. Video fallback policy
+    # 7. Embeddings setup
+    # 8. Console logging
 ```
 
 **User Experience**:
@@ -390,7 +425,21 @@ Downloads local vision models for offline use:
   "api_keys": {
     "openai": "sk-...",
     "anthropic": "ant_...",
+    "openrouter": null,
+    "portkey": null,
+    "openai_compatible": null,
+    "vllm": null,
     "google": null
+  },
+  "server": {
+    "api_key": "acore-server-secret",
+    "allow_unauthenticated": false,
+    "base_url_allowlist": "https://example.com/v1",
+    "url_fetch_allowlist": null,
+    "media_root": "/srv/abstractcore-media",
+    "allow_local_files": false,
+    "host": "127.0.0.1",
+    "port": 8000
   },
   "cache": {
     "default_cache_dir": "~/.cache/abstractcore",
@@ -479,12 +528,34 @@ abstractcore --set-code-model anthropic/claude-3-5-sonnet
 ```bash
 abstractcore --set-api-key openai sk-your-key-here
 abstractcore --set-api-key anthropic ant-your-key-here
+abstractcore --set-api-key openrouter your-openrouter-key
+abstractcore --set-api-key portkey your-portkey-key
+abstractcore --set-api-key openai-compatible your-endpoint-key
+abstractcore --set-api-key vllm your-vllm-key
 abstractcore --set-api-key google your-google-key
 ```
 
 **Check API Key Status**:
 ```bash
 abstractcore --list-api-keys
+```
+
+**Configure HTTP Server Gateway Auth**:
+```bash
+# Inbound server key. Authenticated clients can use server-configured provider keys.
+abstractcore --set-server-api-key acore-server-secret
+
+# Per-request endpoint/media hardening
+abstractcore --set-server-base-url-allowlist "https://example.com/v1"
+abstractcore --set-server-url-fetch-allowlist "https://files.example.com"
+abstractcore --set-server-media-root /srv/abstractcore-media
+abstractcore --disallow-server-local-files
+abstractcore --set-server-host 127.0.0.1
+abstractcore --set-server-port 8000
+
+# Local/dev only escape hatch
+abstractcore --allow-unauthenticated-server
+abstractcore --disallow-unauthenticated-server
 ```
 
 ### Vision Configuration
@@ -648,6 +719,11 @@ config_manager.set_vision_provider("ollama", "qwen2.5vl:7b")
 
 # Set API key
 config_manager.set_api_key("openai", "sk-your-key-here")
+
+# Configure HTTP server gateway auth
+config_manager.set_server_api_key("acore-server-secret")
+config_manager.set_server_base_url_allowlist("https://example.com/v1")
+config_manager.set_server_media_root("/srv/abstractcore-media")
 
 # Configure timeout
 config_manager.set_default_timeout(900)  # 15 minutes
@@ -1324,6 +1400,13 @@ provider, model = get_app_defaults("summarizer")
 - `set_app_default(app: str, provider: str, model: str) -> bool` - Set app default
 - `set_vision_provider(provider: str, model: str) -> bool` - Configure vision
 - `set_api_key(provider: str, key: str) -> bool` - Store API key
+- `set_server_api_key(key: Optional[str]) -> bool` - Store/clear server master key
+- `set_server_allow_unauthenticated(enabled: bool) -> bool` - Toggle local/dev unauthenticated server mode
+- `set_server_base_url_allowlist(allowlist: Optional[str]) -> bool` - Set request `base_url` allowlist
+- `set_server_url_fetch_allowlist(allowlist: Optional[str]) -> bool` - Set URL media fetch allowlist
+- `set_server_media_root(path: Optional[str]) -> bool` - Set safe server media root
+- `set_server_allow_local_files(enabled: bool) -> bool` - Toggle unsafe unrestricted local files
+- `set_server_bind(host: Optional[str], port: Optional[int]) -> bool` - Set server bind defaults
 - `set_default_timeout(timeout: float) -> bool` - Set HTTP timeout (0 = unlimited)
 - `set_tool_timeout(timeout: float) -> bool` - Set tool timeout (0 = unlimited)
 - `set_offline_first(enabled: bool) -> bool` - Enable offline mode

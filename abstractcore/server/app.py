@@ -104,6 +104,32 @@ def _configure_warning_logging() -> None:
 logger = get_logger("server")
 _configure_warning_logging()
 
+
+def _apply_centralized_config_env() -> None:
+    """Load centralized config so persisted keys/server settings reach os.environ.
+
+    The server's auth middleware runs before provider creation, so the server
+    master key and auth hardening knobs must be available at module import time,
+    not only when `create_llm(...)` eventually imports the provider registry.
+    """
+    raw_disable = str(os.getenv("ABSTRACTCORE_SERVER_DISABLE_CENTRALIZED_CONFIG") or "").strip().lower()
+    if raw_disable in {"1", "true", "yes", "on"}:
+        return
+
+    try:
+        from ..config import get_config_manager
+
+        get_config_manager()
+    except Exception as exc:
+        logger.debug(
+            "Centralized config env injection skipped",
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+
+
+_apply_centralized_config_env()
+
 # Log initial startup with debug mode status (may be suppressed by console level).
 logger.info("🚀 AbstractCore Server Initializing", version=__version__, debug_mode=debug_mode)
 
