@@ -44,7 +44,8 @@ import hmac
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Literal, Union, Iterator, Tuple, Annotated
 from enum import Enum
-from fastapi import FastAPI, HTTPException, Request, Query, Body
+from fastapi import FastAPI, HTTPException, Request, Query, Body, Path as FastAPIPath
+from fastapi.openapi.utils import get_openapi
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
@@ -52,6 +53,7 @@ from pydantic import BaseModel, Field, ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..core.factory import create_llm
+from ..exceptions import AuthenticationError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
 from ..utils.structured_logging import get_logger, configure_logging
 from ..utils.version import __version__
 from ..utils.message_preprocessor import MessagePreprocessor
@@ -254,6 +256,11 @@ def _server_allows_unauthenticated() -> bool:
     return raw in {"1", "true", "yes", "on"}
 
 
+def _server_protect_docs() -> bool:
+    raw = str(os.getenv("ABSTRACTCORE_SERVER_PROTECT_DOCS") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
 def _extract_bearer_token(auth_header: Any) -> str:
     auth = str(auth_header or "").strip()
     if not auth.lower().startswith("bearer "):
@@ -277,7 +284,11 @@ def _request_is_auth_exempt(request: Request) -> bool:
     path = str(getattr(request.url, "path", "") or "")
     if request.method.upper() == "OPTIONS":
         return True
-    return path == "/health"
+    if path == "/health":
+        return True
+    if not _server_protect_docs() and path in {"/docs", "/docs/oauth2-redirect", "/openapi.json", "/redoc"}:
+        return True
+    return False
 
 
 def _unauthorized_response(message: str) -> JSONResponse:
@@ -380,9 +391,59 @@ def reconfigure_for_debug():
 # Create FastAPI app (will be initialized after argument parsing)
 app = FastAPI(
     title="AbstractCore Server",
-    description="Universal LLM Gateway with Multi-Agent Tool Call Syntax Support and Media Processing",
-    version=__version__
+    description=(
+        "Universal LLM Gateway with Multi-Agent Tool Call Syntax Support and Media Processing.\n\n"
+        "When server authentication is enabled, click Authorize in Swagger UI and enter the "
+        "`ABSTRACTCORE_SERVER_API_KEY` value. The UI sends it as `Authorization: Bearer <token>` "
+        "for protected API calls."
+    ),
+    version=__version__,
+    swagger_ui_parameters={
+        "persistAuthorization": True,
+        "displayRequestDuration": True,
+        "tryItOutEnabled": True,
+    },
 )
+
+
+def _custom_openapi() -> Dict[str, Any]:
+    if app.openapi_schema:
+        return app.openapi_schema
+
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    components = schema.setdefault("components", {})
+    security_schemes = components.setdefault("securitySchemes", {})
+    security_schemes["AbstractCoreBearerAuth"] = {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "server API key",
+        "description": (
+            "Inbound AbstractCore server token. Use the value configured in "
+            "ABSTRACTCORE_SERVER_API_KEY. Provider-key overrides still use the "
+            "X-AbstractCore-Provider-API-Key header."
+        ),
+    }
+
+    for path, path_item in schema.get("paths", {}).items():
+        if not isinstance(path_item, dict):
+            continue
+        for method, operation in path_item.items():
+            if method.lower() not in {"get", "put", "post", "delete", "patch", "options", "head"}:
+                continue
+            if not isinstance(operation, dict):
+                continue
+            operation["security"] = [] if path == "/health" else [{"AbstractCoreBearerAuth": []}]
+
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+
+app.openapi = _custom_openapi  # type: ignore[method-assign]
 
 app.add_middleware(
     CORSMiddleware,
@@ -1112,6 +1173,20 @@ class EmbeddingRequest(BaseModel):
         description="A unique identifier representing your end-user, which can help OpenAI/providers to monitor and detect abuse. "
                     "This is optional but recommended for production applications.",
         example="user-123"
+    )
+    base_url: Optional[str] = Field(
+        default=None,
+        description=(
+            "AbstractCore extension: request-level OpenAI-compatible base URL override. "
+            "Loopback URLs are allowed by default; non-loopback URLs require "
+            "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+        example="http://127.0.0.1:1234/v1",
+    )
+    api_key: Optional[str] = Field(
+        default=None,
+        description="Deprecated/disabled for HTTP request bodies. Use X-AbstractCore-Provider-API-Key for provider overrides.",
+        example=None,
     )
 
     class Config:
@@ -1936,38 +2011,38 @@ class PromptCacheProxyBase(BaseModel):
 
 
 class PromptCacheSetProxyRequest(PromptCacheProxyBase):
-    key: str
-    make_default: bool = True
-    ttl_s: Optional[float] = None
+    key: str = Field(..., description="Prompt-cache key to select or create on the upstream AbstractEndpoint.", example="project-default")
+    make_default: bool = Field(default=True, description="Whether the upstream endpoint should make this key the default cache key.")
+    ttl_s: Optional[float] = Field(default=None, description="Optional upstream cache TTL in seconds.", example=3600)
 
 
 class PromptCacheUpdateProxyRequest(PromptCacheProxyBase):
-    key: str
-    prompt: Optional[str] = None
-    messages: Optional[List[Dict[str, Any]]] = None
-    system_prompt: Optional[str] = None
-    tools: Optional[List[Dict[str, Any]]] = None
-    add_generation_prompt: bool = False
-    ttl_s: Optional[float] = None
+    key: str = Field(..., description="Prompt-cache key to update on the upstream AbstractEndpoint.", example="project-default")
+    prompt: Optional[str] = Field(default=None, description="Plain prompt text to prepare/cache upstream.")
+    messages: Optional[List[Dict[str, Any]]] = Field(default=None, description="Chat messages to prepare/cache upstream.")
+    system_prompt: Optional[str] = Field(default=None, description="Optional system prompt to include in the prepared cache state.")
+    tools: Optional[List[Dict[str, Any]]] = Field(default=None, description="Optional tool schemas to include in the prepared cache state.")
+    add_generation_prompt: bool = Field(default=False, description="Whether to ask the upstream endpoint to add a generation prompt marker.")
+    ttl_s: Optional[float] = Field(default=None, description="Optional upstream cache TTL in seconds.", example=3600)
 
 
 class PromptCacheForkProxyRequest(PromptCacheProxyBase):
-    from_key: str
-    to_key: str
-    make_default: bool = False
-    ttl_s: Optional[float] = None
+    from_key: str = Field(..., description="Existing upstream cache key to fork from.", example="project-default")
+    to_key: str = Field(..., description="New upstream cache key to create.", example="project-branch")
+    make_default: bool = Field(default=False, description="Whether the forked cache key should become the upstream default.")
+    ttl_s: Optional[float] = Field(default=None, description="Optional upstream cache TTL in seconds.", example=3600)
 
 
 class PromptCacheClearProxyRequest(PromptCacheProxyBase):
-    key: Optional[str] = None
+    key: Optional[str] = Field(default=None, description="Specific upstream cache key to clear. Omit to clear upstream default/all cache state, depending on backend support.")
 
 
 class PromptCachePrepareModulesProxyRequest(PromptCacheProxyBase):
-    namespace: str
-    modules: List[Dict[str, Any]]
-    make_default: bool = False
-    ttl_s: Optional[float] = None
-    version: int = 1
+    namespace: str = Field(..., description="Namespace for the prepared module cache.", example="abstractcore.tools")
+    modules: List[Dict[str, Any]] = Field(..., description="Module descriptors/payloads to prepare on the upstream endpoint.")
+    make_default: bool = Field(default=False, description="Whether the prepared module cache should become the upstream default.")
+    ttl_s: Optional[float] = Field(default=None, description="Optional upstream cache TTL in seconds.", example=3600)
+    version: int = Field(default=1, description="Payload version for forward-compatible module preparation.")
 
 
 def _normalize_control_plane_base_url(base_url: str) -> str:
@@ -2040,7 +2115,11 @@ def _proxy_prompt_cache_request(
     return {"supported": True, "data": payload}
 
 
-@app.get("/acore/prompt_cache/stats")
+@app.get(
+    "/acore/prompt_cache/stats",
+    summary="Prompt Cache Stats",
+    description="Proxy a prompt-cache stats request to an AbstractEndpoint control-plane base URL.",
+)
 def acore_prompt_cache_stats(
     http_request: Request,
     base_url: Optional[str] = Query(None, description="Upstream AbstractEndpoint base_url (optionally including /v1)"),
@@ -2057,7 +2136,11 @@ def acore_prompt_cache_stats(
     )
 
 
-@app.get("/acore/prompt_cache/capabilities")
+@app.get(
+    "/acore/prompt_cache/capabilities",
+    summary="Prompt Cache Capabilities",
+    description="Proxy a prompt-cache capability discovery request to an AbstractEndpoint control-plane base URL.",
+)
 def acore_prompt_cache_capabilities(
     http_request: Request,
     base_url: Optional[str] = Query(None, description="Upstream AbstractEndpoint base_url (optionally including /v1)"),
@@ -2074,7 +2157,11 @@ def acore_prompt_cache_capabilities(
     )
 
 
-@app.post("/acore/prompt_cache/set")
+@app.post(
+    "/acore/prompt_cache/set",
+    summary="Set Prompt Cache Key",
+    description="Proxy a request that selects or creates a prompt-cache key on an upstream AbstractEndpoint.",
+)
 def acore_prompt_cache_set(req: PromptCacheSetProxyRequest, http_request: Request):
     body = req.model_dump(exclude_none=True)
     base_url = body.pop("base_url", None)
@@ -2089,7 +2176,11 @@ def acore_prompt_cache_set(req: PromptCacheSetProxyRequest, http_request: Reques
     )
 
 
-@app.post("/acore/prompt_cache/update")
+@app.post(
+    "/acore/prompt_cache/update",
+    summary="Update Prompt Cache",
+    description="Proxy a request that prepares prompt/messages/tools into an upstream AbstractEndpoint prompt cache.",
+)
 def acore_prompt_cache_update(req: PromptCacheUpdateProxyRequest, http_request: Request):
     body = req.model_dump(exclude_none=True)
     base_url = body.pop("base_url", None)
@@ -2104,7 +2195,11 @@ def acore_prompt_cache_update(req: PromptCacheUpdateProxyRequest, http_request: 
     )
 
 
-@app.post("/acore/prompt_cache/fork")
+@app.post(
+    "/acore/prompt_cache/fork",
+    summary="Fork Prompt Cache",
+    description="Proxy a request that forks one upstream prompt-cache key into another key.",
+)
 def acore_prompt_cache_fork(req: PromptCacheForkProxyRequest, http_request: Request):
     body = req.model_dump(exclude_none=True)
     base_url = body.pop("base_url", None)
@@ -2119,7 +2214,11 @@ def acore_prompt_cache_fork(req: PromptCacheForkProxyRequest, http_request: Requ
     )
 
 
-@app.post("/acore/prompt_cache/clear")
+@app.post(
+    "/acore/prompt_cache/clear",
+    summary="Clear Prompt Cache",
+    description="Proxy a request that clears upstream prompt-cache state.",
+)
 def acore_prompt_cache_clear(req: PromptCacheClearProxyRequest, http_request: Request):
     body = req.model_dump(exclude_none=True)
     base_url = body.pop("base_url", None)
@@ -2134,7 +2233,11 @@ def acore_prompt_cache_clear(req: PromptCacheClearProxyRequest, http_request: Re
     )
 
 
-@app.post("/acore/prompt_cache/prepare_modules")
+@app.post(
+    "/acore/prompt_cache/prepare_modules",
+    summary="Prepare Prompt Cache Modules",
+    description="Proxy a request that prepares module/tool context in an upstream AbstractEndpoint prompt cache.",
+)
 def acore_prompt_cache_prepare_modules(req: PromptCachePrepareModulesProxyRequest, http_request: Request):
     body = req.model_dump(exclude_none=True)
     base_url = body.pop("base_url", None)
@@ -2432,13 +2535,33 @@ async def list_providers(
             "registry_version": "2.0"
         }
 
-@app.post("/v1/responses")
+@app.post(
+    "/v1/responses",
+    summary="Create Response",
+    description=(
+        "Create a model response using either the OpenAI Responses API request shape "
+        "or the legacy AbstractCore chat-completions request shape."
+    ),
+    openapi_extra={
+        "requestBody": {
+            "description": (
+                "JSON body in either OpenAI Responses format (`model` plus `input`) "
+                "or legacy chat-completions format (`model` plus `messages`)."
+            )
+        }
+    },
+)
 async def create_response(
     http_request: Request,
     request_body: Annotated[
         Dict[str, Any],
         Body(
             ...,
+            description=(
+                "Responses request body. Accepts either the OpenAI Responses API shape "
+                "with `input` content items, or the legacy chat-completions shape with "
+                "`messages`. The examples below show both supported formats."
+            ),
             examples={
                 "openai_format": {
                     "summary": "OpenAI Responses API Format",
@@ -2609,8 +2732,161 @@ async def create_response(
             detail={"error": {"message": _redact_text(str(e)), "type": "processing_error"}}
         )
 
+_LOCAL_EMBEDDING_PROVIDERS = {"huggingface", "ollama"}
+_DIRECT_EMBEDDING_PROVIDERS = {"lmstudio", "openai", "openrouter", "portkey", "openai-compatible"}
+_SUPPORTED_EMBEDDING_PROVIDERS = _LOCAL_EMBEDDING_PROVIDERS | _DIRECT_EMBEDDING_PROVIDERS
+
+
+def _normalize_embedding_inputs(value: Union[str, List[str]]) -> List[str]:
+    if isinstance(value, str):
+        inputs = [value]
+    else:
+        inputs = list(value)
+
+    if not inputs:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"message": "Embedding input array must not be empty.", "type": "invalid_request"}},
+        )
+    for idx, text in enumerate(inputs):
+        if not isinstance(text, str):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": {
+                        "message": f"Embedding input at index {idx} must be a string.",
+                        "type": "invalid_request",
+                    }
+                },
+            )
+        if not text.strip():
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": {
+                        "message": f"Embedding input at index {idx} must not be empty.",
+                        "type": "invalid_request",
+                    }
+                },
+            )
+    return inputs
+
+
+def _embedding_dimensions(value: Optional[int]) -> Optional[int]:
+    if value is None or value == 0:
+        return None
+    if value < 0:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"message": "dimensions must be a positive integer, 0, or null.", "type": "invalid_request"}},
+        )
+    return int(value)
+
+
+def _embedding_provider_kwargs(
+    *,
+    provider: str,
+    request: EmbeddingRequest,
+    http_request: Request,
+) -> Dict[str, Any]:
+    provider_kwargs: Dict[str, Any] = {}
+
+    provider_api_key = _provider_api_key_from_request(http_request)
+    if provider_api_key:
+        provider_kwargs["api_key"] = provider_api_key
+
+    _guard_unauthenticated_server_provider_key_use(
+        provider,
+        explicit_provider_key=bool(provider_api_key),
+        http_request=http_request,
+    )
+
+    if isinstance(request.base_url, str) and request.base_url.strip():
+        base_url = request.base_url.strip()
+        if not _server_allows_request_base_url(base_url):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": {
+                        "message": (
+                            "Request-level base_url overrides are restricted for security. "
+                            "By default only loopback URLs are allowed. "
+                            "To allow additional hosts/prefixes, set ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+                        ),
+                        "type": "forbidden",
+                    }
+                },
+            )
+
+        parsed = urllib.parse.urlsplit(base_url)
+        host = str(parsed.hostname or "").strip()
+        if host and not _is_loopback_host(host):
+            env_var = _provider_api_key_env_var(provider)
+            if _server_has_provider_api_key(provider) and not provider_api_key:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": {
+                            "message": (
+                                "Refusing request-level base_url override without an explicit provider key because "
+                                f"the server has {env_var} set. Provide the provider key via "
+                                "X-AbstractCore-Provider-API-Key, or via Authorization only when server auth is "
+                                "not configured. "
+                                f"(provider={provider})"
+                            ),
+                            "type": "forbidden",
+                        }
+                    },
+                )
+
+        provider_kwargs["base_url"] = base_url
+
+    return provider_kwargs
+
+
+def _create_direct_embedding_provider(provider: str, model: str, provider_kwargs: Dict[str, Any]):
+    if provider == "openai":
+        from ..providers.openai_provider import OpenAIProvider
+
+        return OpenAIProvider(model=model, **provider_kwargs)
+    if provider == "openrouter":
+        from ..providers.openrouter_provider import OpenRouterProvider
+
+        return OpenRouterProvider(model=model, validate_model=False, **provider_kwargs)
+    if provider == "portkey":
+        from ..providers.portkey_provider import PortkeyProvider
+
+        return PortkeyProvider(model=model, **provider_kwargs)
+    if provider == "openai-compatible":
+        from ..providers.openai_compatible_provider import OpenAICompatibleProvider
+
+        return OpenAICompatibleProvider(model=model, **provider_kwargs)
+    if provider == "lmstudio":
+        from ..providers.lmstudio_provider import LMStudioProvider
+
+        return LMStudioProvider(model=model, **provider_kwargs)
+    raise ValueError(f"Unsupported direct embedding provider: {provider}")
+
+
+def _provider_exception_status(exc: Exception) -> int:
+    if isinstance(exc, AuthenticationError):
+        return 401
+    if isinstance(exc, RateLimitError):
+        return 429
+    if isinstance(exc, ModelNotFoundError):
+        return 404
+    if isinstance(exc, InvalidRequestError):
+        return 400
+    if isinstance(exc, ProviderAPIError):
+        return 502
+    text = str(exc).lower()
+    if "api key" in text or "authentication" in text or "unauthorized" in text:
+        return 401
+    return 500
+
+
 @app.post("/v1/embeddings")
-async def create_embeddings(request: EmbeddingRequest):
+async def create_embeddings(request: EmbeddingRequest, http_request: Request):
     """
     Create embedding vectors representing the input text.
 
@@ -2646,35 +2922,87 @@ async def create_embeddings(request: EmbeddingRequest):
             input_count=len(request.input) if isinstance(request.input, list) else 1
         )
 
-        # Route to EmbeddingManager with provider parameter
-        # EmbeddingManager handles all embedding logic for all providers
-        from ..embeddings.manager import EmbeddingManager
-
         # Validate provider
         provider_lower = provider.lower()
-        if provider_lower not in ["huggingface", "ollama", "lmstudio"]:
+        if provider_lower not in _SUPPORTED_EMBEDDING_PROVIDERS:
             raise HTTPException(
                 status_code=400,
                 detail={
                     "error": {
-                        "message": f"Embedding provider '{provider}' not supported. Supported providers: huggingface, ollama, lmstudio",
+                        "message": (
+                            f"Embedding provider '{provider}' not supported. Supported providers: "
+                            f"{', '.join(sorted(_SUPPORTED_EMBEDDING_PROVIDERS))}. "
+                            "Anthropic does not expose a native embeddings API; use another embeddings provider."
+                        ),
                         "type": "unsupported_provider"
                     }
                 }
             )
 
-        # Create embedding manager with provider specification
+        _reject_body_api_key(request.api_key)
+        provider_kwargs = _embedding_provider_kwargs(provider=provider_lower, request=request, http_request=http_request)
+        inputs = _normalize_embedding_inputs(request.input)
+        dimensions = _embedding_dimensions(request.dimensions)
+
+        encoding_format = str(request.encoding_format or "float").strip().lower()
+        if encoding_format not in {"float", "base64"}:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": {
+                        "message": "encoding_format must be either 'float' or 'base64'.",
+                        "type": "invalid_request",
+                    }
+                },
+            )
+
+        if provider_lower in _DIRECT_EMBEDDING_PROVIDERS:
+            request_kwargs: Dict[str, Any] = {"encoding_format": encoding_format}
+            if dimensions is not None:
+                request_kwargs["dimensions"] = dimensions
+            if request.user:
+                request_kwargs["user"] = request.user
+
+            direct_provider = _create_direct_embedding_provider(provider_lower, model, provider_kwargs)
+            result = direct_provider.embed(
+                input_text=request.input if isinstance(request.input, str) else inputs,
+                **request_kwargs,
+            )
+            if not isinstance(result, dict):
+                raise ValueError(f"Invalid response from {provider_lower} embedding provider")
+            result["model"] = f"{provider_lower}/{model}"
+
+            logger.info(
+                "✅ Remote embeddings generated",
+                provider=provider_lower,
+                count=len(result.get("data", [])) if isinstance(result.get("data"), list) else None,
+                model=result.get("model"),
+            )
+            return result
+
+        if encoding_format != "float":
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": {
+                        "message": f"encoding_format='base64' is only supported for OpenAI-compatible embedding providers, not {provider_lower}.",
+                        "type": "unsupported_parameter",
+                    }
+                },
+            )
+
+        # Route local/native providers through EmbeddingManager. strict=True is
+        # important for the HTTP server: provider/model failures must surface as
+        # errors, not silent zero-vector fallbacks.
+        from ..embeddings.manager import EmbeddingManager
+
         embedder = EmbeddingManager(
             model=model,
             provider=provider_lower,
-            output_dims=request.dimensions
+            output_dims=dimensions,
+            strict=True,
+            provider_kwargs=provider_kwargs,
         )
-
-        # Process input - handle both string and list
-        if isinstance(request.input, str):
-            inputs = [request.input]
-        else:
-            inputs = request.input
 
         # Generate embeddings
         embeddings = embedder.embed_batch(inputs)
@@ -2720,7 +3048,7 @@ async def create_embeddings(request: EmbeddingRequest):
     except Exception as e:
         logger.error(f"❌ Embedding generation failed: {_redact_text(str(e))}", exc_info=True)
         raise HTTPException(
-            status_code=500,
+            status_code=_provider_exception_status(e),
             detail={"error": {"message": _redact_text(str(e)), "type": "embedding_error"}}
         )
 
@@ -3253,7 +3581,12 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
 
 @app.post("/{provider}/v1/chat/completions")
 async def provider_chat_completions(
-    provider: str,
+    provider: Annotated[
+        str,
+        FastAPIPath(
+            description="Provider route prefix, e.g. `openai`, `anthropic`, `ollama`, `openrouter`, or `openai-compatible`."
+        ),
+    ],
     request: ChatCompletionRequest,
     http_request: Request
 ):

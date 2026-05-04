@@ -13,6 +13,7 @@ from abstractcore.core.types import GenerateResponse
 def _clear_security_sensitive_env(monkeypatch) -> None:
     for name in (
         "ABSTRACTCORE_SERVER_API_KEY",
+        "ABSTRACTCORE_SERVER_PROTECT_DOCS",
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
         "OPENROUTER_API_KEY",
@@ -59,6 +60,42 @@ def test_server_api_key_blocks_unauthenticated_requests_before_provider_creation
 
     models = client.get("/v1/models")
     assert models.status_code == 401
+
+
+def test_swagger_docs_are_usable_with_server_auth_enabled(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_API_KEY", "server-secret")
+    server_app.app.openapi_schema = None
+
+    client = TestClient(server_app.app)
+
+    docs = client.get("/docs")
+    assert docs.status_code == 200
+    assert "SwaggerUIBundle" in docs.text
+
+    schema = client.get("/openapi.json")
+    assert schema.status_code == 200
+    body = schema.json()
+    bearer = body["components"]["securitySchemes"]["AbstractCoreBearerAuth"]
+    assert bearer["type"] == "http"
+    assert bearer["scheme"] == "bearer"
+    assert body["paths"]["/health"]["get"]["security"] == []
+    assert body["paths"]["/v1/chat/completions"]["post"]["security"] == [{"AbstractCoreBearerAuth": []}]
+
+    protected = client.get("/v1/models")
+    assert protected.status_code == 401
+
+
+def test_docs_can_be_protected_for_locked_down_deployments(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_API_KEY", "server-secret")
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_PROTECT_DOCS", "1")
+
+    client = TestClient(server_app.app)
+
+    assert client.get("/docs").status_code == 401
+    assert client.get("/openapi.json").status_code == 401
+    assert client.get("/openapi.json", headers={"Authorization": "Bearer server-secret"}).status_code == 200
 
 
 def test_server_auth_is_required_by_default_when_key_is_not_configured(monkeypatch) -> None:

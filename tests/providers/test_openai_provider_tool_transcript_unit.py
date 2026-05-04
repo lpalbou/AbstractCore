@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import sys
 from types import SimpleNamespace
 
+from abstractcore.providers.model_capabilities import ModelOutputCapability
 from abstractcore.providers.openai_provider import OpenAIProvider
 
 
@@ -70,3 +72,27 @@ def test_openai_provider_preserves_tool_calls_and_tool_call_id_in_messages(monke
     assert api_messages[1].get("tool_calls") == messages[1]["tool_calls"]
     assert api_messages[2].get("tool_call_id") == "call_1"
 
+
+def test_openai_list_available_models_returns_embeddings_when_requested(monkeypatch):
+    class _FakeOpenAIClient:
+        def __init__(self, **_kwargs):
+            self.models = SimpleNamespace(
+                list=lambda: SimpleNamespace(
+                    data=[
+                        SimpleNamespace(id="gpt-4o-mini"),
+                        SimpleNamespace(id="text-embedding-3-small"),
+                        SimpleNamespace(id="text-embedding-3-large"),
+                    ]
+                )
+            )
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=_FakeOpenAIClient))
+
+    models = OpenAIProvider.list_available_models(
+        api_key="sk-test",
+        output_capabilities=[ModelOutputCapability.EMBEDDINGS],
+    )
+
+    assert "text-embedding-3-small" in models
+    assert "text-embedding-3-large" in models
+    assert "gpt-4o-mini" not in models

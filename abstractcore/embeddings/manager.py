@@ -131,6 +131,7 @@ class EmbeddingManager:
         output_dims: Optional[int] = None,
         trust_remote_code: bool = False,
         strict: Optional[bool] = None,
+        provider_kwargs: Optional[Dict[str, Any]] = None,
     ):
         """Initialize the embedding manager.
 
@@ -146,6 +147,8 @@ class EmbeddingManager:
             output_dims: Output dimensions for Matryoshka truncation (if supported by provider)
             trust_remote_code: Whether to trust remote code (HuggingFace only)
             strict: If true, raise on provider/model failures instead of returning zero vectors.
+            provider_kwargs: Optional provider-constructor kwargs for server-backed providers
+                (for example ``api_key`` or ``base_url``).
         """
         if strict is None:
             strict_raw = str(os.environ.get("ABSTRACTCORE_EMBEDDINGS_STRICT", "") or "").strip().lower()
@@ -157,6 +160,7 @@ class EmbeddingManager:
 
         # Store provider (after config loading)
         self.provider = self._resolved_provider.lower()
+        self.provider_kwargs = dict(provider_kwargs or {})
 
         # Validate provider
         _SUPPORTED_EMB_PROVIDERS = [
@@ -210,27 +214,29 @@ class EmbeddingManager:
             # Create provider instance for delegation
             if self.provider == "ollama":
                 from ..providers.ollama_provider import OllamaProvider
-                self._provider_instance = OllamaProvider(model=self._resolved_model)
+                self._provider_instance = OllamaProvider(model=self._resolved_model, **self.provider_kwargs)
                 logger.info(f"Initialized Ollama embedding provider with model: {self._resolved_model}")
             elif self.provider == "lmstudio":
                 from ..providers.lmstudio_provider import LMStudioProvider
-                self._provider_instance = LMStudioProvider(model=self._resolved_model)
+                self._provider_instance = LMStudioProvider(model=self._resolved_model, **self.provider_kwargs)
                 logger.info(f"Initialized LMStudio embedding provider with model: {self._resolved_model}")
             elif self.provider == "openai":
                 from ..providers.openai_provider import OpenAIProvider
-                self._provider_instance = OpenAIProvider(model=self._resolved_model)
+                self._provider_instance = OpenAIProvider(model=self._resolved_model, **self.provider_kwargs)
                 logger.info(f"Initialized OpenAI embedding provider with model: {self._resolved_model}")
             elif self.provider == "openrouter":
                 from ..providers.openrouter_provider import OpenRouterProvider
-                self._provider_instance = OpenRouterProvider(model=self._resolved_model)
+                openrouter_kwargs = dict(self.provider_kwargs)
+                openrouter_kwargs.setdefault("validate_model", False)
+                self._provider_instance = OpenRouterProvider(model=self._resolved_model, **openrouter_kwargs)
                 logger.info(f"Initialized OpenRouter embedding provider with model: {self._resolved_model}")
             elif self.provider == "portkey":
                 from ..providers.portkey_provider import PortkeyProvider
-                self._provider_instance = PortkeyProvider(model=self._resolved_model)
+                self._provider_instance = PortkeyProvider(model=self._resolved_model, **self.provider_kwargs)
                 logger.info(f"Initialized Portkey embedding provider with model: {self._resolved_model}")
             elif self.provider == "openai-compatible":
                 from ..providers.openai_compatible_provider import OpenAICompatibleProvider
-                self._provider_instance = OpenAICompatibleProvider(model=self._resolved_model)
+                self._provider_instance = OpenAICompatibleProvider(model=self._resolved_model, **self.provider_kwargs)
                 logger.info(f"Initialized OpenAI-compatible embedding provider with model: {self._resolved_model}")
 
         # Common setup for all providers
@@ -680,7 +686,10 @@ class EmbeddingManager:
 
             else:
                 # Ollama or LMStudio: Delegate to provider
-                result = self._provider_instance.embed(input_text=text)
+                provider_kwargs = {}
+                if self.output_dims:
+                    provider_kwargs["dimensions"] = self.output_dims
+                result = self._provider_instance.embed(input_text=text, **provider_kwargs)
 
                 # Extract embedding from OpenAI-compatible response
                 if "data" in result and len(result["data"]) > 0:
@@ -779,7 +788,10 @@ class EmbeddingManager:
 
                 else:
                     # Ollama or LMStudio: Delegate to provider (supports batch in single call)
-                    result = self._provider_instance.embed(input_text=uncached_texts)
+                    provider_kwargs = {}
+                    if self.output_dims:
+                        provider_kwargs["dimensions"] = self.output_dims
+                    result = self._provider_instance.embed(input_text=uncached_texts, **provider_kwargs)
 
                     # Extract embeddings from OpenAI-compatible response
                     if "data" in result:

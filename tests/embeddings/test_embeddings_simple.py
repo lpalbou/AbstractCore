@@ -99,6 +99,30 @@ class TestEmbeddingManagerBasic:
             )
             assert manager.get_dimension() == 256
 
+    def test_openrouter_embedding_manager_skips_chat_model_validation(self):
+        """OpenRouter embedding model IDs are not always listed in the chat model catalogue."""
+        from abstractcore.providers.openrouter_provider import OpenRouterProvider
+
+        captured = {}
+
+        def fake_init(self, model, **kwargs):
+            self.model = model
+            captured["model"] = model
+            captured["kwargs"] = kwargs
+
+        with patch.object(OpenRouterProvider, "__init__", fake_init):
+            manager = EmbeddingManager(
+                model="openai/text-embedding-3-small",
+                provider="openrouter",
+                cache_dir=self.cache_dir,
+                provider_kwargs={"api_key": "sk-test"},
+            )
+
+        assert manager.model_id == "openai/text-embedding-3-small"
+        assert captured["model"] == "openai/text-embedding-3-small"
+        assert captured["kwargs"]["api_key"] == "sk-test"
+        assert captured["kwargs"]["validate_model"] is False
+
     def test_cache_operations(self):
         """Test cache operations."""
         with patch('abstractcore.embeddings.manager.sentence_transformers') as mock_st:

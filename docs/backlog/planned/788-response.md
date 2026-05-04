@@ -2,12 +2,12 @@
 
 ## Context (how AbstractCore handles “generative vision”)
 
-- **Generative vision (text→image / image→image)** is not part of AbstractCore’s default install; it comes from the optional `abstractvision` package.
+- **Generative vision (text-to-image / image-to-image)** is dependency-light by default: remote OpenAI-compatible image proxying is handled by AbstractCore Server, while local Diffusers/sdcpp runtimes come from the optional `abstractvision` package.
 - AbstractCore’s **gateway server** (FastAPI) exposes **OpenAI-compatible** image endpoints:
   - `POST /v1/images/generations`
   - `POST /v1/images/edits`
   - Implementation: `abstractcore/server/vision_endpoints.py`
-- These endpoints delegate to **AbstractVision backends** (Diffusers / stable-diffusion.cpp / upstream OpenAI-compatible proxy) and return OpenAI-shaped responses (`data[].b64_json`).
+- These endpoints can proxy to an upstream OpenAI-compatible image endpoint without `abstractvision`, or delegate to **AbstractVision backends** (Diffusers / stable-diffusion.cpp) when local runtimes are installed. They return OpenAI-shaped responses (`data[].b64_json`).
 
 ## What the “mismatch” is
 
@@ -46,11 +46,10 @@ If `ABSTRACTCORE_VISION_UPSTREAM_BASE_URL` is set, provider-prefixed ids like `o
 
 ## How to enable a framework-default vision generator (Qwen/Qwen-Image-2512)
 
-Run the AbstractCore server with `abstractvision` installed, and configure a default local Diffusers model:
+Run the AbstractCore server with the vision extra installed, and configure a default local Diffusers model:
 
 ```bash
-pip install "abstractcore[server]"
-pip install abstractvision
+pip install "abstractcore[server,vision]"
 
 # Recommended default (local Diffusers)
 export ABSTRACTCORE_VISION_BACKEND=diffusers
@@ -115,6 +114,6 @@ Notes:
 
 ## Notes / expectations
 
-- If `abstractvision` is not installed in the server environment, `/v1/images/*` returns `501` with install hints.
+- If `abstractvision` is not installed in the server environment, `/v1/images/*` can still proxy to a configured OpenAI-compatible upstream. Local Diffusers/sdcpp generation returns `501` with install hints.
 - If the server has **no vision backend configured** (no request model that can be routed, and no relevant `ABSTRACTCORE_VISION_*` env vars), it returns `501` with an actionable configuration message.
 - The default model choice (e.g. `Qwen/Qwen-Image-2512`) is a **deployment default**: configure it once on the server, and apps can stay simple.

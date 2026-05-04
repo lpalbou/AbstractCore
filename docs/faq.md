@@ -229,13 +229,13 @@ See: [Server](server.md) and [Capabilities](capabilities.md).
 
 ## How do I generate or edit images?
 
-Generative vision is intentionally not part of AbstractCore’s default install. Use `abstractvision`:
+Generative vision is dependency-light by default. AbstractCore Server can proxy OpenAI-compatible image endpoints without local vision runtimes. For local Diffusers/sdcpp image generation, install the vision extra:
 
 ```bash
-pip install abstractvision
+pip install "abstractcore[server,vision]"
 ```
 
-You can use it through AbstractCore’s `llm.vision.*` capability plugin surface (typically configured via an OpenAI-compatible images endpoint), or through AbstractCore Server’s optional endpoints:
+You can use generative vision through AbstractCore’s `llm.vision.*` capability plugin surface, or through AbstractCore Server’s optional endpoints:
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
 

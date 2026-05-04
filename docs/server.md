@@ -10,6 +10,13 @@ Visit while the server is running:
 - **Swagger UI**: `http://localhost:8000/docs`
 - **ReDoc**: `http://localhost:8000/redoc`
 
+Swagger UI exposes an `Authorize` button. When `ABSTRACTCORE_SERVER_API_KEY` is set,
+enter that value there; requests executed from the docs page will send it as
+`Authorization: Bearer <token>`. The docs and OpenAPI schema are public by default so
+the UI can load before authentication, but API operations remain protected. Set
+`ABSTRACTCORE_SERVER_PROTECT_DOCS=1` if you also want `/docs`, `/redoc`, and
+`/openapi.json` behind server auth.
+
 ## Quick Start
 
 ### Install and Run (2 minutes)
@@ -94,6 +101,9 @@ export PORTKEY_CONFIG="pcfg_..."        # required for Portkey routing
 
 # Server master key. Authenticated clients can use all server-configured providers.
 export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
+
+# Optional: also protect /docs, /redoc, and /openapi.json.
+export ABSTRACTCORE_SERVER_PROTECT_DOCS=1
 
 # Local providers
 export OLLAMA_BASE_URL="http://localhost:11434"          # (or legacy: OLLAMA_HOST)
@@ -294,25 +304,48 @@ Important notes:
 - These are **interoperability-first** endpoints (return `b64_json` or raw bytes), not an artifact-first durability contract.
 - If the required plugin/backend is not available, the server returns `501` with actionable messaging.
 
-#### Images (generate/edit) — requires `abstractvision`
+#### Images (generate/edit)
 
 Endpoints:
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
 
-Install:
+Remote OpenAI-compatible image proxying is included in `abstractcore[server]`
+and is enabled by setting `ABSTRACTCORE_VISION_UPSTREAM_BASE_URL`.
+
+Install for remote image proxying:
 ```bash
 pip install "abstractcore[server]"
-pip install abstractvision
 ```
 
-#### Audio (STT/TTS) — requires an audio/voice capability plugin (typically `abstractvoice`)
+Install local image backends only when you want the server to load Diffusers or
+stable-diffusion.cpp models itself:
+```bash
+pip install "abstractcore[server,vision]"
+```
+
+#### Audio (STT/TTS)
 
 Endpoints:
 - `POST /v1/audio/transcriptions` (multipart; `file=...`)
 - `POST /v1/audio/speech` (json; `input=...`, optional `voice`, optional `format`)
 
-Install:
+Remote provider routing is enabled when `model` is supplied in `provider/model` format:
+- `openai/gpt-4o-mini-transcribe`, `openai/whisper-1`
+- `openai/gpt-4o-mini-tts`, `openai/tts-1`
+- `openrouter/...` for OpenRouter STT/TTS models
+- `portkey/...` for Portkey-routed OpenAI-compatible audio models
+- `openai-compatible/...` for endpoints that implement OpenAI-compatible audio routes
+
+If `model` is omitted, the endpoint delegates to local capability plugins
+(typically `abstractvoice`) and returns `501` when no suitable plugin is installed.
+
+Install for remote audio:
+```bash
+pip install "abstractcore[server,remote]"
+```
+
+Install for local plugin fallback:
 ```bash
 pip install "abstractcore[server]"
 pip install abstractvoice
@@ -320,20 +353,24 @@ pip install abstractvoice
 
 Notes:
 - `/v1/audio/transcriptions` requires `python-multipart` for form parsing (included in the server extra).
+- Uploaded audio is limited by `ABSTRACTCORE_SERVER_AUDIO_MAX_BYTES` (default: 25 MB).
 
 Examples:
 
 ```bash
-# Speech-to-text (STT)
+# Remote speech-to-text (STT)
 curl -X POST http://localhost:8000/v1/audio/transcriptions \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
   -F "file=@speech.wav" \
+  -F "model=openai/gpt-4o-mini-transcribe" \
   -F "language=en"
 
-# Text-to-speech (TTS)
+# Remote text-to-speech (TTS)
 curl -X POST http://localhost:8000/v1/audio/speech \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"input":"Hello!","format":"wav"}' \
-  --output hello.wav
+  -d '{"model":"openai/gpt-4o-mini-tts","input":"Hello!","voice":"alloy","response_format":"mp3"}' \
+  --output hello.mp3
 ```
 
 If you want to “ask a model about an audio file”, prefer one of:
@@ -776,6 +813,19 @@ Generate embedding vectors for semantic search, RAG, and similarity analysis.
 - **HuggingFace**: Local models with ONNX acceleration
 - **Ollama**: `ollama/granite-embedding:278m`, etc.
 - **LMStudio**: Any loaded embedding model
+- **OpenAI**: `openai/text-embedding-3-small`, `openai/text-embedding-3-large`
+- **OpenRouter**: `openrouter/openai/text-embedding-3-small`, etc.
+- **Portkey**: `portkey/...` with your Portkey routing configuration
+- **OpenAI-compatible**: `openai-compatible/...` against configured/local `/v1/embeddings` endpoints
+
+Anthropic does not expose a native embeddings API. Use OpenAI, OpenRouter,
+Portkey, an OpenAI-compatible endpoint, or a local embedding provider.
+
+OpenAI-compatible request fields are forwarded where supported:
+- `dimensions`
+- `encoding_format`
+- `user`
+- `base_url` (AbstractCore extension; loopback by default, allowlist required for non-loopback)
 
 **Batch Embedding:**
 ```bash
@@ -904,23 +954,32 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 
 ### Docker
 
-```dockerfile
-FROM python:3.9-slim
+Release images are published to GitHub Container Registry after the matching
+PyPI release succeeds:
 
-RUN pip install "abstractcore[server]"
-
-EXPOSE 8000
-
-CMD ["uvicorn", "abstractcore.server.app:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+```bash
+ghcr.io/lpalbou/abstractcore-server:<version>
 ```
+
+The image is built from PyPI, not from the repository checkout, and installs:
+
+```bash
+abstractcore[server,remote,media,tokens,compression]==<version>
+```
+
+It includes remote chat/responses, remote embeddings, remote STT/TTS routing,
+remote OpenAI-compatible image proxying, server dependencies, media parsing,
+token counting, and compression helpers. It intentionally does not include
+local model runtimes (`vllm`, `mlx`, `huggingface`, local Diffusers/sdcpp
+vision backends) or local embedding dependencies (`sentence-transformers`).
 
 **Run:**
 ```bash
-docker build -t abstractcore-server .
 docker run -p 8000:8000 \
   -e ABSTRACTCORE_SERVER_API_KEY=$ABSTRACTCORE_SERVER_API_KEY \
   -e OPENAI_API_KEY=$OPENAI_API_KEY \
-  abstractcore-server
+  -e OPENROUTER_API_KEY=$OPENROUTER_API_KEY \
+  ghcr.io/lpalbou/abstractcore-server:2.13.4
 ```
 
 ### Docker Compose
@@ -930,7 +989,7 @@ version: '3.8'
 
 services:
   abstractcore:
-    image: abstractcore-server:latest
+    image: ghcr.io/lpalbou/abstractcore-server:2.13.4
     ports:
       - "8000:8000"
     environment:

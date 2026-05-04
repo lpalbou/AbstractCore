@@ -22,7 +22,7 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/v1/images/edits` | POST | Image editing (optional) | `prompt`, `image`, `mask` |
 | `/v1/audio/transcriptions` | POST | Speech-to-text (optional) | `file` (multipart) |
 | `/v1/audio/translations` | POST | Audio translations (not yet supported) | - |
-| `/v1/audio/speech` | POST | Text-to-speech (optional) | `input`, `voice`, `format` |
+| `/v1/audio/speech` | POST | Text-to-speech (optional) | `model`, `input`, `voice`, `format` |
 | `/v1/audio/music` | POST | Text-to-music (optional) | `prompt`, `format` |
 | `/{provider}/v1/chat/completions` | POST | Provider-specific endpoint | `model` (no prefix) |
 
@@ -48,7 +48,7 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | Media Type | MIME Types | Max Size | Processing |
 |------------|-----------|----------|------------|
 | **Images** | `image/*` | 10MB | Vision models |
-| **Audio** | `audio/*` | 10MB | STT via capability plugins (optional) |
+| **Audio** | `audio/*` | 25MB for `/v1/audio/transcriptions` | Remote STT or capability plugins |
 | **Documents** | `application/pdf`, `docx`, `xlsx` | 10MB | Text extraction |
 | **Data** | `text/csv`, `application/json` | 10MB | Rendering |
 | **Text** | `text/plain`, `text/html` | 10MB | Direct |
@@ -344,6 +344,12 @@ provider keys/endpoints configured on the server. If it is not configured,
 `Authorization: Bearer <provider-key>` may be used as a bring-your-own upstream provider key;
 that key is forwarded only to the requested provider. `GET /health` is always unauthenticated.
 
+Swagger UI at `http://localhost:8000/docs` can execute authenticated requests: click
+`Authorize`, enter the `ABSTRACTCORE_SERVER_API_KEY` value, then use `Try it out`.
+The docs and OpenAPI schema are public by default so the UI can load before authentication;
+set `ABSTRACTCORE_SERVER_PROTECT_DOCS=1` to put `/docs`, `/redoc`, and `/openapi.json`
+behind server auth too.
+
 **Basic Text Chat**:
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
@@ -606,6 +612,7 @@ These return `501` only if the server can't infer a backend (e.g. no `model` in 
   - `ABSTRACTCORE_VISION_UPSTREAM_BASE_URL` (required) — base URL (include `/v1`)
   - `ABSTRACTCORE_VISION_UPSTREAM_API_KEY` (optional)
   - `ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID` (optional)
+  - Install: `pip install "abstractcore[server]"`
 
 - **Local Diffusers**: set `ABSTRACTCORE_VISION_BACKEND=diffusers`
   - `ABSTRACTCORE_VISION_MODEL_ID` (required) — local model id/path (Diffusers)
@@ -613,10 +620,10 @@ These return `501` only if the server can't infer a backend (e.g. no `model` in 
   - `ABSTRACTCORE_VISION_TORCH_DTYPE` (optional, e.g. `float16`; for very large models you typically need `float16` or you may run out of memory)
   - `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD` (optional, default true; set to `0` for cache-only/offline)
   - Note: if you set `ABSTRACTCORE_VISION_DEVICE=mps` or `cuda`, your PyTorch must actually support it (`torch.backends.mps.is_available()` / `torch.cuda.is_available()`).
-  - Install: `pip install "abstractcore[server]"`
+  - Install: `pip install "abstractcore[server,vision]"`
 
 - **Local stable-diffusion.cpp**: set `ABSTRACTCORE_VISION_BACKEND=sdcpp`
-  - Recommended (pip-only): `pip install "abstractcore[server]"`
+  - Recommended (pip-only): `pip install "abstractcore[server,vision]"`
   - Alternative (external executable): install `sd-cli`: https://github.com/leejet/stable-diffusion.cpp/releases
   - `ABSTRACTCORE_VISION_SDCPP_BIN` (optional, default `sd-cli`)
   - Configure either:
@@ -640,9 +647,8 @@ curl http://localhost:8000/v1/images/edits \\
 
 Notes:
 - The server returns `b64_json` outputs, matching the OpenAI image API shape.
-- Endpoints delegate to AbstractVision internally; install it in the same env as the server (and prefer `python -m uvicorn ...`):
-  - `pip install "abstractcore[server]"`
-  - or manage it directly: `pip install abstractvision`
+- OpenAI-compatible image proxying is built into `abstractcore[server]`.
+- Local Diffusers/sdcpp generation delegates to AbstractVision; install it in the same env as the server with `pip install "abstractcore[server,vision]"` and prefer `python -m uvicorn ...`.
 
 ---
 
@@ -733,6 +739,11 @@ print(response.json()["choices"][0]["message"]["content"])
 
 **Purpose**: Generate text embeddings using embedding models.
 
+Supported providers include local/native providers (`huggingface`, `ollama`)
+and OpenAI-compatible remote providers (`lmstudio`, `openai`, `openrouter`,
+`portkey`, `openai-compatible`). Anthropic does not expose a native embeddings
+API, so use another embeddings provider for RAG/vector workflows.
+
 **Request**:
 ```json
 {
@@ -777,10 +788,12 @@ print(response.json()["choices"][0]["message"]["content"])
 **Usage**:
 ```bash
 curl -X POST http://localhost:8000/v1/embeddings \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "model": "huggingface/sentence-transformers/all-MiniLM-L6-v2",
-    "input": "The quick brown fox jumps over the lazy dog"
+    "model": "openai/text-embedding-3-small",
+    "input": "The quick brown fox jumps over the lazy dog",
+    "dimensions": 256
   }'
 ```
 
@@ -990,31 +1003,18 @@ gunicorn abstractcore.server.app:app \
 ```
 
 **Docker Deployment**:
-```dockerfile
-FROM python:3.12-slim
-
-# Install dependencies
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-# Copy application
-COPY . /app
-WORKDIR /app
-
-# Expose port
-EXPOSE 8000
-
-# Run server
-CMD ["uvicorn", "abstractcore.server.app:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
 ```bash
-docker build -t abstractcore-server .
 docker run -p 8000:8000 \
   -e ABSTRACTCORE_SERVER_API_KEY="acore-server-secret" \
   -e OPENAI_API_KEY="sk-..." \
-  abstractcore-server
+  -e OPENROUTER_API_KEY="sk-or-..." \
+  ghcr.io/lpalbou/abstractcore-server:2.13.4
 ```
+
+The release image is built from PyPI with
+`abstractcore[server,remote,media,tokens,compression]==<version>`. It is a
+remote/server gateway image and intentionally does not bundle local model
+runtimes, local Diffusers/sdcpp vision backends, or `sentence-transformers`.
 
 ### Nginx Reverse Proxy
 

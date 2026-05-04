@@ -77,3 +77,23 @@ def test_images_generations_falls_back_when_chat_model_id_is_passed(client, monk
     data = resp.json()
     assert "error" in data
     assert "Vision image endpoints are not configured" in data["error"]["message"]
+
+
+def test_openai_compatible_generation_uses_size_not_width_height(monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    monkeypatch.setenv("ABSTRACTCORE_VISION_UPSTREAM_BASE_URL", "https://api.openai.com/v1")
+
+    width, height, extra = vision_endpoints._image_generation_request_parts(
+        {
+            "model": "openai/dall-e-2",
+            "prompt": "hello",
+            "size": "256x256",
+            "width": 256,
+            "height": 256,
+        }
+    )
+
+    assert width is None
+    assert height is None
+    assert extra["size"] == "256x256"

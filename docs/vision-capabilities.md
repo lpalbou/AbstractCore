@@ -67,17 +67,17 @@ abstractcore --set-vision-provider lmstudio qwen/qwen3-vl-4b
 abstractcore --add-vision-fallback huggingface Salesforce/blip-image-captioning-base
 ```
 
-## 3) Generative vision output is not part of AbstractCore’s default install
+## 3) Generative vision output is dependency-light by default
 
-Creating/editing images and videos is a **deterministic capability** that lives in `abstractvision` and can be integrated in two ways:
+Creating/editing images and videos is a **deterministic capability** that can be integrated in two ways:
 
 1) **Capability plugin (library mode)**: install `abstractvision` and use `llm.vision.*` (e.g. `t2i`, `i2i`).  
    See: `abstractvision/docs/reference/abstractcore-integration.md`
 
-2) **AbstractCore Server (HTTP interop)**: run the optional server and enable `/v1/images/*` endpoints delegated to `abstractvision`.  
+2) **AbstractCore Server (HTTP interop)**: run the optional server and use `/v1/images/*` as an OpenAI-compatible image proxy. Local Diffusers/sdcpp backends remain available when `abstractvision` is installed via `abstractcore[server,vision]`.
    See: `docs/server.md`
 
-This separation keeps the default `abstractcore` install dependency-light: input handling lives in AbstractCore, and generative vision outputs live in `abstractvision`.
+This separation keeps the default `abstractcore` install dependency-light: remote image proxying lives in the server, while local generative vision runtimes remain opt-in through `abstractvision`.
 
 ## Troubleshooting (common)
 

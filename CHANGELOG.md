@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.4] - 2026-05-04
+
+### Added
+- **Remote embeddings in the OpenAI-compatible server**: `/v1/embeddings` now routes `openai/...`, `openrouter/...`, `portkey/...`, `openai-compatible/...`, and `lmstudio/...` models in addition to the existing local/native embedding providers. OpenAI-compatible fields such as `dimensions`, `encoding_format`, and `user` are forwarded where supported, and `base_url` can target loopback/local OpenAI-compatible embedding endpoints under the existing server allowlist policy.
+- **Remote STT/TTS server routing**: `/v1/audio/transcriptions` and `/v1/audio/speech` now route to remote provider endpoints when `model` is supplied (`openai/...`, `openrouter/...`, `portkey/...`, `openai-compatible/...`) while preserving the existing `abstractvoice` capability-plugin fallback when `model` is omitted.
+- **Dependency-light image proxy routes**: `/v1/images/generations` and `/v1/images/edits` can proxy to an OpenAI-compatible upstream without installing local Diffusers/stable-diffusion.cpp vision runtimes. Local image generation remains opt-in via `abstractcore[server,vision]`.
+- **Swagger UI authentication support**: `/docs` now exposes an OpenAPI Bearer auth scheme so users can click `Authorize` and run authenticated requests directly from the browser. Docs/schema stay public by default so Swagger can load before auth; `ABSTRACTCORE_SERVER_PROTECT_DOCS=1` protects them for locked-down deployments.
+- **GHCR server image release path**: the release workflow now publishes `ghcr.io/lpalbou/abstractcore-server:<version>` after PyPI publishing succeeds. The image is built from the PyPI package with `abstractcore[server,remote,media,tokens,compression]==<version>`.
+
+### Changed
+- **Server embedding errors are strict**: HTTP embedding requests now surface upstream/provider failures as errors instead of silently returning zero-vector fallbacks.
+- **Server extra remains remote-friendly**: `abstractcore[server]` now installs the FastAPI server stack without pulling local image-generation runtimes; install `abstractcore[server,vision]` for local Diffusers/sdcpp image generation.
+- **Server docs for deployment and remote modalities**: updated server documentation for remote embeddings, remote audio, provider-key handling, OpenAI-compatible local endpoints, and the PyPI-backed Docker image.
+
+### Fixed
+- **Remote embedding parameter forwarding**: server-backed embedding providers now receive requested dimensions so OpenAI-compatible providers can perform provider-native dimension reduction instead of only local truncation.
+
 ## [2.13.3] - 2026-05-04
 
 ### Added

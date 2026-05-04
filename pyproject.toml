@@ -372,8 +372,9 @@ server = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    # Install vision support by default for a "just works" server install.
-    "abstractvision>=0.2.0",
+    # Image proxy routes are dependency-light in the server itself. Local
+    # Diffusers/stable-diffusion.cpp model serving is opt-in via the `vision`
+    # extras below.
 ]
 
 # Vision (optional) - delegates to AbstractVision.

@@ -26,10 +26,13 @@ import shlex
 import time
 import threading
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, UploadFile
+import httpx
+from fastapi import APIRouter, Body, File, Form, HTTPException, Path as FastAPIPath, Query, UploadFile
+from pydantic import BaseModel, Field
 
 try:  # Optional dependency (needed only for multipart parsing).
     import multipart  # type: ignore  # noqa: F401
@@ -53,6 +56,243 @@ _ACTIVE_LOADED_AT_S: Optional[float] = None
 
 _JOBS_LOCK = threading.Lock()
 _JOBS: Dict[str, Dict[str, Any]] = {}
+
+
+class _ProxyOptionalDependencyMissingError(Exception):
+    """Placeholder exception type for the dependency-free upstream proxy path."""
+
+
+@dataclass
+class _ProxyGeneratedAsset:
+    data: bytes
+    mime_type: str = "image/png"
+
+
+@dataclass
+class _ProxyImageGenerationRequest:
+    prompt: str
+    negative_prompt: Optional[str] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    steps: Optional[int] = None
+    guidance_scale: Optional[float] = None
+    seed: Optional[int] = None
+    extra: Optional[Dict[str, Any]] = None
+
+
+@dataclass
+class _ProxyImageEditRequest:
+    prompt: str
+    image: bytes
+    mask: Optional[bytes] = None
+    negative_prompt: Optional[str] = None
+    seed: Optional[int] = None
+    steps: Optional[int] = None
+    guidance_scale: Optional[float] = None
+    extra: Optional[Dict[str, Any]] = None
+
+
+def _join_url(base_url: str, path: str) -> str:
+    b = str(base_url or "").rstrip("/")
+    p = str(path or "").strip()
+    if not p:
+        return b
+    if not p.startswith("/"):
+        p = "/" + p
+    return b + p
+
+
+def _sniff_mime_type(content: bytes, fallback: str) -> str:
+    b = bytes(content or b"")
+    if b.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if b.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if len(b) >= 12 and b[4:8] == b"ftyp":
+        return "video/mp4"
+    return str(fallback or "application/octet-stream")
+
+
+def _decode_b64(s: str) -> bytes:
+    raw = "".join(str(s or "").strip().split())
+    pad = (-len(raw)) % 4
+    if pad:
+        raw = raw + ("=" * pad)
+    return base64.b64decode(raw, validate=False)
+
+
+def _first_data_item(resp: Dict[str, Any]) -> Dict[str, Any]:
+    data = resp.get("data")
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        return data[0]
+    return {}
+
+
+class _OpenAICompatibleImageProxyBackend:
+    """Dependency-light OpenAI-compatible image proxy used by the server image."""
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        api_key: Optional[str],
+        model_id: Optional[str],
+        timeout_s: float,
+        image_generations_path: str,
+        image_edits_path: str,
+    ) -> None:
+        self.base_url = str(base_url).rstrip("/")
+        self.api_key = api_key
+        self.model_id = model_id
+        self.timeout_s = float(timeout_s)
+        self.image_generations_path = image_generations_path or "/images/generations"
+        self.image_edits_path = image_edits_path or "/images/edits"
+
+    def _headers(self) -> Dict[str, str]:
+        headers: Dict[str, str] = {}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
+    def _raise_for_status(self, resp: httpx.Response) -> None:
+        if resp.status_code < 400:
+            return
+        detail = resp.text[:1000]
+        raise ValueError(f"Upstream image endpoint returned HTTP {resp.status_code}: {detail}")
+
+    def _parse_media(self, payload: Dict[str, Any], *, fallback_mime: str) -> _ProxyGeneratedAsset:
+        item = _first_data_item(payload)
+        if "b64_json" in item:
+            content = _decode_b64(str(item.get("b64_json") or ""))
+            return _ProxyGeneratedAsset(data=content, mime_type=_sniff_mime_type(content, fallback_mime))
+        if "url" in item and isinstance(item.get("url"), str):
+            url = str(item.get("url"))
+            with httpx.Client(timeout=self.timeout_s, follow_redirects=True) as client:
+                resp = client.get(url)
+                self._raise_for_status(resp)
+                content = bytes(resp.content)
+                mime = _sniff_mime_type(content, resp.headers.get("content-type") or fallback_mime)
+                return _ProxyGeneratedAsset(data=content, mime_type=mime)
+        raise ValueError("Invalid upstream image response: missing data[0].b64_json or data[0].url")
+
+    def generate_image(self, request: _ProxyImageGenerationRequest) -> _ProxyGeneratedAsset:
+        payload: Dict[str, Any] = {
+            "prompt": request.prompt,
+            "response_format": "b64_json",
+            "n": 1,
+        }
+        if self.model_id:
+            payload["model"] = self.model_id
+        if request.negative_prompt is not None:
+            payload["negative_prompt"] = request.negative_prompt
+        if request.width is not None and request.height is not None:
+            payload["size"] = f"{int(request.width)}x{int(request.height)}"
+        if request.seed is not None:
+            payload["seed"] = int(request.seed)
+        if request.steps is not None:
+            payload["steps"] = int(request.steps)
+        if request.guidance_scale is not None:
+            payload["guidance_scale"] = float(request.guidance_scale)
+        if isinstance(request.extra, dict):
+            payload.update({k: v for k, v in request.extra.items() if v is not None})
+
+        with httpx.Client(timeout=self.timeout_s) as client:
+            resp = client.post(
+                _join_url(self.base_url, self.image_generations_path),
+                headers=self._headers(),
+                json=payload,
+            )
+            self._raise_for_status(resp)
+            data = resp.json()
+        if not isinstance(data, dict):
+            raise ValueError("Invalid upstream image response: expected JSON object")
+        return self._parse_media(data, fallback_mime="image/png")
+
+    def edit_image(self, request: _ProxyImageEditRequest) -> _ProxyGeneratedAsset:
+        fields: Dict[str, str] = {"prompt": request.prompt}
+        if self.model_id:
+            fields["model"] = self.model_id
+        if request.negative_prompt is not None:
+            fields["negative_prompt"] = request.negative_prompt
+        if request.seed is not None:
+            fields["seed"] = str(int(request.seed))
+        if request.steps is not None:
+            fields["steps"] = str(int(request.steps))
+        if request.guidance_scale is not None:
+            fields["guidance_scale"] = str(float(request.guidance_scale))
+        if isinstance(request.extra, dict):
+            for key, value in request.extra.items():
+                if value is not None:
+                    fields[str(key)] = str(value)
+
+        files: Dict[str, Tuple[str, bytes, str]] = {
+            "image": ("image.png", bytes(request.image), "image/png"),
+        }
+        if request.mask is not None:
+            files["mask"] = ("mask.png", bytes(request.mask), "image/png")
+
+        with httpx.Client(timeout=self.timeout_s) as client:
+            resp = client.post(
+                _join_url(self.base_url, self.image_edits_path),
+                headers=self._headers(),
+                data=fields,
+                files=files,
+            )
+            self._raise_for_status(resp)
+            data = resp.json()
+        if not isinstance(data, dict):
+            raise ValueError("Invalid upstream image edit response: expected JSON object")
+        return self._parse_media(data, fallback_mime="image/png")
+
+
+class VisionModelLoadRequest(BaseModel):
+    """Request body for loading a local vision generation model into memory."""
+
+    model_id: Optional[str] = Field(
+        default=None,
+        description="Vision model id or local model path to load. Required unless using the `model` alias.",
+        examples=["Qwen/Qwen-Image-2512"],
+    )
+    model: Optional[str] = Field(
+        default=None,
+        description="Alias for `model_id`.",
+        examples=["Qwen/Qwen-Image-2512"],
+    )
+
+
+class ImageGenerationBody(BaseModel):
+    """OpenAI-compatible image generation request body."""
+
+    prompt: str = Field(..., description="Text prompt describing the image to generate.", examples=["A precise product photo of a red ceramic mug on a white table."])
+    model: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional vision model id. In auto mode, Hugging Face-style ids route to Diffusers, "
+            "local file paths route to stable-diffusion.cpp, and upstream proxy mode can route to "
+            "OpenAI-compatible image providers."
+        ),
+        examples=["Qwen/Qwen-Image-2512"],
+    )
+    n: Optional[int] = Field(default=1, description="Number of images to generate. Clamped to 1..10.", examples=[1])
+    size: Optional[str] = Field(default=None, description="OpenAI-style image size such as `1024x1024`. Used when width/height are omitted.", examples=["1024x1024"])
+    width: Optional[int] = Field(default=None, description="Requested image width in pixels, backend permitting.", examples=[1024])
+    height: Optional[int] = Field(default=None, description="Requested image height in pixels, backend permitting.", examples=[1024])
+    response_format: Optional[str] = Field(default="b64_json", description="Response format. Only `b64_json` is currently supported.", examples=["b64_json"])
+    negative_prompt: Optional[str] = Field(default=None, description="Optional negative prompt for backends that support it.")
+    seed: Optional[int] = Field(default=None, description="Optional deterministic seed for backends that support it.", examples=[1234])
+    steps: Optional[int] = Field(default=None, description="Optional denoising/inference step count for local generation backends.", examples=[20])
+    guidance_scale: Optional[float] = Field(default=None, description="Optional classifier-free guidance scale for local generation backends.", examples=[7.5])
+
+    class Config:
+        extra = "allow"
+
+
+def _model_payload(model: BaseModel) -> Dict[str, Any]:
+    data = model.model_dump(exclude_none=True)
+    extra = getattr(model, "model_extra", None)
+    if isinstance(extra, dict):
+        data.update(extra)
+    return data
 
 
 def _jobs_max() -> int:
@@ -623,6 +863,45 @@ def _parse_size(value: Any) -> Tuple[Optional[int], Optional[int]]:
         return None, None
 
 
+_IMAGE_GENERATION_CORE_FIELDS = {
+    "prompt",
+    "model",
+    "n",
+    "size",
+    "response_format",
+    "width",
+    "height",
+    "negative_prompt",
+    "seed",
+    "steps",
+    "guidance_scale",
+}
+
+
+def _image_generation_request_parts(payload: Dict[str, Any]) -> Tuple[Optional[int], Optional[int], Dict[str, Any]]:
+    width = _coerce_int(payload.get("width"))
+    height = _coerce_int(payload.get("height"))
+    if (width is None or height is None) and payload.get("size") is not None:
+        w2, h2 = _parse_size(payload.get("size"))
+        width = width if width is not None else w2
+        height = height if height is not None else h2
+
+    extra = {k: v for k, v in payload.items() if k not in _IMAGE_GENERATION_CORE_FIELDS}
+
+    # OpenAI-compatible image endpoints expect `size`, not backend-local
+    # `width`/`height`. Local generation backends still need width/height.
+    if _effective_backend_kind(payload.get("model")) == "openai_compatible_proxy":
+        size = payload.get("size")
+        if size is None and width is not None and height is not None:
+            size = f"{int(width)}x{int(height)}"
+        if size is not None:
+            extra.setdefault("size", str(size))
+        width = None
+        height = None
+
+    return width, height, extra
+
+
 def _coerce_int(v: Any) -> Optional[int]:
     if v is None:
         return None
@@ -680,6 +959,33 @@ def _resolve_backend(request_model: Any):
                 "api_key": _env("ABSTRACTCORE_VISION_UPSTREAM_API_KEY"),
             }
         )
+        key = (
+            "openai_compatible_proxy",
+            prevalidated["base_url"],
+            prevalidated["api_key"],
+            prevalidated["model_id"],
+            prevalidated["timeout_s"],
+            prevalidated["image_generations_path"],
+            prevalidated["image_edits_path"],
+        )
+        backend, call_lock = _get_or_create_cached_backend(
+            key,
+            lambda: _OpenAICompatibleImageProxyBackend(
+                base_url=prevalidated["base_url"],
+                api_key=prevalidated["api_key"],
+                model_id=prevalidated["model_id"],
+                timeout_s=prevalidated["timeout_s"],
+                image_generations_path=prevalidated["image_generations_path"],
+                image_edits_path=prevalidated["image_edits_path"],
+            ),
+        )
+        return (
+            backend,
+            call_lock,
+            _ProxyOptionalDependencyMissingError,
+            _ProxyImageGenerationRequest,
+            _ProxyImageEditRequest,
+        )
     elif backend_kind == "diffusers":
         model_id = _require_diffusers_model_id(request_model)
         allow_download = _env_bool("ABSTRACTCORE_VISION_ALLOW_DOWNLOAD", True)
@@ -727,29 +1033,6 @@ def _resolve_backend(request_model: Any):
     active_model_id, active_kind, active_backend, active_call_lock = _get_active_backend()
     if active_backend is not None and active_call_lock is not None and (not req_model or req_model == active_model_id):
         return active_backend, active_call_lock, OptionalDependencyMissingError, ImageGenerationRequest, ImageEditRequest
-
-    if backend_kind == "openai_compatible_proxy":
-        base_url = prevalidated["base_url"]
-        model_id = prevalidated["model_id"]
-        cfg = OpenAICompatibleBackendConfig(
-            base_url=base_url,
-            api_key=prevalidated["api_key"],
-            model_id=model_id,
-            timeout_s=prevalidated["timeout_s"],
-            image_generations_path=prevalidated["image_generations_path"],
-            image_edits_path=prevalidated["image_edits_path"],
-        )
-        key = (
-            "openai_compatible_proxy",
-            base_url,
-            prevalidated["api_key"],
-            model_id,
-            prevalidated["timeout_s"],
-            prevalidated["image_generations_path"],
-            prevalidated["image_edits_path"],
-        )
-        backend, call_lock = _get_or_create_cached_backend(key, lambda: OpenAICompatibleVisionBackend(config=cfg))
-        return backend, call_lock, OptionalDependencyMissingError, ImageGenerationRequest, ImageEditRequest
 
     if backend_kind == "diffusers":
         model_id = prevalidated["model_id"]
@@ -821,11 +1104,24 @@ def _import_registry() -> Any:
 @router.get("/vision/models")
 async def list_cached_vision_models() -> Dict[str, Any]:
     """List vision models from the AbstractVision registry that are present in local caches."""
-    VisionModelCapabilitiesRegistry = _import_registry()
-    reg = VisionModelCapabilitiesRegistry()
-
     hf_dirs = _default_hf_hub_cache_dirs()
     lms_dirs = _default_lmstudio_model_dirs()
+    try:
+        VisionModelCapabilitiesRegistry = _import_registry()
+        reg = VisionModelCapabilitiesRegistry()
+    except HTTPException as exc:
+        return {
+            "models": [],
+            "registry_available": False,
+            "registry_total": 0,
+            "cached_total": 0,
+            "active": _active_state(),
+            "cache_dirs": {
+                "huggingface": [str(p) for p in hf_dirs],
+                "lmstudio": [str(p) for p in lms_dirs],
+            },
+            "error": str(exc.detail),
+        }
 
     models: list[Dict[str, Any]] = []
     for model_id in reg.list_models():
@@ -857,6 +1153,7 @@ async def list_cached_vision_models() -> Dict[str, Any]:
     models.sort(key=lambda x: str(x.get("id") or ""))
     return {
         "models": models,
+        "registry_available": True,
         "registry_total": len(reg.list_models()),
         "cached_total": len(models),
         "active": _active_state(),
@@ -881,9 +1178,10 @@ async def unload_active_vision_model() -> Dict[str, Any]:
 
 
 @router.post("/vision/model/load")
-async def load_active_vision_model(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+async def load_active_vision_model(payload: VisionModelLoadRequest = Body(...)) -> Dict[str, Any]:
     """Unload any active model, then load the requested one into memory (best-effort)."""
-    model_id = str(payload.get("model_id") or payload.get("model") or "").strip()
+    data = _model_payload(payload)
+    model_id = str(data.get("model_id") or data.get("model") or "").strip()
     if not model_id:
         raise HTTPException(status_code=400, detail="Missing required field: model_id")
 
@@ -973,7 +1271,7 @@ async def load_active_vision_model(payload: Dict[str, Any] = Body(...)) -> Dict[
 
 
 @router.post("/images/generations")
-async def images_generations(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+async def images_generations(payload: ImageGenerationBody = Body(...)) -> Dict[str, Any]:
     """
     OpenAI-compatible image generation endpoint: POST /v1/images/generations
 
@@ -981,6 +1279,7 @@ async def images_generations(payload: Dict[str, Any] = Body(...)) -> Dict[str, A
     - Only `response_format=b64_json` is supported.
     - In `auto` mode (default), the backend is inferred per-request based on `model`.
     """
+    payload = _model_payload(payload)
     prompt = str(payload.get("prompt") or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Missing required field: prompt")
@@ -992,17 +1291,11 @@ async def images_generations(payload: Dict[str, Any] = Body(...)) -> Dict[str, A
     n = _coerce_int(payload.get("n")) or 1
     n = max(1, min(int(n), 10))
 
-    width = _coerce_int(payload.get("width"))
-    height = _coerce_int(payload.get("height"))
-    if (width is None or height is None) and payload.get("size") is not None:
-        w2, h2 = _parse_size(payload.get("size"))
-        width = width if width is not None else w2
-        height = height if height is not None else h2
-
     negative_prompt = payload.get("negative_prompt")
     steps = _coerce_int(payload.get("steps"))
     guidance_scale = _coerce_float(payload.get("guidance_scale"))
     seed = _coerce_int(payload.get("seed"))
+    width, height, extra = _image_generation_request_parts(payload)
 
     backend, call_lock, OptionalDependencyMissingError, ImageGenerationRequest, _ImageEditRequest = _resolve_backend(
         payload.get("model")
@@ -1019,24 +1312,7 @@ async def images_generations(payload: Dict[str, Any] = Body(...)) -> Dict[str, A
                 steps=steps,
                 guidance_scale=guidance_scale,
                 seed=seed,
-                extra={
-                    k: v
-                    for k, v in payload.items()
-                    if k
-                    not in {
-                        "prompt",
-                        "model",
-                        "n",
-                        "size",
-                        "response_format",
-                        "width",
-                        "height",
-                        "negative_prompt",
-                        "seed",
-                        "steps",
-                        "guidance_scale",
-                    }
-                },
+                extra=extra,
             )
             with call_lock:
                 asset = backend.generate_image(req)
@@ -1055,8 +1331,9 @@ async def images_generations(payload: Dict[str, Any] = Body(...)) -> Dict[str, A
 
 
 @router.post("/vision/jobs/images/generations")
-async def jobs_images_generations(payload: Dict[str, Any] = Body(...)) -> Dict[str, Any]:
+async def jobs_images_generations(payload: ImageGenerationBody = Body(...)) -> Dict[str, Any]:
     """Start an async image generation job with progress polling."""
+    payload = _model_payload(payload)
     prompt = str(payload.get("prompt") or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Missing required field: prompt")
@@ -1068,17 +1345,11 @@ async def jobs_images_generations(payload: Dict[str, Any] = Body(...)) -> Dict[s
     n = _coerce_int(payload.get("n")) or 1
     n = max(1, min(int(n), 10))
 
-    width = _coerce_int(payload.get("width"))
-    height = _coerce_int(payload.get("height"))
-    if (width is None or height is None) and payload.get("size") is not None:
-        w2, h2 = _parse_size(payload.get("size"))
-        width = width if width is not None else w2
-        height = height if height is not None else h2
-
     negative_prompt = payload.get("negative_prompt")
     steps = _coerce_int(payload.get("steps"))
     guidance_scale = _coerce_float(payload.get("guidance_scale"))
     seed = _coerce_int(payload.get("seed"))
+    width, height, extra = _image_generation_request_parts(payload)
 
     backend, call_lock, OptionalDependencyMissingError, ImageGenerationRequest, _ImageEditRequest = _resolve_backend(
         payload.get("model")
@@ -1122,24 +1393,7 @@ async def jobs_images_generations(payload: Dict[str, Any] = Body(...)) -> Dict[s
                     steps=steps,
                     guidance_scale=guidance_scale,
                     seed=seed,
-                    extra={
-                        k: v
-                        for k, v in payload.items()
-                        if k
-                        not in {
-                            "prompt",
-                            "model",
-                            "n",
-                            "size",
-                            "response_format",
-                            "width",
-                            "height",
-                            "negative_prompt",
-                            "seed",
-                            "steps",
-                            "guidance_scale",
-                        }
-                    },
+                    extra=extra,
                 )
 
                 offset = int(steps) * i if steps is not None else 0
@@ -1174,7 +1428,10 @@ async def jobs_images_generations(payload: Dict[str, Any] = Body(...)) -> Dict[s
 
 
 @router.get("/vision/jobs/{job_id}")
-async def get_job(job_id: str, consume: Optional[bool] = False) -> Dict[str, Any]:
+async def get_job(
+    job_id: str = FastAPIPath(..., description="Vision job id returned by `/v1/vision/jobs/images/generations` or `/v1/vision/jobs/images/edits`."),
+    consume: Optional[bool] = Query(default=False, description="When true, remove a completed job from the in-memory job store after returning it."),
+) -> Dict[str, Any]:
     """Poll a job status (optionally consume/remove it when completed)."""
     jid = str(job_id or "").strip()
     if not jid:
@@ -1201,15 +1458,17 @@ if _HAS_MULTIPART:
 
     @router.post("/vision/jobs/images/edits")
     async def jobs_images_edits(
-        prompt: str = Form(...),
-        image: UploadFile = File(...),
-        mask: Optional[UploadFile] = File(None),
-        model: Optional[str] = Form(None),
-        negative_prompt: Optional[str] = Form(None),
-        seed: Optional[str] = Form(None),
-        steps: Optional[str] = Form(None),
-        guidance_scale: Optional[str] = Form(None),
-        extra_json: Optional[str] = Form(None),
+        prompt: str = Form(..., description="Text prompt describing the desired image edit."),
+        image: UploadFile = File(..., description="Source image to edit."),
+        mask: Optional[UploadFile] = File(None, description="Optional mask image for inpainting/edit backends that support it."),
+        model: Optional[str] = Form(None, description="Optional vision model id or local model path."),
+        size: Optional[str] = Form(None, description="OpenAI-style output image size such as `1024x1024`."),
+        response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported by the server response."),
+        negative_prompt: Optional[str] = Form(None, description="Optional negative prompt for backends that support it."),
+        seed: Optional[str] = Form(None, description="Optional deterministic seed."),
+        steps: Optional[str] = Form(None, description="Optional denoising/inference step count."),
+        guidance_scale: Optional[str] = Form(None, description="Optional classifier-free guidance scale."),
+        extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters."),
     ) -> Dict[str, Any]:
         """Start an async image edit job with progress polling."""
         prompt_s = str(prompt or "").strip()
@@ -1238,6 +1497,12 @@ if _HAS_MULTIPART:
         seed_i = _coerce_int(seed)
         steps_i = _coerce_int(steps)
         guidance_f = _coerce_float(guidance_scale)
+        response_format_s = str(response_format or "b64_json").strip().lower()
+        if response_format_s not in {"b64_json"}:
+            raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
+        if size:
+            extra.setdefault("size", str(size).strip())
+        extra.setdefault("response_format", "b64_json")
 
         backend, call_lock, OptionalDependencyMissingError, _ImageGenerationRequest, ImageEditRequest = _resolve_backend(model)
         total_steps = int(steps_i) if steps_i is not None else None
@@ -1304,15 +1569,17 @@ if _HAS_MULTIPART:
 
     @router.post("/images/edits")
     async def images_edits(
-        prompt: str = Form(...),
-        image: UploadFile = File(...),
-        mask: Optional[UploadFile] = File(None),
-        model: Optional[str] = Form(None),
-        negative_prompt: Optional[str] = Form(None),
-        seed: Optional[str] = Form(None),
-        steps: Optional[str] = Form(None),
-        guidance_scale: Optional[str] = Form(None),
-        extra_json: Optional[str] = Form(None),
+        prompt: str = Form(..., description="Text prompt describing the desired image edit."),
+        image: UploadFile = File(..., description="Source image to edit."),
+        mask: Optional[UploadFile] = File(None, description="Optional mask image for inpainting/edit backends that support it."),
+        model: Optional[str] = Form(None, description="Optional vision model id or local model path."),
+        size: Optional[str] = Form(None, description="OpenAI-style output image size such as `1024x1024`."),
+        response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported by the server response."),
+        negative_prompt: Optional[str] = Form(None, description="Optional negative prompt for backends that support it."),
+        seed: Optional[str] = Form(None, description="Optional deterministic seed."),
+        steps: Optional[str] = Form(None, description="Optional denoising/inference step count."),
+        guidance_scale: Optional[str] = Form(None, description="Optional classifier-free guidance scale."),
+        extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters."),
     ) -> Dict[str, Any]:
         """
         OpenAI-compatible image edit endpoint: POST /v1/images/edits (multipart/form-data)
@@ -1341,6 +1608,13 @@ if _HAS_MULTIPART:
                 extra = dict(parsed)
             else:
                 raise HTTPException(status_code=400, detail="extra_json must be a JSON object string")
+
+        response_format_s = str(response_format or "b64_json").strip().lower()
+        if response_format_s not in {"b64_json"}:
+            raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
+        if size:
+            extra.setdefault("size", str(size).strip())
+        extra.setdefault("response_format", "b64_json")
 
         backend, call_lock, OptionalDependencyMissingError, _ImageGenerationRequest, ImageEditRequest = _resolve_backend(model)
 

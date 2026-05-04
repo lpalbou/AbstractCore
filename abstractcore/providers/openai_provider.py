@@ -6,7 +6,7 @@ import os
 import json
 import time
 import warnings
-from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING, Tuple
 
 try:
     from pydantic import BaseModel
@@ -28,6 +28,12 @@ try:
     OPENAI_AVAILABLE = True
 except ImportError:
     OPENAI_AVAILABLE = False
+
+try:
+    import httpx
+    HTTPX_AVAILABLE = True
+except ImportError:
+    HTTPX_AVAILABLE = False
 
 
 class OpenAIProvider(BaseProvider):
@@ -1089,9 +1095,37 @@ class OpenAIProvider(BaseProvider):
             client = openai.OpenAI(api_key=api_key, timeout=5.0)
             models = client.models.list()
 
-            # Extract model IDs and filter to chat models only
-            # Filter based on actual OpenAI chat completion model patterns
+            # Extract model IDs and filter to the requested model family.
+            # Default remains chat-oriented for backward compatibility, but
+            # `output_capabilities=[EMBEDDINGS]` should expose embedding models
+            # because AbstractCore Server advertises `/v1/models?output_type=embeddings`.
             available_models = [model.id for model in models.data]
+            input_capabilities = kwargs.get('input_capabilities')
+            output_capabilities = kwargs.get('output_capabilities')
+
+            output_values = {
+                str(getattr(cap, "value", cap)).strip().lower()
+                for cap in (output_capabilities or [])
+            }
+            embeddings_requested = "embeddings" in output_values
+
+            if embeddings_requested:
+                embedding_models = sorted(
+                    [
+                        model_id
+                        for model_id in available_models
+                        if "embedding" in str(model_id).lower()
+                    ],
+                    reverse=True,
+                )
+                if input_capabilities or output_capabilities:
+                    embedding_models = filter_models_by_capabilities(
+                        embedding_models,
+                        input_capabilities=input_capabilities,
+                        output_capabilities=output_capabilities,
+                    )
+                return embedding_models
+
             chat_models = []
 
             for model_id in available_models:
@@ -1110,9 +1144,6 @@ class OpenAIProvider(BaseProvider):
             chat_models = sorted(chat_models, reverse=True)  # Latest models first
 
             # Apply new capability filtering if provided
-            input_capabilities = kwargs.get('input_capabilities')
-            output_capabilities = kwargs.get('output_capabilities')
-
             if input_capabilities or output_capabilities:
                 chat_models = filter_models_by_capabilities(
                     chat_models, 
@@ -1175,3 +1206,115 @@ class OpenAIProvider(BaseProvider):
             }
         except Exception as e:
             raise ProviderAPIError(f"OpenAI embedding error: {str(e)}")
+
+    # ------------------------------------------------------------------
+    # Audio API helpers (OpenAI-compatible STT/TTS)
+    # ------------------------------------------------------------------
+
+    def _audio_base_url(self) -> str:
+        return str(self.base_url or "https://api.openai.com/v1").strip().rstrip("/")
+
+    def _raise_audio_status(self, response: "httpx.Response", *, endpoint: str) -> None:
+        if response.status_code < 400:
+            return
+        detail = response.text
+        try:
+            payload = response.json()
+            if isinstance(payload, dict):
+                err = payload.get("error")
+                if isinstance(err, dict):
+                    detail = str(err.get("message") or err.get("detail") or detail)
+                else:
+                    detail = str(payload.get("message") or payload.get("detail") or detail)
+        except Exception:
+            pass
+        raise ProviderAPIError(f"OpenAI {endpoint} error ({response.status_code}): {detail}")
+
+    def transcribe_audio(
+        self,
+        audio: bytes,
+        *,
+        filename: str = "audio.wav",
+        content_type: str = "application/octet-stream",
+        language: Optional[str] = None,
+        prompt: Optional[str] = None,
+        response_format: Optional[str] = None,
+        temperature: Optional[float] = None,
+        **kwargs: Any,
+    ) -> Tuple[bytes, str]:
+        """Transcribe audio through OpenAI's Audio API.
+
+        Returns raw response bytes and the upstream content type so HTTP callers
+        can preserve JSON, text, SRT, or VTT responses.
+        """
+        if not HTTPX_AVAILABLE:
+            raise ImportError("httpx package not installed. Install with: pip install httpx")
+
+        data: Dict[str, Any] = {"model": self.model}
+        if language:
+            data["language"] = language
+        if prompt:
+            data["prompt"] = prompt
+        if response_format:
+            data["response_format"] = response_format
+        if temperature is not None:
+            data["temperature"] = temperature
+        for key in ("timestamp_granularities", "stream"):
+            value = kwargs.get(key)
+            if value is not None:
+                data[key] = value
+
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        files = {"file": (filename, audio, content_type or "application/octet-stream")}
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.post(
+                f"{self._audio_base_url()}/audio/transcriptions",
+                headers=headers,
+                data=data,
+                files=files,
+            )
+        self._raise_audio_status(response, endpoint="audio/transcriptions")
+        return response.content, response.headers.get("content-type", "application/json")
+
+    def synthesize_speech(
+        self,
+        input_text: str,
+        *,
+        voice: str,
+        response_format: Optional[str] = None,
+        speed: Optional[float] = None,
+        instructions: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Tuple[bytes, str]:
+        """Generate speech audio through OpenAI's Audio API."""
+        if not HTTPX_AVAILABLE:
+            raise ImportError("httpx package not installed. Install with: pip install httpx")
+
+        payload: Dict[str, Any] = {
+            "model": self.model,
+            "input": input_text,
+            "voice": voice,
+        }
+        if response_format:
+            payload["response_format"] = response_format
+        if speed is not None:
+            payload["speed"] = speed
+        if instructions:
+            payload["instructions"] = instructions
+        for key in ("voice_config",):
+            value = kwargs.get(key)
+            if value is not None:
+                payload[key] = value
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.post(
+                f"{self._audio_base_url()}/audio/speech",
+                headers=headers,
+                json=payload,
+            )
+        self._raise_audio_status(response, endpoint="audio/speech")
+        return response.content, response.headers.get("content-type", "application/octet-stream")

@@ -15,7 +15,7 @@ import os
 import httpx
 import json
 import time
-from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING, Tuple
 
 try:
     from pydantic import BaseModel
@@ -1264,3 +1264,89 @@ class OpenAICompatibleProvider(BaseProvider):
         except Exception as e:
             self.logger.error(f"Failed to generate embeddings: {e}")
             raise ProviderAPIError(f"{self.PROVIDER_DISPLAY_NAME} embedding error: {str(e)}")
+
+    def transcribe_audio(
+        self,
+        audio: bytes,
+        *,
+        filename: str = "audio.wav",
+        content_type: str = "application/octet-stream",
+        language: Optional[str] = None,
+        prompt: Optional[str] = None,
+        response_format: Optional[str] = None,
+        temperature: Optional[float] = None,
+        **kwargs: Any,
+    ) -> Tuple[bytes, str]:
+        """Transcribe audio through an OpenAI-compatible `/audio/transcriptions` endpoint.
+
+        Returns raw response bytes and upstream content type so callers can
+        preserve JSON and non-JSON transcription response formats.
+        """
+        try:
+            data: Dict[str, Any] = {"model": self.model}
+            if language:
+                data["language"] = language
+            if prompt:
+                data["prompt"] = prompt
+            if response_format:
+                data["response_format"] = response_format
+            if temperature is not None:
+                data["temperature"] = temperature
+            for key in ("timestamp_granularities", "stream"):
+                value = kwargs.get(key)
+                if value is not None:
+                    data[key] = value
+
+            response = self.client.post(
+                f"{self.base_url}/audio/transcriptions",
+                data=data,
+                files={"file": (filename, audio, content_type or "application/octet-stream")},
+                headers=self._get_headers(),
+            )
+            self._raise_for_status(response, request_url=f"{self.base_url}/audio/transcriptions")
+            return response.content, response.headers.get("content-type", "application/json")
+        except (ModelNotFoundError, AuthenticationError, RateLimitError, InvalidRequestError, ProviderAPIError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to transcribe audio: {e}")
+            raise ProviderAPIError(f"{self.PROVIDER_DISPLAY_NAME} audio transcription error: {str(e)}")
+
+    def synthesize_speech(
+        self,
+        input_text: str,
+        *,
+        voice: str,
+        response_format: Optional[str] = None,
+        speed: Optional[float] = None,
+        instructions: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Tuple[bytes, str]:
+        """Generate speech through an OpenAI-compatible `/audio/speech` endpoint."""
+        try:
+            payload: Dict[str, Any] = {
+                "model": self.model,
+                "input": input_text,
+                "voice": voice,
+            }
+            if response_format:
+                payload["response_format"] = response_format
+            if speed is not None:
+                payload["speed"] = speed
+            if instructions:
+                payload["instructions"] = instructions
+            provider_options = kwargs.get("provider")
+            if isinstance(provider_options, dict):
+                payload["provider"] = provider_options
+
+            response = self.client.post(
+                f"{self.base_url}/audio/speech",
+                json=payload,
+                headers=self._get_headers(),
+            )
+            self._raise_for_status(response, request_url=f"{self.base_url}/audio/speech")
+            return response.content, response.headers.get("content-type", "application/octet-stream")
+        except (ModelNotFoundError, AuthenticationError, RateLimitError, InvalidRequestError, ProviderAPIError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to synthesize speech: {e}")
+            raise ProviderAPIError(f"{self.PROVIDER_DISPLAY_NAME} audio speech error: {str(e)}")
