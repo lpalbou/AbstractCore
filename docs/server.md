@@ -109,6 +109,8 @@ export ABSTRACTCORE_SERVER_PROTECT_DOCS=1
 export OLLAMA_BASE_URL="http://localhost:11434"          # (or legacy: OLLAMA_HOST)
 export LMSTUDIO_BASE_URL="http://localhost:1234/v1"
 export VLLM_BASE_URL="http://localhost:8000/v1"
+export OPENAI_COMPATIBLE_BASE_URL="http://localhost:1234/v1"
+export OPENAI_COMPATIBLE_API_KEY="your-endpoint-key"     # optional, if the endpoint requires auth
 
 # Server bind (only used by `python -m abstractcore.server.app`)
 export HOST="0.0.0.0"
@@ -987,6 +989,8 @@ OPENROUTER_API_KEY=sk-or-...
 ANTHROPIC_API_KEY=sk-ant-...
 PORTKEY_API_KEY=pk_...
 PORTKEY_CONFIG=pcfg_...
+OPENAI_COMPATIBLE_BASE_URL=http://host.docker.internal:1234/v1
+OPENAI_COMPATIBLE_API_KEY=optional
 ```
 
 Then run the image with that environment file:
@@ -1035,6 +1039,8 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
       - PORTKEY_API_KEY=${PORTKEY_API_KEY}
       - PORTKEY_CONFIG=${PORTKEY_CONFIG}
+      - OPENAI_COMPATIBLE_BASE_URL=${OPENAI_COMPATIBLE_BASE_URL}
+      - OPENAI_COMPATIBLE_API_KEY=${OPENAI_COMPATIBLE_API_KEY}
     restart: unless-stopped
 ```
 
