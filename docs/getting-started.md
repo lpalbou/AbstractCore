@@ -52,6 +52,10 @@ pip install abstractvoice   # enables llm.voice / llm.audio (TTS/STT)
 pip install abstractvision  # enables llm.vision (generative vision; typically via an OpenAI-compatible images endpoint)
 ```
 
+For `abstractvoice` 0.8.2+, the base AbstractCore plugin path can install on
+Python 3.9, but Python 3.10+ is recommended. Some optional/heavier voice
+engines are Python 3.10+ only.
+
 See: [Capabilities](capabilities.md) and [Server](server.md).
 
 ## Providers and models

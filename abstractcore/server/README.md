@@ -1008,7 +1008,7 @@ docker run -p 8000:8000 \
   -e ABSTRACTCORE_SERVER_API_KEY="acore-server-secret" \
   -e OPENAI_API_KEY="sk-..." \
   -e OPENROUTER_API_KEY="sk-or-..." \
-  ghcr.io/lpalbou/abstractcore-server:2.13.4
+  ghcr.io/lpalbou/abstractcore-server:2.13.5
 ```
 
 The release image is built from PyPI with

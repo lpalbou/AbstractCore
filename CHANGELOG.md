@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.5] - 2026-05-06
+
+### Added
+- **Local audio model alias**: `/v1/audio/speech` and `/v1/audio/transcriptions` now accept `model="local/abstractvoice"` for local `abstractvoice` plugin fallback, which makes OpenAI SDK-style clients usable without relying on an empty model string.
+
+### Documentation
+- Clarified `abstractvoice` 0.8.2 compatibility: the base AbstractCore plugin path can install on Python 3.9, while Python 3.10+ remains recommended because optional/heavier engines such as OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths.
+
 ## [2.13.4] - 2026-05-04
 
 ### Added

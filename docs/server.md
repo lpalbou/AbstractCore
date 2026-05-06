@@ -332,6 +332,9 @@ Endpoints:
 - `POST /v1/audio/transcriptions` (multipart; `file=...`)
 - `POST /v1/audio/speech` (json; `input=...`, optional `voice`, optional `format`)
 
+Local plugin fallback is enabled when `model` is omitted. OpenAI SDK-style
+clients that require a non-empty model string can use `local/abstractvoice`.
+
 Remote provider routing is enabled when `model` is supplied in `provider/model` format:
 - `openai/gpt-4o-mini-transcribe`, `openai/whisper-1`
 - `openai/gpt-4o-mini-tts`, `openai/tts-1`
@@ -354,6 +357,9 @@ pip install abstractvoice
 ```
 
 Notes:
+- `abstractvoice` 0.8.2+ can install the base plugin path on Python 3.9,
+  but Python 3.10+ is recommended. Optional/heavier engines such as OpenF5/F5-TTS,
+  Chroma, and OmniVoice are Python 3.10+ paths; AEC requires Python 3.11+.
 - `/v1/audio/transcriptions` requires `python-multipart` for form parsing (included in the server extra).
 - Uploaded audio is limited by `ABSTRACTCORE_SERVER_AUDIO_MAX_BYTES` (default: 25 MB).
 
@@ -373,6 +379,13 @@ curl -X POST http://localhost:8000/v1/audio/speech \
   -H "Content-Type: application/json" \
   -d '{"model":"openai/gpt-4o-mini-tts","input":"Hello!","voice":"alloy","response_format":"mp3"}' \
   --output hello.mp3
+
+# Local abstractvoice TTS through the OpenAI-compatible endpoint
+curl -X POST http://localhost:8000/v1/audio/speech \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"local/abstractvoice","input":"Hello!","voice":"alloy","format":"wav"}' \
+  --output hello.wav
 ```
 
 If you want to “ask a model about an audio file”, prefer one of:
@@ -977,7 +990,7 @@ vision backends) or local embedding dependencies (`sentence-transformers`).
 
 **Run:**
 ```bash
-docker pull ghcr.io/lpalbou/abstractcore-server:2.13.4
+docker pull ghcr.io/lpalbou/abstractcore-server:2.13.5
 ```
 
 For local development, keep secrets in an uncommitted `.env` file:
@@ -999,7 +1012,7 @@ Then run the image with that environment file:
 docker run --rm --name abstractcore-server \
   -p 127.0.0.1:8000:8000 \
   --env-file .env \
-  ghcr.io/lpalbou/abstractcore-server:2.13.4
+  ghcr.io/lpalbou/abstractcore-server:2.13.5
 ```
 
 `ABSTRACTCORE_SERVER_API_KEY` is the AbstractCore server auth token. Clients
@@ -1019,7 +1032,7 @@ docker run --rm --name abstractcore-server \
   -e ABSTRACTCORE_SERVER_API_KEY="$ABSTRACTCORE_SERVER_API_KEY" \
   -e OPENAI_COMPATIBLE_BASE_URL="http://host.docker.internal:1234/v1" \
   -e OPENAI_COMPATIBLE_API_KEY="$OPENAI_COMPATIBLE_API_KEY" \
-  ghcr.io/lpalbou/abstractcore-server:2.13.4
+  ghcr.io/lpalbou/abstractcore-server:2.13.5
 ```
 
 ### Docker Compose
@@ -1029,7 +1042,7 @@ version: '3.8'
 
 services:
   abstractcore:
-    image: ghcr.io/lpalbou/abstractcore-server:2.13.4
+    image: ghcr.io/lpalbou/abstractcore-server:2.13.5
     ports:
       - "8000:8000"
     environment:

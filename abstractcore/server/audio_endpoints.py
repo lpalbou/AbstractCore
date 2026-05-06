@@ -37,6 +37,10 @@ _PROVIDER_API_KEY_HEADERS = (
 )
 _PLACEHOLDER_API_KEYS = {"not-needed", "not_needed", "notneeded", "unused", "dummy", "empty", "none"}
 _SUPPORTED_REMOTE_AUDIO_PROVIDERS = {"openai", "openrouter", "portkey", "openai-compatible"}
+_LOCAL_AUDIO_MODEL_ALIASES = {
+    "local/abstractvoice",
+    "abstractvoice/default",
+}
 _DEFAULT_AUDIO_MAX_BYTES = 25 * 1024 * 1024
 
 
@@ -49,9 +53,10 @@ class AudioSpeechRequest(BaseModel):
             "Optional provider/model id for remote TTS routing, e.g. "
             "`openai/gpt-4o-mini-tts`, `openai/tts-1`, `portkey/default`, or "
             "`openai-compatible/my-tts-model`. If omitted, AbstractCore delegates "
-            "to local capability plugins such as abstractvoice."
+            "to local capability plugins such as abstractvoice. Clients that require "
+            "a model string can use `local/abstractvoice` for local plugin fallback."
         ),
-        examples=["openai/gpt-4o-mini-tts"],
+        examples=["openai/gpt-4o-mini-tts", "local/abstractvoice"],
     )
     input: Optional[str] = Field(
         default=None,
@@ -267,6 +272,11 @@ def _parse_model_string(model_string: str) -> tuple[str, str]:
     return provider, model
 
 
+def _is_local_audio_model(model_string: str) -> bool:
+    raw = str(model_string or "").strip().lower()
+    return raw in _LOCAL_AUDIO_MODEL_ALIASES
+
+
 def _create_audio_provider(provider: str, model: str, *, api_key: Optional[str] = None):
     kwargs: Dict[str, Any] = {}
     if api_key:
@@ -359,7 +369,8 @@ async def audio_transcriptions(
         description=(
             "Optional provider/model id for remote STT routing, e.g. `openai/gpt-4o-mini-transcribe`, "
             "`openai/whisper-1`, `openrouter/...`, `portkey/...`, or `openai-compatible/...`. "
-            "If omitted, AbstractCore delegates to local capability plugins such as abstractvoice."
+            "If omitted, AbstractCore delegates to local capability plugins such as abstractvoice. "
+            "Clients that require a model string can use `local/abstractvoice` for local plugin fallback."
         ),
     ),
     language: Optional[str] = Form(default=None, description="Optional input language code such as `en` or `fr`."),
@@ -377,6 +388,8 @@ async def audio_transcriptions(
 
     language = str(language).strip() if isinstance(language, str) and language.strip() else None
     model = _optional_text(model)
+    if model and _is_local_audio_model(model):
+        model = None
     if model:
         provider, model_name = _parse_model_string(model)
         provider_api_key = _provider_api_key_from_request(request)
@@ -451,6 +464,8 @@ async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)
     fmt = str(fmt).strip().lower() if isinstance(fmt, str) and fmt.strip() else None
 
     model = _optional_text(data.get("model"))
+    if model and _is_local_audio_model(model):
+        model = None
     if model:
         provider, model_name = _parse_model_string(model)
         provider_api_key = _provider_api_key_from_request(request)

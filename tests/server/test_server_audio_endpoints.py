@@ -111,6 +111,28 @@ def test_audio_endpoints_happy_path_with_stubbed_plugin(client, monkeypatch):
     assert resp_stt.json() == {"text": "transcript"}
 
 
+def test_audio_endpoints_accept_local_abstractvoice_model_alias(client, monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_fake_voice_audio_plugin_ep()]))
+    _reset_audio_core(monkeypatch)
+
+    resp_tts = client.post(
+        "/v1/audio/speech",
+        json={"model": "local/abstractvoice", "input": "hello", "format": "wav"},
+    )
+    assert resp_tts.status_code == 200
+    assert resp_tts.headers.get("content-type", "").startswith("audio/wav")
+    assert resp_tts.content == b"wav-bytes"
+
+    files = {"file": ("audio.wav", b"abc", "audio/wav")}
+    resp_stt = client.post(
+        "/v1/audio/transcriptions",
+        files=files,
+        data={"model": "local/abstractvoice", "language": "en"},
+    )
+    assert resp_stt.status_code == 200
+    assert resp_stt.json() == {"text": "transcript"}
+
+
 def test_audio_speech_routes_to_openai_when_model_is_supplied(client, monkeypatch):
     from abstractcore.providers.openai_provider import OpenAIProvider
 
