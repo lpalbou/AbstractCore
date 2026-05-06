@@ -45,8 +45,9 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Literal, Union, Iterator, Tuple, Annotated
 from enum import Enum
 from fastapi import FastAPI, HTTPException, Request, Query, Body, Path as FastAPIPath
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_oauth2_redirect_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError
@@ -398,12 +399,144 @@ app = FastAPI(
         "for protected API calls."
     ),
     version=__version__,
+    docs_url=None,
+    redoc_url=None,
     swagger_ui_parameters={
         "persistAuthorization": True,
         "displayRequestDuration": True,
         "tryItOutEnabled": True,
     },
 )
+
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui_html() -> HTMLResponse:
+    """Serve Swagger UI with a small media-preview fix for binary audio POSTs."""
+
+    return HTMLResponse(
+        """
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link type="text/css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+<link rel="shortcut icon" href="https://fastapi.tiangolo.com/img/favicon.png">
+<title>AbstractCore Server - Swagger UI</title>
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>
+window.__abstractcoreLatestAudioPreviewUrl = null;
+
+function abstractcoreHeader(response, name) {
+  const headers = response && response.headers ? response.headers : {};
+  return headers[name] || headers[name.toLowerCase()] || headers[name.toUpperCase()] || "";
+}
+
+function abstractcoreBytesFromString(value) {
+  const bytes = new Uint8Array(value.length);
+  for (let index = 0; index < value.length; index += 1) {
+    bytes[index] = value.charCodeAt(index) & 255;
+  }
+  return bytes;
+}
+
+function abstractcoreBlobFromResponse(response, contentType) {
+  const data = response ? response.data : null;
+  if (data instanceof Blob) {
+    return data;
+  }
+  if (data instanceof ArrayBuffer) {
+    return new Blob([data], { type: contentType });
+  }
+  if (data && data.buffer instanceof ArrayBuffer) {
+    return new Blob([data], { type: contentType });
+  }
+  if (typeof data === "string" && data.length > 0) {
+    return new Blob([abstractcoreBytesFromString(data)], { type: contentType });
+  }
+  return null;
+}
+
+function abstractcorePatchAudioPlayers() {
+  const previewUrl = window.__abstractcoreLatestAudioPreviewUrl;
+  if (!previewUrl) {
+    return;
+  }
+  document.querySelectorAll("audio").forEach((audio) => {
+    const current = audio.getAttribute("src") || "";
+    if (current.includes("/v1/audio/speech") || current === "" || current === window.location.href) {
+      if (audio.src !== previewUrl) {
+        audio.src = previewUrl;
+        audio.load();
+      }
+    }
+  });
+}
+
+const ui = SwaggerUIBundle({
+  url: "/openapi.json",
+  dom_id: "#swagger-ui",
+  layout: "BaseLayout",
+  deepLinking: true,
+  showExtensions: true,
+  showCommonExtensions: true,
+  persistAuthorization: true,
+  displayRequestDuration: true,
+  tryItOutEnabled: true,
+  oauth2RedirectUrl: window.location.origin + "/docs/oauth2-redirect",
+  responseInterceptor: (response) => {
+    const contentType = String(abstractcoreHeader(response, "content-type")).split(";")[0].trim().toLowerCase();
+    if (contentType.startsWith("audio/")) {
+      const blob = abstractcoreBlobFromResponse(response, contentType);
+      if (blob && blob.size > 0) {
+        if (window.__abstractcoreLatestAudioPreviewUrl) {
+          URL.revokeObjectURL(window.__abstractcoreLatestAudioPreviewUrl);
+        }
+        const previewUrl = URL.createObjectURL(blob);
+        window.__abstractcoreLatestAudioPreviewUrl = previewUrl;
+        response.url = previewUrl;
+        response.text = previewUrl;
+        response.obj = previewUrl;
+        window.setTimeout(abstractcorePatchAudioPlayers, 0);
+        window.setTimeout(abstractcorePatchAudioPlayers, 100);
+        window.setTimeout(abstractcorePatchAudioPlayers, 500);
+      }
+    }
+    return response;
+  },
+  presets: [
+    SwaggerUIBundle.presets.apis,
+    SwaggerUIBundle.SwaggerUIStandalonePreset
+  ],
+});
+
+const abstractcoreSwaggerRoot = document.getElementById("swagger-ui");
+if (abstractcoreSwaggerRoot) {
+  const abstractcoreObserver = new MutationObserver(abstractcorePatchAudioPlayers);
+  abstractcoreObserver.observe(abstractcoreSwaggerRoot, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: ["src"]
+  });
+}
+</script>
+</body>
+</html>
+        """
+    )
+
+
+@app.get("/docs/oauth2-redirect", include_in_schema=False)
+async def swagger_ui_redirect() -> HTMLResponse:
+    return get_swagger_ui_oauth2_redirect_html()
+
+
+@app.get("/redoc", include_in_schema=False)
+async def redoc_html() -> HTMLResponse:
+    return get_redoc_html(openapi_url="/openapi.json", title=f"{app.title} - ReDoc")
 
 
 def _custom_openapi() -> Dict[str, Any]:
@@ -477,7 +610,7 @@ def _custom_openapi() -> Dict[str, Any]:
             "input": "Hello from AbstractCore.",
             "text": None,
             "voice": "coral",
-            "response_format": "mp3",
+            "response_format": "wav",
             "format": None,
             "speed": 1.0,
             "instructions": "Speak clearly and calmly.",
@@ -568,7 +701,7 @@ def _custom_openapi() -> Dict[str, Any]:
             "input": "Hello from AbstractCore.",
             "text": None,
             "voice": "coral",
-            "response_format": "mp3",
+            "response_format": "wav",
             "format": None,
             "speed": 1.0,
             "instructions": "Speak clearly and calmly.",

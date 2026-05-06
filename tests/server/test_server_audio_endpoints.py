@@ -103,6 +103,8 @@ def test_audio_endpoints_happy_path_with_stubbed_plugin(client, monkeypatch):
     resp_tts = client.post("/v1/audio/speech", json={"input": "hello", "format": "wav"})
     assert resp_tts.status_code == 200
     assert resp_tts.headers.get("content-type", "").startswith("audio/wav")
+    assert resp_tts.headers.get("content-disposition") == 'inline; filename="abstractcore-speech.wav"'
+    assert resp_tts.headers.get("x-content-type-options") == "nosniff"
     assert resp_tts.content == b"wav-bytes"
 
     files = {"file": ("audio.wav", b"abc", "audio/wav")}
@@ -163,6 +165,7 @@ def test_audio_speech_routes_to_openai_when_model_is_supplied(client, monkeypatc
 
     assert resp.status_code == 200
     assert resp.headers.get("content-type", "").startswith("audio/mpeg")
+    assert resp.headers.get("content-disposition") == 'inline; filename="abstractcore-speech.mp3"'
     assert resp.content == b"mp3-bytes"
     assert captured["init"] == {"model": "gpt-4o-mini-tts", "api_key": "sk-provider-key"}
     assert captured["speech"]["input_text"] == "hello"

@@ -37,8 +37,9 @@ def test_audio_speech_documents_binary_audio_response():
     response = schema["paths"]["/v1/audio/speech"]["post"]["responses"]["200"]
     content = response["content"]
 
-    assert "audio/mpeg" in content
     assert "audio/wav" in content
+    assert "audio/mpeg" in content
+    assert list(content)[0] == "audio/wav"
     assert content["audio/mpeg"]["schema"] == {"type": "string", "format": "binary"}
 
 
@@ -84,6 +85,7 @@ def test_media_swagger_examples_are_complete_and_executable_defaults():
         "base_url",
     }
     assert speech_example["voice"] == "coral"
+    assert speech_example["response_format"] == "wav"
     assert speech_example["base_url"] is None
     assert speech_example["format"] is None
 

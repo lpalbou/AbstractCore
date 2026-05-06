@@ -573,6 +573,14 @@ Notes:
 | `provider` | no | Optional provider-routing options forwarded to compatible gateways. |
 | `base_url` | no | Endpoint override for local/gateway routing. Prefer this with `openai-compatible/...`; if set with `openai/...`, the request is sent to that URL instead of api.openai.com. Loopback is allowed by default, non-loopback requires allowlist. |
 
+Swagger UI can execute `/v1/audio/speech`. AbstractCore serves a small custom
+Swagger wrapper that converts authenticated binary audio `POST` responses into
+browser `blob:` URLs before Swagger renders the player. The example uses
+`response_format="wav"` because WAV has explicit duration metadata and is the
+most reliable inline preview format. If a browser still cannot play the inline
+preview, use the response download or a curl `--output` command; the endpoint
+returns normal `audio/*` bytes and includes a filename in `Content-Disposition`.
+
 `POST /v1/voice/clone` multipart parameters:
 
 | Field | Required | Notes |
@@ -613,8 +621,8 @@ curl -X POST http://localhost:8000/v1/audio/transcriptions \
 curl -X POST http://localhost:8000/v1/audio/speech \
   -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"openai/gpt-4o-mini-tts","input":"Hello!","voice":"coral","response_format":"mp3"}' \
-  --output hello.mp3
+  -d '{"model":"openai/gpt-4o-mini-tts","input":"Hello!","voice":"coral","response_format":"wav"}' \
+  --output hello.wav
 
 # Local abstractvoice TTS through the OpenAI-compatible endpoint
 curl -X POST http://localhost:8000/v1/audio/speech \

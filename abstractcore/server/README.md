@@ -363,6 +363,13 @@ when sent together are shown as `null`; the server drops nulls before routing.
 Use `base_url` only when you intentionally want to target a local/gateway
 OpenAI-compatible endpoint instead of the provider's default API host.
 
+For `/v1/audio/speech`, AbstractCore's Swagger page converts authenticated
+binary audio `POST` responses into browser `blob:` URLs before Swagger renders
+the player. The example requests `wav` because browser players handle WAV
+duration metadata more reliably than MP3 in raw binary previews. If the embedded
+player still shows `0:00`, use the response download or save the same request
+with curl; the endpoint still returned normal audio bytes.
+
 **Basic Text Chat**:
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \

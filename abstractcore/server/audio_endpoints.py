@@ -59,7 +59,7 @@ class AudioSpeechRequest(BaseModel):
                     "input": "Hello from AbstractCore.",
                     "text": None,
                     "voice": "coral",
-                    "response_format": "mp3",
+                    "response_format": "wav",
                     "format": None,
                     "speed": 1.0,
                     "instructions": "Speak clearly and calmly.",
@@ -569,6 +569,28 @@ async def audio_translations(
 _AUDIO_BINARY_RESPONSE = {"schema": {"type": "string", "format": "binary"}}
 
 
+def _audio_response(content: bytes, *, media_type: str, filename_stem: str = "abstractcore-speech") -> Response:
+    normalized_media_type = str(media_type or "application/octet-stream").split(";", 1)[0]
+    extension = {
+        "audio/mpeg": "mp3",
+        "audio/mp3": "mp3",
+        "audio/wav": "wav",
+        "audio/x-wav": "wav",
+        "audio/opus": "opus",
+        "audio/aac": "aac",
+        "audio/flac": "flac",
+        "audio/pcm": "pcm",
+    }.get(normalized_media_type, "bin")
+    return Response(
+        content=bytes(content),
+        media_type=normalized_media_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{filename_stem}.{extension}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
 @router.post(
     "/audio/speech",
     response_class=Response,
@@ -576,8 +598,8 @@ _AUDIO_BINARY_RESPONSE = {"schema": {"type": "string", "format": "binary"}}
         200: {
             "description": "Generated audio bytes.",
             "content": {
-                "audio/mpeg": _AUDIO_BINARY_RESPONSE,
                 "audio/wav": _AUDIO_BINARY_RESPONSE,
+                "audio/mpeg": _AUDIO_BINARY_RESPONSE,
                 "audio/opus": _AUDIO_BINARY_RESPONSE,
                 "audio/aac": _AUDIO_BINARY_RESPONSE,
                 "audio/flac": _AUDIO_BINARY_RESPONSE,
@@ -629,7 +651,7 @@ async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)
             )
         except Exception as e:
             raise HTTPException(status_code=_provider_exception_status(e), detail=f"Audio synthesis failed: {e}") from e
-        return Response(content=content, media_type=str(content_type or "application/octet-stream").split(";", 1)[0])
+        return _audio_response(content, media_type=str(content_type or "application/octet-stream"))
 
     fmt = fmt or "wav"
 
@@ -647,7 +669,7 @@ async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)
             detail="TTS backend returned an unexpected type (expected raw bytes).",
         )
 
-    return Response(content=bytes(audio), media_type=f"audio/{fmt}")
+    return _audio_response(bytes(audio), media_type=f"audio/{fmt}")
 
 
 @router.post("/voice/clone")

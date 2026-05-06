@@ -72,6 +72,8 @@ def test_swagger_docs_are_usable_with_server_auth_enabled(monkeypatch) -> None:
     docs = client.get("/docs")
     assert docs.status_code == 200
     assert "SwaggerUIBundle" in docs.text
+    assert "responseInterceptor" in docs.text
+    assert "__abstractcoreLatestAudioPreviewUrl" in docs.text
 
     schema = client.get("/openapi.json")
     assert schema.status_code == 200

@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.13.6] - 2026-05-06
+## [2.13.6] - 2026-05-07
 
 ### Added
 - **Provider/model image routing for local and remote vision**: `/v1/images/generations` and `/v1/images/edits` use provider/model ids for explicit routing. Local models use `diffusers/default`, `diffusers/<huggingface-repo>`, or `sdcpp/default`; remote OpenAI-compatible image endpoints use `openai-compatible/<model>` with a configured base URL. AbstractCore no longer hardcodes a local image model as its default.
@@ -24,6 +24,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Plugin compatibility floors**: optional vision extras now require `abstractvision>=0.2.6`, and optional voice/audio extras require `abstractvoice>=0.8.5`. Server-local generation, direct `llm.vision` plugin calls, local/remote audio fallback, and voice-clone routing were rechecked against those latest plugin releases.
 
 ### Fixed
+- **Swagger TTS preview reliability**: `/docs` now patches Swagger's audio preview for authenticated binary `POST` responses by converting generated audio to a browser `blob:` URL; `/v1/audio/speech` examples now prefer WAV and audio responses include inline filename headers, while preserving MP3 and other formats for API clients.
 - **Strict image upstream compatibility**: OpenAI-compatible image proxy requests no longer forward local-only top-level fields such as `seed`, `steps`, `guidance_scale`, or `negative_prompt` by default; custom upstreams can still receive those fields through `extra` / `extra_json`.
 - **Swagger audio response docs**: `/v1/audio/speech` now advertises binary `audio/*` responses in OpenAPI instead of documenting the successful response as JSON.
 - **Swagger media examples and error docs**: OpenAPI now provides complete executable examples for image, audio, voice-clone, vision-job, prompt-cache, and model-load request bodies, and documents standard AbstractCore error responses so Swagger no longer labels common 4xx/5xx responses as undocumented.
