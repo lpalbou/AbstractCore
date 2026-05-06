@@ -93,7 +93,7 @@ Configure defaults (optional):
 ```bash
 abstractcore --config
 abstractcore --set-vision-provider lmstudio qwen/qwen3-vl-4b
-abstractcore --set-audio-strategy auto            # requires: pip install abstractvoice
+abstractcore --set-audio-strategy auto            # requires: pip install "abstractcore[voice]"
 abstractcore --set-video-strategy auto            # frames fallback requires ffmpeg
 ```
 

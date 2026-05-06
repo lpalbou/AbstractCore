@@ -428,6 +428,287 @@ def _custom_openapi() -> Dict[str, Any]:
             "X-AbstractCore-Provider-API-Key header."
         ),
     }
+    schemas = components.setdefault("schemas", {})
+    schemas.setdefault(
+        "AbstractCoreError",
+        {
+            "type": "object",
+            "required": ["error"],
+            "properties": {
+                "error": {
+                    "type": "object",
+                    "required": ["message", "type"],
+                    "properties": {
+                        "message": {"type": "string", "description": "Human-readable error message."},
+                        "type": {"type": "string", "description": "Stable error category such as `authentication_error`, `invalid_request_error`, or `http_error`."},
+                        "code": {"type": "string", "nullable": True, "description": "Optional provider/server error code."},
+                    },
+                }
+            },
+            "examples": [
+                {
+                    "error": {
+                        "message": "Invalid server Authorization bearer token",
+                        "type": "authentication_error",
+                    }
+                }
+            ],
+        },
+    )
+
+    def _component_examples(name: str, example: Dict[str, Any]) -> None:
+        comp = schemas.get(name)
+        if isinstance(comp, dict):
+            comp["examples"] = [example]
+
+    def _request_example(path: str, method: str, content_type: str, name: str, summary: str, value: Dict[str, Any]) -> None:
+        operation = schema.get("paths", {}).get(path, {}).get(method.lower())
+        if not isinstance(operation, dict):
+            return
+        content = operation.get("requestBody", {}).get("content", {})
+        media = content.get(content_type)
+        if isinstance(media, dict):
+            media["examples"] = {name: {"summary": summary, "value": value}}
+
+    _component_examples(
+        "AudioSpeechRequest",
+        {
+            "model": "openai/gpt-4o-mini-tts",
+            "input": "Hello from AbstractCore.",
+            "text": None,
+            "voice": "coral",
+            "response_format": "mp3",
+            "format": None,
+            "speed": 1.0,
+            "instructions": "Speak clearly and calmly.",
+            "provider": {},
+            "base_url": None,
+        },
+    )
+    _component_examples(
+        "AudioMusicRequest",
+        {
+            "prompt": "A short calm piano loop.",
+            "input": None,
+            "text": None,
+            "lyrics": None,
+            "response_format": "wav",
+            "format": None,
+        },
+    )
+    image_generation_example = {
+        "model": "openai-compatible/gpt-image-1",
+        "prompt": "A precise product photo of a red ceramic mug on a white table.",
+        "n": 1,
+        "width": 1024,
+        "height": 1024,
+        "response_format": "b64_json",
+        "negative_prompt": None,
+        "seed": None,
+        "steps": None,
+        "guidance_scale": None,
+        "quality": "low",
+        "style": None,
+        "user": "swagger-user",
+        "background": "auto",
+        "output_format": "png",
+        "output_compression": None,
+        "moderation": "auto",
+        "extra": {},
+    }
+    _component_examples("ImageGenerationBody", image_generation_example)
+    _component_examples(
+        "PromptCacheSetProxyRequest",
+        {"base_url": "http://localhost:8001/v1", "api_key": None, "key": "project-default", "make_default": True, "ttl_s": 3600},
+    )
+    _component_examples(
+        "PromptCacheUpdateProxyRequest",
+        {
+            "base_url": "http://localhost:8001/v1",
+            "api_key": None,
+            "key": "project-default",
+            "prompt": "You are a helpful assistant.",
+            "messages": None,
+            "system_prompt": None,
+            "tools": None,
+            "add_generation_prompt": False,
+            "ttl_s": 3600,
+        },
+    )
+    _component_examples(
+        "PromptCacheForkProxyRequest",
+        {"base_url": "http://localhost:8001/v1", "api_key": None, "from_key": "project-default", "to_key": "project-branch", "make_default": False, "ttl_s": 3600},
+    )
+    _component_examples(
+        "PromptCacheClearProxyRequest",
+        {"base_url": "http://localhost:8001/v1", "api_key": None, "key": "project-default"},
+    )
+    _component_examples(
+        "PromptCachePrepareModulesProxyRequest",
+        {
+            "base_url": "http://localhost:8001/v1",
+            "api_key": None,
+            "namespace": "abstractcore.tools",
+            "modules": [{"name": "calculator", "version": "1.0"}],
+            "make_default": False,
+            "ttl_s": 3600,
+            "version": 1,
+        },
+    )
+    _component_examples("VisionModelLoadRequest", {"model_id": "Qwen/Qwen-Image-2512", "model": None})
+
+    _request_example(
+        "/v1/audio/speech",
+        "post",
+        "application/json",
+        "remote_openai",
+        "Remote OpenAI speech",
+        {
+            "model": "openai/gpt-4o-mini-tts",
+            "input": "Hello from AbstractCore.",
+            "text": None,
+            "voice": "coral",
+            "response_format": "mp3",
+            "format": None,
+            "speed": 1.0,
+            "instructions": "Speak clearly and calmly.",
+            "provider": {},
+            "base_url": None,
+        },
+    )
+    _request_example(
+        "/v1/audio/music",
+        "post",
+        "application/json",
+        "local_plugin",
+        "Local music plugin",
+        {
+            "prompt": "A short calm piano loop.",
+            "input": None,
+            "text": None,
+            "lyrics": None,
+            "response_format": "wav",
+            "format": None,
+        },
+    )
+    _request_example(
+        "/v1/audio/transcriptions",
+        "post",
+        "multipart/form-data",
+        "remote_openai",
+        "Remote OpenAI transcription",
+        {
+            "file": "<upload audio.mp3>",
+            "model": "openai/gpt-4o-mini-transcribe",
+            "language": "en",
+            "prompt": "Technical discussion about AbstractCore endpoints.",
+            "response_format": "json",
+            "temperature": 0.0,
+            "format": None,
+            "base_url": None,
+        },
+    )
+    _request_example("/v1/images/generations", "post", "application/json", "remote_openai_compatible", "Remote OpenAI-compatible image generation", image_generation_example)
+    _request_example("/v1/vision/jobs/images/generations", "post", "application/json", "async_image_generation", "Async image generation job", image_generation_example)
+    _request_example(
+        "/v1/audio/translations",
+        "post",
+        "multipart/form-data",
+        "not_implemented",
+        "Compatibility placeholder",
+        {"file": "<upload audio.mp3>", "model": "openai/whisper-1"},
+    )
+    image_edit_example = {
+        "prompt": "Make the mug blue and keep the white background.",
+        "image": "<upload source.png>",
+        "mask": None,
+        "model": "openai-compatible/gpt-image-1",
+        "size": "1024x1024",
+        "response_format": "b64_json",
+        "negative_prompt": None,
+        "seed": None,
+        "steps": None,
+        "guidance_scale": None,
+        "extra_json": '{"quality":"low","background":"auto","output_format":"png"}',
+    }
+    _request_example("/v1/images/edits", "post", "multipart/form-data", "remote_openai_compatible", "Remote OpenAI-compatible image edit", image_edit_example)
+    _request_example("/v1/vision/jobs/images/edits", "post", "multipart/form-data", "async_image_edit", "Async image edit job", image_edit_example)
+    _request_example(
+        "/v1/voice/clone",
+        "post",
+        "multipart/form-data",
+        "compatible_clone_server",
+        "AbstractVoice-compatible clone server",
+        {
+            "file": "<upload reference.wav>",
+            "model": "openai-compatible/default",
+            "name": "my_voice",
+            "reference_text": "Hello from AbstractCore voice cloning.",
+            "validate": True,
+            "base_url": "http://127.0.0.1:5000/v1",
+            "clone_path": "/voice/clone",
+            "file_field": "file",
+            "consent": None,
+        },
+    )
+    _request_example("/v1/vision/model/load", "post", "application/json", "load_local_model", "Load local vision model", {"model_id": "Qwen/Qwen-Image-2512", "model": None})
+    _request_example("/acore/prompt_cache/set", "post", "application/json", "set_cache_key", "Set prompt cache key", {"base_url": "http://localhost:8001/v1", "api_key": None, "key": "project-default", "make_default": True, "ttl_s": 3600})
+    _request_example(
+        "/acore/prompt_cache/update",
+        "post",
+        "application/json",
+        "update_cache_key",
+        "Update prompt cache",
+        {
+            "base_url": "http://localhost:8001/v1",
+            "api_key": None,
+            "key": "project-default",
+            "prompt": "You are a helpful assistant.",
+            "messages": None,
+            "system_prompt": None,
+            "tools": None,
+            "add_generation_prompt": False,
+            "ttl_s": 3600,
+        },
+    )
+    _request_example("/acore/prompt_cache/fork", "post", "application/json", "fork_cache_key", "Fork prompt cache", {"base_url": "http://localhost:8001/v1", "api_key": None, "from_key": "project-default", "to_key": "project-branch", "make_default": False, "ttl_s": 3600})
+    _request_example("/acore/prompt_cache/clear", "post", "application/json", "clear_cache_key", "Clear prompt cache", {"base_url": "http://localhost:8001/v1", "api_key": None, "key": "project-default"})
+    _request_example(
+        "/acore/prompt_cache/prepare_modules",
+        "post",
+        "application/json",
+        "prepare_modules",
+        "Prepare module cache",
+        {
+            "base_url": "http://localhost:8001/v1",
+            "api_key": None,
+            "namespace": "abstractcore.tools",
+            "modules": [{"name": "calculator", "version": "1.0"}],
+            "make_default": False,
+            "ttl_s": 3600,
+            "version": 1,
+        },
+    )
+
+    error_response = {
+        "description": "AbstractCore error response.",
+        "content": {
+            "application/json": {
+                "schema": {"$ref": "#/components/schemas/AbstractCoreError"},
+                "examples": {
+                    "error": {
+                        "summary": "Error",
+                        "value": {
+                            "error": {
+                                "message": "Invalid server Authorization bearer token",
+                                "type": "authentication_error",
+                            }
+                        },
+                    }
+                },
+            }
+        },
+    }
 
     for path, path_item in schema.get("paths", {}).items():
         if not isinstance(path_item, dict):
@@ -438,6 +719,20 @@ def _custom_openapi() -> Dict[str, Any]:
             if not isinstance(operation, dict):
                 continue
             operation["security"] = [] if path == "/health" else [{"AbstractCoreBearerAuth": []}]
+            if path != "/health":
+                responses = operation.setdefault("responses", {})
+                for code, description in (
+                    ("400", "Bad request."),
+                    ("401", "Unauthorized."),
+                    ("413", "Payload too large."),
+                    ("500", "Internal server error."),
+                    ("501", "Capability not implemented or not configured."),
+                    ("502", "Upstream/provider error."),
+                ):
+                    if code not in responses:
+                        item = dict(error_response)
+                        item["description"] = description
+                        responses[code] = item
 
     app.openapi_schema = schema
     return app.openapi_schema
@@ -772,7 +1067,7 @@ class ChatCompletionRequest(BaseModel):
     model: str = Field(
         description="ID of the model to use. Use provider/model format (e.g., 'openai/gpt-4', 'ollama/llama3:latest', "
                     "'anthropic/claude-3-opus-20240229'). You can use the List models API to see all available models, "
-                    "or filter by type=text-generation.",
+                    "or filter by input_type=text&output_type=text.",
         example="openai/gpt-4"
     )
     messages: List[ChatMessage] = Field(
@@ -1152,7 +1447,7 @@ class EmbeddingRequest(BaseModel):
     model: str = Field(
         description="ID of the model to use. Use provider/model format (e.g., 'huggingface/sentence-transformers/all-MiniLM-L6-v2', "
                     "'ollama/granite-embedding:278m', 'lmstudio/text-embedding-all-minilm-l6-v2'). "
-                    "You can use the List models API to see all available models, or filter by type=text-embedding.",
+                    "You can use the List models API to see all available models, or filter by output_type=embeddings.",
         example="huggingface/sentence-transformers/all-MiniLM-L6-v2"
     )
     encoding_format: Optional[str] = Field(
@@ -1977,7 +2272,7 @@ def create_syntax_rewriter(target_format: SyntaxFormat, model_name: str) -> Tool
 # Endpoints
 # ============================================================================
 
-@app.get("/health")
+@app.get("/health", tags=["health"])
 async def health_check():
     """Health check endpoint."""
     return {
@@ -2117,6 +2412,7 @@ def _proxy_prompt_cache_request(
 
 @app.get(
     "/acore/prompt_cache/stats",
+    tags=["prompt-cache"],
     summary="Prompt Cache Stats",
     description="Proxy a prompt-cache stats request to an AbstractEndpoint control-plane base URL.",
 )
@@ -2138,6 +2434,7 @@ def acore_prompt_cache_stats(
 
 @app.get(
     "/acore/prompt_cache/capabilities",
+    tags=["prompt-cache"],
     summary="Prompt Cache Capabilities",
     description="Proxy a prompt-cache capability discovery request to an AbstractEndpoint control-plane base URL.",
 )
@@ -2159,6 +2456,7 @@ def acore_prompt_cache_capabilities(
 
 @app.post(
     "/acore/prompt_cache/set",
+    tags=["prompt-cache"],
     summary="Set Prompt Cache Key",
     description="Proxy a request that selects or creates a prompt-cache key on an upstream AbstractEndpoint.",
 )
@@ -2178,6 +2476,7 @@ def acore_prompt_cache_set(req: PromptCacheSetProxyRequest, http_request: Reques
 
 @app.post(
     "/acore/prompt_cache/update",
+    tags=["prompt-cache"],
     summary="Update Prompt Cache",
     description="Proxy a request that prepares prompt/messages/tools into an upstream AbstractEndpoint prompt cache.",
 )
@@ -2197,6 +2496,7 @@ def acore_prompt_cache_update(req: PromptCacheUpdateProxyRequest, http_request: 
 
 @app.post(
     "/acore/prompt_cache/fork",
+    tags=["prompt-cache"],
     summary="Fork Prompt Cache",
     description="Proxy a request that forks one upstream prompt-cache key into another key.",
 )
@@ -2216,6 +2516,7 @@ def acore_prompt_cache_fork(req: PromptCacheForkProxyRequest, http_request: Requ
 
 @app.post(
     "/acore/prompt_cache/clear",
+    tags=["prompt-cache"],
     summary="Clear Prompt Cache",
     description="Proxy a request that clears upstream prompt-cache state.",
 )
@@ -2235,6 +2536,7 @@ def acore_prompt_cache_clear(req: PromptCacheClearProxyRequest, http_request: Re
 
 @app.post(
     "/acore/prompt_cache/prepare_modules",
+    tags=["prompt-cache"],
     summary="Prepare Prompt Cache Modules",
     description="Proxy a request that prepares module/tool context in an upstream AbstractEndpoint prompt cache.",
 )
@@ -2252,7 +2554,7 @@ def acore_prompt_cache_prepare_modules(req: PromptCachePrepareModulesProxyReques
     )
 
 
-@app.get("/v1/models")
+@app.get("/v1/models", tags=["models"])
 async def list_models(
     http_request: Request,
     provider: Optional[str] = Query(
@@ -2445,7 +2747,7 @@ async def list_models(
             "data": []
         }
 
-@app.get("/providers")
+@app.get("/providers", tags=["providers"])
 async def list_providers(
     include_models: bool = Query(
         False,
@@ -2537,6 +2839,7 @@ async def list_providers(
 
 @app.post(
     "/v1/responses",
+    tags=["responses"],
     summary="Create Response",
     description=(
         "Create a model response using either the OpenAI Responses API request shape "
@@ -2885,7 +3188,7 @@ def _provider_exception_status(exc: Exception) -> int:
     return 500
 
 
-@app.post("/v1/embeddings")
+@app.post("/v1/embeddings", tags=["embeddings"])
 async def create_embeddings(request: EmbeddingRequest, http_request: Request):
     """
     Create embedding vectors representing the input text.
@@ -2906,7 +3209,7 @@ async def create_embeddings(request: EmbeddingRequest, http_request: Request):
     - `ollama/granite-embedding:278m`
     - `lmstudio/text-embedding-all-minilm-l6-v2`
 
-    **To see available embedding models:** `GET /v1/models?type=text-embedding`
+    **To see available embedding models:** `GET /v1/models?output_type=embeddings`
 
     **Returns:** A list of embedding objects containing the embedding vector and metadata.
     """
@@ -3546,7 +3849,7 @@ def validate_media_files(files: List[str]) -> None:
                 detail={"error": {"message": "Total file size exceeds 32MB limit", "type": "total_size_exceeded"}}
             )
 
-@app.post("/v1/chat/completions")
+@app.post("/v1/chat/completions", tags=["chat"])
 async def chat_completions(request: ChatCompletionRequest, http_request: Request):
     """
     Create a model response for the given chat conversation with optional media attachments.
@@ -3572,14 +3875,14 @@ async def chat_completions(request: ChatCompletionRequest, http_request: Request
     - Supported formats: Images (PNG, JPEG, GIF, WEBP), Documents (PDF, DOCX, XLSX, PPTX), Data (CSV, TSV, TXT, MD)
     - Size limits: 10MB per file, 32MB total per request
 
-    **To see available models:** `GET /v1/models?type=text-generation`
+    **To see available text models:** `GET /v1/models?input_type=text&output_type=text`
 
     **Returns:** A chat completion object, or a stream of chat completion chunks if streaming is enabled.
     """
     provider, model = parse_model_string(request.model)
     return await process_chat_completion(provider, model, request, http_request)
 
-@app.post("/{provider}/v1/chat/completions")
+@app.post("/{provider}/v1/chat/completions", tags=["chat"])
 async def provider_chat_completions(
     provider: Annotated[
         str,

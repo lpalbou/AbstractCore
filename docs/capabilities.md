@@ -16,15 +16,15 @@ AbstractCore is **production-ready LLM infrastructure**. It provides a unified, 
 
 AbstractCore stays dependency-light by default. Deterministic modality APIs (STT/TTS, generative vision) live in **optional packages** and are exposed through the capability plugin layer:
 
-- Install `abstractvoice` → `llm.voice` / `llm.audio` (TTS/STT)
-- Install `abstractvision` → `llm.vision` (text→image, image→image, …)
+- Install `abstractcore[voice]` → `llm.voice` / `llm.audio` via `abstractvoice` (TTS/STT)
+- Install `abstractcore[vision]` → `llm.vision` via `abstractvision` (text→image, image→image, …)
 
 ```bash
-pip install abstractvoice
-pip install abstractvision
+pip install "abstractcore[voice]"
+pip install "abstractcore[vision]"
 ```
 
-`abstractvoice` 0.8.2+ can install its base AbstractCore plugin path on
+`abstractvoice` 0.8.5+ can install its base AbstractCore plugin path on
 Python 3.9, but Python 3.10+ is recommended. Optional/heavier engines such as
 OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths, and AEC requires
 Python 3.11+.
@@ -38,10 +38,26 @@ print(llm.capabilities.status())  # availability + selected backend ids + instal
 # Voice/audio
 wav_bytes = llm.voice.tts("Hello", format="wav")
 text = llm.audio.transcribe("speech.wav")
+# Optional: llm.voice.clone(...) is available only when the selected voice
+# backend exposes cloning. The HTTP server also provides /v1/voice/clone.
 
-# Vision (requires vision_base_url / ABSTRACTVISION_BASE_URL)
+# Vision via AbstractVision
+# Configure AbstractVision's backend/default first, or pass backend-specific kwargs.
+png_bytes = llm.vision.t2i("a red square", width=512, height=512, steps=20)
+
+# Remote OpenAI-compatible path:
+# export ABSTRACTVISION_BACKEND=openai
+# export ABSTRACTVISION_BASE_URL=http://localhost:8000/v1
+# unset ABSTRACTVISION_MODEL_ID  # omit model and use the server's configured image default
 # png_bytes = llm.vision.t2i("a red square")
 ```
+
+Direct `llm.vision` calls are provided by `abstractvision`. For local Diffusers,
+choose an explicit model/default in AbstractVision, pre-download model weights,
+or explicitly opt in to runtime downloads with
+`ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD=1`. For server/OpenAI-compatible use,
+point `ABSTRACTVISION_BASE_URL` at an image endpoint such as AbstractCore
+Server's `/v1`.
 
 ## What AbstractCore Does Well
 

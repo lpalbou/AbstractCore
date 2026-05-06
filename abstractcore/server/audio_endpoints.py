@@ -9,6 +9,7 @@ Endpoints:
 - POST /v1/audio/transcriptions (multipart; STT)
 - POST /v1/audio/translations (multipart; not yet supported)
 - POST /v1/audio/speech (json; TTS)
+- POST /v1/voice/clone (multipart; AbstractVoice-compatible extension)
 - POST /v1/audio/music (json; text-to-music via capability plugins)
 """
 
@@ -17,11 +18,12 @@ from __future__ import annotations
 import json
 import os
 import threading
+import urllib.parse
 from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from ..capabilities.errors import CapabilityUnavailableError
 from ..exceptions import AuthenticationError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
@@ -38,6 +40,8 @@ _PROVIDER_API_KEY_HEADERS = (
 _PLACEHOLDER_API_KEYS = {"not-needed", "not_needed", "notneeded", "unused", "dummy", "empty", "none"}
 _SUPPORTED_REMOTE_AUDIO_PROVIDERS = {"openai", "openrouter", "portkey", "openai-compatible"}
 _LOCAL_AUDIO_MODEL_ALIASES = {
+    # `local/abstractvoice` is kept as a backward-compatible alias; prefer
+    # provider/model-style `abstractvoice/default` in docs and examples.
     "local/abstractvoice",
     "abstractvoice/default",
 }
@@ -47,6 +51,25 @@ _DEFAULT_AUDIO_MAX_BYTES = 25 * 1024 * 1024
 class AudioSpeechRequest(BaseModel):
     """OpenAI-compatible text-to-speech request body."""
 
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "model": "openai/gpt-4o-mini-tts",
+                    "input": "Hello from AbstractCore.",
+                    "text": None,
+                    "voice": "coral",
+                    "response_format": "mp3",
+                    "format": None,
+                    "speed": 1.0,
+                    "instructions": "Speak clearly and calmly.",
+                    "provider": {},
+                    "base_url": None,
+                }
+            ]
+        }
+    )
+
     model: Optional[str] = Field(
         default=None,
         description=(
@@ -54,9 +77,9 @@ class AudioSpeechRequest(BaseModel):
             "`openai/gpt-4o-mini-tts`, `openai/tts-1`, `portkey/default`, or "
             "`openai-compatible/my-tts-model`. If omitted, AbstractCore delegates "
             "to local capability plugins such as abstractvoice. Clients that require "
-            "a model string can use `local/abstractvoice` for local plugin fallback."
+            "a model string can use `abstractvoice/default` for local plugin fallback."
         ),
-        examples=["openai/gpt-4o-mini-tts", "local/abstractvoice"],
+        examples=["openai/gpt-4o-mini-tts", "abstractvoice/default"],
     )
     input: Optional[str] = Field(
         default=None,
@@ -70,8 +93,13 @@ class AudioSpeechRequest(BaseModel):
     )
     voice: Optional[str] = Field(
         default=None,
-        description="Voice name supported by the selected provider/backend. Defaults to `alloy` for remote OpenAI-compatible routing.",
-        examples=["alloy"],
+        description=(
+            "Voice name supported by the selected provider/backend. For OpenAI TTS, common "
+            "built-in voices include `alloy`, `ash`, `ballad`, `coral`, `echo`, `fable`, "
+            "`nova`, `onyx`, `sage`, `shimmer`, `verse`, `marin`, and `cedar`. Defaults "
+            "to `alloy` for remote OpenAI-compatible routing when omitted."
+        ),
+        examples=["coral"],
     )
     response_format: Optional[str] = Field(
         default=None,
@@ -97,10 +125,36 @@ class AudioSpeechRequest(BaseModel):
         default=None,
         description="Optional provider-routing options forwarded to OpenAI-compatible gateways such as OpenRouter.",
     )
+    base_url: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional request-level base URL override. Use this mainly with "
+            "`openai-compatible/...` or a gateway/local endpoint. If set with `openai/...`, "
+            "the request is sent to that URL instead of api.openai.com. Loopback URLs are "
+            "allowed by default; non-loopback URLs require ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+        examples=["http://127.0.0.1:5000/v1"],
+    )
 
 
 class AudioMusicRequest(BaseModel):
     """Text-to-music request body for capability-plugin backends."""
+
+    model_config = ConfigDict(
+        extra="allow",
+        json_schema_extra={
+            "examples": [
+                {
+                    "prompt": "A short calm piano loop.",
+                    "input": None,
+                    "text": None,
+                    "lyrics": None,
+                    "response_format": "wav",
+                    "format": None,
+                }
+            ]
+        },
+    )
 
     prompt: Optional[str] = Field(
         default=None,
@@ -112,9 +166,6 @@ class AudioMusicRequest(BaseModel):
     lyrics: Optional[str] = Field(default=None, description="Optional lyrics for backends that support vocal music.")
     response_format: Optional[str] = Field(default=None, description="Output format. Only `wav` is currently supported.", examples=["wav"])
     format: Optional[str] = Field(default=None, description="Alias for `response_format`. Only `wav` is currently supported.", examples=["wav"])
-
-    class Config:
-        extra = "allow"
 
 
 def _model_payload(model: BaseModel) -> Dict[str, Any]:
@@ -216,6 +267,57 @@ def _provider_api_key_env_var(provider: str) -> Optional[str]:
     return None
 
 
+def _csv_env(name: str) -> list[str]:
+    raw = os.getenv(name)
+    if not isinstance(raw, str) or not raw.strip():
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _is_loopback_host(host: str) -> bool:
+    h = str(host or "").strip().lower().strip("[]")
+    return h in {"localhost", "127.0.0.1", "::1"} or h.startswith("127.")
+
+
+def _allowlist_matches_url(url: str, allowlist: list[str]) -> bool:
+    parsed = urllib.parse.urlsplit(str(url or "").strip())
+    host = str(parsed.hostname or "").lower()
+    netloc = str(parsed.netloc or "").lower()
+    full = str(url or "").strip().lower().rstrip("/")
+    for item in allowlist:
+        raw = str(item or "").strip().lower().rstrip("/")
+        if not raw:
+            continue
+        if raw.startswith(("http://", "https://")):
+            if full.startswith(raw):
+                return True
+            continue
+        if raw == host or raw == netloc:
+            return True
+    return False
+
+
+def _validate_request_base_url(base_url: Any) -> Optional[str]:
+    if not isinstance(base_url, str) or not base_url.strip():
+        return None
+    value = base_url.strip().rstrip("/")
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="base_url must be an absolute http(s) URL.")
+    if _is_loopback_host(parsed.hostname):
+        return value
+    if _allowlist_matches_url(value, _csv_env("ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST")):
+        return value
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "Request-level base_url overrides are restricted for security. "
+            "Loopback URLs are allowed by default; set ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST "
+            "to allow additional hosts or URL prefixes."
+        ),
+    )
+
+
 def _server_has_provider_api_key(provider: str) -> bool:
     env_var = _provider_api_key_env_var(provider)
     if env_var and str(os.getenv(env_var) or "").strip():
@@ -277,10 +379,18 @@ def _is_local_audio_model(model_string: str) -> bool:
     return raw in _LOCAL_AUDIO_MODEL_ALIASES
 
 
-def _create_audio_provider(provider: str, model: str, *, api_key: Optional[str] = None):
+def _create_audio_provider(
+    provider: str,
+    model: str,
+    *,
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+):
     kwargs: Dict[str, Any] = {}
     if api_key:
         kwargs["api_key"] = api_key
+    if base_url:
+        kwargs["base_url"] = base_url
     if provider == "openai":
         from ..providers.openai_provider import OpenAIProvider
 
@@ -370,14 +480,25 @@ async def audio_transcriptions(
             "Optional provider/model id for remote STT routing, e.g. `openai/gpt-4o-mini-transcribe`, "
             "`openai/whisper-1`, `openrouter/...`, `portkey/...`, or `openai-compatible/...`. "
             "If omitted, AbstractCore delegates to local capability plugins such as abstractvoice. "
-            "Clients that require a model string can use `local/abstractvoice` for local plugin fallback."
+            "Clients that require a model string can use `abstractvoice/default` for local plugin fallback."
         ),
+        examples=["openai/gpt-4o-mini-transcribe"],
     ),
-    language: Optional[str] = Form(default=None, description="Optional input language code such as `en` or `fr`."),
-    prompt: Optional[str] = Form(default=None, description="Optional transcription prompt/context for providers that support it."),
-    response_format: Optional[str] = Form(default=None, description="Optional provider response format such as `json`, `text`, `srt`, or `vtt`."),
-    temperature: Optional[float] = Form(default=None, description="Optional sampling temperature for providers that support it."),
-    format: Optional[str] = Form(default=None, description="Optional audio format override used by providers such as OpenRouter base64 audio input."),
+    language: Optional[str] = Form(default=None, description="Optional input language code such as `en` or `fr`.", examples=["en"]),
+    prompt: Optional[str] = Form(default=None, description="Optional transcription prompt/context for providers that support it.", examples=["Technical discussion about AbstractCore endpoints."]),
+    response_format: Optional[str] = Form(default=None, description="Optional provider response format such as `json`, `text`, `srt`, or `vtt`.", examples=["json"]),
+    temperature: Optional[float] = Form(default=None, description="Optional sampling temperature for providers that support it.", examples=[0.0]),
+    format: Optional[str] = Form(default=None, description="Optional audio format override used by providers such as OpenRouter base64 audio input.", examples=["mp3"]),
+    base_url: Optional[str] = Form(
+        default=None,
+        description=(
+            "Optional request-level base URL override. Use this mainly with "
+            "`openai-compatible/...` or a gateway/local endpoint. If set with `openai/...`, "
+            "the request is sent to that URL instead of api.openai.com. Loopback URLs are "
+            "allowed by default; non-loopback URLs require ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+        examples=["http://127.0.0.1:5000/v1"],
+    ),
 ):
     """OpenAI-compatible STT endpoint (multipart form with file)."""
     try:
@@ -393,6 +514,7 @@ async def audio_transcriptions(
     if model:
         provider, model_name = _parse_model_string(model)
         provider_api_key = _provider_api_key_from_request(request)
+        base_url_s = _validate_request_base_url(base_url)
         _guard_unauthenticated_server_provider_key_use(
             provider,
             explicit_provider_key=bool(provider_api_key),
@@ -401,7 +523,7 @@ async def audio_transcriptions(
         filename = str(getattr(file, "filename", "") or "audio.wav")
         content_type = str(getattr(file, "content_type", "") or "application/octet-stream")
         try:
-            audio_provider = _create_audio_provider(provider, model_name, api_key=provider_api_key)
+            audio_provider = _create_audio_provider(provider, model_name, api_key=provider_api_key, base_url=base_url_s)
             content, upstream_content_type = audio_provider.transcribe_audio(
                 bytes(audio_bytes),
                 filename=filename,
@@ -430,7 +552,7 @@ async def audio_transcriptions(
 @router.post("/audio/translations")
 async def audio_translations(
     file: UploadFile = File(..., description="Audio file to translate. This endpoint is reserved for OpenAI compatibility."),
-    model: Optional[str] = Form(default=None, description="Requested translation model. Currently not implemented by AbstractCore Server."),
+    model: Optional[str] = Form(default=None, description="Requested translation model. Currently not implemented by AbstractCore Server.", examples=["openai/whisper-1"]),
 ):
     """OpenAI-compatible audio translations endpoint.
 
@@ -444,7 +566,27 @@ async def audio_translations(
     )
 
 
-@router.post("/audio/speech")
+_AUDIO_BINARY_RESPONSE = {"schema": {"type": "string", "format": "binary"}}
+
+
+@router.post(
+    "/audio/speech",
+    response_class=Response,
+    responses={
+        200: {
+            "description": "Generated audio bytes.",
+            "content": {
+                "audio/mpeg": _AUDIO_BINARY_RESPONSE,
+                "audio/wav": _AUDIO_BINARY_RESPONSE,
+                "audio/opus": _AUDIO_BINARY_RESPONSE,
+                "audio/aac": _AUDIO_BINARY_RESPONSE,
+                "audio/flac": _AUDIO_BINARY_RESPONSE,
+                "audio/pcm": _AUDIO_BINARY_RESPONSE,
+                "application/octet-stream": _AUDIO_BINARY_RESPONSE,
+            },
+        }
+    },
+)
 async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)):
     """OpenAI-compatible TTS endpoint (json with input text)."""
     data = _model_payload(payload)
@@ -469,13 +611,14 @@ async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)
     if model:
         provider, model_name = _parse_model_string(model)
         provider_api_key = _provider_api_key_from_request(request)
+        base_url_s = _validate_request_base_url(data.get("base_url"))
         _guard_unauthenticated_server_provider_key_use(
             provider,
             explicit_provider_key=bool(provider_api_key),
             request=request,
         )
         try:
-            audio_provider = _create_audio_provider(provider, model_name, api_key=provider_api_key)
+            audio_provider = _create_audio_provider(provider, model_name, api_key=provider_api_key, base_url=base_url_s)
             content, content_type = audio_provider.synthesize_speech(
                 str(input_text),
                 voice=voice or "alloy",
@@ -505,6 +648,125 @@ async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)
         )
 
     return Response(content=bytes(audio), media_type=f"audio/{fmt}")
+
+
+@router.post("/voice/clone")
+async def voice_clone(
+    request: Request,
+    file: UploadFile = File(..., description="Reference voice audio file, commonly WAV/FLAC/OGG/MP3/M4A/WEBM."),
+    model: Optional[str] = Form(
+        default=None,
+        description=(
+            "Optional provider/model id for remote voice-clone routing. Use "
+            "`openai-compatible/default` for an AbstractVoice-compatible server, or "
+            "`openai/default` for OpenAI custom voice creation where available. "
+            "If omitted, AbstractCore delegates to the local abstractvoice plugin path."
+        ),
+        examples=["openai-compatible/default"],
+    ),
+    name: Optional[str] = Form(default=None, description="Friendly cloned voice name.", examples=["my_voice"]),
+    reference_text: Optional[str] = Form(default=None, description="Transcript of the reference audio when available.", examples=["Hello from AbstractCore voice cloning."]),
+    validate: Optional[bool] = Form(default=None, description="Ask compatible clone servers to validate the clone before returning.", examples=[True]),
+    base_url: Optional[str] = Form(
+        default=None,
+        description=(
+            "Optional request-level base URL for OpenAI-compatible voice endpoints. "
+            "Loopback URLs are allowed by default; non-loopback URLs require "
+            "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+        examples=["http://127.0.0.1:5000/v1"],
+    ),
+    clone_path: Optional[str] = Form(
+        default=None,
+        description=(
+            "Optional provider-specific clone path. Defaults to `/voice/clone` for "
+            "OpenAI-compatible servers and `/audio/voices` for OpenAI."
+        ),
+        examples=["/voice/clone"],
+    ),
+    file_field: Optional[str] = Form(
+        default=None,
+        description="Optional provider-specific multipart file field. Defaults to `file`; OpenAI uses `audio_sample`.",
+        examples=["file"],
+    ),
+    consent: Optional[str] = Form(default=None, description="Optional provider-specific consent id for custom voice creation.", examples=["consent_123"]),
+):
+    """AbstractVoice-compatible voice-clone endpoint.
+
+    `/v1/voice/clone` is an extension route. It mirrors AbstractVoice's
+    compatible server contract and returns the upstream/local clone JSON.
+    """
+    try:
+        audio_bytes = await file.read()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to read uploaded audio file: {e}") from e
+    _enforce_audio_size(bytes(audio_bytes))
+
+    model = _optional_text(model)
+    if model and _is_local_audio_model(model):
+        model = None
+
+    filename = str(getattr(file, "filename", "") or "reference.wav")
+    content_type = str(getattr(file, "content_type", "") or "audio/wav")
+
+    if model:
+        provider, model_name = _parse_model_string(model)
+        provider_api_key = _provider_api_key_from_request(request)
+        base_url_s = _validate_request_base_url(base_url)
+        _guard_unauthenticated_server_provider_key_use(
+            provider,
+            explicit_provider_key=bool(provider_api_key),
+            request=request,
+        )
+        try:
+            audio_provider = _create_audio_provider(provider, model_name, api_key=provider_api_key, base_url=base_url_s)
+            path = _optional_text(clone_path)
+            if path is None:
+                path = "/audio/voices" if provider == "openai" else "/voice/clone"
+            field = _optional_text(file_field)
+            if field is None:
+                field = "audio_sample" if provider == "openai" else "file"
+            out = audio_provider.clone_voice(
+                bytes(audio_bytes),
+                filename=filename,
+                content_type=content_type,
+                name=_optional_text(name),
+                reference_text=_optional_text(reference_text),
+                validate=validate,
+                clone_path=path,
+                file_field=field,
+                consent=_optional_text(consent),
+            )
+        except Exception as e:
+            raise HTTPException(status_code=_provider_exception_status(e), detail=f"Voice clone failed: {e}") from e
+        return out
+
+    try:
+        from abstractvoice.voice_manager import VoiceManager  # type: ignore
+
+        vm = VoiceManager(
+            cloning_engine=os.getenv("ABSTRACTVOICE_CLONING_ENGINE") or "f5_tts",
+            remote_base_url=os.getenv("ABSTRACTVOICE_REMOTE_BASE_URL") or None,
+            remote_api_key=os.getenv("ABSTRACTVOICE_REMOTE_API_KEY") or None,
+        )
+        if not hasattr(vm, "clone_voice_from_wav_bytes"):
+            raise RuntimeError("Installed abstractvoice does not expose clone_voice_from_wav_bytes.")
+        voice_id = vm.clone_voice_from_wav_bytes(
+            bytes(audio_bytes),
+            name=_optional_text(name),
+            reference_text=_optional_text(reference_text),
+            engine=os.getenv("ABSTRACTVOICE_CLONING_ENGINE") or None,
+        )
+        info = {}
+        try:
+            info = dict(vm.get_cloned_voice(str(voice_id)) or {})
+        except Exception:
+            info = {}
+        return {"ok": True, "id": str(voice_id), "voice_id": str(voice_id), "voice": info}
+    except ImportError as e:
+        raise HTTPException(status_code=501, detail='AbstractVoice is required for local voice cloning. Install `abstractcore[voice]`.') from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Voice clone failed: {e}") from e
 
 
 @router.post("/audio/music")

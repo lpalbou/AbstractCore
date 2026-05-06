@@ -77,7 +77,7 @@ def test_audio_speech_returns_501_when_plugin_unavailable(client, monkeypatch):
     assert resp.status_code == 501
     data = resp.json()
     assert "error" in data
-    assert "pip install abstractvoice" in data["error"]["message"]
+    assert 'pip install "abstractcore[voice]"' in data["error"]["message"]
 
 
 def test_audio_transcriptions_returns_501_when_plugin_unavailable(client, monkeypatch):
@@ -89,7 +89,7 @@ def test_audio_transcriptions_returns_501_when_plugin_unavailable(client, monkey
     assert resp.status_code == 501
     data = resp.json()
     assert "error" in data
-    assert "pip install abstractvoice" in data["error"]["message"]
+    assert 'pip install "abstractcore[voice]"' in data["error"]["message"]
 
 
 def test_audio_endpoints_happy_path_with_stubbed_plugin(client, monkeypatch):
@@ -117,7 +117,7 @@ def test_audio_endpoints_accept_local_abstractvoice_model_alias(client, monkeypa
 
     resp_tts = client.post(
         "/v1/audio/speech",
-        json={"model": "local/abstractvoice", "input": "hello", "format": "wav"},
+        json={"model": "abstractvoice/default", "input": "hello", "format": "wav"},
     )
     assert resp_tts.status_code == 200
     assert resp_tts.headers.get("content-type", "").startswith("audio/wav")
@@ -127,7 +127,7 @@ def test_audio_endpoints_accept_local_abstractvoice_model_alias(client, monkeypa
     resp_stt = client.post(
         "/v1/audio/transcriptions",
         files=files,
-        data={"model": "local/abstractvoice", "language": "en"},
+        data={"model": "abstractvoice/default", "language": "en"},
     )
     assert resp_stt.status_code == 200
     assert resp_stt.json() == {"text": "transcript"}
@@ -237,3 +237,126 @@ def test_audio_transcriptions_routes_to_openrouter_with_base64_provider_method(c
     assert captured["transcribe"]["audio"] == b"abc"
     assert captured["transcribe"]["filename"] == "speech.mp3"
     assert captured["transcribe"]["content_type"] == "audio/mpeg"
+
+
+def test_audio_speech_routes_to_openai_compatible_with_request_base_url(client, monkeypatch):
+    from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
+
+    captured = {}
+
+    def fake_init(self, model: str, **kwargs):
+        self.model = model
+        captured["init"] = {"model": model, **kwargs}
+
+    def fake_speech(self, input_text: str, **kwargs):
+        captured["speech"] = {"input_text": input_text, **kwargs}
+        return b"wav-bytes", "audio/wav"
+
+    monkeypatch.setattr(OpenAICompatibleProvider, "__init__", fake_init)
+    monkeypatch.setattr(OpenAICompatibleProvider, "synthesize_speech", fake_speech)
+
+    resp = client.post(
+        "/v1/audio/speech",
+        headers={"Authorization": "Bearer sk-provider-key"},
+        json={
+            "model": "openai-compatible/default",
+            "base_url": "http://127.0.0.1:5000/v1",
+            "input": "hello",
+            "voice": "speaker-1",
+            "response_format": "wav",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.content == b"wav-bytes"
+    assert captured["init"] == {
+        "model": "default",
+        "api_key": "sk-provider-key",
+        "base_url": "http://127.0.0.1:5000/v1",
+    }
+    assert captured["speech"]["input_text"] == "hello"
+    assert captured["speech"]["voice"] == "speaker-1"
+
+
+def test_audio_transcriptions_routes_to_openai_compatible_with_request_base_url(client, monkeypatch):
+    from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
+
+    captured = {}
+
+    def fake_init(self, model: str, **kwargs):
+        self.model = model
+        captured["init"] = {"model": model, **kwargs}
+
+    def fake_transcribe(self, audio: bytes, **kwargs):
+        captured["transcribe"] = {"audio": audio, **kwargs}
+        return b'{"text":"local endpoint transcript"}', "application/json"
+
+    monkeypatch.setattr(OpenAICompatibleProvider, "__init__", fake_init)
+    monkeypatch.setattr(OpenAICompatibleProvider, "transcribe_audio", fake_transcribe)
+
+    resp = client.post(
+        "/v1/audio/transcriptions",
+        headers={"Authorization": "Bearer sk-provider-key"},
+        files={"file": ("speech.wav", b"abc", "audio/wav")},
+        data={
+            "model": "openai-compatible/default",
+            "base_url": "http://127.0.0.1:5000/v1",
+            "language": "en",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"text": "local endpoint transcript"}
+    assert captured["init"] == {
+        "model": "default",
+        "api_key": "sk-provider-key",
+        "base_url": "http://127.0.0.1:5000/v1",
+    }
+    assert captured["transcribe"]["audio"] == b"abc"
+    assert captured["transcribe"]["filename"] == "speech.wav"
+
+
+def test_voice_clone_routes_to_openai_compatible_endpoint(client, monkeypatch):
+    from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
+
+    captured = {}
+
+    def fake_init(self, model: str, **kwargs):
+        self.model = model
+        captured["init"] = {"model": model, **kwargs}
+
+    def fake_clone(self, audio: bytes, **kwargs):
+        captured["clone"] = {"audio": audio, **kwargs}
+        return {"ok": True, "voice_id": "voice-123"}
+
+    monkeypatch.setattr(OpenAICompatibleProvider, "__init__", fake_init)
+    monkeypatch.setattr(OpenAICompatibleProvider, "clone_voice", fake_clone)
+
+    resp = client.post(
+        "/v1/voice/clone",
+        headers={"Authorization": "Bearer sk-provider-key"},
+        files={"file": ("reference.wav", b"wavref", "audio/wav")},
+        data={
+            "model": "openai-compatible/default",
+            "base_url": "http://127.0.0.1:5000/v1",
+            "name": "my_voice",
+            "reference_text": "hello there",
+            "validate": "true",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "voice_id": "voice-123"}
+    assert captured["init"] == {
+        "model": "default",
+        "api_key": "sk-provider-key",
+        "base_url": "http://127.0.0.1:5000/v1",
+    }
+    assert captured["clone"]["audio"] == b"wavref"
+    assert captured["clone"]["filename"] == "reference.wav"
+    assert captured["clone"]["content_type"] == "audio/wav"
+    assert captured["clone"]["name"] == "my_voice"
+    assert captured["clone"]["reference_text"] == "hello there"
+    assert captured["clone"]["validate"] is True
+    assert captured["clone"]["clone_path"] == "/voice/clone"
+    assert captured["clone"]["file_field"] == "file"

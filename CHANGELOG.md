@@ -7,13 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.6] - 2026-05-06
+
+### Added
+- **Provider/model image routing for local and remote vision**: `/v1/images/generations` and `/v1/images/edits` use provider/model ids for explicit routing. Local models use `diffusers/default`, `diffusers/<huggingface-repo>`, or `sdcpp/default`; remote OpenAI-compatible image endpoints use `openai-compatible/<model>` with a configured base URL. AbstractCore no longer hardcodes a local image model as its default.
+- **AbstractVision environment compatibility**: server image endpoints now understand `ABSTRACTVISION_*` configuration aliases in addition to `ABSTRACTCORE_VISION_*`, making AbstractCore Server and direct AbstractVision plugin setups easier to share.
+- **Vision route regression coverage**: added tests for OpenAI-compatible image proxy success, image edit proxy success, provider/model local Diffusers routing, rejection of removed local/default aliases, and the packaging split between lightweight server installs and optional local vision runtimes.
+- **Voice/audio plugin extras**: added `abstractcore[voice]` and `abstractcore[audio]` as lightweight aliases for installing the compatible `abstractvoice` plugin path without making the default or server extras heavier.
+- **OpenAI-compatible voice cloning route**: `/v1/voice/clone` can forward to AbstractVoice-compatible/OpenAI-compatible voice-clone endpoints with provider/model routing and loopback-safe `base_url` overrides, while preserving local AbstractVoice fallback when configured.
+- **Server image plugin coverage**: the GHCR server image now installs `abstractcore[server,remote,media,tokens,compression,voice,vision]` so AbstractVoice and AbstractVision plugin entry points are available by default for remote/OpenAI-compatible voice and vision capability paths.
+
+### Changed
+- **Cleaner image generation contract**: omitted `model` now selects the configured AbstractVision/OpenAI-compatible image default only when the server environment provides one. Explicit image models must use provider/model routing such as `diffusers/default`, `sdcpp/default`, or `openai-compatible/<model>`. The JSON generation schema documents `width`/`height` instead of OpenAI's legacy `size`; legacy `size` is still accepted and translated for compatibility.
+- **Server endpoint documentation pass**: expanded the server docs with a complete endpoint map, parameter tables for image/audio/embedding/model-discovery routes, provider-specific chat guidance, local vision model/job helper docs, and prompt-cache control-plane docs; Swagger now groups core routes under explicit tags instead of the default bucket.
+- **Safer local vision downloads**: local Diffusers server generation is cache-only by default, matching AbstractVision 0.2.6. Set `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD=1` or `ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD=1` only when runtime model downloads are intentional.
+- **Plugin compatibility floors**: optional vision extras now require `abstractvision>=0.2.6`, and optional voice/audio extras require `abstractvoice>=0.8.5`. Server-local generation, direct `llm.vision` plugin calls, local/remote audio fallback, and voice-clone routing were rechecked against those latest plugin releases.
+
+### Fixed
+- **Strict image upstream compatibility**: OpenAI-compatible image proxy requests no longer forward local-only top-level fields such as `seed`, `steps`, `guidance_scale`, or `negative_prompt` by default; custom upstreams can still receive those fields through `extra` / `extra_json`.
+- **Swagger audio response docs**: `/v1/audio/speech` now advertises binary `audio/*` responses in OpenAPI instead of documenting the successful response as JSON.
+- **Swagger media examples and error docs**: OpenAPI now provides complete executable examples for image, audio, voice-clone, vision-job, prompt-cache, and model-load request bodies, and documents standard AbstractCore error responses so Swagger no longer labels common 4xx/5xx responses as undocumented.
+
 ## [2.13.5] - 2026-05-06
 
 ### Added
-- **Local audio model alias**: `/v1/audio/speech` and `/v1/audio/transcriptions` now accept `model="local/abstractvoice"` for local `abstractvoice` plugin fallback, which makes OpenAI SDK-style clients usable without relying on an empty model string.
+- **Local audio model alias**: `/v1/audio/speech` and `/v1/audio/transcriptions` now accept `model="abstractvoice/default"` for local `abstractvoice` plugin fallback, which makes OpenAI SDK-style clients usable without relying on an empty model string. The earlier `local/abstractvoice` spelling remains accepted as a backward-compatible alias.
 
 ### Documentation
-- Clarified `abstractvoice` 0.8.2 compatibility: the base AbstractCore plugin path can install on Python 3.9, while Python 3.10+ remains recommended because optional/heavier engines such as OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths.
+- Clarified `abstractvoice` 0.8.4 compatibility: the base AbstractCore plugin path can install on Python 3.9, while Python 3.10+ remains recommended because optional/heavier engines such as OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths.
 
 ## [2.13.4] - 2026-05-04
 

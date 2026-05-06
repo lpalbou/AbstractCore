@@ -230,9 +230,9 @@ class CapabilityRegistry:
     def _default_install_hint(self, capability: str) -> Optional[str]:
         cap = str(capability or "").strip().lower()
         if cap == "voice" or cap == "audio":
-            return "pip install abstractvoice"
+            return 'pip install "abstractcore[voice]"'
         if cap == "vision":
-            return "pip install abstractvision"
+            return 'pip install "abstractcore[vision]"'
         if cap == "music":
             return "pip install abstractmusic"
         return None
@@ -362,6 +362,22 @@ class _VoiceFacade:
     def stt(self, audio: Any, **kwargs: Any) -> Any:
         return self._registry.get_voice().stt(audio, **kwargs)
 
+    def clone(self, audio: Any, **kwargs: Any) -> Any:
+        backend = self._registry.get_voice()
+        for method_name in ("clone", "clone_voice"):
+            method = getattr(backend, method_name, None)
+            if callable(method):
+                return method(audio, **kwargs)
+        raise CapabilityUnavailableError(
+            capability="voice",
+            reason=(
+                "voice.clone is not exposed by the selected voice capability backend. "
+                "Use AbstractCore Server's /v1/voice/clone route or an AbstractVoice version/backend "
+                "that implements voice cloning."
+            ),
+            install_hint=self._registry._default_install_hint("voice"),
+        )
+
 
 class _AudioFacade:
     def __init__(self, registry: CapabilityRegistry) -> None:
@@ -394,4 +410,3 @@ class _MusicFacade:
 
     def t2m(self, prompt: str, **kwargs: Any) -> Any:
         return self._registry.get_music().t2m(prompt, **kwargs)
-

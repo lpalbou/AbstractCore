@@ -1350,3 +1350,57 @@ class OpenAICompatibleProvider(BaseProvider):
         except Exception as e:
             self.logger.error(f"Failed to synthesize speech: {e}")
             raise ProviderAPIError(f"{self.PROVIDER_DISPLAY_NAME} audio speech error: {str(e)}")
+
+    def clone_voice(
+        self,
+        audio: bytes,
+        *,
+        filename: str = "reference.wav",
+        content_type: str = "audio/wav",
+        name: Optional[str] = None,
+        reference_text: Optional[str] = None,
+        clone_path: str = "/voice/clone",
+        file_field: str = "file",
+        validate: Optional[bool] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Create a cloned voice through an OpenAI-compatible voice-clone endpoint.
+
+        Voice cloning is an AbstractVoice-compatible extension, not part of the
+        core OpenAI audio API. Compatible servers commonly expose
+        `/v1/voice/clone` and return either `id` or `voice_id`.
+        """
+        try:
+            fields: Dict[str, str] = {}
+            if name:
+                fields["name"] = str(name)
+            if reference_text:
+                fields["reference_text"] = str(reference_text)
+            if validate is not None:
+                fields["validate"] = "true" if bool(validate) else "false"
+            for key in ("consent",):
+                value = kwargs.get(key)
+                if value is not None:
+                    fields[key] = str(value)
+
+            path = str(clone_path or "/voice/clone").strip()
+            if not path.startswith("/"):
+                path = "/" + path
+            field_name = str(file_field or "file").strip() or "file"
+
+            response = self.client.post(
+                f"{self.base_url.rstrip('/')}{path}",
+                data=fields,
+                files={field_name: (filename, bytes(audio), content_type or "audio/wav")},
+                headers=self._get_headers(),
+            )
+            self._raise_for_status(response, request_url=f"{self.base_url.rstrip('/')}{path}")
+            payload = response.json()
+            if not isinstance(payload, dict):
+                raise ProviderAPIError("Voice clone response was not a JSON object")
+            return payload
+        except (ModelNotFoundError, AuthenticationError, RateLimitError, InvalidRequestError, ProviderAPIError):
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to clone voice: {e}")
+            raise ProviderAPIError(f"{self.PROVIDER_DISPLAY_NAME} voice clone error: {str(e)}")

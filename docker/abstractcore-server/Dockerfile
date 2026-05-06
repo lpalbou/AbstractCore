@@ -12,7 +12,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN addgroup --system abstractcore \
     && adduser --system --ingroup abstractcore --home /home/abstractcore abstractcore \
     && python -m pip install --upgrade pip \
-    && python -m pip install "abstractcore[server,remote,media,tokens,compression]==${ABSTRACTCORE_VERSION}"
+    && python -m pip install "abstractcore[server,remote,media,tokens,compression,voice,vision]==${ABSTRACTCORE_VERSION}"
 
 USER abstractcore
 WORKDIR /home/abstractcore

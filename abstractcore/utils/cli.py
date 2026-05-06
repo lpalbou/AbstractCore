@@ -1972,7 +1972,7 @@ class SimpleCLI:
                 elif effective_policy in {"native_only", "native", "disabled"}:
                     print(
                         "🎧 Text model - audio input is not supported (native_only). "
-                        "Use --audio-policy auto or speech_to_text (requires `pip install abstractvoice`)."
+                        'Use --audio-policy auto or speech_to_text (requires `pip install "abstractcore[voice]"`).'
                     )
                 else:
                     stt_available = False
@@ -1992,8 +1992,8 @@ class SimpleCLI:
                         )
                     else:
                         print(
-                            "🎧 Text model - speech-to-text fallback requires installing `abstractvoice`: "
-                            'pip install abstractvoice (or pass --audio-policy native_only)'
+                            "🎧 Text model - speech-to-text fallback requires installing `abstractcore[voice]`: "
+                            'pip install "abstractcore[voice]" (or pass --audio-policy native_only)'
                         )
 
         return clean_input, media_files
@@ -2542,7 +2542,7 @@ File Attachments:
   Use @filename syntax to attach files: "Analyze @image.jpg and @doc.pdf"
   Supports images, audio, PDFs, Office docs, and text files with automatic processing
   Vision models analyze images directly; text models use vision fallback (configure via `abstractcore --set-vision-provider ...`)
-  For audio attachments, use --audio-policy auto|speech_to_text (speech-to-text requires `pip install abstractvoice`)
+  For audio attachments, use --audio-policy auto|speech_to_text (speech-to-text requires `pip install "abstractcore[voice]"`)
 
 Configuration:
   Set defaults with: abstractcore --set-app-default cli <provider> <model>

@@ -13,18 +13,25 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | Endpoint | Method | Purpose | Key Parameters |
 |----------|--------|---------|----------------|
 | `/health` | GET | Server health check | - |
-| `/v1/models` | GET | List available models | `type` (optional) |
-| `/providers` | GET | List providers with metadata | - |
+| `/v1/models` | GET | List/filter available models | `provider`, `input_type`, `output_type`, `base_url` |
+| `/providers` | GET | List providers with metadata | `include_models` |
 | `/v1/chat/completions` | POST | Chat completions | `model`, `messages`, `stream` |
 | `/v1/embeddings` | POST | Generate embeddings | `model`, `input` |
 | `/v1/responses` | POST | OpenAI Responses API | `model`, `input` |
-| `/v1/images/generations` | POST | Image generation (optional) | `prompt`, `model` |
-| `/v1/images/edits` | POST | Image editing (optional) | `prompt`, `image`, `mask` |
+| `/v1/images/generations` | POST | Image generation (optional) | `prompt`, `model`, `width`, `height` |
+| `/v1/images/edits` | POST | Image editing (optional) | `prompt`, `image`, `mask`, `size` |
+| `/v1/vision/models` | GET | Cached local vision model inventory | - |
+| `/v1/vision/model` | GET | Active in-memory vision model | - |
+| `/v1/vision/model/load` | POST | Load local vision model | `model_id` / `model` |
+| `/v1/vision/model/unload` | POST | Unload active local vision model | - |
+| `/v1/vision/jobs/*` | GET/POST | Async image jobs | `job_id`, `consume`, image parameters |
 | `/v1/audio/transcriptions` | POST | Speech-to-text (optional) | `file` (multipart) |
 | `/v1/audio/translations` | POST | Audio translations (not yet supported) | - |
 | `/v1/audio/speech` | POST | Text-to-speech (optional) | `model`, `input`, `voice`, `format` |
+| `/v1/voice/clone` | POST | Voice clone/custom voice extension (optional) | `file`, `model`, `base_url`, `name` |
 | `/v1/audio/music` | POST | Text-to-music (optional) | `prompt`, `format` |
 | `/{provider}/v1/chat/completions` | POST | Provider-specific endpoint | `model` (no prefix) |
+| `/acore/prompt_cache/*` | GET/POST | Proxy AbstractEndpoint prompt-cache control plane | `base_url`, cache operation fields |
 
 ### Common Request Patterns
 
@@ -38,6 +45,7 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | **Speech-to-Text** | `/v1/audio/transcriptions` | `file` | Transcribe audio (optional) |
 | **Audio Translations** | `/v1/audio/translations` | `file` | Translate audio (not yet supported) |
 | **Text-to-Speech** | `/v1/audio/speech` | `input` | Generate audio (optional) |
+| **Voice Clone** | `/v1/voice/clone` | `file` | Create a compatible custom voice (optional) |
 | **Text-to-Music** | `/v1/audio/music` | `prompt` | Generate music/audio (optional) |
 | **Documents** | `/v1/chat/completions` | `content: [text, file_url]` | PDF/CSV processing |
 | **Tools** | `/v1/chat/completions` | `tools`, `tool_choice` | Function calling |
@@ -350,6 +358,11 @@ The docs and OpenAPI schema are public by default so the UI can load before auth
 set `ABSTRACTCORE_SERVER_PROTECT_DOCS=1` to put `/docs`, `/redoc`, and `/openapi.json`
 behind server auth too.
 
+Every request body has a Swagger example. Optional aliases that would conflict
+when sent together are shown as `null`; the server drops nulls before routing.
+Use `base_url` only when you intentionally want to target a local/gateway
+OpenAI-compatible endpoint instead of the provider's default API host.
+
 **Basic Text Chat**:
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
@@ -599,26 +612,29 @@ AbstractCore Server can optionally expose OpenAI-compatible image endpoints:
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
 
-These return `501` only if the server can't infer a backend (e.g. no `model` in the request and no relevant env vars are set).
+If `model` is omitted, the server uses its configured AbstractVision/OpenAI-compatible
+image default. AbstractCore does not hardcode a local image model default.
 
 **Backends (env vars)**:
 
 - **Default**: `auto` (picks a backend per request)
-  - If `model` looks like a GGUF file/path, uses stable-diffusion.cpp (`sdcpp`)
-  - If `model` looks like a Hugging Face id/path (e.g. `runwayml/stable-diffusion-v1-5`), uses Diffusers
-  - If `ABSTRACTCORE_VISION_UPSTREAM_BASE_URL` is set and `model` is a bare name (e.g. `dall-e-3`), uses the proxy
+  - If `model` is omitted, uses the configured AbstractVision/OpenAI-compatible image default
+  - If `model` is `diffusers/default`, uses the configured local Diffusers default (`ABSTRACTCORE_VISION_MODEL_ID` / `ABSTRACTVISION_DIFFUSERS_MODEL_ID` / `ABSTRACTVISION_MODEL_ID`)
+  - If `model` is `diffusers/<huggingface-repo>`, uses that explicit local Diffusers model
+  - If `model` is `sdcpp/default`, uses the configured stable-diffusion.cpp model
+  - If `model` is `openai-compatible/<model>` and an upstream base URL is configured, uses the image proxy
 
 - **Proxy**: set `ABSTRACTCORE_VISION_BACKEND=openai_compatible_proxy` (proxy to an upstream OpenAI-compatible image server)
-  - `ABSTRACTCORE_VISION_UPSTREAM_BASE_URL` (required) — base URL (include `/v1`)
-  - `ABSTRACTCORE_VISION_UPSTREAM_API_KEY` (optional)
-  - `ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID` (optional)
+  - `ABSTRACTCORE_VISION_UPSTREAM_BASE_URL` / `ABSTRACTVISION_BASE_URL` (required) — base URL (include `/v1`)
+  - `ABSTRACTCORE_VISION_UPSTREAM_API_KEY` / `ABSTRACTVISION_API_KEY` (optional)
+  - `ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID` / `ABSTRACTVISION_MODEL_ID` (optional)
   - Install: `pip install "abstractcore[server]"`
 
 - **Local Diffusers**: set `ABSTRACTCORE_VISION_BACKEND=diffusers`
-  - `ABSTRACTCORE_VISION_MODEL_ID` (required) — local model id/path (Diffusers)
-  - `ABSTRACTCORE_VISION_DEVICE` (optional, default `auto`; chooses `cuda`/`mps` when available, else `cpu`)
-  - `ABSTRACTCORE_VISION_TORCH_DTYPE` (optional, e.g. `float16`; for very large models you typically need `float16` or you may run out of memory)
-  - `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD` (optional, default true; set to `0` for cache-only/offline)
+  - `ABSTRACTCORE_VISION_MODEL_ID` / `ABSTRACTVISION_DIFFUSERS_MODEL_ID` / `ABSTRACTVISION_MODEL_ID` (required for `diffusers/default`) — local model id/path (Diffusers)
+  - `ABSTRACTCORE_VISION_DEVICE` / `ABSTRACTVISION_DIFFUSERS_DEVICE` (optional, default `auto`; chooses `cuda`/`mps` when available, else `cpu`)
+  - `ABSTRACTCORE_VISION_TORCH_DTYPE` / `ABSTRACTVISION_DIFFUSERS_TORCH_DTYPE` (optional, e.g. `float16`; for very large models you typically need `float16` or you may run out of memory)
+  - `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD` / `ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD` (optional, default false/cache-only)
   - Note: if you set `ABSTRACTCORE_VISION_DEVICE=mps` or `cuda`, your PyTorch must actually support it (`torch.backends.mps.is_available()` / `torch.cuda.is_available()`).
   - Install: `pip install "abstractcore[server,vision]"`
 
@@ -633,14 +649,23 @@ These return `501` only if the server can't infer a backend (e.g. no `model` in 
 
 **Text-to-image (JSON)**:
 ```bash
+# Required for diffusers/default:
+export ABSTRACTCORE_VISION_MODEL_ID="org/image-model"
+
 curl http://localhost:8000/v1/images/generations \\
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '{"prompt":"a red fox in snow","response_format":"b64_json"}'
+  -d '{"model":"diffusers/default","prompt":"a red fox in snow","width":512,"height":512,"steps":20,"response_format":"b64_json"}'
 ```
 
 **Image edit (multipart/form-data)**:
 ```bash
+# Required for diffusers/default:
+export ABSTRACTCORE_VISION_MODEL_ID="org/image-model"
+
 curl http://localhost:8000/v1/images/edits \\
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \\
+  -F "model=diffusers/default" \\
   -F "prompt=make it watercolor" \\
   -F "image=@./input.png"
 ```
@@ -648,7 +673,12 @@ curl http://localhost:8000/v1/images/edits \\
 Notes:
 - The server returns `b64_json` outputs, matching the OpenAI image API shape.
 - OpenAI-compatible image proxying is built into `abstractcore[server]`.
+- Strict OpenAI-compatible upstreams receive only OpenAI-compatible top-level
+  fields by default. Put backend-specific knobs such as `seed`, `steps`,
+  `guidance_scale`, or `negative_prompt` in `extra` / `extra_json` only when
+  your custom upstream supports them.
 - Local Diffusers/sdcpp generation delegates to AbstractVision; install it in the same env as the server with `pip install "abstractcore[server,vision]"` and prefer `python -m uvicorn ...`.
+- Local Diffusers is cache-only by default, matching AbstractVision. Pre-download model weights or opt in with `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD=1`.
 
 ---
 
@@ -1008,7 +1038,7 @@ docker run -p 8000:8000 \
   -e ABSTRACTCORE_SERVER_API_KEY="acore-server-secret" \
   -e OPENAI_API_KEY="sk-..." \
   -e OPENROUTER_API_KEY="sk-or-..." \
-  ghcr.io/lpalbou/abstractcore-server:2.13.5
+  ghcr.io/lpalbou/abstractcore-server:2.13.6
 ```
 
 The release image is built from PyPI with

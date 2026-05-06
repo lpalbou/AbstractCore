@@ -206,7 +206,7 @@ See:
 Install the optional capability plugin package:
 
 ```bash
-pip install abstractvoice
+pip install "abstractcore[voice]"
 ```
 
 Then use the deterministic capability surfaces:
@@ -229,7 +229,9 @@ See: [Server](server.md) and [Capabilities](capabilities.md).
 
 ## How do I generate or edit images?
 
-Generative vision is dependency-light by default. AbstractCore Server can proxy OpenAI-compatible image endpoints without local vision runtimes. For local Diffusers/sdcpp image generation, install the vision extra:
+Generative vision is dependency-light by default. AbstractCore Server can proxy
+OpenAI-compatible image endpoints without local vision runtimes. For local
+Diffusers/sdcpp image generation, install the vision extra:
 
 ```bash
 pip install "abstractcore[server,vision]"
@@ -238,6 +240,15 @@ pip install "abstractcore[server,vision]"
 You can use generative vision through AbstractCore’s `llm.vision.*` capability plugin surface, or through AbstractCore Server’s optional endpoints:
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
+
+Omit `model` with the server endpoints only when this server has a configured
+AbstractVision/OpenAI-compatible image default. Use `model="diffusers/default"`
+or `model="diffusers/<huggingface-repo>"` for explicit Diffusers routing,
+`model="sdcpp/default"` for configured stable-diffusion.cpp, or
+`model="openai-compatible/<model>"` with a configured image base URL for remote
+OpenAI-compatible endpoints. Local Diffusers is cache-only by default, so
+pre-download the model or set `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD=1` /
+`ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD=1` when runtime downloads are intended.
 
 See: [Server](server.md), [Capabilities](capabilities.md), and `abstractvision/docs/reference/abstractcore-integration.md` (in the AbstractVision repo).
 

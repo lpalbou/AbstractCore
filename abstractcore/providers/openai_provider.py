@@ -1318,3 +1318,54 @@ class OpenAIProvider(BaseProvider):
             )
         self._raise_audio_status(response, endpoint="audio/speech")
         return response.content, response.headers.get("content-type", "application/octet-stream")
+
+    def clone_voice(
+        self,
+        audio: bytes,
+        *,
+        filename: str = "reference.wav",
+        content_type: str = "audio/wav",
+        name: Optional[str] = None,
+        reference_text: Optional[str] = None,
+        clone_path: str = "/audio/voices",
+        file_field: str = "audio_sample",
+        validate: Optional[bool] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
+        """Create a custom voice through OpenAI-compatible voice creation.
+
+        This is intentionally a thin HTTP helper because custom voice creation
+        is still provider-specific. For OpenAI, callers typically need to pass
+        a consent id in `consent`.
+        """
+        _ = reference_text
+        if not HTTPX_AVAILABLE:
+            raise ImportError("httpx package not installed. Install with: pip install httpx")
+
+        fields: Dict[str, str] = {}
+        if name:
+            fields["name"] = str(name)
+        if validate is not None:
+            fields["validate"] = "true" if bool(validate) else "false"
+        consent = kwargs.get("consent")
+        if consent is not None:
+            fields["consent"] = str(consent)
+
+        path = str(clone_path or "/audio/voices").strip()
+        if not path.startswith("/"):
+            path = "/" + path
+        field_name = str(file_field or "audio_sample").strip() or "audio_sample"
+        url = f"{self._audio_base_url().rstrip('/')}{path}"
+        headers = {"Authorization": f"Bearer {self.api_key}"}
+        with httpx.Client(timeout=self._timeout) as client:
+            response = client.post(
+                url,
+                headers=headers,
+                data=fields,
+                files={field_name: (filename, bytes(audio), content_type or "audio/wav")},
+            )
+        self._raise_audio_status(response, endpoint=path.lstrip("/"))
+        payload = response.json()
+        if not isinstance(payload, dict):
+            raise ProviderAPIError("OpenAI voice clone response was not a JSON object")
+        return payload

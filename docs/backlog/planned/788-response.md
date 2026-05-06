@@ -89,7 +89,7 @@ curl -s http://localhost:8000/v1/images/generations \
 
 ## Example: Stable Diffusion v1.5 (runwayml/stable-diffusion-v1-5)
 
-This also works with classic Diffusers models like `runwayml/stable-diffusion-v1-5`:
+This also works with classic Diffusers models when routed explicitly:
 
 ```bash
 curl -s http://localhost:8000/v1/images/generations \
@@ -97,7 +97,7 @@ curl -s http://localhost:8000/v1/images/generations \
   -d '{
     "prompt": "a cute corgi puppy wearing sunglasses, bright daylight, high quality photo",
     "negative_prompt": "nsfw, nude, naked",
-    "model": "runwayml/stable-diffusion-v1-5",
+    "model": "diffusers/runwayml/stable-diffusion-v1-5",
     "response_format": "b64_json",
     "width": 256,
     "height": 256,

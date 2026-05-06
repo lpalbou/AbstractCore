@@ -48,6 +48,11 @@ First-class support for:
 (*) Media input is policy-driven (no silent semantic changes). If a model doesn’t support images, AbstractCore can use a configured vision model to generate short visual observations and inject them into your text-only request (vision fallback). Audio/video attachments are also policy-driven (`audio_policy`, `video_policy`) and may require capability plugins for fallbacks. See [Media Handling](docs/media-handling-system.md) and [Centralized Config](docs/centralized-config.md).
 (**) Optional visual-text compression: render long text/PDFs into images and process them with a vision model to reduce token usage. See [Glyph Visual-Text Compression](docs/glyphs.md) (install `pip install "abstractcore[compression]"`; for PDFs also install `pip install "abstractcore[media]"`).
 
+Generative vision uses `abstractvision` when installed. In server mode, omit
+`model` only when the server has a configured image default, or use explicit
+provider/model ids such as `diffusers/default`, `diffusers/<huggingface-repo>`,
+`sdcpp/default`, or `openai-compatible/<model>`.
+
 Docs: [Getting Started](docs/getting-started.md) · [FAQ](docs/faq.md) · [Docs Index](docs/README.md) · https://lpalbou.github.io/AbstractCore
 
 For AI assistants and doc-indexing tools, this repository also publishes
@@ -125,6 +130,8 @@ pip install "abstractcore[vllm]"         # NVIDIA CUDA / ROCm (heavy)
 # Optional application features
 pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
 pip install "abstractcore[media]"       # images, PDFs, Office docs
+pip install "abstractcore[voice]"       # abstractvoice plugin (TTS/STT capability)
+pip install "abstractcore[vision]"      # abstractvision plugin (generative vision capability)
 pip install "abstractcore[compression]" # glyph visual-text compression (Pillow-only)
 pip install "abstractcore[embeddings]"  # EmbeddingManager + local embedding models
 pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
@@ -296,8 +303,8 @@ print(resp.content)
 Notes:
 - **Images**: use a vision-capable model, or configure **vision fallback** for text-only models (`abstractcore --config`; `abstractcore --set-vision-provider PROVIDER MODEL`).
 - **Video**: `video_policy="auto"` (default) uses native video when supported, otherwise samples frames (requires `ffmpeg`/`ffprobe`) and routes them through image/vision handling (so you still need a vision-capable model or vision fallback configured).
-- **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` and install `abstractvoice` for speech-to-text.
-  `abstractvoice` 0.8.2+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines.
+- **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` and install `abstractcore[voice]` for speech-to-text.
+  `abstractvoice` 0.8.5+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines and cloning backends.
 
 Configure defaults (optional):
 

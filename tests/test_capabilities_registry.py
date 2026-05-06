@@ -46,9 +46,9 @@ def test_capabilities_status_empty(monkeypatch):
     status = llm.capabilities.status()
     assert status["plugins_loaded"] is True
     assert status["capabilities"]["voice"]["available"] is False
-    assert status["capabilities"]["voice"]["install_hint"] == "pip install abstractvoice"
+    assert status["capabilities"]["voice"]["install_hint"] == 'pip install "abstractcore[voice]"'
     assert status["capabilities"]["vision"]["available"] is False
-    assert status["capabilities"]["vision"]["install_hint"] == "pip install abstractvision"
+    assert status["capabilities"]["vision"]["install_hint"] == 'pip install "abstractcore[vision]"'
 
 
 @pytest.mark.basic
@@ -59,7 +59,7 @@ def test_missing_capability_raises_actionable_error(monkeypatch):
     with pytest.raises(CapabilityUnavailableError) as e:
         llm.voice.tts("hello")
     assert "voice:" in str(e.value)
-    assert "pip install abstractvoice" in str(e.value)
+    assert 'pip install "abstractcore[voice]"' in str(e.value)
 
 
 @pytest.mark.basic
@@ -166,4 +166,3 @@ def _make_multi_backend_plugin_ep():
         registry.register_voice_backend(backend_id="b", factory=lambda _owner: _VoiceB(), priority=10)
 
     return _FakeEntryPoint(name="fake-multi", value="tests.fake_plugin_multi:register", obj=register)
-

@@ -203,7 +203,7 @@ Transparency:
 
 Requirements:
 - **Native audio** requires an audio-capable model.
-- **STT fallback** requires installing an STT capability plugin (typically `pip install abstractvoice`) and using `audio_policy="auto"`/`"speech_to_text"` (or setting a default via `abstractcore --set-audio-strategy ...`).
+- **STT fallback** requires installing an STT capability plugin (typically `pip install "abstractcore[voice]"`) and using `audio_policy="auto"`/`"speech_to_text"` (or setting a default via `abstractcore --set-audio-strategy ...`).
 
 ### Video (policy-driven; native or frames fallback)
 - **Formats**: common `video/*` types as attachments via `media=[...]`

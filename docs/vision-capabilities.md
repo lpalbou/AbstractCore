@@ -71,10 +71,10 @@ abstractcore --add-vision-fallback huggingface Salesforce/blip-image-captioning-
 
 Creating/editing images and videos is a **deterministic capability** that can be integrated in two ways:
 
-1) **Capability plugin (library mode)**: install `abstractvision` and use `llm.vision.*` (e.g. `t2i`, `i2i`).  
+1) **Capability plugin (library mode)**: install `abstractvision` and use `llm.vision.*` (e.g. `t2i`, `i2i`). Configure the AbstractVision backend/default for your environment; local Diffusers remains cache-only unless downloads are explicitly enabled.
    See: `abstractvision/docs/reference/abstractcore-integration.md`
 
-2) **AbstractCore Server (HTTP interop)**: run the optional server and use `/v1/images/*` as an OpenAI-compatible image proxy. Local Diffusers/sdcpp backends remain available when `abstractvision` is installed via `abstractcore[server,vision]`.
+2) **AbstractCore Server (HTTP interop)**: run the optional server and use `/v1/images/*` as an OpenAI-compatible image proxy. Local Diffusers/sdcpp backends remain available when `abstractvision` is installed via `abstractcore[server,vision]`; omit `model` only when the server has a configured image default, or use provider/model ids such as `model="diffusers/default"`, `model="diffusers/<huggingface-repo>"`, `model="sdcpp/default"`, or `model="openai-compatible/gpt-image-2"` with a configured upstream image endpoint.
    See: `docs/server.md`
 
 This separation keeps the default `abstractcore` install dependency-light: remote image proxying lives in the server, while local generative vision runtimes remain opt-in through `abstractvision`.

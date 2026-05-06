@@ -32,7 +32,7 @@ from typing import Any, Dict, Optional, Tuple
 
 import httpx
 from fastapi import APIRouter, Body, File, Form, HTTPException, Path as FastAPIPath, Query, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 try:  # Optional dependency (needed only for multipart parsing).
     import multipart  # type: ignore  # noqa: F401
@@ -56,6 +56,9 @@ _ACTIVE_LOADED_AT_S: Optional[float] = None
 
 _JOBS_LOCK = threading.Lock()
 _JOBS: Dict[str, Dict[str, Any]] = {}
+
+_DEFAULT_MODEL_ALIASES = {"default", "configured-default"}
+_REMOVED_VISION_MODEL_ALIASES = {"local/abstractvision", "abstractvision/default", "server/default"}
 
 
 class _ProxyOptionalDependencyMissingError(Exception):
@@ -178,21 +181,12 @@ class _OpenAICompatibleImageProxyBackend:
     def generate_image(self, request: _ProxyImageGenerationRequest) -> _ProxyGeneratedAsset:
         payload: Dict[str, Any] = {
             "prompt": request.prompt,
-            "response_format": "b64_json",
             "n": 1,
         }
         if self.model_id:
             payload["model"] = self.model_id
-        if request.negative_prompt is not None:
-            payload["negative_prompt"] = request.negative_prompt
         if request.width is not None and request.height is not None:
             payload["size"] = f"{int(request.width)}x{int(request.height)}"
-        if request.seed is not None:
-            payload["seed"] = int(request.seed)
-        if request.steps is not None:
-            payload["steps"] = int(request.steps)
-        if request.guidance_scale is not None:
-            payload["guidance_scale"] = float(request.guidance_scale)
         if isinstance(request.extra, dict):
             payload.update({k: v for k, v in request.extra.items() if v is not None})
 
@@ -212,14 +206,6 @@ class _OpenAICompatibleImageProxyBackend:
         fields: Dict[str, str] = {"prompt": request.prompt}
         if self.model_id:
             fields["model"] = self.model_id
-        if request.negative_prompt is not None:
-            fields["negative_prompt"] = request.negative_prompt
-        if request.seed is not None:
-            fields["seed"] = str(int(request.seed))
-        if request.steps is not None:
-            fields["steps"] = str(int(request.steps))
-        if request.guidance_scale is not None:
-            fields["guidance_scale"] = str(float(request.guidance_scale))
         if isinstance(request.extra, dict):
             for key, value in request.extra.items():
                 if value is not None:
@@ -263,28 +249,105 @@ class VisionModelLoadRequest(BaseModel):
 class ImageGenerationBody(BaseModel):
     """OpenAI-compatible image generation request body."""
 
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={
+            "examples": [
+                {
+                    "model": "openai-compatible/gpt-image-1",
+                    "prompt": "A precise product photo of a red ceramic mug on a white table.",
+                    "n": 1,
+                    "width": 1024,
+                    "height": 1024,
+                    "response_format": "b64_json",
+                    "negative_prompt": None,
+                    "seed": None,
+                    "steps": None,
+                    "guidance_scale": None,
+                    "quality": "low",
+                    "style": None,
+                    "user": "swagger-user",
+                    "background": "auto",
+                    "output_format": "png",
+                    "output_compression": None,
+                    "moderation": "auto",
+                    "extra": {},
+                }
+            ]
+        },
+    )
+
     prompt: str = Field(..., description="Text prompt describing the image to generate.", examples=["A precise product photo of a red ceramic mug on a white table."])
     model: Optional[str] = Field(
         default=None,
         description=(
-            "Optional vision model id. In auto mode, Hugging Face-style ids route to Diffusers, "
-            "local file paths route to stable-diffusion.cpp, and upstream proxy mode can route to "
-            "OpenAI-compatible image providers."
+            "Optional provider/model image id. Omit this field to use the server's configured "
+            "AbstractVision default. Explicit local models use "
+            "`diffusers/default`, `diffusers/<huggingface-repo>`, "
+            "or `sdcpp/default`; remote image providers use "
+            "`openai-compatible/my-image-model` with a configured upstream image endpoint."
         ),
-        examples=["Qwen/Qwen-Image-2512"],
+        examples=["diffusers/default", "openai-compatible/gpt-image-2"],
     )
     n: Optional[int] = Field(default=1, description="Number of images to generate. Clamped to 1..10.", examples=[1])
-    size: Optional[str] = Field(default=None, description="OpenAI-style image size such as `1024x1024`. Used when width/height are omitted.", examples=["1024x1024"])
     width: Optional[int] = Field(default=None, description="Requested image width in pixels, backend permitting.", examples=[1024])
     height: Optional[int] = Field(default=None, description="Requested image height in pixels, backend permitting.", examples=[1024])
     response_format: Optional[str] = Field(default="b64_json", description="Response format. Only `b64_json` is currently supported.", examples=["b64_json"])
     negative_prompt: Optional[str] = Field(default=None, description="Optional negative prompt for backends that support it.")
-    seed: Optional[int] = Field(default=None, description="Optional deterministic seed for backends that support it.", examples=[1234])
-    steps: Optional[int] = Field(default=None, description="Optional denoising/inference step count for local generation backends.", examples=[20])
-    guidance_scale: Optional[float] = Field(default=None, description="Optional classifier-free guidance scale for local generation backends.", examples=[7.5])
+    seed: Optional[int] = Field(
+        default=None,
+        description=(
+            "Optional deterministic seed for local generation backends. "
+            "Strict OpenAI-compatible upstreams may reject this field; for a custom upstream "
+            "that supports it, pass it through `extra`."
+        ),
+        examples=[1234],
+    )
+    steps: Optional[int] = Field(
+        default=None,
+        description=(
+            "Optional denoising/inference step count for local generation backends. "
+            "For custom OpenAI-compatible upstreams, pass this through `extra`."
+        ),
+        examples=[20],
+    )
+    guidance_scale: Optional[float] = Field(
+        default=None,
+        description=(
+            "Optional classifier-free guidance scale for local generation backends. "
+            "For custom OpenAI-compatible upstreams, pass this through `extra`."
+        ),
+        examples=[7.5],
+    )
+    quality: Optional[str] = Field(default=None, description="Optional OpenAI-compatible image quality forwarded to upstream providers. GPT image models commonly support `low`, `medium`, `high`, or `auto`; DALL-E models use their own quality options.", examples=["low"])
+    style: Optional[str] = Field(default=None, description="Optional OpenAI-compatible image style forwarded to upstream providers that support it, such as `vivid` or `natural` for DALL-E 3.", examples=["natural"])
+    user: Optional[str] = Field(default=None, description="Optional caller/user id forwarded to upstream providers when supported.")
+    background: Optional[str] = Field(default=None, description="Optional OpenAI-compatible background setting forwarded to upstream providers. GPT image models commonly support `auto`, `opaque`, or `transparent`.", examples=["auto"])
+    output_format: Optional[str] = Field(default=None, description="Optional OpenAI-compatible output image format forwarded to upstream providers.", examples=["png"])
+    output_compression: Optional[int] = Field(default=None, description="Optional OpenAI-compatible output compression value forwarded to upstream providers. Use this with compressed formats such as `jpeg` or `webp` when the upstream supports it.", examples=[85])
+    moderation: Optional[str] = Field(default=None, description="Optional OpenAI-compatible moderation setting forwarded to upstream providers, commonly `auto` or `low` for GPT image models.", examples=["auto"])
+    extra: Optional[Dict[str, Any]] = Field(
+        default=None,
+        description="Backend-specific parameters forwarded to the selected image backend or upstream endpoint.",
+    )
 
-    class Config:
-        extra = "allow"
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_size(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or "size" not in data:
+            return data
+        out = dict(data)
+        raw_size = out.pop("size", None)
+        if raw_size is None:
+            return out
+        width, height = _parse_size(raw_size)
+        if width is None or height is None:
+            raise ValueError("size must use WIDTHxHEIGHT format, for example 1024x1024")
+        if out.get("width") is None:
+            out["width"] = width
+        if out.get("height") is None:
+            out["height"] = height
+        return out
 
 
 def _model_payload(model: BaseModel) -> Dict[str, Any]:
@@ -426,11 +489,63 @@ def _env(name: str, default: Optional[str] = None) -> Optional[str]:
     return s if s else default
 
 
+def _env_first(*names: str, default: Optional[str] = None) -> Optional[str]:
+    for name in names:
+        v = _env(name)
+        if v is not None:
+            return v
+    return default
+
+
 def _env_bool(name: str, default: bool = False) -> bool:
     v = _env(name)
     if v is None:
         return bool(default)
     return str(v).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_bool_first(*names: str, default: bool = False) -> bool:
+    for name in names:
+        v = _env(name)
+        if v is not None:
+            return str(v).strip().lower() in {"1", "true", "yes", "on"}
+    return bool(default)
+
+
+def _is_default_model_alias(model: Any) -> bool:
+    return str(model or "").strip().lower() in _DEFAULT_MODEL_ALIASES
+
+
+def _reject_removed_vision_model_alias(model: Any) -> None:
+    raw = str(model or "").strip().lower()
+    if raw in _REMOVED_VISION_MODEL_ALIASES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Image model id {raw!r} is not supported. Omit `model` to use this server's "
+                "configured AbstractVision default, or use provider/model routing such as "
+                "`diffusers/default`, `diffusers/<huggingface-repo>`, `sdcpp/default`, "
+                "or `openai-compatible/<model>` with a configured upstream base URL."
+            ),
+        )
+
+
+def _diffusers_model_env() -> Optional[str]:
+    return _env_first("ABSTRACTCORE_VISION_MODEL_ID", "ABSTRACTVISION_DIFFUSERS_MODEL_ID", "ABSTRACTVISION_MODEL_ID")
+
+
+def _upstream_base_url_env() -> Optional[str]:
+    return _env_first("ABSTRACTCORE_VISION_UPSTREAM_BASE_URL", "ABSTRACTVISION_BASE_URL")
+
+
+def _upstream_model_env() -> Optional[str]:
+    return _env_first("ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID", "ABSTRACTVISION_MODEL_ID")
+
+
+def _sdcpp_env(*names: str) -> Optional[str]:
+    core_names = [f"ABSTRACTCORE_VISION_SDCPP_{name}" for name in names]
+    av_names = [f"ABSTRACTVISION_SDCPP_{name}" for name in names]
+    return _env_first(*(core_names + av_names))
 
 
 def _active_state() -> Dict[str, Any]:
@@ -482,7 +597,7 @@ def _unload_active_backend() -> None:
 
 
 def _vision_backend_kind() -> str:
-    raw = _env("ABSTRACTCORE_VISION_BACKEND")
+    raw = _env_first("ABSTRACTCORE_VISION_BACKEND", "ABSTRACTVISION_BACKEND")
     if not raw:
         return "auto"
     v = str(raw).strip().lower()
@@ -532,30 +647,57 @@ def _normalize_request_model_for_backend(request_model: Any) -> Optional[str]:
     """Normalize AbstractCore-style model ids into AbstractVision backend model ids.
 
     This keeps `/v1/images/*` compatible with AbstractCore's multi-provider model naming:
+    - `diffusers/default` -> configured Diffusers model from env
     - `huggingface/Qwen/Qwen-Image-2512` -> `Qwen/Qwen-Image-2512` (Diffusers)
     - `mlx/Qwen/Qwen-Image-2512` -> `Qwen/Qwen-Image-2512` (Diffusers; device selection is env-driven)
+    - `sdcpp/default` -> configured stable-diffusion.cpp model from env
+    - `openai-compatible/model` -> `model` for the configured upstream image endpoint
 
-    For non-vision providers (e.g. `openai/gpt-4o-mini`), we intentionally drop the request model unless a
-    vision upstream proxy is configured. This enables a "vision default" behavior via env configuration.
+    Non-image AbstractCore providers (e.g. `openai/gpt-4o-mini`) are rejected so
+    chat model ids do not silently become image-generation defaults.
     """
     model = str(request_model or "").strip()
     if not model:
         return None
+    _reject_removed_vision_model_alias(model)
 
     prefix, rest = _split_known_prefix(model)
     if prefix is None:
-        return model
+        if _looks_like_hf_repo_id(model):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Image model {model!r} must use provider/model routing. Use `diffusers/{model}`.",
+            )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Image model {model!r} must use provider/model routing. "
+                "Use `diffusers/<huggingface-repo>`, `sdcpp/default`, "
+                "or `openai-compatible/<model>`."
+            ),
+        )
 
     # Local generation backends: strip prefix and pass through.
-    if prefix in {"huggingface", "hf", "mlx", "diffusers", "sdcpp"}:
+    if prefix in {"huggingface", "hf", "mlx", "diffusers"}:
+        if _is_default_model_alias(rest):
+            return None
+        return rest or None
+    if prefix == "sdcpp":
+        if _is_default_model_alias(rest):
+            return None
         return rest or None
 
-    # Other providers: only use the request model when proxying to an upstream images endpoint.
-    if _env("ABSTRACTCORE_VISION_UPSTREAM_BASE_URL"):
+    if prefix in {"openai-compatible", "openai_compatible"}:
         return rest or None
 
-    # No upstream: treat as "no request model" so env-configured vision defaults apply.
-    return None
+    raise HTTPException(
+        status_code=400,
+        detail=(
+            f"Image model provider {prefix!r} is not supported by `/v1/images/*`. "
+            "Use `diffusers/<huggingface-repo>`, `sdcpp/default`, or "
+            "`openai-compatible/<model>` with a configured upstream image endpoint."
+        ),
+    )
 
 
 def _looks_like_filesystem_path(model: str) -> bool:
@@ -593,6 +735,15 @@ def _looks_like_hf_repo_id(model: str) -> bool:
 
 
 def _infer_backend_kind(request_model: Any) -> str:
+    raw_model = str(request_model or "").strip()
+    prefix, _rest = _split_known_prefix(raw_model)
+    if prefix == "sdcpp":
+        return "sdcpp"
+    if prefix in {"huggingface", "hf", "mlx", "diffusers"}:
+        return "diffusers"
+    if prefix in {"openai-compatible", "openai_compatible"}:
+        return "openai_compatible_proxy"
+
     model = str(_normalize_request_model_for_backend(request_model) or "").strip()
     if model:
         if _looks_like_filesystem_path(model):
@@ -601,26 +752,35 @@ def _infer_backend_kind(request_model: Any) -> str:
         if _looks_like_hf_repo_id(model):
             return "diffusers"
         # Unknown strings: prefer local generation unless proxy is explicitly configured.
-        if _env("ABSTRACTCORE_VISION_UPSTREAM_BASE_URL"):
+        if _upstream_base_url_env():
             return "openai_compatible_proxy"
         return "diffusers"
 
     # No request model: fall back to env configuration.
-    if _env("ABSTRACTCORE_VISION_MODEL_ID"):
-        return "diffusers"
-    if _env("ABSTRACTCORE_VISION_SDCPP_MODEL") or _env("ABSTRACTCORE_VISION_SDCPP_DIFFUSION_MODEL"):
+    if _sdcpp_env("MODEL") or _sdcpp_env("DIFFUSION_MODEL"):
         return "sdcpp"
-    if _env("ABSTRACTCORE_VISION_UPSTREAM_BASE_URL"):
+    if _upstream_base_url_env():
         return "openai_compatible_proxy"
+    if _diffusers_model_env():
+        return "diffusers"
     return "auto_unconfigured"
 
 
 def _effective_backend_kind(request_model: Any) -> str:
+    raw_model = str(request_model or "").strip()
+    prefix, _ = _split_known_prefix(raw_model)
+    if prefix == "sdcpp":
+        return "sdcpp"
+    if prefix in {"huggingface", "hf", "mlx", "diffusers"}:
+        return "diffusers"
+    if prefix in {"openai-compatible", "openai_compatible"}:
+        return "openai_compatible_proxy"
+
     env_kind = _vision_backend_kind()
     if env_kind == "auto":
         return _infer_backend_kind(request_model)
 
-    model = str(request_model or "").strip()
+    model = str(_normalize_request_model_for_backend(request_model) or request_model or "").strip()
     if model and env_kind == "sdcpp" and _looks_like_hf_repo_id(model):
         # Common misconfiguration: user set SDCPP backend but selected a Diffusers model id.
         return "diffusers"
@@ -739,7 +899,7 @@ def _is_lmstudio_model_cached(model_id: str, cache_dirs: list[Path]) -> bool:
 
 
 def _require_upstream_base_url() -> str:
-    base_url = _env("ABSTRACTCORE_VISION_UPSTREAM_BASE_URL")
+    base_url = _upstream_base_url_env()
     if not base_url:
         raise HTTPException(
             status_code=501,
@@ -753,33 +913,36 @@ def _require_upstream_base_url() -> str:
 
 
 def _require_diffusers_model_id(request_model: Any) -> str:
-    model_id = str(request_model or _env("ABSTRACTCORE_VISION_MODEL_ID") or "").strip()
+    model_id = str(_normalize_request_model_for_backend(request_model) or _diffusers_model_env() or "").strip()
     if not model_id:
         raise HTTPException(
             status_code=501,
             detail=(
-                "Vision image endpoints are not configured for diffusers mode. "
-                "Set ABSTRACTCORE_VISION_MODEL_ID (and optionally ABSTRACTCORE_VISION_BACKEND=diffusers), "
-                "or pass `model` in the request."
+                "Vision image endpoints are not configured for Diffusers mode. "
+                "`diffusers/default` requires ABSTRACTCORE_VISION_MODEL_ID, "
+                "ABSTRACTVISION_DIFFUSERS_MODEL_ID, or ABSTRACTVISION_MODEL_ID. "
+                "Alternatively pass `diffusers/<huggingface-repo>` explicitly or configure "
+                "ABSTRACTCORE_VISION_UPSTREAM_BASE_URL / ABSTRACTVISION_BASE_URL for an "
+                "OpenAI-compatible image endpoint."
             ),
         )
     return model_id
 
 
 def _require_sdcpp_model_or_diffusion_model(request_model: Any) -> Tuple[Optional[str], Optional[str]]:
-    req = str(request_model or "").strip()
+    req = str(_normalize_request_model_for_backend(request_model) or "").strip()
     if req and not _looks_like_filesystem_path(req):
         raise HTTPException(
             status_code=400,
             detail=(
                 "stable-diffusion.cpp backend expects a local model path (typically a .gguf file). "
-                f"Got model={req!r}. If you intended to run a Hugging Face model id (e.g. 'runwayml/stable-diffusion-v1-5'), "
+                f"Got model={req!r}. If you intended to run a Hugging Face model id, "
                 "use the Diffusers backend (or set ABSTRACTCORE_VISION_BACKEND=auto)."
             ),
         )
 
-    env_model = str(_env("ABSTRACTCORE_VISION_SDCPP_MODEL") or "").strip()
-    env_diffusion = str(_env("ABSTRACTCORE_VISION_SDCPP_DIFFUSION_MODEL") or "").strip()
+    env_model = str(_sdcpp_env("MODEL") or "").strip()
+    env_diffusion = str(_sdcpp_env("DIFFUSION_MODEL") or "").strip()
 
     # Request model overrides env defaults.
     if req:
@@ -793,6 +956,12 @@ def _require_sdcpp_model_or_diffusion_model(request_model: Any) -> Tuple[Optiona
                 "ABSTRACTCORE_VISION_SDCPP_CLIP_L",
                 "ABSTRACTCORE_VISION_SDCPP_CLIP_G",
                 "ABSTRACTCORE_VISION_SDCPP_T5XXL",
+                "ABSTRACTVISION_SDCPP_VAE",
+                "ABSTRACTVISION_SDCPP_LLM",
+                "ABSTRACTVISION_SDCPP_LLM_VISION",
+                "ABSTRACTVISION_SDCPP_CLIP_L",
+                "ABSTRACTVISION_SDCPP_CLIP_G",
+                "ABSTRACTVISION_SDCPP_T5XXL",
             )
         )
         return (None, req) if component_mode else (req, None)
@@ -875,6 +1044,7 @@ _IMAGE_GENERATION_CORE_FIELDS = {
     "seed",
     "steps",
     "guidance_scale",
+    "extra",
 }
 
 
@@ -887,6 +1057,9 @@ def _image_generation_request_parts(payload: Dict[str, Any]) -> Tuple[Optional[i
         height = height if height is not None else h2
 
     extra = {k: v for k, v in payload.items() if k not in _IMAGE_GENERATION_CORE_FIELDS}
+    nested_extra = payload.get("extra")
+    if isinstance(nested_extra, dict):
+        extra.update({str(k): v for k, v in nested_extra.items() if v is not None})
 
     # OpenAI-compatible image endpoints expect `size`, not backend-local
     # `width`/`height`. Local generation backends still need width/height.
@@ -927,7 +1100,7 @@ def _coerce_float(v: Any) -> Optional[float]:
 def _resolve_backend(request_model: Any):
     normalized = _normalize_request_model_for_backend(request_model)
     req_model = str(normalized or "").strip()
-    backend_kind = _effective_backend_kind(normalized)
+    backend_kind = _effective_backend_kind(request_model)
 
     # Important: return "not configured" errors without requiring optional deps.
     if backend_kind == "auto_unconfigured":
@@ -947,16 +1120,25 @@ def _resolve_backend(request_model: Any):
     prevalidated: Dict[str, Any] = {"backend_kind": backend_kind}
     if backend_kind == "openai_compatible_proxy":
         base_url = _require_upstream_base_url()
-        model_id = str(request_model or _env("ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID") or "").strip() or None
+        model_id = str(normalized or _upstream_model_env() or "").strip() or None
         prevalidated.update(
             {
                 "base_url": base_url,
                 "model_id": model_id,
-                "timeout_s": float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "300") or "300"),
-                "image_generations_path": _env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_GENERATIONS_PATH", "/images/generations")
+                "timeout_s": float(_env_first("ABSTRACTCORE_VISION_TIMEOUT_S", "ABSTRACTVISION_TIMEOUT_S", default="300") or "300"),
+                "image_generations_path": _env_first(
+                    "ABSTRACTCORE_VISION_UPSTREAM_IMAGES_GENERATIONS_PATH",
+                    "ABSTRACTVISION_IMAGES_GENERATIONS_PATH",
+                    default="/images/generations",
+                )
                 or "/images/generations",
-                "image_edits_path": _env("ABSTRACTCORE_VISION_UPSTREAM_IMAGES_EDITS_PATH", "/images/edits") or "/images/edits",
-                "api_key": _env("ABSTRACTCORE_VISION_UPSTREAM_API_KEY"),
+                "image_edits_path": _env_first(
+                    "ABSTRACTCORE_VISION_UPSTREAM_IMAGES_EDITS_PATH",
+                    "ABSTRACTVISION_IMAGES_EDITS_PATH",
+                    default="/images/edits",
+                )
+                or "/images/edits",
+                "api_key": _env_first("ABSTRACTCORE_VISION_UPSTREAM_API_KEY", "ABSTRACTVISION_API_KEY"),
             }
         )
         key = (
@@ -988,31 +1170,40 @@ def _resolve_backend(request_model: Any):
         )
     elif backend_kind == "diffusers":
         model_id = _require_diffusers_model_id(request_model)
-        allow_download = _env_bool("ABSTRACTCORE_VISION_ALLOW_DOWNLOAD", True)
+        allow_download = _env_bool_first(
+            "ABSTRACTCORE_VISION_ALLOW_DOWNLOAD",
+            "ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD",
+            default=False,
+        )
         prevalidated.update(
             {
                 "model_id": model_id,
-                "device": _env("ABSTRACTCORE_VISION_DEVICE", "auto") or "auto",
-                "torch_dtype": _env("ABSTRACTCORE_VISION_TORCH_DTYPE"),
+                "device": _env_first("ABSTRACTCORE_VISION_DEVICE", "ABSTRACTVISION_DIFFUSERS_DEVICE", default="auto") or "auto",
+                "torch_dtype": _env_first("ABSTRACTCORE_VISION_TORCH_DTYPE", "ABSTRACTVISION_DIFFUSERS_TORCH_DTYPE"),
                 "allow_download": allow_download,
+                "auto_retry_fp32": _env_bool_first(
+                    "ABSTRACTCORE_VISION_AUTO_RETRY_FP32",
+                    "ABSTRACTVISION_DIFFUSERS_AUTO_RETRY_FP32",
+                    default=True,
+                ),
             }
         )
     elif backend_kind == "sdcpp":
         model_path, diffusion_model_path = _require_sdcpp_model_or_diffusion_model(request_model)
-        extra_args = _env("ABSTRACTCORE_VISION_SDCPP_EXTRA_ARGS")
+        extra_args = _sdcpp_env("EXTRA_ARGS")
         prevalidated.update(
             {
-                "sd_cli_path": _env("ABSTRACTCORE_VISION_SDCPP_BIN", "sd-cli") or "sd-cli",
+                "sd_cli_path": _sdcpp_env("BIN") or "sd-cli",
                 "model_path": model_path,
                 "diffusion_model_path": diffusion_model_path,
-                "vae": _env("ABSTRACTCORE_VISION_SDCPP_VAE"),
-                "llm": _env("ABSTRACTCORE_VISION_SDCPP_LLM"),
-                "llm_vision": _env("ABSTRACTCORE_VISION_SDCPP_LLM_VISION"),
-                "clip_l": _env("ABSTRACTCORE_VISION_SDCPP_CLIP_L"),
-                "clip_g": _env("ABSTRACTCORE_VISION_SDCPP_CLIP_G"),
-                "t5xxl": _env("ABSTRACTCORE_VISION_SDCPP_T5XXL"),
+                "vae": _sdcpp_env("VAE"),
+                "llm": _sdcpp_env("LLM"),
+                "llm_vision": _sdcpp_env("LLM_VISION"),
+                "clip_l": _sdcpp_env("CLIP_L"),
+                "clip_g": _sdcpp_env("CLIP_G"),
+                "t5xxl": _sdcpp_env("T5XXL"),
                 "extra_args": extra_args,
-                "timeout_s": float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "3600") or "3600"),
+                "timeout_s": float(_env_first("ABSTRACTCORE_VISION_TIMEOUT_S", "ABSTRACTVISION_TIMEOUT_S", default="3600") or "3600"),
             }
         )
     else:
@@ -1042,6 +1233,7 @@ def _resolve_backend(request_model: Any):
             device=prevalidated["device"],
             torch_dtype=prevalidated["torch_dtype"],
             allow_download=allow_download,
+            auto_retry_fp32=prevalidated["auto_retry_fp32"],
         )
         key = (
             "diffusers",
@@ -1049,6 +1241,7 @@ def _resolve_backend(request_model: Any):
             prevalidated["device"],
             prevalidated["torch_dtype"],
             allow_download,
+            prevalidated["auto_retry_fp32"],
         )
         backend, call_lock = _get_or_create_cached_backend(key, lambda: HuggingFaceDiffusersVisionBackend(config=cfg))
         return backend, call_lock, OptionalDependencyMissingError, ImageGenerationRequest, ImageEditRequest
@@ -1219,27 +1412,36 @@ async def load_active_vision_model(payload: VisionModelLoadRequest = Body(...)) 
         if backend_kind == "diffusers":
             cfg = HuggingFaceDiffusersBackendConfig(
                 model_id=model_id,
-                device=_env("ABSTRACTCORE_VISION_DEVICE", "auto") or "auto",
-                torch_dtype=_env("ABSTRACTCORE_VISION_TORCH_DTYPE"),
-                allow_download=_env_bool("ABSTRACTCORE_VISION_ALLOW_DOWNLOAD", True),
+                device=_env_first("ABSTRACTCORE_VISION_DEVICE", "ABSTRACTVISION_DIFFUSERS_DEVICE", default="auto") or "auto",
+                torch_dtype=_env_first("ABSTRACTCORE_VISION_TORCH_DTYPE", "ABSTRACTVISION_DIFFUSERS_TORCH_DTYPE"),
+                allow_download=_env_bool_first(
+                    "ABSTRACTCORE_VISION_ALLOW_DOWNLOAD",
+                    "ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD",
+                    default=False,
+                ),
+                auto_retry_fp32=_env_bool_first(
+                    "ABSTRACTCORE_VISION_AUTO_RETRY_FP32",
+                    "ABSTRACTVISION_DIFFUSERS_AUTO_RETRY_FP32",
+                    default=True,
+                ),
             )
             backend = HuggingFaceDiffusersVisionBackend(config=cfg)
         else:
             # stable-diffusion.cpp: treat `model_id` as a local path when used here.
             model_path, diffusion_model_path = _require_sdcpp_model_or_diffusion_model(model_id)
-            extra_args = _env("ABSTRACTCORE_VISION_SDCPP_EXTRA_ARGS")
+            extra_args = _sdcpp_env("EXTRA_ARGS")
             cfg = StableDiffusionCppBackendConfig(
-                sd_cli_path=_env("ABSTRACTCORE_VISION_SDCPP_BIN", "sd-cli") or "sd-cli",
+                sd_cli_path=_sdcpp_env("BIN") or "sd-cli",
                 model=model_path,
                 diffusion_model=diffusion_model_path,
-                vae=_env("ABSTRACTCORE_VISION_SDCPP_VAE"),
-                llm=_env("ABSTRACTCORE_VISION_SDCPP_LLM"),
-                llm_vision=_env("ABSTRACTCORE_VISION_SDCPP_LLM_VISION"),
-                clip_l=_env("ABSTRACTCORE_VISION_SDCPP_CLIP_L"),
-                clip_g=_env("ABSTRACTCORE_VISION_SDCPP_CLIP_G"),
-                t5xxl=_env("ABSTRACTCORE_VISION_SDCPP_T5XXL"),
+                vae=_sdcpp_env("VAE"),
+                llm=_sdcpp_env("LLM"),
+                llm_vision=_sdcpp_env("LLM_VISION"),
+                clip_l=_sdcpp_env("CLIP_L"),
+                clip_g=_sdcpp_env("CLIP_G"),
+                t5xxl=_sdcpp_env("T5XXL"),
                 extra_args=shlex.split(str(extra_args)) if extra_args else (),
-                timeout_s=float(_env("ABSTRACTCORE_VISION_TIMEOUT_S", "3600") or "3600"),
+                timeout_s=float(_env_first("ABSTRACTCORE_VISION_TIMEOUT_S", "ABSTRACTVISION_TIMEOUT_S", default="3600") or "3600"),
             )
             backend = StableDiffusionCppVisionBackend(config=cfg)
 
@@ -1458,17 +1660,25 @@ if _HAS_MULTIPART:
 
     @router.post("/vision/jobs/images/edits")
     async def jobs_images_edits(
-        prompt: str = Form(..., description="Text prompt describing the desired image edit."),
-        image: UploadFile = File(..., description="Source image to edit."),
-        mask: Optional[UploadFile] = File(None, description="Optional mask image for inpainting/edit backends that support it."),
-        model: Optional[str] = Form(None, description="Optional vision model id or local model path."),
-        size: Optional[str] = Form(None, description="OpenAI-style output image size such as `1024x1024`."),
-        response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported by the server response."),
-        negative_prompt: Optional[str] = Form(None, description="Optional negative prompt for backends that support it."),
-        seed: Optional[str] = Form(None, description="Optional deterministic seed."),
-        steps: Optional[str] = Form(None, description="Optional denoising/inference step count."),
-        guidance_scale: Optional[str] = Form(None, description="Optional classifier-free guidance scale."),
-        extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters."),
+        prompt: str = Form(..., description="Text prompt describing the desired image edit.", examples=["Make the mug blue and keep the white background."]),
+        image: UploadFile = File(..., description="Source image to edit. Upload a PNG, JPEG, or WebP file supported by the selected backend."),
+        mask: Optional[UploadFile] = File(None, description="Optional mask image for inpainting/edit backends that support it. Transparent pixels mark editable areas for OpenAI-style masks."),
+        model: Optional[str] = Form(
+            None,
+            description=(
+                "Optional provider/model image id. Omit to use the server's configured AbstractVision default; "
+                "use `diffusers/default`, `diffusers/<huggingface-repo>`, `sdcpp/default`, or "
+                "`openai-compatible/<model>`."
+            ),
+            examples=["openai-compatible/gpt-image-1"],
+        ),
+        size: Optional[str] = Form(None, description="OpenAI-style output image size such as `1024x1024`, `1536x1024`, `1024x1536`, or `auto` when supported.", examples=["1024x1024"]),
+        response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported by the server response.", examples=["b64_json"]),
+        negative_prompt: Optional[str] = Form(None, description="Local/backend-specific negative prompt. Strict OpenAI-compatible upstreams do not receive this top-level field unless supplied through `extra_json`.", examples=["blur, low quality"]),
+        seed: Optional[str] = Form(None, description="Local/backend-specific deterministic seed. Use `extra_json` for custom OpenAI-compatible upstreams that support a seed field.", examples=["1234"]),
+        steps: Optional[str] = Form(None, description="Local/backend-specific denoising/inference step count. Use `extra_json` for custom OpenAI-compatible upstreams that support a steps field.", examples=["20"]),
+        guidance_scale: Optional[str] = Form(None, description="Local/backend-specific classifier-free guidance scale. Use `extra_json` for custom OpenAI-compatible upstreams that support this field.", examples=["7.5"]),
+        extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters.", examples=['{"quality":"low","background":"auto","output_format":"png"}']),
     ) -> Dict[str, Any]:
         """Start an async image edit job with progress polling."""
         prompt_s = str(prompt or "").strip()
@@ -1502,8 +1712,6 @@ if _HAS_MULTIPART:
             raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
         if size:
             extra.setdefault("size", str(size).strip())
-        extra.setdefault("response_format", "b64_json")
-
         backend, call_lock, OptionalDependencyMissingError, _ImageGenerationRequest, ImageEditRequest = _resolve_backend(model)
         total_steps = int(steps_i) if steps_i is not None else None
 
@@ -1569,17 +1777,25 @@ if _HAS_MULTIPART:
 
     @router.post("/images/edits")
     async def images_edits(
-        prompt: str = Form(..., description="Text prompt describing the desired image edit."),
-        image: UploadFile = File(..., description="Source image to edit."),
-        mask: Optional[UploadFile] = File(None, description="Optional mask image for inpainting/edit backends that support it."),
-        model: Optional[str] = Form(None, description="Optional vision model id or local model path."),
-        size: Optional[str] = Form(None, description="OpenAI-style output image size such as `1024x1024`."),
-        response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported by the server response."),
-        negative_prompt: Optional[str] = Form(None, description="Optional negative prompt for backends that support it."),
-        seed: Optional[str] = Form(None, description="Optional deterministic seed."),
-        steps: Optional[str] = Form(None, description="Optional denoising/inference step count."),
-        guidance_scale: Optional[str] = Form(None, description="Optional classifier-free guidance scale."),
-        extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters."),
+        prompt: str = Form(..., description="Text prompt describing the desired image edit.", examples=["Make the mug blue and keep the white background."]),
+        image: UploadFile = File(..., description="Source image to edit. Upload a PNG, JPEG, or WebP file supported by the selected backend."),
+        mask: Optional[UploadFile] = File(None, description="Optional mask image for inpainting/edit backends that support it. Transparent pixels mark editable areas for OpenAI-style masks."),
+        model: Optional[str] = Form(
+            None,
+            description=(
+                "Optional provider/model image id. Omit to use the server's configured AbstractVision default; "
+                "use `diffusers/default`, `diffusers/<huggingface-repo>`, `sdcpp/default`, or "
+                "`openai-compatible/<model>`."
+            ),
+            examples=["openai-compatible/gpt-image-1"],
+        ),
+        size: Optional[str] = Form(None, description="OpenAI-style output image size such as `1024x1024`, `1536x1024`, `1024x1536`, or `auto` when supported.", examples=["1024x1024"]),
+        response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported by the server response.", examples=["b64_json"]),
+        negative_prompt: Optional[str] = Form(None, description="Local/backend-specific negative prompt. Strict OpenAI-compatible upstreams do not receive this top-level field unless supplied through `extra_json`.", examples=["blur, low quality"]),
+        seed: Optional[str] = Form(None, description="Local/backend-specific deterministic seed. Use `extra_json` for custom OpenAI-compatible upstreams that support a seed field.", examples=["1234"]),
+        steps: Optional[str] = Form(None, description="Local/backend-specific denoising/inference step count. Use `extra_json` for custom OpenAI-compatible upstreams that support a steps field.", examples=["20"]),
+        guidance_scale: Optional[str] = Form(None, description="Local/backend-specific classifier-free guidance scale. Use `extra_json` for custom OpenAI-compatible upstreams that support this field.", examples=["7.5"]),
+        extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters.", examples=['{"quality":"low","background":"auto","output_format":"png"}']),
     ) -> Dict[str, Any]:
         """
         OpenAI-compatible image edit endpoint: POST /v1/images/edits (multipart/form-data)
@@ -1614,8 +1830,6 @@ if _HAS_MULTIPART:
             raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
         if size:
             extra.setdefault("size", str(size).strip())
-        extra.setdefault("response_format", "b64_json")
-
         backend, call_lock, OptionalDependencyMissingError, _ImageGenerationRequest, ImageEditRequest = _resolve_backend(model)
 
         try:

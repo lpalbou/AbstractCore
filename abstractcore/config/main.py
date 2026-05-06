@@ -21,7 +21,7 @@ Usage:
     abstractcore --disable-vision
 
     # Audio/video defaults (attachments)
-    abstractcore --set-audio-strategy auto          # requires: pip install abstractvoice
+    abstractcore --set-audio-strategy auto          # requires: pip install "abstractcore[voice]"
     abstractcore --set-stt-language fr              # optional STT hint
     abstractcore --set-video-strategy auto          # frames fallback requires ffmpeg
     abstractcore --set-video-max-frames 6
@@ -859,7 +859,7 @@ def interactive_configure():
         config_manager.set_audio_strategy(audio_choice)
         print(f"✅ Set audio strategy to: {audio_choice}")
         if audio_choice in ("auto", "speech_to_text"):
-            print("   💡 Requires: pip install abstractvoice")
+            print('   💡 Requires: pip install "abstractcore[voice]"')
     else:
         print("⚠️  Invalid choice; keeping existing audio strategy.")
 
@@ -1246,7 +1246,7 @@ def install_check(auto_accept: bool = False) -> None:
                     _warn("TTS prefetch", f"download failed ({exc})")
     else:
         _warn("abstractvoice", "not installed (TTS/STT unavailable)")
-        print('     💡 Fix: pip install abstractvoice')
+        print('     💡 Fix: pip install "abstractcore[voice]"')
         print('     💡 Then: abstractvoice-prefetch --stt small --piper en')
 
     # Audio strategy
@@ -1299,7 +1299,7 @@ def install_check(auto_accept: bool = False) -> None:
         _pass("abstractvision", "installed")
     else:
         _warn("abstractvision", "not installed (image generation unavailable)")
-        print('     💡 Fix: pip install abstractvision')
+        print('     💡 Fix: pip install "abstractcore[vision]"')
 
     # ------------------------------------------------------------------
     # 8. API keys summary

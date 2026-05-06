@@ -17,6 +17,12 @@ the UI can load before authentication, but API operations remain protected. Set
 `ABSTRACTCORE_SERVER_PROTECT_DOCS=1` if you also want `/docs`, `/redoc`, and
 `/openapi.json` behind server auth.
 
+The OpenAPI schema includes executable examples for every request body. JSON
+examples intentionally show optional aliases as `null` when sending both fields
+would be ambiguous; the server drops nulls before routing. For local/custom
+OpenAI-compatible endpoints, set `base_url` only when you intentionally want to
+route away from the provider's default API host.
+
 ## Quick Start
 
 ### Install and Run (2 minutes)
@@ -160,6 +166,62 @@ uvicorn abstractcore.server.app:app --port 3000             # Custom port
 
 ## API Endpoints
 
+### Endpoint Map
+
+All API operations except `GET /health` use the same server auth policy:
+send `Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY` when
+`ABSTRACTCORE_SERVER_API_KEY` is configured. Provider-key overrides use
+`X-AbstractCore-Provider-API-Key`; body/query `api_key` fields are intentionally
+disabled.
+
+| Group | Method | Endpoint | Purpose | Main parameters |
+|---|---:|---|---|---|
+| Health | GET | `/health` | Liveness/version probe; never requires auth | none |
+| Discovery | GET | `/v1/models` | List models and filter by provider/capabilities | `provider`, `input_type`, `output_type`, `base_url` |
+| Discovery | GET | `/providers` | Provider status/capabilities | `include_models` |
+| Chat | POST | `/v1/chat/completions` | OpenAI-compatible chat, streaming, tools, media | `model`, `messages`, `stream`, `tools`, `tool_choice`, `temperature`, `max_tokens`, `base_url`, `agent_format`, `thinking` |
+| Chat | POST | `/{provider}/v1/chat/completions` | Provider-scoped chat route where body model is unprefixed | path `provider`, body `model`, `messages`, chat parameters |
+| Responses | POST | `/v1/responses` | Responses-style input API plus legacy chat body fallback | `model`, `input` or `messages`, `stream`, generation parameters |
+| Embeddings | POST | `/v1/embeddings` | OpenAI-compatible embedding vectors | `model`, `input`, `dimensions`, `encoding_format`, `user`, `base_url` |
+| Images | POST | `/v1/images/generations` | Text-to-image generation | `prompt`, optional `model`, `width`, `height`, `n`, `steps`, `guidance_scale`, `seed`, `quality`, `extra` |
+| Images | POST | `/v1/images/edits` | Image edit/inpaint via multipart form | `prompt`, `image`, optional `mask`, `model`, `size`, `steps`, `guidance_scale`, `seed`, `extra_json` |
+| Vision Jobs | POST | `/v1/vision/jobs/images/generations` | Async image generation with polling | same body as `/v1/images/generations` |
+| Vision Jobs | POST | `/v1/vision/jobs/images/edits` | Async image edit with polling | same form fields as `/v1/images/edits` |
+| Vision Jobs | GET | `/v1/vision/jobs/{job_id}` | Poll/consume async job state | path `job_id`, query `consume` |
+| Vision Models | GET | `/v1/vision/models` | Cached local AbstractVision model inventory | none |
+| Vision Models | GET | `/v1/vision/model` | Current in-memory local vision model | none |
+| Vision Models | POST | `/v1/vision/model/load` | Load a local model into memory | `model_id` or `model` |
+| Vision Models | POST | `/v1/vision/model/unload` | Best-effort unload active local model | none |
+| Audio | POST | `/v1/audio/transcriptions` | Speech-to-text multipart endpoint | `file`, optional `model`, `language`, `prompt`, `response_format`, `temperature`, `format`, `base_url` |
+| Audio | POST | `/v1/audio/speech` | Text-to-speech endpoint | `input`/`text`, optional `model`, `voice`, `response_format`/`format`, `speed`, `instructions`, `base_url` |
+| Audio | POST | `/v1/voice/clone` | AbstractVoice-compatible voice-clone/custom-voice extension | `file`, optional `model`, `base_url`, `name`, `reference_text`, `validate` |
+| Audio | POST | `/v1/audio/translations` | Reserved OpenAI-compatible translation route | `file`, `model`; returns `501` in this version |
+| Audio | POST | `/v1/audio/music` | Extension endpoint for text-to-music plugins | `prompt`/`input`/`text`, `lyrics`, `format`; requires a music capability plugin |
+| Prompt Cache | GET | `/acore/prompt_cache/stats` | Proxy cache stats to AbstractEndpoint | `base_url`; provider key header if upstream requires auth |
+| Prompt Cache | GET | `/acore/prompt_cache/capabilities` | Proxy cache capability discovery | `base_url`; provider key header if upstream requires auth |
+| Prompt Cache | POST | `/acore/prompt_cache/set` | Select/create upstream cache key | `base_url`, `key`, `make_default`, `ttl_s` |
+| Prompt Cache | POST | `/acore/prompt_cache/update` | Prepare prompt/messages/tools upstream | `base_url`, `key`, `prompt` or `messages`, `system_prompt`, `tools`, `ttl_s` |
+| Prompt Cache | POST | `/acore/prompt_cache/fork` | Fork one upstream cache key to another | `base_url`, `from_key`, `to_key`, `make_default`, `ttl_s` |
+| Prompt Cache | POST | `/acore/prompt_cache/clear` | Clear upstream cache state | `base_url`, optional `key` |
+| Prompt Cache | POST | `/acore/prompt_cache/prepare_modules` | Prepare reusable module/tool context upstream | `base_url`, `namespace`, `modules`, `make_default`, `ttl_s`, `version` |
+
+### Shared Request Conventions
+
+- `model` usually uses `provider/model` format, for example
+  `openai/gpt-4o-mini`, `anthropic/claude-haiku-4-5`,
+  `ollama/qwen3:4b`, `lmstudio/qwen/qwen3-vl-4b`, or
+  `openai-compatible/my-model`.
+- `base_url` is an AbstractCore extension for routing a provider to a specific
+  OpenAI-compatible endpoint. Loopback URLs are allowed by default; non-loopback
+  URLs require `ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST`.
+- `X-AbstractCore-Provider-API-Key` overrides only the requested upstream
+  provider for that request. It does not replace the AbstractCore server token.
+- `api_key` body/query parameters remain in some schemas only as disabled
+  compatibility placeholders; do not use them.
+- Remote URL media fetches are SSRF-protected by default. Local file paths are
+  disabled unless `ABSTRACTCORE_SERVER_MEDIA_ROOT` or
+  `ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1` is configured.
+
 ### Chat Completions
 
 **Endpoint:** `POST /v1/chat/completions`
@@ -298,6 +360,35 @@ curl -X POST http://localhost:8000/v1/chat/completions \
   }'
 ```
 
+### Provider-Specific Chat Route
+
+**Endpoint:** `POST /{provider}/v1/chat/completions`
+
+This route is useful for clients that already route by base URL path and expect
+the body `model` to be provider-local. It is equivalent to using
+`POST /v1/chat/completions` with `model="{provider}/{model}"`.
+
+Parameters:
+- Path `provider` (required): provider route prefix such as `openai`,
+  `anthropic`, `ollama`, `openrouter`, `portkey`, `lmstudio`, `vllm`, or
+  `openai-compatible`.
+- Body `model` (required): provider-local model id, without the provider prefix.
+- Body `messages`, `stream`, `tools`, `tool_choice`, `agent_format`,
+  `thinking`, `base_url`, and other chat parameters behave like
+  `/v1/chat/completions`.
+
+Example:
+
+```bash
+curl -X POST http://localhost:8000/openai/v1/chat/completions \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gpt-4o-mini",
+    "messages": [{"role": "user", "content": "Hello!"}]
+  }'
+```
+
 ### Media generation endpoints (optional)
 
 AbstractCore Server can optionally expose OpenAI-compatible **image generation** and **audio** endpoints.
@@ -313,7 +404,8 @@ Endpoints:
 - `POST /v1/images/edits`
 
 Remote OpenAI-compatible image proxying is included in `abstractcore[server]`
-and is enabled by setting `ABSTRACTCORE_VISION_UPSTREAM_BASE_URL`.
+and is enabled by setting `ABSTRACTCORE_VISION_UPSTREAM_BASE_URL`
+or the AbstractVision equivalent `ABSTRACTVISION_BASE_URL`.
 
 Install for remote image proxying:
 ```bash
@@ -326,14 +418,101 @@ stable-diffusion.cpp models itself:
 pip install "abstractcore[server,vision]"
 ```
 
+Use provider/model-style image ids:
+- Omit `model` only when this server has a configured AbstractVision/OpenAI-compatible
+  image default, for example via `ABSTRACTCORE_VISION_UPSTREAM_BASE_URL` /
+  `ABSTRACTVISION_BASE_URL` plus an optional default model id.
+- `diffusers/default` selects the configured local Diffusers default:
+  `ABSTRACTCORE_VISION_MODEL_ID` / `ABSTRACTVISION_DIFFUSERS_MODEL_ID` /
+  `ABSTRACTVISION_MODEL_ID`.
+- `diffusers/<huggingface-repo>` selects an explicit local Diffusers model.
+- `sdcpp/default` selects the configured stable-diffusion.cpp model.
+- `openai-compatible/<model>` routes to the configured OpenAI-compatible image
+  endpoint.
+
+Local Diffusers generation is cache-only by default; set
+`ABSTRACTCORE_VISION_ALLOW_DOWNLOAD=1` or
+`ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD=1` only when runtime downloads are
+intentional.
+
+`POST /v1/images/generations` JSON parameters:
+
+| Field | Required | Notes |
+|---|---:|---|
+| `prompt` | yes | Text prompt to render. |
+| `model` | no | Omit for the server's configured AbstractVision default. If present, use provider/model routing: `diffusers/default`, `diffusers/<huggingface-repo>`, `sdcpp/default`, or `openai-compatible/<model>`. |
+| `width`, `height` | no | Requested output dimensions in pixels. These are the documented fields for JSON generation. Legacy `size: "WIDTHxHEIGHT"` is accepted for compatibility but not advertised. |
+| `n` | no | Number of images; clamped to `1..10`. |
+| `response_format` | no | Server response format. `b64_json` is the supported response shape. |
+| `negative_prompt` | no | Local/backend-specific negative prompt. Strict OpenAI-compatible upstreams do not receive this top-level field; use `extra` only when your custom upstream supports it. |
+| `seed` | no | Local deterministic seed. Strict OpenAI-compatible upstreams do not receive this top-level field; use `extra.seed` only when your custom upstream supports it. |
+| `steps` | no | Local denoising/inference step count. Strict OpenAI-compatible upstreams do not receive this top-level field; use `extra.steps` only when your custom upstream supports it. |
+| `guidance_scale` | no | Local classifier-free guidance scale. Strict OpenAI-compatible upstreams do not receive this top-level field; use `extra.guidance_scale` only when your custom upstream supports it. |
+| `quality`, `style`, `user`, `background`, `output_format`, `output_compression`, `moderation` | no | Named OpenAI-compatible passthrough fields for upstream image endpoints. |
+| `extra` | no | JSON object for backend-specific passthrough fields. Prefer this over arbitrary top-level keys so the schema stays explicit. |
+
+`POST /v1/images/edits` multipart parameters:
+
+| Field | Required | Notes |
+|---|---:|---|
+| `prompt` | yes | Edit/inpaint instruction. |
+| `image` | yes | Source image file. |
+| `mask` | no | Optional mask image for inpainting/edit-capable backends. |
+| `model` | no | Same provider/model routing as generation; omit for the server default. |
+| `size` | no | OpenAI-style edit output size such as `1024x1024`; multipart edit compatibility keeps this field. |
+| `response_format` | no | Server response shape; `b64_json` is supported. |
+| `negative_prompt`, `seed`, `steps`, `guidance_scale` | no | Local/backend-specific fields. Strict OpenAI-compatible upstreams do not receive them as top-level fields; use `extra_json` only when your custom upstream supports them. |
+| `extra_json` | no | JSON object string with backend/upstream-specific parameters. |
+
+Async image jobs are available when a request can take long enough that polling
+is preferable:
+- `POST /v1/vision/jobs/images/generations` uses the same JSON body as
+  `/v1/images/generations` and returns `{"job_id": "..."}`.
+- `POST /v1/vision/jobs/images/edits` uses the same multipart fields as
+  `/v1/images/edits` and returns `{"job_id": "..."}`.
+- `GET /v1/vision/jobs/{job_id}` returns `queued`, `running`, `succeeded`, or
+  `failed`. Add `?consume=true` to remove a completed job from the in-memory job
+  store after reading it.
+
+Examples:
+
+```bash
+# Remote OpenAI-compatible image endpoint
+export ABSTRACTCORE_VISION_UPSTREAM_BASE_URL="https://api.openai.com/v1"
+export ABSTRACTCORE_VISION_UPSTREAM_API_KEY="$OPENAI_API_KEY"
+
+curl -X POST http://localhost:8000/v1/images/generations \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"openai-compatible/gpt-image-2","prompt":"a precise product photo of a red ceramic mug","width":1024,"height":1024,"quality":"low","response_format":"b64_json"}'
+
+# Configured server image default
+curl -X POST http://localhost:8000/v1/images/generations \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"a red fox in snow","width":512,"height":512,"response_format":"b64_json"}'
+```
+
+Local vision model helper endpoints:
+
+| Endpoint | Purpose | Notes |
+|---|---|---|
+| `GET /v1/vision/models` | List local AbstractVision registry models that are present in known local caches. | Useful before trying local generation with `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD=0`. |
+| `GET /v1/vision/model` | Inspect the current in-memory local generation backend. | Reports `model_id`, `backend_kind`, `loaded_at_s`, and whether a backend is loaded. |
+| `POST /v1/vision/model/load` | Preload a local model into memory. | JSON body accepts `model_id` or `model`; intended for local Diffusers/sdcpp backends, not remote proxy models. |
+| `POST /v1/vision/model/unload` | Best-effort unload of the active local model. | Frees memory when the backend supports unloading. |
+
 #### Audio (STT/TTS)
 
 Endpoints:
 - `POST /v1/audio/transcriptions` (multipart; `file=...`)
 - `POST /v1/audio/speech` (json; `input=...`, optional `voice`, optional `format`)
+- `POST /v1/voice/clone` (multipart; extension route for AbstractVoice-compatible voice cloning)
+- `POST /v1/audio/translations` (multipart; reserved for compatibility, returns `501`)
+- `POST /v1/audio/music` (json; extension endpoint, requires a music capability plugin)
 
 Local plugin fallback is enabled when `model` is omitted. OpenAI SDK-style
-clients that require a non-empty model string can use `local/abstractvoice`.
+clients that require a non-empty model string can use `abstractvoice/default`.
 
 Remote provider routing is enabled when `model` is supplied in `provider/model` format:
 - `openai/gpt-4o-mini-transcribe`, `openai/whisper-1`
@@ -341,6 +520,10 @@ Remote provider routing is enabled when `model` is supplied in `provider/model` 
 - `openrouter/...` for OpenRouter STT/TTS models
 - `portkey/...` for Portkey-routed OpenAI-compatible audio models
 - `openai-compatible/...` for endpoints that implement OpenAI-compatible audio routes
+
+For `openai-compatible/...`, request-level `base_url` can point to a local
+AbstractVoice/OpenAI-compatible audio server. Loopback URLs are allowed by
+default; non-loopback URLs require `ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST`.
 
 If `model` is omitted, the endpoint delegates to local capability plugins
 (typically `abstractvoice`) and returns `501` when no suitable plugin is installed.
@@ -353,15 +536,68 @@ pip install "abstractcore[server,remote]"
 Install for local plugin fallback:
 ```bash
 pip install "abstractcore[server]"
-pip install abstractvoice
+pip install "abstractcore[voice]"
 ```
 
 Notes:
-- `abstractvoice` 0.8.2+ can install the base plugin path on Python 3.9,
-  but Python 3.10+ is recommended. Optional/heavier engines such as OpenF5/F5-TTS,
-  Chroma, and OmniVoice are Python 3.10+ paths; AEC requires Python 3.11+.
+- `abstractvoice` 0.8.5+ can install the base plugin path on Python 3.9,
+  but Python 3.10+ is recommended. Optional/heavier engines and clone backends
+  such as OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths; AEC
+  requires Python 3.11+.
 - `/v1/audio/transcriptions` requires `python-multipart` for form parsing (included in the server extra).
 - Uploaded audio is limited by `ABSTRACTCORE_SERVER_AUDIO_MAX_BYTES` (default: 25 MB).
+
+`POST /v1/audio/transcriptions` multipart parameters:
+
+| Field | Required | Notes |
+|---|---:|---|
+| `file` | yes | Audio file to transcribe, commonly `mp3`, `mp4`, `mpeg`, `mpga`, `m4a`, `wav`, or `webm`. |
+| `model` | no | Provider/model id for remote STT (`openai/gpt-4o-mini-transcribe`, `openai/whisper-1`, `openrouter/...`, `portkey/...`, `openai-compatible/...`). Omit for local `abstractvoice` plugin fallback; `abstractvoice/default` is accepted for clients that require a model string. |
+| `language` | no | Input language code such as `en` or `fr`. |
+| `prompt` | no | Provider transcription prompt/context. |
+| `response_format` | no | Provider response format such as `json`, `text`, `srt`, or `vtt`. |
+| `temperature` | no | Provider sampling temperature where supported. |
+| `format` | no | Audio format override for providers that need it, notably OpenRouter base64 audio input. |
+| `base_url` | no | OpenAI-compatible endpoint override for `openai-compatible/...`; loopback is allowed by default, non-loopback requires allowlist. |
+
+`POST /v1/audio/speech` JSON parameters:
+
+| Field | Required | Notes |
+|---|---:|---|
+| `input` or `text` | yes | Text to synthesize. `text` is the AbstractCore-compatible alias. |
+| `model` | no | Provider/model id for remote TTS (`openai/gpt-4o-mini-tts`, `openai/tts-1`, `openrouter/...`, `portkey/...`, `openai-compatible/...`). Omit for local plugin fallback; `abstractvoice/default` is accepted. |
+| `voice` | no | Provider/backend voice name; remote OpenAI-compatible routing defaults to `alloy`. OpenAI TTS voices include `alloy`, `ash`, `ballad`, `coral`, `echo`, `fable`, `nova`, `onyx`, `sage`, `shimmer`, `verse`, `marin`, and `cedar`; the Swagger example uses `coral`. |
+| `response_format` or `format` | no | Audio output format. Remote providers commonly support `mp3`, `wav`, `opus`, `aac`, `flac`, or `pcm`; local plugin fallback defaults to `wav`. |
+| `speed` | no | Speech speed multiplier when supported. |
+| `instructions` | no | Provider-specific style/instruction text for expressive TTS. |
+| `provider` | no | Optional provider-routing options forwarded to compatible gateways. |
+| `base_url` | no | Endpoint override for local/gateway routing. Prefer this with `openai-compatible/...`; if set with `openai/...`, the request is sent to that URL instead of api.openai.com. Loopback is allowed by default, non-loopback requires allowlist. |
+
+`POST /v1/voice/clone` multipart parameters:
+
+| Field | Required | Notes |
+|---|---:|---|
+| `file` | yes | Reference voice audio file. |
+| `model` | no | Provider/model id for remote clone routing. Use `openai-compatible/default` for an AbstractVoice-compatible server, or `openai/default` where OpenAI custom voice creation is available. Omit for local AbstractVoice clone fallback. |
+| `name` | no | Friendly cloned voice name. |
+| `reference_text` | no | Transcript of the reference audio when available. |
+| `validate` | no | Ask compatible clone servers to validate/smoke-test the clone before returning. |
+| `base_url` | no | OpenAI-compatible endpoint override for `openai-compatible/...`; loopback is allowed by default, non-loopback requires allowlist. |
+| `clone_path` | no | Provider-specific clone path. Defaults to `/voice/clone` for OpenAI-compatible servers and `/audio/voices` for OpenAI. |
+| `file_field` | no | Provider-specific multipart file field. Defaults to `file`; OpenAI uses `audio_sample`. |
+| `consent` | no | Provider-specific consent id when custom voice creation requires it. |
+
+The returned `voice_id` / `id` can be used as the `voice` value in
+`/v1/audio/speech` when the selected backend supports custom voices.
+
+`POST /v1/audio/music` JSON parameters:
+
+| Field | Required | Notes |
+|---|---:|---|
+| `prompt` or `input` or `text` | yes | Music generation prompt. |
+| `lyrics` | no | Optional lyrics for vocal music backends. |
+| `response_format` or `format` | no | Only `wav` is supported in this server contract. |
+| extra top-level fields | no | Best-effort passthrough to the installed music capability plugin. |
 
 Examples:
 
@@ -377,15 +613,25 @@ curl -X POST http://localhost:8000/v1/audio/transcriptions \
 curl -X POST http://localhost:8000/v1/audio/speech \
   -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"openai/gpt-4o-mini-tts","input":"Hello!","voice":"alloy","response_format":"mp3"}' \
+  -d '{"model":"openai/gpt-4o-mini-tts","input":"Hello!","voice":"coral","response_format":"mp3"}' \
   --output hello.mp3
 
 # Local abstractvoice TTS through the OpenAI-compatible endpoint
 curl -X POST http://localhost:8000/v1/audio/speech \
   -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"model":"local/abstractvoice","input":"Hello!","voice":"alloy","format":"wav"}' \
+  -d '{"model":"abstractvoice/default","input":"Hello!","voice":"alloy","format":"wav"}' \
   --output hello.wav
+
+# Remote/local OpenAI-compatible voice clone endpoint
+curl -X POST http://localhost:8000/v1/voice/clone \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -F "file=@reference.wav" \
+  -F "model=openai-compatible/default" \
+  -F "base_url=http://127.0.0.1:5000/v1" \
+  -F "name=my_voice" \
+  -F "reference_text=Hello from my reference recording." \
+  -F "validate=true"
 ```
 
 If you want to “ask a model about an audio file”, prefer one of:
@@ -660,6 +906,17 @@ AbstractCore implements an OpenAI-compatible Responses-style API, including `inp
 }
 ```
 
+Key parameters:
+
+| Field | Required | Notes |
+|---|---:|---|
+| `model` | yes | Provider/model id. Bare model ids may be auto-detected, but provider/model is preferred. |
+| `input` | yes, unless `messages` is used | Responses-style array of input messages. Content items use `input_text` and `input_file`. |
+| `messages` | yes, unless `input` is used | Backward-compatible chat-completions request shape. |
+| `stream` | no | When `true`, returns server-sent events. |
+| `max_tokens`, `temperature`, `top_p` | no | Standard generation controls, forwarded where supported. |
+| `base_url`, `agent_format`, `thinking` | no | AbstractCore extensions with the same behavior as `/v1/chat/completions`. |
+
 **Legacy Format (Still Supported):**
 ```json
 {
@@ -842,6 +1099,18 @@ OpenAI-compatible request fields are forwarded where supported:
 - `user`
 - `base_url` (AbstractCore extension; loopback by default, allowlist required for non-loopback)
 
+Parameters:
+
+| Field | Required | Notes |
+|---|---:|---|
+| `input` | yes | String or array of strings. Arrays return one vector per input item. |
+| `model` | yes | Provider/model id such as `openai/text-embedding-3-small`, `openrouter/openai/text-embedding-3-small`, `portkey/...`, `openai-compatible/...`, `ollama/...`, `lmstudio/...`, or `huggingface/...`. |
+| `encoding_format` | no | `float` by default; `base64` is accepted where supported by the provider/backend. |
+| `dimensions` | no | Requested output dimensions for providers that support native dimension reduction; local backends may truncate when appropriate. |
+| `user` | no | End-user identifier forwarded to providers that support abuse monitoring. |
+| `base_url` | no | OpenAI-compatible endpoint override with the same allowlist policy as chat. |
+| `api_key` | no | Deprecated/disabled in the body. Use `X-AbstractCore-Provider-API-Key` for provider overrides. |
+
 **Batch Embedding:**
 ```bash
 curl -X POST http://localhost:8000/v1/embeddings \
@@ -861,8 +1130,11 @@ curl -X POST http://localhost:8000/v1/embeddings \
 List all available models from configured providers.
 
 **Query Parameters:**
-- `provider`: Filter by provider (e.g., `ollama`, `openai`)
-- `type`: Filter by type (`text-generation` or `text-embedding`)
+- `provider`: Filter by provider (e.g., `ollama`, `openai`, `anthropic`, `lmstudio`, `openai-compatible`).
+- `input_type`: Filter by input capability: `text`, `image`, `audio`, or `video`.
+- `output_type`: Filter by output capability: `text` or `embeddings`.
+- `base_url`: Optional upstream base URL override for providers that support OpenAI-compatible discovery. Loopback is allowed by default; non-loopback requires `ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST`.
+- `api_key`: Deprecated/disabled query parameter. Use `X-AbstractCore-Provider-API-Key` for provider overrides.
 
 **Examples:**
 ```bash
@@ -873,10 +1145,13 @@ curl http://localhost:8000/v1/models
 curl http://localhost:8000/v1/models?provider=ollama
 
 # Embedding models only
-curl http://localhost:8000/v1/models?type=text-embedding
+curl http://localhost:8000/v1/models?output_type=embeddings
+
+# Vision-capable input models
+curl http://localhost:8000/v1/models?input_type=image
 
 # Ollama embeddings
-curl http://localhost:8000/v1/models?provider=ollama&type=text-embedding
+curl http://localhost:8000/v1/models?provider=ollama&output_type=embeddings
 ```
 
 ---
@@ -886,6 +1161,10 @@ curl http://localhost:8000/v1/models?provider=ollama&type=text-embedding
 **Endpoint:** `GET /providers`
 
 List all available providers and their status.
+
+**Query Parameters:**
+- `include_models` (optional, default `false`): Include model lists for each
+  provider. This is slower because it may query provider registries/endpoints.
 
 **Response:**
 ```json
@@ -909,7 +1188,57 @@ List all available providers and their status.
 
 Server health check for monitoring.
 
-**Response:** `{"status": "healthy"}`
+**Response:** includes `status`, server `version`, and enabled feature flags.
+
+---
+
+### Prompt Cache Control Plane
+
+Prompt-cache routes are AbstractCore extensions for orchestration systems that
+want one gateway to talk to an upstream
+[AbstractEndpoint](endpoint.md) prompt-cache control plane. They proxy to the
+`/acore/prompt_cache/*` routes on the upstream endpoint named by `base_url`.
+
+These routes do not create local cache state in AbstractCore Server itself.
+They normalize a supplied `base_url`, enforce the same server-side base URL
+allowlist rules as other request-level routing, and forward provider auth only
+from `X-AbstractCore-Provider-API-Key` or from `Authorization` when server auth
+is disabled.
+
+Common fields:
+
+| Field | Location | Required | Notes |
+|---|---|---:|---|
+| `base_url` | query or JSON body | yes | Upstream AbstractEndpoint URL. It may include `/v1`; the proxy strips that suffix for control-plane calls. |
+| `X-AbstractCore-Provider-API-Key` | header | no | Upstream endpoint token when required. |
+| `api_key` | query/body | no | Deprecated/disabled; do not use. |
+| `ttl_s` | JSON body | no | Optional upstream cache TTL in seconds, where supported. |
+
+Operations:
+
+| Endpoint | Method | Parameters | Result |
+|---|---:|---|---|
+| `/acore/prompt_cache/capabilities` | GET | `base_url` | Upstream supported cache features. |
+| `/acore/prompt_cache/stats` | GET | `base_url` | Upstream cache stats. |
+| `/acore/prompt_cache/set` | POST | `base_url`, `key`, `make_default`, `ttl_s` | Select/create a cache key upstream. |
+| `/acore/prompt_cache/update` | POST | `base_url`, `key`, `prompt` or `messages`, `system_prompt`, `tools`, `add_generation_prompt`, `ttl_s` | Prepare prompt/messages/tools into an upstream cache key. |
+| `/acore/prompt_cache/fork` | POST | `base_url`, `from_key`, `to_key`, `make_default`, `ttl_s` | Fork an existing upstream key. |
+| `/acore/prompt_cache/clear` | POST | `base_url`, optional `key` | Clear a key or upstream default/all cache state, depending on backend support. |
+| `/acore/prompt_cache/prepare_modules` | POST | `base_url`, `namespace`, `modules`, `make_default`, `ttl_s`, `version` | Prepare reusable module/tool context upstream. |
+
+Example:
+
+```bash
+curl -X POST http://localhost:8000/acore/prompt_cache/update \
+  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "base_url": "http://127.0.0.1:8001/v1",
+    "key": "project-default",
+    "messages": [{"role": "system", "content": "You are concise."}],
+    "ttl_s": 3600
+  }'
+```
 
 ---
 
@@ -979,18 +1308,21 @@ ghcr.io/lpalbou/abstractcore-server:<version>
 The image is built from PyPI, not from the repository checkout, and installs:
 
 ```bash
-abstractcore[server,remote,media,tokens,compression]==<version>
+abstractcore[server,remote,media,tokens,compression,voice,vision]==<version>
 ```
 
 It includes remote chat/responses, remote embeddings, remote STT/TTS routing,
-remote OpenAI-compatible image proxying, server dependencies, media parsing,
-token counting, and compression helpers. It intentionally does not include
-local model runtimes (`vllm`, `mlx`, `huggingface`, local Diffusers/sdcpp
-vision backends) or local embedding dependencies (`sentence-transformers`).
+remote OpenAI-compatible image proxying, AbstractVoice/AbstractVision capability
+plugins, server dependencies, media parsing, token counting, and compression
+helpers. It intentionally does not include AbstractCore local LLM runtimes
+(`vllm`, `mlx`, `huggingface`), local embedding dependencies
+(`sentence-transformers`), or heavyweight AbstractVoice optional clone/voice
+extras. Local vision runtime behavior remains opt-in by configuration and model
+availability.
 
 **Run:**
 ```bash
-docker pull ghcr.io/lpalbou/abstractcore-server:2.13.5
+docker pull ghcr.io/lpalbou/abstractcore-server:2.13.6
 ```
 
 For local development, keep secrets in an uncommitted `.env` file:
@@ -1004,6 +1336,8 @@ PORTKEY_API_KEY=pk_...
 PORTKEY_CONFIG=pcfg_...
 OPENAI_COMPATIBLE_BASE_URL=http://host.docker.internal:1234/v1
 OPENAI_COMPATIBLE_API_KEY=optional
+ABSTRACTCORE_VISION_UPSTREAM_BASE_URL=https://api.openai.com/v1
+ABSTRACTCORE_VISION_UPSTREAM_API_KEY=${OPENAI_API_KEY}
 ```
 
 Then run the image with that environment file:
@@ -1012,7 +1346,7 @@ Then run the image with that environment file:
 docker run --rm --name abstractcore-server \
   -p 127.0.0.1:8000:8000 \
   --env-file .env \
-  ghcr.io/lpalbou/abstractcore-server:2.13.5
+  ghcr.io/lpalbou/abstractcore-server:2.13.6
 ```
 
 `ABSTRACTCORE_SERVER_API_KEY` is the AbstractCore server auth token. Clients
@@ -1032,7 +1366,7 @@ docker run --rm --name abstractcore-server \
   -e ABSTRACTCORE_SERVER_API_KEY="$ABSTRACTCORE_SERVER_API_KEY" \
   -e OPENAI_COMPATIBLE_BASE_URL="http://host.docker.internal:1234/v1" \
   -e OPENAI_COMPATIBLE_API_KEY="$OPENAI_COMPATIBLE_API_KEY" \
-  ghcr.io/lpalbou/abstractcore-server:2.13.5
+  ghcr.io/lpalbou/abstractcore-server:2.13.6
 ```
 
 ### Docker Compose
@@ -1042,7 +1376,7 @@ version: '3.8'
 
 services:
   abstractcore:
-    image: ghcr.io/lpalbou/abstractcore-server:2.13.5
+    image: ghcr.io/lpalbou/abstractcore-server:2.13.6
     ports:
       - "8000:8000"
     environment:
@@ -1054,6 +1388,8 @@ services:
       - PORTKEY_CONFIG=${PORTKEY_CONFIG}
       - OPENAI_COMPATIBLE_BASE_URL=${OPENAI_COMPATIBLE_BASE_URL}
       - OPENAI_COMPATIBLE_API_KEY=${OPENAI_COMPATIBLE_API_KEY}
+      - ABSTRACTCORE_VISION_UPSTREAM_BASE_URL=${ABSTRACTCORE_VISION_UPSTREAM_BASE_URL}
+      - ABSTRACTCORE_VISION_UPSTREAM_API_KEY=${ABSTRACTCORE_VISION_UPSTREAM_API_KEY}
     restart: unless-stopped
 ```
 

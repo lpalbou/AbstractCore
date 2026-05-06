@@ -159,7 +159,7 @@ Audio attachments are controlled by `audio_policy`. The default is `auto`: use n
 
 ```bash
 # STT fallback requires abstractvoice
-pip install abstractvoice
+pip install "abstractcore[voice]"
 
 # Override strategy explicitly (auto is the default)
 abstractcore --set-audio-strategy auto

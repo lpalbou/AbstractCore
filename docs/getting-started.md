@@ -48,15 +48,23 @@ Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, LocalAI, etc
 Optional capability plugins (deterministic multimodal outputs):
 
 ```bash
-pip install abstractvoice   # enables llm.voice / llm.audio (TTS/STT)
-pip install abstractvision  # enables llm.vision (generative vision; typically via an OpenAI-compatible images endpoint)
+pip install "abstractcore[voice]"   # enables llm.voice / llm.audio via abstractvoice (TTS/STT)
+pip install "abstractcore[vision]"  # enables llm.vision via abstractvision (generative vision)
 ```
 
-For `abstractvoice` 0.8.2+, the base AbstractCore plugin path can install on
+For `abstractvoice` 0.8.5+, the base AbstractCore plugin path can install on
 Python 3.9, but Python 3.10+ is recommended. Some optional/heavier voice
-engines are Python 3.10+ only.
+engines and voice-clone backends are Python 3.10+ only.
 
 See: [Capabilities](capabilities.md) and [Server](server.md).
+
+For generative vision, AbstractCore does not hardcode a local model default.
+Configure an AbstractVision/OpenAI-compatible image default and omit `model`, or
+route explicitly with `model="diffusers/default"`,
+`model="diffusers/<huggingface-repo>"`, `model="sdcpp/default"`, or
+`model="openai-compatible/<model>"` on `/v1/images/generations` /
+`/v1/images/edits`. Local Diffusers runs cache-only unless you opt in to
+downloads.
 
 ## Providers and models
 

@@ -197,6 +197,14 @@ media = [
     "pandas>=1.0.0,<3.0.0",
 ]
 
+voice = [
+    "abstractvoice>=0.8.5",
+]
+
+audio = [
+    "abstractvoice>=0.8.5",
+]
+
 compression = [
     # Glyph visual-text compression renders text into images (PIL renderer).
     "Pillow>=10.0.0,<12.0.0",
@@ -239,12 +247,13 @@ all = [
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
+    "abstractvoice>=0.8.5",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.2.0",
+    "abstractvision>=0.2.6",
 ]
 
 all-apple = [
@@ -275,12 +284,13 @@ all-apple = [
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
+    "abstractvoice>=0.8.5",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.2.0",
+    "abstractvision>=0.2.6",
 ]
 
 all-gpu = [
@@ -310,12 +320,13 @@ all-gpu = [
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
+    "abstractvoice>=0.8.5",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.2.0",
+    "abstractvision>=0.2.6",
 ]
 
 # Legacy broad bundle kept for existing users. New installs should usually
@@ -346,12 +357,13 @@ all-non-mlx = [
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
+    "abstractvoice>=0.8.5",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.2.0",
+    "abstractvision>=0.2.6",
 ]
 
 # Development dependencies
@@ -380,19 +392,19 @@ server = [
 # Vision (optional) - delegates to AbstractVision.
 # Kept as a separate extra for installs that want vision without the HTTP server.
 vision = [
-    "abstractvision>=0.2.0",
+    "abstractvision>=0.2.6",
 ]
 
 vision-diffusers = [
-    "abstractvision[huggingface]>=0.2.0",
+    "abstractvision[huggingface]>=0.2.6",
 ]
 
 vision-sdcpp = [
-    "abstractvision[sdcpp]>=0.2.0",
+    "abstractvision[sdcpp]>=0.2.6",
 ]
 
 vision-local = [
-    "abstractvision[local]>=0.2.0",
+    "abstractvision[local]>=0.2.6",
 ]
 
 # Testing dependencies
@@ -460,7 +472,7 @@ full-dev = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.2.0",
+    "abstractvision>=0.2.6",
     # Tooling
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
