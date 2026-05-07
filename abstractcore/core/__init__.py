@@ -12,6 +12,12 @@ from .factory import create_llm
 from .session import BasicSession
 from .cached_session import CachedSession
 from .types import GenerateResponse, Message
+from .multimodal_generation import (
+    GeneratedItem,
+    GeneratedResource,
+    GenerationIssue,
+    MultimodalGenerateResponse,
+)
 from .enums import ModelParameter, ModelCapability, MessageRole
 from .interface import AbstractCoreInterface
 
@@ -20,6 +26,10 @@ __all__ = [
     'BasicSession',
     'CachedSession',
     'GenerateResponse',
+    'GeneratedItem',
+    'GeneratedResource',
+    'GenerationIssue',
+    'MultimodalGenerateResponse',
     'Message',
     'ModelParameter',
     'ModelCapability',

@@ -34,6 +34,8 @@ import httpx
 from fastapi import APIRouter, Body, File, Form, HTTPException, Path as FastAPIPath, Query, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .capability_generation import ServerVisionFacade, create_capability_generation_core
+
 try:  # Optional dependency (needed only for multipart parsing).
     import multipart  # type: ignore  # noqa: F401
 
@@ -1283,6 +1285,30 @@ def _resolve_backend(request_model: Any):
     raise HTTPException(status_code=501, detail=f"Unknown vision backend kind: {backend_kind!r} (set ABSTRACTCORE_VISION_BACKEND)")
 
 
+def _create_vision_generation_core(request_model: Any):
+    backend, call_lock, OptionalDependencyMissingError, ImageGenerationRequest, ImageEditRequest = _resolve_backend(
+        request_model
+    )
+    facade = ServerVisionFacade(
+        backend=backend,
+        call_lock=call_lock,
+        image_generation_request_cls=ImageGenerationRequest,
+        image_edit_request_cls=ImageEditRequest,
+        backend_id=f"abstractcore-server:{_effective_backend_kind(request_model)}",
+    )
+    core = create_capability_generation_core(vision_facade=facade)
+    return core, OptionalDependencyMissingError
+
+
+def _first_generated_image_bytes(result: Any) -> bytes:
+    image_items = getattr(result, "outputs", {}).get("image", [])
+    item = image_items[0] if image_items else None
+    data = getattr(item, "data", None)
+    if not isinstance(data, (bytes, bytearray)):
+        raise RuntimeError("Image backend returned an unexpected type (expected raw bytes).")
+    return bytes(data)
+
+
 def _import_registry() -> Any:
     try:
         from abstractvision import VisionModelCapabilitiesRegistry  # type: ignore
@@ -1499,25 +1525,26 @@ async def images_generations(payload: ImageGenerationBody = Body(...)) -> Dict[s
     seed = _coerce_int(payload.get("seed"))
     width, height, extra = _image_generation_request_parts(payload)
 
-    backend, call_lock, OptionalDependencyMissingError, ImageGenerationRequest, _ImageEditRequest = _resolve_backend(
-        payload.get("model")
-    )
+    core, OptionalDependencyMissingError = _create_vision_generation_core(payload.get("model"))
 
     data_items = []
     for _ in range(n):
         try:
-            req = ImageGenerationRequest(
-                prompt=prompt,
-                negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
-                width=width,
-                height=height,
-                steps=steps,
-                guidance_scale=guidance_scale,
-                seed=seed,
-                extra=extra,
+            result = core.generate(
+                prompt,
+                output={
+                    "modality": "image",
+                    "task": "image_generation",
+                    "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
+                    "width": width,
+                    "height": height,
+                    "steps": steps,
+                    "guidance_scale": guidance_scale,
+                    "seed": seed,
+                    "extra": extra,
+                },
             )
-            with call_lock:
-                asset = backend.generate_image(req)
+            image_bytes = _first_generated_image_bytes(result)
         except OptionalDependencyMissingError as e:
             raise HTTPException(status_code=501, detail=str(e)) from e
         except ValueError as e:
@@ -1526,7 +1553,7 @@ async def images_generations(payload: ImageGenerationBody = Body(...)) -> Dict[s
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e)) from e
-        b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
+        b64 = base64.b64encode(image_bytes).decode("ascii")
         data_items.append({"b64_json": b64})
 
     return {"created": int(time.time()), "data": data_items}
@@ -1830,21 +1857,38 @@ if _HAS_MULTIPART:
             raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
         if size:
             extra.setdefault("size", str(size).strip())
-        backend, call_lock, OptionalDependencyMissingError, _ImageGenerationRequest, ImageEditRequest = _resolve_backend(model)
+        core, OptionalDependencyMissingError = _create_vision_generation_core(model)
 
         try:
-            req = ImageEditRequest(
-                prompt=prompt_s,
-                image=bytes(image_bytes),
-                mask=bytes(mask_bytes) if mask_bytes else None,
-                negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
-                seed=_coerce_int(seed),
-                steps=_coerce_int(steps),
-                guidance_scale=_coerce_float(guidance_scale),
-                extra=extra,
+            media = [
+                {
+                    "type": "image",
+                    "content": bytes(image_bytes),
+                    "role": "source",
+                }
+            ]
+            if mask_bytes:
+                media.append(
+                    {
+                        "type": "image",
+                        "content": bytes(mask_bytes),
+                        "role": "mask",
+                    }
+                )
+            result = core.generate(
+                prompt_s,
+                media=media,
+                output={
+                    "modality": "image",
+                    "task": "image_edit",
+                    "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
+                    "seed": _coerce_int(seed),
+                    "steps": _coerce_int(steps),
+                    "guidance_scale": _coerce_float(guidance_scale),
+                    "extra": extra,
+                },
             )
-            with call_lock:
-                asset = backend.edit_image(req)
+            image_bytes_out = _first_generated_image_bytes(result)
         except OptionalDependencyMissingError as e:
             raise HTTPException(status_code=501, detail=str(e)) from e
         except ValueError as e:
@@ -1853,7 +1897,7 @@ if _HAS_MULTIPART:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e)) from e
-        b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
+        b64 = base64.b64encode(image_bytes_out).decode("ascii")
         return {"created": int(time.time()), "data": [{"b64_json": b64}]}
 
 else:

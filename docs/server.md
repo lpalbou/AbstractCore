@@ -406,6 +406,9 @@ Endpoints:
 Remote OpenAI-compatible image proxying is included in `abstractcore[server]`
 and is enabled by setting `ABSTRACTCORE_VISION_UPSTREAM_BASE_URL`
 or the AbstractVision equivalent `ABSTRACTVISION_BASE_URL`.
+The synchronous image routes use the same internal `generate(..., output="image")`
+dispatcher as the Python API, then serialize the result back to the
+OpenAI-compatible `b64_json` response shape.
 
 Install for remote image proxying:
 ```bash
@@ -477,18 +480,48 @@ is preferable:
 Examples:
 
 ```bash
-# Remote OpenAI-compatible image endpoint
-export ABSTRACTCORE_VISION_UPSTREAM_BASE_URL="https://api.openai.com/v1"
-export ABSTRACTCORE_VISION_UPSTREAM_API_KEY="$OPENAI_API_KEY"
+# Remote OpenAI-compatible image endpoint.
+BASE=http://127.0.0.1:8000
+TOKEN=replace-with-server-token
 
-curl -X POST http://localhost:8000/v1/images/generations \
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+curl -sS -X POST "$BASE/v1/images/generations" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"model":"openai-compatible/gpt-image-2","prompt":"a precise product photo of a red ceramic mug","width":1024,"height":1024,"quality":"low","response_format":"b64_json"}'
+  -d '{"model":"openai-compatible/gpt-image-1","prompt":"A clean product photo of a red ceramic mug on a white table.","n":1,"width":1024,"height":1024,"response_format":"b64_json","quality":"low"}' \
+  > /tmp/acore-image.json
+
+python - <<'PY'
+import base64
+import json
+from pathlib import Path
+
+data = json.loads(Path("/tmp/acore-image.json").read_text())
+Path("/tmp/acore-image.png").write_bytes(base64.b64decode(data["data"][0]["b64_json"]))
+PY
+
+# Image edit using the generated image.
+curl -sS -X POST "$BASE/v1/images/edits" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "model=openai-compatible/gpt-image-1" \
+  -F "prompt=Make the mug blue while keeping the white table." \
+  -F "image=@/tmp/acore-image.png;type=image/png" \
+  -F "size=1024x1024" \
+  -F "response_format=b64_json" \
+  -F 'extra_json={"quality":"low"}' \
+  > /tmp/acore-edit.json
+
+python - <<'PY'
+import base64
+import json
+from pathlib import Path
+
+data = json.loads(Path("/tmp/acore-edit.json").read_text())
+Path("/tmp/acore-edit.png").write_bytes(base64.b64decode(data["data"][0]["b64_json"]))
+PY
 
 # Configured server image default
-curl -X POST http://localhost:8000/v1/images/generations \
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+curl -sS -X POST "$BASE/v1/images/generations" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"prompt":"a red fox in snow","width":512,"height":512,"response_format":"b64_json"}'
 ```
@@ -527,6 +560,9 @@ default; non-loopback URLs require `ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST`.
 
 If `model` is omitted, the endpoint delegates to local capability plugins
 (typically `abstractvoice`) and returns `501` when no suitable plugin is installed.
+Those local/plugin paths use the same internal `generate(..., output=...)`
+dispatcher as the Python API; provider/model remote routes keep their
+OpenAI-compatible HTTP wire behavior.
 
 Install for remote audio:
 ```bash
@@ -540,7 +576,7 @@ pip install "abstractcore[voice]"
 ```
 
 Notes:
-- `abstractvoice` 0.8.5+ can install the base plugin path on Python 3.9,
+- `abstractvoice` 0.9.0+ can install the base plugin path on Python 3.9,
   but Python 3.10+ is recommended. Optional/heavier engines and clone backends
   such as OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths; AEC
   requires Python 3.11+.
@@ -610,30 +646,47 @@ The returned `voice_id` / `id` can be used as the `voice` value in
 Examples:
 
 ```bash
+BASE=http://127.0.0.1:8000
+TOKEN=replace-with-server-token
+
+# Local/plugin TTS through AbstractCore's unified output dispatcher.
+curl -sS -X POST "$BASE/v1/audio/speech" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "Accept: audio/wav" \
+  -d '{"input":"Hello from the updated AbstractCore server.","voice":"coral","response_format":"wav"}' \
+  --output /tmp/acore-speech.wav
+
+# Local/plugin STT through AbstractCore's unified output dispatcher.
+curl -sS -X POST "$BASE/v1/audio/transcriptions" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "file=@/tmp/acore-speech.wav;type=audio/wav" \
+  -F "language=en"
+
 # Remote speech-to-text (STT)
-curl -X POST http://localhost:8000/v1/audio/transcriptions \
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+curl -sS -X POST "$BASE/v1/audio/transcriptions" \
+  -H "Authorization: Bearer $TOKEN" \
   -F "file=@speech.wav" \
   -F "model=openai/gpt-4o-mini-transcribe" \
   -F "language=en"
 
 # Remote text-to-speech (TTS)
-curl -X POST http://localhost:8000/v1/audio/speech \
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+curl -sS -X POST "$BASE/v1/audio/speech" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"openai/gpt-4o-mini-tts","input":"Hello!","voice":"coral","response_format":"wav"}' \
   --output hello.wav
 
 # Local abstractvoice TTS through the OpenAI-compatible endpoint
-curl -X POST http://localhost:8000/v1/audio/speech \
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+curl -sS -X POST "$BASE/v1/audio/speech" \
+  -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"model":"abstractvoice/default","input":"Hello!","voice":"alloy","format":"wav"}' \
   --output hello.wav
 
 # Remote/local OpenAI-compatible voice clone endpoint
-curl -X POST http://localhost:8000/v1/voice/clone \
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+curl -sS -X POST "$BASE/v1/voice/clone" \
+  -H "Authorization: Bearer $TOKEN" \
   -F "file=@reference.wav" \
   -F "model=openai-compatible/default" \
   -F "base_url=http://127.0.0.1:5000/v1" \
@@ -652,6 +705,39 @@ AbstractCore server supports comprehensive file attachments using OpenAI-compati
 
 Security note (HTTP server): local file paths are disabled by default (including `@/path/to/file` and `{"url": "/path/to/file"}`).
 Use `http(s)` URLs or `data:` base64, or enable local paths via `ABSTRACTCORE_SERVER_MEDIA_ROOT` (safe) / `ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1` (unsafe).
+
+Image analysis example using a local generated image:
+
+```bash
+BASE=http://127.0.0.1:8000
+TOKEN=replace-with-server-token
+
+python - <<'PY'
+import base64
+from pathlib import Path
+
+Path("/tmp/acore-image.b64").write_text(base64.b64encode(Path("/tmp/acore-image.png").read_bytes()).decode("ascii"))
+PY
+
+jq -n --rawfile img /tmp/acore-image.b64 '{
+  model: "openai/gpt-4o-mini",
+  messages: [{
+    role: "user",
+    content: [
+      {type: "text", text: "Describe this image in one concise sentence."},
+      {type: "image_url", image_url: {url: ("data:image/png;base64," + $img)}}
+    ]
+  }],
+  max_tokens: 80,
+  temperature: 0
+}' > /tmp/acore-vision-chat.json
+
+curl -sS -X POST "$BASE/v1/chat/completions" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  --data-binary @/tmp/acore-vision-chat.json \
+  | jq -r '.choices[0].message.content'
+```
 
 #### Supported File Types
 
@@ -1330,7 +1416,7 @@ voice/vision plugin execution is required.
 
 **Run:**
 ```bash
-docker pull ghcr.io/lpalbou/abstractcore-server:2.13.7
+docker pull ghcr.io/lpalbou/abstractcore-server:2.13.8
 ```
 
 For local development, keep secrets in an uncommitted `.env` file:
@@ -1354,7 +1440,7 @@ Then run the image with that environment file:
 docker run --rm --name abstractcore-server \
   -p 127.0.0.1:8000:8000 \
   --env-file .env \
-  ghcr.io/lpalbou/abstractcore-server:2.13.7
+  ghcr.io/lpalbou/abstractcore-server:2.13.8
 ```
 
 `ABSTRACTCORE_SERVER_API_KEY` is the AbstractCore server auth token. Clients
@@ -1374,7 +1460,7 @@ docker run --rm --name abstractcore-server \
   -e ABSTRACTCORE_SERVER_API_KEY="$ABSTRACTCORE_SERVER_API_KEY" \
   -e OPENAI_COMPATIBLE_BASE_URL="http://host.docker.internal:1234/v1" \
   -e OPENAI_COMPATIBLE_API_KEY="$OPENAI_COMPATIBLE_API_KEY" \
-  ghcr.io/lpalbou/abstractcore-server:2.13.7
+  ghcr.io/lpalbou/abstractcore-server:2.13.8
 ```
 
 ### Docker Compose
@@ -1384,7 +1470,7 @@ version: '3.8'
 
 services:
   abstractcore:
-    image: ghcr.io/lpalbou/abstractcore-server:2.13.7
+    image: ghcr.io/lpalbou/abstractcore-server:2.13.8
     ports:
       - "8000:8000"
     environment:

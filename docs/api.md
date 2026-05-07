@@ -179,6 +179,41 @@ Then pass `media=[...]` to `generate()` / `agenerate()` (or use the media pipeli
 
 See **[Media Handling](media-handling-system.md)**, **[Vision Capabilities](vision-capabilities.md)**, and **[Centralized Config](centralized-config.md)**.
 
+## Generated media output
+
+Install the relevant optional plugin first:
+
+```bash
+pip install "abstractcore[vision]"  # image generation/edit
+pip install "abstractcore[voice]"   # TTS/STT/voice clone when backend supports it
+```
+
+Then use `output=...` for simple media-generation tasks:
+
+```python
+# Text-only generate remains unchanged.
+text = llm.generate("Explain cache invalidation.")
+
+# Image generation.
+image = llm.generate("A red ceramic mug on a white table.", output="image")
+
+# Image edit. One image media item plus output="image" infers image edit.
+edited = llm.generate("Make the mug blue.", media="mug.png", output="image")
+
+# TTS.
+speech = llm.generate(text="Hello from AbstractCore.", output="voice")
+
+# Voice clone/register. Audio media plus output="voice" returns a voice
+# resource id when the selected AbstractVoice backend supports cloning.
+clone = llm.generate(text="Optional transcript.", media="reference.wav", output="voice")
+voice_id = clone.resources["voice"][0].resource_id
+```
+
+`generate(..., output=...)` returns `MultimodalGenerateResponse` for non-text
+outputs. Binary artifacts are grouped under `outputs`, while reusable resources
+such as cloned voices are grouped under `resources`. Plain `output="text"` with
+a prompt preserves the normal `GenerateResponse` path for compatibility.
+
 ## HTTP API (optional)
 
 If you want an OpenAI-compatible `/v1` gateway, install and run the server:

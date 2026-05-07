@@ -33,6 +33,12 @@ from .core.factory import create_llm
 from .core.session import BasicSession
 from .core.cached_session import CachedSession
 from .core.types import GenerateResponse, Message
+from .core.multimodal_generation import (
+    GeneratedItem,
+    GeneratedResource,
+    GenerationIssue,
+    MultimodalGenerateResponse,
+)
 from .core.enums import ModelParameter, ModelCapability, MessageRole
 from .exceptions import ModelNotFoundError, ProviderAPIError, AuthenticationError
 
@@ -51,6 +57,10 @@ __all__ = [
     'BasicSession',
     'CachedSession',
     'GenerateResponse',
+    'GeneratedItem',
+    'GeneratedResource',
+    'GenerationIssue',
+    'MultimodalGenerateResponse',
     'Message',
     'ModelParameter',
     'ModelCapability',

@@ -60,6 +60,19 @@ class VoiceCapability(Protocol):
         metadata: Optional[Dict[str, Any]] = None,
     ) -> str: ...
 
+    def clone(
+        self,
+        audio: Union[bytes, ArtifactRef, str],
+        *,
+        name: Optional[str] = None,
+        reference_text: Optional[str] = None,
+        consent: Optional[str] = None,
+        validate: Optional[bool] = None,
+        artifact_store: Optional[ArtifactStoreLike] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> Any: ...
+
 
 class AudioCapability(Protocol):
     backend_id: str
@@ -153,4 +166,3 @@ class MusicCapability(Protocol):
 class GenerateWithOutputsResult:
     response: "GenerateResponse"
     outputs: Dict[str, Any]
-

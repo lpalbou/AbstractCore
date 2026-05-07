@@ -304,7 +304,7 @@ Notes:
 - **Images**: use a vision-capable model, or configure **vision fallback** for text-only models (`abstractcore --config`; `abstractcore --set-vision-provider PROVIDER MODEL`).
 - **Video**: `video_policy="auto"` (default) uses native video when supported, otherwise samples frames (requires `ffmpeg`/`ffprobe`) and routes them through image/vision handling (so you still need a vision-capable model or vision fallback configured).
 - **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` and install `abstractcore[voice]` for speech-to-text.
-  `abstractvoice` 0.8.5+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines and cloning backends.
+  `abstractvoice` 0.9.0+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines and cloning backends.
 
 Configure defaults (optional):
 
@@ -316,6 +316,35 @@ abstractcore --set-video-strategy auto
 ```
 
 See [Media Handling](docs/media-handling-system.md) and [Vision Capabilities](docs/vision-capabilities.md).
+
+## Generated media output
+
+Optional capability plugins can also generate media through the normal
+`generate(...)` surface:
+
+```python
+# Image generation via abstractvision.
+image = llm.generate("A red ceramic mug on a white table.", output="image")
+png_bytes = image.outputs["image"][0].data
+
+# Image edit: image media + image output infers image-to-image.
+edited = llm.generate("Make the mug blue.", media="mug.png", output="image")
+
+# TTS via abstractvoice.
+speech = llm.generate(text="Hello from AbstractCore.", output="voice")
+wav_bytes = speech.outputs["voice"][0].data
+
+# Voice clone/register: audio media + voice output returns a reusable voice id
+# when the selected AbstractVoice backend supports local or remote cloning.
+clone = llm.generate(text="Optional transcript.", media="reference.wav", output="voice")
+voice_id = clone.resources["voice"][0].resource_id
+```
+
+Text-only `generate(...)` is unchanged. For advanced/provider-specific work,
+the direct `llm.vision.*`, `llm.voice.*`, and `llm.audio.*` facades remain
+available. Configure `abstractvision` and `abstractvoice` backends first for
+real generation; lightweight remote paths use OpenAI/OpenAI-compatible base URLs
+and keys, while local model engines remain optional plugin extras.
 
 ## HTTP server (OpenAI-compatible gateway)
 

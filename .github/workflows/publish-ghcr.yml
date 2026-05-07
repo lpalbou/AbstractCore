@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Image version, with or without the leading v (example: 2.13.7)"
+        description: "Image version, with or without the leading v (example: 2.13.8)"
         required: true
         type: string
 

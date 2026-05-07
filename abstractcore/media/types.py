@@ -88,6 +88,10 @@ class MediaContent:
         media_type_raw = data.get("media_type")
         if media_type_raw is None:
             media_type_raw = data.get("mediaType")
+        if media_type_raw is None:
+            type_raw = data.get("type")
+            if isinstance(type_raw, str) and type_raw.strip().lower() in {m.value for m in MediaType}:
+                media_type_raw = type_raw
 
         mime_type_raw = data.get("mime_type")
         if mime_type_raw is None:
@@ -100,7 +104,7 @@ class MediaContent:
         if isinstance(media_type_raw, MediaType):
             media_type = media_type_raw
         elif isinstance(media_type_raw, str) and media_type_raw.strip():
-            media_type = MediaType(media_type_raw.strip())
+            media_type = MediaType(media_type_raw.strip().lower())
         else:
             # Infer from MIME type when missing.
             mt = mime_type.lower()
@@ -118,19 +122,24 @@ class MediaContent:
         content_format_raw = data.get("content_format")
         if content_format_raw is None:
             content_format_raw = data.get("contentFormat")
-        if content_format_raw is None:
-            content_format_raw = data.get("format")
 
         file_path_raw = data.get("file_path")
         if file_path_raw is None:
             file_path_raw = data.get("filePath")
+        if file_path_raw is None:
+            file_path_raw = data.get("path")
 
         content = data.get("content")
+        if content is None and isinstance(file_path_raw, str) and file_path_raw.strip():
+            content = file_path_raw
 
         if isinstance(content_format_raw, ContentFormat):
             content_format = content_format_raw
         elif isinstance(content_format_raw, str) and content_format_raw.strip():
-            content_format = ContentFormat(content_format_raw.strip())
+            try:
+                content_format = ContentFormat(content_format_raw.strip().lower())
+            except ValueError:
+                content_format = ContentFormat.AUTO
         else:
             if isinstance(file_path_raw, str) and file_path_raw.strip():
                 content_format = ContentFormat.FILE_PATH
@@ -143,6 +152,8 @@ class MediaContent:
 
         metadata_raw = data.get("metadata")
         metadata = dict(metadata_raw) if isinstance(metadata_raw, dict) else {}
+        if "role" in data and "role" not in metadata:
+            metadata["role"] = data.get("role")
 
         file_path = str(file_path_raw).strip() if isinstance(file_path_raw, str) and file_path_raw.strip() else None
 

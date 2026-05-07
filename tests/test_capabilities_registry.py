@@ -96,6 +96,14 @@ def test_preferred_backend_beats_priority(monkeypatch):
     assert llm_prefer_a.voice.tts("hello") == b"a"
 
 
+@pytest.mark.basic
+def test_voice_facade_uses_remote_adapter_voice_without_treating_it_as_clone(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_remote_voice_plugin_ep()]))
+
+    llm = _DummyProvider(model="dummy")
+    assert llm.voice.tts("hello", voice="coral", format="wav", speed=1.1) == b"remote:coral:wav:1.1"
+
+
 def _make_fake_plugin_ep():
     def register(registry):
         class _Voice:
@@ -166,3 +174,41 @@ def _make_multi_backend_plugin_ep():
         registry.register_voice_backend(backend_id="b", factory=lambda _owner: _VoiceB(), priority=10)
 
     return _FakeEntryPoint(name="fake-multi", value="tests.fake_plugin_multi:register", obj=register)
+
+
+def _make_remote_voice_plugin_ep():
+    def register(registry):
+        class _Adapter:
+            def is_available(self):
+                return True
+
+            def synthesize_to_bytes_with_voice(self, text: str, *, format: str, voice: str, speed=None, instructions=None):
+                _ = (text, instructions)
+                return f"remote:{voice}:{format}:{speed}".encode()
+
+        class _VM:
+            tts_adapter = _Adapter()
+
+            def get_cloned_voice(self, voice_id: str):
+                _ = voice_id
+                return None
+
+        class _Voice:
+            backend_id = "remote-voice"
+
+            def _get_vm(self):
+                return _VM()
+
+            def tts(self, text: str, **kwargs):
+                raise AssertionError("built-in remote voices should use the adapter path")
+
+            def stt(self, audio, **kwargs):
+                return "transcript"
+
+        registry.register_voice_backend(
+            backend_id="remote-voice",
+            factory=lambda _owner: _Voice(),
+            priority=0,
+        )
+
+    return _FakeEntryPoint(name="fake-remote-voice", value="tests.fake_remote_voice:register", obj=register)

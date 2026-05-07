@@ -6,6 +6,7 @@ import time
 import uuid
 import asyncio
 import warnings
+import base64
 import json
 import re
 import socket
@@ -14,7 +15,7 @@ import inspect
 import threading
 from collections import deque, OrderedDict
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING, Tuple
+from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING, Tuple, Sequence
 from abc import ABC, abstractmethod
 
 try:
@@ -26,6 +27,8 @@ except ImportError:
 
 from ..core.interface import AbstractCoreInterface
 from ..core.types import GenerateResponse
+from ..core.multimodal_generation import GeneratedItem, GeneratedResource, MultimodalGenerateResponse
+from ..capabilities.types import is_artifact_ref
 from ..events import EventType, Event
 from datetime import datetime
 from ..utils.structured_logging import get_logger
@@ -1489,8 +1492,630 @@ class BaseProvider(AbstractCoreInterface, ABC):
         )
         return system_prompt
 
+    @staticmethod
+    def _is_acore_output_request(output: Any) -> bool:
+        """Return True when ``output`` is an AbstractCore multimodal selector."""
+        if output is None:
+            return False
+        if isinstance(output, str):
+            return output.strip().lower() in {
+                "text",
+                "transcript",
+                "transcription",
+                "image",
+                "voice",
+                "speech",
+                "tts",
+                "audio",
+            }
+        if isinstance(output, (list, tuple)):
+            return bool(output) and all(BaseProvider._is_acore_output_request(item) for item in output)
+        if isinstance(output, dict):
+            raw = output.get("modality", output.get("type", output.get("output")))
+            task = output.get("task")
+            values = {str(v).strip().lower() for v in (raw, task) if isinstance(v, str) and v.strip()}
+            return bool(
+                values
+                & {
+                    "text",
+                    "transcript",
+                    "transcription",
+                    "text_generation",
+                    "image",
+                    "image_generation",
+                    "image_edit",
+                    "t2i",
+                    "i2i",
+                    "image_to_image",
+                    "voice",
+                    "speech",
+                    "tts",
+                    "voice_clone",
+                    "clone",
+                }
+            )
+        return False
+
+    @staticmethod
+    def _normalize_output_specs(output: Any) -> List[Dict[str, Any]]:
+        if isinstance(output, (list, tuple)):
+            return [BaseProvider._normalize_output_spec(item) for item in output]
+        return [BaseProvider._normalize_output_spec(output)]
+
+    @staticmethod
+    def _normalize_output_spec(output: Any) -> Dict[str, Any]:
+        spec: Dict[str, Any]
+        if isinstance(output, str):
+            spec = {"modality": output}
+        elif isinstance(output, dict):
+            spec = dict(output)
+            spec["modality"] = spec.get("modality", spec.get("type", spec.get("output")))
+        else:
+            raise ValueError("output must be a string, dict, or list of output specs")
+
+        modality = str(spec.get("modality") or "").strip().lower()
+        task = str(spec.get("task") or "").strip().lower()
+
+        if modality in {"speech", "tts", "audio"}:
+            modality = "voice"
+            task = task or "tts"
+        elif modality in {"transcript", "transcription"}:
+            modality = "text"
+            task = task or "transcription"
+        elif modality in {"t2i", "image_generation"}:
+            modality = "image"
+            task = task or "image_generation"
+        elif modality in {"i2i", "image_to_image", "image_edit"}:
+            modality = "image"
+            task = task or "image_edit"
+
+        if task in {"speech", "audio"}:
+            task = "tts"
+        elif task in {"clone"}:
+            task = "voice_clone"
+        elif task in {"transcript"}:
+            task = "transcription"
+        elif task in {"t2i"}:
+            task = "image_generation"
+        elif task in {"i2i", "image_to_image"}:
+            task = "image_edit"
+
+        if not modality:
+            if task in {"tts", "voice_clone"}:
+                modality = "voice"
+            elif task in {"transcription"}:
+                modality = "text"
+            elif task in {"image_generation", "image_edit"}:
+                modality = "image"
+
+        spec["modality"] = modality
+        if task:
+            spec["task"] = task
+        return spec
+
+    @staticmethod
+    def _coerce_media_items(media: Any) -> List[Any]:
+        if media is None:
+            return []
+        if isinstance(media, (str, bytes, bytearray, dict)) or hasattr(media, "media_type"):
+            return [media]
+        if isinstance(media, Sequence):
+            return list(media)
+        return [media]
+
+    @staticmethod
+    def _media_role(item: Any) -> Optional[str]:
+        role = None
+        if isinstance(item, dict):
+            role = item.get("role")
+            if role is None and isinstance(item.get("metadata"), dict):
+                role = item["metadata"].get("role")
+        elif hasattr(item, "metadata"):
+            metadata = getattr(item, "metadata", None)
+            if isinstance(metadata, dict):
+                role = metadata.get("role")
+        if isinstance(role, str) and role.strip():
+            return role.strip().lower()
+        return None
+
+    @staticmethod
+    def _media_type(item: Any, *, fallback: Optional[str] = None) -> Optional[str]:
+        if isinstance(item, dict):
+            raw = item.get("media_type", item.get("mediaType"))
+            if raw is None:
+                raw = item.get("type")
+            if isinstance(raw, str) and raw.strip().lower() in {"image", "audio", "video", "document", "text"}:
+                return raw.strip().lower()
+            mime = item.get("mime_type", item.get("mimeType", item.get("mime")))
+            path = item.get("file_path", item.get("filePath", item.get("path")))
+        elif hasattr(item, "media_type"):
+            raw = getattr(item, "media_type", None)
+            value = getattr(raw, "value", raw)
+            if isinstance(value, str) and value.strip():
+                return value.strip().lower()
+            mime = getattr(item, "mime_type", None)
+            path = getattr(item, "file_path", None)
+        elif isinstance(item, (bytes, bytearray)):
+            return fallback
+        else:
+            mime = None
+            path = item if isinstance(item, str) else None
+
+        if isinstance(mime, str):
+            ml = mime.lower()
+            if ml.startswith("image/"):
+                return "image"
+            if ml.startswith("audio/"):
+                return "audio"
+            if ml.startswith("video/"):
+                return "video"
+            if ml.startswith("text/"):
+                return "text"
+
+        if isinstance(path, str) and path.strip():
+            import mimetypes
+
+            guessed, _ = mimetypes.guess_type(path)
+            if isinstance(guessed, str):
+                gl = guessed.lower()
+                if gl.startswith("image/"):
+                    return "image"
+                if gl.startswith("audio/"):
+                    return "audio"
+                if gl.startswith("video/"):
+                    return "video"
+                if gl.startswith("text/"):
+                    return "text"
+        return fallback
+
+    @staticmethod
+    def _media_payload(item: Any) -> Any:
+        def _maybe_decode_base64(content: Any, content_format: Any) -> Any:
+            raw_format = getattr(content_format, "value", content_format)
+            if not (isinstance(raw_format, str) and raw_format.strip().lower() == "base64"):
+                return content
+            if isinstance(content, (bytes, bytearray)):
+                return bytes(content)
+            if isinstance(content, str):
+                raw = content.strip()
+                if "," in raw and raw.lower().startswith("data:"):
+                    raw = raw.split(",", 1)[1]
+                return base64.b64decode("".join(raw.split()), validate=False)
+            return content
+
+        if isinstance(item, dict):
+            for key in ("file_path", "filePath", "path"):
+                value = item.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value
+            if "content" in item:
+                return _maybe_decode_base64(
+                    item.get("content"),
+                    item.get("content_format", item.get("contentFormat")),
+                )
+            return item
+        if hasattr(item, "file_path") and getattr(item, "file_path", None):
+            return getattr(item, "file_path")
+        if hasattr(item, "content"):
+            return _maybe_decode_base64(getattr(item, "content"), getattr(item, "content_format", None))
+        return item
+
+    def _context_media_for_text_generation(self, media: Any) -> Any:
+        """Return only media explicitly marked as text-model context."""
+        items = self._coerce_media_items(media)
+        if not items:
+            return None
+        context_items = [item for item in items if self._media_role(item) == "context"]
+        return context_items or None
+
+    @staticmethod
+    def _output_plugin_kwargs(spec: Dict[str, Any], *, exclude: Optional[set[str]] = None) -> Dict[str, Any]:
+        base_exclude = {
+            "id",
+            "modality",
+            "type",
+            "output",
+            "task",
+            "source",
+            "prompt",
+            "text",
+            "media",
+            "input_media",
+            "role",
+        }
+        if exclude:
+            base_exclude.update(exclude)
+        return {k: v for k, v in spec.items() if k not in base_exclude and v is not None}
+
+    @staticmethod
+    def _artifact_or_data(value: Any) -> tuple[Optional[bytes], Optional[Dict[str, Any]], Dict[str, Any]]:
+        if isinstance(value, (bytes, bytearray)):
+            return bytes(value), None, {}
+        if is_artifact_ref(value):
+            return None, dict(value), {}
+        if isinstance(value, dict):
+            for key in ("data", "bytes", "content"):
+                content = value.get(key)
+                if isinstance(content, (bytes, bytearray)):
+                    meta = {k: v for k, v in value.items() if k != key}
+                    return bytes(content), None, meta
+            return None, dict(value) if is_artifact_ref(value) else None, dict(value)
+        content = getattr(value, "data", None)
+        if isinstance(content, (bytes, bytearray)):
+            metadata = getattr(value, "metadata", None)
+            meta = dict(metadata) if isinstance(metadata, dict) else {}
+            for attr, key in (("mime_type", "mime_type"), ("content_type", "content_type")):
+                raw = getattr(value, attr, None)
+                if raw is not None and key not in meta:
+                    meta[key] = raw
+            return bytes(content), None, meta
+        return None, None, {"value": value}
+
+    @staticmethod
+    def _artifact_ref_from_store_result(value: Any) -> Optional[Dict[str, Any]]:
+        if is_artifact_ref(value):
+            return dict(value)
+        if isinstance(value, str) and value.strip():
+            return {"$artifact": value.strip()}
+        raw = getattr(value, "artifact_id", None)
+        if isinstance(raw, str) and raw.strip():
+            return {"$artifact": raw.strip()}
+        return None
+
+    @staticmethod
+    def _store_generated_data(
+        data: Optional[bytes],
+        *,
+        artifact_store: Optional[Any],
+        content_type: str,
+        spec: Dict[str, Any],
+    ) -> tuple[Optional[bytes], Optional[Dict[str, Any]]]:
+        if data is None or artifact_store is None:
+            return data, None
+        store = getattr(artifact_store, "store", None)
+        if not callable(store):
+            return data, None
+        stored = store(
+            bytes(data),
+            content_type=content_type,
+            run_id=spec.get("run_id"),
+            tags=spec.get("tags") if isinstance(spec.get("tags"), dict) else None,
+            artifact_id=spec.get("artifact_id") if isinstance(spec.get("artifact_id"), str) else None,
+        )
+        ref = BaseProvider._artifact_ref_from_store_result(stored)
+        if ref is not None:
+            return None, ref
+        return data, None
+
+    @staticmethod
+    def _resource_id_from_clone_result(value: Any) -> tuple[str, Dict[str, Any]]:
+        if isinstance(value, str) and value.strip():
+            return value.strip(), {"raw": value}
+        if isinstance(value, dict):
+            for key in ("resource_id", "voice_id", "id", "name"):
+                raw = value.get(key)
+                if isinstance(raw, str) and raw.strip():
+                    return raw.strip(), dict(value)
+            voice = value.get("voice")
+            if isinstance(voice, dict):
+                for key in ("resource_id", "voice_id", "id", "name"):
+                    raw = voice.get(key)
+                    if isinstance(raw, str) and raw.strip():
+                        return raw.strip(), dict(value)
+        for key in ("resource_id", "voice_id", "id", "name"):
+            raw = getattr(value, key, None)
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip(), {"raw": value}
+        raise ValueError("Voice clone backend did not return a usable voice id.")
+
+    def _generate_multimodal_response(
+        self,
+        *,
+        prompt: str,
+        output: Any,
+        media: Any,
+        stream: bool,
+        response_model: Optional[Type[BaseModel]],
+        artifact_store: Optional[Any],
+        partial: bool,
+        text_generation_kwargs: Dict[str, Any],
+    ) -> MultimodalGenerateResponse:
+        specs = self._normalize_output_specs(output)
+        if any(s.get("modality") == "text" and not s.get("task") for s in specs) and not str(prompt or "").strip():
+            audio_items = [
+                item
+                for item in self._coerce_media_items(media)
+                if self._media_type(item, fallback="audio" if isinstance(item, (bytes, bytearray)) else None) == "audio"
+            ]
+            if audio_items:
+                for spec in specs:
+                    if spec.get("modality") == "text" and not spec.get("task"):
+                        spec["task"] = "transcription"
+        if stream:
+            raise ValueError("generate(..., output=...) does not support stream=True for non-text outputs yet.")
+        if response_model is not None and any(s.get("modality") != "text" for s in specs):
+            raise ValueError("response_model cannot be combined with non-text multimodal outputs.")
+
+        text_specs = [s for s in specs if s.get("modality") == "text" and s.get("task") != "transcription"]
+        non_text_specs = [s for s in specs if not (s.get("modality") == "text" and s.get("task") != "transcription")]
+        if len(text_specs) > 1 and any("source" not in s for s in non_text_specs):
+            raise ValueError("Multiple text outputs require explicit source binding for non-text outputs.")
+
+        result = MultimodalGenerateResponse(metadata={"model": self.model, "provider": self.__class__.__name__})
+
+        generated_text: Optional[GenerateResponse] = None
+        if text_specs and len(specs) > 1:
+            text_kwargs = dict(text_generation_kwargs)
+            text_kwargs["media"] = self._context_media_for_text_generation(media)
+            generated_text = self.generate_with_telemetry(
+                prompt=prompt,
+                stream=False,
+                **text_kwargs,
+            )
+            if not isinstance(generated_text, GenerateResponse):
+                raise ValueError("Text output generation did not return GenerateResponse.")
+            result.text = generated_text
+
+        if len(specs) == 1 and specs[0].get("modality") == "text" and specs[0].get("task") != "transcription":
+            generated_text = self.generate_with_telemetry(
+                prompt=prompt,
+                stream=False,
+                **dict(text_generation_kwargs),
+            )
+            if not isinstance(generated_text, GenerateResponse):
+                raise ValueError("Text output generation did not return GenerateResponse.")
+            result.text = generated_text
+            return result
+
+        for spec in non_text_specs:
+            try:
+                source_text = str(spec.get("text") or spec.get("prompt") or "")
+                if not source_text:
+                    source = spec.get("source")
+                    if source and generated_text is None:
+                        raise ValueError(f"Unknown text source {source!r}; no generated text output is available.")
+                    if generated_text is not None:
+                        source_text = str(generated_text.content or "")
+                    else:
+                        source_text = str(prompt or "")
+                self._run_multimodal_spec(
+                    result=result,
+                    spec=spec,
+                    prompt=source_text,
+                    media=media,
+                    artifact_store=artifact_store,
+                )
+            except Exception as e:
+                if partial:
+                    from ..core.multimodal_generation import GenerationIssue
+
+                    result.errors.append(
+                        GenerationIssue(
+                            modality=str(spec.get("modality") or "unknown"),
+                            task=str(spec.get("task") or "unknown"),
+                            message=f"{type(e).__name__}: {e}",
+                        )
+                    )
+                    continue
+                raise
+
+        return result
+
+    def _run_multimodal_spec(
+        self,
+        *,
+        result: MultimodalGenerateResponse,
+        spec: Dict[str, Any],
+        prompt: str,
+        media: Any,
+        artifact_store: Optional[Any],
+    ) -> None:
+        modality = str(spec.get("modality") or "").lower()
+        if modality == "image":
+            self._run_image_output(result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store)
+            return
+        if modality == "voice":
+            self._run_voice_output(result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store)
+            return
+        if modality == "text" and spec.get("task") == "transcription":
+            self._run_transcription_output(result=result, spec=spec, media=media, artifact_store=artifact_store)
+            return
+        raise ValueError(f"Unsupported multimodal output modality: {modality!r}")
+
+    def _run_image_output(
+        self,
+        *,
+        result: MultimodalGenerateResponse,
+        spec: Dict[str, Any],
+        prompt: str,
+        media: Any,
+        artifact_store: Optional[Any],
+    ) -> None:
+        items = self._coerce_media_items(media)
+        images = [item for item in items if self._media_type(item, fallback="image" if isinstance(item, (bytes, bytearray)) else None) == "image"]
+        roles = [(item, self._media_role(item)) for item in images]
+        source_items = [item for item, role in roles if role == "source"]
+        mask_items = [item for item, role in roles if role == "mask"]
+        reference_like = [item for item, role in roles if role in {"reference", "style", "context"}]
+        unroled = [item for item, role in roles if role is None]
+        task = str(spec.get("task") or "").lower()
+
+        if mask_items and not (source_items or unroled):
+            raise ValueError("Image edit mask media requires one source image.")
+        if len(mask_items) > 1:
+            raise ValueError("Image edit supports at most one mask in v1.")
+        if len(source_items) > 1:
+            raise ValueError("Image edit supports at most one source image in v1.")
+
+        should_edit = task == "image_edit"
+        if not task:
+            if source_items or mask_items:
+                should_edit = True
+            elif len(unroled) == 1 and not reference_like and not mask_items:
+                should_edit = True
+            elif len(unroled) > 1:
+                raise ValueError("Multiple image media items require explicit roles.")
+        if mask_items and len(unroled) > 1:
+            raise ValueError("Image edit with a mask requires exactly one source image.")
+
+        kwargs = self._output_plugin_kwargs(
+            spec,
+            exclude={"format", "content_type", "mime_type", "model", "response_format"},
+        )
+        if artifact_store is not None:
+            kwargs["artifact_store"] = artifact_store
+
+        if should_edit:
+            kwargs = {k: v for k, v in kwargs.items() if k not in {"width", "height"}}
+            source = source_items[0] if source_items else (unroled[0] if unroled else None)
+            if source is None:
+                raise ValueError("Image edit requires one source image.")
+            mask = mask_items[0] if mask_items else None
+            raw = self.vision.i2i(
+                prompt,
+                self._media_payload(source),
+                mask=self._media_payload(mask) if mask is not None else None,
+                **kwargs,
+            )
+            task_name = "image_edit"
+        else:
+            raw = self.vision.t2i(prompt, **kwargs)
+            task_name = "image_generation"
+
+        data, artifact_ref, metadata = self._artifact_or_data(raw)
+        fmt = str(spec.get("format") or "png")
+        content_type = str(metadata.get("content_type") or metadata.get("mime_type") or f"image/{fmt}")
+        if artifact_ref is None:
+            data, stored_ref = self._store_generated_data(
+                data,
+                artifact_store=artifact_store,
+                content_type=content_type,
+                spec=spec,
+            )
+            artifact_ref = stored_ref
+        item = GeneratedItem(
+            modality="image",
+            task=task_name,
+            data=data,
+            artifact_ref=artifact_ref,
+            content_type=content_type,
+            format=fmt,
+            backend_id=getattr(self.vision, "backend_id", None),
+            provider=self.__class__.__name__,
+            model=str(spec.get("model") or self.model),
+            metadata=metadata,
+        )
+        result.add_output("image", item)
+
+    def _run_voice_output(
+        self,
+        *,
+        result: MultimodalGenerateResponse,
+        spec: Dict[str, Any],
+        prompt: str,
+        media: Any,
+        artifact_store: Optional[Any],
+    ) -> None:
+        items = self._coerce_media_items(media)
+        audio_items = [item for item in items if self._media_type(item, fallback="audio" if isinstance(item, (bytes, bytearray)) else None) == "audio"]
+        task = str(spec.get("task") or "").lower()
+        voice_id = spec.get("voice_id", spec.get("voice"))
+        if task in {"voice_clone", "clone"} or (audio_items and not task):
+            if voice_id:
+                raise ValueError("Voice output with audio media and voice/voice_id is ambiguous; set task='tts' or omit voice/voice_id.")
+            if len(audio_items) != 1:
+                raise ValueError("Voice cloning requires exactly one audio media item in v1.")
+            kwargs = self._output_plugin_kwargs(spec, exclude={"voice", "voice_id", "format"})
+            reference_text = kwargs.pop("reference_text", None)
+            if reference_text is None and prompt:
+                reference_text = prompt
+            if artifact_store is not None:
+                kwargs["artifact_store"] = artifact_store
+            raw = self.voice.clone(
+                self._media_payload(audio_items[0]),
+                reference_text=reference_text,
+                **kwargs,
+            )
+            resource_id, metadata = self._resource_id_from_clone_result(raw)
+            result.add_resource(
+                "voice",
+                GeneratedResource(
+                    modality="voice",
+                    task="voice_clone",
+                    resource_type="voice",
+                    resource_id=resource_id,
+                    name=str(spec.get("name")) if spec.get("name") is not None else None,
+                    backend_id=getattr(self.voice, "backend_id", None),
+                    provider=self.__class__.__name__,
+                    model=str(spec.get("model") or self.model),
+                    metadata=metadata,
+                ),
+            )
+            return
+
+        fmt = str(spec.get("format") or "wav")
+        kwargs = self._output_plugin_kwargs(spec, exclude={"voice", "voice_id", "format"})
+        kwargs["voice"] = str(voice_id) if voice_id is not None else None
+        kwargs["format"] = fmt
+        if audio_items:
+            if len(audio_items) > 1:
+                raise ValueError("Reference-guided TTS supports at most one audio reference in v1.")
+            kwargs["reference_audio"] = self._media_payload(audio_items[0])
+        if artifact_store is not None:
+            kwargs["artifact_store"] = artifact_store
+        raw = self.voice.tts(prompt, **kwargs)
+        data, artifact_ref, metadata = self._artifact_or_data(raw)
+        content_type = str(metadata.get("content_type") or metadata.get("mime_type") or f"audio/{fmt}")
+        if artifact_ref is None:
+            data, stored_ref = self._store_generated_data(
+                data,
+                artifact_store=artifact_store,
+                content_type=content_type,
+                spec=spec,
+            )
+            artifact_ref = stored_ref
+        result.add_output(
+            "voice",
+            GeneratedItem(
+                modality="voice",
+                task="tts",
+                data=data,
+                artifact_ref=artifact_ref,
+                content_type=content_type,
+                format=fmt,
+                backend_id=getattr(self.voice, "backend_id", None),
+                provider=self.__class__.__name__,
+                model=str(spec.get("model") or self.model),
+                metadata=metadata,
+            ),
+        )
+
+    def _run_transcription_output(
+        self,
+        *,
+        result: MultimodalGenerateResponse,
+        spec: Dict[str, Any],
+        media: Any,
+        artifact_store: Optional[Any],
+    ) -> None:
+        items = self._coerce_media_items(media)
+        audio_items = [item for item in items if self._media_type(item, fallback="audio" if isinstance(item, (bytes, bytearray)) else None) == "audio"]
+        if len(audio_items) != 1:
+            raise ValueError("Transcription requires exactly one audio media item in v1.")
+        kwargs: Dict[str, Any] = {}
+        if spec.get("language") is not None:
+            kwargs["language"] = spec.get("language")
+        if artifact_store is not None:
+            kwargs["artifact_store"] = artifact_store
+        transcript = self.audio.transcribe(self._media_payload(audio_items[0]), **kwargs)
+        result.text = GenerateResponse(
+            content=str(transcript),
+            model=self.model,
+            metadata={"task": "transcription", "modality": "text"},
+        )
+
     def generate_with_telemetry(self,
-                               prompt: str,
+                               prompt: str = "",
                                messages: Optional[List[Dict[str, str]]] = None,
                                system_prompt: Optional[str] = None,
                                tools: Optional[List] = None,  # Accept both ToolDefinition and Dict
@@ -1522,6 +2147,52 @@ class BaseProvider(AbstractCoreInterface, ABC):
             thinking: Unified reasoning/thinking control (auto/on/off/none or low/medium/high/xhigh when supported)
         """
         system_prompt = self._normalize_system_prompt_alias(system_prompt, kwargs, stacklevel=4)
+
+        output_request = kwargs.get("output", None)
+        is_acore_output = self._is_acore_output_request(output_request)
+        if (prompt is None or str(prompt) == "") and "text" in kwargs:
+            text_value = kwargs.pop("text")
+            prompt = "" if text_value is None else str(text_value)
+
+        if is_acore_output:
+            try:
+                maybe_specs = self._normalize_output_specs(output_request)
+            except Exception:
+                maybe_specs = []
+            if (
+                len(maybe_specs) == 1
+                and maybe_specs[0].get("modality") == "text"
+                and maybe_specs[0].get("task") not in {"transcription"}
+                and str(prompt or "").strip()
+            ):
+                kwargs.pop("output", None)
+                is_acore_output = False
+
+        if is_acore_output:
+            output_request = kwargs.pop("output")
+            artifact_store = kwargs.pop("artifact_store", None)
+            partial = bool(kwargs.pop("partial", False))
+            return self._generate_multimodal_response(
+                prompt=str(prompt or ""),
+                output=output_request,
+                media=media,
+                stream=stream,
+                response_model=response_model,
+                artifact_store=artifact_store,
+                partial=partial,
+                text_generation_kwargs={
+                    "messages": messages,
+                    "system_prompt": system_prompt,
+                    "tools": tools,
+                    "media": media,
+                    "retry_strategy": retry_strategy,
+                    "tool_call_tags": tool_call_tags,
+                    "execute_tools": execute_tools,
+                    "glyph_compression": glyph_compression,
+                    "thinking": thinking,
+                    **kwargs,
+                },
+            )
 
         # Normalize token limit naming at the provider boundary.
         #
@@ -3682,7 +4353,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         processed_media = []
 
-        for i, media_item in enumerate(media):
+        media_items = self._coerce_media_items(media)
+        for i, media_item in enumerate(media_items):
             try:
                 if isinstance(media_item, str):
                     # File path - process with auto media handler
@@ -4358,10 +5030,11 @@ Please provide a structured response."""
         return structured_result
 
     def generate(self,
-                prompt: str,
+                prompt: str = "",
                 messages: Optional[List[Dict[str, str]]] = None,
                 system_prompt: Optional[str] = None,
                 tools: Optional[List[Dict[str, Any]]] = None,
+                media: Optional[List[Union[str, Dict[str, Any], 'MediaContent']]] = None,
                 stream: bool = False,
                 **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse], BaseModel]:
         """
@@ -4385,6 +5058,7 @@ Please provide a structured response."""
             messages=messages,
             system_prompt=system_prompt,
             tools=tools,
+            media=media,
             stream=stream,
             **kwargs
         )
@@ -4416,6 +5090,49 @@ Please provide a structured response."""
             GenerateResponse, AsyncIterator[GenerateResponse] for streaming, or BaseModel for structured output
         """
         system_prompt = self._normalize_system_prompt_alias(system_prompt, kwargs, stacklevel=3)
+
+        output_request = kwargs.get("output", None)
+        is_acore_output = self._is_acore_output_request(output_request)
+        if (prompt is None or str(prompt) == "") and "text" in kwargs:
+            text_value = kwargs.pop("text")
+            prompt = "" if text_value is None else str(text_value)
+
+        if is_acore_output:
+            try:
+                maybe_specs = self._normalize_output_specs(output_request)
+            except Exception:
+                maybe_specs = []
+            if (
+                len(maybe_specs) == 1
+                and maybe_specs[0].get("modality") == "text"
+                and maybe_specs[0].get("task") not in {"transcription"}
+                and str(prompt or "").strip()
+            ):
+                is_acore_output = False
+
+        if is_acore_output:
+            output_request = kwargs.pop("output")
+            response_model = kwargs.pop("response_model", None)
+            artifact_store = kwargs.pop("artifact_store", None)
+            partial = bool(kwargs.pop("partial", False))
+            return await asyncio.to_thread(
+                self._generate_multimodal_response,
+                prompt=str(prompt or ""),
+                output=output_request,
+                media=media,
+                stream=stream,
+                response_model=response_model,
+                artifact_store=artifact_store,
+                partial=partial,
+                text_generation_kwargs={
+                    "messages": messages,
+                    "system_prompt": system_prompt,
+                    "tools": tools,
+                    "media": media,
+                    **kwargs,
+                },
+            )
+
         self._apply_default_prompt_cache_key(kwargs)
         response = await self._agenerate_internal(
             prompt, messages, system_prompt, tools, media, stream, **kwargs
@@ -4474,7 +5191,13 @@ Please provide a structured response."""
             # Run sync generate in thread pool (fallback)
             return await asyncio.to_thread(
                 self.generate,
-                prompt, messages, system_prompt, tools, stream, **kwargs
+                prompt=prompt,
+                messages=messages,
+                system_prompt=system_prompt,
+                tools=tools,
+                media=media,
+                stream=stream,
+                **kwargs,
             )
 
     async def _async_stream_generate(self,

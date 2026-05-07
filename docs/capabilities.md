@@ -24,7 +24,7 @@ pip install "abstractcore[voice]"
 pip install "abstractcore[vision]"
 ```
 
-`abstractvoice` 0.8.5+ can install its base AbstractCore plugin path on
+`abstractvoice` 0.9.0+ can install its base AbstractCore plugin path on
 Python 3.9, but Python 3.10+ is recommended. Optional/heavier engines such as
 OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths, and AEC requires
 Python 3.11+.
@@ -52,12 +52,62 @@ png_bytes = llm.vision.t2i("a red square", width=512, height=512, steps=20)
 # png_bytes = llm.vision.t2i("a red square")
 ```
 
+### Unified `generate(..., output=...)` convenience
+
+For common cases, the normal generation API can route to these optional
+capabilities:
+
+```python
+# Image generation.
+image = llm.generate("A red square on a white background.", output="image")
+
+# Image edit. One image media item plus output="image" infers image-to-image.
+edited = llm.generate("Make it blue.", media="red-square.png", output="image")
+
+# TTS. Text plus output="voice" returns generated audio.
+speech = llm.generate(text="Hello from AbstractCore.", output="voice")
+
+# Voice clone/register. Audio media plus output="voice" returns a reusable voice id
+# when the selected AbstractVoice backend supports local or remote cloning.
+clone = llm.generate(text="Optional transcript.", media="reference.wav", output="voice")
+voice_id = clone.resources["voice"][0].resource_id
+```
+
+Text-only `generate(...)` is unchanged. Ambiguous media cases require explicit
+roles, for example `role="source"` and `role="mask"` for image edits with masks.
+Use `task="tts"` when audio media is a temporary voice reference rather than a
+clone/register sample.
+
 Direct `llm.vision` calls are provided by `abstractvision`. For local Diffusers,
 choose an explicit model/default in AbstractVision, pre-download model weights,
 or explicitly opt in to runtime downloads with
 `ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD=1`. For server/OpenAI-compatible use,
 point `ABSTRACTVISION_BASE_URL` at an image endpoint such as AbstractCore
 Server's `/v1`.
+
+Direct `llm.voice` / `generate(..., output="voice")` calls are provided by
+`abstractvoice`. For remote OpenAI TTS/STT, configure the provider before
+creating the LLM:
+
+```python
+llm = create_llm(
+    "openai",
+    model="gpt-4o-mini",
+    voice_tts_engine="openai",
+    voice_stt_engine="openai",
+)
+
+speech = llm.generate(
+    text="Hello from AbstractCore.",
+    output={"modality": "voice", "voice": "coral", "format": "wav"},
+)
+```
+
+For OpenAI-compatible audio servers, use `voice_tts_engine="openai-compatible"`
+and set `voice_remote_base_url` / `voice_remote_api_key`, or the equivalent
+`ABSTRACTVOICE_REMOTE_BASE_URL` / `ABSTRACTVOICE_REMOTE_API_KEY` environment
+variables. Voice clone/register also requires a backend that exposes a local or
+remote clone route.
 
 ## What AbstractCore Does Well
 

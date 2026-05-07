@@ -281,7 +281,7 @@ class AbstractCoreInterface(ABC):
 
     @abstractmethod
     def generate(self,
-                prompt: str,
+                prompt: str = "",
                 messages: Optional[List[Dict[str, str]]] = None,
                 system_prompt: Optional[str] = None,
                 tools: Optional[List[Dict[str, Any]]] = None,
@@ -300,10 +300,13 @@ class AbstractCoreInterface(ABC):
             media: Optional list of media files (file paths, MediaContent objects, or dicts)
             stream: Whether to stream the response
             thinking: Unified thinking/reasoning control (best-effort across providers/models)
-            **kwargs: Additional provider-specific parameters
+            **kwargs: Additional provider-specific parameters. AbstractCore consumes
+                output=... for opt-in multimodal generation before provider calls.
+                Examples: output="image", output="voice", output=[{"modality": "text"}, {"modality": "voice"}].
 
         Returns:
-            GenerateResponse or iterator of GenerateResponse for streaming
+            GenerateResponse or iterator of GenerateResponse for streaming. When output=... requests
+            non-text modalities, returns MultimodalGenerateResponse.
         """
         pass
 

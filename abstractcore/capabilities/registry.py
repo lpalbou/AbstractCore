@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import importlib
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
 from .errors import CapabilityUnavailableError
@@ -356,11 +357,60 @@ class _VoiceFacade:
     def __init__(self, registry: CapabilityRegistry) -> None:
         self._registry = registry
 
+    @property
+    def backend_id(self) -> Optional[str]:
+        try:
+            return str(getattr(self._registry.get_voice(), "backend_id"))
+        except Exception:
+            return None
+
     def tts(self, text: str, **kwargs: Any) -> Any:
-        return self._registry.get_voice().tts(text, **kwargs)
+        backend = self._registry.get_voice()
+        direct = self._tts_with_adapter_voice(backend, text, kwargs)
+        if direct is not None:
+            return direct
+        return backend.tts(text, **kwargs)
 
     def stt(self, audio: Any, **kwargs: Any) -> Any:
         return self._registry.get_voice().stt(audio, **kwargs)
+
+    @staticmethod
+    def _tts_with_adapter_voice(backend: Any, text: str, kwargs: Dict[str, Any]) -> Any:
+        voice = kwargs.get("voice")
+        if not (isinstance(voice, str) and voice.strip()):
+            return None
+        get_vm = getattr(backend, "_get_vm", None)
+        if not callable(get_vm):
+            return None
+        try:
+            vm = get_vm()
+        except Exception:
+            return None
+        get_cloned_voice = getattr(vm, "get_cloned_voice", None)
+        if callable(get_cloned_voice):
+            try:
+                if get_cloned_voice(str(voice)):
+                    return None
+            except Exception:
+                pass
+        adapter = getattr(vm, "tts_adapter", None)
+        if adapter is None:
+            return None
+        is_available = getattr(adapter, "is_available", None)
+        if callable(is_available) and not is_available():
+            return None
+        synth = getattr(adapter, "synthesize_to_bytes_with_voice", None)
+        if not callable(synth):
+            return None
+        call_kwargs: Dict[str, Any] = {
+            "format": str(kwargs.get("format") or "wav"),
+            "voice": str(voice),
+        }
+        if kwargs.get("speed") is not None:
+            call_kwargs["speed"] = kwargs.get("speed")
+        if kwargs.get("instructions") is not None:
+            call_kwargs["instructions"] = kwargs.get("instructions")
+        return synth(str(text), **call_kwargs)
 
     def clone(self, audio: Any, **kwargs: Any) -> Any:
         backend = self._registry.get_voice()
@@ -368,6 +418,33 @@ class _VoiceFacade:
             method = getattr(backend, method_name, None)
             if callable(method):
                 return method(audio, **kwargs)
+
+        # AbstractVoice 0.9.x keeps clone methods on VoiceManager, not on the
+        # AbstractCore capability shim. Use that existing manager when present
+        # so the library API and server route share the same clone semantics.
+        get_vm = getattr(backend, "_get_vm", None)
+        if callable(get_vm):
+            vm = get_vm()
+            clone_voice = getattr(vm, "clone_voice", None)
+            clone_from_bytes = getattr(vm, "clone_voice_from_wav_bytes", None)
+            name = kwargs.get("name")
+            reference_text = kwargs.get("reference_text")
+            engine = kwargs.get("engine") or kwargs.get("cloning_engine")
+            if isinstance(audio, str) and callable(clone_voice):
+                return clone_voice(
+                    audio,
+                    name=str(name) if name is not None else None,
+                    reference_text=str(reference_text) if reference_text is not None else None,
+                    engine=str(engine) if engine is not None else None,
+                )
+            if callable(clone_from_bytes):
+                audio_bytes = self._clone_audio_bytes(audio, artifact_store=kwargs.get("artifact_store"))
+                return clone_from_bytes(
+                    audio_bytes,
+                    name=str(name) if name is not None else None,
+                    reference_text=str(reference_text) if reference_text is not None else None,
+                    engine=str(engine) if engine is not None else None,
+                )
         raise CapabilityUnavailableError(
             capability="voice",
             reason=(
@@ -378,10 +455,41 @@ class _VoiceFacade:
             install_hint=self._registry._default_install_hint("voice"),
         )
 
+    @staticmethod
+    def _clone_audio_bytes(audio: Any, *, artifact_store: Any = None) -> bytes:
+        if isinstance(audio, (bytes, bytearray)):
+            return bytes(audio)
+        if isinstance(audio, str) and audio.strip():
+            return Path(audio).expanduser().read_bytes()
+        if isinstance(audio, dict):
+            for key in ("data", "bytes", "content"):
+                value = audio.get(key)
+                if isinstance(value, (bytes, bytearray)):
+                    return bytes(value)
+            artifact_id = audio.get("$artifact")
+            if isinstance(artifact_id, str) and artifact_id and artifact_store is not None:
+                loaded = artifact_store.load(artifact_id)
+                return _VoiceFacade._clone_audio_bytes(loaded, artifact_store=artifact_store)
+        for key in ("data", "bytes", "content"):
+            value = getattr(audio, key, None)
+            if isinstance(value, (bytes, bytearray)):
+                return bytes(value)
+        raise CapabilityUnavailableError(
+            capability="voice",
+            reason="Voice clone audio must be bytes, a readable file path, or an artifact ref with an artifact_store.",
+        )
+
 
 class _AudioFacade:
     def __init__(self, registry: CapabilityRegistry) -> None:
         self._registry = registry
+
+    @property
+    def backend_id(self) -> Optional[str]:
+        try:
+            return str(getattr(self._registry.get_audio(), "backend_id"))
+        except Exception:
+            return None
 
     def transcribe(self, audio: Any, **kwargs: Any) -> Any:
         return self._registry.get_audio().transcribe(audio, **kwargs)
@@ -390,6 +498,13 @@ class _AudioFacade:
 class _VisionFacade:
     def __init__(self, registry: CapabilityRegistry) -> None:
         self._registry = registry
+
+    @property
+    def backend_id(self) -> Optional[str]:
+        try:
+            return str(getattr(self._registry.get_vision(), "backend_id"))
+        except Exception:
+            return None
 
     def t2i(self, prompt: str, **kwargs: Any) -> Any:
         return self._registry.get_vision().t2i(prompt, **kwargs)

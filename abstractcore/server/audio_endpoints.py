@@ -176,29 +176,52 @@ def _model_payload(model: BaseModel) -> Dict[str, Any]:
     return data
 
 
+def _bool_env(name: str, *, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return bool(default)
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _capability_config_from_env() -> Dict[str, Any]:
+    """Map server env to AbstractCore capability-plugin config keys."""
+    config: Dict[str, Any] = {}
+    env_map = {
+        "ABSTRACTVOICE_LANGUAGE": "voice_language",
+        "ABSTRACTVOICE_TTS_ENGINE": "voice_tts_engine",
+        "ABSTRACTVOICE_STT_ENGINE": "voice_stt_engine",
+        "ABSTRACTVOICE_WHISPER_MODEL": "voice_whisper_model",
+        "ABSTRACTVOICE_TTS_MODEL": "voice_tts_model",
+        "ABSTRACTVOICE_STT_MODEL": "voice_stt_model",
+        "ABSTRACTVOICE_CLONING_ENGINE": "voice_cloning_engine",
+        "ABSTRACTVOICE_REMOTE_BASE_URL": "voice_remote_base_url",
+        "ABSTRACTVOICE_REMOTE_API_KEY": "voice_remote_api_key",
+        "ABSTRACTVOICE_REMOTE_TIMEOUT_S": "voice_remote_timeout_s",
+        "ABSTRACTVOICE_TTS_DELIVERY_MODE": "voice_tts_delivery_mode",
+    }
+    for env_name, config_name in env_map.items():
+        value = os.getenv(env_name)
+        if isinstance(value, str) and value.strip():
+            config[config_name] = value.strip()
+    if os.getenv("ABSTRACTVOICE_ALLOW_DOWNLOADS") is not None:
+        config["voice_allow_downloads"] = _bool_env("ABSTRACTVOICE_ALLOW_DOWNLOADS", default=True)
+    if os.getenv("ABSTRACTVOICE_CLONED_TTS_STREAMING") is not None:
+        config["voice_cloned_tts_streaming"] = _bool_env("ABSTRACTVOICE_CLONED_TTS_STREAMING", default=True)
+    if os.getenv("ABSTRACTVOICE_DEBUG") is not None:
+        config["voice_debug_mode"] = _bool_env("ABSTRACTVOICE_DEBUG", default=False)
+    return config
+
+
 def _get_capability_core() -> Any:
-    """Create/reuse a tiny AbstractCoreInterface host for capability plugins."""
+    """Create/reuse a tiny BaseProvider host for capability plugins."""
     global _CORE
     with _CORE_LOCK:
         if _CORE is not None:
             return _CORE
 
-        from ..core.interface import AbstractCoreInterface
-        from ..core.types import GenerateResponse
+        from .capability_generation import create_capability_generation_core
 
-        class _CapabilityOnlyCore(AbstractCoreInterface):
-            def generate(self, prompt: str, **kwargs):  # type: ignore[override]
-                _ = kwargs
-                return GenerateResponse(content=str(prompt))
-
-            def get_capabilities(self):  # type: ignore[override]
-                return []
-
-            def unload_model(self, model_name: str) -> None:  # type: ignore[override]
-                _ = model_name
-                return None
-
-        _CORE = _CapabilityOnlyCore(model="capabilities")
+        _CORE = create_capability_generation_core(**_capability_config_from_env())
         return _CORE
 
 
@@ -538,9 +561,20 @@ async def audio_transcriptions(
             raise HTTPException(status_code=_provider_exception_status(e), detail=f"Audio transcription failed: {e}") from e
         return _json_or_raw_audio_response(content, upstream_content_type)
 
+    filename = str(getattr(file, "filename", "") or "audio.wav")
+    content_type = str(getattr(file, "content_type", "") or "audio/wav")
     core = _get_capability_core()
     try:
-        text = core.audio.transcribe(bytes(audio_bytes), language=language)
+        result = core.generate(
+            media={
+                "type": "audio",
+                "content": bytes(audio_bytes),
+                "mime_type": content_type,
+                "filename": filename,
+            },
+            output={"modality": "text", "task": "transcription", "language": language},
+        )
+        text = getattr(getattr(result, "text", None), "content", None)
     except CapabilityUnavailableError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
     except Exception as e:
@@ -657,7 +691,22 @@ async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)
 
     core = _get_capability_core()
     try:
-        audio = core.voice.tts(str(input_text), voice=voice, format=fmt)
+        result = core.generate(
+            text=str(input_text),
+            output={
+                "modality": "voice",
+                "task": "tts",
+                "voice": voice,
+                "format": fmt,
+                "speed": _optional_float(data.get("speed"), field="speed"),
+                "instructions": _optional_text(data.get("instructions")),
+                "provider": data.get("provider") if isinstance(data.get("provider"), dict) else None,
+            },
+        )
+        voice_items = getattr(result, "outputs", {}).get("voice", [])
+        audio_item = voice_items[0] if voice_items else None
+        audio = getattr(audio_item, "data", None)
+        content_type = getattr(audio_item, "content_type", None)
     except CapabilityUnavailableError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
     except Exception as e:
@@ -669,7 +718,7 @@ async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)
             detail="TTS backend returned an unexpected type (expected raw bytes).",
         )
 
-    return _audio_response(bytes(audio), media_type=f"audio/{fmt}")
+    return _audio_response(bytes(audio), media_type=str(content_type or f"audio/{fmt}"))
 
 
 @router.post("/voice/clone")
@@ -763,30 +812,37 @@ async def voice_clone(
             raise HTTPException(status_code=_provider_exception_status(e), detail=f"Voice clone failed: {e}") from e
         return out
 
+    core = _get_capability_core()
     try:
-        from abstractvoice.voice_manager import VoiceManager  # type: ignore
-
-        vm = VoiceManager(
-            cloning_engine=os.getenv("ABSTRACTVOICE_CLONING_ENGINE") or "f5_tts",
-            remote_base_url=os.getenv("ABSTRACTVOICE_REMOTE_BASE_URL") or None,
-            remote_api_key=os.getenv("ABSTRACTVOICE_REMOTE_API_KEY") or None,
+        result = core.generate(
+            text=_optional_text(reference_text) or "",
+            media={
+                "type": "audio",
+                "content": bytes(audio_bytes),
+                "mime_type": content_type,
+                "filename": filename,
+                "role": "clone_sample",
+            },
+            output={
+                "modality": "voice",
+                "task": "voice_clone",
+                "name": _optional_text(name),
+                "reference_text": _optional_text(reference_text),
+                "consent": _optional_text(consent),
+                "validate": validate,
+                "cloning_engine": os.getenv("ABSTRACTVOICE_CLONING_ENGINE") or None,
+            },
         )
-        if not hasattr(vm, "clone_voice_from_wav_bytes"):
-            raise RuntimeError("Installed abstractvoice does not expose clone_voice_from_wav_bytes.")
-        voice_id = vm.clone_voice_from_wav_bytes(
-            bytes(audio_bytes),
-            name=_optional_text(name),
-            reference_text=_optional_text(reference_text),
-            engine=os.getenv("ABSTRACTVOICE_CLONING_ENGINE") or None,
-        )
-        info = {}
-        try:
-            info = dict(vm.get_cloned_voice(str(voice_id)) or {})
-        except Exception:
-            info = {}
+        voice_resources = getattr(result, "resources", {}).get("voice", [])
+        resource = voice_resources[0] if voice_resources else None
+        voice_id = getattr(resource, "resource_id", None)
+        if not voice_id:
+            raise RuntimeError("Voice clone backend did not return a usable voice id.")
+        metadata = getattr(resource, "metadata", None)
+        info = dict(metadata or {}) if isinstance(metadata, dict) else {}
         return {"ok": True, "id": str(voice_id), "voice_id": str(voice_id), "voice": info}
-    except ImportError as e:
-        raise HTTPException(status_code=501, detail='AbstractVoice is required for local voice cloning. Install `abstractcore[voice]`.') from e
+    except CapabilityUnavailableError as e:
+        raise HTTPException(status_code=501, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Voice clone failed: {e}") from e
 

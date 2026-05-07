@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.8] - 2026-05-07
+
+### Added
+- **Unified generated media output**: `generate(..., output=...)` now supports a narrow opt-in multimodal path over optional capability plugins. `output="image"` routes to AbstractVision image generation/edit, while `output="voice"` routes to AbstractVoice TTS or voice clone/register depending on whether audio media is supplied. Text-only `generate(...)` remains unchanged.
+- **Multimodal result types**: added `MultimodalGenerateResponse`, `GeneratedItem`, and `GeneratedResource` so generated binary artifacts and reusable resources such as cloned voices have separate, inspectable result shapes.
+- **Unified output tests**: added fake-plugin coverage for image generation, image edit, TTS, voice clone/register, transcription, multi-output text chaining, streaming rejection, and provider-kwarg backward compatibility.
+
+### Changed
+- **Plugin compatibility floors**: optional voice/audio extras now require `abstractvoice>=0.9.0`; optional vision extras now require `abstractvision>=0.3.1`.
+- **Media input normalization**: media dicts now accept the public `{"type": "...", "path": "...", "role": "..."}` shape and preserve roles for output routing.
+- **Async generated media parity**: `agenerate(..., output=...)` now uses the same central multimodal dispatcher as sync generation instead of bypassing optional voice/vision plugins in native async providers.
+- **Generated media routing hardening**: task-only output specs now infer their modality, masked image edits infer image-to-image correctly, empty `output=[]` remains a provider kwarg, and ambiguous audio+voice clone requests are rejected.
+- **AbstractVoice clone compatibility**: the library clone path can reuse AbstractVoice's `VoiceManager` clone methods when the capability shim exposes TTS/STT but not a direct `clone(...)` method.
+- **Generated artifact metadata**: output items now record backend/provider identity when available, forward TTS backend kwargs, decode base64 `MediaContent` payloads for plugin calls, and store returned raw bytes through `artifact_store` when provided.
+- **Server media wiring**: synchronous image generation/edit routes and local/plugin audio speech, transcription, and voice-clone routes now reuse the same `generate(..., output=...)` dispatcher while preserving their OpenAI-compatible HTTP contracts.
+- **Server documentation**: documented tested curl examples for image generation, image edit, TTS, STT, and image analysis, and moved the unified multimodal generation backlog item to completed with a completion report.
+
 ## [2.13.7] - 2026-05-07
 
 ### Fixed

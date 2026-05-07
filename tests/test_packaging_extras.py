@@ -41,14 +41,17 @@ def test_server_extra_stays_vision_runtime_light() -> None:
     vision_block = _extract_optional_dependency_block(text, key="vision")
     vision_diffusers_block = _extract_optional_dependency_block(text, key="vision-diffusers")
     vision_sdcpp_block = _extract_optional_dependency_block(text, key="vision-sdcpp")
+    full_dev_block = _extract_optional_dependency_block(text, key="full-dev")
 
     assert "abstractvision" not in server_block
     assert "abstractvoice" not in server_block
-    assert "abstractvoice>=0.8.5" in voice_block
-    assert "abstractvoice>=0.8.5" in audio_block
-    assert "abstractvision>=0.2.6" in vision_block
-    assert "abstractvision[huggingface]>=0.2.6" in vision_diffusers_block
-    assert "abstractvision[sdcpp]>=0.2.6" in vision_sdcpp_block
+    assert "abstractvoice>=0.9.0" in voice_block
+    assert "abstractvoice>=0.9.0" in audio_block
+    assert "abstractvision>=0.3.1" in vision_block
+    assert "abstractvision[huggingface]>=0.3.1" in vision_diffusers_block
+    assert "abstractvision[sdcpp]>=0.3.1" in vision_sdcpp_block
+    assert "abstractvoice>=0.9.0" in full_dev_block
+    assert "abstractvision>=0.3.1" in full_dev_block
 
 
 def test_server_docker_image_installs_exact_lightweight_release_wheel() -> None:
