@@ -36,7 +36,16 @@ class _FakeProvider(BaseProvider):
         self.provider_calls = []
         self.plugin_calls = []
 
-    def _generate_internal(self, prompt, messages=None, system_prompt=None, tools=None, media=None, stream=False, **kwargs):
+    def _generate_internal(
+        self,
+        prompt,
+        messages=None,
+        system_prompt=None,
+        tools=None,
+        media=None,
+        stream=False,
+        **kwargs,
+    ):
         self.provider_calls.append(
             {
                 "prompt": prompt,
@@ -61,7 +70,9 @@ class _FakeProvider(BaseProvider):
 
 
 class _NativeAsyncFakeProvider(_FakeProvider):
-    async def _agenerate_internal(self, prompt, messages, system_prompt, tools, media, stream, **kwargs):
+    async def _agenerate_internal(
+        self, prompt, messages, system_prompt, tools, media, stream, **kwargs
+    ):
         self.provider_calls.append(
             {
                 "prompt": prompt,
@@ -93,7 +104,9 @@ def _make_plugin_ep():
                 return "voice transcript"
 
             def clone(self, audio, *, name=None, reference_text=None, consent=None, **kwargs):
-                self.owner.plugin_calls.append(("clone", audio, name, reference_text, consent, kwargs))
+                self.owner.plugin_calls.append(
+                    ("clone", audio, name, reference_text, consent, kwargs)
+                )
                 return {"voice_id": "voice-123", "name": name or "clone"}
 
         class _Audio:
@@ -126,21 +139,33 @@ def _make_plugin_ep():
             def i2v(self, image, **kwargs):
                 return b"mp4"
 
-        registry.register_voice_backend(backend_id="fake-voice", factory=lambda owner: _Voice(owner))
-        registry.register_audio_backend(backend_id="fake-audio", factory=lambda owner: _Audio(owner))
-        registry.register_vision_backend(backend_id="fake-vision", factory=lambda owner: _Vision(owner))
+        registry.register_voice_backend(
+            backend_id="fake-voice", factory=lambda owner: _Voice(owner)
+        )
+        registry.register_audio_backend(
+            backend_id="fake-audio", factory=lambda owner: _Audio(owner)
+        )
+        registry.register_vision_backend(
+            backend_id="fake-vision", factory=lambda owner: _Vision(owner)
+        )
 
     return _FakeEntryPoint(register)
 
 
 @pytest.fixture()
 def fake_plugins(monkeypatch):
-    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_plugin_ep()]))
+    monkeypatch.setattr(
+        importlib.metadata, "entry_points", lambda: _EntryPoints([_make_plugin_ep()])
+    )
 
 
 @pytest.mark.basic
 def test_generate_without_output_keeps_text_path_and_does_not_load_plugins(monkeypatch):
-    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: (_ for _ in ()).throw(AssertionError("plugins loaded")))
+    monkeypatch.setattr(
+        importlib.metadata,
+        "entry_points",
+        lambda: (_ for _ in ()).throw(AssertionError("plugins loaded")),
+    )
 
     llm = _FakeProvider()
     response = llm.generate("hello")
@@ -154,7 +179,9 @@ def test_generate_without_output_keeps_text_path_and_does_not_load_plugins(monke
 def test_output_image_without_media_calls_t2i_not_text_provider(fake_plugins):
     llm = _FakeProvider()
 
-    response = llm.generate("red cube", output={"modality": "image", "width": 64, "height": 64, "format": "png"})
+    response = llm.generate(
+        "red cube", output={"modality": "image", "width": 64, "height": 64, "format": "png"}
+    )
 
     assert isinstance(response, MultimodalGenerateResponse)
     assert response.outputs["image"][0].data == b"png-bytes"
@@ -194,7 +221,13 @@ def test_output_image_with_source_and_mask_roles(fake_plugins):
     )
 
     assert response.outputs["image"][0].task == "image_edit"
-    assert llm.plugin_calls[0] == ("i2i", "change only the masked region", "source.png", "mask.png", {})
+    assert llm.plugin_calls[0] == (
+        "i2i",
+        "change only the masked region",
+        "source.png",
+        "mask.png",
+        {},
+    )
 
 
 @pytest.mark.basic
@@ -211,7 +244,13 @@ def test_output_image_with_unroled_source_and_mask_infers_edit(fake_plugins):
     )
 
     assert response.outputs["image"][0].task == "image_edit"
-    assert llm.plugin_calls[0] == ("i2i", "change only the masked region", "source.png", "mask.png", {})
+    assert llm.plugin_calls[0] == (
+        "i2i",
+        "change only the masked region",
+        "source.png",
+        "mask.png",
+        {},
+    )
 
 
 @pytest.mark.basic
@@ -226,7 +265,9 @@ def test_output_image_with_ambiguous_images_raises(fake_plugins):
 def test_output_voice_with_text_calls_tts_without_text_model(fake_plugins):
     llm = _FakeProvider()
 
-    response = llm.generate(text="Hello from AbstractCore.", output={"modality": "voice", "voice": "coral"})
+    response = llm.generate(
+        text="Hello from AbstractCore.", output={"modality": "voice", "voice": "coral"}
+    )
 
     assert response.outputs["voice"][0].task == "tts"
     assert response.outputs["voice"][0].data == b"voice-bytes"
@@ -271,7 +312,13 @@ def test_output_voice_with_audio_media_infers_clone_resource(fake_plugins):
     assert response.outputs == {}
     assert response.resources["voice"][0].resource_id == "voice-123"
     assert llm.provider_calls == []
-    assert llm.plugin_calls[0][0:5] == ("clone", "reference.wav", "narrator", "Optional transcript.", "consent-1")
+    assert llm.plugin_calls[0][0:5] == (
+        "clone",
+        "reference.wav",
+        "narrator",
+        "Optional transcript.",
+        "consent-1",
+    )
 
 
 @pytest.mark.basic
@@ -279,7 +326,11 @@ def test_output_voice_with_audio_and_voice_id_requires_explicit_task(fake_plugin
     llm = _FakeProvider()
 
     with pytest.raises(ValueError, match="ambiguous"):
-        llm.generate(text="Hello.", media={"type": "audio", "path": "reference.wav"}, output={"modality": "voice", "voice": "existing"})
+        llm.generate(
+            text="Hello.",
+            media={"type": "audio", "path": "reference.wav"},
+            output={"modality": "voice", "voice": "existing"},
+        )
 
 
 @pytest.mark.basic
@@ -287,7 +338,10 @@ def test_output_voice_with_audio_and_voice_id_without_prompt_is_ambiguous(fake_p
     llm = _FakeProvider()
 
     with pytest.raises(ValueError, match="ambiguous"):
-        llm.generate(media={"type": "audio", "path": "reference.wav"}, output={"modality": "voice", "voice": "existing"})
+        llm.generate(
+            media={"type": "audio", "path": "reference.wav"},
+            output={"modality": "voice", "voice": "existing"},
+        )
 
 
 @pytest.mark.basic
@@ -296,13 +350,59 @@ def test_task_only_output_specs_infer_modality(fake_plugins):
 
     speech = llm.generate(text="Hello.", output={"task": "tts"})
     image = llm.generate("red square", output={"task": "t2i"})
-    clone = llm.generate(media={"type": "audio", "path": "reference.wav"}, output={"task": "voice_clone"})
-    transcript = llm.generate(media={"type": "audio", "path": "meeting.wav"}, output={"task": "transcription"})
+    clone = llm.generate(
+        media={"type": "audio", "path": "reference.wav"}, output={"task": "voice_clone"}
+    )
+    transcript = llm.generate(
+        media={"type": "audio", "path": "meeting.wav"}, output={"task": "transcription"}
+    )
 
     assert speech.outputs["voice"][0].task == "tts"
     assert image.outputs["image"][0].task == "image_generation"
     assert clone.resources["voice"][0].resource_id == "voice-123"
     assert transcript.text.content == "transcribed audio"
+
+
+@pytest.mark.basic
+@pytest.mark.parametrize(
+    "output",
+    [
+        {"task": "text_generation"},
+        {"modality": "text", "task": "text_generation"},
+    ],
+)
+def test_text_generation_output_selectors_use_normal_text_path(fake_plugins, output):
+    llm = _FakeProvider()
+
+    response = llm.generate("Hello.", output=output)
+
+    assert isinstance(response, GenerateResponse)
+    assert response.content == "generated:Hello."
+    assert llm.provider_calls[0]["kwargs"].get("output") is None
+    assert llm.plugin_calls == []
+
+
+@pytest.mark.basic
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "output",
+    [
+        {"task": "text_generation"},
+        {"modality": "text", "task": "text_generation"},
+    ],
+)
+async def test_native_async_text_generation_output_selectors_use_normal_text_path(
+    fake_plugins, output
+):
+    llm = _NativeAsyncFakeProvider()
+
+    response = await llm.agenerate("Hello.", output=output)
+
+    assert isinstance(response, GenerateResponse)
+    assert response.content == "async-generated:Hello."
+    assert llm.provider_calls[0]["native_async"] is True
+    assert llm.provider_calls[0]["kwargs"].get("output") is None
+    assert llm.plugin_calls == []
 
 
 @pytest.mark.basic

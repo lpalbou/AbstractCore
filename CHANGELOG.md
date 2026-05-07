@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.10] - 2026-05-07
+
+### Fixed
+- **Task-only text generation selectors**: `generate(...)` and `agenerate(...)` calls with
+  `output={"task": "text_generation"}` now normalize through the public output selector contract as
+  `modality="text"` and follow the normal chat/text generation path instead of being treated as
+  generated media or non-chat dispatch.
+
+### Changed
+- **Backlog completion**: moved the task-only text generation output-normalization proposal to
+  completed with an implementation report, acceptance-criteria results, and validation notes.
+
 ## [2.13.9] - 2026-05-07
 
 ### Added

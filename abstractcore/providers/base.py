@@ -5011,6 +5011,7 @@ Please provide a structured response."""
                 and maybe_specs[0].get("task") not in {"transcription"}
                 and str(prompt or "").strip()
             ):
+                kwargs.pop("output", None)
                 is_acore_output = False
 
         if is_acore_output:

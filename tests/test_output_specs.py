@@ -50,8 +50,19 @@ def test_public_selector_matches_base_provider_wrapper(value, expected):
         ({"task": "t2i"}, [{"task": "image_generation", "modality": "image"}]),
         ({"task": "image_to_image"}, [{"task": "image_edit", "modality": "image"}]),
         ({"task": "audio"}, [{"task": "tts", "modality": "voice"}]),
-        ({"task": "text_generation"}, [{"task": "text_generation", "modality": ""}]),
-        ({"type": "voice", "format": "wav"}, [{"type": "voice", "format": "wav", "modality": "voice"}]),
+        ({"task": "text_generation"}, [{"task": "text_generation", "modality": "text"}]),
+        (
+            {"modality": "text", "task": "text_generation"},
+            [{"modality": "text", "task": "text_generation"}],
+        ),
+        (
+            {"output": "text_generation"},
+            [{"output": "text_generation", "modality": "text", "task": "text_generation"}],
+        ),
+        (
+            {"type": "voice", "format": "wav"},
+            [{"type": "voice", "format": "wav", "modality": "voice"}],
+        ),
         (
             [{"modality": "text"}, {"modality": "voice", "format": "mp3"}],
             [{"modality": "text"}, {"modality": "voice", "format": "mp3"}],
@@ -84,6 +95,8 @@ def test_normalize_output_spec_copies_input_dict():
         ({"task": "clone"}, False),
         ([{"modality": "text"}, {"task": "voice_clone"}], False),
         ("text", False),
+        ({"task": "text_generation"}, False),
+        ({"modality": "text", "task": "text_generation"}, False),
         ("transcription", False),
         ({"task": "transcription"}, False),
         ("json", False),
@@ -103,6 +116,8 @@ def test_output_has_generated_media(value, expected):
         ("transcription", True),
         ({"task": "transcription"}, True),
         ("text", False),
+        ({"task": "text_generation"}, False),
+        ({"modality": "text", "task": "text_generation"}, False),
         ("json", False),
     ],
 )
@@ -113,7 +128,12 @@ def test_output_requires_non_chat_dispatch(value, expected):
 @pytest.mark.basic
 def test_strip_runtime_output_metadata_removes_storage_fields_without_mutating():
     original = [
-        {"modality": "image", "run_id": "run-1", "tags": {"tenant": "demo"}, "artifact_id": "img-1"},
+        {
+            "modality": "image",
+            "run_id": "run-1",
+            "tags": {"tenant": "demo"},
+            "artifact_id": "img-1",
+        },
         {"modality": "voice", "format": "wav"},
     ]
 

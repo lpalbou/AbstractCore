@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
-
-GenerationOutputSpec = Dict[str, Any]
+GenerationOutputSpec = dict[str, Any]
 
 OUTPUT_STRING_VALUES = {
     "text",
@@ -37,6 +36,7 @@ OUTPUT_DICT_VALUES = {
 }
 
 OUTPUT_MODALITY_ALIASES = {
+    "text_generation": ("text", "text_generation"),
     "speech": ("voice", "tts"),
     "tts": ("voice", "tts"),
     "audio": ("voice", "tts"),
@@ -57,6 +57,15 @@ OUTPUT_TASK_ALIASES = {
     "t2i": "image_generation",
     "i2i": "image_edit",
     "image_to_image": "image_edit",
+}
+
+OUTPUT_TASK_MODALITIES = {
+    "text_generation": "text",
+    "transcription": "text",
+    "image_generation": "image",
+    "image_edit": "image",
+    "tts": "voice",
+    "voice_clone": "voice",
 }
 
 OUTPUT_PLUGIN_EXCLUDE_KEYS = {
@@ -97,7 +106,7 @@ def is_output_request(value: Any) -> bool:
     return False
 
 
-def normalize_output_specs(value: Any) -> List[GenerationOutputSpec]:
+def normalize_output_specs(value: Any) -> list[GenerationOutputSpec]:
     """Normalize one output selector or a list/tuple of selectors."""
 
     if isinstance(value, (list, tuple)):
@@ -127,13 +136,8 @@ def normalize_output_spec(value: Any) -> GenerationOutputSpec:
     if task in OUTPUT_TASK_ALIASES:
         task = OUTPUT_TASK_ALIASES[task]
 
-    if not modality:
-        if task in {"tts", "voice_clone"}:
-            modality = "voice"
-        elif task in {"transcription"}:
-            modality = "text"
-        elif task in {"image_generation", "image_edit"}:
-            modality = "image"
+    if not modality and task in OUTPUT_TASK_MODALITIES:
+        modality = OUTPUT_TASK_MODALITIES[task]
 
     spec["modality"] = modality
     if task:
@@ -186,9 +190,9 @@ def strip_runtime_output_metadata(value: Any) -> Any:
 def output_plugin_kwargs(
     spec: GenerationOutputSpec,
     *,
-    exclude: Optional[Set[str]] = None,
+    exclude: set[str] | None = None,
     strip_runtime_metadata: bool = False,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Return backend kwargs from a normalized output spec."""
 
     excluded = set(OUTPUT_PLUGIN_EXCLUDE_KEYS)
