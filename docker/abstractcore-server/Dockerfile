@@ -12,7 +12,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 RUN addgroup --system abstractcore \
     && adduser --system --ingroup abstractcore --home /home/abstractcore abstractcore \
     && python -m pip install --upgrade pip \
-    && python -m pip install "abstractcore[server,remote,media,tokens,compression,voice,vision]==${ABSTRACTCORE_VERSION}"
+    && ABSTRACTCORE_WHEEL_URL="$(python -c 'import json, os, urllib.request; version = os.environ["ABSTRACTCORE_VERSION"]; url = "https://pypi.org/pypi/abstractcore/" + version + "/json"; payload = json.load(urllib.request.urlopen(url, timeout=20)); print(next(item["url"] for item in payload["urls"] if item.get("packagetype") == "bdist_wheel" and item.get("filename", "").endswith(".whl")))')" \
+    && python -m pip install "abstractcore[server,remote,media,tokens,compression] @ ${ABSTRACTCORE_WHEEL_URL}"
 
 USER abstractcore
 WORKDIR /home/abstractcore

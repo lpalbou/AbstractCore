@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.7] - 2026-05-07
+
+### Fixed
+- **GHCR image packaging**: corrects the 2.13.6 image release path by installing the exact PyPI release wheel by direct URL from PyPI metadata, avoiding PyPI simple-index propagation lag during release builds.
+- **Docker image scope**: the published server image remains a lightweight remote/server gateway with `abstractcore[server,remote,media,tokens,compression]`. AbstractVoice and AbstractVision local plugin runtimes remain optional custom-image installs because their current packages pull large native inference stacks; remote OpenAI-compatible audio and image routes still work in the default image.
+- **Docker configuration docs**: server-image examples now show explicit secret values in `.env` files instead of shell interpolation that `docker run --env-file` would treat literally.
+
 ## [2.13.6] - 2026-05-07
 
 ### Added

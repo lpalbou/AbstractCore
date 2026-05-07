@@ -51,8 +51,11 @@ def test_server_extra_stays_vision_runtime_light() -> None:
     assert "abstractvision[sdcpp]>=0.2.6" in vision_sdcpp_block
 
 
-def test_server_docker_image_includes_remote_voice_and_vision_plugins() -> None:
+def test_server_docker_image_installs_exact_lightweight_release_wheel() -> None:
     dockerfile = Path(__file__).resolve().parents[1] / "docker" / "abstractcore-server" / "Dockerfile"
     text = dockerfile.read_text(encoding="utf-8")
 
-    assert "abstractcore[server,remote,media,tokens,compression,voice,vision]==${ABSTRACTCORE_VERSION}" in text
+    assert "https://pypi.org/pypi/abstractcore/" in text
+    assert "ABSTRACTCORE_WHEEL_URL" in text
+    assert "abstractcore[server,remote,media,tokens,compression] @ ${ABSTRACTCORE_WHEEL_URL}" in text
+    assert "abstractcore[server,remote,media,tokens,compression,voice,vision]" not in text

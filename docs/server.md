@@ -1316,21 +1316,21 @@ ghcr.io/lpalbou/abstractcore-server:<version>
 The image is built from PyPI, not from the repository checkout, and installs:
 
 ```bash
-abstractcore[server,remote,media,tokens,compression,voice,vision]==<version>
+abstractcore[server,remote,media,tokens,compression]==<version>
 ```
 
 It includes remote chat/responses, remote embeddings, remote STT/TTS routing,
-remote OpenAI-compatible image proxying, AbstractVoice/AbstractVision capability
-plugins, server dependencies, media parsing, token counting, and compression
-helpers. It intentionally does not include AbstractCore local LLM runtimes
-(`vllm`, `mlx`, `huggingface`), local embedding dependencies
-(`sentence-transformers`), or heavyweight AbstractVoice optional clone/voice
-extras. Local vision runtime behavior remains opt-in by configuration and model
-availability.
+remote OpenAI-compatible image proxying, server dependencies, media parsing,
+token counting, and compression helpers. It intentionally does not include
+AbstractCore local LLM runtimes (`vllm`, `mlx`, `huggingface`), local embedding
+dependencies (`sentence-transformers`), or the AbstractVoice/AbstractVision
+local plugin runtimes because those pull large native inference stacks. Build a
+custom image with `abstractcore[voice]` or `abstractcore[vision]` when local
+voice/vision plugin execution is required.
 
 **Run:**
 ```bash
-docker pull ghcr.io/lpalbou/abstractcore-server:2.13.6
+docker pull ghcr.io/lpalbou/abstractcore-server:2.13.7
 ```
 
 For local development, keep secrets in an uncommitted `.env` file:
@@ -1345,7 +1345,7 @@ PORTKEY_CONFIG=pcfg_...
 OPENAI_COMPATIBLE_BASE_URL=http://host.docker.internal:1234/v1
 OPENAI_COMPATIBLE_API_KEY=optional
 ABSTRACTCORE_VISION_UPSTREAM_BASE_URL=https://api.openai.com/v1
-ABSTRACTCORE_VISION_UPSTREAM_API_KEY=${OPENAI_API_KEY}
+ABSTRACTCORE_VISION_UPSTREAM_API_KEY=sk-...
 ```
 
 Then run the image with that environment file:
@@ -1354,7 +1354,7 @@ Then run the image with that environment file:
 docker run --rm --name abstractcore-server \
   -p 127.0.0.1:8000:8000 \
   --env-file .env \
-  ghcr.io/lpalbou/abstractcore-server:2.13.6
+  ghcr.io/lpalbou/abstractcore-server:2.13.7
 ```
 
 `ABSTRACTCORE_SERVER_API_KEY` is the AbstractCore server auth token. Clients
@@ -1374,7 +1374,7 @@ docker run --rm --name abstractcore-server \
   -e ABSTRACTCORE_SERVER_API_KEY="$ABSTRACTCORE_SERVER_API_KEY" \
   -e OPENAI_COMPATIBLE_BASE_URL="http://host.docker.internal:1234/v1" \
   -e OPENAI_COMPATIBLE_API_KEY="$OPENAI_COMPATIBLE_API_KEY" \
-  ghcr.io/lpalbou/abstractcore-server:2.13.6
+  ghcr.io/lpalbou/abstractcore-server:2.13.7
 ```
 
 ### Docker Compose
@@ -1384,7 +1384,7 @@ version: '3.8'
 
 services:
   abstractcore:
-    image: ghcr.io/lpalbou/abstractcore-server:2.13.6
+    image: ghcr.io/lpalbou/abstractcore-server:2.13.7
     ports:
       - "8000:8000"
     environment:
