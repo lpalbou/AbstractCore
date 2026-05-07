@@ -18,6 +18,15 @@ from .multimodal_generation import (
     GenerationIssue,
     MultimodalGenerateResponse,
 )
+from .output_specs import (
+    GenerationOutputSpec,
+    is_output_request,
+    normalize_output_spec,
+    normalize_output_specs,
+    output_has_generated_media,
+    output_requires_non_chat_dispatch,
+    strip_runtime_output_metadata,
+)
 from .enums import ModelParameter, ModelCapability, MessageRole
 from .interface import AbstractCoreInterface
 
@@ -26,10 +35,17 @@ __all__ = [
     'BasicSession',
     'CachedSession',
     'GenerateResponse',
+    'GenerationOutputSpec',
     'GeneratedItem',
     'GeneratedResource',
     'GenerationIssue',
     'MultimodalGenerateResponse',
+    'is_output_request',
+    'normalize_output_spec',
+    'normalize_output_specs',
+    'output_has_generated_media',
+    'output_requires_non_chat_dispatch',
+    'strip_runtime_output_metadata',
     'Message',
     'ModelParameter',
     'ModelCapability',

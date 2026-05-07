@@ -28,6 +28,12 @@ except ImportError:
 from ..core.interface import AbstractCoreInterface
 from ..core.types import GenerateResponse
 from ..core.multimodal_generation import GeneratedItem, GeneratedResource, MultimodalGenerateResponse
+from ..core.output_specs import (
+    is_output_request,
+    normalize_output_spec,
+    normalize_output_specs,
+    output_plugin_kwargs,
+)
 from ..capabilities.types import is_artifact_ref
 from ..events import EventType, Event
 from datetime import datetime
@@ -1495,103 +1501,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
     @staticmethod
     def _is_acore_output_request(output: Any) -> bool:
         """Return True when ``output`` is an AbstractCore multimodal selector."""
-        if output is None:
-            return False
-        if isinstance(output, str):
-            return output.strip().lower() in {
-                "text",
-                "transcript",
-                "transcription",
-                "image",
-                "voice",
-                "speech",
-                "tts",
-                "audio",
-            }
-        if isinstance(output, (list, tuple)):
-            return bool(output) and all(BaseProvider._is_acore_output_request(item) for item in output)
-        if isinstance(output, dict):
-            raw = output.get("modality", output.get("type", output.get("output")))
-            task = output.get("task")
-            values = {str(v).strip().lower() for v in (raw, task) if isinstance(v, str) and v.strip()}
-            return bool(
-                values
-                & {
-                    "text",
-                    "transcript",
-                    "transcription",
-                    "text_generation",
-                    "image",
-                    "image_generation",
-                    "image_edit",
-                    "t2i",
-                    "i2i",
-                    "image_to_image",
-                    "voice",
-                    "speech",
-                    "tts",
-                    "voice_clone",
-                    "clone",
-                }
-            )
-        return False
+        return is_output_request(output)
 
     @staticmethod
     def _normalize_output_specs(output: Any) -> List[Dict[str, Any]]:
-        if isinstance(output, (list, tuple)):
-            return [BaseProvider._normalize_output_spec(item) for item in output]
-        return [BaseProvider._normalize_output_spec(output)]
+        return normalize_output_specs(output)
 
     @staticmethod
     def _normalize_output_spec(output: Any) -> Dict[str, Any]:
-        spec: Dict[str, Any]
-        if isinstance(output, str):
-            spec = {"modality": output}
-        elif isinstance(output, dict):
-            spec = dict(output)
-            spec["modality"] = spec.get("modality", spec.get("type", spec.get("output")))
-        else:
-            raise ValueError("output must be a string, dict, or list of output specs")
-
-        modality = str(spec.get("modality") or "").strip().lower()
-        task = str(spec.get("task") or "").strip().lower()
-
-        if modality in {"speech", "tts", "audio"}:
-            modality = "voice"
-            task = task or "tts"
-        elif modality in {"transcript", "transcription"}:
-            modality = "text"
-            task = task or "transcription"
-        elif modality in {"t2i", "image_generation"}:
-            modality = "image"
-            task = task or "image_generation"
-        elif modality in {"i2i", "image_to_image", "image_edit"}:
-            modality = "image"
-            task = task or "image_edit"
-
-        if task in {"speech", "audio"}:
-            task = "tts"
-        elif task in {"clone"}:
-            task = "voice_clone"
-        elif task in {"transcript"}:
-            task = "transcription"
-        elif task in {"t2i"}:
-            task = "image_generation"
-        elif task in {"i2i", "image_to_image"}:
-            task = "image_edit"
-
-        if not modality:
-            if task in {"tts", "voice_clone"}:
-                modality = "voice"
-            elif task in {"transcription"}:
-                modality = "text"
-            elif task in {"image_generation", "image_edit"}:
-                modality = "image"
-
-        spec["modality"] = modality
-        if task:
-            spec["task"] = task
-        return spec
+        return normalize_output_spec(output)
 
     @staticmethod
     def _coerce_media_items(media: Any) -> List[Any]:
@@ -1710,22 +1628,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
     @staticmethod
     def _output_plugin_kwargs(spec: Dict[str, Any], *, exclude: Optional[set[str]] = None) -> Dict[str, Any]:
-        base_exclude = {
-            "id",
-            "modality",
-            "type",
-            "output",
-            "task",
-            "source",
-            "prompt",
-            "text",
-            "media",
-            "input_media",
-            "role",
-        }
-        if exclude:
-            base_exclude.update(exclude)
-        return {k: v for k, v in spec.items() if k not in base_exclude and v is not None}
+        return output_plugin_kwargs(spec, exclude=exclude)
 
     @staticmethod
     def _artifact_or_data(value: Any) -> tuple[Optional[bytes], Optional[Dict[str, Any]], Dict[str, Any]]:

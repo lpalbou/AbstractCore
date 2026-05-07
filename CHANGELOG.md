@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.9] - 2026-05-07
+
+### Added
+- **Public output selector contract for runtimes**: added `abstractcore.core.output_specs` so AbstractRuntime and other durable callers can identify and normalize `generate(..., output=...)` selectors without importing private provider helpers or maintaining a drift-prone mirror of AbstractCore dispatch semantics.
+- **Output routing guardrail helpers**: exposed helpers for selector detection, output-spec normalization, generated-media detection, non-chat dispatch detection, runtime metadata stripping, and backend plugin kwargs extraction.
+- **Selector contract tests**: added parity tests for string, dict, list, unsupported, alias-normalization, transcription, generated-media, non-chat-dispatch, and runtime-metadata cases.
+
+### Changed
+- **Provider selector delegation**: `BaseProvider._is_acore_output_request(...)`, `_normalize_output_spec(...)`, `_normalize_output_specs(...)`, and `_output_plugin_kwargs(...)` now delegate to the public Core helper module while preserving existing behavior and compatibility quirks, including the current string-vs-dict `"audio"` selector behavior.
+- **Backlog completion**: moved the public output selector proposal to completed with an implementation report and validation notes.
+
 ## [2.13.8] - 2026-05-07
 
 ### Added

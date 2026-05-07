@@ -1416,7 +1416,7 @@ voice/vision plugin execution is required.
 
 **Run:**
 ```bash
-docker pull ghcr.io/lpalbou/abstractcore-server:2.13.8
+docker pull ghcr.io/lpalbou/abstractcore-server:2.13.9
 ```
 
 For local development, keep secrets in an uncommitted `.env` file:
@@ -1440,7 +1440,7 @@ Then run the image with that environment file:
 docker run --rm --name abstractcore-server \
   -p 127.0.0.1:8000:8000 \
   --env-file .env \
-  ghcr.io/lpalbou/abstractcore-server:2.13.8
+  ghcr.io/lpalbou/abstractcore-server:2.13.9
 ```
 
 `ABSTRACTCORE_SERVER_API_KEY` is the AbstractCore server auth token. Clients
@@ -1460,7 +1460,7 @@ docker run --rm --name abstractcore-server \
   -e ABSTRACTCORE_SERVER_API_KEY="$ABSTRACTCORE_SERVER_API_KEY" \
   -e OPENAI_COMPATIBLE_BASE_URL="http://host.docker.internal:1234/v1" \
   -e OPENAI_COMPATIBLE_API_KEY="$OPENAI_COMPATIBLE_API_KEY" \
-  ghcr.io/lpalbou/abstractcore-server:2.13.8
+  ghcr.io/lpalbou/abstractcore-server:2.13.9
 ```
 
 ### Docker Compose
@@ -1470,7 +1470,7 @@ version: '3.8'
 
 services:
   abstractcore:
-    image: ghcr.io/lpalbou/abstractcore-server:2.13.8
+    image: ghcr.io/lpalbou/abstractcore-server:2.13.9
     ports:
       - "8000:8000"
     environment:
