@@ -596,7 +596,7 @@ pip install "abstractcore[voice]"
 ```
 
 Notes:
-- `abstractvoice` 0.9.1+ can install the base plugin path on Python 3.9,
+- `abstractvoice` 0.9.2+ can install the base plugin path on Python 3.9,
   but Python 3.10+ is recommended. Optional/heavier engines and clone backends
   such as OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths; AEC
   requires Python 3.11+.
@@ -1438,7 +1438,7 @@ local plugin extras only when you want local native inference engines.
 
 **Run:**
 ```bash
-docker pull ghcr.io/lpalbou/abstractcore-server:2.13.11
+docker pull ghcr.io/lpalbou/abstractcore-server:2.13.12
 ```
 
 For local development, keep secrets in an uncommitted `.env` file:
@@ -1462,7 +1462,7 @@ Then run the image with that environment file:
 docker run --rm --name abstractcore-server \
   -p 127.0.0.1:8000:8000 \
   --env-file .env \
-  ghcr.io/lpalbou/abstractcore-server:2.13.11
+  ghcr.io/lpalbou/abstractcore-server:2.13.12
 ```
 
 `ABSTRACTCORE_SERVER_API_KEY` is the AbstractCore server auth token. Clients
@@ -1482,7 +1482,7 @@ docker run --rm --name abstractcore-server \
   -e ABSTRACTCORE_SERVER_API_KEY="$ABSTRACTCORE_SERVER_API_KEY" \
   -e OPENAI_COMPATIBLE_BASE_URL="http://host.docker.internal:1234/v1" \
   -e OPENAI_COMPATIBLE_API_KEY="$OPENAI_COMPATIBLE_API_KEY" \
-  ghcr.io/lpalbou/abstractcore-server:2.13.11
+  ghcr.io/lpalbou/abstractcore-server:2.13.12
 ```
 
 ### Docker Compose
@@ -1492,7 +1492,7 @@ version: '3.8'
 
 services:
   abstractcore:
-    image: ghcr.io/lpalbou/abstractcore-server:2.13.11
+    image: ghcr.io/lpalbou/abstractcore-server:2.13.12
     ports:
       - "8000:8000"
     environment:

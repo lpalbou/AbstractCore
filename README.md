@@ -144,7 +144,7 @@ pip install "abstractcore[remote,media,tools]"
 
 # Turnkey local-runtime installs
 pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
-pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
+pip install "abstractcore[all-gpu]"      # GPU host: remote SDKs + HF/GGUF + vLLM + features + server
 ```
 
 `apple`/`gpu` are hardware-profile aliases for the local LLM engine stack.
@@ -310,7 +310,7 @@ Notes:
 - **Images**: use a vision-capable model, or configure **vision fallback** for text-only models (`abstractcore --config`; `abstractcore --set-vision-provider PROVIDER MODEL`).
 - **Video**: `video_policy="auto"` (default) uses native video when supported, otherwise samples frames (requires `ffmpeg`/`ffprobe`) and routes them through image/vision handling (so you still need a vision-capable model or vision fallback configured).
 - **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` and install `abstractcore[voice]` for speech-to-text.
-  `abstractvoice` 0.9.1+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines and cloning backends.
+  `abstractvoice` 0.9.2+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines and cloning backends.
 
 Configure defaults (optional):
 

@@ -42,18 +42,32 @@ def test_server_extra_stays_vision_runtime_light() -> None:
     vision_diffusers_block = _extract_optional_dependency_block(text, key="vision-diffusers")
     vision_sdcpp_block = _extract_optional_dependency_block(text, key="vision-sdcpp")
     vision_local_block = _extract_optional_dependency_block(text, key="vision-local")
+    music_block = _extract_optional_dependency_block(text, key="music")
+    all_apple_block = _extract_optional_dependency_block(text, key="all-apple")
+    all_gpu_block = _extract_optional_dependency_block(text, key="all-gpu")
     full_dev_block = _extract_optional_dependency_block(text, key="full-dev")
 
     assert "abstractvision" not in server_block
     assert "abstractvoice" not in server_block
-    assert "abstractvoice>=0.9.1" in voice_block
-    assert "abstractvoice>=0.9.1" in audio_block
-    assert "abstractvision>=0.3.2" in vision_block
-    assert "abstractvision[huggingface]>=0.3.2" in vision_diffusers_block
-    assert "abstractvision[sdcpp]>=0.3.2" in vision_sdcpp_block
-    assert "abstractvision[local]>=0.3.2" in vision_local_block
-    assert "abstractvoice>=0.9.1" in full_dev_block
-    assert "abstractvision>=0.3.2" in full_dev_block
+    assert "abstractvoice>=0.9.2" in voice_block
+    assert "abstractmusic" not in voice_block
+    assert "abstractvoice>=0.9.2" in audio_block
+    assert "abstractvision>=0.3.3" in vision_block
+    assert "abstractvision[huggingface]>=0.3.3" in vision_diffusers_block
+    assert "abstractvision[sdcpp]>=0.3.3" in vision_sdcpp_block
+    assert "abstractvision[local]>=0.3.3" in vision_local_block
+    assert "abstractmusic>=0.1.1" in music_block
+    assert "abstractvoice[all-apple]>=0.9.2" in all_apple_block
+    assert "abstractvision[all-apple]>=0.3.3" in all_apple_block
+    assert "abstractmusic[all-apple]>=0.1.1" in all_apple_block
+    assert "vllm" not in all_apple_block
+    assert "abstractvoice[all-gpu]>=0.9.2" in all_gpu_block
+    assert "abstractvision[all-gpu]>=0.3.3" in all_gpu_block
+    assert "abstractmusic[all-gpu]>=0.1.1" in all_gpu_block
+    assert "mlx-lm" not in all_gpu_block
+    assert "abstractvoice>=0.9.2" in full_dev_block
+    assert "abstractvision>=0.3.3" in full_dev_block
+    assert "abstractmusic>=0.1.1" in full_dev_block
 
 
 def test_server_docker_image_installs_exact_lightweight_release_wheel() -> None:

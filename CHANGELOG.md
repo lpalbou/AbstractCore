@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.12] - 2026-05-08
+
+### Changed
+- **Capability plugin floors**: optional vision/voice/music install profiles now
+  require `abstractvision>=0.3.3`, `abstractvoice>=0.9.2`, and
+  `abstractmusic>=0.1.1`.
+- **Native aggregate profiles**: `abstractcore[all-apple]` now cascades to
+  `abstractvision[all-apple]`, `abstractvoice[all-apple]`, and
+  `abstractmusic[all-apple]`; `abstractcore[all-gpu]` now cascades to the
+  matching `all-gpu` capability packages.
+- **Profile boundary**: `abstractcore[apple]` remains the MLX local LLM alias
+  and `abstractcore[gpu]` remains the vLLM local LLM alias. Full media/capability
+  installs use `all-apple` or `all-gpu`.
+
 ## [2.13.11] - 2026-05-08
 
 ### Added
