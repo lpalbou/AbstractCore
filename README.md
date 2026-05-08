@@ -124,8 +124,10 @@ pip install "abstractcore[remote]"
 pip install "abstractcore[openai]"       # OpenAI SDK
 pip install "abstractcore[anthropic]"    # Anthropic SDK
 pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
-pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
-pip install "abstractcore[vllm]"         # NVIDIA CUDA / ROCm (heavy)
+pip install "abstractcore[apple]"        # Apple Silicon local LLM stack (alias of mlx; heavy)
+pip install "abstractcore[gpu]"          # GPU local LLM stack (alias of vllm; heavy)
+pip install "abstractcore[mlx]"          # Explicit MLX provider extra
+pip install "abstractcore[vllm]"         # Explicit vLLM provider extra
 
 # Optional application features
 pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
@@ -144,6 +146,10 @@ pip install "abstractcore[remote,media,tools]"
 pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF + MLX + features + server
 pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
 ```
+
+`apple`/`gpu` are hardware-profile aliases for the local LLM engine stack.
+`all-apple`/`all-gpu` are larger aggregate profiles for a full local-development
+environment.
 
 ## Quickstart
 
@@ -304,7 +310,7 @@ Notes:
 - **Images**: use a vision-capable model, or configure **vision fallback** for text-only models (`abstractcore --config`; `abstractcore --set-vision-provider PROVIDER MODEL`).
 - **Video**: `video_policy="auto"` (default) uses native video when supported, otherwise samples frames (requires `ffmpeg`/`ffprobe`) and routes them through image/vision handling (so you still need a vision-capable model or vision fallback configured).
 - **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` and install `abstractcore[voice]` for speech-to-text.
-  `abstractvoice` 0.9.0+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines and cloning backends.
+  `abstractvoice` 0.9.1+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines and cloning backends.
 
 Configure defaults (optional):
 
@@ -345,6 +351,19 @@ the direct `llm.vision.*`, `llm.voice.*`, and `llm.audio.*` facades remain
 available. Configure `abstractvision` and `abstractvoice` backends first for
 real generation; lightweight remote paths use OpenAI/OpenAI-compatible base URLs
 and keys, while local model engines remain optional plugin extras.
+
+Catalog helpers are available for UI/dropdown preflight:
+
+```python
+image_models = llm.vision.list_provider_models(task="text_to_image")
+voices = llm.voice.voice_catalog()
+tts_models = llm.voice.list_tts_models()
+```
+
+The HTTP server exposes equivalent discovery at
+`/v1/vision/provider_models`, `/v1/audio/voices`, and
+`/v1/audio/speech/models`. `/v1/models` remains focused on LLM and embedding
+provider models.
 
 ## HTTP server (OpenAI-compatible gateway)
 

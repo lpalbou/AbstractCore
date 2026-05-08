@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Protocol, Union, runtime_checkable, TYPE_CHECKING
+from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..core.types import GenerateResponse
@@ -38,6 +38,12 @@ class ArtifactStoreLike(Protocol):
 
 class VoiceCapability(Protocol):
     backend_id: str
+
+    def list_profiles(self, *, kind: str = "tts") -> List[Dict[str, Any]]: ...
+
+    def list_tts_models(self) -> List[str]: ...
+
+    def voice_catalog(self) -> Dict[str, Any]: ...
 
     def tts(
         self,
@@ -89,6 +95,8 @@ class AudioCapability(Protocol):
 
 class VisionCapability(Protocol):
     backend_id: str
+
+    def list_provider_models(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]: ...
 
     def t2i(
         self,

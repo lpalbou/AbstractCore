@@ -15,6 +15,9 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/health` | GET | Server health check | - |
 | `/v1/models` | GET | List/filter available models | `provider`, `input_type`, `output_type`, `base_url` |
 | `/providers` | GET | List providers with metadata | `include_models` |
+| `/v1/vision/provider_models` | GET | AbstractVision provider model catalog | `task`, `base_url` |
+| `/v1/audio/voices` | GET | AbstractVoice voice/profile catalog | `base_url` |
+| `/v1/audio/speech/models` | GET | AbstractVoice TTS model catalog | `base_url` |
 | `/v1/chat/completions` | POST | Chat completions | `model`, `messages`, `stream` |
 | `/v1/embeddings` | POST | Generate embeddings | `model`, `input` |
 | `/v1/responses` | POST | OpenAI Responses API | `model`, `input` |
@@ -40,6 +43,7 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | **Simple Chat** | `/v1/chat/completions` | `model`, `messages` | Text conversation |
 | **Streaming** | `/v1/chat/completions` | `stream: true` | Real-time responses |
 | **Vision** | `/v1/chat/completions` | `content: [text, image_url]` | Image analysis |
+| **Media Catalogs** | `/v1/vision/provider_models`, `/v1/audio/voices` | `task`, `base_url` | Populate image model and voice dropdowns |
 | **Image Generation** | `/v1/images/generations` | `prompt` | Create images (optional) |
 | **Image Editing** | `/v1/images/edits` | `prompt`, `image` | Edit images (optional) |
 | **Speech-to-Text** | `/v1/audio/transcriptions` | `file` | Transcribe audio (optional) |
@@ -205,6 +209,24 @@ vision_models = response.json()["data"]
 response = requests.get("http://localhost:8000/v1/models?output_type=embeddings")
 embedding_models = response.json()["data"]
 ```
+
+---
+
+### Capability Catalogs
+
+Use these routes when a client needs image model, TTS model, or voice/profile
+dropdowns. They use the AbstractVision/AbstractVoice plugin boundary and keep
+`/v1/models` focused on LLM and embedding provider models.
+
+```bash
+curl http://localhost:8000/v1/vision/provider_models?task=text_to_image
+curl http://localhost:8000/v1/audio/voices
+curl http://localhost:8000/v1/audio/speech/models
+```
+
+`base_url` can target a local or remote OpenAI-compatible media endpoint. It
+uses the same loopback-by-default / allowlist policy as generation routes.
+Provider-key overrides use `X-AbstractCore-Provider-API-Key`.
 
 ---
 
@@ -1045,13 +1067,17 @@ docker run -p 8000:8000 \
   -e ABSTRACTCORE_SERVER_API_KEY="acore-server-secret" \
   -e OPENAI_API_KEY="sk-..." \
   -e OPENROUTER_API_KEY="sk-or-..." \
-  ghcr.io/lpalbou/abstractcore-server:2.13.10
+  ghcr.io/lpalbou/abstractcore-server:2.13.11
 ```
 
 The release image is built from PyPI with
 `abstractcore[server,remote,media,tokens,compression]==<version>`. It is a
 remote/server gateway image and intentionally does not bundle local model
-runtimes, local Diffusers/sdcpp vision backends, or `sentence-transformers`.
+runtimes, local Diffusers/sdcpp vision backends, `sentence-transformers`, or
+AbstractVoice/AbstractVision plugin entry points. Remote image/audio
+OpenAI-compatible endpoint routes still work. Use a custom image with
+`abstractcore[server,remote,media,tokens,compression,voice,vision]` when you
+want plugin-backed media catalogs or plugin default routes.
 
 ### Nginx Reverse Proxy
 

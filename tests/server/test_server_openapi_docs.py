@@ -25,9 +25,12 @@ def test_core_endpoint_tags_are_documentation_friendly():
     assert schema["paths"]["/providers"]["get"]["tags"] == ["providers"]
     assert schema["paths"]["/v1/embeddings"]["post"]["tags"] == ["embeddings"]
     assert schema["paths"]["/v1/audio/speech"]["post"]["tags"] == ["audio"]
+    assert schema["paths"]["/v1/audio/speech/models"]["get"]["tags"] == ["audio"]
     assert schema["paths"]["/v1/audio/transcriptions"]["post"]["tags"] == ["audio"]
+    assert schema["paths"]["/v1/audio/voices"]["get"]["tags"] == ["audio"]
     assert schema["paths"]["/v1/voice/clone"]["post"]["tags"] == ["audio"]
     assert schema["paths"]["/v1/images/generations"]["post"]["tags"] == ["vision"]
+    assert schema["paths"]["/v1/vision/provider_models"]["get"]["tags"] == ["vision"]
     assert schema["paths"]["/v1/responses"]["post"]["tags"] == ["responses"]
     assert schema["paths"]["/acore/prompt_cache/stats"]["get"]["tags"] == ["prompt-cache"]
 

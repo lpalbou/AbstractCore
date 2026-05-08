@@ -24,7 +24,7 @@ pip install "abstractcore[voice]"
 pip install "abstractcore[vision]"
 ```
 
-`abstractvoice` 0.9.0+ can install its base AbstractCore plugin path on
+`abstractvoice` 0.9.1+ can install its base AbstractCore plugin path on
 Python 3.9, but Python 3.10+ is recommended. Optional/heavier engines such as
 OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths, and AEC requires
 Python 3.11+.
@@ -38,12 +38,15 @@ print(llm.capabilities.status())  # availability + selected backend ids + instal
 # Voice/audio
 wav_bytes = llm.voice.tts("Hello", format="wav")
 text = llm.audio.transcribe("speech.wav")
+voices = llm.voice.voice_catalog()
+tts_models = llm.voice.list_tts_models()
 # Optional: llm.voice.clone(...) is available only when the selected voice
 # backend exposes cloning. The HTTP server also provides /v1/voice/clone.
 
 # Vision via AbstractVision
 # Configure AbstractVision's backend/default first, or pass backend-specific kwargs.
 png_bytes = llm.vision.t2i("a red square", width=512, height=512, steps=20)
+image_models = llm.vision.list_provider_models(task="text_to_image")
 
 # Remote OpenAI-compatible path:
 # export ABSTRACTVISION_BACKEND=openai
@@ -84,6 +87,16 @@ or explicitly opt in to runtime downloads with
 `ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD=1`. For server/OpenAI-compatible use,
 point `ABSTRACTVISION_BASE_URL` at an image endpoint such as AbstractCore
 Server's `/v1`.
+
+The server exposes the same deep catalogs through:
+
+- `GET /v1/vision/provider_models`
+- `GET /v1/audio/voices`
+- `GET /v1/audio/speech/models`
+
+Keep `/v1/models` for LLM/embedding provider discovery. Generated-media
+catalogs are intentionally separate so image and voice backends can expose their
+own provider-specific metadata without blurring the LLM model taxonomy.
 
 Direct `llm.voice` / `generate(..., output="voice")` calls are provided by
 `abstractvoice`. For remote OpenAI TTS/STT, configure the provider before

@@ -35,8 +35,10 @@ pip install "abstractcore[remote]"
 pip install "abstractcore[openai]"       # OpenAI SDK
 pip install "abstractcore[anthropic]"    # Anthropic SDK
 pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
-pip install "abstractcore[mlx]"          # Apple Silicon only (heavy)
-pip install "abstractcore[vllm]"         # NVIDIA CUDA/ROCm only (heavy)
+pip install "abstractcore[apple]"        # Apple Silicon local LLM stack (alias of mlx; heavy)
+pip install "abstractcore[gpu]"          # GPU local LLM stack (alias of vllm; heavy)
+pip install "abstractcore[mlx]"          # Explicit MLX provider extra
+pip install "abstractcore[vllm]"         # Explicit vLLM provider extra
 
 # Optional features
 pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
@@ -52,8 +54,10 @@ pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + v
 ```
 
 **Hardware Notes:**
-- `[mlx]` - Only works on Apple Silicon (M1/M2/M3/M4)
-- `[vllm]` - Only works with NVIDIA CUDA GPUs
+- `[apple]` - Native Apple local LLM stack; currently aliases `[mlx]` and only works on Apple Silicon (M1/M2/M3/M4)
+- `[gpu]` - Local GPU LLM stack; currently aliases `[vllm]` and only works with supported CUDA/ROCm GPUs
+- `[mlx]` - Provider-specific MLX extra, kept for explicit installs
+- `[vllm]` - Provider-specific vLLM extra, kept for explicit installs
 - `[remote]` - Lightweight hosted SDK bundle for OpenAI + Anthropic; OpenRouter, Portkey, Ollama, LM Studio, and generic `/v1` endpoints need no extra dependency.
 - `[all-apple]` - Best for Apple Silicon local development (includes MLX, excludes vLLM)
 - `[all-gpu]` - Best for NVIDIA GPU local development (includes vLLM, excludes MLX)

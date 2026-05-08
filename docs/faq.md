@@ -13,8 +13,9 @@ Anything heavy (provider SDKs, torch/transformers, PDF parsing, embeddings model
 - Anthropic: `pip install "abstractcore[anthropic]"`
 - OpenRouter, Portkey, Ollama, LM Studio, and generic OpenAI-compatible `/v1` endpoints: core install is enough (`pip install abstractcore`).
 - HuggingFace (transformers/torch; heavy): `pip install "abstractcore[huggingface]"`
-- MLX (Apple Silicon; heavy): `pip install "abstractcore[mlx]"`
-- vLLM integration (GPU; heavy): `pip install "abstractcore[vllm]"`
+- Apple Silicon local LLM stack: `pip install "abstractcore[apple]"` (alias of `mlx`; heavy)
+- GPU local LLM stack: `pip install "abstractcore[gpu]"` (alias of `vllm`; heavy)
+- Explicit provider extras remain available: `abstractcore[mlx]`, `abstractcore[vllm]`
 
 These providers work with the core install (no provider extra): `ollama`, `lmstudio`, `openrouter`, `portkey`, `openai-compatible`.
 
@@ -25,11 +26,11 @@ These providers work with the core install (no provider extra): `ollama`, `lmstu
 pip install "abstractcore[remote,media,tools]"
 ```
 
-For “turnkey” local-runtime installs, see `README.md` (`all-apple` for Apple Silicon, `all-gpu` for NVIDIA GPU).
+For “turnkey” local-runtime installs, see `README.md` (`all-apple` for Apple Silicon, `all-gpu` for NVIDIA GPU). The `apple` and `gpu` extras install only the hardware-specific local LLM engine stack; the `all-*` extras are larger aggregate profiles.
 
 ## Why did my install pull `torch` / take a long time?
 
-You probably installed a heavy extra (most commonly `abstractcore[huggingface]`, `abstractcore[mlx]`, or `abstractcore[all-*]`). The core install (`pip install abstractcore`) does not include torch/transformers.
+You probably installed a heavy extra (most commonly `abstractcore[huggingface]`, `abstractcore[apple]`/`abstractcore[mlx]`, `abstractcore[gpu]`/`abstractcore[vllm]`, or `abstractcore[all-*]`). The core install (`pip install abstractcore`) does not include torch/transformers.
 
 ## What’s the difference between “provider” and “model”?
 

@@ -81,6 +81,12 @@ def test_plugin_registration_and_backend_resolution(monkeypatch):
     assert llm.capabilities.status()["capabilities"]["voice"]["available"] is True
     assert llm.voice.tts("hello") == b"wav-bytes"
     assert llm.audio.transcribe(b"123") == "transcript"
+    assert llm.voice.list_profiles()[0]["profile_id"] == "coral"
+    assert llm.voice.list_tts_models() == ["tts-test"]
+    assert llm.voice.voice_catalog()["active_model"] == "tts-test"
+    assert llm.vision.list_provider_models(task="text_to_image") == [
+        {"id": "image-test", "task": "text_to_image"}
+    ]
     assert llm.music.t2m("hello") == b"mp3-bytes"
 
 
@@ -115,11 +121,45 @@ def _make_fake_plugin_ep():
             def stt(self, audio, **kwargs):
                 return "transcript"
 
+            def list_profiles(self, *, kind: str = "tts"):
+                return [{"profile_id": "coral", "kind": kind}]
+
+            def list_tts_models(self):
+                return ["tts-test"]
+
+            def voice_catalog(self):
+                return {
+                    "kind": "tts",
+                    "engine_id": "fake",
+                    "active_profile": {"profile_id": "coral"},
+                    "active_model": "tts-test",
+                    "profiles": [{"profile_id": "coral"}],
+                    "tts_models": ["tts-test"],
+                }
+
         class _Audio:
             backend_id = "fake-audio"
 
             def transcribe(self, audio, **kwargs):
                 return "transcript"
+
+        class _Vision:
+            backend_id = "fake-vision"
+
+            def list_provider_models(self, *, task=None):
+                return [{"id": "image-test", "task": task}]
+
+            def t2i(self, prompt: str, **kwargs):
+                return b"png-bytes"
+
+            def i2i(self, prompt: str, image, **kwargs):
+                return b"edited-png-bytes"
+
+            def t2v(self, prompt: str, **kwargs):
+                return b"mp4-bytes"
+
+            def i2v(self, image, **kwargs):
+                return b"mp4-bytes"
 
         class _Music:
             backend_id = "fake-music"
@@ -138,6 +178,12 @@ def _make_fake_plugin_ep():
             factory=lambda _owner: _Audio(),
             priority=0,
             description="Fake audio backend for tests",
+        )
+        registry.register_vision_backend(
+            backend_id="fake-vision",
+            factory=lambda _owner: _Vision(),
+            priority=0,
+            description="Fake vision backend for tests",
         )
         registry.register_music_backend(
             backend_id="fake-music",

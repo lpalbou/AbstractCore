@@ -24,8 +24,10 @@ pip install "abstractcore[remote]"
 pip install "abstractcore[openai]"       # OpenAI SDK
 pip install "abstractcore[anthropic]"    # Anthropic SDK
 pip install "abstractcore[huggingface]"  # Transformers / torch (heavy)
-pip install "abstractcore[mlx]"          # Apple Silicon local inference (heavy)
-pip install "abstractcore[vllm]"         # NVIDIA CUDA / ROCm inference (heavy)
+pip install "abstractcore[apple]"        # Apple Silicon local LLM stack (alias of mlx; heavy)
+pip install "abstractcore[gpu]"          # GPU local LLM stack (alias of vllm; heavy)
+pip install "abstractcore[mlx]"          # Explicit MLX provider extra
+pip install "abstractcore[vllm]"         # Explicit vLLM provider extra
 
 # Optional features
 pip install "abstractcore[tools]"        # built-in tools (web/file/command helpers)
@@ -43,6 +45,10 @@ pip install "abstractcore[all-apple]"    # Apple Silicon: remote SDKs + HF/GGUF 
 pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + vLLM + features + server
 ```
 
+`apple`/`gpu` are hardware-profile aliases for the local LLM engine stack.
+`all-apple`/`all-gpu` are larger aggregate profiles for a full local-development
+environment.
+
 Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, LocalAI, etc.) work with the core install; you just point AbstractCore at the server base URL. See [Prerequisites](prerequisites.md) for provider setup.
 
 Optional capability plugins (deterministic multimodal outputs):
@@ -52,7 +58,7 @@ pip install "abstractcore[voice]"   # enables llm.voice / llm.audio via abstract
 pip install "abstractcore[vision]"  # enables llm.vision via abstractvision (generative vision)
 ```
 
-For `abstractvoice` 0.9.0+, the base AbstractCore plugin path can install on
+For `abstractvoice` 0.9.1+, the base AbstractCore plugin path can install on
 Python 3.9, but Python 3.10+ is recommended. Some optional/heavier voice
 engines and voice-clone backends are Python 3.10+ only.
 

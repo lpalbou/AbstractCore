@@ -179,6 +179,9 @@ disabled.
 | Health | GET | `/health` | Liveness/version probe; never requires auth | none |
 | Discovery | GET | `/v1/models` | List models and filter by provider/capabilities | `provider`, `input_type`, `output_type`, `base_url` |
 | Discovery | GET | `/providers` | Provider status/capabilities | `include_models` |
+| Discovery | GET | `/v1/vision/provider_models` | AbstractVision provider catalog for image/video generation models | optional `task`, `base_url` |
+| Discovery | GET | `/v1/audio/voices` | AbstractVoice voice/profile catalog for TTS | optional `base_url` |
+| Discovery | GET | `/v1/audio/speech/models` | AbstractVoice TTS model id catalog | optional `base_url` |
 | Chat | POST | `/v1/chat/completions` | OpenAI-compatible chat, streaming, tools, media | `model`, `messages`, `stream`, `tools`, `tool_choice`, `temperature`, `max_tokens`, `base_url`, `agent_format`, `thinking` |
 | Chat | POST | `/{provider}/v1/chat/completions` | Provider-scoped chat route where body model is unprefixed | path `provider`, body `model`, `messages`, chat parameters |
 | Responses | POST | `/v1/responses` | Responses-style input API plus legacy chat body fallback | `model`, `input` or `messages`, `stream`, generation parameters |
@@ -397,6 +400,23 @@ Important notes:
 - These are **interoperability-first** endpoints (return `b64_json` or raw bytes), not an artifact-first durability contract.
 - If the required plugin/backend is not available, the server returns `501` with actionable messaging.
 
+#### Capability catalogs
+
+Thin clients can preflight the configured media surface without importing
+`abstractvision` or `abstractvoice` directly:
+
+| Endpoint | Purpose | Notes |
+|---|---|---|
+| `GET /v1/vision/provider_models` | Lists provider image/video model catalog entries through the selected AbstractVision backend. | Optional `task`: `text_to_image`, `image_to_image`, `text_to_video`, or `image_to_video`. Optional `base_url` targets a local or remote OpenAI-compatible `/v1` endpoint under the same allowlist policy as generation. |
+| `GET /v1/audio/voices` | Lists TTS profiles/voices, active profile, active model, and raw bounded catalog data through AbstractVoice. | Returns `available`, `source`, `stale`, `error`, `backend_id`, `profiles`, and `tts_models` where available. |
+| `GET /v1/audio/speech/models` | Narrow TTS model id projection. | Useful for dropdowns that only need model names. |
+
+These routes instantiate only the selected capability backend needed for deep
+catalog discovery. Shallow plugin availability remains available through the
+library `llm.capabilities.status()` call. Server-held provider keys remain behind
+server auth; per-request upstream key overrides must use
+`X-AbstractCore-Provider-API-Key`, not query strings or request bodies.
+
 #### Images (generate/edit)
 
 Endpoints:
@@ -576,7 +596,7 @@ pip install "abstractcore[voice]"
 ```
 
 Notes:
-- `abstractvoice` 0.9.0+ can install the base plugin path on Python 3.9,
+- `abstractvoice` 0.9.1+ can install the base plugin path on Python 3.9,
   but Python 3.10+ is recommended. Optional/heavier engines and clone backends
   such as OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths; AEC
   requires Python 3.11+.
@@ -1409,14 +1429,16 @@ It includes remote chat/responses, remote embeddings, remote STT/TTS routing,
 remote OpenAI-compatible image proxying, server dependencies, media parsing,
 token counting, and compression helpers. It intentionally does not include
 AbstractCore local LLM runtimes (`vllm`, `mlx`, `huggingface`), local embedding
-dependencies (`sentence-transformers`), or the AbstractVoice/AbstractVision
-local plugin runtimes because those pull large native inference stacks. Build a
-custom image with `abstractcore[voice]` or `abstractcore[vision]` when local
-voice/vision plugin execution is required.
+dependencies (`sentence-transformers`), or AbstractVoice/AbstractVision plugin
+entry points. Remote image/audio OpenAI-compatible endpoint routes still work
+without those plugins. Build a custom image with
+`abstractcore[server,remote,media,tokens,compression,voice,vision]` when you
+want plugin-backed media catalogs or plugin default routes, and add explicit
+local plugin extras only when you want local native inference engines.
 
 **Run:**
 ```bash
-docker pull ghcr.io/lpalbou/abstractcore-server:2.13.10
+docker pull ghcr.io/lpalbou/abstractcore-server:2.13.11
 ```
 
 For local development, keep secrets in an uncommitted `.env` file:
@@ -1440,7 +1462,7 @@ Then run the image with that environment file:
 docker run --rm --name abstractcore-server \
   -p 127.0.0.1:8000:8000 \
   --env-file .env \
-  ghcr.io/lpalbou/abstractcore-server:2.13.10
+  ghcr.io/lpalbou/abstractcore-server:2.13.11
 ```
 
 `ABSTRACTCORE_SERVER_API_KEY` is the AbstractCore server auth token. Clients
@@ -1460,7 +1482,7 @@ docker run --rm --name abstractcore-server \
   -e ABSTRACTCORE_SERVER_API_KEY="$ABSTRACTCORE_SERVER_API_KEY" \
   -e OPENAI_COMPATIBLE_BASE_URL="http://host.docker.internal:1234/v1" \
   -e OPENAI_COMPATIBLE_API_KEY="$OPENAI_COMPATIBLE_API_KEY" \
-  ghcr.io/lpalbou/abstractcore-server:2.13.10
+  ghcr.io/lpalbou/abstractcore-server:2.13.11
 ```
 
 ### Docker Compose
@@ -1470,7 +1492,7 @@ version: '3.8'
 
 services:
   abstractcore:
-    image: ghcr.io/lpalbou/abstractcore-server:2.13.10
+    image: ghcr.io/lpalbou/abstractcore-server:2.13.11
     ports:
       - "8000:8000"
     environment:

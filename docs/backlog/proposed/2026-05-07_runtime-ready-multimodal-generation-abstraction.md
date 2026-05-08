@@ -12,6 +12,12 @@ AbstractVision and AbstractVoice. Users should be able to generate text, images,
 without manually stitching together the text `generate(...)` API, `llm.vision.*`, `llm.voice.*`,
 server image routes, server audio routes, and runtime artifact handling.
 
+2026-05-08 update: AbstractVoice is now moving to a remote-first base/default and exposes voice
+profile/model discovery through the AbstractCore plugin boundary. AbstractVision exposes remote
+provider model discovery through its AbstractCore plugin boundary. That makes Core the right
+abstraction layer for both execution and capability catalogs: clients should be able to ask Core
+"what can this configured server generate?" and then call the same Core generation contract.
+
 AbstractRuntime has a different responsibility. It should not know how AbstractVision or
 AbstractVoice work internally. It should know how to execute a durable workflow effect, persist
 large outputs by reference, and resume workflows safely.
@@ -23,6 +29,14 @@ The desired system boundary is:
 - AbstractRuntime owns durable execution, workflow state, retries/waits where applicable, and
   artifact references.
 - User-facing APIs stay small, explicit, and predictable.
+
+2026-05-08 Core update: the Core-side catalog/readiness slice is now implemented. AbstractCore
+facades expose `llm.vision.list_provider_models(...)`, `llm.voice.voice_catalog()`,
+`llm.voice.list_profiles(...)`, and `llm.voice.list_tts_models()`, and the server exposes
+`GET /v1/vision/provider_models`, `GET /v1/audio/voices`, and
+`GET /v1/audio/speech/models`. The remaining open part of this proposal is the durable
+AbstractRuntime effect/artifact-store integration, which belongs outside the AbstractCore
+workspace.
 
 This proposal complements the planned unified multimodal generation API item by focusing on the
 Core/Runtime boundary and on the simplest abstraction that can serve scripts, apps, server calls,
@@ -145,6 +159,28 @@ user-facing request can use `voice` because that is the product intent. The resu
 record the technical content type.
 
 ## Proposal
+
+### 0. Make capability readiness and catalogs first-class
+
+Before broadening generation orchestration, Core should expose stable capability introspection:
+
+- `llm.capabilities.status()` remains shallow and non-instantiating.
+- `llm.vision.list_provider_models(...)` returns deep image provider catalogs when requested.
+- `llm.voice.voice_catalog()` returns deep TTS profile/model catalogs when requested.
+- Core Server exposes these through explicit media catalog routes, not through `/v1/models`.
+
+This is important for Core as an entry point. A direct Core user, Gateway, Flow, or any thin client
+must be able to preflight the configured generative media surface without importing AbstractVoice or
+AbstractVision directly. Readiness should distinguish:
+
+- plugin package installed;
+- backend registered;
+- backend configured;
+- remote provider reachable / local engine loadable;
+- generation route actually usable.
+
+The generation contract below should then record the selected backend/model/profile in every
+generated item.
 
 ### 1. Define a small generation request contract
 
@@ -270,6 +306,14 @@ The multimodal result should be inspectable and JSON-safe when an artifact store
 In simple library mode, Core can return raw bytes when no artifact store is supplied. In framework
 mode, Core should prefer artifact refs. Runtime should always use artifact refs for binary outputs.
 
+For generated media, include enough routing metadata for auditability:
+
+- capability backend id, e.g. `abstractvision:openai` or `abstractvoice:default`;
+- provider/model id where known;
+- profile/voice id for TTS;
+- whether the output came from a remote provider, local engine, or compatible endpoint;
+- bounded warnings/errors with `#FALLBACK` / `#TRUNCATION` labels where applicable.
+
 ### 5. Keep missing capabilities explicit
 
 If a user asks for `image` and AbstractVision is not installed or no backend is configured, Core
@@ -343,6 +387,21 @@ Do not remove lower-level APIs:
 
 The new abstraction should reduce what users need to know, not remove escape hatches.
 
+### 8. Keep Core as the entry point, not a package-specific proxy
+
+Core should not simply proxy package-specific method names over HTTP. It should define the stable
+framework vocabulary and map packages into it:
+
+- Vision package vocabulary stays inside AbstractVision.
+- Voice/profile package vocabulary stays inside AbstractVoice.
+- Core exposes stable "image generation", "image edit", "voice/TTS", "speech transcription",
+  "catalog", and "readiness" concepts.
+- Gateway consumes Core's stable concepts, then adds deployment policy, workflows, memory, agents,
+  and auth for thin clients.
+
+This lets AbstractVoice/AbstractVision evolve internally while keeping Core as a coherent foundation
+for scripts, standalone server users, Gateway, and Runtime effects.
+
 ## Why this shape
 
 This design keeps the system easy to reason about:
@@ -368,8 +427,10 @@ It also keeps the initial implementation small. The first useful release can sup
 Promote this to `planned/` when these are true:
 
 - The team agrees on the canonical modality vocabulary and alias policy.
-- AbstractVision and AbstractVoice expose enough stable artifact-backed capability methods for
-  Core to wrap.
+- AbstractVision and AbstractVoice releases expose enough stable artifact-backed capability methods
+  and catalog methods for Core to wrap.
+- Core package pins target those released versions (`abstractvoice>=0.9.1` expected for Voice;
+  `abstractvision>=0.3.2` for Vision, verified from the PyPI wheel).
 - The existing `generate_with_outputs(...)` behavior has been reviewed and either folded into the
   new orchestrator or marked as legacy.
 - Runtime maintainers agree that one generation effect is preferable to separate modality-specific
@@ -388,16 +449,20 @@ Promote this to `planned/` when these are true:
    - `self.vision.t2i(...)`;
    - `self.voice.tts(...)`;
    - music only behind explicit experimental gating.
-4. Preserve backward compatibility by returning `GenerateResponse` for text-only calls without
+4. Add Core facade methods for generative capability catalogs before or alongside the orchestrator:
+   - `self.vision.list_provider_models(...)`;
+   - `self.voice.voice_catalog()`;
+   - route-level readiness/error normalization.
+5. Preserve backward compatibility by returning `GenerateResponse` for text-only calls without
    `output=...`.
-5. Add artifact-store support to the orchestrator and normalize raw plugin outputs into one result
+6. Add artifact-store support to the orchestrator and normalize raw plugin outputs into one result
    shape.
-6. Add sync tests with fake text, vision, and voice capabilities.
-7. Add async support after the sync contract is stable.
-8. Add an AbstractRuntime `GENERATION_CALL` handler that invokes the Core contract and stores binary
+7. Add sync tests with fake text, vision, and voice capabilities.
+8. Add async support after the sync contract is stable.
+9. Add an AbstractRuntime `GENERATION_CALL` handler that invokes the Core contract and stores binary
    outputs as artifact refs.
-9. Add runtime tests with a fake Core client returning image/audio bytes and artifact refs.
-10. Add docs and examples showing:
+10. Add runtime tests with a fake Core client returning image/audio bytes and artifact refs.
+11. Add docs and examples showing:
     - image-only generation;
     - voice-only generation;
     - text plus image plus voice;
@@ -425,6 +490,8 @@ Core tests:
 - Missing AbstractVision or AbstractVoice produces explicit capability errors.
 - Artifact-store mode returns refs, not raw bytes.
 - Partial-failure behavior is opt-in and bounded.
+- Catalog/readiness calls do not trigger generation, do not auto-select "latest" models, and do not
+  instantiate heavy local engines during shallow discovery.
 
 Runtime tests:
 

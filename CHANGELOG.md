@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.11] - 2026-05-08
+
+### Added
+- **Capability catalog discovery**: added `llm.vision.list_provider_models(...)`,
+  `llm.voice.list_profiles(...)`, `llm.voice.list_tts_models()`, and
+  `llm.voice.voice_catalog()` facade methods over optional capability plugins.
+- **Server media catalog routes**: added `GET /v1/vision/provider_models`,
+  `GET /v1/audio/voices`, and `GET /v1/audio/speech/models` so thin clients can
+  discover image models, TTS models, and voice profiles without importing
+  AbstractVision or AbstractVoice directly.
+
+### Changed
+- **Plugin compatibility floors**: optional voice/audio extras now require
+  `abstractvoice>=0.9.1`; optional vision extras now require
+  `abstractvision>=0.3.2` so Core can rely on the released plugin catalog
+  boundary while keeping local engines behind explicit plugin extras.
+- **Install profile alignment**: added `abstractcore[apple]` as the hardware
+  alias for the MLX local LLM stack and `abstractcore[gpu]` as the hardware
+  alias for the vLLM local LLM stack, while keeping `all-apple` and `all-gpu`
+  as broader aggregate profiles.
+
+### Fixed
+- **Audio catalog route HTTP status preservation**: `/v1/audio/voices` and
+  `/v1/audio/speech/models` now preserve route-level `HTTPException` statuses
+  for server-held credential auth failures and invalid/disallowed `base_url`
+  overrides instead of wrapping them as `502` catalog failures.
+
 ## [2.13.10] - 2026-05-07
 
 ### Fixed

@@ -21,7 +21,7 @@ import threading
 import urllib.parse
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -493,6 +493,63 @@ def _json_or_raw_audio_response(content: bytes, content_type: str, *, fallback_m
     return Response(content=content, media_type=media_type)
 
 
+def _server_has_audio_catalog_credential() -> bool:
+    for env_var in (
+        "ABSTRACTVOICE_REMOTE_API_KEY",
+        "ABSTRACTVOICE_OPENAI_API_KEY",
+        "ABSTRACTVOICE_OPENAI_COMPATIBLE_API_KEY",
+        "OPENAI_API_KEY",
+    ):
+        if str(os.getenv(env_var) or "").strip():
+            return True
+    return False
+
+
+def _guard_audio_catalog_credentials(*, request: Request, explicit_provider_key: bool) -> None:
+    if _request_has_server_auth(request) or explicit_provider_key:
+        return
+    if not _server_has_audio_catalog_credential():
+        return
+    raise HTTPException(
+        status_code=401,
+        detail=(
+            "Server-held AbstractVoice/OpenAI credentials are configured, but inbound server auth was not used. "
+            "Set ABSTRACTCORE_SERVER_API_KEY and send Authorization: Bearer <server-key>, or pass an explicit "
+            "provider key with X-AbstractCore-Provider-API-Key for this request."
+        ),
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def _audio_catalog_core(request: Request, *, base_url: Optional[str]) -> Any:
+    provider_api_key = _provider_api_key_from_request(request)
+    base_url_s = _validate_request_base_url(base_url)
+    _guard_audio_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+    config = _capability_config_from_env()
+    if base_url_s:
+        config["voice_remote_base_url"] = base_url_s
+    if provider_api_key:
+        config["voice_remote_api_key"] = provider_api_key
+    from .capability_generation import create_capability_generation_core
+
+    return create_capability_generation_core(**config)
+
+
+def _audio_catalog_error(exc: Exception) -> HTTPException:
+    detail = {
+        "available": False,
+        "source": "abstractvoice",
+        "stale": False,
+        "error": str(exc),
+    }
+    if isinstance(exc, CapabilityUnavailableError):
+        return HTTPException(status_code=501, detail=detail)
+    msg = str(exc).lower()
+    if "not configured" in msg or "missing" in msg or "does not expose" in msg or "not expose" in msg:
+        return HTTPException(status_code=501, detail=detail)
+    return HTTPException(status_code=502, detail=detail)
+
+
 @router.post("/audio/transcriptions")
 async def audio_transcriptions(
     request: Request,
@@ -623,6 +680,70 @@ def _audio_response(content: bytes, *, media_type: str, filename_stem: str = "ab
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@router.get("/audio/voices")
+async def audio_voices(
+    request: Request,
+    base_url: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional OpenAI-compatible voice endpoint override for catalog discovery. "
+            "Loopback is allowed by default; non-loopback URLs require "
+            "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+    ),
+) -> Dict[str, Any]:
+    """Discover configured TTS voices/profiles through the AbstractVoice plugin boundary."""
+    try:
+        core = _audio_catalog_core(request, base_url=base_url)
+        catalog = core.voice.voice_catalog()
+        out = dict(catalog)
+        out.setdefault("kind", "tts")
+        out.update(
+            {
+                "available": True,
+                "source": "abstractvoice",
+                "stale": False,
+                "error": None,
+                "backend_id": getattr(core.voice, "backend_id", None),
+            }
+        )
+        return out
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _audio_catalog_error(e) from e
+
+
+@router.get("/audio/speech/models")
+async def audio_speech_models(
+    request: Request,
+    base_url: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional OpenAI-compatible voice endpoint override for TTS model discovery. "
+            "Loopback is allowed by default; non-loopback URLs require "
+            "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+    ),
+) -> Dict[str, Any]:
+    """Discover configured TTS model ids through the AbstractVoice plugin boundary."""
+    try:
+        core = _audio_catalog_core(request, base_url=base_url)
+        models = core.voice.list_tts_models()
+        return {
+            "available": True,
+            "source": "abstractvoice",
+            "stale": False,
+            "error": None,
+            "backend_id": getattr(core.voice, "backend_id", None),
+            "models": list(models or []),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _audio_catalog_error(e) from e
 
 
 @router.post(

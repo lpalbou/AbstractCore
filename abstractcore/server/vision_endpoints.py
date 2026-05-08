@@ -25,15 +25,17 @@ import platform
 import shlex
 import time
 import threading
+import urllib.parse
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
 import httpx
-from fastapi import APIRouter, Body, File, Form, HTTPException, Path as FastAPIPath, Query, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, Path as FastAPIPath, Query, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ..capabilities.errors import CapabilityUnavailableError
 from .capability_generation import ServerVisionFacade, create_capability_generation_core
 
 try:  # Optional dependency (needed only for multipart parsing).
@@ -512,6 +514,163 @@ def _env_bool_first(*names: str, default: bool = False) -> bool:
         if v is not None:
             return str(v).strip().lower() in {"1", "true", "yes", "on"}
     return bool(default)
+
+
+def _extract_bearer_token(auth_header: Any) -> str:
+    auth = str(auth_header or "").strip()
+    if not auth.lower().startswith("bearer "):
+        return ""
+    return auth[7:].strip()
+
+
+def _extract_secret_header(header_value: Any) -> str:
+    value = str(header_value or "").strip()
+    if value.lower().startswith("bearer "):
+        return value[7:].strip()
+    return value
+
+
+def _server_auth_enabled() -> bool:
+    return bool(str(os.getenv("ABSTRACTCORE_SERVER_API_KEY") or "").strip())
+
+
+def _request_has_server_auth(request: Request) -> bool:
+    return bool(getattr(request.state, "abstractcore_server_authenticated", False))
+
+
+def _is_placeholder_api_key(token: Any) -> bool:
+    text = str(token or "").strip()
+    return not text or text.lower() in {"not-needed", "not_needed", "notneeded", "unused", "dummy", "empty", "none"}
+
+
+def _provider_api_key_from_request(request: Request) -> Optional[str]:
+    for header_name in ("x-abstractcore-provider-api-key", "x-provider-api-key"):
+        token = _extract_secret_header(request.headers.get(header_name))
+        if not _is_placeholder_api_key(token):
+            return token
+    if _server_auth_enabled():
+        return None
+    token = _extract_bearer_token(request.headers.get("authorization"))
+    return None if _is_placeholder_api_key(token) else token
+
+
+def _is_loopback_host(host: str) -> bool:
+    h = str(host or "").strip().lower().strip("[]")
+    return h in {"localhost", "127.0.0.1", "::1"} or h.startswith("127.")
+
+
+def _allowlist_matches_url(url: str, allowlist: list[str]) -> bool:
+    parsed = urllib.parse.urlsplit(str(url or "").strip())
+    host = str(parsed.hostname or "").lower()
+    netloc = str(parsed.netloc or "").lower()
+    full = str(url or "").strip().lower().rstrip("/")
+    for item in allowlist:
+        raw = str(item or "").strip().lower().rstrip("/")
+        if not raw:
+            continue
+        if raw.startswith(("http://", "https://")):
+            if full.startswith(raw):
+                return True
+            continue
+        if raw == host or raw == netloc:
+            return True
+    return False
+
+
+def _csv_env(name: str) -> list[str]:
+    raw = os.getenv(name)
+    if not isinstance(raw, str) or not raw.strip():
+        return []
+    return [part.strip() for part in raw.split(",") if part.strip()]
+
+
+def _validate_request_base_url(base_url: Any) -> Optional[str]:
+    if not isinstance(base_url, str) or not base_url.strip():
+        return None
+    value = base_url.strip().rstrip("/")
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="base_url must be an absolute http(s) URL.")
+    if _is_loopback_host(parsed.hostname):
+        return value
+    if _allowlist_matches_url(value, _csv_env("ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST")):
+        return value
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "Request-level base_url overrides are restricted for security. "
+            "Loopback URLs are allowed by default; set ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST "
+            "to allow additional hosts or URL prefixes."
+        ),
+    )
+
+
+def _server_has_vision_catalog_credential() -> bool:
+    for env_var in (
+        "ABSTRACTCORE_VISION_UPSTREAM_API_KEY",
+        "ABSTRACTVISION_API_KEY",
+        "OPENAI_API_KEY",
+    ):
+        if str(os.getenv(env_var) or "").strip():
+            return True
+    return False
+
+
+def _guard_vision_catalog_credentials(*, request: Request, explicit_provider_key: bool) -> None:
+    if _request_has_server_auth(request) or explicit_provider_key:
+        return
+    if not _server_has_vision_catalog_credential():
+        return
+    raise HTTPException(
+        status_code=401,
+        detail=(
+            "Server-held AbstractVision/OpenAI credentials are configured, but inbound server auth was not used. "
+            "Set ABSTRACTCORE_SERVER_API_KEY and send Authorization: Bearer <server-key>, or pass an explicit "
+            "provider key with X-AbstractCore-Provider-API-Key for this request."
+        ),
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
+def _vision_catalog_config_from_env() -> Dict[str, Any]:
+    config: Dict[str, Any] = {}
+    env_map = {
+        "ABSTRACTCORE_VISION_BACKEND": "vision_backend",
+        "ABSTRACTVISION_BACKEND": "vision_backend",
+        "ABSTRACTCORE_VISION_UPSTREAM_BASE_URL": "vision_base_url",
+        "ABSTRACTVISION_BASE_URL": "vision_base_url",
+        "ABSTRACTCORE_VISION_UPSTREAM_API_KEY": "vision_api_key",
+        "ABSTRACTVISION_API_KEY": "vision_api_key",
+        "ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID": "vision_model_id",
+        "ABSTRACTCORE_VISION_MODEL_ID": "vision_model_id",
+        "ABSTRACTVISION_MODEL_ID": "vision_model_id",
+        "ABSTRACTCORE_VISION_TIMEOUT_S": "vision_timeout_s",
+        "ABSTRACTVISION_TIMEOUT_S": "vision_timeout_s",
+        "ABSTRACTCORE_VISION_MODELS_PATH": "vision_models_path",
+        "ABSTRACTVISION_MODELS_PATH": "vision_models_path",
+        "ABSTRACTCORE_VISION_SDCPP_MODEL": "vision_sdcpp_model",
+        "ABSTRACTVISION_SDCPP_MODEL": "vision_sdcpp_model",
+        "ABSTRACTCORE_VISION_SDCPP_DIFFUSION_MODEL": "vision_sdcpp_diffusion_model",
+        "ABSTRACTVISION_SDCPP_DIFFUSION_MODEL": "vision_sdcpp_diffusion_model",
+    }
+    for env_name, config_name in env_map.items():
+        value = _env(env_name)
+        if value is not None and config_name not in config:
+            config[config_name] = value
+    return config
+
+
+def _vision_catalog_core(request: Request, *, base_url: Optional[str]) -> Any:
+    provider_api_key = _provider_api_key_from_request(request)
+    base_url_s = _validate_request_base_url(base_url)
+    _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+    config = _vision_catalog_config_from_env()
+    if base_url_s:
+        config["vision_base_url"] = base_url_s
+        config.setdefault("vision_backend", "openai-compatible")
+    if provider_api_key:
+        config["vision_api_key"] = provider_api_key
+    return create_capability_generation_core(**config)
 
 
 def _is_default_model_alias(model: Any) -> bool:
@@ -1318,6 +1477,65 @@ def _import_registry() -> Any:
             detail="AbstractVision is required for vision model registry endpoints. Install `abstractvision`.",
         ) from e
     return VisionModelCapabilitiesRegistry
+
+
+def _vision_catalog_error(exc: Exception) -> HTTPException:
+    detail = {
+        "available": False,
+        "source": "abstractvision",
+        "stale": False,
+        "error": str(exc),
+    }
+    if isinstance(exc, CapabilityUnavailableError):
+        return HTTPException(status_code=501, detail=detail)
+    msg = str(exc).lower()
+    if "not configured" in msg or "missing" in msg or "does not support" in msg or "does not expose" in msg:
+        return HTTPException(status_code=501, detail=detail)
+    return HTTPException(status_code=502, detail=detail)
+
+
+@router.get("/vision/provider_models")
+async def list_vision_provider_models(
+    request: Request,
+    task: Optional[str] = Query(
+        default=None,
+        description="Optional provider catalog task filter: text_to_image, image_to_image, text_to_video, or image_to_video.",
+        examples=["text_to_image"],
+    ),
+    base_url: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional OpenAI-compatible vision endpoint override for catalog discovery. "
+            "Loopback is allowed by default; non-loopback URLs require "
+            "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+        examples=["http://127.0.0.1:5000/v1"],
+    ),
+) -> Dict[str, Any]:
+    """List provider image/video model catalogs through the AbstractVision plugin boundary."""
+    if task is not None:
+        task = str(task).strip() or None
+    if task and task not in {"text_to_image", "image_to_image", "text_to_video", "image_to_video"}:
+        raise HTTPException(
+            status_code=400,
+            detail="task must be one of: text_to_image, image_to_image, text_to_video, image_to_video",
+        )
+    try:
+        core = _vision_catalog_core(request, base_url=base_url)
+        models = core.vision.list_provider_models(task=task)
+        return {
+            "available": True,
+            "source": "abstractvision",
+            "stale": False,
+            "error": None,
+            "backend_id": getattr(core.vision, "backend_id", None),
+            "task": task,
+            "models": list(models or []),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _vision_catalog_error(e) from e
 
 
 @router.get("/vision/models")

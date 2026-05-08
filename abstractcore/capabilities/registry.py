@@ -374,6 +374,51 @@ class _VoiceFacade:
     def stt(self, audio: Any, **kwargs: Any) -> Any:
         return self._registry.get_voice().stt(audio, **kwargs)
 
+    def list_profiles(self, *, kind: str = "tts") -> List[Dict[str, Any]]:
+        backend = self._registry.get_voice()
+        method = getattr(backend, "list_profiles", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="voice",
+                reason="The selected voice capability backend does not expose list_profiles(kind=...).",
+                install_hint=self._registry._default_install_hint("voice"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        out = method(kind=str(kind or "tts"))
+        return list(out or [])
+
+    def list_tts_models(self) -> List[str]:
+        backend = self._registry.get_voice()
+        method = getattr(backend, "list_tts_models", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="voice",
+                reason="The selected voice capability backend does not expose list_tts_models().",
+                install_hint=self._registry._default_install_hint("voice"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        return [str(item) for item in list(method() or []) if str(item or "").strip()]
+
+    def voice_catalog(self) -> Dict[str, Any]:
+        backend = self._registry.get_voice()
+        method = getattr(backend, "voice_catalog", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="voice",
+                reason="The selected voice capability backend does not expose voice_catalog().",
+                install_hint=self._registry._default_install_hint("voice"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        out = method()
+        if not isinstance(out, dict):
+            raise CapabilityUnavailableError(
+                capability="voice",
+                reason="The selected voice capability backend returned a non-object voice catalog.",
+                install_hint=self._registry._default_install_hint("voice"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        return dict(out)
+
     @staticmethod
     def _tts_with_adapter_voice(backend: Any, text: str, kwargs: Dict[str, Any]) -> Any:
         voice = kwargs.get("voice")
@@ -508,6 +553,19 @@ class _VisionFacade:
 
     def t2i(self, prompt: str, **kwargs: Any) -> Any:
         return self._registry.get_vision().t2i(prompt, **kwargs)
+
+    def list_provider_models(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]:
+        backend = self._registry.get_vision()
+        method = getattr(backend, "list_provider_models", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="vision",
+                reason="The selected vision capability backend does not expose list_provider_models(task=...).",
+                install_hint=self._registry._default_install_hint("vision"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        out = method(task=task)
+        return list(out or [])
 
     def i2i(self, prompt: str, image: Any, **kwargs: Any) -> Any:
         return self._registry.get_vision().i2i(prompt, image, **kwargs)

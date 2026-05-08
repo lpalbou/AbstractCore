@@ -144,6 +144,14 @@ mlx = [
     "outlines>=0.1.0",  # Optional native structured output support
 ]
 
+apple = [
+    # Hardware-profile alias for the native Apple local LLM stack.
+    # Keep in sync with `mlx`.
+    "mlx>=0.30.0,<1.0.0",
+    "mlx-lm>=0.30.0,<1.0.0",
+    "outlines>=0.1.0",
+]
+
 mlx-bench = [
     # Used by `examples/performance/mlx_concurrency_benchmark.py` to generate the PNG graph.
     "matplotlib>=3.8.0,<4.0.0",
@@ -151,6 +159,12 @@ mlx-bench = [
 
 vllm = [
     "vllm>=0.6.0,<1.0.0",  # GPU-only (CUDA/ROCm) - not compatible with Apple Silicon
+]
+
+gpu = [
+    # Hardware-profile alias for the local GPU LLM stack.
+    # Keep in sync with `vllm`.
+    "vllm>=0.6.0,<1.0.0",
 ]
 
 embeddings = [
@@ -198,11 +212,11 @@ media = [
 ]
 
 voice = [
-    "abstractvoice>=0.9.0",
+    "abstractvoice>=0.9.1",
 ]
 
 audio = [
-    "abstractvoice>=0.9.0",
+    "abstractvoice>=0.9.1",
 ]
 
 compression = [
@@ -212,7 +226,7 @@ compression = [
 
 # Turnkey installs.
 # Notes:
-# - Prefer `remote`, explicit composed extras, `all-apple`, or `all-gpu` in docs.
+# - Prefer `remote`, explicit composed extras, `apple`/`gpu`, or `all-apple`/`all-gpu` in docs.
 # - `ollama`, `lmstudio`, `openai-compatible`, `openrouter`, and `portkey` use only core deps.
 # - `all` includes both MLX (Apple Silicon) and vLLM (CUDA/ROCm) and may not install everywhere.
 all = [
@@ -247,13 +261,13 @@ all = [
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.9.0",
+    "abstractvoice>=0.9.1",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.1",
+    "abstractvision>=0.3.2",
 ]
 
 all-apple = [
@@ -284,13 +298,13 @@ all-apple = [
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.9.0",
+    "abstractvoice>=0.9.1",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.1",
+    "abstractvision>=0.3.2",
 ]
 
 all-gpu = [
@@ -320,13 +334,13 @@ all-gpu = [
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.9.0",
+    "abstractvoice>=0.9.1",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.1",
+    "abstractvision>=0.3.2",
 ]
 
 # Legacy broad bundle kept for existing users. New installs should usually
@@ -357,13 +371,13 @@ all-non-mlx = [
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.9.0",
+    "abstractvoice>=0.9.1",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.1",
+    "abstractvision>=0.3.2",
 ]
 
 # Development dependencies
@@ -392,19 +406,19 @@ server = [
 # Vision (optional) - delegates to AbstractVision.
 # Kept as a separate extra for installs that want vision without the HTTP server.
 vision = [
-    "abstractvision>=0.3.1",
+    "abstractvision>=0.3.2",
 ]
 
 vision-diffusers = [
-    "abstractvision[huggingface]>=0.3.1",
+    "abstractvision[huggingface]>=0.3.2",
 ]
 
 vision-sdcpp = [
-    "abstractvision[sdcpp]>=0.3.1",
+    "abstractvision[sdcpp]>=0.3.2",
 ]
 
 vision-local = [
-    "abstractvision[local]>=0.3.1",
+    "abstractvision[local]>=0.3.2",
 ]
 
 # Testing dependencies
@@ -468,12 +482,12 @@ full-dev = [
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.9.0",
+    "abstractvoice>=0.9.1",
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.1",
+    "abstractvision>=0.3.2",
     # Tooling
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
