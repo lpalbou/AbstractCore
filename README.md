@@ -310,7 +310,7 @@ Notes:
 - **Images**: use a vision-capable model, or configure **vision fallback** for text-only models (`abstractcore --config`; `abstractcore --set-vision-provider PROVIDER MODEL`).
 - **Video**: `video_policy="auto"` (default) uses native video when supported, otherwise samples frames (requires `ffmpeg`/`ffprobe`) and routes them through image/vision handling (so you still need a vision-capable model or vision fallback configured).
 - **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` and install `abstractcore[voice]` for speech-to-text.
-  `abstractvoice` 0.9.2+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines and cloning backends.
+  `abstractvoice` 0.9.3+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines and cloning backends.
 
 Configure defaults (optional):
 
@@ -358,12 +358,13 @@ Catalog helpers are available for UI/dropdown preflight:
 image_models = llm.vision.list_provider_models(task="text_to_image")
 voices = llm.voice.voice_catalog()
 tts_models = llm.voice.list_tts_models()
+stt_models = llm.voice.list_stt_models()
 ```
 
 The HTTP server exposes equivalent discovery at
-`/v1/vision/provider_models`, `/v1/audio/voices`, and
-`/v1/audio/speech/models`. `/v1/models` remains focused on LLM and embedding
-provider models.
+`/v1/vision/provider_models`, `/v1/audio/voices`,
+`/v1/audio/speech/models`, and `/v1/audio/transcriptions/models`.
+`/v1/models` remains focused on LLM and embedding provider models.
 
 ## HTTP server (OpenAI-compatible gateway)
 

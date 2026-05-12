@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.13] - 2026-05-12
+
+### Added
+- Added a Voice capability `list_stt_models()` contract and `/v1/audio/transcriptions/models` server catalog route so Gateway and thin clients can discover speech-to-text models instead of hard-coding defaults.
+
+### Changed
+- Raised AbstractVoice capability floors to `abstractvoice>=0.9.3` for voice-enabled install profiles.
+
 ## [2.13.12] - 2026-05-08
 
 ### Changed

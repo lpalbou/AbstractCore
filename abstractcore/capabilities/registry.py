@@ -399,6 +399,18 @@ class _VoiceFacade:
             )
         return [str(item) for item in list(method() or []) if str(item or "").strip()]
 
+    def list_stt_models(self) -> List[str]:
+        backend = self._registry.get_voice()
+        method = getattr(backend, "list_stt_models", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="voice",
+                reason="The selected voice capability backend does not expose list_stt_models().",
+                install_hint=self._registry._default_install_hint("voice"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        return [str(item) for item in list(method() or []) if str(item or "").strip()]
+
     def voice_catalog(self) -> Dict[str, Any]:
         backend = self._registry.get_voice()
         method = getattr(backend, "voice_catalog", None)

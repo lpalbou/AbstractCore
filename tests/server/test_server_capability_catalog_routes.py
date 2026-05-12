@@ -23,6 +23,9 @@ class _FakeVoice:
     def list_tts_models(self):
         return ["tts-test"]
 
+    def list_stt_models(self):
+        return ["stt-test"]
+
 
 class _FakeVision:
     backend_id = "fake-vision"
@@ -84,6 +87,18 @@ def test_audio_speech_models_catalog_route(monkeypatch):
     assert response.json()["models"] == ["tts-test"]
 
 
+def test_audio_transcription_models_catalog_route(monkeypatch):
+    from abstractcore.server import audio_endpoints
+
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
+    monkeypatch.delenv("ABSTRACTCORE_SERVER_API_KEY", raising=False)
+    monkeypatch.setattr(audio_endpoints, "_audio_catalog_core", lambda request, *, base_url=None: _FakeCore())
+
+    response = TestClient(app).get("/v1/audio/transcriptions/models")
+    assert response.status_code == 200
+    assert response.json()["models"] == ["stt-test"]
+
+
 def test_vision_provider_models_catalog_route(monkeypatch):
     from abstractcore.server import vision_endpoints
 
@@ -128,7 +143,7 @@ def test_catalog_routes_surface_missing_plugins_as_501(monkeypatch):
     assert client.get("/v1/vision/provider_models").status_code == 501
 
 
-@pytest.mark.parametrize("path", ["/v1/audio/voices", "/v1/audio/speech/models"])
+@pytest.mark.parametrize("path", ["/v1/audio/voices", "/v1/audio/speech/models", "/v1/audio/transcriptions/models"])
 def test_audio_catalog_routes_preserve_server_credential_auth_error(monkeypatch, path):
     monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
     monkeypatch.setenv("OPENAI_API_KEY", "server-held-key")
@@ -139,7 +154,7 @@ def test_audio_catalog_routes_preserve_server_credential_auth_error(monkeypatch,
     assert "server-held" in _error_message(response).lower()
 
 
-@pytest.mark.parametrize("path", ["/v1/audio/voices", "/v1/audio/speech/models"])
+@pytest.mark.parametrize("path", ["/v1/audio/voices", "/v1/audio/speech/models", "/v1/audio/transcriptions/models"])
 def test_audio_catalog_routes_preserve_bad_base_url_error(monkeypatch, path):
     monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
 
@@ -149,7 +164,7 @@ def test_audio_catalog_routes_preserve_bad_base_url_error(monkeypatch, path):
     assert "absolute http(s) url" in _error_message(response).lower()
 
 
-@pytest.mark.parametrize("path", ["/v1/audio/voices", "/v1/audio/speech/models"])
+@pytest.mark.parametrize("path", ["/v1/audio/voices", "/v1/audio/speech/models", "/v1/audio/transcriptions/models"])
 def test_audio_catalog_routes_preserve_disallowed_base_url_error(monkeypatch, path):
     monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
 

@@ -746,6 +746,36 @@ async def audio_speech_models(
         raise _audio_catalog_error(e) from e
 
 
+@router.get("/audio/transcriptions/models")
+async def audio_transcription_models(
+    request: Request,
+    base_url: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional OpenAI-compatible voice endpoint override for STT model discovery. "
+            "Loopback is allowed by default; non-loopback URLs require "
+            "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+    ),
+) -> Dict[str, Any]:
+    """Discover configured STT model ids through the AbstractVoice plugin boundary."""
+    try:
+        core = _audio_catalog_core(request, base_url=base_url)
+        models = core.voice.list_stt_models()
+        return {
+            "available": True,
+            "source": "abstractvoice",
+            "stale": False,
+            "error": None,
+            "backend_id": getattr(core.voice, "backend_id", None),
+            "models": list(models or []),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _audio_catalog_error(e) from e
+
+
 @router.post(
     "/audio/speech",
     response_class=Response,
