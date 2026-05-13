@@ -1545,6 +1545,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if isinstance(raw, str) and raw.strip().lower() in {"image", "audio", "video", "document", "text"}:
                 return raw.strip().lower()
             mime = item.get("mime_type", item.get("mimeType", item.get("mime")))
+            if mime is None:
+                mime = item.get("content_type", item.get("contentType"))
             path = item.get("file_path", item.get("filePath", item.get("path")))
         elif hasattr(item, "media_type"):
             raw = getattr(item, "media_type", None)
@@ -1863,7 +1865,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         kwargs = self._output_plugin_kwargs(
             spec,
-            exclude={"format", "content_type", "mime_type", "model", "response_format"},
+            exclude={"format", "content_type", "mime_type", "provider", "response_format"},
         )
         if artifact_store is not None:
             kwargs["artifact_store"] = artifact_store
@@ -1928,7 +1930,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 raise ValueError("Voice output with audio media and voice/voice_id is ambiguous; set task='tts' or omit voice/voice_id.")
             if len(audio_items) != 1:
                 raise ValueError("Voice cloning requires exactly one audio media item in v1.")
-            kwargs = self._output_plugin_kwargs(spec, exclude={"voice", "voice_id", "format"})
+            kwargs = self._output_plugin_kwargs(spec, exclude={"voice", "voice_id", "format", "provider"})
             reference_text = kwargs.pop("reference_text", None)
             if reference_text is None and prompt:
                 reference_text = prompt
@@ -1957,7 +1959,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             return
 
         fmt = str(spec.get("format") or "wav")
-        kwargs = self._output_plugin_kwargs(spec, exclude={"voice", "voice_id", "format"})
+        kwargs = self._output_plugin_kwargs(spec, exclude={"voice", "voice_id", "format", "provider"})
         kwargs["voice"] = str(voice_id) if voice_id is not None else None
         kwargs["format"] = fmt
         if audio_items:
@@ -2008,6 +2010,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
         kwargs: Dict[str, Any] = {}
         if spec.get("language") is not None:
             kwargs["language"] = spec.get("language")
+        if spec.get("model") is not None:
+            kwargs["model"] = spec.get("model")
         if artifact_store is not None:
             kwargs["artifact_store"] = artifact_store
         transcript = self.audio.transcribe(self._media_payload(audio_items[0]), **kwargs)

@@ -212,11 +212,11 @@ media = [
 ]
 
 voice = [
-    "abstractvoice>=0.9.3",
+    "abstractvoice>=0.9.4",
 ]
 
 audio = [
-    "abstractvoice>=0.9.3",
+    "abstractvoice>=0.9.4",
 ]
 
 compression = [
@@ -261,14 +261,14 @@ all = [
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.9.3",
+    "abstractvoice>=0.9.4",
     "abstractmusic>=0.1.1",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.4",
+    "abstractvision>=0.3.5",
 ]
 
 all-apple = [
@@ -299,14 +299,14 @@ all-apple = [
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice[all-apple]>=0.9.3",
+    "abstractvoice[all-apple]>=0.9.4",
     "abstractmusic[all-apple]>=0.1.1",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision[all-apple]>=0.3.3",
+    "abstractvision[all-apple]>=0.3.5",
 ]
 
 all-gpu = [
@@ -336,14 +336,14 @@ all-gpu = [
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice[all-gpu]>=0.9.3",
+    "abstractvoice[all-gpu]>=0.9.4",
     "abstractmusic[all-gpu]>=0.1.1",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision[all-gpu]>=0.3.3",
+    "abstractvision[all-gpu]>=0.3.5",
 ]
 
 # Legacy broad bundle kept for existing users. New installs should usually
@@ -374,14 +374,14 @@ all-non-mlx = [
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.9.3",
+    "abstractvoice>=0.9.4",
     "abstractmusic>=0.1.1",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.4",
+    "abstractvision>=0.3.5",
 ]
 
 # Development dependencies
@@ -410,19 +410,19 @@ server = [
 # Vision (optional) - delegates to AbstractVision.
 # Kept as a separate extra for installs that want vision without the HTTP server.
 vision = [
-    "abstractvision>=0.3.4",
+    "abstractvision>=0.3.5",
 ]
 
 vision-diffusers = [
-    "abstractvision[huggingface]>=0.3.3",
+    "abstractvision[huggingface]>=0.3.5",
 ]
 
 vision-sdcpp = [
-    "abstractvision[sdcpp]>=0.3.3",
+    "abstractvision[sdcpp]>=0.3.5",
 ]
 
 vision-local = [
-    "abstractvision[local]>=0.3.3",
+    "abstractvision[local]>=0.3.5",
 ]
 
 music = [
@@ -490,13 +490,13 @@ full-dev = [
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.9.3",
+    "abstractvoice>=0.9.4",
     "abstractmusic>=0.1.1",
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.4",
+    "abstractvision>=0.3.5",
     # Tooling
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",

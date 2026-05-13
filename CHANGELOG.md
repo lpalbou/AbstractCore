@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.14] - 2026-05-13
+
+### Fixed
+- Generated image, voice, and transcription output specs now pass per-call media model selectors through capability plugins while keeping runtime LLM provider routing out of plugin kwargs.
+- Media classification now honors dict `content_type` metadata so artifact-backed, extensionless audio remains valid for transcription.
+
+### Changed
+- Raised AbstractVision and AbstractVoice capability floors to `abstractvision>=0.3.5` and `abstractvoice>=0.9.4`.
+
+
 ## [2.13.13] - 2026-05-12
 
 ### Added
