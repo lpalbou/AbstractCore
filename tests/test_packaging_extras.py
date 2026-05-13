@@ -49,24 +49,24 @@ def test_server_extra_stays_vision_runtime_light() -> None:
 
     assert "abstractvision" not in server_block
     assert "abstractvoice" not in server_block
-    assert "abstractvoice>=0.9.3" in voice_block
+    assert "abstractvoice>=0.9.4" in voice_block
     assert "abstractmusic" not in voice_block
-    assert "abstractvoice>=0.9.3" in audio_block
-    assert "abstractvision>=0.3.4" in vision_block
-    assert "abstractvision[huggingface]>=0.3.3" in vision_diffusers_block
-    assert "abstractvision[sdcpp]>=0.3.3" in vision_sdcpp_block
-    assert "abstractvision[local]>=0.3.3" in vision_local_block
+    assert "abstractvoice>=0.9.4" in audio_block
+    assert "abstractvision>=0.3.5" in vision_block
+    assert "abstractvision[huggingface]>=0.3.5" in vision_diffusers_block
+    assert "abstractvision[sdcpp]>=0.3.5" in vision_sdcpp_block
+    assert "abstractvision[local]>=0.3.5" in vision_local_block
     assert "abstractmusic>=0.1.1" in music_block
-    assert "abstractvoice[all-apple]>=0.9.3" in all_apple_block
-    assert "abstractvision[all-apple]>=0.3.3" in all_apple_block
+    assert "abstractvoice[all-apple]>=0.9.4" in all_apple_block
+    assert "abstractvision[all-apple]>=0.3.5" in all_apple_block
     assert "abstractmusic[all-apple]>=0.1.1" in all_apple_block
     assert "vllm" not in all_apple_block
-    assert "abstractvoice[all-gpu]>=0.9.3" in all_gpu_block
-    assert "abstractvision[all-gpu]>=0.3.3" in all_gpu_block
+    assert "abstractvoice[all-gpu]>=0.9.4" in all_gpu_block
+    assert "abstractvision[all-gpu]>=0.3.5" in all_gpu_block
     assert "abstractmusic[all-gpu]>=0.1.1" in all_gpu_block
     assert "mlx-lm" not in all_gpu_block
-    assert "abstractvoice>=0.9.3" in full_dev_block
-    assert "abstractvision>=0.3.4" in full_dev_block
+    assert "abstractvoice>=0.9.4" in full_dev_block
+    assert "abstractvision>=0.3.5" in full_dev_block
     assert "abstractmusic>=0.1.1" in full_dev_block
 
 
