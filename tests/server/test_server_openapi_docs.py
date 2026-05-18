@@ -45,7 +45,15 @@ def test_core_endpoint_tags_are_documentation_friendly():
     assert "/v1/vision/provider_models" not in schema["paths"]
     assert "/v1/vision/model" not in schema["paths"]
     assert schema["paths"]["/v1/responses"]["post"]["tags"] == ["responses"]
+    assert schema["paths"]["/acore/models/loaded"]["get"]["tags"] == ["runtime"]
+    assert schema["paths"]["/acore/models/load"]["post"]["tags"] == ["runtime"]
+    assert schema["paths"]["/acore/models/unload"]["post"]["tags"] == ["runtime"]
     assert schema["paths"]["/acore/prompt_cache/stats"]["get"]["tags"] == ["prompt-cache"]
+    assert schema["paths"]["/acore/blocs/upsert_text"]["post"]["tags"] == ["memory-blocs"]
+    assert schema["paths"]["/acore/blocs/record"]["get"]["tags"] == ["memory-blocs"]
+    assert schema["paths"]["/acore/blocs/kv/manifest"]["get"]["tags"] == ["memory-blocs"]
+    assert schema["paths"]["/acore/blocs/kv/ensure"]["post"]["tags"] == ["memory-blocs"]
+    assert schema["paths"]["/acore/blocs/kv/load"]["post"]["tags"] == ["memory-blocs"]
 
 
 def test_audio_speech_documents_binary_audio_response():

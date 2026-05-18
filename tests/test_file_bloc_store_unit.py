@@ -38,8 +38,11 @@ def test_file_bloc_store_upsert_and_list(tmp_path: Path) -> None:
     assert store.meta_path(rec.sha256).exists()
 
     kv = store.kv_cache_path(rec.sha256, provider="huggingface", model="dummy-model")
+    manifest = store.kv_cache_manifest_path(rec.sha256, provider="huggingface", model="dummy-model")
     assert str(kv).endswith(".safetensors")
+    assert str(manifest).endswith(".manifest.json")
     assert store.has_kv_cache(rec.sha256, provider="huggingface", model="dummy-model") is False
+    assert store.has_kv_cache_manifest(rec.sha256, provider="huggingface", model="dummy-model") is False
 
 
 def test_file_bloc_store_stable_bloc_ids_are_monotonic_and_durable(tmp_path: Path) -> None:
@@ -95,4 +98,3 @@ def test_heuristic_summary_and_keywords() -> None:
     assert summary == "Title line"
     assert isinstance(kw, list)
     assert "the" not in kw
-

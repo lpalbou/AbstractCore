@@ -16,6 +16,7 @@ The store persists:
 - `meta.json` — record metadata (path, size, timestamps, token estimate, etc.)
 - `meta.jsonld` (optional) — compact JSON-LD metadata for catalogs/search
 - `kv/…` (optional) — per-(provider, model) prompt-cache artifacts (derived)
+- `kv/…manifest.json` (optional) — sidecar integrity/freshness metadata for those artifacts
 
 ## On-disk layout
 
@@ -28,8 +29,10 @@ Per-bloc directory:
   - `meta.json`
   - `meta.jsonld` (optional)
   - `kv/<provider+model-slug>.safetensors` (optional)
+  - `kv/<provider+model-slug>.manifest.json` (optional)
 
-`FileBlocStore.kv_cache_path(...)` defines the exact naming convention for KV artifact files.
+`FileBlocStore.kv_cache_path(...)` and `FileBlocStore.kv_cache_manifest_path(...)` define the
+on-disk naming convention for KV artifacts and their manifest sidecars.
 
 ## Minimal usage (library)
 
@@ -38,10 +41,43 @@ Per-bloc directory:
 Typical flow:
 1. extract a file to text (e.g. via `extract_file_box()` or your own pipeline)
 2. write/update the bloc record + `content.txt` via `FileBlocStore.upsert(...)`
-3. (optional) compile a per-model KV artifact with your provider and save it under `kv/`
-4. (optional) generate JSON-LD metadata with `generate_bloc_metadata_jsonld(...)`
+3. (optional) compile a per-model KV artifact with `ensure_bloc_kv_artifact(...)`
+4. (optional) load or fork it later with `load_bloc_kv_artifact(...)`
+5. (optional) generate JSON-LD metadata with `generate_bloc_metadata_jsonld(...)`
 
 See:
 - `abstractcore/core/file_blocs.py` for the store and record schema
+- `abstractcore/core/bloc_kv.py` for the MLX bloc artifact compiler/loader
 - `abstractcore/core/bloc_metadata.py` for JSON-LD schema + metadata generator/parser
 
+## API exposure
+
+For a long-lived single-model local runtime, `AbstractEndpoint` exposes:
+
+- `POST /acore/blocs/upsert_text`
+- `GET /acore/blocs/record`
+- `GET /acore/blocs/kv/manifest`
+- `POST /acore/blocs/kv/ensure`
+- `POST /acore/blocs/kv/load`
+
+The multi-provider gateway `abstractcore.server.app` now exposes two modes:
+
+- direct gateway mode:
+  - `POST /acore/models/load`
+  - `GET /acore/models/loaded`
+  - `POST /acore/models/unload`
+  - local `POST /acore/blocs/upsert_text`
+  - local `GET /acore/blocs/record`
+  - local `GET /acore/blocs/kv/manifest`
+  - local `POST /acore/blocs/kv/ensure`
+  - local `POST /acore/blocs/kv/load`
+- proxy mode:
+  - the same `/acore/blocs/*` routes with `base_url` pointing at an upstream `AbstractEndpoint`
+
+Important boundary:
+
+- the durable artifact is bloc-only
+- in direct gateway mode, loaded cache keys live on the loaded gateway runtime selected by `provider` + `model`
+- `runtime_id` from `/acore/models/load` is the most precise selector when multiple warm runtimes share the same `provider` + `model`
+- in proxy mode, loaded cache keys live on the upstream endpoint worker/provider instance
+- `/acore/blocs/kv/load` returns `artifact.key`; use that value as `prompt_cache_key` on the next chat call

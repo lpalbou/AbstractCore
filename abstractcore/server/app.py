@@ -26,6 +26,7 @@ import os
 import json
 import time
 import uuid
+import hashlib
 import base64
 import tempfile
 import urllib.request
@@ -53,8 +54,11 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from ..core.bloc_kv import ensure_bloc_kv_artifact, load_bloc_kv_artifact, read_bloc_kv_manifest
 from ..core.factory import create_llm
+from ..core.file_blocs import FileBlocStore
 from ..exceptions import AuthenticationError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
+from ..providers.base import PromptCacheError
 from ..utils.structured_logging import get_logger, configure_logging
 from ..utils.version import __version__
 from ..utils.message_preprocessor import MessagePreprocessor
@@ -2727,6 +2731,244 @@ def parse_model_string(model_string: str) -> tuple[str, str]:
     else:
         return "ollama", model_string  # Default
 
+
+class _GatewayLoadedRuntime:
+    def __init__(
+        self,
+        *,
+        provider: str,
+        model: str,
+        base_url: Optional[str],
+        explicit_provider_key_hash: Optional[str],
+        llm: Any,
+    ) -> None:
+        self.provider = provider
+        self.model = model
+        self.base_url = base_url
+        self.explicit_provider_key_hash = explicit_provider_key_hash
+        self.llm = llm
+        signature = f"{provider}|{model}|{base_url or ''}|{explicit_provider_key_hash or ''}"
+        self.runtime_id = hashlib.sha256(signature.encode("utf-8")).hexdigest()[:16]
+        self.lock = threading.RLock()
+        now = time.time()
+        self.created_at = now
+        self.last_used_at = now
+        self.request_count = 0
+
+
+_GATEWAY_RUNTIME_LOCK = threading.RLock()
+_GATEWAY_LOADED_RUNTIMES: Dict[str, _GatewayLoadedRuntime] = {}
+_GATEWAY_RUNTIME_IDS: Dict[str, str] = {}
+_SERVER_BLOC_STORE = FileBlocStore()
+
+
+def _normalize_loaded_runtime_base_url(base_url: Optional[str]) -> Optional[str]:
+    if not isinstance(base_url, str):
+        return None
+    value = base_url.strip()
+    if not value:
+        return None
+    return value.rstrip("/")
+
+
+def _provider_key_fingerprint(provider_api_key: Optional[str]) -> Optional[str]:
+    if not isinstance(provider_api_key, str) or not provider_api_key.strip():
+        return None
+    return hashlib.sha256(provider_api_key.strip().encode("utf-8")).hexdigest()
+
+
+def _gateway_runtime_registry_key(
+    *,
+    provider: str,
+    model: str,
+    base_url: Optional[str],
+    explicit_provider_key_hash: Optional[str],
+) -> str:
+    return "|".join(
+        [
+            str(provider or "").strip().lower(),
+            str(model or "").strip(),
+            _normalize_loaded_runtime_base_url(base_url) or "",
+            explicit_provider_key_hash or "",
+        ]
+    )
+
+
+def _gateway_runtime_to_dict(runtime: _GatewayLoadedRuntime) -> Dict[str, Any]:
+    return {
+        "runtime_id": runtime.runtime_id,
+        "provider": runtime.provider,
+        "model": runtime.model,
+        "base_url": runtime.base_url,
+        "uses_explicit_provider_key": bool(runtime.explicit_provider_key_hash),
+        "resolved_model_id": getattr(runtime.llm, "_resolved_model_id", None),
+        "created_at": int(runtime.created_at),
+        "last_used_at": int(runtime.last_used_at),
+        "request_count": int(runtime.request_count),
+        "supports_prompt_cache": bool(getattr(runtime.llm, "supports_prompt_cache", lambda: False)()),
+    }
+
+
+def _get_loaded_gateway_runtime(
+    *,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    base_url: Optional[str] = None,
+    explicit_provider_key_hash: Optional[str] = None,
+    runtime_id: Optional[str] = None,
+) -> Optional[_GatewayLoadedRuntime]:
+    with _GATEWAY_RUNTIME_LOCK:
+        if isinstance(runtime_id, str) and runtime_id.strip():
+            registry_key = _GATEWAY_RUNTIME_IDS.get(runtime_id.strip())
+            if registry_key:
+                return _GATEWAY_LOADED_RUNTIMES.get(registry_key)
+            return None
+        if not isinstance(provider, str) or not provider.strip() or not isinstance(model, str) or not model.strip():
+            return None
+        registry_key = _gateway_runtime_registry_key(
+            provider=provider,
+            model=model,
+            base_url=base_url,
+            explicit_provider_key_hash=explicit_provider_key_hash,
+        )
+        return _GATEWAY_LOADED_RUNTIMES.get(registry_key)
+
+
+def _touch_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime) -> None:
+    runtime.last_used_at = time.time()
+    runtime.request_count += 1
+
+
+def _ensure_loaded_gateway_runtime(
+    *,
+    provider: str,
+    model: str,
+    provider_kwargs: Dict[str, Any],
+    explicit_provider_key_hash: Optional[str],
+) -> Tuple[_GatewayLoadedRuntime, bool]:
+    registry_key = _gateway_runtime_registry_key(
+        provider=provider,
+        model=model,
+        base_url=provider_kwargs.get("base_url"),
+        explicit_provider_key_hash=explicit_provider_key_hash,
+    )
+    with _GATEWAY_RUNTIME_LOCK:
+        existing = _GATEWAY_LOADED_RUNTIMES.get(registry_key)
+        if existing is not None:
+            return existing, False
+        llm = create_llm(provider, model=model, **provider_kwargs)
+        runtime = _GatewayLoadedRuntime(
+            provider=str(provider).strip().lower(),
+            model=str(model).strip(),
+            base_url=_normalize_loaded_runtime_base_url(provider_kwargs.get("base_url")),
+            explicit_provider_key_hash=explicit_provider_key_hash,
+            llm=llm,
+        )
+        _GATEWAY_LOADED_RUNTIMES[registry_key] = runtime
+        _GATEWAY_RUNTIME_IDS[runtime.runtime_id] = registry_key
+        return runtime, True
+
+
+def _unload_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime) -> None:
+    with runtime.lock:
+        if not hasattr(runtime.llm, "unload_model"):
+            raise AttributeError("Provider does not implement unload_model(model_name)")
+        runtime.llm.unload_model(runtime.model)
+    with _GATEWAY_RUNTIME_LOCK:
+        registry_key = _GATEWAY_RUNTIME_IDS.pop(runtime.runtime_id, None)
+        if registry_key:
+            _GATEWAY_LOADED_RUNTIMES.pop(registry_key, None)
+
+
+def _best_effort_unload_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime, *, request_id: str) -> None:
+    try:
+        _unload_loaded_gateway_runtime(runtime)
+        logger.info(
+            "🧹 Gateway Runtime Unloaded",
+            request_id=request_id,
+            provider=runtime.provider,
+            model=runtime.model,
+            runtime_id=runtime.runtime_id,
+        )
+    except Exception as e:
+        logger.warning(
+            "⚠️ Gateway runtime unload failed",
+            request_id=request_id,
+            provider=runtime.provider,
+            model=runtime.model,
+            runtime_id=runtime.runtime_id,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+
+
+def _resolve_local_runtime_for_control(
+    *,
+    provider: Optional[str],
+    model: Optional[str],
+    http_request: Optional[Request],
+    base_url: Optional[str] = None,
+    runtime_id: Optional[str] = None,
+) -> _GatewayLoadedRuntime:
+    explicit_provider_key_hash = _provider_key_fingerprint(_provider_api_key_from_request(http_request)) if http_request is not None else None
+    runtime = _get_loaded_gateway_runtime(
+        provider=provider,
+        model=model,
+        base_url=base_url,
+        explicit_provider_key_hash=explicit_provider_key_hash,
+        runtime_id=runtime_id,
+    )
+    if runtime is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "error": {
+                    "message": (
+                        "Loaded gateway runtime not found. Load it first with `/acore/models/load` "
+                        "or proxy to an AbstractEndpoint via `base_url`."
+                    ),
+                    "type": "not_found",
+                }
+            },
+        )
+    return runtime
+
+
+def _gateway_prompt_cache_capabilities_dict(llm: Any) -> Dict[str, Any]:
+    getter = getattr(llm, "get_prompt_cache_capabilities", None)
+    if callable(getter):
+        try:
+            caps = getter()
+            to_dict = getattr(caps, "to_dict", None)
+            if callable(to_dict):
+                return to_dict()
+        except Exception:
+            pass
+    return {
+        "supported": bool(getattr(llm, "supports_prompt_cache", lambda: False)()),
+    }
+
+
+def _gateway_prompt_cache_error_payload(llm: Any, error: Exception, *, operation: str) -> Dict[str, Any]:
+    caps = _gateway_prompt_cache_capabilities_dict(llm)
+    if isinstance(error, PromptCacheError):
+        payload = error.to_dict()
+        payload.setdefault("capabilities", caps)
+        return {
+            "supported": False,
+            "operation": payload.get("operation") or operation,
+            "code": payload.get("code") or "prompt_cache_error",
+            "error": payload.get("message") or str(error),
+            "capabilities": payload.get("capabilities") or caps,
+        }
+    return {
+        "supported": False,
+        "operation": operation,
+        "code": "prompt_cache_error",
+        "error": str(error),
+        "capabilities": caps,
+    }
+
 def detect_target_format(
     model: str,
     request: ChatCompletionRequest,
@@ -2784,6 +3026,57 @@ def create_syntax_rewriter(target_format: SyntaxFormat, model_name: str) -> Tool
     else:
         return ToolCallSyntaxRewriter(target_format, model_name=model_name)
 
+
+class LoadedModelRequest(BaseModel):
+    provider: str = Field(..., description="Provider name to load into the gateway runtime registry.", example="mlx")
+    model: str = Field(..., description="Model identifier to keep warm inside the gateway.", example="mlx-community/Qwen3.6-27B-4bit")
+    base_url: Optional[str] = Field(
+        default=None,
+        description="Optional provider base URL override. Useful for OpenAI-compatible local runtimes.",
+        example=None,
+    )
+    timeout_s: Optional[float] = Field(
+        default=None,
+        description="Optional provider timeout in seconds for the loaded runtime.",
+        example=7200.0,
+    )
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "summary": "Load Gateway Runtime",
+                    "value": {
+                        "provider": "mlx",
+                        "model": "mlx-community/Qwen3.6-27B-4bit",
+                        "base_url": None,
+                        "timeout_s": 7200.0,
+                    },
+                }
+            ]
+        }
+
+
+class UnloadModelRequest(BaseModel):
+    runtime_id: Optional[str] = Field(default=None, description="Specific loaded runtime identifier returned by `/acore/models/load`.")
+    provider: Optional[str] = Field(default=None, description="Provider name for runtime selection when `runtime_id` is omitted.", example="mlx")
+    model: Optional[str] = Field(default=None, description="Model identifier for runtime selection when `runtime_id` is omitted.", example="mlx-community/Qwen3.6-27B-4bit")
+    base_url: Optional[str] = Field(default=None, description="Optional provider base URL used when the runtime was loaded.", example=None)
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "summary": "Unload Gateway Runtime",
+                    "value": {
+                        "provider": "mlx",
+                        "model": "mlx-community/Qwen3.6-27B-4bit",
+                        "base_url": None,
+                    },
+                }
+            ]
+        }
+
 # ============================================================================
 # Endpoints
 # ============================================================================
@@ -2803,16 +3096,175 @@ async def health_check():
     }
 
 
+@app.get(
+    "/acore/models/loaded",
+    tags=["runtime"],
+    summary="List Loaded Gateway Runtimes",
+    description="List provider/model runtimes currently kept warm inside the gateway process.",
+)
+def acore_models_loaded(
+    provider: Optional[str] = Query(None, description="Optional provider filter.", example="mlx"),
+    model: Optional[str] = Query(None, description="Optional exact model filter.", example="mlx-community/Qwen3.6-27B-4bit"),
+):
+    provider_filter = str(provider or "").strip().lower()
+    model_filter = str(model or "").strip()
+    with _GATEWAY_RUNTIME_LOCK:
+        runtimes = [
+            _gateway_runtime_to_dict(runtime)
+            for runtime in _GATEWAY_LOADED_RUNTIMES.values()
+            if (not provider_filter or runtime.provider == provider_filter)
+            and (not model_filter or runtime.model == model_filter)
+        ]
+    return {"object": "list", "data": sorted(runtimes, key=lambda item: item["runtime_id"])}
+
+
+@app.post(
+    "/acore/models/load",
+    tags=["runtime"],
+    summary="Load Gateway Runtime",
+    description=(
+        "Load a provider/model into the gateway runtime registry so subsequent chat requests and local "
+        "prompt-cache / memory-bloc control-plane calls can reuse the same warm provider instance."
+    ),
+)
+def acore_models_load(req: LoadedModelRequest, http_request: Request):
+    provider = str(req.provider or "").strip().lower()
+    model = str(req.model or "").strip()
+    if not provider or not model:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"message": "provider and model are required", "type": "invalid_request"}},
+        )
+
+    provider_kwargs: Dict[str, Any] = {}
+    provider_api_key = _provider_api_key_from_request(http_request)
+    if provider_api_key:
+        provider_kwargs["api_key"] = provider_api_key
+    _guard_unauthenticated_server_provider_key_use(
+        provider,
+        explicit_provider_key=bool(provider_api_key),
+        http_request=http_request,
+    )
+
+    if isinstance(req.base_url, str) and req.base_url.strip():
+        base_url = req.base_url.strip()
+        if not _server_allows_request_base_url(base_url):
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": {
+                        "message": (
+                            "Request-level base_url overrides are restricted for security. "
+                            "By default only loopback URLs are allowed. "
+                            "To allow additional hosts/prefixes, set ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+                        ),
+                        "type": "forbidden",
+                    }
+                },
+            )
+
+        parsed = urllib.parse.urlsplit(base_url)
+        host = str(parsed.hostname or "").strip()
+        if host and not _is_loopback_host(host):
+            env_var = _provider_api_key_env_var(provider)
+            if _server_has_provider_api_key(provider) and not provider_api_key:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": {
+                            "message": (
+                                "Refusing request-level base_url override without an explicit provider key because "
+                                f"the server has {env_var} set. Provide the provider key via "
+                                "X-AbstractCore-Provider-API-Key."
+                            ),
+                            "type": "forbidden",
+                        }
+                    },
+                )
+        provider_kwargs["base_url"] = base_url
+
+    if req.timeout_s is not None:
+        provider_kwargs["timeout"] = req.timeout_s
+
+    runtime, loaded_new = _ensure_loaded_gateway_runtime(
+        provider=provider,
+        model=model,
+        provider_kwargs=provider_kwargs,
+        explicit_provider_key_hash=_provider_key_fingerprint(provider_api_key),
+    )
+    return {
+        "ok": True,
+        "loaded_new": bool(loaded_new),
+        "runtime": _gateway_runtime_to_dict(runtime),
+        "prompt_cache_capabilities": _gateway_prompt_cache_capabilities_dict(runtime.llm),
+    }
+
+
+@app.post(
+    "/acore/models/unload",
+    tags=["runtime"],
+    summary="Unload Gateway Runtime",
+    description="Unload a previously loaded provider/model runtime from the gateway process.",
+)
+def acore_models_unload(req: UnloadModelRequest, http_request: Request):
+    runtime_id = str(req.runtime_id or "").strip() or None
+    provider = str(req.provider or "").strip().lower() or None
+    model = str(req.model or "").strip() or None
+    if runtime_id is None and (provider is None or model is None):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "message": "Provide runtime_id or provider+model to unload a gateway runtime.",
+                    "type": "invalid_request",
+                }
+            },
+        )
+    runtime = _resolve_local_runtime_for_control(
+        provider=provider,
+        model=model,
+        base_url=req.base_url,
+        runtime_id=runtime_id,
+        http_request=http_request,
+    )
+    _unload_loaded_gateway_runtime(runtime)
+    return {"ok": True, "runtime": _gateway_runtime_to_dict(runtime), "unloaded": True}
+
+
 class PromptCacheProxyBase(BaseModel):
     """Proxy configuration for forwarding AbstractCore prompt-cache control-plane calls."""
 
+    runtime_id: Optional[str] = Field(
+        default=None,
+        description=(
+            "Specific loaded gateway runtime identifier returned by `/acore/models/load`. "
+            "When supplied, the prompt-cache or bloc control-plane call targets that local runtime."
+        ),
+    )
     base_url: Optional[str] = Field(
         default=None,
         description=(
             "Upstream base URL for an AbstractEndpoint instance. Can include an OpenAI-style `/v1` suffix "
-            "(it will be stripped when proxying `/acore/prompt_cache/*`)."
+            "(it will be stripped when proxying `/acore/prompt_cache/*`). "
+            "When `runtime_id` or `provider` + `model` is supplied, `base_url` is used to disambiguate the local runtime key."
         ),
         example="http://localhost:8001/v1",
+    )
+    provider: Optional[str] = Field(
+        default=None,
+        description=(
+            "Gateway-local provider name for a previously loaded runtime. "
+            "Use together with `model` when `base_url` is omitted."
+        ),
+        example="mlx",
+    )
+    model: Optional[str] = Field(
+        default=None,
+        description=(
+            "Gateway-local model identifier for a previously loaded runtime. "
+            "Use together with `provider` when `base_url` is omitted."
+        ),
+        example="mlx-community/Qwen3.6-27B-4bit",
     )
     api_key: Optional[str] = Field(
         default=None,
@@ -2854,6 +3306,91 @@ class PromptCachePrepareModulesProxyRequest(PromptCacheProxyBase):
     make_default: bool = Field(default=False, description="Whether the prepared module cache should become the upstream default.")
     ttl_s: Optional[float] = Field(default=None, description="Optional upstream cache TTL in seconds.", example=3600)
     version: int = Field(default=1, description="Payload version for forward-compatible module preparation.")
+
+
+class BlocProxyBase(PromptCacheProxyBase):
+    """Proxy configuration for forwarding bloc control-plane calls to an AbstractEndpoint."""
+
+
+class BlocUpsertTextProxyRequest(BlocProxyBase):
+    path: str = Field(..., description="Logical source path for the extracted text snapshot.", example="/tmp/orbit.txt")
+    content: str = Field(..., description="Extracted text content to persist in the upstream bloc store.")
+    sha256: Optional[str] = Field(default=None, description="Optional caller-supplied bloc sha256. Defaults to a hash of `content` when omitted.")
+    content_sha256: Optional[str] = Field(default=None, description="Optional content hash override. Defaults to a hash of `content` when omitted.")
+    media_type: str = Field(default="text", description="Logical media type for the stored bloc.", example="text")
+    size_bytes: Optional[int] = Field(default=None, description="Optional original source size in bytes.")
+    mtime_ns: Optional[int] = Field(default=None, description="Optional source modification time in nanoseconds.")
+    format: Optional[str] = Field(default=None, description="Optional source format identifier.", example="text/plain")
+    estimated_tokens: Optional[int] = Field(default=None, description="Optional estimated token count for the stored content.")
+    relpath_base: Optional[str] = Field(default=None, description="Optional base path used to derive a stable relative path in the record.")
+    summary: Optional[str] = Field(default=None, description="Optional explicit summary override.")
+    keywords: Optional[List[str]] = Field(default=None, description="Optional explicit keywords override.")
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "summary": "Persist Text Bloc",
+                    "value": {
+                        "provider": "mlx",
+                        "model": "mlx-community/Qwen3.6-27B-4bit",
+                        "path": "/tmp/orbit.txt",
+                        "content": "Document title: Orbit Notes\n\nThe launch window is Tuesday at 14:30 UTC.\n",
+                        "media_type": "text",
+                        "format": "text/plain",
+                    },
+                }
+            ]
+        }
+
+
+class BlocKVEnsureProxyRequest(BlocProxyBase):
+    sha256: Optional[str] = Field(default=None, description="Bloc sha256 selector.")
+    bloc_id: Optional[int] = Field(default=None, description="Stable integer bloc selector.")
+    artifact_path: Optional[str] = Field(default=None, description="Optional explicit artifact path override.")
+    force_rebuild: bool = Field(default=False, description="Force artifact rebuild even if a valid one already exists.")
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "summary": "Ensure Bloc KV Artifact",
+                    "value": {
+                        "provider": "mlx",
+                        "model": "mlx-community/Qwen3.6-27B-4bit",
+                        "sha256": "abababababababababababababababababababababababababababababababab",
+                        "force_rebuild": False,
+                    },
+                }
+            ]
+        }
+
+
+class BlocKVLoadProxyRequest(BlocProxyBase):
+    sha256: Optional[str] = Field(default=None, description="Bloc sha256 selector.")
+    bloc_id: Optional[int] = Field(default=None, description="Stable integer bloc selector.")
+    artifact_path: Optional[str] = Field(default=None, description="Optional explicit artifact path override.")
+    stable_cache_key: Optional[str] = Field(default=None, description="Optional long-lived cache key to keep loaded upstream.")
+    key: Optional[str] = Field(default=None, description="Target upstream cache key to load or fork into.")
+    make_default: bool = Field(default=False, description="Whether the loaded or forked key should become the upstream default.")
+    force_rebuild: bool = Field(default=False, description="Force artifact rebuild before loading.")
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "summary": "Load Bloc KV Artifact",
+                    "value": {
+                        "provider": "mlx",
+                        "model": "mlx-community/Qwen3.6-27B-4bit",
+                        "sha256": "abababababababababababababababababababababababababababababababab",
+                        "stable_cache_key": "stable:orbit",
+                        "key": "work:orbit",
+                        "make_default": False,
+                    },
+                }
+            ]
+        }
 
 
 def _normalize_control_plane_base_url(base_url: str) -> str:
@@ -2926,18 +3463,153 @@ def _proxy_prompt_cache_request(
     return {"supported": True, "data": payload}
 
 
+def _proxy_endpoint_control_request(
+    *,
+    http_request: Optional[Request] = None,
+    base_url: Optional[str],
+    api_key: Optional[str],
+    method: str,
+    path: str,
+    json_body: Optional[Dict[str, Any]] = None,
+    query_params: Optional[Dict[str, Any]] = None,
+    timeout_s: float = 30.0,
+) -> Any:
+    if not isinstance(base_url, str) or not base_url.strip():
+        return JSONResponse(
+            status_code=400,
+            content={"ok": False, "error": "base_url is required to proxy AbstractEndpoint bloc control-plane calls"},
+        )
+    _reject_body_api_key(api_key)
+
+    base_url_s = base_url.strip()
+    if not _server_allows_request_base_url(base_url_s):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "ok": False,
+                "error": (
+                    "Request-level base_url overrides are restricted for security. "
+                    "By default only loopback URLs are allowed. "
+                    "To allow additional hosts/prefixes, set ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+                ),
+            },
+        )
+
+    upstream_root = _normalize_control_plane_base_url(base_url_s)
+    url = f"{upstream_root}{path}"
+
+    headers: Dict[str, str] = {}
+    upstream_api_key = _provider_api_key_from_request(http_request) if http_request is not None else None
+    if upstream_api_key:
+        headers["Authorization"] = f"Bearer {upstream_api_key}"
+
+    params = {k: v for k, v in (query_params or {}).items() if v is not None}
+
+    try:
+        with httpx.Client(timeout=timeout_s) as client:
+            if method.upper() == "GET":
+                resp = client.get(url, headers=headers, params=params)
+            else:
+                resp = client.post(url, headers=headers, params=params, json=json_body or {})
+    except Exception as e:
+        return JSONResponse(status_code=502, content={"ok": False, "error": str(e)})
+
+    try:
+        payload = resp.json()
+    except Exception:
+        payload = {"error": resp.text}
+
+    if resp.status_code >= 400:
+        if isinstance(payload, dict):
+            content = dict(payload)
+            content.setdefault("upstream", url)
+        else:
+            content = {"ok": False, "error": payload, "upstream": url}
+        return JSONResponse(status_code=int(resp.status_code), content=content)
+
+    if isinstance(payload, dict):
+        return payload
+    return {"ok": True, "data": payload}
+
+
+def _local_bloc_error(operation: str, error: Exception | str, *, status_code: int) -> JSONResponse:
+    return JSONResponse(
+        status_code=int(status_code),
+        content={
+            "ok": False,
+            "operation": operation,
+            "error": str(error),
+        },
+    )
+
+
+def _resolve_local_bloc_selector(*, sha256: Optional[str], bloc_id: Optional[int]):
+    if isinstance(sha256, str) and sha256.strip():
+        rec = _SERVER_BLOC_STORE.get(sha256.strip().lower())
+        if rec is not None:
+            return rec
+    if bloc_id is not None:
+        try:
+            rec = _SERVER_BLOC_STORE.get_by_bloc_id(int(bloc_id))
+        except Exception:
+            rec = None
+        if rec is not None:
+            return rec
+    return None
+
+
 @app.get(
     "/acore/prompt_cache/stats",
     tags=["prompt-cache"],
     summary="Prompt Cache Stats",
-    description="Proxy a prompt-cache stats request to an AbstractEndpoint control-plane base URL.",
+    description="Inspect prompt-cache stats on either a loaded gateway runtime (`provider` + `model`) or an upstream AbstractEndpoint (`base_url`).",
 )
 def acore_prompt_cache_stats(
     http_request: Request,
+    runtime_id: Optional[str] = Query(None, description="Specific loaded gateway runtime identifier."),
     base_url: Optional[str] = Query(None, description="Upstream AbstractEndpoint base_url (optionally including /v1)"),
+    provider: Optional[str] = Query(None, description="Gateway-local provider name for a loaded runtime."),
+    model: Optional[str] = Query(None, description="Gateway-local model identifier for a loaded runtime."),
     api_key: Optional[str] = Query(None, description="Deprecated/disabled. Use X-AbstractCore-Provider-API-Key for provider overrides."),
 ):
     _reject_query_api_key(api_key)
+    local_requested = bool((runtime_id and runtime_id.strip()) or (str(provider or "").strip() and str(model or "").strip()))
+    if local_requested:
+        provider_s = str(provider or "").strip().lower()
+        model_s = str(model or "").strip()
+        runtime = _resolve_local_runtime_for_control(
+            provider=provider_s,
+            model=model_s,
+            base_url=base_url,
+            runtime_id=runtime_id,
+            http_request=http_request,
+        )
+        llm = runtime.llm
+        caps = _gateway_prompt_cache_capabilities_dict(llm)
+        if not caps.get("supports_stats") or not hasattr(llm, "get_prompt_cache_stats"):
+            return {
+                "supported": False,
+                "operation": "stats",
+                "code": "prompt_cache_unsupported",
+                "error": "provider does not expose prompt cache stats",
+                "capabilities": caps,
+            }
+        with runtime.lock:
+            try:
+                _touch_loaded_gateway_runtime(runtime)
+                return {
+                    "supported": True,
+                    "operation": "stats",
+                    "capabilities": caps,
+                    "stats": llm.get_prompt_cache_stats(),
+                }
+            except Exception as e:
+                return _gateway_prompt_cache_error_payload(llm, e, operation="stats")
+    if not isinstance(base_url, str) or not base_url.strip():
+        return {
+            "supported": False,
+            "error": "base_url or provider+model is required for prompt cache control plane calls",
+        }
     return _proxy_prompt_cache_request(
         http_request=http_request,
         base_url=base_url,
@@ -2952,14 +3624,39 @@ def acore_prompt_cache_stats(
     "/acore/prompt_cache/capabilities",
     tags=["prompt-cache"],
     summary="Prompt Cache Capabilities",
-    description="Proxy a prompt-cache capability discovery request to an AbstractEndpoint control-plane base URL.",
+    description="Inspect prompt-cache capabilities on either a loaded gateway runtime (`provider` + `model`) or an upstream AbstractEndpoint (`base_url`).",
 )
 def acore_prompt_cache_capabilities(
     http_request: Request,
+    runtime_id: Optional[str] = Query(None, description="Specific loaded gateway runtime identifier."),
     base_url: Optional[str] = Query(None, description="Upstream AbstractEndpoint base_url (optionally including /v1)"),
+    provider: Optional[str] = Query(None, description="Gateway-local provider name for a loaded runtime."),
+    model: Optional[str] = Query(None, description="Gateway-local model identifier for a loaded runtime."),
     api_key: Optional[str] = Query(None, description="Deprecated/disabled. Use X-AbstractCore-Provider-API-Key for provider overrides."),
 ):
     _reject_query_api_key(api_key)
+    local_requested = bool((runtime_id and runtime_id.strip()) or (str(provider or "").strip() and str(model or "").strip()))
+    if local_requested:
+        provider_s = str(provider or "").strip().lower()
+        model_s = str(model or "").strip()
+        runtime = _resolve_local_runtime_for_control(
+            provider=provider_s,
+            model=model_s,
+            base_url=base_url,
+            runtime_id=runtime_id,
+            http_request=http_request,
+        )
+        caps = _gateway_prompt_cache_capabilities_dict(runtime.llm)
+        return {
+            "supported": bool(caps.get("supported")),
+            "operation": "capabilities",
+            "capabilities": caps,
+        }
+    if not isinstance(base_url, str) or not base_url.strip():
+        return {
+            "supported": False,
+            "error": "base_url or provider+model is required for prompt cache control plane calls",
+        }
     return _proxy_prompt_cache_request(
         http_request=http_request,
         base_url=base_url,
@@ -2974,11 +3671,42 @@ def acore_prompt_cache_capabilities(
     "/acore/prompt_cache/set",
     tags=["prompt-cache"],
     summary="Set Prompt Cache Key",
-    description="Proxy a request that selects or creates a prompt-cache key on an upstream AbstractEndpoint.",
+    description="Select or create a prompt-cache key on a loaded gateway runtime (`provider` + `model`) or proxy the same operation to an upstream AbstractEndpoint (`base_url`).",
 )
 def acore_prompt_cache_set(req: PromptCacheSetProxyRequest, http_request: Request):
+    _reject_body_api_key(req.api_key)
+    local_requested = bool((req.runtime_id and req.runtime_id.strip()) or (str(req.provider or "").strip() and str(req.model or "").strip()))
+    if local_requested:
+        provider_s = str(req.provider or "").strip().lower()
+        model_s = str(req.model or "").strip()
+        runtime = _resolve_local_runtime_for_control(provider=provider_s, model=model_s, base_url=req.base_url, runtime_id=req.runtime_id, http_request=http_request)
+        llm = runtime.llm
+        caps = _gateway_prompt_cache_capabilities_dict(llm)
+        if not caps.get("supports_set") or not hasattr(llm, "prompt_cache_set"):
+            return {
+                "supported": False,
+                "operation": "set",
+                "code": "prompt_cache_unsupported",
+                "error": "provider does not support prompt cache control plane",
+                "capabilities": caps,
+            }
+        with runtime.lock:
+            try:
+                _touch_loaded_gateway_runtime(runtime)
+                ok = llm.prompt_cache_set(req.key, make_default=req.make_default, ttl_s=req.ttl_s)
+                return {"supported": True, "operation": "set", "ok": bool(ok), "capabilities": caps}
+            except Exception as e:
+                return _gateway_prompt_cache_error_payload(llm, e, operation="set")
+    if not isinstance(req.base_url, str) or not req.base_url.strip():
+        return {
+            "supported": False,
+            "error": "base_url or provider+model is required for prompt cache control plane calls",
+        }
     body = req.model_dump(exclude_none=True)
+    body.pop("runtime_id", None)
     base_url = body.pop("base_url", None)
+    body.pop("provider", None)
+    body.pop("model", None)
     api_key = body.pop("api_key", None)
     return _proxy_prompt_cache_request(
         http_request=http_request,
@@ -2994,11 +3722,50 @@ def acore_prompt_cache_set(req: PromptCacheSetProxyRequest, http_request: Reques
     "/acore/prompt_cache/update",
     tags=["prompt-cache"],
     summary="Update Prompt Cache",
-    description="Proxy a request that prepares prompt/messages/tools into an upstream AbstractEndpoint prompt cache.",
+    description="Prepare prompt/messages/tools into a loaded gateway runtime (`provider` + `model`) or proxy the same operation to an upstream AbstractEndpoint (`base_url`).",
 )
 def acore_prompt_cache_update(req: PromptCacheUpdateProxyRequest, http_request: Request):
+    _reject_body_api_key(req.api_key)
+    local_requested = bool((req.runtime_id and req.runtime_id.strip()) or (str(req.provider or "").strip() and str(req.model or "").strip()))
+    if local_requested:
+        provider_s = str(req.provider or "").strip().lower()
+        model_s = str(req.model or "").strip()
+        runtime = _resolve_local_runtime_for_control(provider=provider_s, model=model_s, base_url=req.base_url, runtime_id=req.runtime_id, http_request=http_request)
+        llm = runtime.llm
+        caps = _gateway_prompt_cache_capabilities_dict(llm)
+        if not caps.get("supports_update") or not hasattr(llm, "prompt_cache_update"):
+            return {
+                "supported": False,
+                "operation": "update",
+                "code": "prompt_cache_unsupported",
+                "error": "provider does not support prompt cache control plane",
+                "capabilities": caps,
+            }
+        with runtime.lock:
+            try:
+                _touch_loaded_gateway_runtime(runtime)
+                ok = llm.prompt_cache_update(
+                    req.key,
+                    prompt=req.prompt or "",
+                    messages=req.messages,
+                    system_prompt=req.system_prompt,
+                    tools=req.tools,
+                    add_generation_prompt=bool(req.add_generation_prompt),
+                    ttl_s=req.ttl_s,
+                )
+                return {"supported": True, "operation": "update", "ok": bool(ok), "capabilities": caps}
+            except Exception as e:
+                return _gateway_prompt_cache_error_payload(llm, e, operation="update")
+    if not isinstance(req.base_url, str) or not req.base_url.strip():
+        return {
+            "supported": False,
+            "error": "base_url or provider+model is required for prompt cache control plane calls",
+        }
     body = req.model_dump(exclude_none=True)
+    body.pop("runtime_id", None)
     base_url = body.pop("base_url", None)
+    body.pop("provider", None)
+    body.pop("model", None)
     api_key = body.pop("api_key", None)
     return _proxy_prompt_cache_request(
         http_request=http_request,
@@ -3014,11 +3781,47 @@ def acore_prompt_cache_update(req: PromptCacheUpdateProxyRequest, http_request: 
     "/acore/prompt_cache/fork",
     tags=["prompt-cache"],
     summary="Fork Prompt Cache",
-    description="Proxy a request that forks one upstream prompt-cache key into another key.",
+    description="Fork one prompt-cache key into another on a loaded gateway runtime (`provider` + `model`) or an upstream AbstractEndpoint (`base_url`).",
 )
 def acore_prompt_cache_fork(req: PromptCacheForkProxyRequest, http_request: Request):
+    _reject_body_api_key(req.api_key)
+    local_requested = bool((req.runtime_id and req.runtime_id.strip()) or (str(req.provider or "").strip() and str(req.model or "").strip()))
+    if local_requested:
+        provider_s = str(req.provider or "").strip().lower()
+        model_s = str(req.model or "").strip()
+        runtime = _resolve_local_runtime_for_control(provider=provider_s, model=model_s, base_url=req.base_url, runtime_id=req.runtime_id, http_request=http_request)
+        llm = runtime.llm
+        caps = _gateway_prompt_cache_capabilities_dict(llm)
+        if not caps.get("supports_fork") or not hasattr(llm, "prompt_cache_fork"):
+            return {
+                "supported": False,
+                "operation": "fork",
+                "code": "prompt_cache_unsupported",
+                "error": "provider does not support prompt cache control plane",
+                "capabilities": caps,
+            }
+        with runtime.lock:
+            try:
+                _touch_loaded_gateway_runtime(runtime)
+                ok = llm.prompt_cache_fork(
+                    req.from_key,
+                    req.to_key,
+                    make_default=bool(req.make_default),
+                    ttl_s=req.ttl_s,
+                )
+                return {"supported": True, "operation": "fork", "ok": bool(ok), "capabilities": caps}
+            except Exception as e:
+                return _gateway_prompt_cache_error_payload(llm, e, operation="fork")
+    if not isinstance(req.base_url, str) or not req.base_url.strip():
+        return {
+            "supported": False,
+            "error": "base_url or provider+model is required for prompt cache control plane calls",
+        }
     body = req.model_dump(exclude_none=True)
+    body.pop("runtime_id", None)
     base_url = body.pop("base_url", None)
+    body.pop("provider", None)
+    body.pop("model", None)
     api_key = body.pop("api_key", None)
     return _proxy_prompt_cache_request(
         http_request=http_request,
@@ -3034,11 +3837,42 @@ def acore_prompt_cache_fork(req: PromptCacheForkProxyRequest, http_request: Requ
     "/acore/prompt_cache/clear",
     tags=["prompt-cache"],
     summary="Clear Prompt Cache",
-    description="Proxy a request that clears upstream prompt-cache state.",
+    description="Clear prompt-cache state on a loaded gateway runtime (`provider` + `model`) or an upstream AbstractEndpoint (`base_url`).",
 )
 def acore_prompt_cache_clear(req: PromptCacheClearProxyRequest, http_request: Request):
+    _reject_body_api_key(req.api_key)
+    local_requested = bool((req.runtime_id and req.runtime_id.strip()) or (str(req.provider or "").strip() and str(req.model or "").strip()))
+    if local_requested:
+        provider_s = str(req.provider or "").strip().lower()
+        model_s = str(req.model or "").strip()
+        runtime = _resolve_local_runtime_for_control(provider=provider_s, model=model_s, base_url=req.base_url, runtime_id=req.runtime_id, http_request=http_request)
+        llm = runtime.llm
+        caps = _gateway_prompt_cache_capabilities_dict(llm)
+        if not caps.get("supports_clear") or not hasattr(llm, "prompt_cache_clear"):
+            return {
+                "supported": False,
+                "operation": "clear",
+                "code": "prompt_cache_unsupported",
+                "error": "provider does not support prompt cache control plane",
+                "capabilities": caps,
+            }
+        with runtime.lock:
+            try:
+                _touch_loaded_gateway_runtime(runtime)
+                ok = llm.prompt_cache_clear(req.key)
+                return {"supported": True, "operation": "clear", "ok": bool(ok), "capabilities": caps}
+            except Exception as e:
+                return _gateway_prompt_cache_error_payload(llm, e, operation="clear")
+    if not isinstance(req.base_url, str) or not req.base_url.strip():
+        return {
+            "supported": False,
+            "error": "base_url or provider+model is required for prompt cache control plane calls",
+        }
     body = req.model_dump(exclude_none=True)
+    body.pop("runtime_id", None)
     base_url = body.pop("base_url", None)
+    body.pop("provider", None)
+    body.pop("model", None)
     api_key = body.pop("api_key", None)
     return _proxy_prompt_cache_request(
         http_request=http_request,
@@ -3054,11 +3888,47 @@ def acore_prompt_cache_clear(req: PromptCacheClearProxyRequest, http_request: Re
     "/acore/prompt_cache/prepare_modules",
     tags=["prompt-cache"],
     summary="Prepare Prompt Cache Modules",
-    description="Proxy a request that prepares module/tool context in an upstream AbstractEndpoint prompt cache.",
+    description="Prepare module/tool context on a loaded gateway runtime (`provider` + `model`) or an upstream AbstractEndpoint (`base_url`).",
 )
 def acore_prompt_cache_prepare_modules(req: PromptCachePrepareModulesProxyRequest, http_request: Request):
+    _reject_body_api_key(req.api_key)
+    local_requested = bool((req.runtime_id and req.runtime_id.strip()) or (str(req.provider or "").strip() and str(req.model or "").strip()))
+    if local_requested:
+        provider_s = str(req.provider or "").strip().lower()
+        model_s = str(req.model or "").strip()
+        runtime = _resolve_local_runtime_for_control(provider=provider_s, model=model_s, base_url=req.base_url, runtime_id=req.runtime_id, http_request=http_request)
+        llm = runtime.llm
+        caps = _gateway_prompt_cache_capabilities_dict(llm)
+        if not caps.get("supports_prepare_modules") or not hasattr(llm, "prompt_cache_prepare_modules"):
+            return {
+                "supported": False,
+                "operation": "prepare_modules",
+                "code": "prompt_cache_unsupported",
+                "error": "provider does not support prompt cache module preparation",
+                "capabilities": caps,
+            }
+        with runtime.lock:
+            try:
+                _touch_loaded_gateway_runtime(runtime)
+                return llm.prompt_cache_prepare_modules(
+                    namespace=req.namespace,
+                    modules=req.modules,
+                    make_default=bool(req.make_default),
+                    ttl_s=req.ttl_s,
+                    version=int(req.version),
+                )
+            except Exception as e:
+                return _gateway_prompt_cache_error_payload(llm, e, operation="prepare_modules")
+    if not isinstance(req.base_url, str) or not req.base_url.strip():
+        return {
+            "supported": False,
+            "error": "base_url or provider+model is required for prompt cache control plane calls",
+        }
     body = req.model_dump(exclude_none=True)
+    body.pop("runtime_id", None)
     base_url = body.pop("base_url", None)
+    body.pop("provider", None)
+    body.pop("model", None)
     api_key = body.pop("api_key", None)
     return _proxy_prompt_cache_request(
         http_request=http_request,
@@ -3066,6 +3936,269 @@ def acore_prompt_cache_prepare_modules(req: PromptCachePrepareModulesProxyReques
         api_key=api_key,
         method="POST",
         path="/acore/prompt_cache/prepare_modules",
+        json_body=body,
+    )
+
+
+@app.post(
+    "/acore/blocs/upsert_text",
+    tags=["memory-blocs"],
+    summary="Persist Text Bloc",
+    description="Persist extracted text into the gateway-local bloc store, or proxy the same operation to an upstream AbstractEndpoint when `base_url` is provided.",
+)
+def acore_blocs_upsert_text(req: BlocUpsertTextProxyRequest, http_request: Request):
+    _reject_body_api_key(req.api_key)
+    if not isinstance(req.base_url, str) or not req.base_url.strip():
+        try:
+            content = str(req.content or "")
+            if not content:
+                return _local_bloc_error("upsert_text", "content is required", status_code=400)
+            path = str(req.path or "").strip()
+            if not path:
+                return _local_bloc_error("upsert_text", "path is required", status_code=400)
+            content_sha256 = (
+                str(req.content_sha256).strip().lower()
+                if isinstance(req.content_sha256, str) and req.content_sha256.strip()
+                else hashlib.sha256(content.encode("utf-8")).hexdigest()
+            )
+            sha256 = (
+                str(req.sha256).strip().lower()
+                if isinstance(req.sha256, str) and req.sha256.strip()
+                else hashlib.sha256(content.encode("utf-8")).hexdigest()
+            )
+            rec = _SERVER_BLOC_STORE.upsert(
+                file_meta={
+                    "path": path,
+                    "media_type": str(req.media_type or "text"),
+                    "size_bytes": int(req.size_bytes) if req.size_bytes is not None else len(content.encode("utf-8")),
+                    "mtime_ns": int(req.mtime_ns) if req.mtime_ns is not None else time.time_ns(),
+                    "sha256": sha256,
+                    "content_sha256": content_sha256,
+                    "format": req.format,
+                    "content_length": len(content),
+                    "estimated_tokens": int(req.estimated_tokens) if req.estimated_tokens is not None else None,
+                },
+                content=content,
+                relpath_base=Path(os.path.expanduser(req.relpath_base)) if isinstance(req.relpath_base, str) and req.relpath_base.strip() else None,
+                summary=req.summary,
+                keywords=req.keywords,
+            )
+            _SERVER_BLOC_STORE.ensure_bloc_ids()
+            rec = _SERVER_BLOC_STORE.get(rec.sha256) or rec
+            return {"ok": True, "operation": "upsert_text", "record": rec.to_dict()}
+        except Exception as e:
+            return _local_bloc_error("upsert_text", e, status_code=500)
+    body = req.model_dump(exclude_none=True)
+    base_url = body.pop("base_url", None)
+    body.pop("provider", None)
+    body.pop("model", None)
+    api_key = body.pop("api_key", None)
+    return _proxy_endpoint_control_request(
+        http_request=http_request,
+        base_url=base_url,
+        api_key=api_key,
+        method="POST",
+        path="/acore/blocs/upsert_text",
+        json_body=body,
+    )
+
+
+@app.get(
+    "/acore/blocs/record",
+    tags=["memory-blocs"],
+    summary="Get Bloc Record",
+    description="Fetch a bloc record from the gateway-local bloc store, or proxy the same operation to an upstream AbstractEndpoint when `base_url` is provided.",
+)
+def acore_bloc_record(
+    http_request: Request,
+    base_url: Optional[str] = Query(None, description="Upstream AbstractEndpoint base_url (optionally including /v1)"),
+    sha256: Optional[str] = Query(None, description="Bloc sha256 selector."),
+    bloc_id: Optional[int] = Query(None, description="Stable integer bloc selector."),
+    api_key: Optional[str] = Query(None, description="Deprecated/disabled. Use X-AbstractCore-Provider-API-Key for provider overrides."),
+):
+    _reject_query_api_key(api_key)
+    if not isinstance(base_url, str) or not base_url.strip():
+        rec = _resolve_local_bloc_selector(sha256=sha256, bloc_id=bloc_id)
+        if rec is None:
+            return _local_bloc_error("record", "bloc not found", status_code=404)
+        return {"ok": True, "operation": "record", "record": rec.to_dict()}
+    return _proxy_endpoint_control_request(
+        http_request=http_request,
+        base_url=base_url,
+        api_key=api_key,
+        method="GET",
+        path="/acore/blocs/record",
+        query_params={"sha256": sha256, "bloc_id": bloc_id},
+    )
+
+
+@app.get(
+    "/acore/blocs/kv/manifest",
+    tags=["memory-blocs"],
+    summary="Get Bloc KV Manifest",
+    description="Inspect a bloc KV manifest on a loaded gateway runtime (`provider` + `model`) or on an upstream AbstractEndpoint (`base_url`).",
+)
+def acore_bloc_kv_manifest(
+    http_request: Request,
+    runtime_id: Optional[str] = Query(None, description="Specific loaded gateway runtime identifier."),
+    base_url: Optional[str] = Query(None, description="Upstream AbstractEndpoint base_url (optionally including /v1)"),
+    provider: Optional[str] = Query(None, description="Gateway-local provider name for a loaded runtime."),
+    model: Optional[str] = Query(None, description="Gateway-local model identifier for a loaded runtime."),
+    sha256: Optional[str] = Query(None, description="Bloc sha256 selector."),
+    bloc_id: Optional[int] = Query(None, description="Stable integer bloc selector."),
+    artifact_path: Optional[str] = Query(None, description="Optional explicit upstream artifact path override."),
+    api_key: Optional[str] = Query(None, description="Deprecated/disabled. Use X-AbstractCore-Provider-API-Key for provider overrides."),
+):
+    _reject_query_api_key(api_key)
+    local_requested = bool((runtime_id and runtime_id.strip()) or (str(provider or "").strip() and str(model or "").strip()))
+    if local_requested:
+        provider_s = str(provider or "").strip().lower()
+        model_s = str(model or "").strip()
+        rec = _resolve_local_bloc_selector(sha256=sha256, bloc_id=bloc_id)
+        if rec is None:
+            return _local_bloc_error("kv_manifest", "bloc not found", status_code=404)
+        runtime = _resolve_local_runtime_for_control(provider=provider_s, model=model_s, base_url=base_url, runtime_id=runtime_id, http_request=http_request)
+        with runtime.lock:
+            try:
+                _touch_loaded_gateway_runtime(runtime)
+                manifest = read_bloc_kv_manifest(
+                    provider=runtime.llm,
+                    store=_SERVER_BLOC_STORE,
+                    model=model_s,
+                    record=rec,
+                    artifact_path=artifact_path,
+                )
+                if manifest is None:
+                    return _local_bloc_error("kv_manifest", "manifest not found", status_code=404)
+                return {"ok": True, "operation": "kv_manifest", "manifest": manifest.to_dict()}
+            except Exception as e:
+                return _local_bloc_error("kv_manifest", e, status_code=500)
+    return _proxy_endpoint_control_request(
+        http_request=http_request,
+        base_url=base_url,
+        api_key=api_key,
+        method="GET",
+        path="/acore/blocs/kv/manifest",
+        query_params={"sha256": sha256, "bloc_id": bloc_id, "artifact_path": artifact_path},
+    )
+
+
+@app.post(
+    "/acore/blocs/kv/ensure",
+    tags=["memory-blocs"],
+    summary="Ensure Bloc KV Artifact",
+    description="Compile or validate an MLX bloc KV artifact on a loaded gateway runtime (`provider` + `model`) or proxy the same operation to an upstream AbstractEndpoint (`base_url`).",
+)
+def acore_bloc_kv_ensure(req: BlocKVEnsureProxyRequest, http_request: Request):
+    _reject_body_api_key(req.api_key)
+    local_requested = bool((req.runtime_id and req.runtime_id.strip()) or (str(req.provider or "").strip() and str(req.model or "").strip()))
+    if local_requested:
+        provider_s = str(req.provider or "").strip().lower()
+        model_s = str(req.model or "").strip()
+        rec = _resolve_local_bloc_selector(sha256=req.sha256, bloc_id=req.bloc_id)
+        if rec is None:
+            return _local_bloc_error("kv_ensure", "bloc not found", status_code=404)
+        runtime = _resolve_local_runtime_for_control(provider=provider_s, model=model_s, base_url=req.base_url, runtime_id=req.runtime_id, http_request=http_request)
+        with runtime.lock:
+            try:
+                _touch_loaded_gateway_runtime(runtime)
+                result = ensure_bloc_kv_artifact(
+                    provider=runtime.llm,
+                    store=_SERVER_BLOC_STORE,
+                    model=model_s,
+                    record=rec,
+                    artifact_path=req.artifact_path,
+                    force_rebuild=bool(req.force_rebuild),
+                )
+                return {
+                    "ok": True,
+                    "operation": "kv_ensure",
+                    "artifact": {
+                        "artifact_path": str(result.artifact_path),
+                        "manifest_path": str(result.manifest_path),
+                        "compiled": bool(result.compiled),
+                        "rebuilt": bool(result.rebuilt),
+                        "source_cache_key": result.source_cache_key,
+                        "manifest": result.manifest.to_dict(),
+                    },
+                }
+            except Exception as e:
+                return _local_bloc_error("kv_ensure", e, status_code=500)
+    body = req.model_dump(exclude_none=True)
+    body.pop("runtime_id", None)
+    base_url = body.pop("base_url", None)
+    body.pop("provider", None)
+    body.pop("model", None)
+    api_key = body.pop("api_key", None)
+    return _proxy_endpoint_control_request(
+        http_request=http_request,
+        base_url=base_url,
+        api_key=api_key,
+        method="POST",
+        path="/acore/blocs/kv/ensure",
+        json_body=body,
+    )
+
+
+@app.post(
+    "/acore/blocs/kv/load",
+    tags=["memory-blocs"],
+    summary="Load Bloc KV Artifact",
+    description="Load or fork an MLX bloc KV artifact into a prompt-cache key on a loaded gateway runtime (`provider` + `model`) or an upstream AbstractEndpoint (`base_url`).",
+)
+def acore_bloc_kv_load(req: BlocKVLoadProxyRequest, http_request: Request):
+    _reject_body_api_key(req.api_key)
+    local_requested = bool((req.runtime_id and req.runtime_id.strip()) or (str(req.provider or "").strip() and str(req.model or "").strip()))
+    if local_requested:
+        provider_s = str(req.provider or "").strip().lower()
+        model_s = str(req.model or "").strip()
+        rec = _resolve_local_bloc_selector(sha256=req.sha256, bloc_id=req.bloc_id)
+        if rec is None:
+            return _local_bloc_error("kv_load", "bloc not found", status_code=404)
+        runtime = _resolve_local_runtime_for_control(provider=provider_s, model=model_s, base_url=req.base_url, runtime_id=req.runtime_id, http_request=http_request)
+        with runtime.lock:
+            try:
+                _touch_loaded_gateway_runtime(runtime)
+                result = load_bloc_kv_artifact(
+                    provider=runtime.llm,
+                    store=_SERVER_BLOC_STORE,
+                    model=model_s,
+                    record=rec,
+                    artifact_path=req.artifact_path,
+                    stable_cache_key=req.stable_cache_key,
+                    key=req.key,
+                    make_default=bool(req.make_default),
+                    force_rebuild=bool(req.force_rebuild),
+                )
+                return {
+                    "ok": True,
+                    "operation": "kv_load",
+                    "artifact": {
+                        "artifact_path": str(result.artifact_path),
+                        "manifest_path": str(result.manifest_path),
+                        "compiled": bool(result.compiled),
+                        "loaded": bool(result.loaded),
+                        "reloaded_stable_key": bool(result.reloaded_stable_key),
+                        "key": result.key,
+                        "stable_cache_key": result.stable_cache_key,
+                        "forked_from": result.forked_from,
+                        "manifest": result.manifest.to_dict(),
+                    },
+                }
+            except Exception as e:
+                return _local_bloc_error("kv_load", e, status_code=500)
+    body = req.model_dump(exclude_none=True)
+    body.pop("runtime_id", None)
+    base_url = body.pop("base_url", None)
+    body.pop("provider", None)
+    body.pop("model", None)
+    api_key = body.pop("api_key", None)
+    return _proxy_endpoint_control_request(
+        http_request=http_request,
+        base_url=base_url,
+        api_key=api_key,
+        method="POST",
+        path="/acore/blocs/kv/load",
         json_body=body,
     )
 
@@ -4617,9 +5750,15 @@ async def process_chat_completion(
                 },
             )
 
-        llm = create_llm(provider, model=model, **provider_kwargs)
+        loaded_runtime = _get_loaded_gateway_runtime(
+            provider=provider_normalized,
+            model=model,
+            base_url=provider_kwargs.get("base_url"),
+            explicit_provider_key_hash=_provider_key_fingerprint(provider_api_key),
+        )
+        llm = loaded_runtime.llm if loaded_runtime is not None else create_llm(provider, model=model, **provider_kwargs)
         ollama_key: Optional[Tuple[str, str, str]] = None
-        if provider_normalized == "ollama":
+        if loaded_runtime is None and provider_normalized == "ollama":
             base_url_for_key = provider_kwargs.get("base_url")
             if not isinstance(base_url_for_key, str) or not base_url_for_key.strip():
                 base_url_for_key = request.base_url
@@ -4689,12 +5828,18 @@ async def process_chat_completion(
                         unload_after=unload_after_requested,
                         ollama_key=ollama_key,
                         allow_unsafe_unload_after=allow_unsafe_unload_after,
+                        loaded_runtime=loaded_runtime,
                     ),
                     media_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
                 )
             else:
-                response = llm.generate(**gen_kwargs)
+                if loaded_runtime is not None:
+                    with loaded_runtime.lock:
+                        _touch_loaded_gateway_runtime(loaded_runtime)
+                        response = llm.generate(**gen_kwargs)
+                else:
+                    response = llm.generate(**gen_kwargs)
                 openai_response = convert_to_openai_response(
                     response, provider, model, syntax_rewriter, request_id
                 )
@@ -4709,7 +5854,9 @@ async def process_chat_completion(
                 return openai_response
         finally:
             if not request.stream:
-                if provider_normalized == "ollama" and ollama_key is not None:
+                if loaded_runtime is not None and unload_after_requested:
+                    _best_effort_unload_loaded_gateway_runtime(loaded_runtime, request_id=request_id)
+                elif provider_normalized == "ollama" and ollama_key is not None:
                     should_unload = _ollama_inflight_exit(ollama_key, unload_after_requested=unload_after_requested)
                     if should_unload and allow_unsafe_unload_after:
                         _best_effort_unload(llm, request_id=request_id, provider=provider, model=model)
@@ -4769,6 +5916,7 @@ def generate_streaming_response(
     unload_after: bool = False,
     ollama_key: Optional[Tuple[str, str, str]] = None,
     allow_unsafe_unload_after: bool = False,
+    loaded_runtime: Optional[_GatewayLoadedRuntime] = None,
 ) -> Iterator[str]:
     """Generate OpenAI-compatible streaming response with syntax rewriting."""
     provider_normalized = provider.strip().lower()
@@ -4777,7 +5925,17 @@ def generate_streaming_response(
         created_time = int(time.time())
         has_tool_calls = False
 
-        for chunk in llm.generate(**gen_kwargs):
+        def _iter_chunks() -> Iterator[Any]:
+            if loaded_runtime is not None:
+                with loaded_runtime.lock:
+                    _touch_loaded_gateway_runtime(loaded_runtime)
+                    for item in llm.generate(**gen_kwargs):
+                        yield item
+                return
+            for item in llm.generate(**gen_kwargs):
+                yield item
+
+        for chunk in _iter_chunks():
             # Content streaming
             if hasattr(chunk, 'content') and chunk.content:
                 content = chunk.content
@@ -4905,7 +6063,9 @@ def generate_streaming_response(
         error_chunk = {"error": {"message": str(e), "type": "server_error"}}
         yield f"data: {json.dumps(error_chunk)}\n\n"
     finally:
-        if provider_normalized == "ollama" and ollama_key is not None:
+        if loaded_runtime is not None and unload_after:
+            _best_effort_unload_loaded_gateway_runtime(loaded_runtime, request_id=request_id)
+        elif provider_normalized == "ollama" and ollama_key is not None:
             try:
                 should_unload = _ollama_inflight_exit(ollama_key, unload_after_requested=unload_after)
             except Exception as e:

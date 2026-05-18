@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.16] - 2026-05-19
+
+### Added
+- **Gateway warm-runtime control plane**: added `/acore/models/load`, `/acore/models/loaded`, and `/acore/models/unload` so the multi-provider server can keep local runtimes warm and expose a stable runtime selector for follow-up prompt-cache and memory-bloc operations.
+- **Direct gateway bloc/prompt-cache orchestration**: the server now supports local prompt-cache and MLX bloc-KV control-plane calls against loaded gateway runtimes instead of requiring every workflow to proxy through a separate `AbstractEndpoint`.
+- **MLX bloc artifact integrity coverage**: added focused unit/integration coverage for suffix-preserving artifact writes, resolved-model-id cache loading, gateway runtime reuse, and local/proxied bloc control-plane behavior.
+
+### Changed
+- **Gateway reuse path**: `/v1/chat/completions` now reuses a matching warm runtime when one has already been loaded into the gateway, including MLX prompt-cache/bloc workflows that need model state to stay hot across requests.
+- **Control-plane contract**: prompt-cache and memory-bloc server routes now accept `runtime_id` as the cleanest selector for a loaded runtime when multiple warm runtimes share the same `provider` + `model`, with `provider`/`model` and optional `base_url` remaining as stable fallback selectors.
+- **Documentation set**: server, endpoint, memory-bloc, and server README docs now describe both direct gateway mode and upstream `AbstractEndpoint` proxy mode, and they document that `/acore/blocs/kv/load` returns `artifact.key` for reuse as `prompt_cache_key`.
+
+### Fixed
+- **Bloc control-plane HTTP semantics**: `AbstractEndpoint` memory-bloc routes now return real HTTP error statuses for missing blocs/manifests and execution failures instead of always returning `200` with `ok: false`.
+- **Real MLX artifact persistence**: bloc KV temp artifact handling now preserves the original artifact suffix, which fixes practical save/load behavior against real MLX prompt-cache files.
+- **MLX metadata generation reuse path**: bloc metadata generation now consumes the shared MLX bloc-KV loader path correctly and avoids mutating the provider default cache key as a side effect.
+
 ## [2.13.15] - 2026-05-18
 
 ### Added

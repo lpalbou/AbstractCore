@@ -55,6 +55,7 @@ class MLXProvider(BaseProvider):
 
         self.llm = None
         self.tokenizer = None
+        self._resolved_model_id: Optional[str] = None
         self._load_model()
 
     def supports_prompt_cache(self) -> bool:
@@ -404,6 +405,9 @@ class MLXProvider(BaseProvider):
         out_meta.setdefault("format", "abstractcore-prompt-cache/v1")
         out_meta.setdefault("provider", str(getattr(self, "provider", "mlx")))
         out_meta.setdefault("model", str(getattr(self, "model", "")))
+        resolved_model_id = str(getattr(self, "_resolved_model_id", "") or "").strip()
+        if resolved_model_id:
+            out_meta.setdefault("model_resolved_id", resolved_model_id)
         out_meta.setdefault("saved_at", datetime.now().isoformat())
 
         try:
@@ -472,14 +476,24 @@ class MLXProvider(BaseProvider):
         loaded_cache, meta = load_prompt_cache(str(filename), return_metadata=True)
         meta_dict: Dict[str, Any] = dict(meta or {}) if isinstance(meta, dict) else {}
 
-        required_model = meta_dict.get("model") or meta_dict.get("model_id")
-        current_model = str(getattr(self, "model", ""))
-        if isinstance(required_model, str) and required_model.strip() and required_model.strip() != current_model:
+        required_ids = {
+            str(meta_dict.get("model") or "").strip(),
+            str(meta_dict.get("model_id") or "").strip(),
+            str(meta_dict.get("model_resolved_id") or "").strip(),
+        }
+        required_ids.discard("")
+        current_ids = {str(getattr(self, "model", "") or "").strip()}
+        resolved_model_id = str(getattr(self, "_resolved_model_id", "") or "").strip()
+        if resolved_model_id:
+            current_ids.add(resolved_model_id)
+        current_ids.discard("")
+        if required_ids and not (required_ids & current_ids):
             raise ValueError(
-                f"Prompt cache model mismatch: cache expects '{required_model.strip()}', current model is '{current_model}'."
+                "Prompt cache model mismatch: "
+                f"cache expects one of {sorted(required_ids)!r}, current provider is {sorted(current_ids)!r}."
             )
 
-        if not isinstance(required_model, str) or not required_model.strip():
+        if not required_ids:
             # Best-effort structural check: layer count mismatch is a strong signal of wrong model.
             try:
                 expected = self._prompt_cache_backend_create()
@@ -676,6 +690,7 @@ class MLXProvider(BaseProvider):
                 raise ModelNotFoundError(msg)
 
             load_target = str(load_dir)
+            self._resolved_model_id = load_target
 
             # Silence the "Fetching" progress bar by redirecting stdout/stderr
             with open(os.devnull, "w") as devnull:

@@ -213,13 +213,21 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Audio | POST | `/{provider}/v1/voice/clone` | Provider-scoped voice-clone route where body model is unprefixed | path `provider`, optional `base_url`, voice-clone form fields |
 | Audio | POST | `/v1/audio/translations` | Reserved OpenAI-compatible translation route | `file`, `model`; returns `501` in this version |
 | Audio | POST | `/v1/audio/music` | Extension endpoint for text-to-music plugins | `prompt`/`input`/`text`, `lyrics`, `format`; requires a music capability plugin |
-| Prompt Cache | GET | `/acore/prompt_cache/stats` | Proxy cache stats to AbstractEndpoint | `base_url`; provider key header if upstream requires auth |
-| Prompt Cache | GET | `/acore/prompt_cache/capabilities` | Proxy cache capability discovery | `base_url`; provider key header if upstream requires auth |
-| Prompt Cache | POST | `/acore/prompt_cache/set` | Select/create upstream cache key | `base_url`, `key`, `make_default`, `ttl_s` |
-| Prompt Cache | POST | `/acore/prompt_cache/update` | Prepare prompt/messages/tools upstream | `base_url`, `key`, `prompt` or `messages`, `system_prompt`, `tools`, `ttl_s` |
-| Prompt Cache | POST | `/acore/prompt_cache/fork` | Fork one upstream cache key to another | `base_url`, `from_key`, `to_key`, `make_default`, `ttl_s` |
-| Prompt Cache | POST | `/acore/prompt_cache/clear` | Clear upstream cache state | `base_url`, optional `key` |
-| Prompt Cache | POST | `/acore/prompt_cache/prepare_modules` | Prepare reusable module/tool context upstream | `base_url`, `namespace`, `modules`, `make_default`, `ttl_s`, `version` |
+| Runtime | POST | `/acore/models/load` | Load and keep warm a gateway-local provider/model runtime | `provider`, `model`, optional `base_url`, `timeout_s` |
+| Runtime | GET | `/acore/models/loaded` | List gateway-local loaded runtimes | optional `provider`, `model` |
+| Runtime | POST | `/acore/models/unload` | Unload a gateway-local runtime | `runtime_id` or `provider` + `model`, optional `base_url` |
+| Prompt Cache | GET | `/acore/prompt_cache/stats` | Cache stats on a loaded gateway runtime or upstream AbstractEndpoint | `provider` + `model` or `base_url`; provider key header if required |
+| Prompt Cache | GET | `/acore/prompt_cache/capabilities` | Cache capability discovery on a loaded gateway runtime or upstream AbstractEndpoint | `provider` + `model` or `base_url`; provider key header if required |
+| Prompt Cache | POST | `/acore/prompt_cache/set` | Select/create a cache key locally or upstream | `provider` + `model` or `base_url`, `key`, `make_default`, `ttl_s` |
+| Prompt Cache | POST | `/acore/prompt_cache/update` | Prepare prompt/messages/tools locally or upstream | `provider` + `model` or `base_url`, `key`, `prompt` or `messages`, `system_prompt`, `tools`, `ttl_s` |
+| Prompt Cache | POST | `/acore/prompt_cache/fork` | Fork one cache key to another locally or upstream | `provider` + `model` or `base_url`, `from_key`, `to_key`, `make_default`, `ttl_s` |
+| Prompt Cache | POST | `/acore/prompt_cache/clear` | Clear local or upstream cache state | `provider` + `model` or `base_url`, optional `key` |
+| Prompt Cache | POST | `/acore/prompt_cache/prepare_modules` | Prepare reusable module/tool context locally or upstream | `provider` + `model` or `base_url`, `namespace`, `modules`, `make_default`, `ttl_s`, `version` |
+| Memory Blocs | POST | `/acore/blocs/upsert_text` | Persist extracted text into the gateway-local bloc store or an upstream AbstractEndpoint bloc store | optional `base_url`, `path`, `content`, optional bloc metadata |
+| Memory Blocs | GET | `/acore/blocs/record` | Inspect a gateway-local or upstream bloc record | optional `base_url`, `sha256` or `bloc_id` |
+| Memory Blocs | GET | `/acore/blocs/kv/manifest` | Inspect a gateway-local or upstream bloc KV manifest | `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path` |
+| Memory Blocs | POST | `/acore/blocs/kv/ensure` | Compile or validate a local or upstream MLX bloc KV artifact | `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path`, `force_rebuild` |
+| Memory Blocs | POST | `/acore/blocs/kv/load` | Load or fork a local or upstream MLX bloc KV artifact into a cache key | `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path`, `stable_cache_key`, `key`, `make_default`, `force_rebuild` |
 
 ### Shared Request Conventions
 
@@ -1357,16 +1365,31 @@ Server health check for monitoring.
 
 ---
 
+### Runtime Control Plane
+
+If you want the gateway itself to keep a local model warm, use:
+
+- `POST /acore/models/load`
+- `GET /acore/models/loaded`
+- `POST /acore/models/unload`
+
+`/acore/models/load` creates or reuses a gateway-local runtime keyed by
+`provider`, `model`, optional `base_url`, and the explicit provider-key
+override when one is supplied. Later `/v1/chat/completions` calls that target
+the same provider/model automatically reuse that warm runtime instead of
+creating a fresh provider instance per request.
+
 ### Prompt Cache Control Plane
 
-Prompt-cache routes are AbstractCore extensions for orchestration systems that
-want one gateway to talk to an upstream
-[AbstractEndpoint](endpoint.md) prompt-cache control plane. They proxy to the
-`/acore/prompt_cache/*` routes on the upstream endpoint named by `base_url`.
+Prompt-cache routes support two modes:
 
-These routes do not create local cache state in AbstractCore Server itself.
-They normalize a supplied `base_url`, enforce the same server-side base URL
-allowlist rules as other request-level routing, and forward provider auth only
+- direct gateway mode:
+  - target a previously loaded runtime with `provider` + `model`
+- proxy mode:
+  - target an upstream [AbstractEndpoint](endpoint.md) with `base_url`
+
+In proxy mode, the gateway normalizes `base_url`, enforces the same base URL
+allowlist rules as other request-level routing, and forwards provider auth only
 from `X-AbstractCore-Provider-API-Key` or from `Authorization` when server auth
 is disabled.
 
@@ -1374,7 +1397,9 @@ Common fields:
 
 | Field | Location | Required | Notes |
 |---|---|---:|---|
-| `base_url` | query or JSON body | yes | Upstream AbstractEndpoint URL. It may include `/v1`; the proxy strips that suffix for control-plane calls. |
+| `runtime_id` | query or JSON body | no | Stable selector returned by `/acore/models/load`. Use this when multiple warm runtimes share the same `provider` + `model`. |
+| `provider` + `model` | query or JSON body | yes, unless `base_url` is provided | Select a loaded gateway-local runtime. |
+| `base_url` | query or JSON body | yes, unless `runtime_id` or `provider` + `model` is provided | Upstream AbstractEndpoint URL. It may include `/v1`; the proxy strips that suffix for control-plane calls. In local mode it can also disambiguate a warm runtime that was loaded with a base URL. |
 | `X-AbstractCore-Provider-API-Key` | header | no | Upstream endpoint token when required. |
 | `api_key` | query/body | no | Deprecated/disabled; do not use. |
 | `ttl_s` | JSON body | no | Optional upstream cache TTL in seconds, where supported. |
@@ -1383,13 +1408,13 @@ Operations:
 
 | Endpoint | Method | Parameters | Result |
 |---|---:|---|---|
-| `/acore/prompt_cache/capabilities` | GET | `base_url` | Upstream supported cache features. |
-| `/acore/prompt_cache/stats` | GET | `base_url` | Upstream cache stats. |
-| `/acore/prompt_cache/set` | POST | `base_url`, `key`, `make_default`, `ttl_s` | Select/create a cache key upstream. |
-| `/acore/prompt_cache/update` | POST | `base_url`, `key`, `prompt` or `messages`, `system_prompt`, `tools`, `add_generation_prompt`, `ttl_s` | Prepare prompt/messages/tools into an upstream cache key. |
-| `/acore/prompt_cache/fork` | POST | `base_url`, `from_key`, `to_key`, `make_default`, `ttl_s` | Fork an existing upstream key. |
-| `/acore/prompt_cache/clear` | POST | `base_url`, optional `key` | Clear a key or upstream default/all cache state, depending on backend support. |
-| `/acore/prompt_cache/prepare_modules` | POST | `base_url`, `namespace`, `modules`, `make_default`, `ttl_s`, `version` | Prepare reusable module/tool context upstream. |
+| `/acore/prompt_cache/capabilities` | GET | `provider` + `model` or `base_url` | Cache features on the selected local or upstream runtime. |
+| `/acore/prompt_cache/stats` | GET | `provider` + `model` or `base_url` | Cache stats on the selected local or upstream runtime. |
+| `/acore/prompt_cache/set` | POST | `provider` + `model` or `base_url`, `key`, `make_default`, `ttl_s` | Select/create a cache key locally or upstream. |
+| `/acore/prompt_cache/update` | POST | `provider` + `model` or `base_url`, `key`, `prompt` or `messages`, `system_prompt`, `tools`, `add_generation_prompt`, `ttl_s` | Prepare prompt/messages/tools into a local or upstream cache key. |
+| `/acore/prompt_cache/fork` | POST | `provider` + `model` or `base_url`, `from_key`, `to_key`, `make_default`, `ttl_s` | Fork an existing local or upstream key. |
+| `/acore/prompt_cache/clear` | POST | `provider` + `model` or `base_url`, optional `key` | Clear a local or upstream key, or default/all cache state depending on backend support. |
+| `/acore/prompt_cache/prepare_modules` | POST | `provider` + `model` or `base_url`, `namespace`, `modules`, `make_default`, `ttl_s`, `version` | Prepare reusable module/tool context locally or upstream. |
 
 Example:
 
@@ -1402,6 +1427,65 @@ curl -X POST http://localhost:8000/acore/prompt_cache/update \
     "key": "project-default",
     "messages": [{"role": "system", "content": "You are concise."}],
     "ttl_s": 3600
+  }'
+```
+
+### Memory Blocs Control Plane
+
+Memory-bloc routes also support two modes:
+
+- direct gateway mode:
+  - `POST /acore/models/load`
+  - local `POST /acore/blocs/upsert_text`
+  - local `POST /acore/blocs/kv/ensure`
+  - local `POST /acore/blocs/kv/load`
+  - then normal `/v1/chat/completions`
+- proxy mode:
+  - the same `/acore/blocs/*` routes with `base_url` targeting an upstream `AbstractEndpoint`
+
+That distinction matters:
+
+- gateway-local bloc records live in the gateway bloc store
+- gateway-local loaded cache keys live on the selected loaded runtime
+- proxy-mode loaded cache keys live on the upstream `AbstractEndpoint`
+
+Operations:
+
+| Endpoint | Method | Parameters | Result |
+|---|---:|---|---|
+| `/acore/blocs/upsert_text` | POST | optional `base_url`, `path`, `content`, optional bloc metadata | Persist extracted text into the local bloc store or upstream bloc store. |
+| `/acore/blocs/record` | GET | optional `base_url`, `sha256` or `bloc_id` | Inspect a local or upstream bloc record. |
+| `/acore/blocs/kv/manifest` | GET | `runtime_id` or `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path` | Inspect the local or upstream KV manifest for the selected model. |
+| `/acore/blocs/kv/ensure` | POST | `runtime_id` or `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path`, `force_rebuild` | Compile or validate the durable MLX bloc KV artifact locally or upstream. |
+| `/acore/blocs/kv/load` | POST | `runtime_id` or `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path`, `stable_cache_key`, `key`, `make_default`, `force_rebuild` | Load or fork the local or upstream artifact into a prompt-cache key. |
+
+Typical direct gateway flow:
+
+1. `POST /acore/models/load`
+2. `POST /acore/blocs/upsert_text`
+3. `POST /acore/blocs/kv/ensure`
+4. `POST /acore/blocs/kv/load`
+5. call `/v1/chat/completions` with the returned `artifact.key` as `prompt_cache_key`
+
+Typical remote flow:
+
+1. `POST /acore/blocs/upsert_text`
+2. `POST /acore/blocs/kv/ensure`
+3. `POST /acore/blocs/kv/load`
+4. call `/v1/chat/completions` with the returned `artifact.key` as `prompt_cache_key`
+
+Example:
+
+```bash
+curl -X POST http://localhost:8000/acore/blocs/kv/load \
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "base_url": "http://127.0.0.1:8001/v1",
+    "sha256": "abababababababababababababababababababababababababababababababab",
+    "stable_cache_key": "stable:orbit",
+    "key": "work:orbit",
+    "make_default": false
   }'
 ```
 

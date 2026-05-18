@@ -81,3 +81,29 @@ The `capabilities` object is always included on prompt-cache control-plane respo
 
 For caching concepts, see [Session Management](session.md) and [Architecture](architecture.md).
 For a dedicated overview, see [Prompt Caching](prompt-caching.md).
+
+## Memory blocs and durable MLX bloc KV artifacts
+
+`AbstractEndpoint` can also expose a small memory-bloc control plane for single-model local
+providers, currently aimed at MLX bloc KV reuse:
+
+- `POST /acore/blocs/upsert_text`
+- `GET /acore/blocs/record`
+- `GET /acore/blocs/kv/manifest`
+- `POST /acore/blocs/kv/ensure`
+- `POST /acore/blocs/kv/load`
+
+Typical flow:
+
+1. persist extracted text into the endpoint-local bloc store with `POST /acore/blocs/upsert_text`
+2. compile or validate the durable artifact with `POST /acore/blocs/kv/ensure`
+3. load or fork it into an in-process cache key with `POST /acore/blocs/kv/load`
+4. call `/v1/chat/completions` with the returned `artifact.key` as `prompt_cache_key`
+
+Important boundary:
+
+- the durable artifact is **bloc-only**; it is not a full `system + tools + transcript` bootstrap
+- the loaded cache key is **worker-local** to this `AbstractEndpoint` process
+- stable reuse only works when subsequent requests hit the same long-lived endpoint worker/provider
+
+For the storage contract and Python helpers, see [Memory Blocs](memory-blocs.md).

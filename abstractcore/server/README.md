@@ -42,7 +42,11 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/{provider}/v1/voice/clone` | POST | Provider-scoped voice clone/custom voice extension | `model` (no prefix), `file`, `base_url`, `name` |
 | `/v1/audio/music` | POST | Text-to-music (optional) | `prompt`, `format` |
 | `/{provider}/v1/chat/completions` | POST | Provider-specific endpoint | `model` (no prefix) |
-| `/acore/prompt_cache/*` | GET/POST | Proxy AbstractEndpoint prompt-cache control plane | `base_url`, cache operation fields |
+| `/acore/models/load` | POST | Load a provider/model into the gateway runtime registry | `provider`, `model`, optional `base_url`, `timeout_s` |
+| `/acore/models/loaded` | GET | List currently loaded gateway runtimes | optional `provider`, `model` |
+| `/acore/models/unload` | POST | Unload a gateway runtime | `runtime_id` or `provider` + `model`, optional `base_url` |
+| `/acore/prompt_cache/*` | GET/POST | Prompt-cache control plane on a loaded gateway runtime or proxied AbstractEndpoint | `provider` + `model` or `base_url`, cache operation fields |
+| `/acore/blocs/*` | GET/POST | Memory-bloc / MLX bloc-KV control plane on a loaded gateway runtime or proxied AbstractEndpoint | local store by default, or `runtime_id` / `provider` + `model` / `base_url` as required |
 
 ### Common Request Patterns
 

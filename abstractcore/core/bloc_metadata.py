@@ -20,6 +20,7 @@ import re
 import uuid
 from typing import Any, Dict, Optional, Sequence, Tuple
 
+from .bloc_kv import load_bloc_kv_artifact
 from .file_blocs import FileBlocRecord, FileBlocStore
 
 
@@ -360,6 +361,7 @@ def generate_bloc_metadata_jsonld(
     can_fork = callable(supports) and bool(supports("fork"))
     can_load = callable(supports) and bool(supports("load"))
     can_clear = callable(supports) and bool(supports("clear"))
+    uses_mlx_bloc_cache = str(getattr(provider, "provider", "") or "").strip().lower() == "mlx"
 
     system_prompt = _build_metadata_prompt(schema, record=record)
 
@@ -443,11 +445,23 @@ def generate_bloc_metadata_jsonld(
 
     for attempt in range(3):
         tmp_key = f"tmp:meta:{uuid.uuid4().hex[:12]}"
+        previous_default_key = getattr(provider, "_default_prompt_cache_key", None)
         try:
-            if can_fork and stable_cache_key:
-                provider.prompt_cache_fork(stable_cache_key, tmp_key, make_default=True)
+            if uses_mlx_bloc_cache:
+                load_bloc_kv_artifact(
+                    provider=provider,
+                    store=store,
+                    model=model_id,
+                    record=record,
+                    artifact_path=kv_path,
+                    stable_cache_key=stable_cache_key,
+                    key=tmp_key,
+                    make_default=False,
+                )
+            elif can_fork and stable_cache_key:
+                provider.prompt_cache_fork(stable_cache_key, tmp_key, make_default=False)
             elif can_load and isinstance(kv_path, str) and kv_path:
-                provider.prompt_cache_load(str(kv_path), key=tmp_key, make_default=True)
+                provider.prompt_cache_load(str(kv_path), key=tmp_key, make_default=False)
             else:
                 return BlocMetadataResult(
                     ok=False,
@@ -457,6 +471,11 @@ def generate_bloc_metadata_jsonld(
             user_prompt = "Generate the JSON metadata now." if attempt == 0 else _fix_prompt(
                 error=last_error or "invalid metadata json", raw_text=last_raw
             )
+            call_prompt = user_prompt
+            call_system_prompt: Optional[str] = system_prompt
+            if uses_mlx_bloc_cache:
+                call_system_prompt = None
+                call_prompt = f"{system_prompt}\n\n{user_prompt}"
             attempt_max = int(max_output_tokens)
             if attempt == 1:
                 attempt_max = max(attempt_max, 2048)
@@ -464,8 +483,8 @@ def generate_bloc_metadata_jsonld(
                 attempt_max = max(attempt_max, 4096)
 
             resp = provider.generate(
-                user_prompt,
-                system_prompt=system_prompt,
+                call_prompt,
+                system_prompt=call_system_prompt,
                 stream=False,
                 thinking=False,
                 max_output_tokens=int(attempt_max),
@@ -630,6 +649,10 @@ def generate_bloc_metadata_jsonld(
                     provider.prompt_cache_clear(tmp_key)
                 except Exception:
                     pass
+            if hasattr(provider, "_default_prompt_cache_key"):
+                try:
+                    provider._default_prompt_cache_key = previous_default_key  # type: ignore[attr-defined]
+                except Exception:
+                    pass
 
     return BlocMetadataResult(ok=False, error=last_error or "metadata generation failed")
-

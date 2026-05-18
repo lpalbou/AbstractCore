@@ -210,6 +210,10 @@ class FileBlocStore:
         slug = _slug_provider_model(str(provider or ""), str(model or ""))
         return self._bloc_dir(sha256) / "kv" / f"{slug}{ext}"
 
+    def kv_cache_manifest_path(self, sha256: str, *, provider: str, model: str) -> Path:
+        slug = _slug_provider_model(str(provider or ""), str(model or ""))
+        return self._bloc_dir(sha256) / "kv" / f"{slug}.manifest.json"
+
     def bloc_id_counter_path(self) -> Path:
         """Path for stable, monotonic bloc ids (useful for durable selectors)."""
         return self.root_dir / "bloc_ids.json"
@@ -614,5 +618,11 @@ class FileBlocStore:
     def has_kv_cache(self, sha256: str, *, provider: str, model: str) -> bool:
         try:
             return self.kv_cache_path(sha256, provider=provider, model=model).exists()
+        except Exception:
+            return False
+
+    def has_kv_cache_manifest(self, sha256: str, *, provider: str, model: str) -> bool:
+        try:
+            return self.kv_cache_manifest_path(sha256, provider=provider, model=model).exists()
         except Exception:
             return False
