@@ -370,10 +370,10 @@ class ProviderRegistry:
             if provider_name_norm == "openai-compatible" and not (
                 isinstance(base_url_override, str) and base_url_override.strip()
             ):
-                if not self._has_configured_base_url(provider_name_norm, env_var="OPENAI_COMPATIBLE_BASE_URL"):
+                if not self._has_configured_base_url(provider_name_norm, env_var="OPENAI_BASE_URL"):
                     if raise_on_error:
                         raise ValueError(
-                            "openai-compatible base_url is not configured. Set OPENAI_COMPATIBLE_BASE_URL "
+                            "openai-compatible base_url is not configured. Set OPENAI_BASE_URL "
                             "or pass base_url=... for model discovery."
                         )
                     return []

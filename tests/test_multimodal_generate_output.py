@@ -286,6 +286,8 @@ def test_output_voice_tts_forwards_backend_kwargs(fake_plugins):
             "voice": "coral",
             "format": "wav",
             "speed": 1.1,
+            "provider": "supertonic",
+            "model": "supertonic-3",
             "run_id": "run-1",
             "tags": {"case": "tts"},
             "metadata": {"source": "test"},
@@ -294,6 +296,8 @@ def test_output_voice_tts_forwards_backend_kwargs(fake_plugins):
 
     assert llm.plugin_calls[0][0:4] == ("tts", "Hello from AbstractCore.", "coral", "wav")
     assert llm.plugin_calls[0][4]["speed"] == 1.1
+    assert llm.plugin_calls[0][4]["provider"] == "supertonic"
+    assert llm.plugin_calls[0][4]["model"] == "supertonic-3"
     assert llm.plugin_calls[0][4]["run_id"] == "run-1"
     assert llm.plugin_calls[0][4]["tags"] == {"case": "tts"}
     assert llm.plugin_calls[0][4]["metadata"] == {"source": "test"}
@@ -473,7 +477,7 @@ def test_generated_item_records_backend_and_provider(fake_plugins):
 
     item = response.outputs["image"][0]
     assert item.backend_id == "fake-vision"
-    assert item.provider == "_FakeProvider"
+    assert item.provider == "fake-vision"
 
 
 @pytest.mark.basic

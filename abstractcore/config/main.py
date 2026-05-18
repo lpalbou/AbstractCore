@@ -36,7 +36,7 @@ Usage:
     abstractcore --set-api-key portkey pk_...
 
     # HTTP server auth/hardening
-    abstractcore --set-server-api-key acore-secret
+    abstractcore --set-server-auth-token acore-secret
     abstractcore --set-server-base-url-allowlist https://example.com/v1
 """
 
@@ -229,10 +229,10 @@ def add_arguments(parser: argparse.ArgumentParser):
 
     # HTTP server configuration group
     server_group = parser.add_argument_group('HTTP Server Configuration')
-    server_group.add_argument("--set-server-api-key", metavar="KEY",
-                             help="Set the AbstractCore HTTP server master key")
-    server_group.add_argument("--clear-server-api-key", action="store_true",
-                             help="Clear the persisted AbstractCore HTTP server master key")
+    server_group.add_argument("--set-server-auth-token", dest="set_server_auth_token", metavar="TOKEN",
+                             help="Set the AbstractCore HTTP server auth token")
+    server_group.add_argument("--clear-server-auth-token", dest="clear_server_auth_token", action="store_true",
+                             help="Clear the persisted AbstractCore HTTP server auth token")
     server_group.add_argument("--allow-unauthenticated-server", action="store_true",
                              help="Allow unauthenticated HTTP server requests (local/dev only)")
     server_group.add_argument("--disallow-unauthenticated-server", action="store_true",
@@ -451,15 +451,15 @@ def print_status():
     print("│")
     print("│  🛡️  HTTP Server Gateway")
     server = status.get("server", {})
-    if "✅" in str(server.get("api_key", "")):
-        print("│     ✅ Server auth     Master key configured")
+    if "✅" in str(server.get("auth_token", "")):
+        print("│     ✅ Server auth     Auth token configured")
         print("│     🔐 Provider keys   Server-configured keys are available to authenticated clients")
     elif server.get("allow_unauthenticated"):
         print("│     ⚠️  Server auth     Unauthenticated local/dev mode enabled")
         print("│     🔑 Provider keys   Clients must bring provider keys for server-held providers")
     else:
-        print("│     ⚠️  Server auth     No master key configured")
-        print("│     🔑 Provider keys   Clients can bring keys via Authorization/X-AbstractCore-Provider-API-Key")
+        print("│     ⚠️  Server auth     No auth token configured")
+        print("│     🔑 Provider keys   Clients can bring keys via X-AbstractCore-Provider-API-Key")
     if server.get("base_url_allowlist"):
         print(f"│     🌐 base_url list   {server['base_url_allowlist']}")
     if server.get("url_fetch_allowlist"):
@@ -648,7 +648,7 @@ def print_status():
     print("│     abstractcore --set-global-default PROVIDER/MODEL")
     print("│     abstractcore --set-app-default APPNAME PROVIDER MODEL")
     print("│     abstractcore --set-api-key PROVIDER YOUR_KEY")
-    print("│     abstractcore --set-server-api-key SERVER_KEY")
+    print("│     abstractcore --set-server-auth-token SERVER_TOKEN")
     print("│")
     print("│  🔧 Media & Behavior")
     print("│     abstractcore --set-vision-provider PROVIDER MODEL")
@@ -717,7 +717,7 @@ def interactive_configure():
                 "ollama": ("OLLAMA_BASE_URL", "http://localhost:11434"),
                 "lmstudio": ("LMSTUDIO_BASE_URL", "http://localhost:1234/v1"),
                 "vllm": ("VLLM_BASE_URL", "http://localhost:8000/v1"),
-                "openai-compatible": ("OPENAI_COMPATIBLE_BASE_URL", "http://localhost:1234/v1"),
+                "openai-compatible": ("OPENAI_BASE_URL", "http://localhost:1234/v1"),
             }
             if selected_provider in _LOCAL_PROVIDER_ENV_VARS:
                 env_var, default_url = _LOCAL_PROVIDER_ENV_VARS[selected_provider]
@@ -772,22 +772,22 @@ def interactive_configure():
     # Ask about HTTP server auth and hardening.
     print("\n4. HTTP Server / Gateway Auth")
     print("The optional OpenAI-compatible server can use provider keys saved above.")
-    print("With a server master key, clients authenticate to AbstractCore and can use server-configured provider keys.")
-    print("Without a server master key, clients must bring provider keys via Authorization or X-AbstractCore-Provider-API-Key.")
+    print("With a server auth token, clients authenticate to AbstractCore and can use server-configured provider keys.")
+    print("Without a server auth token, clients must bring provider keys via X-AbstractCore-Provider-API-Key.")
     print("Provider keys in request bodies or query strings are disabled.")
     server_choice = input("Configure HTTP server auth/hardening? [y/N]: ").lower().strip()
     if server_choice == 'y':
-        server_key = input("Server master key (blank to skip, 'generate' to create one, 'clear' to remove): ").strip()
-        server_key_lower = server_key.lower()
-        if server_key_lower == "generate":
-            server_key = secrets.token_urlsafe(32)
-            print(f"Generated server key: {server_key}")
-        if server_key_lower == "clear":
-            config_manager.set_server_api_key(None)
-            print("✅ Cleared AbstractCore server master key")
-        elif server_key:
-            config_manager.set_server_api_key(server_key)
-            print("✅ Set AbstractCore server master key")
+        server_token = input("Server auth token (blank to skip, 'generate' to create one, 'clear' to remove): ").strip()
+        server_token_lower = server_token.lower()
+        if server_token_lower == "generate":
+            server_token = secrets.token_urlsafe(32)
+            print(f"Generated server auth token: {server_token}")
+        if server_token_lower == "clear":
+            config_manager.set_server_auth_token(None)
+            print("✅ Cleared AbstractCore server auth token")
+        elif server_token:
+            config_manager.set_server_auth_token(server_token)
+            print("✅ Set AbstractCore server auth token")
 
         unauth = input("Allow unauthenticated local/dev server requests? [y/N]: ").lower().strip()
         if unauth in ("y", "yes"):
@@ -1560,14 +1560,14 @@ def handle_commands(args) -> bool:
         handled = True
 
     # HTTP server configuration
-    if getattr(args, "set_server_api_key", None):
-        config_manager.set_server_api_key(args.set_server_api_key)
-        print("✅ Set AbstractCore server master key")
+    if getattr(args, "set_server_auth_token", None):
+        config_manager.set_server_auth_token(args.set_server_auth_token)
+        print("✅ Set AbstractCore server auth token")
         handled = True
 
-    if getattr(args, "clear_server_api_key", False):
-        config_manager.set_server_api_key(None)
-        print("✅ Cleared AbstractCore server master key")
+    if getattr(args, "clear_server_auth_token", False):
+        config_manager.set_server_auth_token(None)
+        print("✅ Cleared AbstractCore server auth token")
         handled = True
 
     if getattr(args, "allow_unauthenticated_server", False):
@@ -1774,7 +1774,7 @@ COMMON TASKS:
   abstractcore --set-api-key openai-compatible endpoint-key
 
   # Configure HTTP server auth/gateway behavior
-  abstractcore --set-server-api-key acore-server-secret
+  abstractcore --set-server-auth-token acore-server-secret
   abstractcore --set-server-base-url-allowlist https://example.com/v1
 
   # Setup vision for images (with text-only models)

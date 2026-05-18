@@ -232,7 +232,7 @@ Open-source-first: local providers (Ollama, LMStudio, vLLM, openai-compatible, H
 - `ollama`: local server at `OLLAMA_BASE_URL` (or legacy `OLLAMA_HOST`)
 - `lmstudio`: OpenAI-compatible local server at `LMSTUDIO_BASE_URL` (default: `http://localhost:1234/v1`)
 - `vllm`: OpenAI-compatible server at `VLLM_BASE_URL` (default: `http://localhost:8000/v1`)
-- `openai-compatible`: generic OpenAI-compatible endpoints via `OPENAI_COMPATIBLE_BASE_URL` (default: `http://localhost:1234/v1`)
+- `openai-compatible`: generic OpenAI-compatible endpoints via `OPENAI_BASE_URL` (default: `http://localhost:1234/v1`)
 - `huggingface`: local models via Transformers (optional `HUGGINGFACE_TOKEN` for gated downloads)
 - `mlx`: Apple Silicon local models (optional `HUGGINGFACE_TOKEN` for gated downloads)
 
@@ -240,7 +240,7 @@ You can also persist settings (including API keys) via the config CLI:
 - `abstractcore --status`
 - `abstractcore --configure` (alias: `--config`)
 - `abstractcore --set-api-key openai sk-...`
-- `abstractcore --set-server-api-key acore-server-secret`
+- `abstractcore --set-server-auth-token acore-server-secret`
 
 ## What’s inside (quick tour)
 
@@ -310,7 +310,7 @@ Notes:
 - **Images**: use a vision-capable model, or configure **vision fallback** for text-only models (`abstractcore --config`; `abstractcore --set-vision-provider PROVIDER MODEL`).
 - **Video**: `video_policy="auto"` (default) uses native video when supported, otherwise samples frames (requires `ffmpeg`/`ffprobe`) and routes them through image/vision handling (so you still need a vision-capable model or vision fallback configured).
 - **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` and install `abstractcore[voice]` for speech-to-text.
-  `abstractvoice` 0.9.3+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines and cloning backends.
+  `abstractvoice` 0.10.3+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines and cloning backends.
 
 Configure defaults (optional):
 
@@ -362,8 +362,9 @@ stt_models = llm.voice.list_stt_models()
 ```
 
 The HTTP server exposes equivalent discovery at
-`/v1/vision/provider_models`, `/v1/audio/voices`,
-`/v1/audio/speech/models`, and `/v1/audio/transcriptions/models`.
+`/v1/vision/providers/`, `/v1/vision/models`, `/v1/audio/voices`,
+`/v1/audio/speech/models`, `/v1/audio/transcriptions/models`, and
+`/v1/voice/clone/providers`.
 `/v1/models` remains focused on LLM and embedding provider models.
 
 ## HTTP server (OpenAI-compatible gateway)

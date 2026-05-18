@@ -288,8 +288,8 @@ for chunk in llm.generate("Search for AI news", tools=tools, stream=True):
 **Installation**: `pip install abstractcore` (no extra deps)
 
 **Setup**:
-- Base URL: `base_url=...` or `OPENAI_COMPATIBLE_BASE_URL`
-- Optional key: `api_key=...` or `OPENAI_COMPATIBLE_API_KEY`
+- Base URL: `base_url=...` or `OPENAI_BASE_URL`
+- Optional key: `api_key=...` or `OPENAI_API_KEY`
 
 **Usage**:
 ```python

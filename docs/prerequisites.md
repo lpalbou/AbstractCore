@@ -586,9 +586,9 @@ AbstractCore supports a generic OpenAI-compatible provider plus specific conveni
 You must include `/v1` for OpenAI-compatible servers:
 
 ```bash
-export OPENAI_COMPATIBLE_BASE_URL="http://localhost:1234/v1"
+export OPENAI_BASE_URL="http://localhost:1234/v1"
 # Optional (if your endpoint requires auth)
-export OPENAI_COMPATIBLE_API_KEY="your-api-key"
+export OPENAI_API_KEY="your-api-key"
 ```
 
 #### 2. Test Setup

@@ -24,7 +24,7 @@ pip install "abstractcore[voice]"
 pip install "abstractcore[vision]"
 ```
 
-`abstractvoice` 0.9.2+ can install its base AbstractCore plugin path on
+`abstractvoice` 0.10.3+ can install its base AbstractCore plugin path on
 Python 3.9, but Python 3.10+ is recommended. Optional/heavier engines such as
 OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths, and AEC requires
 Python 3.11+.
@@ -50,7 +50,7 @@ image_models = llm.vision.list_provider_models(task="text_to_image")
 
 # Remote OpenAI-compatible path:
 # export ABSTRACTVISION_BACKEND=openai
-# export ABSTRACTVISION_BASE_URL=http://localhost:8000/v1
+# export OPENAI_BASE_URL=http://localhost:8000/v1
 # unset ABSTRACTVISION_MODEL_ID  # omit model and use the server's configured image default
 # png_bytes = llm.vision.t2i("a red square")
 ```
@@ -85,12 +85,13 @@ Direct `llm.vision` calls are provided by `abstractvision`. For local Diffusers,
 choose an explicit model/default in AbstractVision, pre-download model weights,
 or explicitly opt in to runtime downloads with
 `ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD=1`. For server/OpenAI-compatible use,
-point `ABSTRACTVISION_BASE_URL` at an image endpoint such as AbstractCore
+point `OPENAI_BASE_URL` at an image endpoint such as AbstractCore
 Server's `/v1`.
 
 The server exposes the same deep catalogs through:
 
-- `GET /v1/vision/provider_models`
+- `GET /v1/vision/providers/`
+- `GET /v1/vision/models`
 - `GET /v1/audio/voices`
 - `GET /v1/audio/speech/models`
 
@@ -118,7 +119,7 @@ speech = llm.generate(
 
 For OpenAI-compatible audio servers, use `voice_tts_engine="openai-compatible"`
 and set `voice_remote_base_url` / `voice_remote_api_key`, or the equivalent
-`ABSTRACTVOICE_REMOTE_BASE_URL` / `ABSTRACTVOICE_REMOTE_API_KEY` environment
+`OPENAI_BASE_URL` / `OPENAI_API_KEY` environment
 variables. Voice clone/register also requires a backend that exposes a local or
 remote clone route.
 

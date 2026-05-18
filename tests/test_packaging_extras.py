@@ -49,25 +49,32 @@ def test_server_extra_stays_vision_runtime_light() -> None:
 
     assert "abstractvision" not in server_block
     assert "abstractvoice" not in server_block
-    assert "abstractvoice>=0.9.4" in voice_block
+    assert "abstractvoice>=0.10.3" in voice_block
     assert "abstractmusic" not in voice_block
-    assert "abstractvoice>=0.9.4" in audio_block
-    assert "abstractvision>=0.3.5" in vision_block
-    assert "abstractvision[huggingface]>=0.3.5" in vision_diffusers_block
-    assert "abstractvision[sdcpp]>=0.3.5" in vision_sdcpp_block
-    assert "abstractvision[local]>=0.3.5" in vision_local_block
+    assert "abstractvoice>=0.10.3" in audio_block
+    assert "abstractvision>=0.3.6" in vision_block
+    assert "abstractvision[huggingface]>=0.3.6" in vision_diffusers_block
+    assert "abstractvision[sdcpp]>=0.3.6" in vision_sdcpp_block
+    assert "abstractvision[local]>=0.3.6" in vision_local_block
     assert "abstractmusic>=0.1.1" in music_block
-    assert "abstractvoice[all-apple]>=0.9.4" in all_apple_block
-    assert "abstractvision[all-apple]>=0.3.5" in all_apple_block
+    assert "abstractvoice[all-apple]>=0.10.3" in all_apple_block
+    assert "abstractvision[all-apple]>=0.3.6" in all_apple_block
     assert "abstractmusic[all-apple]>=0.1.1" in all_apple_block
     assert "vllm" not in all_apple_block
-    assert "abstractvoice[all-gpu]>=0.9.4" in all_gpu_block
-    assert "abstractvision[all-gpu]>=0.3.5" in all_gpu_block
+    assert "abstractvoice[all-gpu]>=0.10.3" in all_gpu_block
+    assert "abstractvision[all-gpu]>=0.3.6" in all_gpu_block
     assert "abstractmusic[all-gpu]>=0.1.1" in all_gpu_block
     assert "mlx-lm" not in all_gpu_block
-    assert "abstractvoice>=0.9.4" in full_dev_block
-    assert "abstractvision>=0.3.5" in full_dev_block
+    assert "abstractvoice>=0.10.3" in full_dev_block
+    assert "abstractvision>=0.3.6" in full_dev_block
     assert "abstractmusic>=0.1.1" in full_dev_block
+
+    assert "transformers>=5.3.0,<6.0.0" in all_apple_block
+    assert "torch>=2.7.1,<3.0.0" in all_apple_block
+    assert "llama-cpp-python>=0.3.23,<1.0.0" in all_apple_block
+    assert "accelerate>=1.0.0" in all_apple_block
+    assert "numpy>=2.1.0,<3.0.0" in all_apple_block
+    assert "Pillow>=12.1.1,<13.0.0" in all_apple_block
 
 
 def test_server_docker_image_installs_exact_lightweight_release_wheel() -> None:

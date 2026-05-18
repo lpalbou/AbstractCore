@@ -11,7 +11,7 @@ class StubConfigManager:
         self.default_model = None
         self.vision_calls = []
         self.api_keys = {}
-        self.server_api_key = None
+        self.server_auth_token = None
         self.server_allow_unauthenticated = None
         self.server_base_url_allowlist = None
         self.server_url_fetch_allowlist = None
@@ -32,8 +32,8 @@ class StubConfigManager:
     def set_api_key(self, provider: str, key: str) -> None:
         self.api_keys[provider] = key
 
-    def set_server_api_key(self, key: str) -> None:
-        self.server_api_key = key
+    def set_server_auth_token(self, key: str) -> None:
+        self.server_auth_token = key
 
     def set_server_allow_unauthenticated(self, enabled: bool) -> None:
         self.server_allow_unauthenticated = enabled
@@ -172,7 +172,7 @@ def test_interactive_configure_can_set_server_auth(monkeypatch) -> None:
 
     config_main.interactive_configure()
 
-    assert stub.server_api_key == "server-secret"
+    assert stub.server_auth_token == "server-secret"
     assert stub.server_allow_unauthenticated is False
     assert stub.server_base_url_allowlist == "https://example.com/v1"
     assert stub.server_url_fetch_allowlist == "https://files.example.com"

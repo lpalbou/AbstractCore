@@ -13,25 +13,33 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | Endpoint | Method | Purpose | Key Parameters |
 |----------|--------|---------|----------------|
 | `/health` | GET | Server health check | - |
-| `/v1/models` | GET | List/filter available models | `provider`, `input_type`, `output_type`, `base_url` |
+| `/v1/models` | GET | List/filter available models | `provider`, `input_type`, `output_type`, `base_url`, `api_key` |
 | `/providers` | GET | List providers with metadata | `include_models` |
-| `/v1/vision/provider_models` | GET | AbstractVision provider model catalog | `task`, `base_url` |
-| `/v1/audio/voices` | GET | AbstractVoice voice/profile catalog | `base_url` |
-| `/v1/audio/speech/models` | GET | AbstractVoice TTS model catalog | `base_url` |
+| `/v1/vision/providers/` | GET | AbstractVision provider model catalog | `task`, `provider`, `include_models`, `base_url`, `api_key` |
+| `/v1/audio/voices` | GET | AbstractVoice voice/profile catalog | `provider`, `model`, `providers_only`, `base_url`, `api_key` |
+| `/v1/audio/speech/models` | GET | AbstractVoice TTS model catalog | `provider`, `base_url`, `api_key` |
+| `/v1/audio/speech/providers` | GET | AbstractVoice TTS provider catalog | `base_url` |
+| `/v1/audio/transcriptions/models` | GET | AbstractVoice STT model catalog | `provider`, `base_url`, `api_key` |
+| `/v1/audio/transcriptions/providers` | GET | AbstractVoice STT provider catalog | `base_url` |
+| `/v1/voice/clone/providers` | GET | AbstractVoice voice clone provider catalog | `base_url` |
 | `/v1/chat/completions` | POST | Chat completions | `model`, `messages`, `stream` |
 | `/v1/embeddings` | POST | Generate embeddings | `model`, `input` |
 | `/v1/responses` | POST | OpenAI Responses API | `model`, `input` |
-| `/v1/images/generations` | POST | Image generation (optional) | `prompt`, `model`, `width`, `height` |
-| `/v1/images/edits` | POST | Image editing (optional) | `prompt`, `image`, `mask`, `size` |
-| `/v1/vision/models` | GET | Cached local vision model inventory | - |
-| `/v1/vision/model` | GET | Active in-memory vision model | - |
+| `/v1/images/generations` | POST | Image generation (optional) | `prompt`, `model`, `provider`, `base_url`, `width`, `height`, `size` |
+| `/{provider}/v1/images/generations` | POST | Provider-scoped image generation | `model` (no prefix), `prompt`, `base_url` |
+| `/v1/images/edits` | POST | Image editing (optional) | `prompt`, `image`, `model`, `provider`, `base_url`, `mask`, `size` |
+| `/{provider}/v1/images/edits` | POST | Provider-scoped image editing | `model` (no prefix), `prompt`, `image`, `base_url` |
+| `/v1/vision/models` | GET | Available vision model catalog | `task`, `provider`, `base_url`, `api_key` |
 | `/v1/vision/model/load` | POST | Load local vision model | `model_id` / `model` |
 | `/v1/vision/model/unload` | POST | Unload active local vision model | - |
 | `/v1/vision/jobs/*` | GET/POST | Async image jobs | `job_id`, `consume`, image parameters |
-| `/v1/audio/transcriptions` | POST | Speech-to-text (optional) | `file` (multipart) |
+| `/v1/audio/transcriptions` | POST | Speech-to-text (optional) | `file`, `provider`, `model`, `base_url` |
+| `/{provider}/v1/audio/transcriptions` | POST | Provider-scoped speech-to-text | `model` (no prefix), `file`, `base_url` |
 | `/v1/audio/translations` | POST | Audio translations (not yet supported) | - |
-| `/v1/audio/speech` | POST | Text-to-speech (optional) | `model`, `input`, `voice`, `format` |
-| `/v1/voice/clone` | POST | Voice clone/custom voice extension (optional) | `file`, `model`, `base_url`, `name` |
+| `/v1/audio/speech` | POST | Text-to-speech (optional) | `input`, `provider`, `model`, `voice`, `format`, `profile`, `quality_preset`, `quality`, `base_url` |
+| `/{provider}/v1/audio/speech` | POST | Provider-scoped text-to-speech | `model` (no prefix), `input`, `base_url` |
+| `/v1/voice/clone` | POST | Voice clone/custom voice extension (optional) | `file`, `provider`, `model`, `tts_model`, `cloning_engine`, `base_url`, `name` |
+| `/{provider}/v1/voice/clone` | POST | Provider-scoped voice clone/custom voice extension | `model` (no prefix), `file`, `base_url`, `name` |
 | `/v1/audio/music` | POST | Text-to-music (optional) | `prompt`, `format` |
 | `/{provider}/v1/chat/completions` | POST | Provider-specific endpoint | `model` (no prefix) |
 | `/acore/prompt_cache/*` | GET/POST | Proxy AbstractEndpoint prompt-cache control plane | `base_url`, cache operation fields |
@@ -43,13 +51,13 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | **Simple Chat** | `/v1/chat/completions` | `model`, `messages` | Text conversation |
 | **Streaming** | `/v1/chat/completions` | `stream: true` | Real-time responses |
 | **Vision** | `/v1/chat/completions` | `content: [text, image_url]` | Image analysis |
-| **Media Catalogs** | `/v1/vision/provider_models`, `/v1/audio/voices` | `task`, `base_url` | Populate image model and voice dropdowns |
-| **Image Generation** | `/v1/images/generations` | `prompt` | Create images (optional) |
-| **Image Editing** | `/v1/images/edits` | `prompt`, `image` | Edit images (optional) |
-| **Speech-to-Text** | `/v1/audio/transcriptions` | `file` | Transcribe audio (optional) |
+| **Media Catalogs** | `/v1/vision/providers/`, `/v1/audio/voices` | `task`, `provider`, `base_url`, `api_key` | Populate image model and voice dropdowns |
+| **Image Generation** | `/v1/images/generations`, `/{provider}/v1/images/generations` | `prompt`, optional `model`/`provider`/`base_url` | Create images (optional) |
+| **Image Editing** | `/v1/images/edits`, `/{provider}/v1/images/edits` | `prompt`, `image`, optional `model`/`provider`/`base_url` | Edit images (optional) |
+| **Speech-to-Text** | `/v1/audio/transcriptions`, `/{provider}/v1/audio/transcriptions` | `file`, optional `model`/`provider`/`base_url` | Transcribe audio (optional) |
 | **Audio Translations** | `/v1/audio/translations` | `file` | Translate audio (not yet supported) |
-| **Text-to-Speech** | `/v1/audio/speech` | `input` | Generate audio (optional) |
-| **Voice Clone** | `/v1/voice/clone` | `file` | Create a compatible custom voice (optional) |
+| **Text-to-Speech** | `/v1/audio/speech`, `/{provider}/v1/audio/speech` | `input`, optional `model`/`provider`/`base_url` | Generate audio (optional) |
+| **Voice Clone** | `/v1/voice/clone`, `/{provider}/v1/voice/clone` | `file`, optional `model`/`provider`/`base_url` | Create a compatible custom voice (optional) |
 | **Text-to-Music** | `/v1/audio/music` | `prompt` | Generate music/audio (optional) |
 | **Documents** | `/v1/chat/completions` | `content: [text, file_url]` | PDF/CSV processing |
 | **Tools** | `/v1/chat/completions` | `tools`, `tool_choice` | Function calling |
@@ -219,9 +227,14 @@ dropdowns. They use the AbstractVision/AbstractVoice plugin boundary and keep
 `/v1/models` focused on LLM and embedding provider models.
 
 ```bash
-curl http://localhost:8000/v1/vision/provider_models?task=text_to_image
+curl http://localhost:8000/v1/vision/providers/?task=text_to_image
+curl http://localhost:8000/v1/vision/models
 curl http://localhost:8000/v1/audio/voices
 curl http://localhost:8000/v1/audio/speech/models
+curl http://localhost:8000/v1/audio/speech/providers
+curl http://localhost:8000/v1/audio/transcriptions/models
+curl http://localhost:8000/v1/audio/transcriptions/providers
+curl http://localhost:8000/v1/voice/clone/providers
 ```
 
 `base_url` can target a local or remote OpenAI-compatible media endpoint. It
@@ -328,7 +341,7 @@ curl http://localhost:8000/providers
 | `tools` | array | null | Available function tools |
 | `tool_choice` | string/object | "auto" | Tool calling strategy |
 | `agent_format` | string | null | Tool syntax format |
-| `api_key` | string | null | Deprecated/disabled in request bodies. Use server-side provider config, `X-AbstractCore-Provider-API-Key` for a provider override, or `Authorization` as a provider key only when server auth is not configured. |
+| `api_key` | string | null | Deprecated/disabled in request bodies. Use server-side provider config or `X-AbstractCore-Provider-API-Key` for a provider override. |
 | `base_url` | string | null | Custom API endpoint URL |
 
 **Response (Non-Streaming)**:
@@ -368,17 +381,23 @@ data: [DONE]
 **Usage Examples**:
 
 **Server authentication**:
-If `ABSTRACTCORE_SERVER_API_KEY` is configured, every non-health endpoint requires
-`Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY`. Authenticated clients can use all
+If `ABSTRACTCORE_AUTH_TOKEN` is configured, every non-health endpoint requires
+`Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN`. Authenticated clients can use all
 provider keys/endpoints configured on the server. If it is not configured,
-`Authorization: Bearer <provider-key>` may be used as a bring-your-own upstream provider key;
-that key is forwarded only to the requested provider. `GET /health` is always unauthenticated.
+either set `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1` for intentional local/dev use, or
+pass an explicit upstream provider key via `X-AbstractCore-Provider-API-Key`.
+For Swagger UI convenience, when server auth is not configured the server also treats
+`Authorization: Bearer <provider-key>` as an upstream provider key. `GET /health`
+is always unauthenticated.
 
-Swagger UI at `http://localhost:8000/docs` can execute authenticated requests: click
-`Authorize`, enter the `ABSTRACTCORE_SERVER_API_KEY` value, then use `Try it out`.
+Swagger UI at `http://localhost:8000/docs` keeps the normal `Authorize` button
+when server auth is enabled. Enter the `ABSTRACTCORE_AUTH_TOKEN` value there; AbstractCore validates the bearer token
+before Swagger marks it authorized for `Try it out`.
+The dependency-free endpoint index is available at `http://localhost:8000/docs-lite`.
 The docs and OpenAPI schema are public by default so the UI can load before authentication;
-set `ABSTRACTCORE_SERVER_PROTECT_DOCS=1` to put `/docs`, `/redoc`, and `/openapi.json`
-behind server auth too.
+set `ABSTRACTCORE_SERVER_PROTECT_DOCS=1` to put `/docs`, `/docs-lite`, `/redoc`, and
+`/openapi.json` behind server auth too. When server auth is disabled, the
+server bearer scheme is omitted from Swagger UI.
 
 Every request body has a Swagger example. Optional aliases that would conflict
 when sent together are shown as `null`; the server drops nulls before routing.
@@ -396,7 +415,7 @@ with curl; the endpoint still returned normal audio bytes.
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \
   -d '{
     "model": "openai/gpt-4o-mini",
     "messages": [
@@ -476,7 +495,7 @@ from openai import OpenAI
 # Point to AbstractCore server
 client = OpenAI(
     base_url="http://localhost:8000/v1",
-    api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"]
+    api_key=os.environ["ABSTRACTCORE_AUTH_TOKEN"]
 )
 
 response = client.chat.completions.create(
@@ -495,7 +514,7 @@ print(response.choices[0].message.content)
 # Preferred: configure provider keys on the server (e.g. OPENAI_API_KEY).
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \
   -d '{
     "model": "openai/gpt-4o-mini",
     "messages": [{"role": "user", "content": "Hello!"}]
@@ -503,10 +522,10 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 ```
 
 ```bash
-# Override only the requested upstream provider while still using the server master key.
+# Override only the requested upstream provider while still using the server auth token.
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \
   -H "X-AbstractCore-Provider-API-Key: $ANTHROPIC_API_KEY" \
   -d '{
     "model": "anthropic/claude-haiku-4-5",
@@ -515,19 +534,20 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 ```
 
 ```python
-# When server auth is not configured, Authorization may be used as the upstream provider key.
+# When server auth is not configured, either set ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1
+# for intentional local/dev use, or provide an upstream provider key explicitly.
 response = requests.post(
     "http://localhost:8000/v1/chat/completions",
-    headers={"Authorization": "Bearer sk-provider-key"},
+    headers={"X-AbstractCore-Provider-API-Key": "sk-provider-key"},
     json={
         "model": "openai-compatible/my-model",
         "messages": [{"role": "user", "content": "Hello!"}],
-        "base_url": "https://my-custom-endpoint.com/v1"
-    }
+        "base_url": "https://my-custom-endpoint.com/v1",
+    },
 )
 ```
 
-Note: request-body and query-string `api_key` are disabled because those values are routinely logged by clients, proxies, and servers.
+Note: provider keys in request bodies remain disabled because those values are routinely logged by clients, proxies, and servers. Select discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI convenience, but headers remain preferred.
 
 ---
 
@@ -639,10 +659,17 @@ print(response.json()["choices"][0]["message"]["content"])
 
 AbstractCore Server can optionally expose OpenAI-compatible image endpoints:
 - `POST /v1/images/generations`
+- `POST /{provider}/v1/images/generations`
 - `POST /v1/images/edits`
+- `POST /{provider}/v1/images/edits`
 
 If `model` is omitted, the server uses its configured AbstractVision/OpenAI-compatible
 image default. AbstractCore does not hardcode a local image model default.
+Provider-scoped routes accept an unprefixed body `model`, matching the chat
+route pattern used by `/{provider}/v1/chat/completions`.
+Global routes also accept optional `provider` and `base_url` overrides so image
+generation and image edits follow the same routing contract as the audio
+endpoints and the Python `generate(..., output="image")` path.
 
 **Backends (env vars)**:
 
@@ -652,10 +679,11 @@ image default. AbstractCore does not hardcode a local image model default.
   - If `model` is `diffusers/<huggingface-repo>`, uses that explicit local Diffusers model
   - If `model` is `sdcpp/default`, uses the configured stable-diffusion.cpp model
   - If `model` is `openai-compatible/<model>` and an upstream base URL is configured, uses the image proxy
+  - If `model` is `openai/gpt-image-1`, or the route is `/openai/v1/images/generations`, uses the OpenAI Images API with `OPENAI_API_KEY`
 
 - **Proxy**: set `ABSTRACTCORE_VISION_BACKEND=openai_compatible_proxy` (proxy to an upstream OpenAI-compatible image server)
-  - `ABSTRACTCORE_VISION_UPSTREAM_BASE_URL` / `ABSTRACTVISION_BASE_URL` (required) — base URL (include `/v1`)
-  - `ABSTRACTCORE_VISION_UPSTREAM_API_KEY` / `ABSTRACTVISION_API_KEY` (optional)
+  - `OPENAI_BASE_URL` (required) — base URL (include `/v1`)
+  - `OPENAI_API_KEY` (optional)
   - `ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID` / `ABSTRACTVISION_MODEL_ID` (optional)
   - Install: `pip install "abstractcore[server]"`
 
@@ -682,7 +710,7 @@ image default. AbstractCore does not hardcode a local image model default.
 export ABSTRACTCORE_VISION_MODEL_ID="org/image-model"
 
 curl http://localhost:8000/v1/images/generations \\
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \\
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \\
   -H "Content-Type: application/json" \\
   -d '{"model":"diffusers/default","prompt":"a red fox in snow","width":512,"height":512,"steps":20,"response_format":"b64_json"}'
 ```
@@ -693,7 +721,7 @@ curl http://localhost:8000/v1/images/generations \\
 export ABSTRACTCORE_VISION_MODEL_ID="org/image-model"
 
 curl http://localhost:8000/v1/images/edits \\
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \\
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \\
   -F "model=diffusers/default" \\
   -F "prompt=make it watercolor" \\
   -F "image=@./input.png"
@@ -847,7 +875,7 @@ API, so use another embeddings provider for RAG/vector workflows.
 **Usage**:
 ```bash
 curl -X POST http://localhost:8000/v1/embeddings \
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "openai/text-embedding-3-small",
@@ -1036,8 +1064,8 @@ python -m abstractcore.server --host 0.0.0.0 --port 8080 --debug
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 
-# Server master key
-export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
+# Server auth token
+export ABSTRACTCORE_AUTH_TOKEN="acore-server-secret"
 
 # Debug mode
 export ABSTRACTCORE_DEBUG="true"
@@ -1064,7 +1092,7 @@ gunicorn abstractcore.server.app:app \
 **Docker Deployment**:
 ```bash
 docker run -p 8000:8000 \
-  -e ABSTRACTCORE_SERVER_API_KEY="acore-server-secret" \
+  -e ABSTRACTCORE_AUTH_TOKEN="acore-server-secret" \
   -e OPENAI_API_KEY="sk-..." \
   -e OPENROUTER_API_KEY="sk-or-..." \
   ghcr.io/lpalbou/abstractcore-server:2.13.11
@@ -1111,7 +1139,7 @@ The server automatically reads API keys from environment variables:
 ```bash
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
-export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
+export ABSTRACTCORE_AUTH_TOKEN="acore-server-secret"
 ```
 
 Or use AbstractCore's configuration system:
@@ -1269,7 +1297,7 @@ from openai import OpenAI
 
 client = OpenAI(
     base_url="http://localhost:8000/v1",
-    api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"]
+    api_key=os.environ["ABSTRACTCORE_AUTH_TOKEN"]
 )
 
 response = client.chat.completions.create(

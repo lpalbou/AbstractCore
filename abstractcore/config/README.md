@@ -199,7 +199,7 @@ def get_config_manager() -> ConfigurationManager:
 - `set_app_default(app_name, provider, model)` - Set app-specific default
 - `get_app_default(app_name)` - Retrieve app defaults
 - `set_api_key(provider, key)` - Store API key
-- `set_server_api_key(key)` - Store or clear the HTTP server master key
+- `set_server_auth_token(token)` - Store or clear the HTTP server auth token
 - `set_server_base_url_allowlist(allowlist)` - Configure safe request-level provider endpoint overrides
 - `set_server_media_root(path)` - Configure safe local media file access for the HTTP server
 - `get_status()` - Return comprehensive configuration status
@@ -238,7 +238,7 @@ Defines all CLI configuration arguments organized into groups:
    - `--list-api-keys` - Show API key status
 
 4. **HTTP Server Configuration**:
-   - `--set-server-api-key KEY` / `--clear-server-api-key` - Configure inbound server auth
+   - `--set-server-auth-token TOKEN` / `--clear-server-auth-token` - Configure inbound server auth
    - `--allow-unauthenticated-server` / `--disallow-unauthenticated-server` - Local/dev auth escape hatch
    - `--set-server-base-url-allowlist CSV` - Allow non-loopback request `base_url` overrides
    - `--set-server-url-fetch-allowlist CSV` - Allow URL media fetch targets
@@ -542,8 +542,8 @@ abstractcore --list-api-keys
 
 **Configure HTTP Server Gateway Auth**:
 ```bash
-# Inbound server key. Authenticated clients can use server-configured provider keys.
-abstractcore --set-server-api-key acore-server-secret
+# Inbound auth token. Authenticated clients can use server-configured provider keys.
+abstractcore --set-server-auth-token acore-server-secret
 
 # Per-request endpoint/media hardening
 abstractcore --set-server-base-url-allowlist "https://example.com/v1"
@@ -721,7 +721,7 @@ config_manager.set_vision_provider("ollama", "qwen2.5vl:7b")
 config_manager.set_api_key("openai", "sk-your-key-here")
 
 # Configure HTTP server gateway auth
-config_manager.set_server_api_key("acore-server-secret")
+config_manager.set_server_auth_token("acore-server-secret")
 config_manager.set_server_base_url_allowlist("https://example.com/v1")
 config_manager.set_server_media_root("/srv/abstractcore-media")
 
@@ -1400,7 +1400,7 @@ provider, model = get_app_defaults("summarizer")
 - `set_app_default(app: str, provider: str, model: str) -> bool` - Set app default
 - `set_vision_provider(provider: str, model: str) -> bool` - Configure vision
 - `set_api_key(provider: str, key: str) -> bool` - Store API key
-- `set_server_api_key(key: Optional[str]) -> bool` - Store/clear server master key
+- `set_server_auth_token(token: Optional[str]) -> bool` - Store/clear server auth token
 - `set_server_allow_unauthenticated(enabled: bool) -> bool` - Toggle local/dev unauthenticated server mode
 - `set_server_base_url_allowlist(allowlist: Optional[str]) -> bool` - Set request `base_url` allowlist
 - `set_server_url_fetch_allowlist(allowlist: Optional[str]) -> bool` - Set URL media fetch allowlist

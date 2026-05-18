@@ -119,15 +119,15 @@ class OpenAICompatibleProvider(BaseProvider):
                         api_key="your-key")
 
         # Environment variable configuration
-        export OPENAI_COMPATIBLE_BASE_URL="http://127.0.0.1:1234/v1"
-        export OPENAI_COMPATIBLE_API_KEY="your-key"  # Optional
+        export OPENAI_BASE_URL="http://127.0.0.1:1234/v1"
+        export OPENAI_API_KEY="your-key"  # Optional
         llm = create_llm("openai-compatible", model="my-model")
     """
 
     PROVIDER_ID = "openai-compatible"
     PROVIDER_DISPLAY_NAME = "OpenAI-compatible server"
-    BASE_URL_ENV_VAR = "OPENAI_COMPATIBLE_BASE_URL"
-    API_KEY_ENV_VAR = "OPENAI_COMPATIBLE_API_KEY"
+    BASE_URL_ENV_VAR = "OPENAI_BASE_URL"
+    API_KEY_ENV_VAR = "OPENAI_API_KEY"
     DEFAULT_BASE_URL = "http://localhost:1234/v1"
 
     def __init__(self, model: str = "default", base_url: Optional[str] = None,

@@ -9,7 +9,7 @@ from abstractcore.config.manager import ConfigurationManager
 
 
 _CONFIG_ENV_NAMES = (
-    "ABSTRACTCORE_SERVER_API_KEY",
+    "ABSTRACTCORE_AUTH_TOKEN",
     "ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED",
     "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST",
     "ABSTRACTCORE_SERVER_URL_FETCH_ALLOWLIST",
@@ -18,7 +18,7 @@ _CONFIG_ENV_NAMES = (
     "ABSTRACTCORE_SERVER_DISABLE_CENTRALIZED_CONFIG",
     "HOST",
     "PORT",
-    "OPENAI_COMPATIBLE_API_KEY",
+    "OPENAI_API_KEY",
     "VLLM_API_KEY",
 )
 
@@ -36,11 +36,11 @@ def _restore_config_env_after_test():
 
 
 def test_server_config_persists_and_injects_env(monkeypatch, tmp_path) -> None:
-    """Server master key and hardening settings should be persisted and env-backed."""
+    """Server auth token and hardening settings should be persisted and env-backed."""
     monkeypatch.setenv("HOME", str(tmp_path))
 
     manager = ConfigurationManager()
-    assert manager.set_server_api_key("server-secret")
+    assert manager.set_server_auth_token("server-secret")
     assert manager.set_server_allow_unauthenticated(True)
     assert manager.set_server_base_url_allowlist("https://example.com/v1")
     assert manager.set_server_url_fetch_allowlist("https://files.example.com")
@@ -51,7 +51,7 @@ def test_server_config_persists_and_injects_env(monkeypatch, tmp_path) -> None:
     reloaded = ConfigurationManager()
     status = reloaded.get_status()["server"]
 
-    assert status["api_key"] == "✅ Set"
+    assert status["auth_token"] == "✅ Set"
     assert status["allow_unauthenticated"] is True
     assert status["base_url_allowlist"] == "https://example.com/v1"
     assert status["url_fetch_allowlist"] == "https://files.example.com"
@@ -60,7 +60,7 @@ def test_server_config_persists_and_injects_env(monkeypatch, tmp_path) -> None:
     assert status["host"] == "127.0.0.1"
     assert status["port"] == 8787
 
-    assert os.environ["ABSTRACTCORE_SERVER_API_KEY"] == "server-secret"
+    assert os.environ["ABSTRACTCORE_AUTH_TOKEN"] == "server-secret"
     assert os.environ["ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED"] == "1"
     assert os.environ["ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST"] == "https://example.com/v1"
     assert os.environ["ABSTRACTCORE_SERVER_URL_FETCH_ALLOWLIST"] == "https://files.example.com"
@@ -73,18 +73,18 @@ def test_server_config_persists_and_injects_env(monkeypatch, tmp_path) -> None:
 def test_environment_values_override_persisted_server_config(monkeypatch, tmp_path) -> None:
     """Deployment env vars must win over local config values."""
     monkeypatch.setenv("HOME", str(tmp_path))
-    monkeypatch.setenv("ABSTRACTCORE_SERVER_API_KEY", "env-secret")
+    monkeypatch.setenv("ABSTRACTCORE_AUTH_TOKEN", "env-secret")
 
     manager = ConfigurationManager()
-    assert manager.set_server_api_key("config-secret")
+    assert manager.set_server_auth_token("config-secret")
 
     reloaded = ConfigurationManager()
-    assert reloaded.config.server.api_key == "config-secret"
-    assert os.environ["ABSTRACTCORE_SERVER_API_KEY"] == "env-secret"
+    assert reloaded.config.server.auth_token == "config-secret"
+    assert os.environ["ABSTRACTCORE_AUTH_TOKEN"] == "env-secret"
 
 
 def test_provider_api_key_aliases_include_openai_compatible_and_vllm(monkeypatch, tmp_path) -> None:
-    """Gateway/self-hosted provider API keys should be first-class config keys."""
+    """Gateway/self-hosted OpenAI-shaped providers share the standard OpenAI env key."""
     monkeypatch.setenv("HOME", str(tmp_path))
 
     manager = ConfigurationManager()
@@ -94,7 +94,7 @@ def test_provider_api_key_aliases_include_openai_compatible_and_vllm(monkeypatch
     reloaded = ConfigurationManager()
     assert reloaded.config.api_keys.openai_compatible == "compat-key"
     assert reloaded.config.api_keys.vllm == "vllm-key"
-    assert os.environ["OPENAI_COMPATIBLE_API_KEY"] == "compat-key"
+    assert os.environ["OPENAI_API_KEY"] == "compat-key"
     assert os.environ["VLLM_API_KEY"] == "vllm-key"
 
 
@@ -102,17 +102,17 @@ def test_server_app_loader_applies_persisted_server_config_when_enabled(monkeypa
     """The HTTP server startup hook should load persisted server settings outside tests."""
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.delenv("ABSTRACTCORE_SERVER_DISABLE_CENTRALIZED_CONFIG", raising=False)
-    monkeypatch.delenv("ABSTRACTCORE_SERVER_API_KEY", raising=False)
+    monkeypatch.delenv("ABSTRACTCORE_AUTH_TOKEN", raising=False)
 
     manager = ConfigurationManager()
-    assert manager.set_server_api_key("central-server-secret")
+    assert manager.set_server_auth_token("central-server-secret")
 
     # Simulate a fresh server process where the value is only in config JSON.
-    os.environ.pop("ABSTRACTCORE_SERVER_API_KEY", None)
+    os.environ.pop("ABSTRACTCORE_AUTH_TOKEN", None)
     config_manager_module = importlib.import_module("abstractcore.config.manager")
     monkeypatch.setattr(config_manager_module, "_config_manager", None)
 
     server_app = importlib.import_module("abstractcore.server.app")
     server_app._apply_centralized_config_env()
 
-    assert os.environ["ABSTRACTCORE_SERVER_API_KEY"] == "central-server-secret"
+    assert os.environ["ABSTRACTCORE_AUTH_TOKEN"] == "central-server-secret"

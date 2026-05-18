@@ -1,4 +1,5 @@
 from abstractcore.architectures import detect_architecture, get_architecture_format, get_model_capabilities
+from abstractcore.architectures import detection as architecture_detection
 
 
 def test_variant_suffix_normalization_resolves_qwen_liquid_and_gpt_families() -> None:
@@ -163,6 +164,26 @@ def test_2026_frontier_model_entries_expose_expected_capabilities() -> None:
     assert omni.get("vision_support") is True
     assert omni.get("audio_support") is True
     assert omni.get("video_support") is True
+
+
+def test_qwen3_6_mtp_gguf_variants_resolve_to_explicit_catalog_entries() -> None:
+    architecture_detection._load_json_assets()
+    models = (architecture_detection._model_capabilities or {}).get("models", {})
+
+    assert architecture_detection.resolve_model_alias("unsloth/Qwen3.6-27B-MTP-GGUF:Q4_K_M", models) == "qwen3.6-27b-mtp-gguf"
+    assert architecture_detection.resolve_model_alias("unsloth/Qwen3.6-35B-A3B-MTP-GGUF:UD-Q4_K_M", models) == "qwen3.6-35b-a3b-mtp-gguf"
+
+    qwen27 = get_model_capabilities("unsloth/Qwen3.6-27B-MTP-GGUF:Q4_K_M")
+    assert qwen27.get("repository") == "unsloth/Qwen3.6-27B-MTP-GGUF"
+    assert qwen27.get("architecture") == "qwen3_6"
+    assert qwen27.get("max_tokens") == 262144
+    assert qwen27.get("vision_support") is True
+
+    qwen35 = get_model_capabilities("unsloth/Qwen3.6-35B-A3B-MTP-GGUF:UD-Q4_K_M")
+    assert qwen35.get("repository") == "unsloth/Qwen3.6-35B-A3B-MTP-GGUF"
+    assert qwen35.get("architecture") == "qwen3_6"
+    assert qwen35.get("active_parameters") == "3B"
+    assert qwen35.get("vision_support") is True
 
 
 def test_granite_and_nemotron_architecture_formats_match_upstream_tool_transcripts() -> None:

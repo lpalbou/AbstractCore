@@ -365,11 +365,7 @@ class _VoiceFacade:
             return None
 
     def tts(self, text: str, **kwargs: Any) -> Any:
-        backend = self._registry.get_voice()
-        direct = self._tts_with_adapter_voice(backend, text, kwargs)
-        if direct is not None:
-            return direct
-        return backend.tts(text, **kwargs)
+        return self._registry.get_voice().tts(text, **kwargs)
 
     def stt(self, audio: Any, **kwargs: Any) -> Any:
         return self._registry.get_voice().stt(audio, **kwargs)
@@ -431,43 +427,32 @@ class _VoiceFacade:
             )
         return dict(out)
 
-    @staticmethod
-    def _tts_with_adapter_voice(backend: Any, text: str, kwargs: Dict[str, Any]) -> Any:
-        voice = kwargs.get("voice")
-        if not (isinstance(voice, str) and voice.strip()):
-            return None
-        get_vm = getattr(backend, "_get_vm", None)
-        if not callable(get_vm):
-            return None
-        try:
-            vm = get_vm()
-        except Exception:
-            return None
-        get_cloned_voice = getattr(vm, "get_cloned_voice", None)
-        if callable(get_cloned_voice):
-            try:
-                if get_cloned_voice(str(voice)):
-                    return None
-            except Exception:
-                pass
-        adapter = getattr(vm, "tts_adapter", None)
-        if adapter is None:
-            return None
-        is_available = getattr(adapter, "is_available", None)
-        if callable(is_available) and not is_available():
-            return None
-        synth = getattr(adapter, "synthesize_to_bytes_with_voice", None)
-        if not callable(synth):
-            return None
-        call_kwargs: Dict[str, Any] = {
-            "format": str(kwargs.get("format") or "wav"),
-            "voice": str(voice),
-        }
-        if kwargs.get("speed") is not None:
-            call_kwargs["speed"] = kwargs.get("speed")
-        if kwargs.get("instructions") is not None:
-            call_kwargs["instructions"] = kwargs.get("instructions")
-        return synth(str(text), **call_kwargs)
+    def available_providers(self) -> Dict[str, Any]:
+        """Return lightweight provider availability for voice backends.
+
+        This is intended for UI/catalog routes; implementations must avoid
+        constructing heavy runtimes.
+        """
+        backend = self._registry.get_voice()
+        method = getattr(backend, "available_providers", None)
+        if not callable(method):
+            method = getattr(backend, "list_available_providers", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="voice",
+                reason="The selected voice capability backend does not expose available_providers().",
+                install_hint=self._registry._default_install_hint("voice"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        out = method()
+        if not isinstance(out, dict):
+            raise CapabilityUnavailableError(
+                capability="voice",
+                reason="The selected voice capability backend returned a non-object provider availability payload.",
+                install_hint=self._registry._default_install_hint("voice"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        return dict(out)
 
     def clone(self, audio: Any, **kwargs: Any) -> Any:
         backend = self._registry.get_voice()
@@ -578,6 +563,29 @@ class _VisionFacade:
             )
         out = method(task=task)
         return list(out or [])
+
+    def available_providers(self, *, task: Optional[str] = None) -> Dict[str, Any]:
+        """Return lightweight provider availability for vision backends."""
+        backend = self._registry.get_vision()
+        method = getattr(backend, "available_providers", None)
+        if not callable(method):
+            method = getattr(backend, "list_available_providers", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="vision",
+                reason="The selected vision capability backend does not expose available_providers(task=...).",
+                install_hint=self._registry._default_install_hint("vision"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        out = method(task=task)
+        if not isinstance(out, dict):
+            raise CapabilityUnavailableError(
+                capability="vision",
+                reason="The selected vision capability backend returned a non-object provider availability payload.",
+                install_hint=self._registry._default_install_hint("vision"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        return dict(out)
 
     def i2i(self, prompt: str, image: Any, **kwargs: Any) -> Any:
         return self._registry.get_vision().i2i(prompt, image, **kwargs)

@@ -29,12 +29,12 @@ def test_server_forwards_prompt_cache_key(monkeypatch) -> None:
 
     server_app = importlib.import_module("abstractcore.server.app")
     for name in (
-        "ABSTRACTCORE_SERVER_API_KEY",
+        "ABSTRACTCORE_AUTH_TOKEN",
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
         "OPENROUTER_API_KEY",
         "PORTKEY_API_KEY",
-        "OPENAI_COMPATIBLE_API_KEY",
+        "OPENAI_BASE_URL",
         "VLLM_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)

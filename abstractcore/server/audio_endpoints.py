@@ -19,9 +19,9 @@ import json
 import os
 import threading
 import urllib.parse
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
-from fastapi import APIRouter, Body, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Body, File, Form, HTTPException, Path as FastAPIPath, Query, Request, UploadFile
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -30,6 +30,7 @@ from ..exceptions import AuthenticationError, InvalidRequestError, ModelNotFound
 
 
 router = APIRouter(tags=["audio"])
+provider_router = APIRouter(tags=["audio"])
 
 _CORE_LOCK = threading.Lock()
 _CORE: Optional[Any] = None
@@ -39,6 +40,7 @@ _PROVIDER_API_KEY_HEADERS = (
 )
 _PLACEHOLDER_API_KEYS = {"not-needed", "not_needed", "notneeded", "unused", "dummy", "empty", "none"}
 _SUPPORTED_REMOTE_AUDIO_PROVIDERS = {"openai", "openrouter", "portkey", "openai-compatible"}
+_REMOTE_AUDIO_PROVIDER_ALIASES = {"openai", "openrouter", "portkey", "openai-compatible", "remote"}
 _LOCAL_AUDIO_MODEL_ALIASES = {
     # `local/abstractvoice` is kept as a backward-compatible alias; prefer
     # provider/model-style `abstractvoice/default` in docs and examples.
@@ -59,9 +61,11 @@ class AudioSpeechRequest(BaseModel):
                     "input": "Hello from AbstractCore.",
                     "text": None,
                     "voice": "coral",
+                    "profile": None,
                     "response_format": "wav",
                     "format": None,
                     "speed": 1.0,
+                    "quality_preset": "standard",
                     "instructions": "Speak clearly and calmly.",
                     "provider": {},
                     "base_url": None,
@@ -101,6 +105,11 @@ class AudioSpeechRequest(BaseModel):
         ),
         examples=["coral"],
     )
+    profile: Optional[str] = Field(
+        default=None,
+        description="Optional local AbstractVoice profile id. This is ignored by strict remote OpenAI-compatible providers.",
+        examples=["en_US-amy-medium"],
+    )
     response_format: Optional[str] = Field(
         default=None,
         description="Requested audio format for remote providers, e.g. `mp3`, `wav`, `opus`, `aac`, `flac`, or `pcm` when supported.",
@@ -116,14 +125,27 @@ class AudioSpeechRequest(BaseModel):
         description="Optional speech speed multiplier when supported by the provider.",
         examples=[1.0],
     )
+    quality_preset: Optional[str] = Field(
+        default=None,
+        description="Optional local AbstractVoice quality preset: low, standard, or high. Aliases are normalized by AbstractVoice.",
+        examples=["standard"],
+    )
+    quality: Optional[str] = Field(
+        default=None,
+        description="Compatibility alias for quality_preset.",
+        examples=["high"],
+    )
     instructions: Optional[str] = Field(
         default=None,
         description="Optional style/instruction text for providers that support expressive TTS controls.",
         examples=["Speak clearly and calmly."],
     )
-    provider: Optional[Dict[str, Any]] = Field(
+    provider: Optional[Union[Dict[str, Any], str]] = Field(
         default=None,
-        description="Optional provider-routing options forwarded to OpenAI-compatible gateways such as OpenRouter.",
+        description=(
+            "Optional provider-routing options forwarded to OpenAI-compatible gateways such as OpenRouter, "
+            "or a local AbstractVoice engine id such as `piper` for capability-plugin routing."
+        ),
     )
     base_url: Optional[str] = Field(
         default=None,
@@ -194,8 +216,7 @@ def _capability_config_from_env() -> Dict[str, Any]:
         "ABSTRACTVOICE_TTS_MODEL": "voice_tts_model",
         "ABSTRACTVOICE_STT_MODEL": "voice_stt_model",
         "ABSTRACTVOICE_CLONING_ENGINE": "voice_cloning_engine",
-        "ABSTRACTVOICE_REMOTE_BASE_URL": "voice_remote_base_url",
-        "ABSTRACTVOICE_REMOTE_API_KEY": "voice_remote_api_key",
+        "OPENAI_BASE_URL": "voice_remote_base_url",
         "ABSTRACTVOICE_REMOTE_TIMEOUT_S": "voice_remote_timeout_s",
         "ABSTRACTVOICE_TTS_DELIVERY_MODE": "voice_tts_delivery_mode",
     }
@@ -230,13 +251,18 @@ def _require_dict(data: Any, *, where: str) -> Dict[str, Any]:
         raise HTTPException(status_code=422, detail=f"Invalid request body for {where}: expected a JSON object.")
     return data
 
+_SERVER_AUTH_TOKEN_ENV_VAR = "ABSTRACTCORE_AUTH_TOKEN"
 
-def _server_api_key() -> str:
-    return str(os.getenv("ABSTRACTCORE_SERVER_API_KEY") or "").strip()
+
+def _server_auth_token() -> str:
+    value = os.getenv(_SERVER_AUTH_TOKEN_ENV_VAR)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return ""
 
 
 def _server_auth_enabled() -> bool:
-    return bool(_server_api_key())
+    return bool(_server_auth_token())
 
 
 def _extract_bearer_token(auth_header: Any) -> str:
@@ -264,9 +290,13 @@ def _provider_api_key_from_request(request: Request) -> Optional[str]:
         if not _is_placeholder_api_key(token):
             return token
 
+    # When server auth is enabled, `Authorization` is reserved for the server
+    # auth token and must never be forwarded upstream.
     if _server_auth_enabled():
         return None
 
+    # Legacy/Swagger UI convenience: when server auth is disabled, treat
+    # `Authorization: Bearer <token>` as the upstream provider key.
     token = _extract_bearer_token(request.headers.get("authorization"))
     if _is_placeholder_api_key(token):
         return None
@@ -286,7 +316,7 @@ def _provider_api_key_env_var(provider: str) -> Optional[str]:
     if p == "portkey":
         return "PORTKEY_API_KEY"
     if p == "openai-compatible":
-        return "OPENAI_COMPATIBLE_API_KEY"
+        return "OPENAI_API_KEY"
     return None
 
 
@@ -369,9 +399,9 @@ def _guard_unauthenticated_server_provider_key_use(provider: str, *, explicit_pr
         status_code=401,
         detail=(
             f"Server-held {env_var} is configured, but inbound server auth is not. "
-            "Set ABSTRACTCORE_SERVER_API_KEY and send Authorization: Bearer <server-key>, "
-            "or pass an explicit provider key with Authorization: Bearer <provider-key> "
-            "when server auth is not configured."
+            "Set ABSTRACTCORE_AUTH_TOKEN and send "
+            "Authorization: Bearer <server-token>, "
+            "or pass an explicit provider key with X-AbstractCore-Provider-API-Key."
         ),
         headers={"WWW-Authenticate": "Bearer"},
     )
@@ -400,6 +430,43 @@ def _parse_model_string(model_string: str) -> tuple[str, str]:
 def _is_local_audio_model(model_string: str) -> bool:
     raw = str(model_string or "").strip().lower()
     return raw in _LOCAL_AUDIO_MODEL_ALIASES
+
+
+def _request_provider_value(value: Any) -> Optional[str]:
+    if isinstance(value, str) and value.strip():
+        normalized = value.strip().lower().replace("_", "-")
+        if normalized == "remote":
+            return "openai-compatible"
+        return normalized
+    return None
+
+
+def _resolve_audio_request_routing(
+    *,
+    model: Any,
+    provider: Any = None,
+    path_provider: Any = None,
+) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    """Resolve route/body audio selectors into provider, remote model, and local model."""
+    request_provider = _request_provider_value(path_provider) or _request_provider_value(provider)
+    model_name = _optional_text(model)
+    local_model = None
+
+    if model_name and _is_local_audio_model(model_name):
+        model_name = None
+
+    if request_provider and model_name and "/" in model_name:
+        prefix, rest = model_name.split("/", 1)
+        if prefix.strip().lower().replace("_", "-") == request_provider:
+            model_name = rest.strip() or None
+
+    if request_provider and request_provider not in _REMOTE_AUDIO_PROVIDER_ALIASES:
+        local_model = model_name
+        model_name = None
+    elif request_provider and model_name and "/" not in model_name:
+        model_name = f"{request_provider}/{model_name}"
+
+    return request_provider, model_name, local_model
 
 
 def _create_audio_provider(
@@ -494,35 +561,37 @@ def _json_or_raw_audio_response(content: bytes, content_type: str, *, fallback_m
 
 
 def _server_has_audio_catalog_credential() -> bool:
-    for env_var in (
-        "ABSTRACTVOICE_REMOTE_API_KEY",
-        "ABSTRACTVOICE_OPENAI_API_KEY",
-        "ABSTRACTVOICE_OPENAI_COMPATIBLE_API_KEY",
-        "OPENAI_API_KEY",
-    ):
-        if str(os.getenv(env_var) or "").strip():
-            return True
-    return False
+    return bool(str(os.getenv("OPENAI_API_KEY") or "").strip())
+
+
+def _server_allows_unauthenticated() -> bool:
+    return _bool_env("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", default=False)
 
 
 def _guard_audio_catalog_credentials(*, request: Request, explicit_provider_key: bool) -> None:
     if _request_has_server_auth(request) or explicit_provider_key:
+        return
+    if _server_allows_unauthenticated():
         return
     if not _server_has_audio_catalog_credential():
         return
     raise HTTPException(
         status_code=401,
         detail=(
-            "Server-held AbstractVoice/OpenAI credentials are configured, but inbound server auth was not used. "
-            "Set ABSTRACTCORE_SERVER_API_KEY and send Authorization: Bearer <server-key>, or pass an explicit "
+            "Server-held audio/OpenAI credentials are configured, but inbound server auth was not used. "
+            "Set ABSTRACTCORE_AUTH_TOKEN and send "
+            "Authorization: Bearer <server-token>, or pass an explicit "
             "provider key with X-AbstractCore-Provider-API-Key for this request."
         ),
         headers={"WWW-Authenticate": "Bearer"},
     )
 
 
-def _audio_catalog_core(request: Request, *, base_url: Optional[str]) -> Any:
-    provider_api_key = _provider_api_key_from_request(request)
+def _audio_catalog_core(request: Request, *, base_url: Optional[str], api_key: Optional[str]) -> Any:
+    explicit_key = str(api_key).strip() if isinstance(api_key, str) else ""
+    if _is_placeholder_api_key(explicit_key):
+        explicit_key = ""
+    provider_api_key = explicit_key or _provider_api_key_from_request(request)
     base_url_s = _validate_request_base_url(base_url)
     _guard_audio_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
     config = _capability_config_from_env()
@@ -564,6 +633,15 @@ async def audio_transcriptions(
         ),
         examples=["openai/gpt-4o-mini-transcribe"],
     ),
+    provider: Optional[str] = Form(
+        default=None,
+        description=(
+            "Optional provider/engine hint. Use this for local plugin routing such as "
+            "`faster-whisper` or `transformers-asr`, or remote routing such as `openai` "
+            "or `openai-compatible`."
+        ),
+        examples=["faster-whisper"],
+    ),
     language: Optional[str] = Form(default=None, description="Optional input language code such as `en` or `fr`.", examples=["en"]),
     prompt: Optional[str] = Form(default=None, description="Optional transcription prompt/context for providers that support it.", examples=["Technical discussion about AbstractCore endpoints."]),
     response_format: Optional[str] = Form(default=None, description="Optional provider response format such as `json`, `text`, `srt`, or `vtt`.", examples=["json"]),
@@ -588,9 +666,7 @@ async def audio_transcriptions(
     _enforce_audio_size(bytes(audio_bytes))
 
     language = str(language).strip() if isinstance(language, str) and language.strip() else None
-    model = _optional_text(model)
-    if model and _is_local_audio_model(model):
-        model = None
+    request_provider, model, local_model = _resolve_audio_request_routing(model=model, provider=provider)
     if model:
         provider, model_name = _parse_model_string(model)
         provider_api_key = _provider_api_key_from_request(request)
@@ -629,7 +705,13 @@ async def audio_transcriptions(
                 "mime_type": content_type,
                 "filename": filename,
             },
-            output={"modality": "text", "task": "transcription", "language": language},
+            output={
+                "modality": "text",
+                "task": "transcription",
+                "language": language,
+                "provider": request_provider,
+                "model": local_model,
+            },
         )
         text = getattr(getattr(result, "text", None), "content", None)
     except CapabilityUnavailableError as e:
@@ -638,6 +720,59 @@ async def audio_transcriptions(
         raise HTTPException(status_code=500, detail=f"Audio transcription failed: {e}") from e
 
     return {"text": str(text or "").strip()}
+
+
+@provider_router.post("/{provider}/v1/audio/transcriptions")
+async def provider_audio_transcriptions(
+    request: Request,
+    provider: str = FastAPIPath(
+        ...,
+        description="Audio provider route prefix, e.g. `openai`, `openrouter`, `portkey`, `openai-compatible`, or a local AbstractVoice engine.",
+    ),
+    file: UploadFile = File(..., description="Audio file to transcribe. Common formats include mp3, mp4, mpeg, mpga, m4a, wav, and webm."),
+    model: Optional[str] = Form(
+        default=None,
+        description=(
+            "Optional unprefixed model id for the provider route. If a provider/model id is supplied, "
+            "the route provider takes precedence."
+        ),
+        examples=["gpt-4o-mini-transcribe"],
+    ),
+    provider_hint: Optional[str] = Form(
+        default=None,
+        alias="provider",
+        description="Optional provider/engine hint. The route provider takes precedence when both are set.",
+        examples=["openai"],
+    ),
+    language: Optional[str] = Form(default=None, description="Optional input language code such as `en` or `fr`.", examples=["en"]),
+    prompt: Optional[str] = Form(default=None, description="Optional transcription prompt/context for providers that support it.", examples=["Technical discussion about AbstractCore endpoints."]),
+    response_format: Optional[str] = Form(default=None, description="Optional provider response format such as `json`, `text`, `srt`, or `vtt`.", examples=["json"]),
+    temperature: Optional[float] = Form(default=None, description="Optional sampling temperature for providers that support it.", examples=[0.0]),
+    format: Optional[str] = Form(default=None, description="Optional audio format override used by providers such as OpenRouter base64 audio input.", examples=["mp3"]),
+    base_url: Optional[str] = Form(
+        default=None,
+        description=(
+            "Optional request-level base URL override. Use this mainly with "
+            "`openai-compatible/...` or a gateway/local endpoint. If set with `openai/...`, "
+            "the request is sent to that URL instead of api.openai.com. Loopback URLs are "
+            "allowed by default; non-loopback URLs require ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+        examples=["http://127.0.0.1:5000/v1"],
+    ),
+):
+    """Provider-scoped OpenAI-compatible STT endpoint."""
+    return await audio_transcriptions(
+        request=request,
+        file=file,
+        model=model,
+        provider=provider_hint or provider,
+        language=language,
+        prompt=prompt,
+        response_format=response_format,
+        temperature=temperature,
+        format=format,
+        base_url=base_url,
+    )
 
 
 @router.post("/audio/translations")
@@ -682,6 +817,376 @@ def _audio_response(content: bytes, *, media_type: str, filename_stem: str = "ab
     )
 
 
+def _audio_dedupe_strings(values: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        text = str(value or "").strip()
+        key = text.lower()
+        if not text or key in seen:
+            continue
+        seen.add(key)
+        out.append(text)
+    return out
+
+
+def _audio_voice_record_provider(item: Any) -> str:
+    if not isinstance(item, dict):
+        return ""
+    params = item.get("params") if isinstance(item.get("params"), dict) else {}
+    tags = item.get("tags") if isinstance(item.get("tags"), dict) else {}
+    return str(
+        item.get("provider")
+        or item.get("engine_id")
+        or item.get("engine")
+        or tags.get("provider")
+        or tags.get("engine_id")
+        or tags.get("engine")
+        or params.get("provider")
+        or params.get("engine_id")
+        or params.get("engine")
+        or ""
+    ).strip()
+
+
+def _audio_voice_record_model(item: Any) -> str:
+    if not isinstance(item, dict):
+        return ""
+    params = item.get("params") if isinstance(item.get("params"), dict) else {}
+    return str(
+        item.get("model")
+        or item.get("model_id")
+        or params.get("model")
+        or params.get("model_id")
+        or params.get("model_filename")
+        or ""
+    ).strip()
+
+
+def _audio_provider_filtered_values(response: Dict[str, Any], provider: str, *keys: str) -> list[str]:
+    wanted = str(provider or "").strip().lower()
+    if not wanted:
+        return []
+    for key in keys:
+        mapping = response.get(key)
+        if not isinstance(mapping, dict):
+            continue
+        for provider_key, values in mapping.items():
+            if str(provider_key or "").strip().lower() != wanted or not isinstance(values, list):
+                continue
+            return _audio_dedupe_strings([str(item).strip() for item in values if isinstance(item, str) and str(item).strip()])
+    return []
+
+
+def _filter_audio_voice_catalog_response(
+    response: Dict[str, Any],
+    *,
+    provider: Optional[str],
+    model: Optional[str],
+    providers_only: bool,
+) -> Dict[str, Any]:
+    wanted_provider = str(provider or "").strip().lower()
+    wanted_model = str(model or "").strip().lower()
+    out = dict(response)
+
+    record_values: list[Any] = []
+    for key in ("profiles", "voices", "cloned_voices"):
+        values = response.get(key)
+        if isinstance(values, list):
+            record_values.extend(values)
+
+    derived_providers = [
+        _audio_voice_record_provider(item)
+        for item in record_values
+        if isinstance(item, dict) and _audio_voice_record_provider(item)
+    ]
+    map_providers: list[str] = []
+    for key in ("tts_models_by_provider", "tts_voices_by_provider", "tts_profiles_by_provider"):
+        mapping = response.get(key)
+        if isinstance(mapping, dict):
+            map_providers.extend(str(k).strip() for k in mapping.keys() if str(k).strip())
+    providers = _audio_dedupe_strings(
+        [
+            str(item).strip()
+            for item in list(response.get("tts_providers") or response.get("providers") or []) + derived_providers + map_providers
+            if isinstance(item, str) and str(item).strip()
+        ]
+    )
+    stt_providers = _audio_dedupe_strings(
+        [str(item).strip() for item in (response.get("stt_providers") or []) if isinstance(item, str) and str(item).strip()]
+    )
+    if wanted_provider:
+        providers = [item for item in providers if item.lower() == wanted_provider]
+        stt_providers = [item for item in stt_providers if item.lower() == wanted_provider]
+
+    def keep_record(item: Any) -> bool:
+        if not isinstance(item, dict):
+            return not wanted_provider and not wanted_model
+        item_provider = _audio_voice_record_provider(item).lower()
+        item_model = _audio_voice_record_model(item).lower()
+        if wanted_provider and item_provider and item_provider != wanted_provider:
+            return False
+        if wanted_model and item_model and item_model != wanted_model:
+            return False
+        return True
+
+    if providers_only:
+        out["providers"] = providers
+        out["tts_providers"] = providers
+        out["stt_providers"] = stt_providers
+        out["profiles"] = []
+        out["voices"] = []
+        out["cloned_voices"] = []
+        out["available"] = bool(providers or stt_providers)
+        return out
+
+    for key in ("profiles", "voices", "cloned_voices"):
+        values = response.get(key)
+        if isinstance(values, list):
+            out[key] = [item for item in values if keep_record(item)]
+    for key in ("tts_models_by_provider", "stt_models_by_provider", "tts_voices_by_provider", "tts_profiles_by_provider"):
+        mapping = response.get(key)
+        if isinstance(mapping, dict) and wanted_provider:
+            out[key] = {k: v for k, v in mapping.items() if str(k).strip().lower() == wanted_provider}
+    if wanted_provider:
+        tts_models = _audio_provider_filtered_values(response, wanted_provider, "tts_models_by_provider", "models_by_provider")
+        stt_models = _audio_provider_filtered_values(response, wanted_provider, "stt_models_by_provider")
+        if not tts_models and str(response.get("active_tts_provider") or response.get("provider") or "").strip().lower() == wanted_provider:
+            raw_tts = response.get("tts_models") or response.get("models")
+            tts_models = (
+                _audio_dedupe_strings([str(item).strip() for item in raw_tts if isinstance(item, str) and str(item).strip()])
+                if isinstance(raw_tts, list)
+                else []
+            )
+        if not stt_models and str(response.get("active_stt_provider") or "").strip().lower() == wanted_provider:
+            raw_stt = response.get("stt_models")
+            stt_models = (
+                _audio_dedupe_strings([str(item).strip() for item in raw_stt if isinstance(item, str) and str(item).strip()])
+                if isinstance(raw_stt, list)
+                else []
+            )
+        out["models"] = tts_models
+        out["tts_models"] = tts_models
+        if "stt_models" in out or stt_models:
+            out["stt_models"] = stt_models
+
+    out["providers"] = providers or out.get("providers") or []
+    out["tts_providers"] = providers or out.get("tts_providers") or []
+    out["stt_providers"] = stt_providers or out.get("stt_providers") or []
+    return out
+
+
+def _audio_list_strings(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return _audio_dedupe_strings([str(item).strip() for item in value if isinstance(item, str) and str(item).strip()])
+
+
+def _audio_mapping_strings(value: Any) -> Dict[str, list[str]]:
+    if not isinstance(value, dict):
+        return {}
+    out: Dict[str, list[str]] = {}
+    for key, items in value.items():
+        provider = str(key or "").strip()
+        if not provider or not isinstance(items, list):
+            continue
+        values = _audio_list_strings(items)
+        if values:
+            out[provider] = values
+    return out
+
+
+def _audio_catalog_available_provider_ids(catalog: Dict[str, Any], kind: str) -> list[str]:
+    available = catalog.get("available_providers")
+    if isinstance(available, dict):
+        values = available.get(kind)
+        if isinstance(values, list):
+            return _audio_list_strings(values)
+    key = {
+        "tts": "available_tts_providers",
+        "stt": "available_stt_providers",
+        "cloning": "available_cloning_providers",
+    }.get(kind)
+    return _audio_list_strings(catalog.get(key)) if key else []
+
+
+def _audio_provider_models(models_by_provider: Dict[str, list[str]]) -> list[Dict[str, str]]:
+    out: list[Dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for provider, models in models_by_provider.items():
+        provider_s = str(provider or "").strip()
+        if not provider_s:
+            continue
+        for model in models:
+            model_s = str(model or "").strip()
+            if not model_s:
+                continue
+            routed = model_s if model_s.startswith(f"{provider_s}/") else f"{provider_s}/{model_s}"
+            key = (provider_s.lower(), routed.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(
+                {
+                    "id": model_s,
+                    "model": routed,
+                    "provider": provider_s,
+                    "routed_model": routed,
+                    "object": "model",
+                    "owned_by": provider_s,
+                }
+            )
+    return out
+
+
+def _audio_models_by_provider(
+    *,
+    catalog: Dict[str, Any],
+    kind: str,
+    providers: list[str],
+    models: list[str],
+) -> Dict[str, list[str]]:
+    if kind == "stt":
+        mapping = _audio_mapping_strings(catalog.get("stt_models_by_provider"))
+    else:
+        mapping = _audio_mapping_strings(catalog.get("tts_models_by_provider"))
+    if not mapping and len(providers) == 1 and models:
+        mapping[providers[0]] = list(models)
+    return mapping
+
+
+def _audio_model_catalog_payload(
+    *,
+    core: Any,
+    kind: str,
+    catalog: Dict[str, Any],
+    models: list[str],
+) -> Dict[str, Any]:
+    if kind == "stt":
+        provider_key = "stt_providers"
+        active_provider = catalog.get("active_stt_provider")
+    elif kind == "cloning":
+        provider_key = "cloning_providers"
+        active_provider = catalog.get("active_cloning_provider")
+    else:
+        provider_key = "tts_providers"
+        active_provider = catalog.get("active_tts_provider") or catalog.get("engine_id")
+
+    providers = _audio_list_strings(catalog.get(provider_key))
+    available_providers = _audio_catalog_available_provider_ids(
+        catalog,
+        "stt" if kind == "stt" else ("cloning" if kind == "cloning" else "tts"),
+    )
+    if available_providers:
+        providers = list(available_providers)
+    models_by_provider = _audio_models_by_provider(catalog=catalog, kind=kind, providers=providers, models=models)
+    if available_providers and models_by_provider:
+        allowed = {provider.lower() for provider in available_providers}
+        models_by_provider = {k: v for k, v in models_by_provider.items() if k.lower() in allowed}
+        allowed_models = {str(model).lower() for values in models_by_provider.values() for model in values}
+        if allowed_models:
+            models = [model for model in models if str(model).lower() in allowed_models]
+    if models_by_provider:
+        for provider in models_by_provider:
+            if provider not in providers:
+                providers.append(provider)
+
+    payload: Dict[str, Any] = {
+        "available": True,
+        "source": "abstractvoice",
+        "stale": False,
+        "error": None,
+        "backend_id": getattr(core.voice, "backend_id", None),
+        "providers": providers,
+        "available_providers": available_providers,
+        "active_provider": active_provider,
+        "models": models,
+        "models_by_provider": models_by_provider,
+        "provider_models": _audio_provider_models(models_by_provider),
+    }
+    if kind == "tts":
+        payload["controls"] = {
+            "speed": {"supported": True, "min": 0.5, "max": 2.0, "default": 1.0},
+            "quality_preset": {"supported": True, "values": ["low", "standard", "high"], "default": "standard"},
+            "instructions": {"supported": True},
+            "profile": {"supported": True},
+            "voice_clone": {"supported": True},
+        }
+    return payload
+
+
+def _audio_provider_catalog_payload(*, core: Any, catalog: Dict[str, Any], kind: str) -> Dict[str, Any]:
+    if kind == "stt":
+        providers = _audio_list_strings(catalog.get("stt_providers"))
+        active_provider = catalog.get("active_stt_provider")
+        available_providers = _audio_catalog_available_provider_ids(catalog, "stt")
+    elif kind == "cloning":
+        providers = _audio_list_strings(catalog.get("cloning_providers"))
+        available_providers = _audio_catalog_available_provider_ids(catalog, "cloning")
+        if not providers:
+            providers = list(available_providers)
+        active_provider = catalog.get("active_cloning_provider")
+        if not active_provider:
+            available = catalog.get("available_providers")
+            if isinstance(available, dict):
+                active_provider = available.get("active_cloning_provider")
+    else:
+        providers = _audio_list_strings(catalog.get("tts_providers") or catalog.get("providers"))
+        active_provider = catalog.get("active_tts_provider") or catalog.get("engine_id")
+        available_providers = _audio_catalog_available_provider_ids(catalog, "tts")
+    if available_providers:
+        providers = list(available_providers)
+
+    return {
+        "available": True,
+        "source": "abstractvoice",
+        "stale": False,
+        "error": None,
+        "backend_id": getattr(core.voice, "backend_id", None),
+        "providers": providers,
+        "available_providers": available_providers,
+        "active_provider": active_provider,
+    }
+
+
+def _audio_voice_catalog_or_available(core: Any) -> Dict[str, Any]:
+    try:
+        if hasattr(core.voice, "voice_catalog"):
+            catalog = core.voice.voice_catalog()
+            if isinstance(catalog, dict):
+                return dict(catalog)
+    except Exception as catalog_error:
+        try:
+            if hasattr(core.voice, "available_providers"):
+                providers = core.voice.available_providers()
+                if isinstance(providers, dict):
+                    return {
+                        "available_providers": dict(providers),
+                        "tts_providers": _audio_list_strings(providers.get("tts_providers") or providers.get("tts")),
+                        "stt_providers": _audio_list_strings(providers.get("stt_providers") or providers.get("stt")),
+                        "cloning_providers": _audio_list_strings(providers.get("cloning_providers") or providers.get("cloning")),
+                        "active_tts_provider": providers.get("active_tts_provider"),
+                        "active_stt_provider": providers.get("active_stt_provider"),
+                        "active_cloning_provider": providers.get("active_cloning_provider"),
+                    }
+        except Exception:
+            pass
+        raise catalog_error
+    return {}
+
+
+def _audio_voice_available_providers(core: Any) -> Dict[str, Any]:
+    """Return lightweight availability from the capability plugin (best-effort)."""
+    try:
+        if hasattr(core.voice, "available_providers"):
+            payload = core.voice.available_providers()
+            if isinstance(payload, dict):
+                return dict(payload)
+    except Exception:
+        return {}
+    return {}
+
+
 @router.get("/audio/voices")
 async def audio_voices(
     request: Request,
@@ -693,13 +1198,34 @@ async def audio_voices(
             "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
         ),
     ),
+    api_key: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional upstream provider API key override for discovery. Prefer "
+            "`X-AbstractCore-Provider-API-Key`; this query parameter is supported for tooling/Swagger UI "
+            "convenience and is redacted from server logs."
+        ),
+    ),
+    provider: Optional[str] = Query(default=None, description="Optional TTS provider/engine filter."),
+    model: Optional[str] = Query(default=None, description="Optional TTS model/language filter."),
+    providers_only: bool = Query(default=False, description="Return provider names without model/voice lists."),
 ) -> Dict[str, Any]:
     """Discover configured TTS voices/profiles through the AbstractVoice plugin boundary."""
     try:
-        core = _audio_catalog_core(request, base_url=base_url)
-        catalog = core.voice.voice_catalog()
+        core = _audio_catalog_core(request, base_url=base_url, api_key=api_key)
+        catalog = _audio_voice_catalog_or_available(core)
         out = dict(catalog)
         out.setdefault("kind", "tts")
+        out.setdefault(
+            "controls",
+            {
+                "speed": {"supported": True, "min": 0.5, "max": 2.0, "default": 1.0},
+                "quality_preset": {"supported": True, "values": ["low", "standard", "high"], "default": "standard"},
+                "instructions": {"supported": True},
+                "profile": {"supported": True},
+                "voice_clone": {"supported": True},
+            },
+        )
         out.update(
             {
                 "available": True,
@@ -709,7 +1235,46 @@ async def audio_voices(
                 "backend_id": getattr(core.voice, "backend_id", None),
             }
         )
-        return out
+        return _filter_audio_voice_catalog_response(out, provider=provider, model=model, providers_only=providers_only)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _audio_catalog_error(e) from e
+
+
+@router.get("/audio/speech/providers")
+async def audio_speech_providers(
+    request: Request,
+    base_url: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional OpenAI-compatible voice endpoint override for TTS provider discovery. "
+            "Loopback is allowed by default; non-loopback URLs require "
+            "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+    ),
+    api_key: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional upstream provider API key override for discovery. Prefer "
+            "`X-AbstractCore-Provider-API-Key`; this query parameter is supported for tooling/Swagger UI "
+            "convenience and is redacted from server logs."
+        ),
+    ),
+) -> Dict[str, Any]:
+    """Discover configured TTS providers through the AbstractVoice plugin boundary."""
+    try:
+        core = _audio_catalog_core(request, base_url=base_url, api_key=api_key)
+        availability = _audio_voice_available_providers(core)
+        if availability:
+            catalog = {
+                "tts_providers": availability.get("known_tts_providers") or availability.get("tts_providers") or availability.get("tts"),
+                "available_providers": availability,
+                "available_tts_providers": availability.get("tts"),
+                "active_tts_provider": availability.get("active_tts_provider"),
+            }
+            return _audio_provider_catalog_payload(core=core, catalog=catalog, kind="tts")
+        return _audio_provider_catalog_payload(core=core, catalog=_audio_voice_catalog_or_available(core), kind="tts")
     except HTTPException:
         raise
     except Exception as e:
@@ -719,6 +1284,11 @@ async def audio_voices(
 @router.get("/audio/speech/models")
 async def audio_speech_models(
     request: Request,
+    provider: Optional[str] = Query(
+        default=None,
+        description="Optional provider filter (e.g. openai, openai-compatible, elevenlabs, supertonic).",
+        examples=["openai"],
+    ),
     base_url: Optional[str] = Query(
         default=None,
         description=(
@@ -727,19 +1297,78 @@ async def audio_speech_models(
             "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
         ),
     ),
+    api_key: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional upstream provider API key override for discovery. Prefer "
+            "`X-AbstractCore-Provider-API-Key`; this query parameter is supported for tooling/Swagger UI "
+            "convenience and is redacted from server logs."
+        ),
+    ),
 ) -> Dict[str, Any]:
     """Discover configured TTS model ids through the AbstractVoice plugin boundary."""
     try:
-        core = _audio_catalog_core(request, base_url=base_url)
-        models = core.voice.list_tts_models()
-        return {
-            "available": True,
-            "source": "abstractvoice",
-            "stale": False,
-            "error": None,
-            "backend_id": getattr(core.voice, "backend_id", None),
-            "models": list(models or []),
-        }
+        core = _audio_catalog_core(request, base_url=base_url, api_key=api_key)
+        catalog = _audio_voice_catalog_or_available(core)
+        try:
+            models = _audio_list_strings(list(core.voice.list_tts_models() or []))
+        except Exception:
+            models = _audio_list_strings(catalog.get("tts_models") or catalog.get("models"))
+        if not models:
+            models = _audio_list_strings(catalog.get("tts_models") or catalog.get("models"))
+        payload = _audio_model_catalog_payload(core=core, kind="tts", catalog=catalog, models=models)
+        provider_norm = str(provider or "").strip()
+        if provider_norm and isinstance(payload.get("models_by_provider"), dict):
+            provider_lc = provider_norm.lower()
+            models_by_provider = {
+                k: v for k, v in payload["models_by_provider"].items() if str(k).strip().lower() == provider_lc
+            }
+            payload["models_by_provider"] = models_by_provider
+            payload["providers"] = list(models_by_provider) or [provider_norm]
+            payload["available_providers"] = [p for p in payload.get("available_providers") or [] if str(p).strip().lower() == provider_lc] or payload["providers"]
+            models_filtered = [m for values in models_by_provider.values() for m in values]
+            payload["models"] = models_filtered
+            payload["provider_models"] = _audio_provider_models(models_by_provider)
+        return payload
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _audio_catalog_error(e) from e
+
+
+@router.get("/audio/transcriptions/providers")
+async def audio_transcription_providers(
+    request: Request,
+    base_url: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional OpenAI-compatible voice endpoint override for STT provider discovery. "
+            "Loopback is allowed by default; non-loopback URLs require "
+            "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+    ),
+    api_key: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional upstream provider API key override for discovery. Prefer "
+            "`X-AbstractCore-Provider-API-Key`; this query parameter is supported for tooling/Swagger UI "
+            "convenience and is redacted from server logs."
+        ),
+    ),
+) -> Dict[str, Any]:
+    """Discover configured STT providers through the AbstractVoice plugin boundary."""
+    try:
+        core = _audio_catalog_core(request, base_url=base_url, api_key=api_key)
+        availability = _audio_voice_available_providers(core)
+        if availability:
+            catalog = {
+                "stt_providers": availability.get("known_stt_providers") or availability.get("stt_providers") or availability.get("stt"),
+                "available_providers": availability,
+                "available_stt_providers": availability.get("stt"),
+                "active_stt_provider": availability.get("active_stt_provider"),
+            }
+            return _audio_provider_catalog_payload(core=core, catalog=catalog, kind="stt")
+        return _audio_provider_catalog_payload(core=core, catalog=_audio_voice_catalog_or_available(core), kind="stt")
     except HTTPException:
         raise
     except Exception as e:
@@ -749,6 +1378,11 @@ async def audio_speech_models(
 @router.get("/audio/transcriptions/models")
 async def audio_transcription_models(
     request: Request,
+    provider: Optional[str] = Query(
+        default=None,
+        description="Optional provider filter (e.g. openai, openai-compatible, whisper, deepgram).",
+        examples=["openai"],
+    ),
     base_url: Optional[str] = Query(
         default=None,
         description=(
@@ -757,46 +1391,170 @@ async def audio_transcription_models(
             "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
         ),
     ),
+    api_key: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional upstream provider API key override for discovery. Prefer "
+            "`X-AbstractCore-Provider-API-Key`; this query parameter is supported for tooling/Swagger UI "
+            "convenience and is redacted from server logs."
+        ),
+    ),
 ) -> Dict[str, Any]:
     """Discover configured STT model ids through the AbstractVoice plugin boundary."""
     try:
-        core = _audio_catalog_core(request, base_url=base_url)
-        models = core.voice.list_stt_models()
-        return {
-            "available": True,
-            "source": "abstractvoice",
-            "stale": False,
-            "error": None,
-            "backend_id": getattr(core.voice, "backend_id", None),
-            "models": list(models or []),
-        }
+        core = _audio_catalog_core(request, base_url=base_url, api_key=api_key)
+        catalog = _audio_voice_catalog_or_available(core)
+        try:
+            models = _audio_list_strings(list(core.voice.list_stt_models() or []))
+        except Exception:
+            models = _audio_list_strings(catalog.get("stt_models"))
+        if not models:
+            models = _audio_list_strings(catalog.get("stt_models"))
+        payload = _audio_model_catalog_payload(core=core, kind="stt", catalog=catalog, models=models)
+        provider_norm = str(provider or "").strip()
+        if provider_norm and isinstance(payload.get("models_by_provider"), dict):
+            provider_lc = provider_norm.lower()
+            models_by_provider = {
+                k: v for k, v in payload["models_by_provider"].items() if str(k).strip().lower() == provider_lc
+            }
+            payload["models_by_provider"] = models_by_provider
+            payload["providers"] = list(models_by_provider) or [provider_norm]
+            payload["available_providers"] = [p for p in payload.get("available_providers") or [] if str(p).strip().lower() == provider_lc] or payload["providers"]
+            models_filtered = [m for values in models_by_provider.values() for m in values]
+            payload["models"] = models_filtered
+            payload["provider_models"] = _audio_provider_models(models_by_provider)
+        return payload
     except HTTPException:
         raise
     except Exception as e:
         raise _audio_catalog_error(e) from e
 
 
-@router.post(
-    "/audio/speech",
-    response_class=Response,
-    responses={
-        200: {
-            "description": "Generated audio bytes.",
-            "content": {
-                "audio/wav": _AUDIO_BINARY_RESPONSE,
-                "audio/mpeg": _AUDIO_BINARY_RESPONSE,
-                "audio/opus": _AUDIO_BINARY_RESPONSE,
-                "audio/aac": _AUDIO_BINARY_RESPONSE,
-                "audio/flac": _AUDIO_BINARY_RESPONSE,
-                "audio/pcm": _AUDIO_BINARY_RESPONSE,
-                "application/octet-stream": _AUDIO_BINARY_RESPONSE,
-            },
-        }
-    },
-)
-async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)):
-    """OpenAI-compatible TTS endpoint (json with input text)."""
+@router.get("/voice/clone/providers")
+async def voice_clone_providers(
+    request: Request,
+    base_url: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional OpenAI-compatible voice endpoint override for voice clone provider discovery. "
+            "Loopback is allowed by default; non-loopback URLs require "
+            "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+    ),
+    api_key: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional upstream provider API key override for discovery. Prefer "
+            "`X-AbstractCore-Provider-API-Key`; this query parameter is supported for tooling/Swagger UI "
+            "convenience and is redacted from server logs."
+        ),
+    ),
+) -> Dict[str, Any]:
+    """Discover voice cloning providers through the AbstractVoice plugin boundary."""
+    try:
+        core = _audio_catalog_core(request, base_url=base_url, api_key=api_key)
+        availability = _audio_voice_available_providers(core)
+        if availability:
+            catalog = {
+                "cloning_providers": availability.get("known_cloning_providers") or availability.get("cloning_providers") or availability.get("cloning"),
+                "available_providers": availability,
+                "available_cloning_providers": availability.get("cloning"),
+                "active_cloning_provider": availability.get("active_cloning_provider"),
+            }
+            return _audio_provider_catalog_payload(core=core, catalog=catalog, kind="cloning")
+        return _audio_provider_catalog_payload(core=core, catalog=_audio_voice_catalog_or_available(core), kind="cloning")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _audio_catalog_error(e) from e
+
+
+@router.get("/voice/clone/models")
+async def voice_clone_models(
+    request: Request,
+    provider: Optional[str] = Query(
+        default=None,
+        description="Optional provider filter (e.g. openai-compatible, elevenlabs, supertonic).",
+        examples=["openai-compatible"],
+    ),
+    base_url: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional OpenAI-compatible voice endpoint override for voice cloning model discovery. "
+            "Loopback is allowed by default; non-loopback URLs require "
+            "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+    ),
+    api_key: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional upstream provider API key override for discovery. Prefer "
+            "`X-AbstractCore-Provider-API-Key`; this query parameter is supported for tooling/Swagger UI "
+            "convenience and is redacted from server logs."
+        ),
+    ),
+) -> Dict[str, Any]:
+    """Discover voice cloning model ids (if any) through the AbstractVoice plugin boundary."""
+    try:
+        core = _audio_catalog_core(request, base_url=base_url, api_key=api_key)
+        availability = _audio_voice_available_providers(core)
+        if availability:
+            catalog = {
+                "cloning_providers": availability.get("known_cloning_providers") or availability.get("cloning_providers") or availability.get("cloning"),
+                "available_providers": availability,
+                "available_cloning_providers": availability.get("cloning"),
+                "active_cloning_provider": availability.get("active_cloning_provider"),
+            }
+            payload = _audio_model_catalog_payload(core=core, kind="cloning", catalog=catalog, models=[])
+            provider_norm = str(provider or "").strip()
+            if provider_norm:
+                payload["providers"] = [provider_norm]
+                payload["available_providers"] = [p for p in payload.get("available_providers") or [] if str(p).strip().lower() == provider_norm.lower()] or [provider_norm]
+                payload["models_by_provider"] = {}
+                payload["models"] = []
+                payload["provider_models"] = []
+            return payload
+
+        catalog = _audio_voice_catalog_or_available(core)
+        payload = _audio_model_catalog_payload(core=core, kind="cloning", catalog=catalog, models=[])
+        provider_norm = str(provider or "").strip()
+        if provider_norm:
+            payload["providers"] = [provider_norm]
+            payload["available_providers"] = [p for p in payload.get("available_providers") or [] if str(p).strip().lower() == provider_norm.lower()] or [provider_norm]
+            payload["models_by_provider"] = {}
+            payload["models"] = []
+            payload["provider_models"] = []
+        return payload
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise _audio_catalog_error(e) from e
+
+
+_AUDIO_SPEECH_RESPONSES = {
+    200: {
+        "description": "Generated audio bytes.",
+        "content": {
+            "audio/wav": _AUDIO_BINARY_RESPONSE,
+            "audio/mpeg": _AUDIO_BINARY_RESPONSE,
+            "audio/opus": _AUDIO_BINARY_RESPONSE,
+            "audio/aac": _AUDIO_BINARY_RESPONSE,
+            "audio/flac": _AUDIO_BINARY_RESPONSE,
+            "audio/pcm": _AUDIO_BINARY_RESPONSE,
+            "application/octet-stream": _AUDIO_BINARY_RESPONSE,
+        },
+    }
+}
+
+
+async def _audio_speech_impl(
+    request: Request,
+    payload: AudioSpeechRequest,
+    *,
+    path_tts_engine: Optional[str] = None,
+):
     data = _model_payload(payload)
+    path_provider = _request_provider_value(path_tts_engine)
 
     input_text = data.get("input")
     if input_text is None:
@@ -812,9 +1570,22 @@ async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)
         fmt = data.get("response_format")
     fmt = str(fmt).strip().lower() if isinstance(fmt, str) and fmt.strip() else None
 
+    request_provider = path_provider or _request_provider_value(data.get("provider"))
+    remote_provider_payload = data.get("provider") if isinstance(data.get("provider"), dict) else None
+    local_model = None
     model = _optional_text(data.get("model"))
+    if path_provider and model and "/" in model:
+        _model_provider, model_tail = model.split("/", 1)
+        model = model_tail.strip() or None
     if model and _is_local_audio_model(model):
         model = None
+    if path_provider and path_provider in _REMOTE_AUDIO_PROVIDER_ALIASES and model and "/" not in model:
+        model = f"{path_provider}/{model}"
+    elif request_provider and request_provider not in _REMOTE_AUDIO_PROVIDER_ALIASES:
+        local_model = model
+        model = None
+    elif request_provider in {"openai", "openai-compatible"} and model and "/" not in model:
+        model = f"{request_provider}/{model}"
     if model:
         provider, model_name = _parse_model_string(model)
         provider_api_key = _provider_api_key_from_request(request)
@@ -832,7 +1603,7 @@ async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)
                 response_format=fmt,
                 speed=_optional_float(data.get("speed"), field="speed"),
                 instructions=_optional_text(data.get("instructions")),
-                provider=data.get("provider") if isinstance(data.get("provider"), dict) else None,
+                provider=remote_provider_payload,
             )
         except Exception as e:
             raise HTTPException(status_code=_provider_exception_status(e), detail=f"Audio synthesis failed: {e}") from e
@@ -850,8 +1621,11 @@ async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)
                 "voice": voice,
                 "format": fmt,
                 "speed": _optional_float(data.get("speed"), field="speed"),
+                "quality_preset": _optional_text(data.get("quality_preset") or data.get("quality")),
                 "instructions": _optional_text(data.get("instructions")),
-                "provider": data.get("provider") if isinstance(data.get("provider"), dict) else None,
+                "profile": _optional_text(data.get("profile")),
+                "provider": request_provider,
+                "model": local_model,
             },
         )
         voice_items = getattr(result, "outputs", {}).get("voice", [])
@@ -872,6 +1646,33 @@ async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)
     return _audio_response(bytes(audio), media_type=str(content_type or f"audio/{fmt}"))
 
 
+@router.post(
+    "/audio/speech",
+    response_class=Response,
+    responses=_AUDIO_SPEECH_RESPONSES,
+)
+async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)):
+    """OpenAI-compatible TTS endpoint (json with input text)."""
+    return await _audio_speech_impl(request, payload)
+
+
+@provider_router.post(
+    "/{provider}/v1/audio/speech",
+    response_class=Response,
+    responses=_AUDIO_SPEECH_RESPONSES,
+)
+async def provider_audio_speech(
+    request: Request,
+    payload: AudioSpeechRequest = Body(...),
+    provider: str = FastAPIPath(
+        ...,
+        description="TTS engine/provider route prefix, e.g. `piper`, `supertonic`, `openai`, or `openai-compatible`.",
+    ),
+):
+    """Provider-scoped TTS endpoint. The route engine takes precedence over body routing fields."""
+    return await _audio_speech_impl(request, payload, path_tts_engine=provider)
+
+
 @router.post("/voice/clone")
 async def voice_clone(
     request: Request,
@@ -885,6 +1686,14 @@ async def voice_clone(
             "If omitted, AbstractCore delegates to the local abstractvoice plugin path."
         ),
         examples=["openai-compatible/default"],
+    ),
+    provider: Optional[str] = Form(
+        default=None,
+        description=(
+            "Optional provider/engine hint. Use this for local clone routing such as "
+            "`omnivoice` or `f5-tts`, or remote routing such as `openai-compatible`."
+        ),
+        examples=["omnivoice"],
     ),
     name: Optional[str] = Form(default=None, description="Friendly cloned voice name.", examples=["my_voice"]),
     reference_text: Optional[str] = Form(default=None, description="Transcript of the reference audio when available.", examples=["Hello from AbstractCore voice cloning."]),
@@ -924,9 +1733,7 @@ async def voice_clone(
         raise HTTPException(status_code=400, detail=f"Failed to read uploaded audio file: {e}") from e
     _enforce_audio_size(bytes(audio_bytes))
 
-    model = _optional_text(model)
-    if model and _is_local_audio_model(model):
-        model = None
+    request_provider, model, local_model = _resolve_audio_request_routing(model=model, provider=provider)
 
     filename = str(getattr(file, "filename", "") or "reference.wav")
     content_type = str(getattr(file, "content_type", "") or "audio/wav")
@@ -981,7 +1788,10 @@ async def voice_clone(
                 "reference_text": _optional_text(reference_text),
                 "consent": _optional_text(consent),
                 "validate": validate,
-                "cloning_engine": os.getenv("ABSTRACTVOICE_CLONING_ENGINE") or None,
+                "provider": request_provider,
+                "model": local_model,
+                "tts_model": local_model,
+                "cloning_engine": request_provider or os.getenv("ABSTRACTVOICE_CLONING_ENGINE") or None,
             },
         )
         voice_resources = getattr(result, "resources", {}).get("voice", [])
@@ -996,6 +1806,69 @@ async def voice_clone(
         raise HTTPException(status_code=501, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Voice clone failed: {e}") from e
+
+
+@provider_router.post("/{provider}/v1/voice/clone")
+async def provider_voice_clone(
+    request: Request,
+    provider: str = FastAPIPath(
+        ...,
+        description="Voice-clone provider route prefix, e.g. `openai-compatible` or `openai`.",
+    ),
+    file: UploadFile = File(..., description="Reference voice audio file, commonly WAV/FLAC/OGG/MP3/M4A/WEBM."),
+    model: Optional[str] = Form(
+        default=None,
+        description="Optional unprefixed model id for the provider route. Defaults to `default` when omitted.",
+        examples=["default"],
+    ),
+    provider_hint: Optional[str] = Form(
+        default=None,
+        alias="provider",
+        description="Optional provider/engine hint. The route provider takes precedence when both are set.",
+        examples=["openai-compatible"],
+    ),
+    name: Optional[str] = Form(default=None, description="Friendly cloned voice name.", examples=["my_voice"]),
+    reference_text: Optional[str] = Form(default=None, description="Transcript of the reference audio when available.", examples=["Hello from AbstractCore voice cloning."]),
+    validate: Optional[bool] = Form(default=None, description="Ask compatible clone servers to validate the clone before returning.", examples=[True]),
+    base_url: Optional[str] = Form(
+        default=None,
+        description=(
+            "Optional request-level base URL for OpenAI-compatible voice endpoints. "
+            "Loopback URLs are allowed by default; non-loopback URLs require "
+            "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+        examples=["http://127.0.0.1:5000/v1"],
+    ),
+    clone_path: Optional[str] = Form(
+        default=None,
+        description="Optional provider-specific clone path.",
+        examples=["/voice/clone"],
+    ),
+    file_field: Optional[str] = Form(
+        default=None,
+        description="Optional provider-specific multipart file field.",
+        examples=["file"],
+    ),
+    consent: Optional[str] = Form(default=None, description="Optional provider-specific consent id for custom voice creation.", examples=["consent_123"]),
+):
+    """Provider-scoped voice-clone endpoint."""
+    provider_s = _request_provider_value(provider_hint or provider)
+    model_s = _optional_text(model)
+    if provider_s in _REMOTE_AUDIO_PROVIDER_ALIASES and not model_s:
+        model_s = "default"
+    return await voice_clone(
+        request=request,
+        file=file,
+        model=model_s,
+        provider=provider_s,
+        name=name,
+        reference_text=reference_text,
+        validate=validate,
+        base_url=base_url,
+        clone_path=clone_path,
+        file_field=file_field,
+        consent=consent,
+    )
 
 
 @router.post("/audio/music")

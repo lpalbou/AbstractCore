@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass, asdict, fields
 
+_SERVER_AUTH_TOKEN_ENV_VAR = "ABSTRACTCORE_AUTH_TOKEN"
+
 
 @dataclass
 class VisionConfig:
@@ -154,10 +156,10 @@ class ApiKeysConfig:
 class ServerConfig:
     """OpenAI-compatible HTTP gateway configuration."""
 
-    # Inbound server master key. When set, clients authenticate with
-    # `Authorization: Bearer <api_key>` and can use provider keys configured on
+    # Inbound server auth token. When set, clients authenticate with
+    # `Authorization: Bearer <token>` and can use provider keys configured on
     # the server.
-    api_key: Optional[str] = None
+    auth_token: Optional[str] = None
 
     # Dangerous local/dev escape hatch. Production should keep this false.
     allow_unauthenticated: bool = False
@@ -329,7 +331,7 @@ class ConfigurationManager:
             "anthropic": "ANTHROPIC_API_KEY",
             "openrouter": "OPENROUTER_API_KEY",
             "portkey": "PORTKEY_API_KEY",
-            "openai_compatible": "OPENAI_COMPATIBLE_API_KEY",
+            "openai_compatible": "OPENAI_API_KEY",
             "vllm": "VLLM_API_KEY",
             "google": "GOOGLE_API_KEY",
         }
@@ -354,7 +356,7 @@ class ConfigurationManager:
             server = self.config.server
 
             value_map = {
-                "ABSTRACTCORE_SERVER_API_KEY": server.api_key,
+                _SERVER_AUTH_TOKEN_ENV_VAR: server.auth_token,
                 "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST": server.base_url_allowlist,
                 "ABSTRACTCORE_SERVER_URL_FETCH_ALLOWLIST": server.url_fetch_allowlist,
                 "ABSTRACTCORE_SERVER_MEDIA_ROOT": server.media_root,
@@ -362,6 +364,8 @@ class ConfigurationManager:
                 "PORT": str(server.port) if server.port is not None else None,
             }
             for env_var, value in value_map.items():
+                if env_var == _SERVER_AUTH_TOKEN_ENV_VAR and os.environ.get(_SERVER_AUTH_TOKEN_ENV_VAR):
+                    continue
                 if value is not None and str(value).strip() and not os.environ.get(env_var):
                     os.environ[env_var] = str(value).strip()
 
@@ -722,11 +726,11 @@ class ConfigurationManager:
                 "google": "✅ Set" if self.config.api_keys.google else "❌ Not set"
             },
             "server": {
-                "api_key": "✅ Set" if self.config.server.api_key else "❌ Not set",
+                "auth_token": "✅ Set" if self.config.server.auth_token else "❌ Not set",
                 "allow_unauthenticated": bool(self.config.server.allow_unauthenticated),
                 "auth_mode": (
-                    "server_key"
-                    if self.config.server.api_key
+                    "server_token"
+                    if self.config.server.auth_token
                     else ("unauthenticated_dev" if self.config.server.allow_unauthenticated else "provider_key_only")
                 ),
                 "base_url_allowlist": self.config.server.base_url_allowlist,
@@ -1050,11 +1054,11 @@ class ConfigurationManager:
         except Exception:
             return False
 
-    def set_server_api_key(self, key: Optional[str]) -> bool:
-        """Set or clear the HTTP server master API key."""
+    def set_server_auth_token(self, token: Optional[str]) -> bool:
+        """Set or clear the HTTP server auth token."""
         try:
-            value = str(key or "").strip()
-            self.config.server.api_key = value or None
+            value = str(token or "").strip()
+            self.config.server.auth_token = value or None
             self._save_config()
             self._apply_server_config_to_env()
             return True

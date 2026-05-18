@@ -12,13 +12,14 @@ from abstractcore.core.types import GenerateResponse
 @pytest.fixture(autouse=True)
 def _clear_security_sensitive_env(monkeypatch) -> None:
     for name in (
-        "ABSTRACTCORE_SERVER_API_KEY",
+        "ABSTRACTCORE_AUTH_TOKEN",
+        "ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED",
         "ABSTRACTCORE_SERVER_PROTECT_DOCS",
         "OPENAI_API_KEY",
         "ANTHROPIC_API_KEY",
         "OPENROUTER_API_KEY",
         "PORTKEY_API_KEY",
-        "OPENAI_COMPATIBLE_API_KEY",
+        "OPENAI_BASE_URL",
         "VLLM_API_KEY",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -40,7 +41,7 @@ class _StubLLM:
 
 def test_server_api_key_blocks_unauthenticated_requests_before_provider_creation(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
-    monkeypatch.setenv("ABSTRACTCORE_SERVER_API_KEY", "server-secret")
+    monkeypatch.setenv("ABSTRACTCORE_AUTH_TOKEN", "server-secret")
 
     def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
         raise AssertionError("create_llm should not be called before server auth succeeds")
@@ -64,7 +65,7 @@ def test_server_api_key_blocks_unauthenticated_requests_before_provider_creation
 
 def test_swagger_docs_are_usable_with_server_auth_enabled(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
-    monkeypatch.setenv("ABSTRACTCORE_SERVER_API_KEY", "server-secret")
+    monkeypatch.setenv("ABSTRACTCORE_AUTH_TOKEN", "server-secret")
     server_app.app.openapi_schema = None
 
     client = TestClient(server_app.app)
@@ -74,6 +75,17 @@ def test_swagger_docs_are_usable_with_server_auth_enabled(monkeypatch) -> None:
     assert "SwaggerUIBundle" in docs.text
     assert "responseInterceptor" in docs.text
     assert "__abstractcoreLatestAudioPreviewUrl" in docs.text
+    assert "/acore/auth/validate" in docs.text
+    assert "AbstractCoreSwaggerAuthPlugin" in docs.text
+    assert 'url: "/openapi.json"' in docs.text
+    assert "abstractcore-server-token" not in docs.text
+    assert "authorization__btn" not in docs.text
+    assert "lightweight documentation view" not in docs.text
+
+    docs_lite = client.get("/docs-lite")
+    assert docs_lite.status_code == 200
+    assert "lightweight documentation view" in docs_lite.text
+    assert "SwaggerUIBundle" not in docs_lite.text
 
     schema = client.get("/openapi.json")
     assert schema.status_code == 200
@@ -88,21 +100,60 @@ def test_swagger_docs_are_usable_with_server_auth_enabled(monkeypatch) -> None:
     assert protected.status_code == 401
 
 
+def test_swagger_docs_do_not_advertise_server_bearer_auth_when_server_key_is_disabled(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.delenv("ABSTRACTCORE_AUTH_TOKEN", raising=False)
+    server_app.app.openapi_schema = None
+
+    client = TestClient(server_app.app)
+
+    docs = client.get("/docs")
+    assert docs.status_code == 200
+    assert "AbstractCoreSwaggerAuthPlugin" in docs.text
+
+    schema = client.get("/openapi.json")
+    assert schema.status_code == 200
+    body = schema.json()
+    assert "securitySchemes" not in body.get("components", {}) or "AbstractCoreBearerAuth" not in body["components"].get("securitySchemes", {})
+    assert "security" not in body["paths"]["/v1/chat/completions"]["post"]
+    assert "security" not in body["paths"]["/v1/models"]["get"]
+
+
+
+def test_docs_auth_validation_endpoint_requires_real_server_token(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("ABSTRACTCORE_AUTH_TOKEN", "server-secret")
+
+    client = TestClient(server_app.app)
+
+    assert client.get("/acore/auth/validate").status_code == 401
+    assert client.get("/acore/auth/validate", headers={"Authorization": "Bearer wrong"}).status_code == 401
+
+    valid = client.get("/acore/auth/validate", headers={"Authorization": "Bearer server-secret"})
+    assert valid.status_code == 200
+    assert valid.json() == {
+        "ok": True,
+        "server_auth_enabled": True,
+        "authenticated": True,
+    }
+
+
 def test_docs_can_be_protected_for_locked_down_deployments(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
-    monkeypatch.setenv("ABSTRACTCORE_SERVER_API_KEY", "server-secret")
+    monkeypatch.setenv("ABSTRACTCORE_AUTH_TOKEN", "server-secret")
     monkeypatch.setenv("ABSTRACTCORE_SERVER_PROTECT_DOCS", "1")
 
     client = TestClient(server_app.app)
 
     assert client.get("/docs").status_code == 401
+    assert client.get("/docs-lite").status_code == 401
     assert client.get("/openapi.json").status_code == 401
     assert client.get("/openapi.json", headers={"Authorization": "Bearer server-secret"}).status_code == 200
 
 
 def test_server_auth_is_required_by_default_when_key_is_not_configured(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
-    monkeypatch.delenv("ABSTRACTCORE_SERVER_API_KEY", raising=False)
+    monkeypatch.delenv("ABSTRACTCORE_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", raising=False)
 
     def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
@@ -122,7 +173,7 @@ def test_server_auth_is_required_by_default_when_key_is_not_configured(monkeypat
 
 def test_server_api_key_allows_authenticated_request_without_forwarding_server_key(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
-    monkeypatch.setenv("ABSTRACTCORE_SERVER_API_KEY", "server-secret")
+    monkeypatch.setenv("ABSTRACTCORE_AUTH_TOKEN", "server-secret")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-server-openai-key")
 
     created: List[Dict[str, Any]] = []
@@ -146,7 +197,7 @@ def test_server_api_key_allows_authenticated_request_without_forwarding_server_k
 
 def test_server_api_key_allows_provider_override_header(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
-    monkeypatch.setenv("ABSTRACTCORE_SERVER_API_KEY", "server-secret")
+    monkeypatch.setenv("ABSTRACTCORE_AUTH_TOKEN", "server-secret")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-server-key")
 
     created: List[Dict[str, Any]] = []
@@ -172,6 +223,7 @@ def test_server_api_key_allows_provider_override_header(monkeypatch) -> None:
 
 def test_provider_api_key_body_field_is_disabled(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
 
     def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
         raise AssertionError("create_llm should not be called when body api_key is rejected")
@@ -190,20 +242,30 @@ def test_provider_api_key_body_field_is_disabled(monkeypatch) -> None:
     assert r.status_code == 400
 
 
-def test_provider_api_key_query_param_is_disabled(monkeypatch) -> None:
+def test_models_endpoint_accepts_api_key_query_param_override(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
 
-    def fake_get_models_from_provider(*args: Any, **kwargs: Any) -> List[str]:
-        raise AssertionError("model discovery should not run when query api_key is rejected")
+    captured: Dict[str, Any] = {}
+
+    def fake_get_models_from_provider(provider: str, *args: Any, **kwargs: Any) -> List[str]:
+        captured["provider"] = provider
+        captured["kwargs"] = dict(kwargs)
+        return ["gpt-4o-mini"]
 
     monkeypatch.setattr(server_app, "get_models_from_provider", fake_get_models_from_provider)
 
     client = TestClient(server_app.app)
-    r = client.get("/v1/models?provider=openai&api_key=sk-should-not-be-logged")
-    assert r.status_code == 400
+    r = client.get(
+        "/v1/models?provider=openai&api_key=sk-should-not-be-logged",
+        headers={"Authorization": "Bearer sk-header-provider-key"},
+    )
+    assert r.status_code == 200
+    assert captured["provider"] == "openai"
+    assert captured["kwargs"].get("api_key") == "sk-should-not-be-logged"
 
 
-def test_provider_api_key_authorization_header_is_forwarded_only_without_server_auth(monkeypatch) -> None:
+def test_authorization_header_is_treated_as_provider_api_key_when_server_auth_is_disabled(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
 
     created: List[Dict[str, Any]] = []
@@ -224,7 +286,7 @@ def test_provider_api_key_authorization_header_is_forwarded_only_without_server_
     assert created and created[-1].get("api_key") == "sk-provider-request-key"
 
 
-def test_provider_api_key_authorization_overrides_server_env_without_server_auth(monkeypatch) -> None:
+def test_authorization_header_overrides_server_provider_env_when_server_auth_is_disabled(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-server-env-key")
 
@@ -269,6 +331,7 @@ def test_provider_override_header_is_forwarded_without_server_auth(monkeypatch) 
 
 def test_unauthenticated_request_cannot_use_server_provider_env_key(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
     monkeypatch.setenv("OPENAI_API_KEY", "sk-server-env-key")
 
     def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
@@ -314,6 +377,7 @@ def test_sensitive_values_are_redacted_from_structured_log_fields() -> None:
 
 def test_server_blocks_non_loopback_base_url_by_default(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
 
     def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
         raise AssertionError("create_llm should not be called for blocked base_url overrides")
@@ -334,6 +398,7 @@ def test_server_blocks_non_loopback_base_url_by_default(monkeypatch) -> None:
 
 def test_server_allows_loopback_base_url_override(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
 
     created: List[Dict[str, Any]] = []
 
@@ -358,6 +423,7 @@ def test_server_allows_loopback_base_url_override(monkeypatch) -> None:
 
 def test_server_prevents_env_key_exfiltration_via_base_url_override(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
 
     # Allow this non-loopback base_url for the test.
     monkeypatch.setenv("ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST", "https://example.com")
@@ -424,6 +490,7 @@ def test_url_allowlist_host_globs_still_match_canonical_hosts() -> None:
 
 def test_server_blocks_local_file_paths_in_http_requests_by_default(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
 
     def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
         raise AssertionError("create_llm should not be called when local paths are rejected")
@@ -451,6 +518,7 @@ def test_server_blocks_local_file_paths_in_http_requests_by_default(monkeypatch)
 
 def test_server_blocks_private_url_fetches_by_default(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
 
     def fake_create_llm(*args: Any, **kwargs: Any) -> _StubLLM:
         raise AssertionError("create_llm should not be called when SSRF is blocked")

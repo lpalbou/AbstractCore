@@ -11,12 +11,12 @@ from abstractcore.server.app import app
 
 @pytest.fixture(autouse=True)
 def _clear_server_auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("ABSTRACTCORE_SERVER_API_KEY", raising=False)
+    monkeypatch.delenv("ABSTRACTCORE_AUTH_TOKEN", raising=False)
     monkeypatch.delenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("PORTKEY_API_KEY", raising=False)
-    monkeypatch.delenv("OPENAI_COMPATIBLE_API_KEY", raising=False)
 
 
 @pytest.fixture()
@@ -25,7 +25,7 @@ def client() -> TestClient:
 
 
 def _provider_auth_headers() -> Dict[str, str]:
-    return {"Authorization": "Bearer sk-request-provider-key"}
+    return {"X-AbstractCore-Provider-API-Key": "sk-request-provider-key"}
 
 
 def test_openai_embeddings_route_forwards_remote_parameters(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:

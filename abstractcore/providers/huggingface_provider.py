@@ -2236,6 +2236,18 @@ class HuggingFaceProvider(BaseProvider):
             if not gguf_files:
                 return None
             gguf_files = sorted(gguf_files, key=lambda p: p.name)
+            explicit_selector = None
+            selector_source = str(model_name or "").strip()
+            if ":" in selector_source:
+                explicit_selector = selector_source.split(":", 1)[1].strip().strip("/")
+                explicit_selector = explicit_selector or None
+            if explicit_selector:
+                selector_upper = explicit_selector.upper()
+                for gguf_file in gguf_files:
+                    file_name_upper = gguf_file.name.upper()
+                    file_path_upper = str(gguf_file).upper()
+                    if selector_upper == file_name_upper or selector_upper in file_name_upper or selector_upper in file_path_upper:
+                        return str(gguf_file)
             preferred_quants = ['Q4_K_M', 'Q5_K_M', 'Q4_0', 'Q4_1', 'Q5_0', 'Q8_0']
             for quant in preferred_quants:
                 for gguf_file in gguf_files:
@@ -2424,9 +2436,17 @@ class HuggingFaceProvider(BaseProvider):
             except Exception:
                 gguf_arch = None
 
+            model_lower = self.model.lower()
+
+            if "mtp" in model_lower:
+                self.logger.warning(
+                    "Loading an MTP GGUF through llama-cpp-python. The model can be used as a regular GGUF, "
+                    "but current public llama-cpp-python bindings do not expose native MTP acceleration in-process. "
+                    "Use an external llama.cpp server/runtime with native MTP support if you need the speedup."
+                )
+
             # Determine chat format for function calling
             chat_format = None
-            model_lower = self.model.lower()
             if 'qwen' in model_lower or 'coder' in model_lower:
                 # Qwen models often support function calling
                 chat_format = "chatml-function-calling"

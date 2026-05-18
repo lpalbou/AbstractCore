@@ -209,20 +209,20 @@ Supported provider key names include `openai`, `anthropic`, `openrouter`, `portk
 
 ### HTTP Server Gateway Auth
 
-The optional OpenAI-compatible HTTP server has its own inbound server key. This is separate from upstream provider keys.
+The optional OpenAI-compatible HTTP server has its own inbound auth token. This is separate from upstream provider keys.
 
 ```bash
-# Set the AbstractCore server master key
-abstractcore --set-server-api-key acore-server-secret
+# Set the AbstractCore server auth token
+abstractcore --set-server-auth-token acore-server-secret
 
 # Start the server; clients now authenticate with:
 # Authorization: Bearer acore-server-secret
 python -m abstractcore.server.app
 ```
 
-When a server master key is configured, authenticated clients can use provider keys configured on the server through `abstractcore --set-api-key ...` or environment variables. To override one upstream provider for one request, clients can send `X-AbstractCore-Provider-API-Key`.
+When a server auth token is configured, authenticated clients can use provider keys configured on the server through `abstractcore --set-api-key ...` or environment variables. To override one upstream provider for one request, clients can send `X-AbstractCore-Provider-API-Key`.
 
-When no server master key is configured, clients may bring their own upstream provider key with `Authorization: Bearer <provider-key>` or `X-AbstractCore-Provider-API-Key`, but they cannot use server-held provider keys. Provider keys in request bodies or query strings are disabled.
+When no server auth token is configured, clients may bring their own upstream provider key with `X-AbstractCore-Provider-API-Key`, but they cannot use server-held provider keys. Provider keys in request bodies remain disabled; select discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI convenience.
 
 Server hardening commands:
 
@@ -249,7 +249,7 @@ abstractcore --set-server-host 127.0.0.1
 abstractcore --set-server-port 8000
 ```
 
-The interactive wizard (`abstractcore --config`) asks for the same persisted server security surface: server master key, unauthenticated local/dev mode, request `base_url` allowlist, URL media-fetch allowlist, safe media root, unrestricted local-file toggle, and default server host/port. It can generate a server key and accepts `clear` for the key, allowlists, and media root.
+The interactive wizard (`abstractcore --config`) asks for the same persisted server security surface: server auth token, unauthenticated local/dev mode, request `base_url` allowlist, URL media-fetch allowlist, safe media root, unrestricted local-file toggle, and default server host/port. It can generate an auth token and accepts `clear` for the key, allowlists, and media root.
 
 ### Streaming Configuration
 
@@ -369,7 +369,7 @@ abstractcore --set-api-key openai-compatible your-endpoint-key
 abstractcore --set-api-key vllm your-vllm-key
 
 # 5. Optional: configure the OpenAI-compatible HTTP server gateway
-abstractcore --set-server-api-key acore-server-secret
+abstractcore --set-server-auth-token acore-server-secret
 abstractcore --set-server-base-url-allowlist "https://example.com/v1"
 
 # 6. Configure logging for development
@@ -565,7 +565,8 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 - **google**: Google API key (reserved for future integrations; not required for current built-in providers)
 
 ### Server Section
-- **api_key**: AbstractCore server master key for inbound client authentication
+- **auth_token**: AbstractCore server auth token for inbound client authentication
+- **api_key**: Legacy status alias retained for compatibility with older callers
 - **allow_unauthenticated**: Local/dev escape hatch for unauthenticated HTTP server requests
 - **base_url_allowlist**: Additional non-loopback `base_url` override allowlist
 - **url_fetch_allowlist**: URL media fetch allowlist for otherwise blocked targets

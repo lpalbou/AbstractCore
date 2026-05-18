@@ -13,7 +13,7 @@ from typing import Dict, List, Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Server unit tests set auth explicitly with fixtures. Do not let a developer's
-# persisted ~/.abstractcore server key leak into app imports during collection.
+# persisted ~/.abstractcore server auth token leak into app imports during collection.
 os.environ["ABSTRACTCORE_SERVER_DISABLE_CENTRALIZED_CONFIG"] = "1"
 
 from abstractcore import create_llm

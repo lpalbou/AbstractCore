@@ -16,6 +16,8 @@ def clean_vision_state(monkeypatch):
     for key in list(os.environ):
         if key.startswith(("ABSTRACTCORE_VISION_", "ABSTRACTVISION_")):
             monkeypatch.delenv(key, raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
     from abstractcore.server import vision_endpoints
 
@@ -40,9 +42,9 @@ def test_images_generations_without_model_uses_configured_openai_compatible_defa
     from abstractcore.server import vision_endpoints
 
     _FakeProxyClient.calls = []
-    monkeypatch.setenv("ABSTRACTVISION_BASE_URL", "https://images.example/v1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://images.example/v1")
     monkeypatch.setenv("ABSTRACTVISION_MODEL_ID", "remote-image-model")
-    monkeypatch.setenv("ABSTRACTVISION_API_KEY", "vision-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "vision-key")
     monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
 
     resp = client.post("/v1/images/generations", json={"prompt": "hello", "width": 64, "height": 64, "response_format": "b64_json"})
@@ -61,9 +63,9 @@ def test_images_edits_without_model_uses_configured_openai_compatible_default(cl
     from abstractcore.server import vision_endpoints
 
     _FakeProxyClient.calls = []
-    monkeypatch.setenv("ABSTRACTVISION_BASE_URL", "https://images.example/v1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://images.example/v1")
     monkeypatch.setenv("ABSTRACTVISION_MODEL_ID", "remote-image-model")
-    monkeypatch.setenv("ABSTRACTVISION_API_KEY", "vision-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "vision-key")
     monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
 
     files = {"image": ("image.png", b"\x89PNG\r\n\x1a\nabc", "image/png")}
@@ -80,7 +82,7 @@ def test_images_edits_without_model_uses_configured_openai_compatible_default(cl
 
 def test_images_generations_without_model_returns_501_when_unconfigured(client, monkeypatch):
     monkeypatch.delenv("ABSTRACTCORE_VISION_BACKEND", raising=False)
-    monkeypatch.delenv("ABSTRACTCORE_VISION_UPSTREAM_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("ABSTRACTCORE_VISION_MODEL_ID", raising=False)
     monkeypatch.delenv("ABSTRACTCORE_VISION_SDCPP_MODEL", raising=False)
     monkeypatch.delenv("ABSTRACTCORE_VISION_SDCPP_DIFFUSION_MODEL", raising=False)
@@ -118,7 +120,7 @@ def test_images_edits_returns_501_when_sdcpp_unconfigured(client, monkeypatch):
 
 def test_images_generations_rejects_chat_model_id(client, monkeypatch):
     """Ensure AbstractCore-style chat model ids don't get misrouted as image models."""
-    monkeypatch.delenv("ABSTRACTCORE_VISION_UPSTREAM_BASE_URL", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("ABSTRACTCORE_VISION_BACKEND", raising=False)
     monkeypatch.delenv("ABSTRACTCORE_VISION_MODEL_ID", raising=False)
     monkeypatch.delenv("ABSTRACTCORE_VISION_SDCPP_MODEL", raising=False)
@@ -137,7 +139,7 @@ def test_images_generations_rejects_chat_model_id(client, monkeypatch):
 def test_openai_compatible_generation_uses_size_not_width_height(monkeypatch):
     from abstractcore.server import vision_endpoints
 
-    monkeypatch.setenv("ABSTRACTCORE_VISION_UPSTREAM_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
 
     width, height, extra = vision_endpoints._image_generation_request_parts(
         {
@@ -192,8 +194,8 @@ def test_openai_compatible_generation_proxy_success(client, monkeypatch):
     from abstractcore.server import vision_endpoints
 
     _FakeProxyClient.calls = []
-    monkeypatch.setenv("ABSTRACTCORE_VISION_UPSTREAM_BASE_URL", "https://images.example/v1")
-    monkeypatch.setenv("ABSTRACTCORE_VISION_UPSTREAM_API_KEY", "provider-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://images.example/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "provider-key")
     monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
 
     resp = client.post(
@@ -232,11 +234,84 @@ def test_openai_compatible_generation_proxy_success(client, monkeypatch):
     assert "height" not in call["json"]
 
 
+def test_provider_scoped_images_generation_prefixes_plain_model(client, monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    _FakeProxyClient.calls = []
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://images.example/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "provider-key")
+    monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
+
+    resp = client.post(
+        "/openai-compatible/v1/images/generations",
+        json={
+            "prompt": "a red square",
+            "model": "gpt-image-2",
+            "width": 256,
+            "height": 256,
+            "response_format": "b64_json",
+        },
+    )
+
+    assert resp.status_code == 200
+    call = _FakeProxyClient.calls[0]
+    assert call["url"] == "https://images.example/v1/images/generations"
+    assert call["headers"]["Authorization"] == "Bearer provider-key"
+    assert call["json"]["model"] == "gpt-image-2"
+    assert call["json"]["size"] == "256x256"
+
+
+def test_images_generations_accepts_request_base_url_override_and_provider_key(client, monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    _FakeProxyClient.calls = []
+    monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
+
+    resp = client.post(
+        "/v1/images/generations",
+        headers={"X-AbstractCore-Provider-API-Key": "request-image-key"},
+        json={
+            "prompt": "a red square",
+            "provider": "openai-compatible",
+            "base_url": "http://127.0.0.1:5000/v1",
+            "width": 128,
+            "height": 128,
+            "response_format": "b64_json",
+        },
+    )
+
+    assert resp.status_code == 200
+    call = _FakeProxyClient.calls[0]
+    assert call["url"] == "http://127.0.0.1:5000/v1/images/generations"
+    assert call["headers"]["Authorization"] == "Bearer request-image-key"
+    assert call["json"]["model"] == "default"
+    assert call["json"]["size"] == "128x128"
+
+
+def test_provider_scoped_openai_images_generation_defaults_to_openai_api(client, monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    _FakeProxyClient.calls = []
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-key")
+    monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
+
+    resp = client.post(
+        "/openai/v1/images/generations",
+        json={"prompt": "a red square", "model": "gpt-image-1", "response_format": "b64_json"},
+    )
+
+    assert resp.status_code == 200
+    call = _FakeProxyClient.calls[0]
+    assert call["url"] == "https://api.openai.com/v1/images/generations"
+    assert call["headers"]["Authorization"] == "Bearer openai-key"
+    assert call["json"]["model"] == "gpt-image-1"
+
+
 def test_openai_compatible_generation_proxy_allows_backend_specific_extra(client, monkeypatch):
     from abstractcore.server import vision_endpoints
 
     _FakeProxyClient.calls = []
-    monkeypatch.setenv("ABSTRACTCORE_VISION_UPSTREAM_BASE_URL", "https://images.example/v1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://images.example/v1")
     monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
 
     resp = client.post(
@@ -265,7 +340,8 @@ def test_images_generation_schema_uses_width_height_not_size(client):
 
     assert "width" in props
     assert "height" in props
-    assert "size" not in props
+    assert "size" in props
+    assert "base_url" in props
     assert body_schema.get("additionalProperties") is False
     assert "additionalProp1" not in str(body_schema)
 
@@ -275,8 +351,8 @@ def test_openai_compatible_edit_proxy_success_with_abstractvision_env(client, mo
 
     _FakeProxyClient.calls = []
     monkeypatch.setenv("ABSTRACTVISION_BACKEND", "openai")
-    monkeypatch.setenv("ABSTRACTVISION_BASE_URL", "https://images.example/v1")
-    monkeypatch.setenv("ABSTRACTVISION_API_KEY", "vision-key")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://images.example/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "vision-key")
     monkeypatch.setenv("ABSTRACTVISION_MODEL_ID", "remote-image-model")
     monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
 
@@ -295,11 +371,38 @@ def test_openai_compatible_edit_proxy_success_with_abstractvision_env(client, mo
     assert "image" in call["files"]
 
 
+def test_images_edits_accepts_provider_and_request_base_url_override(client, monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    _FakeProxyClient.calls = []
+    monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
+
+    files = {"image": ("image.png", _PNG_BYTES, "image/png")}
+    resp = client.post(
+        "/v1/images/edits",
+        headers={"X-AbstractCore-Provider-API-Key": "request-image-key"},
+        data={
+            "prompt": "make it watercolor",
+            "provider": "openai-compatible",
+            "base_url": "http://127.0.0.1:5000/v1",
+            "size": "256x256",
+        },
+        files=files,
+    )
+
+    assert resp.status_code == 200
+    call = _FakeProxyClient.calls[0]
+    assert call["url"] == "http://127.0.0.1:5000/v1/images/edits"
+    assert call["headers"]["Authorization"] == "Bearer request-image-key"
+    assert call["data"]["model"] == "default"
+    assert call["data"]["size"] == "256x256"
+
+
 def test_openai_compatible_generation_with_abstractvision_env_strips_provider_prefix(client, monkeypatch):
     from abstractcore.server import vision_endpoints
 
     _FakeProxyClient.calls = []
-    monkeypatch.setenv("ABSTRACTVISION_BASE_URL", "https://images.example/v1")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://images.example/v1")
     monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
 
     resp = client.post(
@@ -374,6 +477,8 @@ def test_diffusers_default_provider_model_uses_configured_diffusers_model(client
             _FakeDiffusersBackend,
             object,
             object,
+            object,
+            object,
             RuntimeError,
             (_FakeImageGenerationRequest, _FakeImageEditRequest),
         )
@@ -398,6 +503,40 @@ def test_diffusers_default_provider_model_uses_configured_diffusers_model(client
     assert req.width == 64
     assert req.height == 64
     assert req.steps == 2
+
+
+def test_mflux_provider_model_uses_mflux_backend_without_diffusers_prefix(client, monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    _FakeDiffusersConfig.instances = []
+    _FakeDiffusersBackend.requests = []
+
+    def fake_import_abstractvision():
+        return (
+            object,
+            object,
+            object,
+            object,
+            _FakeDiffusersConfig,
+            _FakeDiffusersBackend,
+            object,
+            object,
+            RuntimeError,
+            (_FakeImageGenerationRequest, _FakeImageEditRequest),
+        )
+
+    monkeypatch.setattr(vision_endpoints, "_import_abstractvision", fake_import_abstractvision)
+
+    resp = client.post(
+        "/v1/images/generations",
+        json={"prompt": "a small red square", "provider": "mflux", "model": "flux2-klein-9b", "width": 64, "height": 64, "steps": 2},
+    )
+
+    assert resp.status_code == 200
+    cfg = _FakeDiffusersConfig.instances[0]
+    assert cfg.model == "flux2-klein-9b"
+    assert not str(cfg.model).startswith("diffusers/")
+    assert _FakeDiffusersBackend.requests[0].prompt == "a small red square"
 
 
 def test_diffusers_default_provider_model_requires_configured_model(client):

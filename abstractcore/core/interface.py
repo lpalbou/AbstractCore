@@ -133,7 +133,11 @@ class AbstractCoreInterface(ABC):
                 mbs_l = mbs.lower()
                 if mbs_l in {"diffusers"}:
                     merged_prefs["music"] = "abstractmusic:diffusers"
-                elif mbs_l in {"acestep", "ace-step", "acestep_v15", "acestep-v15"}:
+                elif mbs_l in {"acestep", "ace", "ace-step"}:
+                    merged_prefs["music"] = "abstractmusic:acestep-v15"
+                elif mbs_l in {"official", "acestep-official", "acestep_official"}:
+                    merged_prefs["music"] = "abstractmusic:acestep-official"
+                elif mbs_l in {"acestep_v15", "acestep-v15"}:
                     merged_prefs["music"] = "abstractmusic:acestep-v15"
                 else:
                     # If caller already provided a concrete backend_id, accept as-is.

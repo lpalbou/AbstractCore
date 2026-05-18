@@ -23,7 +23,7 @@ if TYPE_CHECKING:
 
 try:
     import sentence_transformers
-except ImportError:
+except Exception:
     sentence_transformers = None
 
 try:

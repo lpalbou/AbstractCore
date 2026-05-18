@@ -63,6 +63,36 @@ def _make_multi_audio_backend_plugin_ep():
     return _FakeEntryPoint(name="fake-multi-audio", value="tests.fake_multi_audio:register", obj=register)
 
 
+def _make_multi_music_backend_plugin_ep():
+    def register(registry):
+        class _MusicOfficial:
+            backend_id = "abstractmusic:acestep-official"
+
+            def t2m(self, prompt, **kwargs):
+                _ = prompt, kwargs
+                return b"official"
+
+        class _MusicLegacy:
+            backend_id = "abstractmusic:acestep-v15"
+
+            def t2m(self, prompt, **kwargs):
+                _ = prompt, kwargs
+                return b"legacy"
+
+        registry.register_music_backend(
+            backend_id="abstractmusic:acestep-official",
+            factory=lambda _owner: _MusicOfficial(),
+            priority=20,
+        )
+        registry.register_music_backend(
+            backend_id="abstractmusic:acestep-v15",
+            factory=lambda _owner: _MusicLegacy(),
+            priority=10,
+        )
+
+    return _FakeEntryPoint(name="fake-multi-music", value="tests.fake_multi_music:register", obj=register)
+
+
 @pytest.mark.basic
 def test_config_audio_stt_backend_id_selects_audio_backend(monkeypatch):
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_audio_backend_plugin_ep()]))
@@ -96,3 +126,36 @@ def test_explicit_preferred_backend_overrides_config_default(monkeypatch):
     assert llm.capabilities.status()["capabilities"]["audio"]["selected_backend"] == "b"
     assert llm.audio.transcribe(b"123") == "b"
 
+
+@pytest.mark.basic
+def test_music_backend_acestep_alias_selects_internal_backend(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_music_backend_plugin_ep()]))
+
+    import abstractcore.config.manager as config_manager_module
+
+    monkeypatch.setattr(
+        config_manager_module,
+        "get_config_manager",
+        lambda: SimpleNamespace(config=SimpleNamespace(audio=SimpleNamespace(stt_backend_id=None))),
+    )
+
+    llm = _DummyProvider(model="dummy", music_backend="acestep")
+    assert llm.capabilities.status()["capabilities"]["music"]["selected_backend"] == "abstractmusic:acestep-v15"
+    assert llm.music.t2m("bright melodic synth loop") == b"legacy"
+
+
+@pytest.mark.basic
+def test_music_backend_acestep_v15_alias_keeps_legacy_backend(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_music_backend_plugin_ep()]))
+
+    import abstractcore.config.manager as config_manager_module
+
+    monkeypatch.setattr(
+        config_manager_module,
+        "get_config_manager",
+        lambda: SimpleNamespace(config=SimpleNamespace(audio=SimpleNamespace(stt_backend_id=None))),
+    )
+
+    llm = _DummyProvider(model="dummy", music_backend="acestep-v15")
+    assert llm.capabilities.status()["capabilities"]["music"]["selected_backend"] == "abstractmusic:acestep-v15"
+    assert llm.music.t2m("bright melodic synth loop") == b"legacy"

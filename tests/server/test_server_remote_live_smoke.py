@@ -16,7 +16,7 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture()
 def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    monkeypatch.delenv("ABSTRACTCORE_SERVER_API_KEY", raising=False)
+    monkeypatch.delenv("ABSTRACTCORE_AUTH_TOKEN", raising=False)
     return TestClient(app)
 
 

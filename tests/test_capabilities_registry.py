@@ -103,11 +103,36 @@ def test_preferred_backend_beats_priority(monkeypatch):
 
 
 @pytest.mark.basic
-def test_voice_facade_uses_remote_adapter_voice_without_treating_it_as_clone(monkeypatch):
+def test_voice_facade_delegates_remote_voice_to_backend(monkeypatch):
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_remote_voice_plugin_ep()]))
 
     llm = _DummyProvider(model="dummy")
     assert llm.voice.tts("hello", voice="coral", format="wav", speed=1.1) == b"remote:coral:wav:1.1"
+
+
+@pytest.mark.basic
+def test_voice_facade_respects_provider_override_before_adapter_voice_fast_path(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_provider_override_voice_plugin_ep()]))
+
+    llm = _DummyProvider(model="dummy")
+    assert llm.voice.tts("hello", voice="alloy", provider="openai", format="wav") == b"backend:openai:alloy"
+
+
+@pytest.mark.basic
+def test_voice_facade_delegates_local_profile_voice_to_backend(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_local_profile_voice_plugin_ep()]))
+
+    llm = _DummyProvider(model="dummy")
+    assert (
+        llm.voice.tts(
+            "hello",
+            voice="M1",
+            provider="supertonic",
+            model="supertonic-3",
+            format="wav",
+        )
+        == b"backend:supertonic:supertonic-3:M1"
+    )
 
 
 def _make_fake_plugin_ep():
@@ -246,7 +271,8 @@ def _make_remote_voice_plugin_ep():
                 return _VM()
 
             def tts(self, text: str, **kwargs):
-                raise AssertionError("built-in remote voices should use the adapter path")
+                _ = text
+                return f"remote:{kwargs.get('voice')}:{kwargs.get('format')}:{kwargs.get('speed')}".encode()
 
             def stt(self, audio, **kwargs):
                 return "transcript"
@@ -258,3 +284,86 @@ def _make_remote_voice_plugin_ep():
         )
 
     return _FakeEntryPoint(name="fake-remote-voice", value="tests.fake_remote_voice:register", obj=register)
+
+
+def _make_provider_override_voice_plugin_ep():
+    def register(registry):
+        class _Adapter:
+            engine_id = "piper"
+
+            def is_available(self):
+                return True
+
+            def synthesize_to_bytes_with_voice(self, text: str, *, format: str, voice: str, speed=None, instructions=None):
+                raise AssertionError("provider override should bypass the active adapter fast path")
+
+        class _VM:
+            tts_adapter = _Adapter()
+            _tts_engine_name = "piper"
+
+            def get_cloned_voice(self, voice_id: str):
+                _ = voice_id
+                return None
+
+        class _Voice:
+            backend_id = "provider-override-voice"
+
+            def _get_vm(self):
+                return _VM()
+
+            def tts(self, text: str, **kwargs):
+                _ = text
+                return f"backend:{kwargs.get('provider')}:{kwargs.get('voice')}".encode()
+
+            def stt(self, audio, **kwargs):
+                return "transcript"
+
+        registry.register_voice_backend(
+            backend_id="provider-override-voice",
+            factory=lambda _owner: _Voice(),
+            priority=0,
+        )
+
+    return _FakeEntryPoint(name="fake-provider-override-voice", value="tests.fake_provider_override_voice:register", obj=register)
+
+
+def _make_local_profile_voice_plugin_ep():
+    def register(registry):
+        class _Adapter:
+            engine_id = "supertonic"
+
+            def is_available(self):
+                return True
+
+            def synthesize_to_bytes_with_voice(self, text: str, *, format: str, voice: str, speed=None, instructions=None):
+                _ = (text, format, speed, instructions)
+                raise AssertionError("local provider profile voices must be routed through backend.tts")
+
+        class _VM:
+            tts_adapter = _Adapter()
+            _tts_engine_name = "supertonic"
+
+            def get_cloned_voice(self, voice_id: str):
+                _ = voice_id
+                return None
+
+        class _Voice:
+            backend_id = "local-profile-voice"
+
+            def _get_vm(self):
+                return _VM()
+
+            def tts(self, text: str, **kwargs):
+                _ = text
+                return f"backend:{kwargs.get('provider')}:{kwargs.get('model')}:{kwargs.get('voice')}".encode()
+
+            def stt(self, audio, **kwargs):
+                return "transcript"
+
+        registry.register_voice_backend(
+            backend_id="local-profile-voice",
+            factory=lambda _owner: _Voice(),
+            priority=0,
+        )
+
+    return _FakeEntryPoint(name="fake-local-profile-voice", value="tests.fake_local_profile_voice:register", obj=register)

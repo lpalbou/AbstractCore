@@ -2,7 +2,7 @@
 
 > Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media handling (images/audio/video + documents), embeddings, and an optional OpenAI-compatible HTTP server. Default install stays lightweight; features are enabled via extras.
 
-Last reviewed against source: 2026-05-04. Package version in source: 2.13.2. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
+Last reviewed against source: 2026-05-18. Package version in source: 2.13.15. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 This is the curated, high-signal index for agents. For a self-contained handbook with the important details inlined, read `llms-full.txt`.
 
@@ -55,10 +55,11 @@ Quick start:
 - [Provider registry](abstractcore/providers/registry.py): provider IDs, defaults, install extras
 - [Provider setup guide](docs/prerequisites.md): env vars + examples for OpenAI/Anthropic/Ollama/LMStudio/MLX/HuggingFace/vLLM/OpenRouter/Portkey/OpenAI-compatible
 - Install profile vocabulary: `abstractcore[apple]` is the hardware alias for the MLX local LLM stack, `abstractcore[gpu]` is the hardware alias for the vLLM local LLM stack, and `abstractcore[all-apple]` / `abstractcore[all-gpu]` are larger aggregate profiles.
+- Optional media plugin floors in this source: `abstractvoice>=0.10.3` and `abstractvision>=0.3.6`.
 
 ## Server (OpenAI-compatible `/v1`)
 
-- [Server docs](docs/server.md): run + env vars + auth + endpoints and extensions (`base_url`, `agent_format`, `thinking`, `prompt_cache_key`). Request body/query `api_key` is disabled; use server-side provider config, `X-AbstractCore-Provider-API-Key`, or `Authorization` only when server auth is not configured.
+- [Server docs](docs/server.md): run + env vars + server auth token `ABSTRACTCORE_AUTH_TOKEN` + Swagger `Authorize` validation on `/docs` when server auth is enabled + media catalogs + endpoints and extensions (`provider`, `base_url`, `agent_format`, `thinking`, `prompt_cache_key`). Request body/query `api_key` is disabled; use server-side provider config, `X-AbstractCore-Provider-API-Key`, or `Authorization` only when server auth is not configured.
 - [Server implementation](abstractcore/server/app.py): FastAPI gateway source
 - [Endpoint docs](docs/endpoint.md): single-model OpenAI-compatible endpoint (`abstractcore-endpoint`)
 - [Endpoint implementation](abstractcore/endpoint/app.py): endpoint server source

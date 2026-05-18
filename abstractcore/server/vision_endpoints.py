@@ -47,6 +47,7 @@ except Exception:  # pragma: no cover
 
 
 router = APIRouter(tags=["vision"])
+provider_router = APIRouter(tags=["vision"])
 
 _BACKEND_CACHE_LOCK = threading.Lock()
 _BACKEND_CACHE: Dict[Tuple[Any, ...], Tuple[Any, threading.Lock, float]] = {}
@@ -259,6 +260,7 @@ class ImageGenerationBody(BaseModel):
             "examples": [
                 {
                     "model": "openai-compatible/gpt-image-1",
+                    "provider": "openai-compatible",
                     "prompt": "A precise product photo of a red ceramic mug on a white table.",
                     "n": 1,
                     "width": 1024,
@@ -282,20 +284,38 @@ class ImageGenerationBody(BaseModel):
     )
 
     prompt: str = Field(..., description="Text prompt describing the image to generate.", examples=["A precise product photo of a red ceramic mug on a white table."])
+    provider: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional image provider/backend hint. Prefer this field over encoding backend policy "
+            "into `model`; AbstractVision resolves the concrete local engine when possible."
+        ),
+        examples=["mflux", "huggingface", "openai-compatible"],
+    )
     model: Optional[str] = Field(
         default=None,
         description=(
             "Optional provider/model image id. Omit this field to use the server's configured "
             "AbstractVision default. Explicit local models use "
-            "`diffusers/default`, `diffusers/<huggingface-repo>`, "
+            "`mflux/<preset>`, `diffusers/default`, `diffusers/<huggingface-repo>`, "
             "or `sdcpp/default`; remote image providers use "
             "`openai-compatible/my-image-model` with a configured upstream image endpoint."
         ),
-        examples=["diffusers/default", "openai-compatible/gpt-image-2"],
+        examples=["flux2-klein-9b", "mflux/flux2-klein-9b", "openai-compatible/gpt-image-2"],
+    )
+    base_url: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional request-level base URL override for OpenAI/OpenAI-compatible image backends. "
+            "Loopback URLs are allowed by default; non-loopback URLs require "
+            "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+        examples=["http://127.0.0.1:5000/v1"],
     )
     n: Optional[int] = Field(default=1, description="Number of images to generate. Clamped to 1..10.", examples=[1])
     width: Optional[int] = Field(default=None, description="Requested image width in pixels, backend permitting.", examples=[1024])
     height: Optional[int] = Field(default=None, description="Requested image height in pixels, backend permitting.", examples=[1024])
+    size: Optional[str] = Field(default=None, description="OpenAI-compatible size selector such as 1024x1024 or auto.", examples=["auto"])
     response_format: Optional[str] = Field(default="b64_json", description="Response format. Only `b64_json` is currently supported.", examples=["b64_json"])
     negative_prompt: Optional[str] = Field(default=None, description="Optional negative prompt for backends that support it.")
     seed: Optional[int] = Field(
@@ -343,6 +363,9 @@ class ImageGenerationBody(BaseModel):
         out = dict(data)
         raw_size = out.pop("size", None)
         if raw_size is None:
+            return out
+        if str(raw_size).strip().lower() == "auto":
+            out["size"] = "auto"
             return out
         width, height = _parse_size(raw_size)
         if width is None or height is None:
@@ -529,9 +552,12 @@ def _extract_secret_header(header_value: Any) -> str:
         return value[7:].strip()
     return value
 
+_SERVER_AUTH_TOKEN_ENV_VAR = "ABSTRACTCORE_AUTH_TOKEN"
+
 
 def _server_auth_enabled() -> bool:
-    return bool(str(os.getenv("ABSTRACTCORE_SERVER_API_KEY") or "").strip())
+    value = os.getenv(_SERVER_AUTH_TOKEN_ENV_VAR)
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _request_has_server_auth(request: Request) -> bool:
@@ -548,10 +574,18 @@ def _provider_api_key_from_request(request: Request) -> Optional[str]:
         token = _extract_secret_header(request.headers.get(header_name))
         if not _is_placeholder_api_key(token):
             return token
+
+    # When server auth is enabled, `Authorization` is reserved for the server
+    # auth token and must never be forwarded upstream.
     if _server_auth_enabled():
         return None
+
+    # Legacy/Swagger UI convenience: when server auth is disabled, treat
+    # `Authorization: Bearer <token>` as the upstream provider key.
     token = _extract_bearer_token(request.headers.get("authorization"))
-    return None if _is_placeholder_api_key(token) else token
+    if _is_placeholder_api_key(token):
+        return None
+    return token
 
 
 def _is_loopback_host(host: str) -> bool:
@@ -606,26 +640,34 @@ def _validate_request_base_url(base_url: Any) -> Optional[str]:
 
 
 def _server_has_vision_catalog_credential() -> bool:
-    for env_var in (
-        "ABSTRACTCORE_VISION_UPSTREAM_API_KEY",
-        "ABSTRACTVISION_API_KEY",
-        "OPENAI_API_KEY",
-    ):
-        if str(os.getenv(env_var) or "").strip():
-            return True
-    return False
+    return bool(str(os.getenv("OPENAI_API_KEY") or "").strip())
+
+
+def _server_allows_unauthenticated() -> bool:
+    return _env_bool("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", default=False)
+
+
+def _looks_like_openai_api(base_url: Any) -> bool:
+    return "api.openai.com" in str(base_url or "").lower()
+
+
+def _vision_catalog_api_key_for_base_url(base_url: Any) -> Optional[str]:
+    return _env("OPENAI_API_KEY")
 
 
 def _guard_vision_catalog_credentials(*, request: Request, explicit_provider_key: bool) -> None:
     if _request_has_server_auth(request) or explicit_provider_key:
+        return
+    if _server_allows_unauthenticated():
         return
     if not _server_has_vision_catalog_credential():
         return
     raise HTTPException(
         status_code=401,
         detail=(
-            "Server-held AbstractVision/OpenAI credentials are configured, but inbound server auth was not used. "
-            "Set ABSTRACTCORE_SERVER_API_KEY and send Authorization: Bearer <server-key>, or pass an explicit "
+            "Server-held vision/OpenAI credentials are configured, but inbound server auth was not used. "
+            "Set ABSTRACTCORE_AUTH_TOKEN and send "
+            "Authorization: Bearer <server-token>, or pass an explicit "
             "provider key with X-AbstractCore-Provider-API-Key for this request."
         ),
         headers={"WWW-Authenticate": "Bearer"},
@@ -637,13 +679,20 @@ def _vision_catalog_config_from_env() -> Dict[str, Any]:
     env_map = {
         "ABSTRACTCORE_VISION_BACKEND": "vision_backend",
         "ABSTRACTVISION_BACKEND": "vision_backend",
-        "ABSTRACTCORE_VISION_UPSTREAM_BASE_URL": "vision_base_url",
-        "ABSTRACTVISION_BASE_URL": "vision_base_url",
-        "ABSTRACTCORE_VISION_UPSTREAM_API_KEY": "vision_api_key",
-        "ABSTRACTVISION_API_KEY": "vision_api_key",
+        "OPENAI_BASE_URL": "vision_base_url",
         "ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID": "vision_model_id",
         "ABSTRACTCORE_VISION_MODEL_ID": "vision_model_id",
         "ABSTRACTVISION_MODEL_ID": "vision_model_id",
+        "ABSTRACTCORE_VISION_MFLUX_MODEL": "vision_mflux_model",
+        "ABSTRACTVISION_MFLUX_MODEL": "vision_mflux_model",
+        "ABSTRACTCORE_VISION_MFLUX_BASE_MODEL": "vision_mflux_base_model",
+        "ABSTRACTVISION_MFLUX_BASE_MODEL": "vision_mflux_base_model",
+        "ABSTRACTCORE_VISION_MODEL_DIR": "vision_model_dir",
+        "ABSTRACTVISION_MODEL_DIR": "vision_model_dir",
+        "ABSTRACTCORE_VISION_MFLUX_QUANTIZE": "vision_mflux_quantize",
+        "ABSTRACTVISION_MFLUX_QUANTIZE": "vision_mflux_quantize",
+        "ABSTRACTCORE_VISION_MFLUX_ALLOW_DOWNLOAD": "vision_mflux_allow_download",
+        "ABSTRACTVISION_MFLUX_ALLOW_DOWNLOAD": "vision_mflux_allow_download",
         "ABSTRACTCORE_VISION_TIMEOUT_S": "vision_timeout_s",
         "ABSTRACTVISION_TIMEOUT_S": "vision_timeout_s",
         "ABSTRACTCORE_VISION_MODELS_PATH": "vision_models_path",
@@ -657,17 +706,27 @@ def _vision_catalog_config_from_env() -> Dict[str, Any]:
         value = _env(env_name)
         if value is not None and config_name not in config:
             config[config_name] = value
+    api_key = _vision_catalog_api_key_for_base_url(config.get("vision_base_url"))
+    if api_key:
+        config["vision_api_key"] = api_key
     return config
 
 
-def _vision_catalog_core(request: Request, *, base_url: Optional[str]) -> Any:
-    provider_api_key = _provider_api_key_from_request(request)
+def _vision_catalog_core(request: Request, *, base_url: Optional[str], api_key: Optional[str]) -> Any:
+    explicit_key = str(api_key).strip() if isinstance(api_key, str) else ""
+    if _is_placeholder_api_key(explicit_key):
+        explicit_key = ""
+    provider_api_key = explicit_key or _provider_api_key_from_request(request)
     base_url_s = _validate_request_base_url(base_url)
     _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
     config = _vision_catalog_config_from_env()
     if base_url_s:
         config["vision_base_url"] = base_url_s
         config.setdefault("vision_backend", "openai-compatible")
+        if not provider_api_key:
+            api_key = _vision_catalog_api_key_for_base_url(base_url_s)
+            if api_key:
+                config["vision_api_key"] = api_key
     if provider_api_key:
         config["vision_api_key"] = provider_api_key
     return create_capability_generation_core(**config)
@@ -695,8 +754,17 @@ def _diffusers_model_env() -> Optional[str]:
     return _env_first("ABSTRACTCORE_VISION_MODEL_ID", "ABSTRACTVISION_DIFFUSERS_MODEL_ID", "ABSTRACTVISION_MODEL_ID")
 
 
+def _mflux_model_env() -> Optional[str]:
+    return _env_first(
+        "ABSTRACTCORE_VISION_MFLUX_MODEL",
+        "ABSTRACTVISION_MFLUX_MODEL",
+        "ABSTRACTCORE_VISION_MODEL_ID",
+        "ABSTRACTVISION_MODEL_ID",
+    )
+
+
 def _upstream_base_url_env() -> Optional[str]:
-    return _env_first("ABSTRACTCORE_VISION_UPSTREAM_BASE_URL", "ABSTRACTVISION_BASE_URL")
+    return _env("OPENAI_BASE_URL")
 
 
 def _upstream_model_env() -> Optional[str]:
@@ -768,6 +836,8 @@ def _vision_backend_kind() -> str:
         return "openai_compatible_proxy"
     if v in {"diffusers", "hf-diffusers", "huggingface-diffusers"}:
         return "diffusers"
+    if v in {"mflux", "m-flux"}:
+        return "mflux"
     if v in {"sdcpp", "sd-cpp", "stable-diffusion.cpp", "stable-diffusion-cpp", "stable_diffusion_cpp"}:
         return "sdcpp"
     return v
@@ -788,9 +858,93 @@ _KNOWN_MODEL_PREFIXES: set[str] = {
     "hf",
     "mlx",
     # Vision backend families (AbstractVision).
+    "mflux",
+    "m-flux",
     "diffusers",
     "sdcpp",
 }
+
+
+def _normalize_provider_route_prefix(provider: Any) -> str:
+    return str(provider or "").strip().lower().replace("_", "-")
+
+
+def _normalize_vision_provider_filter(provider: Any) -> str:
+    raw = _normalize_provider_route_prefix(provider)
+    if not raw:
+        return ""
+    aliases = {
+        "openai_compatible": "openai-compatible",
+        "openai-compatible": "openai-compatible",
+        "hf": "huggingface",
+        "mlx": "huggingface",
+        "m-flux": "mflux",
+        "sd-cpp": "sdcpp",
+        "stable-diffusion.cpp": "sdcpp",
+        "stable-diffusion-cpp": "sdcpp",
+        "stable_diffusion_cpp": "sdcpp",
+    }
+    return aliases.get(raw, raw)
+
+
+def _vision_filter_provider_payload(payload: Dict[str, Any], provider: Any) -> Dict[str, Any]:
+    provider_norm = _normalize_vision_provider_filter(provider)
+    if not provider_norm:
+        return payload
+    provider_lc = provider_norm.lower()
+
+    out = dict(payload)
+    out["providers"] = [
+        str(p).strip()
+        for p in (out.get("providers") or [])
+        if isinstance(p, str) and str(p).strip().lower() == provider_lc
+    ] or [provider_norm]
+    out["available_providers"] = [
+        str(p).strip()
+        for p in (out.get("available_providers") or [])
+        if isinstance(p, str) and str(p).strip().lower() == provider_lc
+    ]
+
+    models_by_provider = out.get("models_by_provider")
+    if isinstance(models_by_provider, dict) and models_by_provider:
+        filtered = {k: v for k, v in models_by_provider.items() if str(k).strip().lower() == provider_lc}
+        out["models_by_provider"] = filtered
+        out["models"] = [m for values in filtered.values() for m in (values or [])]
+        return out
+
+    models = out.get("models")
+    if isinstance(models, list) and models:
+        out["models"] = [
+            item
+            for item in models
+            if str(getattr(item, "get", lambda *_: "")("provider") or "").strip().lower() == provider_lc
+        ]
+    return out
+
+
+def _looks_like_openai_image_model(model: Any) -> bool:
+    value = str(model or "").strip().lower()
+    return value.startswith(("gpt-image", "dall-e"))
+
+
+def _is_openai_image_request_model(request_model: Any) -> bool:
+    prefix, rest = _split_known_prefix(str(request_model or "").strip())
+    return prefix == "openai" and _looks_like_openai_image_model(rest)
+
+
+def _payload_with_path_provider(payload: Dict[str, Any], provider: Any) -> Dict[str, Any]:
+    provider_s = _normalize_provider_route_prefix(provider)
+    if not provider_s:
+        return payload
+
+    out = dict(payload)
+    model = out.get("model")
+    if isinstance(model, str) and model.strip():
+        prefix, rest = _split_known_prefix(model)
+        if prefix is not None:
+            out["model"] = rest
+    out["provider"] = provider_s
+    return out
 
 
 def _split_known_prefix(model: str) -> tuple[Optional[str], str]:
@@ -802,6 +956,20 @@ def _split_known_prefix(model: str) -> tuple[Optional[str], str]:
     if head_s in _KNOWN_MODEL_PREFIXES:
         return head_s, tail.strip()
     return None, s
+
+
+def _scoped_request_model(model: Any, provider: Any = None) -> Any:
+    provider_s = str(provider or "").strip()
+    model_s = str(model or "").strip()
+    if not provider_s:
+        return model
+    provider_l = provider_s.lower().replace("_", "-")
+    if model_s:
+        prefix, _rest = _split_known_prefix(model_s)
+        if prefix is not None:
+            return model_s
+        return f"{provider_l}/{model_s}"
+    return f"{provider_l}/default"
 
 
 def _normalize_request_model_for_backend(request_model: Any) -> Optional[str]:
@@ -825,10 +993,7 @@ def _normalize_request_model_for_backend(request_model: Any) -> Optional[str]:
     prefix, rest = _split_known_prefix(model)
     if prefix is None:
         if _looks_like_hf_repo_id(model):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Image model {model!r} must use provider/model routing. Use `diffusers/{model}`.",
-            )
+            return model
         raise HTTPException(
             status_code=400,
             detail=(
@@ -839,7 +1004,7 @@ def _normalize_request_model_for_backend(request_model: Any) -> Optional[str]:
         )
 
     # Local generation backends: strip prefix and pass through.
-    if prefix in {"huggingface", "hf", "mlx", "diffusers"}:
+    if prefix in {"huggingface", "hf", "mlx", "diffusers", "mflux", "m-flux"}:
         if _is_default_model_alias(rest):
             return None
         return rest or None
@@ -850,6 +1015,12 @@ def _normalize_request_model_for_backend(request_model: Any) -> Optional[str]:
 
     if prefix in {"openai-compatible", "openai_compatible"}:
         return rest or None
+    if prefix == "openai" and _looks_like_openai_image_model(rest):
+        return rest or None
+    if prefix == "openai" and rest:
+        nested_prefix, _nested_rest = _split_known_prefix(rest)
+        if nested_prefix in {"openai-compatible", "openai_compatible", "openai"}:
+            return _normalize_request_model_for_backend(rest)
 
     raise HTTPException(
         status_code=400,
@@ -898,11 +1069,15 @@ def _looks_like_hf_repo_id(model: str) -> bool:
 def _infer_backend_kind(request_model: Any) -> str:
     raw_model = str(request_model or "").strip()
     prefix, _rest = _split_known_prefix(raw_model)
+    if prefix in {"mflux", "m-flux"}:
+        return "mflux"
     if prefix == "sdcpp":
         return "sdcpp"
     if prefix in {"huggingface", "hf", "mlx", "diffusers"}:
         return "diffusers"
     if prefix in {"openai-compatible", "openai_compatible"}:
+        return "openai_compatible_proxy"
+    if prefix == "openai" and _looks_like_openai_image_model(_split_known_prefix(raw_model)[1]):
         return "openai_compatible_proxy"
 
     model = str(_normalize_request_model_for_backend(request_model) or "").strip()
@@ -922,6 +1097,8 @@ def _infer_backend_kind(request_model: Any) -> str:
         return "sdcpp"
     if _upstream_base_url_env():
         return "openai_compatible_proxy"
+    if _mflux_model_env():
+        return "mflux"
     if _diffusers_model_env():
         return "diffusers"
     return "auto_unconfigured"
@@ -930,12 +1107,18 @@ def _infer_backend_kind(request_model: Any) -> str:
 def _effective_backend_kind(request_model: Any) -> str:
     raw_model = str(request_model or "").strip()
     prefix, _ = _split_known_prefix(raw_model)
+    if prefix in {"mflux", "m-flux"}:
+        return "mflux"
     if prefix == "sdcpp":
         return "sdcpp"
     if prefix in {"huggingface", "hf", "mlx", "diffusers"}:
         return "diffusers"
     if prefix in {"openai-compatible", "openai_compatible"}:
         return "openai_compatible_proxy"
+    if prefix == "openai" and _looks_like_openai_image_model(_split_known_prefix(raw_model)[1]):
+        return "openai_compatible_proxy"
+    if _looks_like_hf_repo_id(raw_model):
+        return "diffusers"
 
     env_kind = _vision_backend_kind()
     if env_kind == "auto":
@@ -955,7 +1138,7 @@ def _effective_backend_kind(request_model: Any) -> str:
 def _default_hf_hub_cache_dirs() -> list[Path]:
     dirs: list[str] = []
     # Explicit overrides.
-    for k in ("HF_HUB_CACHE", "HF_HUB_CACHE_DIR"):
+    for k in ("HF_HUB_CACHE", "HF_HUB_CACHE_DIR", "ABSTRACTCORE_VISION_HF_HUB_CACHE", "ABSTRACTVISION_HF_HUB_CACHE"):
         v = _env(k)
         if v:
             dirs.append(v)
@@ -980,6 +1163,15 @@ def _default_hf_hub_cache_dirs() -> list[Path]:
         # Fallback: common default.
         dirs.append(str(Path.home() / ".cache" / "huggingface" / "hub"))
 
+    for root in _framework_candidate_roots():
+        dirs.append(str(root / "runtime" / "hf-hub"))
+        quarantine = root / "runtime" / "model-quarantine"
+        try:
+            if quarantine.is_dir():
+                dirs.extend(str(path / "hf-hub") for path in quarantine.iterdir() if path.is_dir())
+        except Exception:
+            pass
+
     out: list[Path] = []
     seen: set[str] = set()
     for d in dirs:
@@ -993,6 +1185,131 @@ def _default_hf_hub_cache_dirs() -> list[Path]:
     return out
 
 
+def _framework_candidate_roots() -> list[Path]:
+    roots: list[Path] = []
+    for candidate in [Path.cwd(), *Path(__file__).resolve().parents]:
+        try:
+            root = candidate.expanduser().resolve()
+        except Exception:
+            continue
+        if root not in roots:
+            roots.append(root)
+        if (root / "runtime").is_dir() or (root / "untracked").is_dir():
+            parent = root.parent
+            if parent not in roots:
+                roots.append(parent)
+    return roots[:16]
+
+
+def _default_local_diffusers_model_dirs() -> list[Path]:
+    dirs: list[str] = []
+    for k in (
+        "ABSTRACTCORE_VISION_MODELS_DIR",
+        "ABSTRACTCORE_VISION_MODEL_DIR",
+        "ABSTRACTVISION_MODELS_DIR",
+        "ABSTRACTVISION_MODEL_DIR",
+    ):
+        v = _env(k)
+        if v:
+            dirs.append(v)
+    for root in _framework_candidate_roots():
+        dirs.append(str(root / "untracked" / "models" / "abstractvision"))
+        dirs.append(str(root / "runtime" / "models" / "abstractvision"))
+        quarantine = root / "runtime" / "model-quarantine"
+        try:
+            if quarantine.is_dir():
+                dirs.extend(str(path / "models") for path in quarantine.iterdir() if path.is_dir())
+        except Exception:
+            pass
+    out: list[Path] = []
+    seen: set[str] = set()
+    for d in dirs:
+        p = Path(d).expanduser()
+        key = str(p)
+        if key in seen:
+            continue
+        seen.add(key)
+        if p.is_dir():
+            out.append(p)
+    return out
+
+
+_DIFFUSERS_NON_IMAGE_TOKENS = (
+    "acestep",
+    "ace_step",
+    "audio",
+    "music",
+    "sound",
+    "speech",
+    "spectrogram",
+    "mel",
+    "oobleck",
+    "audioldm",
+    "stableaudio",
+    "stable_audio",
+    "musicldm",
+)
+
+_DIFFUSERS_IMAGE_PIPELINE_TOKENS = (
+    "image",
+    "stable",
+    "flux",
+    "qwenimage",
+    "qwen_image",
+    "qwen-image",
+    "pixart",
+    "kolors",
+    "kandinsky",
+    "wuerstchen",
+    "deepfloyd",
+    "paint",
+    "controlnet",
+    "consistency",
+    "unclip",
+    "hunyuandit",
+    "hunyuan",
+    "lumina",
+    "sana",
+    "chroma",
+    "omnigen",
+    "hidream",
+    "cogview",
+    "zimage",
+    "z-image",
+)
+
+
+def _diffusers_model_index_supports_image(model_index: Path, *, model_id: Optional[str] = None) -> bool:
+    try:
+        data = json.loads(model_index.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if not isinstance(data, dict):
+        return False
+
+    class_name = str(data.get("_class_name") or "").strip().lower()
+    model_s = str(model_id or model_index.parent.name or "").strip().lower()
+    try:
+        blob = json.dumps(data, sort_keys=True).lower()
+    except Exception:
+        blob = class_name
+
+    for token in _DIFFUSERS_NON_IMAGE_TOKENS:
+        if token in class_name or token in model_s or token in blob:
+            return False
+    return any(token in class_name or token in model_s for token in _DIFFUSERS_IMAGE_PIPELINE_TOKENS)
+
+
+def _hf_snapshot_model_indexes(folder: Path) -> list[Path]:
+    snapshots = folder / "snapshots"
+    try:
+        if not snapshots.is_dir():
+            return []
+        return [snap.joinpath("model_index.json") for snap in snapshots.iterdir() if snap.is_dir() and snap.joinpath("model_index.json").exists()]
+    except Exception:
+        return []
+
+
 def _is_hf_model_cached(model_id: str, cache_dirs: list[Path]) -> bool:
     s = str(model_id or "").strip()
     if "/" not in s:
@@ -1000,13 +1317,63 @@ def _is_hf_model_cached(model_id: str, cache_dirs: list[Path]) -> bool:
     # HF hub cache uses folder names like: models--org--name
     folder = "models--" + s.replace("/", "--")
     for base in cache_dirs:
-        snaps = base / folder / "snapshots"
-        try:
-            if snaps.is_dir() and any(snaps.iterdir()):
+        cached = base / folder
+        for model_index in _hf_snapshot_model_indexes(cached):
+            if _diffusers_model_index_supports_image(model_index, model_id=s):
                 return True
+    return False
+
+
+def _discover_cached_hf_diffusers_models(cache_dirs: list[Path]) -> list[str]:
+    """Discover complete local Hugging Face diffusers repos from hub cache folders.
+
+    We only list repos with a cached ``model_index.json`` snapshot because those
+    are the ones the diffusers backend can plausibly load without guessing.
+    Partial refs/blobs-only cache entries are intentionally excluded.
+    """
+    out: list[str] = []
+    seen: set[str] = set()
+    for base in cache_dirs:
+        try:
+            candidates = list(base.glob("models--*"))
         except Exception:
             continue
-    return False
+        for folder in candidates:
+            name = folder.name
+            if not name.startswith("models--"):
+                continue
+            model_id = name[len("models--") :].replace("--", "/")
+            if "/" not in model_id or model_id in seen:
+                continue
+            if not any(_diffusers_model_index_supports_image(path, model_id=model_id) for path in _hf_snapshot_model_indexes(folder)):
+                continue
+            seen.add(model_id)
+            out.append(model_id)
+    return sorted(out)
+
+
+def _discover_local_diffusers_models(model_dirs: list[Path]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for base in model_dirs:
+        try:
+            model_indexes = list(base.rglob("model_index.json"))
+        except Exception:
+            continue
+        for model_index in model_indexes:
+            if not _diffusers_model_index_supports_image(model_index):
+                continue
+            folder = model_index.parent
+            name = folder.name
+            if "__" in name:
+                model_id = name.replace("__", "/")
+            else:
+                model_id = str(folder)
+            if not model_id or model_id in seen:
+                continue
+            seen.add(model_id)
+            out.append(model_id)
+    return sorted(out)
 
 
 def _default_lmstudio_model_dirs() -> list[Path]:
@@ -1066,11 +1433,26 @@ def _require_upstream_base_url() -> str:
             status_code=501,
             detail=(
                 "Vision image endpoints are not configured. "
-                "Set ABSTRACTCORE_VISION_UPSTREAM_BASE_URL to an OpenAI-compatible server base URL "
+                "Set OPENAI_BASE_URL to an OpenAI-compatible server base URL "
                 "(e.g. https://api.openai.com/v1 or http://localhost:1234/v1)."
             ),
         )
     return base_url
+
+
+def _upstream_base_url_for_request(request_model: Any) -> str:
+    base_url = _upstream_base_url_env()
+    if base_url:
+        return base_url
+    if _is_openai_image_request_model(request_model):
+        return "https://api.openai.com/v1"
+    return _require_upstream_base_url()
+
+
+def _upstream_api_key_for_request(request_model: Any) -> Optional[str]:
+    if _is_openai_image_request_model(request_model) or _upstream_base_url_env():
+        return _env("OPENAI_API_KEY")
+    return None
 
 
 def _require_diffusers_model_id(request_model: Any) -> str:
@@ -1083,8 +1465,7 @@ def _require_diffusers_model_id(request_model: Any) -> str:
                 "`diffusers/default` requires ABSTRACTCORE_VISION_MODEL_ID, "
                 "ABSTRACTVISION_DIFFUSERS_MODEL_ID, or ABSTRACTVISION_MODEL_ID. "
                 "Alternatively pass `diffusers/<huggingface-repo>` explicitly or configure "
-                "ABSTRACTCORE_VISION_UPSTREAM_BASE_URL / ABSTRACTVISION_BASE_URL for an "
-                "OpenAI-compatible image endpoint."
+                "OPENAI_BASE_URL for an OpenAI-compatible image endpoint."
             ),
         )
     return model_id
@@ -1147,6 +1528,8 @@ def _import_abstractvision() -> Tuple[Any, ...]:
         from abstractvision.backends import (  # type: ignore
             HuggingFaceDiffusersBackendConfig,
             HuggingFaceDiffusersVisionBackend,
+            MFluxBackendConfig,
+            MFluxVisionBackend,
             OpenAICompatibleBackendConfig,
             OpenAICompatibleVisionBackend,
             StableDiffusionCppBackendConfig,
@@ -1171,6 +1554,8 @@ def _import_abstractvision() -> Tuple[Any, ...]:
         OpenAICompatibleVisionBackend,
         HuggingFaceDiffusersBackendConfig,
         HuggingFaceDiffusersVisionBackend,
+        MFluxBackendConfig,
+        MFluxVisionBackend,
         StableDiffusionCppBackendConfig,
         StableDiffusionCppVisionBackend,
         OptionalDependencyMissingError,
@@ -1195,7 +1580,9 @@ def _parse_size(value: Any) -> Tuple[Optional[int], Optional[int]]:
 
 _IMAGE_GENERATION_CORE_FIELDS = {
     "prompt",
+    "provider",
     "model",
+    "base_url",
     "n",
     "size",
     "response_format",
@@ -1209,7 +1596,11 @@ _IMAGE_GENERATION_CORE_FIELDS = {
 }
 
 
-def _image_generation_request_parts(payload: Dict[str, Any]) -> Tuple[Optional[int], Optional[int], Dict[str, Any]]:
+def _image_generation_request_parts(
+    payload: Dict[str, Any],
+    *,
+    request_model: Any = None,
+) -> Tuple[Optional[int], Optional[int], Dict[str, Any]]:
     width = _coerce_int(payload.get("width"))
     height = _coerce_int(payload.get("height"))
     if (width is None or height is None) and payload.get("size") is not None:
@@ -1224,7 +1615,11 @@ def _image_generation_request_parts(payload: Dict[str, Any]) -> Tuple[Optional[i
 
     # OpenAI-compatible image endpoints expect `size`, not backend-local
     # `width`/`height`. Local generation backends still need width/height.
-    if _effective_backend_kind(payload.get("model")) == "openai_compatible_proxy":
+    effective_request_model = request_model if request_model is not None else _scoped_request_model(
+        payload.get("model"),
+        payload.get("provider"),
+    )
+    if _effective_backend_kind(effective_request_model) == "openai_compatible_proxy":
         size = payload.get("size")
         if size is None and width is not None and height is not None:
             size = f"{int(width)}x{int(height)}"
@@ -1234,6 +1629,24 @@ def _image_generation_request_parts(payload: Dict[str, Any]) -> Tuple[Optional[i
         height = None
 
     return width, height, extra
+
+
+def _scoped_request_model_for_request(model: Any, provider: Any = None, *, base_url: Any = None) -> Any:
+    request_model = _scoped_request_model(model, provider)
+    if request_model:
+        return request_model
+
+    base_url_s = str(base_url or "").strip()
+    provider_s = _normalize_provider_route_prefix(provider)
+    if not base_url_s:
+        return request_model
+
+    if provider_s in {"huggingface", "hf", "diffusers", "mflux", "m-flux", "sdcpp", "sd-cpp"}:
+        return request_model
+
+    remote_provider = "openai" if _looks_like_openai_api(base_url_s) else "openai-compatible"
+    default_model = "gpt-image-1" if remote_provider == "openai" else "default"
+    return _scoped_request_model(default_model, remote_provider)
 
 
 def _coerce_int(v: Any) -> Optional[int]:
@@ -1258,7 +1671,7 @@ def _coerce_float(v: Any) -> Optional[float]:
         return None
 
 
-def _resolve_backend(request_model: Any):
+def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_key: Optional[str] = None):
     normalized = _normalize_request_model_for_backend(request_model)
     req_model = str(normalized or "").strip()
     backend_kind = _effective_backend_kind(request_model)
@@ -1271,7 +1684,7 @@ def _resolve_backend(request_model: Any):
                 "Vision image endpoints are not configured. "
                 "Either pass a vision-capable `model` in the request (recommended), or set one of:\n"
                 "- ABSTRACTCORE_VISION_MODEL_ID (Diffusers)\n"
-                "- ABSTRACTCORE_VISION_UPSTREAM_BASE_URL (OpenAI-compatible proxy)\n"
+                "- OPENAI_BASE_URL (OpenAI-compatible proxy)\n"
                 "- ABSTRACTCORE_VISION_SDCPP_MODEL / ABSTRACTCORE_VISION_SDCPP_DIFFUSION_MODEL (stable-diffusion.cpp)"
             ),
         )
@@ -1280,7 +1693,9 @@ def _resolve_backend(request_model: Any):
     # This keeps error messages stable and avoids optional dependency requirements for unconfigured setups.
     prevalidated: Dict[str, Any] = {"backend_kind": backend_kind}
     if backend_kind == "openai_compatible_proxy":
-        base_url = _require_upstream_base_url()
+        explicit_base_url = _validate_request_base_url(base_url)
+        explicit_api_key = str(api_key).strip() if isinstance(api_key, str) and str(api_key).strip() else None
+        base_url = explicit_base_url or _upstream_base_url_for_request(request_model)
         model_id = str(normalized or _upstream_model_env() or "").strip() or None
         prevalidated.update(
             {
@@ -1299,7 +1714,7 @@ def _resolve_backend(request_model: Any):
                     default="/images/edits",
                 )
                 or "/images/edits",
-                "api_key": _env_first("ABSTRACTCORE_VISION_UPSTREAM_API_KEY", "ABSTRACTVISION_API_KEY"),
+                "api_key": explicit_api_key or _upstream_api_key_for_request(request_model),
             }
         )
         key = (
@@ -1349,6 +1764,26 @@ def _resolve_backend(request_model: Any):
                 ),
             }
         )
+    elif backend_kind == "mflux":
+        model_id = str(_normalize_request_model_for_backend(request_model) or _mflux_model_env() or "").strip() or None
+        quantize_raw = _env_first("ABSTRACTCORE_VISION_MFLUX_QUANTIZE", "ABSTRACTVISION_MFLUX_QUANTIZE")
+        try:
+            quantize = int(quantize_raw) if quantize_raw else None
+        except Exception:
+            quantize = None
+        prevalidated.update(
+            {
+                "model_id": model_id,
+                "base_model": _env_first("ABSTRACTCORE_VISION_MFLUX_BASE_MODEL", "ABSTRACTVISION_MFLUX_BASE_MODEL"),
+                "model_dir": _env_first("ABSTRACTCORE_VISION_MODEL_DIR", "ABSTRACTVISION_MODEL_DIR"),
+                "quantize": quantize,
+                "allow_download": _env_bool_first(
+                    "ABSTRACTCORE_VISION_MFLUX_ALLOW_DOWNLOAD",
+                    "ABSTRACTVISION_MFLUX_ALLOW_DOWNLOAD",
+                    default=False,
+                ),
+            }
+        )
     elif backend_kind == "sdcpp":
         model_path, diffusion_model_path = _require_sdcpp_model_or_diffusion_model(request_model)
         extra_args = _sdcpp_env("EXTRA_ARGS")
@@ -1375,6 +1810,8 @@ def _resolve_backend(request_model: Any):
         OpenAICompatibleVisionBackend,
         HuggingFaceDiffusersBackendConfig,
         HuggingFaceDiffusersVisionBackend,
+        MFluxBackendConfig,
+        MFluxVisionBackend,
         StableDiffusionCppBackendConfig,
         StableDiffusionCppVisionBackend,
         OptionalDependencyMissingError,
@@ -1405,6 +1842,25 @@ def _resolve_backend(request_model: Any):
             prevalidated["auto_retry_fp32"],
         )
         backend, call_lock = _get_or_create_cached_backend(key, lambda: HuggingFaceDiffusersVisionBackend(config=cfg))
+        return backend, call_lock, OptionalDependencyMissingError, ImageGenerationRequest, ImageEditRequest
+
+    if backend_kind == "mflux":
+        cfg = MFluxBackendConfig(
+            model=prevalidated["model_id"],
+            base_model=prevalidated["base_model"],
+            model_dir=prevalidated["model_dir"],
+            quantize=prevalidated["quantize"],
+            allow_download=prevalidated["allow_download"],
+        )
+        key = (
+            "mflux",
+            prevalidated["model_id"],
+            prevalidated["base_model"],
+            prevalidated["model_dir"],
+            prevalidated["quantize"],
+            prevalidated["allow_download"],
+        )
+        backend, call_lock = _get_or_create_cached_backend(key, lambda: MFluxVisionBackend(config=cfg))
         return backend, call_lock, OptionalDependencyMissingError, ImageGenerationRequest, ImageEditRequest
 
     if backend_kind == "sdcpp":
@@ -1444,9 +1900,16 @@ def _resolve_backend(request_model: Any):
     raise HTTPException(status_code=501, detail=f"Unknown vision backend kind: {backend_kind!r} (set ABSTRACTCORE_VISION_BACKEND)")
 
 
-def _create_vision_generation_core(request_model: Any):
+def _create_vision_generation_core(
+    request_model: Any,
+    *,
+    base_url: Optional[str] = None,
+    api_key: Optional[str] = None,
+):
     backend, call_lock, OptionalDependencyMissingError, ImageGenerationRequest, ImageEditRequest = _resolve_backend(
-        request_model
+        request_model,
+        base_url=base_url,
+        api_key=api_key,
     )
     facade = ServerVisionFacade(
         backend=backend,
@@ -1457,6 +1920,10 @@ def _create_vision_generation_core(request_model: Any):
     )
     core = create_capability_generation_core(vision_facade=facade)
     return core, OptionalDependencyMissingError
+
+
+def _is_remote_vision_request(request_model: Any) -> bool:
+    return _effective_backend_kind(request_model) == "openai_compatible_proxy"
 
 
 def _first_generated_image_bytes(result: Any) -> bytes:
@@ -1494,13 +1961,304 @@ def _vision_catalog_error(exc: Exception) -> HTTPException:
     return HTTPException(status_code=502, detail=detail)
 
 
-@router.get("/vision/provider_models")
-async def list_vision_provider_models(
+def _vision_provider_model_capabilities_for_task(task: Optional[str]) -> list[str]:
+    caps = ["text_to_image", "image_to_image", "image_generation", "image_edit"]
+    if task and task not in caps:
+        return []
+    return caps
+
+
+def _configured_vision_provider_model_entries(task: Optional[str]) -> list[Dict[str, Any]]:
+    caps = _vision_provider_model_capabilities_for_task(task)
+    if not caps:
+        return []
+    entries: list[Dict[str, Any]] = []
+
+    def add(*, provider: str, model_id: Optional[str]) -> None:
+        mid = str(model_id or "").strip()
+        if not mid:
+            return
+        provider_s = str(provider or "").strip() or "openai-compatible"
+        raw_id = mid
+        for prefix in ("openai-compatible/", "openai/"):
+            if raw_id.startswith(prefix):
+                raw_id = raw_id[len(prefix) :]
+                break
+        routed = mid if mid.startswith(f"{provider_s}/") else f"{provider_s}/{raw_id}"
+        entries.append(
+            {
+                "id": raw_id,
+                "model": routed,
+                "provider": provider,
+                "routed_model": routed,
+                "object": "model",
+                "owned_by": provider,
+                "capabilities": caps,
+                "raw": {
+                    "id": raw_id,
+                    "provider": provider,
+                    "backend": "openai-compatible",
+                    "routed_model": routed,
+                    "configured": True,
+                },
+            }
+        )
+
+    openai_model = _env_first("OPENAI_IMAGE_MODEL_ID", "OPENAI_IMAGE_MODEL")
+    if openai_model and _env("OPENAI_API_KEY"):
+        add(provider="openai", model_id=openai_model)
+
+    upstream_base_url = _env("OPENAI_BASE_URL")
+    upstream_model = _env_first("ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID")
+    upstream_key = _vision_catalog_api_key_for_base_url(upstream_base_url)
+    if upstream_base_url and upstream_model and (not _looks_like_openai_api(upstream_base_url) or upstream_key):
+        add(provider="openai" if _looks_like_openai_api(upstream_base_url) else "openai-compatible", model_id=upstream_model)
+
+    backend_kind = _vision_backend_kind()
+    abstractvision_model = _env_first("ABSTRACTVISION_MODEL_ID", "ABSTRACTCORE_VISION_MODEL_ID")
+    if abstractvision_model and upstream_base_url and (backend_kind == "openai_compatible_proxy" or upstream_base_url) and (
+        not _looks_like_openai_api(upstream_base_url) or upstream_key
+    ):
+        add(provider="openai" if _looks_like_openai_api(upstream_base_url) else "openai-compatible", model_id=abstractvision_model)
+
+    return entries
+
+
+def _cached_vision_provider_model_entries(cached_catalog: Any, task: Optional[str]) -> list[Dict[str, Any]]:
+    if not isinstance(cached_catalog, dict):
+        return []
+    values = cached_catalog.get("models")
+    if not isinstance(values, list):
+        return []
+    entries: list[Dict[str, Any]] = []
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+        model_id = str(item.get("id") or item.get("model") or "").strip()
+        if not model_id:
+            continue
+        provider = str(item.get("provider") or "huggingface").strip() or "huggingface"
+        tasks = [str(t) for t in item.get("tasks", [])] if isinstance(item.get("tasks"), list) else ["text_to_image"]
+        if task and task not in tasks:
+            continue
+        backend = "diffusers" if provider in {"huggingface", "hf"} else provider
+        routed = f"diffusers/{model_id}" if backend == "diffusers" and not model_id.startswith("diffusers/") else model_id
+        entries.append(
+            {
+                "id": model_id,
+                "model": routed,
+                "provider": provider,
+                "backend": backend,
+                "routed_model": routed,
+                "object": "model",
+                "owned_by": provider,
+                "capabilities": tasks,
+                "raw": {
+                    **item,
+                    "provider": provider,
+                    "backend": backend,
+                    "routed_model": routed,
+                    "local_cached": True,
+                },
+            }
+        )
+    return entries
+
+
+def _merge_vision_provider_model_entries(*groups: Any) -> list[Dict[str, Any]]:
+    out: list[Dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    for group in groups:
+        if not isinstance(group, list):
+            continue
+        for item in group:
+            if not isinstance(item, dict):
+                continue
+            provider = str(item.get("provider") or item.get("owned_by") or "").strip()
+            model = str(item.get("model") or item.get("routed_model") or item.get("id") or "").strip()
+            if not model:
+                continue
+            key = (provider, model)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(dict(item))
+    return out
+
+
+def _vision_providers_from_model_entries(models: list[Dict[str, Any]]) -> list[str]:
+    providers: list[str] = []
+    seen: set[str] = set()
+    for item in models:
+        provider = str(item.get("provider") or item.get("owned_by") or "").strip()
+        key = provider.lower()
+        if not provider or key in seen:
+            continue
+        seen.add(key)
+        providers.append(provider)
+    return providers
+
+
+def _vision_models_by_provider(models: list[Dict[str, Any]]) -> Dict[str, list[str]]:
+    out: Dict[str, list[str]] = {}
+    seen: Dict[str, set[str]] = {}
+    for item in models:
+        provider = str(item.get("provider") or item.get("owned_by") or "").strip()
+        model = str(item.get("model") or item.get("routed_model") or item.get("id") or "").strip()
+        if not provider or not model:
+            continue
+        values = out.setdefault(provider, [])
+        provider_seen = seen.setdefault(provider, set())
+        key = model.lower()
+        if key in provider_seen:
+            continue
+        provider_seen.add(key)
+        values.append(model)
+    return out
+
+
+async def _vision_provider_catalog(
+    request: Request,
+    *,
+    task: Optional[str],
+    base_url: Optional[str],
+    api_key: Optional[str],
+) -> tuple[Optional[Any], Dict[str, Any], list[Dict[str, Any]], Optional[Exception]]:
+    catalog_error: Optional[Exception] = None
+    core = None
+    plugin_models: list[Dict[str, Any]] = []
+    availability: Dict[str, Any] = {}
+    try:
+        core = _vision_catalog_core(request, base_url=base_url, api_key=api_key)
+        try:
+            if hasattr(core.vision, "available_providers"):
+                raw = core.vision.available_providers(task=task)
+                if isinstance(raw, dict):
+                    availability = dict(raw)
+        except Exception:
+            availability = {}
+
+        plugin_models = [dict(x) for x in list(core.vision.list_provider_models(task=task) or []) if isinstance(x, dict)]
+    except HTTPException:
+        raise
+    except Exception as e:
+        catalog_error = e
+
+    try:
+        cached_models = _cached_vision_provider_model_entries(await _local_vision_model_catalog(), task)
+    except Exception:
+        cached_models = []
+    configured_models = _configured_vision_provider_model_entries(task)
+    models = _merge_vision_provider_model_entries(plugin_models, cached_models, configured_models)
+    return core, availability, models, catalog_error
+
+
+async def _vision_providers_payload(
+    *,
+    request: Request,
+    task: Optional[str],
+    base_url: Optional[str],
+    api_key: Optional[str],
+    include_models: bool,
+) -> Dict[str, Any]:
+    if task is not None:
+        task = str(task).strip() or None
+    if task and task not in {"text_to_image", "image_to_image", "text_to_video", "image_to_video"}:
+        raise HTTPException(
+            status_code=400,
+            detail="task must be one of: text_to_image, image_to_image, text_to_video, image_to_video",
+        )
+
+    if not include_models:
+        try:
+            core = _vision_catalog_core(request, base_url=base_url, api_key=api_key)
+            availability: Dict[str, Any] = {}
+            try:
+                if hasattr(core.vision, "available_providers"):
+                    raw = core.vision.available_providers(task=task)
+                    if isinstance(raw, dict):
+                        availability = dict(raw)
+            except Exception:
+                availability = {}
+            providers = [str(p).strip() for p in availability.get("providers") or [] if isinstance(p, str) and str(p).strip()]
+            available_providers = [
+                str(p).strip()
+                for p in availability.get("available_providers") or []
+                if isinstance(p, str) and str(p).strip()
+            ]
+            if not providers and available_providers:
+                providers = list(available_providers)
+            return {
+                "available": True,
+                "source": "abstractvision",
+                "stale": False,
+                "error": None,
+                "backend_id": getattr(core.vision, "backend_id", None),
+                "task": task,
+                "providers": providers,
+                "available_providers": available_providers or providers,
+                "models_by_provider": {},
+                "models": [],
+            }
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise _vision_catalog_error(e) from e
+
+    core, availability, models, catalog_error = await _vision_provider_catalog(
+        request,
+        task=task,
+        base_url=base_url,
+        api_key=api_key,
+    )
+
+    if models or catalog_error is None:
+        providers = _vision_providers_from_model_entries(models)
+        if isinstance(availability.get("providers"), list):
+            providers = [str(p).strip() for p in availability.get("providers") if isinstance(p, str) and str(p).strip()] or providers
+        available_providers = providers
+        if isinstance(availability.get("available_providers"), list):
+            available_providers = [
+                str(p).strip()
+                for p in availability.get("available_providers")
+                if isinstance(p, str) and str(p).strip()
+            ] or available_providers
+
+        models_by_provider = _vision_models_by_provider(models)
+        if available_providers:
+            allowed = {p.lower() for p in available_providers}
+            models_by_provider = {k: v for k, v in models_by_provider.items() if k.lower() in allowed}
+        return {
+            "available": True,
+            "source": "abstractvision",
+            "stale": False,
+            "error": str(catalog_error) if catalog_error is not None and models else None,
+            "backend_id": getattr(core.vision, "backend_id", None) if core is not None else None,
+            "task": task,
+            "providers": providers,
+            "available_providers": available_providers,
+            "models_by_provider": models_by_provider,
+            "models": list(models or []),
+        }
+    raise _vision_catalog_error(catalog_error) from catalog_error
+
+
+@router.get("/vision/providers/")
+async def list_vision_providers(
     request: Request,
     task: Optional[str] = Query(
         default=None,
         description="Optional provider catalog task filter: text_to_image, image_to_image, text_to_video, or image_to_video.",
         examples=["text_to_image"],
+    ),
+    provider: Optional[str] = Query(
+        default=None,
+        description="Optional provider filter (e.g. openai, openai-compatible, huggingface, mflux, sdcpp).",
+        examples=["mflux"],
+    ),
+    include_models: bool = Query(
+        default=False,
+        description="Include full provider model catalogs (slower).",
     ),
     base_url: Optional[str] = Query(
         default=None,
@@ -1511,37 +2269,72 @@ async def list_vision_provider_models(
         ),
         examples=["http://127.0.0.1:5000/v1"],
     ),
+    api_key: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional upstream provider API key override for catalog discovery. Prefer "
+            "`X-AbstractCore-Provider-API-Key`; this query parameter is supported for tooling/Swagger UI "
+            "convenience and is redacted from server logs."
+        ),
+    ),
 ) -> Dict[str, Any]:
-    """List provider image/video model catalogs through the AbstractVision plugin boundary."""
-    if task is not None:
-        task = str(task).strip() or None
-    if task and task not in {"text_to_image", "image_to_image", "text_to_video", "image_to_video"}:
-        raise HTTPException(
-            status_code=400,
-            detail="task must be one of: text_to_image, image_to_image, text_to_video, image_to_video",
-        )
-    try:
-        core = _vision_catalog_core(request, base_url=base_url)
-        models = core.vision.list_provider_models(task=task)
-        return {
-            "available": True,
-            "source": "abstractvision",
-            "stale": False,
-            "error": None,
-            "backend_id": getattr(core.vision, "backend_id", None),
-            "task": task,
-            "models": list(models or []),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise _vision_catalog_error(e) from e
+    """List vision providers through the AbstractVision plugin boundary."""
+    payload = await _vision_providers_payload(
+        request=request,
+        task=task,
+        base_url=base_url,
+        api_key=api_key,
+        include_models=bool(include_models),
+    )
+    return _vision_filter_provider_payload(payload, provider)
 
 
-@router.get("/vision/models")
-async def list_cached_vision_models() -> Dict[str, Any]:
+@router.get("/vision/provider_models", include_in_schema=False)
+async def list_vision_provider_models(
+    request: Request,
+    task: Optional[str] = Query(
+        default=None,
+        description="Optional provider catalog task filter: text_to_image, image_to_image, text_to_video, or image_to_video.",
+        examples=["text_to_image"],
+    ),
+    provider: Optional[str] = Query(
+        default=None,
+        description="Optional provider filter (e.g. openai, openai-compatible, huggingface, mflux, sdcpp).",
+        examples=["mflux"],
+    ),
+    base_url: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional OpenAI-compatible vision endpoint override for catalog discovery. "
+            "Loopback is allowed by default; non-loopback URLs require "
+            "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+        examples=["http://127.0.0.1:5000/v1"],
+    ),
+    api_key: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional upstream provider API key override for catalog discovery. Prefer "
+            "`X-AbstractCore-Provider-API-Key`; this query parameter is supported for tooling/Swagger UI "
+            "convenience and is redacted from server logs."
+        ),
+    ),
+) -> Dict[str, Any]:
+    """List full provider model catalogs (hidden from OpenAPI schema)."""
+    payload = await _vision_providers_payload(
+        request=request,
+        task=task,
+        base_url=base_url,
+        api_key=api_key,
+        include_models=True,
+    )
+    return _vision_filter_provider_payload(payload, provider)
+
+
+async def _local_vision_model_catalog() -> Dict[str, Any]:
     """List vision models from the AbstractVision registry that are present in local caches."""
     hf_dirs = _default_hf_hub_cache_dirs()
+    local_diffusers_dirs = _default_local_diffusers_model_dirs()
     lms_dirs = _default_lmstudio_model_dirs()
     try:
         VisionModelCapabilitiesRegistry = _import_registry()
@@ -1555,12 +2348,14 @@ async def list_cached_vision_models() -> Dict[str, Any]:
             "active": _active_state(),
             "cache_dirs": {
                 "huggingface": [str(p) for p in hf_dirs],
+                "local_diffusers": [str(p) for p in local_diffusers_dirs],
                 "lmstudio": [str(p) for p in lms_dirs],
             },
             "error": str(exc.detail),
         }
 
     models: list[Dict[str, Any]] = []
+    seen_model_ids: set[str] = set()
     for model_id in reg.list_models():
         spec = reg.get(model_id)
         # Only list models relevant to this UI (t2i / i2i).
@@ -1586,6 +2381,39 @@ async def list_cached_vision_models() -> Dict[str, Any]:
                 "cached_in": cached_in,
             }
         )
+        seen_model_ids.add(str(model_id))
+
+    for model_id in _discover_cached_hf_diffusers_models(hf_dirs):
+        if model_id in seen_model_ids:
+            continue
+        models.append(
+            {
+                "id": model_id,
+                "provider": "huggingface",
+                "license": "unknown",
+                "tasks": ["image_to_image", "text_to_image"],
+                "notes": "Discovered from the local Hugging Face cache (image-capable diffusers model_index.json present).",
+                "cached_in": ["huggingface"],
+                "discovered": True,
+            }
+        )
+        seen_model_ids.add(model_id)
+
+    for model_id in _discover_local_diffusers_models(local_diffusers_dirs):
+        if model_id in seen_model_ids:
+            continue
+        models.append(
+            {
+                "id": model_id,
+                "provider": "huggingface" if "/" in model_id else "local",
+                "license": "unknown",
+                "tasks": ["image_to_image", "text_to_image"],
+                "notes": "Discovered from a local AbstractVision Diffusers model directory (image-capable model_index.json present).",
+                "cached_in": ["local_diffusers"],
+                "discovered": True,
+            }
+        )
+        seen_model_ids.add(model_id)
 
     models.sort(key=lambda x: str(x.get("id") or ""))
     return {
@@ -1596,12 +2424,117 @@ async def list_cached_vision_models() -> Dict[str, Any]:
         "active": _active_state(),
         "cache_dirs": {
             "huggingface": [str(p) for p in hf_dirs],
+            "local_diffusers": [str(p) for p in local_diffusers_dirs],
             "lmstudio": [str(p) for p in lms_dirs],
         },
     }
 
 
-@router.get("/vision/model")
+@router.get("/vision/models")
+async def list_cached_vision_models(
+    request: Request,
+    task: Optional[str] = Query(
+        default=None,
+        description="Optional model catalog task filter: text_to_image, image_to_image, text_to_video, or image_to_video.",
+        examples=["text_to_image"],
+    ),
+    provider: Optional[str] = Query(
+        default=None,
+        description="Optional provider filter (e.g. openai, openai-compatible, huggingface, mflux, sdcpp).",
+        examples=["huggingface"],
+    ),
+    base_url: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional OpenAI-compatible vision endpoint override for model discovery. "
+            "Loopback is allowed by default; non-loopback URLs require "
+            "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+        ),
+        examples=["http://127.0.0.1:5000/v1"],
+    ),
+    api_key: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional upstream provider API key override for model discovery. Prefer "
+            "`X-AbstractCore-Provider-API-Key`; this query parameter is supported for tooling/Swagger UI "
+            "convenience and is redacted from server logs."
+        ),
+    ),
+) -> Dict[str, Any]:
+    """List available vision provider models, including local cached models."""
+    if task is not None:
+        task = str(task).strip() or None
+    if task and task not in {"text_to_image", "image_to_image", "text_to_video", "image_to_video"}:
+        raise HTTPException(
+            status_code=400,
+            detail="task must be one of: text_to_image, image_to_image, text_to_video, image_to_video",
+        )
+
+    provider_norm = str(provider or "").strip() or None
+
+    local_catalog = await _local_vision_model_catalog()
+    core, availability, models, catalog_error = await _vision_provider_catalog(
+        request,
+        task=task,
+        base_url=base_url,
+        api_key=api_key,
+    )
+    if not models and catalog_error is not None:
+        raise _vision_catalog_error(catalog_error) from catalog_error
+
+    if provider_norm:
+        provider_lc = provider_norm.lower()
+        models = [
+            item
+            for item in (models or [])
+            if str(item.get("provider") or "").strip().lower() == provider_lc
+        ]
+
+    providers = _vision_providers_from_model_entries(models)
+    if isinstance(availability.get("providers"), list):
+        providers = [str(p).strip() for p in availability.get("providers") if isinstance(p, str) and str(p).strip()] or providers
+    available_providers = providers
+    if isinstance(availability.get("available_providers"), list):
+        available_providers = [
+            str(p).strip()
+            for p in availability.get("available_providers")
+            if isinstance(p, str) and str(p).strip()
+        ] or available_providers
+
+    models_by_provider = _vision_models_by_provider(models)
+    if available_providers:
+        allowed = {p.lower() for p in available_providers}
+        models_by_provider = {k: v for k, v in models_by_provider.items() if k.lower() in allowed}
+    if provider_norm and models_by_provider:
+        models_by_provider = {k: v for k, v in models_by_provider.items() if k.lower() == provider_norm.lower()}
+        available_providers = list(models_by_provider) or [provider_norm]
+        providers = list(available_providers)
+    out = dict(local_catalog)
+    if provider_norm:
+        out["models"] = [
+            item
+            for item in (list(local_catalog.get("models") or []))
+            if str(item.get("provider") or "").strip().lower() == provider_norm.lower()
+        ]
+    out.update(
+        {
+            "available": True,
+            "source": "abstractvision",
+            "stale": False,
+            "error": str(catalog_error) if catalog_error is not None and models else None,
+            "backend_id": getattr(core.vision, "backend_id", None) if core is not None else None,
+            "task": task,
+            "providers": providers,
+            "available_providers": available_providers,
+            "models_by_provider": models_by_provider,
+            "models": list(models or []),
+            "local_models": list(out.get("models") or []),
+        }
+    )
+    return out
+
+
+@router.get("/vision/model", include_in_schema=False)
 async def get_active_vision_model() -> Dict[str, Any]:
     """Get the currently loaded (in-memory) vision model for this server process."""
     return {"active": _active_state()}
@@ -1716,8 +2649,12 @@ async def load_active_vision_model(payload: VisionModelLoadRequest = Body(...)) 
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/images/generations")
-async def images_generations(payload: ImageGenerationBody = Body(...)) -> Dict[str, Any]:
+async def _images_generations_impl(
+    request: Request,
+    payload: ImageGenerationBody,
+    *,
+    path_provider: Optional[str] = None,
+) -> Dict[str, Any]:
     """
     OpenAI-compatible image generation endpoint: POST /v1/images/generations
 
@@ -1726,6 +2663,8 @@ async def images_generations(payload: ImageGenerationBody = Body(...)) -> Dict[s
     - In `auto` mode (default), the backend is inferred per-request based on `model`.
     """
     payload = _model_payload(payload)
+    if path_provider:
+        payload = _payload_with_path_provider(payload, path_provider)
     prompt = str(payload.get("prompt") or "").strip()
     if not prompt:
         raise HTTPException(status_code=400, detail="Missing required field: prompt")
@@ -1741,26 +2680,42 @@ async def images_generations(payload: ImageGenerationBody = Body(...)) -> Dict[s
     steps = _coerce_int(payload.get("steps"))
     guidance_scale = _coerce_float(payload.get("guidance_scale"))
     seed = _coerce_int(payload.get("seed"))
-    width, height, extra = _image_generation_request_parts(payload)
-
-    core, OptionalDependencyMissingError = _create_vision_generation_core(payload.get("model"))
+    request_model = _scoped_request_model_for_request(
+        payload.get("model"),
+        payload.get("provider"),
+        base_url=payload.get("base_url"),
+    )
+    width, height, extra = _image_generation_request_parts(payload, request_model=request_model)
+    provider_api_key = _provider_api_key_from_request(request)
+    if _is_remote_vision_request(request_model):
+        _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+    core, OptionalDependencyMissingError = _create_vision_generation_core(
+        request_model,
+        base_url=payload.get("base_url"),
+        api_key=provider_api_key,
+    )
 
     data_items = []
     for _ in range(n):
         try:
+            output_spec = {
+                "modality": "image",
+                "task": "image_generation",
+                "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
+                "width": width,
+                "height": height,
+                "steps": steps,
+                "guidance_scale": guidance_scale,
+                "seed": seed,
+                "extra": extra,
+            }
+            if payload.get("provider") is not None:
+                output_spec["provider"] = payload.get("provider")
+            if payload.get("model") is not None:
+                output_spec["model"] = payload.get("model")
             result = core.generate(
                 prompt,
-                output={
-                    "modality": "image",
-                    "task": "image_generation",
-                    "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
-                    "width": width,
-                    "height": height,
-                    "steps": steps,
-                    "guidance_scale": guidance_scale,
-                    "seed": seed,
-                    "extra": extra,
-                },
+                output=output_spec,
             )
             image_bytes = _first_generated_image_bytes(result)
         except OptionalDependencyMissingError as e:
@@ -1777,8 +2732,37 @@ async def images_generations(payload: ImageGenerationBody = Body(...)) -> Dict[s
     return {"created": int(time.time()), "data": data_items}
 
 
+@router.post("/images/generations")
+async def images_generations(request: Request, payload: ImageGenerationBody = Body(...)) -> Dict[str, Any]:
+    """
+    OpenAI-compatible image generation endpoint: POST /v1/images/generations
+
+    The request can route remotely or locally through `model` in provider/model format,
+    for example `openai-compatible/gpt-image-1` or `diffusers/Qwen/Qwen-Image-2512`.
+    """
+    return await _images_generations_impl(request, payload)
+
+
+@provider_router.post("/{provider}/v1/images/generations")
+async def provider_images_generations(
+    request: Request,
+    provider: str = FastAPIPath(
+        ...,
+        description="Image provider route prefix, e.g. `openai-compatible`, `openai`, `diffusers`, `mflux`, or `sdcpp`.",
+    ),
+    payload: ImageGenerationBody = Body(...),
+) -> Dict[str, Any]:
+    """
+    Provider-scoped image generation endpoint.
+
+    Same behavior as `/v1/images/generations`, but the provider is supplied in
+    the URL so OpenAI-compatible clients can use an unprefixed model name.
+    """
+    return await _images_generations_impl(request, payload, path_provider=provider)
+
+
 @router.post("/vision/jobs/images/generations")
-async def jobs_images_generations(payload: ImageGenerationBody = Body(...)) -> Dict[str, Any]:
+async def jobs_images_generations(request: Request, payload: ImageGenerationBody = Body(...)) -> Dict[str, Any]:
     """Start an async image generation job with progress polling."""
     payload = _model_payload(payload)
     prompt = str(payload.get("prompt") or "").strip()
@@ -1796,10 +2780,20 @@ async def jobs_images_generations(payload: ImageGenerationBody = Body(...)) -> D
     steps = _coerce_int(payload.get("steps"))
     guidance_scale = _coerce_float(payload.get("guidance_scale"))
     seed = _coerce_int(payload.get("seed"))
-    width, height, extra = _image_generation_request_parts(payload)
+    request_model = _scoped_request_model_for_request(
+        payload.get("model"),
+        payload.get("provider"),
+        base_url=payload.get("base_url"),
+    )
+    width, height, extra = _image_generation_request_parts(payload, request_model=request_model)
+    provider_api_key = _provider_api_key_from_request(request)
+    if _is_remote_vision_request(request_model):
+        _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
 
     backend, call_lock, OptionalDependencyMissingError, ImageGenerationRequest, _ImageEditRequest = _resolve_backend(
-        payload.get("model")
+        request_model,
+        base_url=payload.get("base_url"),
+        api_key=provider_api_key,
     )
 
     total_steps = (int(steps) * int(n)) if steps is not None else None
@@ -1905,9 +2899,15 @@ if _HAS_MULTIPART:
 
     @router.post("/vision/jobs/images/edits")
     async def jobs_images_edits(
+        request: Request,
         prompt: str = Form(..., description="Text prompt describing the desired image edit.", examples=["Make the mug blue and keep the white background."]),
         image: UploadFile = File(..., description="Source image to edit. Upload a PNG, JPEG, or WebP file supported by the selected backend."),
         mask: Optional[UploadFile] = File(None, description="Optional mask image for inpainting/edit backends that support it. Transparent pixels mark editable areas for OpenAI-style masks."),
+        provider: Optional[str] = Form(
+            None,
+            description="Optional image provider/backend hint, e.g. `openai-compatible`, `openai`, `diffusers`, `mflux`, or `sdcpp`.",
+            examples=["openai-compatible"],
+        ),
         model: Optional[str] = Form(
             None,
             description=(
@@ -1916,6 +2916,15 @@ if _HAS_MULTIPART:
                 "`openai-compatible/<model>`."
             ),
             examples=["openai-compatible/gpt-image-1"],
+        ),
+        base_url: Optional[str] = Form(
+            None,
+            description=(
+                "Optional request-level base URL override for OpenAI/OpenAI-compatible image backends. "
+                "Loopback URLs are allowed by default; non-loopback URLs require "
+                "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+            ),
+            examples=["http://127.0.0.1:5000/v1"],
         ),
         size: Optional[str] = Form(None, description="OpenAI-style output image size such as `1024x1024`, `1536x1024`, `1024x1536`, or `auto` when supported.", examples=["1024x1024"]),
         response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported by the server response.", examples=["b64_json"]),
@@ -1957,7 +2966,15 @@ if _HAS_MULTIPART:
             raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
         if size:
             extra.setdefault("size", str(size).strip())
-        backend, call_lock, OptionalDependencyMissingError, _ImageGenerationRequest, ImageEditRequest = _resolve_backend(model)
+        request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
+        provider_api_key = _provider_api_key_from_request(request)
+        if _is_remote_vision_request(request_model):
+            _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+        backend, call_lock, OptionalDependencyMissingError, _ImageGenerationRequest, ImageEditRequest = _resolve_backend(
+            request_model,
+            base_url=base_url,
+            api_key=provider_api_key,
+        )
         total_steps = int(steps_i) if steps_i is not None else None
 
         now_s = time.time()
@@ -2022,9 +3039,15 @@ if _HAS_MULTIPART:
 
     @router.post("/images/edits")
     async def images_edits(
+        request: Request,
         prompt: str = Form(..., description="Text prompt describing the desired image edit.", examples=["Make the mug blue and keep the white background."]),
         image: UploadFile = File(..., description="Source image to edit. Upload a PNG, JPEG, or WebP file supported by the selected backend."),
         mask: Optional[UploadFile] = File(None, description="Optional mask image for inpainting/edit backends that support it. Transparent pixels mark editable areas for OpenAI-style masks."),
+        provider: Optional[str] = Form(
+            None,
+            description="Optional image provider/backend hint, e.g. `openai-compatible`, `openai`, `diffusers`, `mflux`, or `sdcpp`.",
+            examples=["openai-compatible"],
+        ),
         model: Optional[str] = Form(
             None,
             description=(
@@ -2033,6 +3056,15 @@ if _HAS_MULTIPART:
                 "`openai-compatible/<model>`."
             ),
             examples=["openai-compatible/gpt-image-1"],
+        ),
+        base_url: Optional[str] = Form(
+            None,
+            description=(
+                "Optional request-level base URL override for OpenAI/OpenAI-compatible image backends. "
+                "Loopback URLs are allowed by default; non-loopback URLs require "
+                "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+            ),
+            examples=["http://127.0.0.1:5000/v1"],
         ),
         size: Optional[str] = Form(None, description="OpenAI-style output image size such as `1024x1024`, `1536x1024`, `1024x1536`, or `auto` when supported.", examples=["1024x1024"]),
         response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported by the server response.", examples=["b64_json"]),
@@ -2075,7 +3107,15 @@ if _HAS_MULTIPART:
             raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
         if size:
             extra.setdefault("size", str(size).strip())
-        core, OptionalDependencyMissingError = _create_vision_generation_core(model)
+        request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
+        provider_api_key = _provider_api_key_from_request(request)
+        if _is_remote_vision_request(request_model):
+            _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+        core, OptionalDependencyMissingError = _create_vision_generation_core(
+            request_model,
+            base_url=base_url,
+            api_key=provider_api_key,
+        )
 
         try:
             media = [
@@ -2099,6 +3139,8 @@ if _HAS_MULTIPART:
                 output={
                     "modality": "image",
                     "task": "image_edit",
+                    "provider": provider,
+                    "model": model,
                     "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
                     "seed": _coerce_int(seed),
                     "steps": _coerce_int(steps),
@@ -2118,6 +3160,58 @@ if _HAS_MULTIPART:
         b64 = base64.b64encode(image_bytes_out).decode("ascii")
         return {"created": int(time.time()), "data": [{"b64_json": b64}]}
 
+    @provider_router.post("/{provider}/v1/images/edits")
+    async def provider_images_edits(
+        request: Request,
+        provider: str = FastAPIPath(
+            ...,
+            description="Image provider route prefix, e.g. `openai-compatible`, `openai`, `diffusers`, `mflux`, or `sdcpp`.",
+        ),
+        prompt: str = Form(..., description="Text prompt describing the desired image edit.", examples=["Make the mug blue and keep the white background."]),
+        image: UploadFile = File(..., description="Source image to edit. Upload a PNG, JPEG, or WebP file supported by the selected backend."),
+        mask: Optional[UploadFile] = File(None, description="Optional mask image for inpainting/edit backends that support it. Transparent pixels mark editable areas for OpenAI-style masks."),
+        model: Optional[str] = Form(
+            None,
+            description=(
+                "Optional unprefixed model id for the provider route. If a provider/model id is supplied, "
+                "the route provider takes precedence."
+            ),
+            examples=["gpt-image-1"],
+        ),
+        base_url: Optional[str] = Form(
+            None,
+            description=(
+                "Optional request-level base URL override for OpenAI/OpenAI-compatible image backends. "
+                "Loopback URLs are allowed by default; non-loopback URLs require "
+                "ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+            ),
+            examples=["http://127.0.0.1:5000/v1"],
+        ),
+        size: Optional[str] = Form(None, description="OpenAI-style output image size such as `1024x1024`, `1536x1024`, `1024x1536`, or `auto` when supported.", examples=["1024x1024"]),
+        response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported by the server response.", examples=["b64_json"]),
+        negative_prompt: Optional[str] = Form(None, description="Local/backend-specific negative prompt. Strict OpenAI-compatible upstreams do not receive this top-level field unless supplied through `extra_json`.", examples=["blur, low quality"]),
+        seed: Optional[str] = Form(None, description="Local/backend-specific deterministic seed. Use `extra_json` for custom OpenAI-compatible upstreams that support a seed field.", examples=["1234"]),
+        steps: Optional[str] = Form(None, description="Local/backend-specific denoising/inference step count. Use `extra_json` for custom OpenAI-compatible upstreams that support a steps field.", examples=["20"]),
+        guidance_scale: Optional[str] = Form(None, description="Local/backend-specific classifier-free guidance scale. Use `extra_json` for custom OpenAI-compatible upstreams that support this field.", examples=["7.5"]),
+        extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters.", examples=['{"quality":"low","background":"auto","output_format":"png"}']),
+    ) -> Dict[str, Any]:
+        return await images_edits(
+            request=request,
+            prompt=prompt,
+            image=image,
+            mask=mask,
+            provider=provider,
+            model=model,
+            base_url=base_url,
+            size=size,
+            response_format=response_format,
+            negative_prompt=negative_prompt,
+            seed=seed,
+            steps=steps,
+            guidance_scale=guidance_scale,
+            extra_json=extra_json,
+        )
+
 else:
 
     @router.post("/images/edits")
@@ -2126,6 +3220,19 @@ else:
             status_code=501,
             detail=(
                 "The /v1/images/edits endpoint requires python-multipart for multipart/form-data parsing. "
+                "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
+            ),
+        )
+
+    @provider_router.post("/{provider}/v1/images/edits")
+    async def provider_images_edits(
+        provider: str = FastAPIPath(..., description="Image provider route prefix."),
+    ) -> Dict[str, Any]:
+        _ = provider
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "The /{provider}/v1/images/edits endpoint requires python-multipart for multipart/form-data parsing. "
                 "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
             ),
         )

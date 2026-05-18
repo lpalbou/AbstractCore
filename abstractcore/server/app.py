@@ -69,6 +69,41 @@ from ..tools.syntax_rewriter import (
 )
 
 # ============================================================================
+# Dev sys.path helpers
+# ============================================================================
+
+def _maybe_prefer_sibling_dev_packages() -> None:
+    """Prefer sibling checkouts (../abstractvision, ../abstractvoice) when present.
+
+    AbstractCore is often developed alongside sibling repos inside a monorepo-like
+    folder. The server loads capability plugins via installed entry points, but
+    the entry points import Python modules by name. By prepending sibling repo
+    paths to `sys.path`, we ensure those imports resolve to the local working
+    copy instead of an older site-packages install.
+    """
+    raw = str(os.getenv("ABSTRACTCORE_DEV_PREFER_SIBLINGS", "1") or "").strip().lower()
+    if raw in {"0", "false", "no", "off"}:
+        return
+
+    try:
+        repo_root = Path(__file__).resolve().parents[2]  # .../abstractcore
+        mono_root = repo_root.parent  # .../abstractframework
+        candidates = [
+            mono_root / "abstractvision" / "src",
+            mono_root / "abstractvoice",
+        ]
+        for path in reversed([p for p in candidates if p.exists()]):
+            text = str(path)
+            if text not in sys.path:
+                sys.path.insert(0, text)
+    except Exception:
+        # Never fail server import due to dev convenience.
+        return
+
+
+_maybe_prefer_sibling_dev_packages()
+
+# ============================================================================
 # Configuration
 # ============================================================================
 
@@ -112,7 +147,7 @@ def _apply_centralized_config_env() -> None:
     """Load centralized config so persisted keys/server settings reach os.environ.
 
     The server's auth middleware runs before provider creation, so the server
-    master key and auth hardening knobs must be available at module import time,
+    auth token and auth hardening knobs must be available at module import time,
     not only when `create_llm(...)` eventually imports the provider registry.
     """
     raw_disable = str(os.getenv("ABSTRACTCORE_SERVER_DISABLE_CENTRALIZED_CONFIG") or "").strip().lower()
@@ -158,6 +193,7 @@ _SENSITIVE_FIELD_NAMES = {
 }
 _SENSITIVE_FIELD_FRAGMENTS = ("api_key", "api-key", "apikey", "authorization", "password", "secret", "token")
 _PLACEHOLDER_API_KEYS = {"not-needed", "not_needed", "notneeded", "unused", "dummy", "empty", "none"}
+_SERVER_AUTH_TOKEN_ENV_VAR = "ABSTRACTCORE_AUTH_TOKEN"
 _PROVIDER_API_KEY_HEADERS = (
     "x-abstractcore-provider-api-key",
     "x-provider-api-key",
@@ -243,13 +279,16 @@ def _redact_text(text: Any) -> str:
         return raw
 
 
-def _server_api_key() -> str:
-    """Return the configured inbound server API key, if any."""
-    return str(os.getenv("ABSTRACTCORE_SERVER_API_KEY") or "").strip()
+def _server_auth_token() -> str:
+    """Return the configured inbound server auth token, if any."""
+    value = os.getenv(_SERVER_AUTH_TOKEN_ENV_VAR)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return ""
 
 
 def _server_auth_enabled() -> bool:
-    return bool(_server_api_key())
+    return bool(_server_auth_token())
 
 
 def _server_allows_unauthenticated() -> bool:
@@ -287,7 +326,7 @@ def _request_is_auth_exempt(request: Request) -> bool:
         return True
     if path == "/health":
         return True
-    if not _server_protect_docs() and path in {"/docs", "/docs/oauth2-redirect", "/openapi.json", "/redoc"}:
+    if not _server_protect_docs() and path in {"/docs", "/docs-lite", "/docs/oauth2-redirect", "/openapi.json", "/redoc"}:
         return True
     return False
 
@@ -301,14 +340,15 @@ def _unauthorized_response(message: str) -> JSONResponse:
 
 
 async def _enforce_server_auth(request: Request, call_next):
-    """Enforce the server-master auth boundary before endpoint/provider creation."""
+    """Enforce the server auth-token boundary before endpoint/provider creation."""
     if _request_is_auth_exempt(request):
         return await call_next(request)
 
-    expected = _server_api_key()
+    expected = _server_auth_token()
     if not expected:
-        # No master server key is configured. In this mode Authorization may be
-        # used as a provider key, but it does not unlock server-held provider keys.
+        # No server auth token is configured. In this mode the server is either:
+        # - explicitly configured to allow unauthenticated access (local/dev), or
+        # - used with an explicit upstream provider key override header.
         if (
             _server_allows_unauthenticated()
             or _provider_api_key_from_request(request)
@@ -319,10 +359,11 @@ async def _enforce_server_auth(request: Request, call_next):
             content={
                 "error": {
                     "message": (
-                        "Server authentication is required but ABSTRACTCORE_SERVER_API_KEY is not configured. "
-                        "Set ABSTRACTCORE_SERVER_API_KEY, pass an explicit provider key with Authorization: "
-                        "Bearer <provider-key>, or set ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1 only for "
-                        "intentional local/dev use."
+                        "Server authentication is required but ABSTRACTCORE_AUTH_TOKEN is not configured. "
+                        "Set ABSTRACTCORE_AUTH_TOKEN, set "
+                        "ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1 only for "
+                        "intentional local/dev use, or pass an explicit upstream provider key via "
+                        "X-AbstractCore-Provider-API-Key or Authorization: Bearer <provider-key>."
                     ),
                     "type": "server_auth_not_configured",
                 }
@@ -349,19 +390,25 @@ def _provider_api_key_from_request(http_request: Request) -> Optional[str]:
     """Resolve the explicit upstream provider key for this request.
 
     Contract:
-    - `Authorization` is the AbstractCore server key whenever server auth is configured.
+    - `Authorization` is the AbstractCore server auth token whenever server auth is configured.
     - `X-AbstractCore-Provider-API-Key` is the per-request upstream provider override.
-    - For compatibility, when server auth is not configured, `Authorization` may carry
-      the upstream provider key.
+    - For backwards compatibility and Swagger UI convenience, when server auth is
+      NOT configured, `Authorization: Bearer <token>` is treated as an upstream
+      provider key.
     """
     for header_name in _PROVIDER_API_KEY_HEADERS:
         token = _extract_secret_header(http_request.headers.get(header_name))
         if not _is_placeholder_api_key(token):
             return token
 
+    # When server auth is enabled, `Authorization` is reserved for the server
+    # auth token and must never be forwarded upstream.
     if _server_auth_enabled():
         return None
 
+    # When server auth is disabled, accept `Authorization` as the explicit
+    # upstream provider key (legacy behavior, and what Swagger UI "Authorize"
+    # naturally supports).
     token = _extract_bearer_token(http_request.headers.get("authorization"))
     if _is_placeholder_api_key(token):
         return None
@@ -395,7 +442,8 @@ app = FastAPI(
     description=(
         "Universal LLM Gateway with Multi-Agent Tool Call Syntax Support and Media Processing.\n\n"
         "When server authentication is enabled, click Authorize in Swagger UI and enter the "
-        "`ABSTRACTCORE_SERVER_API_KEY` value. The UI sends it as `Authorization: Bearer <token>` "
+        "`ABSTRACTCORE_AUTH_TOKEN` value. "
+        "The UI sends it as `Authorization: Bearer <token>` "
         "for protected API calls."
     ),
     version=__version__,
@@ -409,25 +457,181 @@ app = FastAPI(
 )
 
 
+def _offline_openapi_docs_html(*, title: str, openapi_url: str = "/openapi.json") -> str:
+    """Return a dependency-free OpenAPI viewer for offline installs."""
+    safe_title = str(title or "API docs")
+    safe_openapi_url = str(openapi_url or "/openapi.json")
+    return (
+        """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>__TITLE__</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1020; --panel:#121a30; --text:#e8edff; --muted:#9ca8cc; --line:#2b3860; --accent:#35d0ff; --green:#39d98a; --blue:#6ea8fe; --orange:#ffb454; --red:#ff6b6b; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; font:15px/1.55 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--text); background:radial-gradient(circle at 20% 10%,rgba(53,208,255,.14),transparent 30rem),radial-gradient(circle at 80% 0%,rgba(255,107,107,.12),transparent 28rem),var(--bg); }
+    main { max-width:1180px; margin:0 auto; padding:40px 24px 64px; }
+    header { display:flex; align-items:flex-start; justify-content:space-between; gap:24px; margin-bottom:26px; }
+    h1 { margin:0 0 8px; font-size:clamp(2rem,4vw,3.4rem); letter-spacing:-.04em; }
+    p { margin:0; color:var(--muted); }
+    a { color:var(--accent); text-decoration:none; }
+    a:hover { text-decoration:underline; }
+    .actions { display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+    .button { display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:999px; padding:10px 14px; background:rgba(255,255,255,.05); color:var(--text); font-weight:700; }
+    .notice { border:1px solid rgba(53,208,255,.35); border-radius:18px; padding:16px 18px; background:rgba(53,208,255,.08); margin-bottom:24px; }
+    .toolbar { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; margin-bottom:18px; }
+    input { width:100%; border:1px solid var(--line); border-radius:14px; padding:13px 14px; background:rgba(0,0,0,.18); color:var(--text); font:inherit; }
+    .status { color:var(--muted); align-self:center; white-space:nowrap; }
+    .endpoint { border:1px solid var(--line); border-radius:18px; background:rgba(18,26,48,.88); margin:12px 0; overflow:hidden; }
+    .endpoint summary { cursor:pointer; padding:15px 18px; display:grid; grid-template-columns:82px minmax(0,1fr); gap:14px; align-items:center; }
+    .method { display:inline-flex; justify-content:center; border-radius:999px; padding:5px 10px; font:800 12px/1 ui-monospace,SFMono-Regular,Menlo,monospace; letter-spacing:.08em; color:#06101f; background:var(--blue); }
+    .method.POST { background:var(--green); } .method.PUT,.method.PATCH { background:var(--orange); } .method.DELETE { background:var(--red); }
+    .path { font:700 15px/1.35 ui-monospace,SFMono-Regular,Menlo,monospace; overflow-wrap:anywhere; }
+    .details { padding:0 18px 18px 114px; color:var(--muted); }
+    .details code { display:inline-block; margin:4px 6px 4px 0; padding:4px 8px; border-radius:999px; background:rgba(255,255,255,.07); color:var(--text); }
+    .error { border:1px solid rgba(255,107,107,.55); background:rgba(255,107,107,.1); border-radius:18px; padding:18px; color:#ffd0d0; }
+    @media (max-width:720px) { header,.toolbar { display:block; } .actions { justify-content:flex-start; margin-top:18px; } .status { margin-top:10px; display:block; } .endpoint summary { grid-template-columns:1fr; } .details { padding-left:18px; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <div>
+        <h1>__TITLE__</h1>
+        <p id="description">Offline OpenAPI documentation. No CDN, no internet required.</p>
+      </div>
+      <nav class="actions">
+        <a class="button" href="__OPENAPI_URL__">Open JSON</a>
+        <a class="button" href="/health">Health</a>
+      </nav>
+    </header>
+    <section class="notice">This lightweight documentation view lists endpoints from <a href="__OPENAPI_URL__">__OPENAPI_URL__</a>. Protected routes still require configured server authentication when called by clients.</section>
+    <section class="toolbar"><input id="filter" autocomplete="off" placeholder="Filter endpoints, methods, summaries..."><span class="status" id="status">Loading OpenAPI...</span></section>
+    <section id="routes"></section>
+  </main>
+  <script>
+    const openapiUrl = "__OPENAPI_URL__";
+    const methods = new Set(["get","post","put","patch","delete","head","options"]);
+    const state = { entries: [] };
+    const text = (value) => value == null ? "" : String(value);
+    function render() {
+      const q = document.getElementById("filter").value.trim().toLowerCase();
+      const routes = document.getElementById("routes");
+      routes.textContent = "";
+      const filtered = state.entries.filter((entry) => !q || [entry.method, entry.path, entry.summary, entry.description, entry.tags.join(" ")].join(" ").toLowerCase().includes(q));
+      document.getElementById("status").textContent = `${filtered.length} / ${state.entries.length} endpoints`;
+      for (const entry of filtered) {
+        const details = document.createElement("details");
+        details.className = "endpoint";
+        const summary = document.createElement("summary");
+        const method = document.createElement("span");
+        method.className = `method ${entry.method}`;
+        method.textContent = entry.method;
+        const path = document.createElement("span");
+        path.className = "path";
+        path.textContent = entry.path;
+        summary.append(method, path);
+        const body = document.createElement("div");
+        body.className = "details";
+        const line = document.createElement("p");
+        line.textContent = entry.summary || entry.description || "No summary.";
+        body.append(line);
+        if (entry.tags.length) {
+          const tags = document.createElement("p");
+          tags.append("Tags: ");
+          for (const tag of entry.tags) {
+            const code = document.createElement("code");
+            code.textContent = tag;
+            tags.append(code);
+          }
+          body.append(tags);
+        }
+        if (entry.parameters.length) {
+          const params = document.createElement("p");
+          params.append("Parameters: ");
+          for (const param of entry.parameters) {
+            const code = document.createElement("code");
+            code.textContent = `${param.name || "?"}:${param.in || "?"}`;
+            params.append(code);
+          }
+          body.append(params);
+        }
+        if (entry.requestBody) {
+          const req = document.createElement("p");
+          req.textContent = "Request body: yes";
+          body.append(req);
+        }
+        details.append(summary, body);
+        routes.append(details);
+      }
+    }
+    async function load() {
+      try {
+        const response = await fetch(openapiUrl, { headers: { "Accept": "application/json" } });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const schema = await response.json();
+        document.title = `${schema.info?.title || "__TITLE__"} - API docs`;
+        document.getElementById("description").textContent = schema.info?.description || "Offline OpenAPI documentation.";
+        const entries = [];
+        for (const [path, operations] of Object.entries(schema.paths || {})) {
+          for (const [method, op] of Object.entries(operations || {})) {
+            if (!methods.has(method)) continue;
+            entries.push({ method: method.toUpperCase(), path, summary: text(op.summary), description: text(op.description), tags: Array.isArray(op.tags) ? op.tags.map(text) : [], parameters: Array.isArray(op.parameters) ? op.parameters : [], requestBody: Boolean(op.requestBody) });
+          }
+        }
+        entries.sort((a, b) => a.path.localeCompare(b.path) || a.method.localeCompare(b.method));
+        state.entries = entries;
+        render();
+      } catch (error) {
+        const routes = document.getElementById("routes");
+        routes.textContent = "";
+        const box = document.createElement("div");
+        box.className = "error";
+        box.textContent = `Could not load ${openapiUrl}: ${error}`;
+        routes.append(box);
+        document.getElementById("status").textContent = "OpenAPI load failed";
+      }
+    }
+    document.getElementById("filter").addEventListener("input", render);
+    load();
+  </script>
+</body>
+</html>"""
+        .replace("__TITLE__", safe_title)
+        .replace("__OPENAPI_URL__", safe_openapi_url)
+    )
+
+
+@app.get("/docs-lite", include_in_schema=False)
+async def offline_openapi_docs_html() -> HTMLResponse:
+    """Serve dependency-free OpenAPI docs for offline installs."""
+    return HTMLResponse(_offline_openapi_docs_html(title=f"{app.title} API Docs"))
+
+
 @app.get("/docs", include_in_schema=False)
 async def custom_swagger_ui_html() -> HTMLResponse:
     """Serve Swagger UI with a small media-preview fix for binary audio POSTs."""
 
-    return HTMLResponse(
-        """
+    html = """
 <!DOCTYPE html>
 <html>
 <head>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<link type="text/css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+<link type="text/css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.6/swagger-ui.css">
 <link rel="shortcut icon" href="https://fastapi.tiangolo.com/img/favicon.png">
 <title>AbstractCore Server - Swagger UI</title>
+<style>
+body { margin: 0; }
+</style>
 </head>
 <body>
 <div id="swagger-ui"></div>
-<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.32.6/swagger-ui-bundle.js"></script>
 <script>
 window.__abstractcoreLatestAudioPreviewUrl = null;
+const abstractcoreServerAuthEnabled = __SERVER_AUTH_ENABLED__;
 
 function abstractcoreHeader(response, name) {
   const headers = response && response.headers ? response.headers : {};
@@ -475,6 +679,115 @@ function abstractcorePatchAudioPlayers() {
   });
 }
 
+async function abstractcoreValidateServerToken(candidate) {
+  if (!abstractcoreServerAuthEnabled) {
+    return { ok: true };
+  }
+
+  const token = String(candidate || "").trim();
+  if (!token) {
+    return { ok: false, message: "Enter the AbstractCore server token." };
+  }
+
+  try {
+    const response = await fetch("/acore/auth/validate", {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Accept": "application/json"
+      }
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const message = payload && payload.error && payload.error.message
+        ? String(payload.error.message)
+        : `Invalid server token (HTTP ${response.status})`;
+      return { ok: false, message };
+    }
+    if (!payload || payload.authenticated !== true) {
+      return { ok: false, message: "Server token was not accepted." };
+    }
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, message: `Token validation failed: ${error}` };
+  }
+}
+
+function abstractcoreAuthErrorsClear(system, authId) {
+  if (!(system && system.errActions && typeof system.errActions.clearBy === "function")) {
+    return;
+  }
+  system.errActions.clearBy((error) => {
+    if (!(error && typeof error.get === "function")) {
+      return true;
+    }
+    return !(error.get("source") === "auth" && error.get("authId") === authId);
+  });
+}
+
+function abstractcoreAuthError(system, authId, message) {
+  if (!(system && system.errActions && typeof system.errActions.newAuthErr === "function")) {
+    return;
+  }
+  system.errActions.newAuthErr({
+    authId,
+    source: "auth",
+    level: "error",
+    message: String(message || "Invalid server token"),
+  });
+}
+
+function abstractcoreAuthValue(payload, authId) {
+  if (!(payload && Object.prototype.hasOwnProperty.call(payload, authId))) {
+    return "";
+  }
+  const auth = payload[authId] || {};
+  const raw = auth.value;
+  if (typeof raw === "string") {
+    return raw.trim();
+  }
+  if (raw && typeof raw.value === "string") {
+    return raw.value.trim();
+  }
+  if (raw == null) {
+    return "";
+  }
+  return String(raw).trim();
+}
+
+const AbstractCoreSwaggerAuthPlugin = function(system) {
+  return {
+    statePlugins: {
+      auth: {
+        wrapActions: {
+          authorize: (oriAction, wrappedSystem) => (payload) => {
+            const authId = "AbstractCoreBearerAuth";
+            if (!abstractcoreServerAuthEnabled || !(payload && Object.prototype.hasOwnProperty.call(payload, authId))) {
+              return oriAction(payload);
+            }
+
+            abstractcoreAuthErrorsClear(wrappedSystem, authId);
+            const token = abstractcoreAuthValue(payload, authId);
+            if (!token) {
+              abstractcoreAuthError(wrappedSystem, authId, "Enter the AbstractCore server token.");
+              return undefined;
+            }
+
+            return abstractcoreValidateServerToken(token).then((result) => {
+              if (!result || result.ok !== true) {
+                abstractcoreAuthError(wrappedSystem, authId, result && result.message ? result.message : "Invalid server token.");
+                return undefined;
+              }
+              abstractcoreAuthErrorsClear(wrappedSystem, authId);
+              return oriAction(payload);
+            });
+          },
+        },
+      },
+    },
+  };
+};
+
 const ui = SwaggerUIBundle({
   url: "/openapi.json",
   dom_id: "#swagger-ui",
@@ -482,7 +795,7 @@ const ui = SwaggerUIBundle({
   deepLinking: true,
   showExtensions: true,
   showCommonExtensions: true,
-  persistAuthorization: true,
+  persistAuthorization: false,
   displayRequestDuration: true,
   tryItOutEnabled: true,
   oauth2RedirectUrl: window.location.origin + "/docs/oauth2-redirect",
@@ -510,6 +823,9 @@ const ui = SwaggerUIBundle({
     SwaggerUIBundle.presets.apis,
     SwaggerUIBundle.SwaggerUIStandalonePreset
   ],
+  plugins: [
+    AbstractCoreSwaggerAuthPlugin
+  ],
 });
 
 const abstractcoreSwaggerRoot = document.getElementById("swagger-ui");
@@ -525,8 +841,8 @@ if (abstractcoreSwaggerRoot) {
 </script>
 </body>
 </html>
-        """
-    )
+    """
+    return HTMLResponse(html.replace("__SERVER_AUTH_ENABLED__", "true" if _server_auth_enabled() else "false"))
 
 
 @app.get("/docs/oauth2-redirect", include_in_schema=False)
@@ -539,6 +855,16 @@ async def redoc_html() -> HTMLResponse:
     return get_redoc_html(openapi_url="/openapi.json", title=f"{app.title} - ReDoc")
 
 
+@app.get("/acore/auth/validate", include_in_schema=False)
+async def validate_server_auth_token(request: Request) -> JSONResponse:
+    """Validate the inbound server token for the docs UI."""
+    return JSONResponse(
+        {
+            "ok": True,
+            "server_auth_enabled": _server_auth_enabled(),
+            "authenticated": _request_has_server_auth(request),
+        }
+    )
 def _custom_openapi() -> Dict[str, Any]:
     if app.openapi_schema:
         return app.openapi_schema
@@ -550,17 +876,18 @@ def _custom_openapi() -> Dict[str, Any]:
         routes=app.routes,
     )
     components = schema.setdefault("components", {})
-    security_schemes = components.setdefault("securitySchemes", {})
-    security_schemes["AbstractCoreBearerAuth"] = {
-        "type": "http",
-        "scheme": "bearer",
-        "bearerFormat": "server API key",
-        "description": (
-            "Inbound AbstractCore server token. Use the value configured in "
-            "ABSTRACTCORE_SERVER_API_KEY. Provider-key overrides still use the "
-            "X-AbstractCore-Provider-API-Key header."
-        ),
-    }
+    if _server_auth_enabled():
+        security_schemes = components.setdefault("securitySchemes", {})
+        security_schemes["AbstractCoreBearerAuth"] = {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "server auth token",
+            "description": (
+                "Inbound AbstractCore server token. Use the value configured in "
+                "ABSTRACTCORE_AUTH_TOKEN. Provider-key overrides still use the "
+                "X-AbstractCore-Provider-API-Key header."
+            ),
+        }
     schemas = components.setdefault("schemas", {})
     schemas.setdefault(
         "AbstractCoreError",
@@ -610,9 +937,12 @@ def _custom_openapi() -> Dict[str, Any]:
             "input": "Hello from AbstractCore.",
             "text": None,
             "voice": "coral",
+            "profile": None,
             "response_format": "wav",
             "format": None,
             "speed": 1.0,
+            "quality_preset": "standard",
+            "quality": None,
             "instructions": "Speak clearly and calmly.",
             "provider": {},
             "base_url": None,
@@ -631,8 +961,11 @@ def _custom_openapi() -> Dict[str, Any]:
     )
     image_generation_example = {
         "model": "openai-compatible/gpt-image-1",
+        "provider": "openai-compatible",
         "prompt": "A precise product photo of a red ceramic mug on a white table.",
         "n": 1,
+        "base_url": None,
+        "size": "1024x1024",
         "width": 1024,
         "height": 1024,
         "response_format": "b64_json",
@@ -701,9 +1034,12 @@ def _custom_openapi() -> Dict[str, Any]:
             "input": "Hello from AbstractCore.",
             "text": None,
             "voice": "coral",
+            "profile": None,
             "response_format": "wav",
             "format": None,
             "speed": 1.0,
+            "quality_preset": "standard",
+            "quality": None,
             "instructions": "Speak clearly and calmly.",
             "provider": {},
             "base_url": None,
@@ -733,6 +1069,25 @@ def _custom_openapi() -> Dict[str, Any]:
         {
             "file": "<upload audio.mp3>",
             "model": "openai/gpt-4o-mini-transcribe",
+            "provider": None,
+            "language": "en",
+            "prompt": "Technical discussion about AbstractCore endpoints.",
+            "response_format": "json",
+            "temperature": 0.0,
+            "format": None,
+            "base_url": None,
+        },
+    )
+    _request_example(
+        "/{provider}/v1/audio/transcriptions",
+        "post",
+        "multipart/form-data",
+        "provider_scoped_stt",
+        "Provider-scoped transcription",
+        {
+            "file": "<upload audio.mp3>",
+            "model": "gpt-4o-mini-transcribe",
+            "provider": None,
             "language": "en",
             "prompt": "Technical discussion about AbstractCore endpoints.",
             "response_format": "json",
@@ -742,6 +1097,7 @@ def _custom_openapi() -> Dict[str, Any]:
         },
     )
     _request_example("/v1/images/generations", "post", "application/json", "remote_openai_compatible", "Remote OpenAI-compatible image generation", image_generation_example)
+    _request_example("/{provider}/v1/images/generations", "post", "application/json", "provider_scoped_image_generation", "Provider-scoped image generation", {**image_generation_example, "model": "gpt-image-1", "provider": None})
     _request_example("/v1/vision/jobs/images/generations", "post", "application/json", "async_image_generation", "Async image generation job", image_generation_example)
     _request_example(
         "/v1/audio/translations",
@@ -755,7 +1111,9 @@ def _custom_openapi() -> Dict[str, Any]:
         "prompt": "Make the mug blue and keep the white background.",
         "image": "<upload source.png>",
         "mask": None,
+        "provider": "openai-compatible",
         "model": "openai-compatible/gpt-image-1",
+        "base_url": None,
         "size": "1024x1024",
         "response_format": "b64_json",
         "negative_prompt": None,
@@ -765,6 +1123,7 @@ def _custom_openapi() -> Dict[str, Any]:
         "extra_json": '{"quality":"low","background":"auto","output_format":"png"}',
     }
     _request_example("/v1/images/edits", "post", "multipart/form-data", "remote_openai_compatible", "Remote OpenAI-compatible image edit", image_edit_example)
+    _request_example("/{provider}/v1/images/edits", "post", "multipart/form-data", "provider_scoped_image_edit", "Provider-scoped image edit", {**image_edit_example, "model": "gpt-image-1"})
     _request_example("/v1/vision/jobs/images/edits", "post", "multipart/form-data", "async_image_edit", "Async image edit job", image_edit_example)
     _request_example(
         "/v1/voice/clone",
@@ -775,6 +1134,26 @@ def _custom_openapi() -> Dict[str, Any]:
         {
             "file": "<upload reference.wav>",
             "model": "openai-compatible/default",
+            "provider": None,
+            "name": "my_voice",
+            "reference_text": "Hello from AbstractCore voice cloning.",
+            "validate": True,
+            "base_url": "http://127.0.0.1:5000/v1",
+            "clone_path": "/voice/clone",
+            "file_field": "file",
+            "consent": None,
+        },
+    )
+    _request_example(
+        "/{provider}/v1/voice/clone",
+        "post",
+        "multipart/form-data",
+        "provider_scoped_clone_server",
+        "Provider-scoped voice clone",
+        {
+            "file": "<upload reference.wav>",
+            "model": "default",
+            "provider": None,
             "name": "my_voice",
             "reference_text": "Hello from AbstractCore voice cloning.",
             "validate": True,
@@ -851,7 +1230,10 @@ def _custom_openapi() -> Dict[str, Any]:
                 continue
             if not isinstance(operation, dict):
                 continue
-            operation["security"] = [] if path == "/health" else [{"AbstractCoreBearerAuth": []}]
+            if _server_auth_enabled():
+                operation["security"] = [] if path == "/health" else [{"AbstractCoreBearerAuth": []}]
+            else:
+                operation.pop("security", None)
             if path != "/health":
                 responses = operation.setdefault("responses", {})
                 for code, description in (
@@ -884,9 +1266,11 @@ app.add_middleware(
 # Optional: OpenAI-compatible vision generation endpoints (/v1/images/*).
 # These are safe-by-default and require explicit configuration; see `vision_endpoints.py`.
 try:
+    from .vision_endpoints import provider_router as _vision_provider_router
     from .vision_endpoints import router as _vision_router
 
     app.include_router(_vision_router, prefix="/v1")
+    app.include_router(_vision_provider_router)
     logger.info("🖼️ Vision endpoints enabled at /v1/images/*")
 except Exception as e:
     logger.debug(f"Vision endpoints not loaded: {e}")
@@ -894,9 +1278,11 @@ except Exception as e:
 # Optional: OpenAI-compatible audio endpoints (/v1/audio/*).
 # These delegate to capability plugins (e.g. AbstractVoice) and degrade to 501 when unavailable.
 try:
+    from .audio_endpoints import provider_router as _provider_audio_router
     from .audio_endpoints import router as _audio_router
 
     app.include_router(_audio_router, prefix="/v1")
+    app.include_router(_provider_audio_router)
     logger.info("🔊 Audio endpoints enabled at /v1/audio/*")
 except Exception as e:
     logger.debug(f"Audio endpoints not loaded: {e}")
@@ -1327,8 +1713,7 @@ class ChatCompletionRequest(BaseModel):
     api_key: Optional[str] = Field(
         default=None,
         description="Deprecated/disabled for HTTP requests. Provider API keys must be supplied via "
-                    "X-AbstractCore-Provider-API-Key, via Authorization only when server auth is not "
-                    "configured, or configured on the server (e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, "
+                    "X-AbstractCore-Provider-API-Key, or configured on the server (e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, "
                     "OPENROUTER_API_KEY, PORTKEY_API_KEY).",
         example=None
     )
@@ -2062,7 +2447,7 @@ def _provider_api_key_env_var(provider: str) -> Optional[str]:
     if p == "portkey":
         return "PORTKEY_API_KEY"
     if p == "openai-compatible":
-        return "OPENAI_COMPATIBLE_API_KEY"
+        return "OPENAI_API_KEY"
     if p == "vllm":
         return "VLLM_API_KEY"
     return None
@@ -2099,8 +2484,7 @@ def _reject_body_api_key(api_key: Any) -> None:
                 "message": (
                     "Per-request provider api_key fields are disabled for the HTTP server because they leak "
                     "through bodies, logs, and client history. Use X-AbstractCore-Provider-API-Key for a "
-                    "provider override, Authorization as a provider key only when server auth is not "
-                    "configured, or configure provider keys on the server."
+                    "provider override, or configure provider keys on the server."
                 ),
                 "type": "invalid_request",
             }
@@ -2117,9 +2501,8 @@ def _reject_query_api_key(api_key: Any) -> None:
             "error": {
                 "message": (
                     "Query-string api_key is disabled because URLs are routinely logged. Use Authorization "
-                    "as a provider key only when server auth is not configured, "
-                    "X-AbstractCore-Provider-API-Key for a provider override, or configure provider keys "
-                    "on the server."
+                    "for the AbstractCore server auth token when configured, use X-AbstractCore-Provider-API-Key "
+                    "for a provider override, or configure provider keys on the server."
                 ),
                 "type": "invalid_request",
             }
@@ -2146,9 +2529,9 @@ def _guard_unauthenticated_server_provider_key_use(
             "error": {
                 "message": (
                     f"Server-held {env_var} is configured, but inbound server auth is not. "
-                    "Set ABSTRACTCORE_SERVER_API_KEY and send Authorization: Bearer <server-key>, "
-                    "or pass an explicit provider key with Authorization: Bearer <provider-key> "
-                    "when server auth is not configured."
+                    "Set ABSTRACTCORE_AUTH_TOKEN "
+                    "and send Authorization: Bearer <server-token>, "
+                    "or pass an explicit provider key with X-AbstractCore-Provider-API-Key."
                 ),
                 "type": "authentication_error",
             }
@@ -2705,9 +3088,8 @@ async def list_models(
     api_key: Optional[str] = Query(
         None,
         description=(
-            "Deprecated/disabled. Query-string secrets leak through URLs; use "
-            "X-AbstractCore-Provider-API-Key for provider overrides, Authorization only when "
-            "server auth is not configured, or configure provider keys on the server."
+            "Optional upstream provider API key override. Prefer `X-AbstractCore-Provider-API-Key`; "
+            "this query parameter is supported for tooling/Swagger UI convenience and is redacted from server logs."
         ),
     ),
     base_url: Optional[str] = Query(
@@ -2737,8 +3119,17 @@ async def list_models(
         # Use the capability enums directly
         input_capabilities = [input_type] if input_type else None
         output_capabilities = [output_type] if output_type else None
-
-        _reject_query_api_key(api_key)
+        api_key_s = str(api_key).strip() if isinstance(api_key, str) and str(api_key).strip() else ""
+        if api_key_s and not provider:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": {
+                        "message": "api_key requires provider=... so the override target is unambiguous.",
+                        "type": "invalid_request",
+                    }
+                },
+            )
 
         if provider:
             provider_norm = provider.lower().strip()
@@ -2750,7 +3141,7 @@ async def list_models(
 
             provider_kwargs: Dict[str, Any] = {}
 
-            candidate_key = _provider_api_key_from_request(http_request) or ""
+            candidate_key = api_key_s or (_provider_api_key_from_request(http_request) or "")
 
             if candidate_key:
                 provider_kwargs["api_key"] = candidate_key
@@ -2789,8 +3180,7 @@ async def list_models(
                                     "message": (
                                         "Refusing request-level base_url override without an explicit provider key "
                                         f"because the server has {env_var} set. Provide the provider key via "
-                                        "X-AbstractCore-Provider-API-Key, or via Authorization only when server auth "
-                                        "is not configured."
+                                        "X-AbstractCore-Provider-API-Key."
                                     ),
                                     "type": "forbidden",
                                 }
@@ -2935,7 +3325,8 @@ async def list_providers(
                         "error": {
                             "message": (
                                 "Provider model discovery would use server-held API keys, but inbound server auth is "
-                                "not configured. Set ABSTRACTCORE_SERVER_API_KEY or omit include_models=true."
+                                "not configured. Set ABSTRACTCORE_AUTH_TOKEN "
+                                "or omit include_models=true."
                             ),
                             "type": "authentication_error",
                         }
@@ -3266,8 +3657,7 @@ def _embedding_provider_kwargs(
                             "message": (
                                 "Refusing request-level base_url override without an explicit provider key because "
                                 f"the server has {env_var} set. Provide the provider key via "
-                                "X-AbstractCore-Provider-API-Key, or via Authorization only when server auth is "
-                                "not configured. "
+                                "X-AbstractCore-Provider-API-Key. "
                                 f"(provider={provider})"
                             ),
                             "type": "forbidden",
@@ -4195,8 +4585,7 @@ async def process_chat_completion(
                                 "message": (
                                     "Refusing request-level base_url override without an explicit provider key because "
                                     f"the server has {env_var} set. Provide the provider key via "
-                                    "X-AbstractCore-Provider-API-Key, or via Authorization only when server auth is "
-                                    "not configured. "
+                                    "X-AbstractCore-Provider-API-Key. "
                                     f"(provider={provider})"
                                 ),
                                 "type": "forbidden",
@@ -4654,7 +5043,7 @@ Examples:
   python -m abstractcore.server.app --debug --port 8080           # Debug on custom port
 
 Environment Variables:
-  ABSTRACTCORE_SERVER_API_KEY=...  # Server master key for non-health endpoints
+  ABSTRACTCORE_AUTH_TOKEN=...  # Server auth token for non-health endpoints
   ABSTRACTCORE_DEBUG=true    # Enable debug mode (equivalent to --debug)
   HOST=127.0.0.1            # Server host (overridden by --host)
   PORT=8080                  # Server port (overridden by --port)

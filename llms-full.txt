@@ -2,8 +2,8 @@
 
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
-Last updated: 2026-05-04
-Package version: 2.13.2
+Last updated: 2026-05-18
+Package version: 2.13.15
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -206,10 +206,10 @@ OpenAI-compatible base URLs (local/self-hosted):
 - `OLLAMA_BASE_URL` (legacy: `OLLAMA_HOST`)
 - `LMSTUDIO_BASE_URL`
 - `VLLM_BASE_URL`
-- `OPENAI_COMPATIBLE_BASE_URL` (generic provider)
+- `OPENAI_BASE_URL` (generic provider)
 
 OpenAI-compatible optional auth:
-- `OPENAI_COMPATIBLE_API_KEY`
+- `OPENAI_API_KEY`
 
 HuggingFace caching (optional):
 - `HF_HOME` (or rely on defaults)
@@ -314,9 +314,9 @@ Best for: any OpenAI-compatible `/v1` endpoint (llama.cpp servers, LocalAI, text
 Setup:
 
 ```bash
-export OPENAI_COMPATIBLE_BASE_URL="http://localhost:1234/v1"
+export OPENAI_BASE_URL="http://localhost:1234/v1"
 # Optional (if your endpoint requires auth)
-export OPENAI_COMPATIBLE_API_KEY="your-api-key"
+export OPENAI_API_KEY="your-api-key"
 ```
 
 Use:
@@ -636,6 +636,7 @@ abstractcore --set-stt-language en
 AbstractCore supports optional capability plugins discovered via Python entry points:
 - install `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
 - install `abstractvision` -> enables `llm.vision` (generative vision; often via an OpenAI-compatible images endpoint)
+- current plugin floors in this source: `abstractvoice>=0.10.3`, `abstractvision>=0.3.6`
 
 Server note:
 - the server can optionally expose `/v1/images/*` (requires `abstractvision`)
@@ -690,7 +691,7 @@ abstractcore --set-api-key portkey pk-...
 abstractcore --set-api-key openai-compatible endpoint-key
 abstractcore --set-api-key vllm endpoint-key
 
-abstractcore --set-server-api-key acore-server-secret
+abstractcore --set-server-auth-token acore-server-secret
 abstractcore --set-server-base-url-allowlist "https://example.com/v1"
 abstractcore --set-server-url-fetch-allowlist "https://files.example.com"
 abstractcore --set-server-media-root /srv/abstractcore-media
@@ -701,7 +702,7 @@ abstractcore --set-code-model anthropic/claude-haiku-4-5
 
 HTTP server settings persisted here are injected into `ABSTRACTCORE_SERVER_*`,
 `HOST`, and `PORT` when those environment variables are not already set. A
-server master key authenticates clients to AbstractCore; provider keys remain
+server auth token authenticates clients to AbstractCore; provider keys remain
 separate upstream credentials.
 
 ### Priority order (high -> low)
@@ -758,6 +759,14 @@ curl http://localhost:8000/health
 Interactive docs:
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
+- Docs Lite: `http://localhost:8000/docs-lite`
+
+When server auth is enabled, `/docs` keeps Swagger UI's normal `Authorize`
+button, but AbstractCore wraps that action and calls `/acore/auth/validate`
+before Swagger stores a bearer token for `Try it out` requests. Invalid tokens
+are not treated as authenticated.
+When server auth is disabled, the server bearer scheme is omitted from the
+OpenAPI docs so Swagger does not show a misleading server-token authorize flow.
 
 ### Model naming
 
@@ -771,7 +780,7 @@ Requests use `provider/model`:
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \\
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \\
   -d '{
     "model": "openai/gpt-4o-mini",
     "messages": [{"role": "user", "content": "Hello!"}]
@@ -788,19 +797,18 @@ The server supports a few non-OpenAI fields to make multi-provider routing pract
 - `prompt_cache_key` / `prompt_cache_retention`: best-effort provider prompt-cache controls
 - `unload_after`: best-effort model unload after request (dangerous in multi-tenant environments)
 
-Provider keys are not accepted in request bodies or query strings. Configure
-provider keys on the server, send `X-AbstractCore-Provider-API-Key` as a
-per-request upstream override, or use `Authorization: Bearer <provider-key>`
-only when `ABSTRACTCORE_SERVER_API_KEY` is not configured. When server auth is
-configured, `Authorization` is the AbstractCore server key and is not forwarded
-upstream.
+Provider keys are not accepted in request bodies. Configure provider keys on the
+server, send `X-AbstractCore-Provider-API-Key` as a per-request upstream override,
+or use `Authorization: Bearer <provider-key>` only when `ABSTRACTCORE_AUTH_TOKEN`
+is not configured.
+When server auth is configured, `Authorization` is the AbstractCore server auth token and is not forwarded upstream.
 
 ### Provider base_url override example
 
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \\
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \\
   -d '{
     "model": "lmstudio/qwen/qwen3-4b-2507",
     "base_url": "http://localhost:1234/v1",
@@ -810,8 +818,8 @@ curl -X POST http://localhost:8000/v1/chat/completions \\
 
 ### Optional images/audio endpoints
 
-- Images: `POST /v1/images/generations`, `POST /v1/images/edits` (requires `abstractvision`)
-- Audio: `POST /v1/audio/transcriptions`, `POST /v1/audio/speech` (requires an audio/voice plugin; commonly `abstractvoice`)
+- Images: `POST /v1/images/generations`, `POST /v1/images/edits` (requires `abstractvision`; global routes accept `model`, optional `provider`, and optional `base_url`)
+- Audio: `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`, `POST /v1/voice/clone` (requires an audio/voice plugin; commonly `abstractvoice`; global routes accept `model`, optional `provider`, and optional `base_url`)
 
 If a required plugin/backend is missing, the server returns `501` with actionable messaging.
 
@@ -1814,9 +1822,9 @@ AbstractCore supports a generic OpenAI-compatible provider plus specific conveni
 You must include `/v1` for OpenAI-compatible servers:
 
 ```bash
-export OPENAI_COMPATIBLE_BASE_URL="http://localhost:1234/v1"
+export OPENAI_BASE_URL="http://localhost:1234/v1"
 # Optional (if your endpoint requires auth)
-export OPENAI_COMPATIBLE_API_KEY="your-api-key"
+export OPENAI_API_KEY="your-api-key"
 ```
 
 #### 2. Test Setup
@@ -6837,20 +6845,20 @@ Supported provider key names include `openai`, `anthropic`, `openrouter`, `portk
 
 ### HTTP Server Gateway Auth
 
-The optional OpenAI-compatible HTTP server has its own inbound server key. This is separate from upstream provider keys.
+The optional OpenAI-compatible HTTP server has its own inbound auth token. This is separate from upstream provider keys.
 
 ```bash
-# Set the AbstractCore server master key
-abstractcore --set-server-api-key acore-server-secret
+# Set the AbstractCore server auth token
+abstractcore --set-server-auth-token acore-server-secret
 
 # Start the server; clients now authenticate with:
 # Authorization: Bearer acore-server-secret
 python -m abstractcore.server.app
 ```
 
-When a server master key is configured, authenticated clients can use provider keys configured on the server through `abstractcore --set-api-key ...` or environment variables. To override one upstream provider for one request, clients can send `X-AbstractCore-Provider-API-Key`.
+When a server auth token is configured, authenticated clients can use provider keys configured on the server through `abstractcore --set-api-key ...` or environment variables. To override one upstream provider for one request, clients can send `X-AbstractCore-Provider-API-Key`.
 
-When no server master key is configured, clients may bring their own upstream provider key with `Authorization: Bearer <provider-key>` or `X-AbstractCore-Provider-API-Key`, but they cannot use server-held provider keys. Provider keys in request bodies or query strings are disabled.
+When no server auth token is configured, clients may bring their own upstream provider key with `Authorization: Bearer <provider-key>` or `X-AbstractCore-Provider-API-Key`, but they cannot use server-held provider keys. Provider keys in request bodies or query strings are disabled.
 
 Server hardening commands:
 
@@ -6877,7 +6885,7 @@ abstractcore --set-server-host 127.0.0.1
 abstractcore --set-server-port 8000
 ```
 
-The interactive wizard (`abstractcore --config`) asks for the same persisted server security surface: server master key, unauthenticated local/dev mode, request `base_url` allowlist, URL media-fetch allowlist, safe media root, unrestricted local-file toggle, and default server host/port. It can generate a server key and accepts `clear` for the key, allowlists, and media root.
+The interactive wizard (`abstractcore --config`) asks for the same persisted server security surface: server auth token, unauthenticated local/dev mode, request `base_url` allowlist, URL media-fetch allowlist, safe media root, unrestricted local-file toggle, and default server host/port. It can generate an auth token and accepts `clear` for the key, allowlists, and media root.
 
 ### Streaming Configuration
 
@@ -6997,7 +7005,7 @@ abstractcore --set-api-key openai-compatible your-endpoint-key
 abstractcore --set-api-key vllm your-vllm-key
 
 # 5. Optional: configure the OpenAI-compatible HTTP server gateway
-abstractcore --set-server-api-key acore-server-secret
+abstractcore --set-server-auth-token acore-server-secret
 abstractcore --set-server-base-url-allowlist "https://example.com/v1"
 
 # 6. Configure logging for development
@@ -7193,7 +7201,8 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 - **google**: Google API key (reserved for future integrations; not required for current built-in providers)
 
 ### Server Section
-- **api_key**: AbstractCore server master key for inbound client authentication
+- **auth_token**: AbstractCore server auth token for inbound client authentication
+- **api_key**: Legacy status alias retained for compatibility with older callers
 - **allow_unauthenticated**: Local/dev escape hatch for unauthenticated HTTP server requests
 - **base_url_allowlist**: Additional non-loopback `base_url` override allowlist
 - **url_fetch_allowlist**: URL media fetch allowlist for otherwise blocked targets
@@ -7374,7 +7383,7 @@ Visit while the server is running:
 pip install "abstractcore[server]"
 
 # Configure server auth and provider keys
-export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
+export ABSTRACTCORE_AUTH_TOKEN="acore-server-secret"
 export OPENAI_API_KEY="sk-..."
 
 # Start server
@@ -7393,7 +7402,7 @@ curl http://localhost:8000/health
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \
   -d '{
     "model": "openai/gpt-4o-mini",
     "messages": [{"role": "user", "content": "Hello!"}]
@@ -7406,7 +7415,7 @@ Or with Python:
 import os
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"])
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_AUTH_TOKEN"])
 
 response = client.chat.completions.create(
     model="anthropic/claude-haiku-4-5",
@@ -7429,8 +7438,8 @@ export OPENROUTER_API_KEY="sk-or-..."
 export PORTKEY_API_KEY="pk_..."         # optional (Portkey)
 export PORTKEY_CONFIG="pcfg_..."        # required for Portkey routing
 
-# Server master key. Authenticated clients can use all server-configured providers.
-export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
+# Server auth token. Authenticated clients can use all server-configured providers.
+export ABSTRACTCORE_AUTH_TOKEN="acore-server-secret"
 
 # Local providers
 export OLLAMA_BASE_URL="http://localhost:11434"          # (or legacy: OLLAMA_HOST)
@@ -7492,10 +7501,10 @@ uvicorn abstractcore.server.app:app --port 3000             # Custom port
 Standard OpenAI-compatible endpoint. Works with all providers.
 
 Server auth:
-- If `ABSTRACTCORE_SERVER_API_KEY` is configured, every non-health endpoint requires
-  `Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY`. Authenticated clients can use all
+- If `ABSTRACTCORE_AUTH_TOKEN` is configured, every non-health endpoint requires
+  `Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN`. Authenticated clients can use all
   provider keys/endpoints configured on the server.
-- If `ABSTRACTCORE_SERVER_API_KEY` is not configured, `Authorization: Bearer <provider-key>`
+- If `ABSTRACTCORE_AUTH_TOKEN` is not configured, `Authorization: Bearer <provider-key>`
   may be used as a bring-your-own upstream provider key. That key is forwarded only to the
   requested provider and never unlocks server-configured provider keys.
 - Health checks (`GET /health`) are always unauthenticated.
@@ -7520,7 +7529,7 @@ Server auth:
 - `stream` (optional): Enable streaming responses
 - `tools` (optional): Tools for function calling
 - `agent_format` (optional, AbstractCore extension): Tool-call syntax output format for agentic clients (`"auto"|"openai"|"codex"|"qwen3"|"llama3"|"gemma"|"xml"|"passthrough"`). When omitted, the server auto-detects from user-agent + model heuristics.
-- `api_key` (deprecated/disabled, AbstractCore extension): Provider API keys are no longer accepted in request bodies or query strings. Configure provider keys on the server, use `X-AbstractCore-Provider-API-Key` for a per-request provider override, or use `Authorization` as a provider key only when `ABSTRACTCORE_SERVER_API_KEY` is not configured.
+- `api_key` (deprecated/disabled, AbstractCore extension): Provider API keys are not accepted in request bodies. Configure provider keys on the server, use `X-AbstractCore-Provider-API-Key` for a per-request provider override, or use `Authorization` as a provider key only when `ABSTRACTCORE_AUTH_TOKEN` is not configured. Select discovery endpoints also accept an `api_key` query parameter for tooling/Swagger UI convenience.
 - `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
 - `unload_after` (optional, AbstractCore extension): If `true`, calls `llm.unload_model(model)` after the request completes. Disabled for `ollama/*` unless `ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1`.
 - `prompt_cache_key` (optional, AbstractCore extension): Best-effort prompt caching key (semantics depend on provider/backend). See `docs/prompt-caching.md`.
@@ -7556,7 +7565,7 @@ Notes:
 import os
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"])
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_AUTH_TOKEN"])
 
 stream = client.chat.completions.create(
     model="ollama/qwen3-coder:30b",
@@ -7591,31 +7600,31 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 
 #### Provider Authentication
 
-Do not put provider keys in request bodies or query strings. Those fields are disabled because
-they leak through logs, shell history, browser history, and reverse proxies.
+Do not put provider keys in request bodies. Those fields are disabled because they leak through
+logs, shell history, browser history, and reverse proxies.
 
 ```bash
 # Preferred: configure provider keys on the server and authenticate to AbstractCore.
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \
   -d '{
     "model": "openai/gpt-4o-mini",
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
 
-When `ABSTRACTCORE_SERVER_API_KEY` is not configured, `Authorization: Bearer <provider-key>` may
+When `ABSTRACTCORE_AUTH_TOKEN` is not configured, `Authorization: Bearer <provider-key>` may
 be used as an upstream provider key. Once server auth is enabled, `Authorization` is reserved for
-the AbstractCore server key and is never forwarded upstream.
+the AbstractCore server auth token and is never forwarded upstream.
 
-To override a single upstream provider while still using the server master key, send the provider
+To override a single upstream provider while still using the server auth token, send the provider
 key in `X-AbstractCore-Provider-API-Key`. The override applies only to the requested provider:
 
 ```bash
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $ABSTRACTCORE_SERVER_API_KEY" \
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \
   -H "X-AbstractCore-Provider-API-Key: $ANTHROPIC_API_KEY" \
   -d '{
     "model": "anthropic/claude-haiku-4-5",
@@ -7827,7 +7836,7 @@ import os
 from openai import OpenAI
 import base64
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"])
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_AUTH_TOKEN"])
 
 # Method 1: @filename syntax
 response = client.chat.completions.create(
@@ -8068,7 +8077,7 @@ All file types supported via URL, local path, or base64:
 import os
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_SERVER_API_KEY"])
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_AUTH_TOKEN"])
 
 # Direct request to /v1/responses endpoint
 import requests
@@ -8255,7 +8264,7 @@ CMD ["uvicorn", "abstractcore.server.app:app", "--host", "0.0.0.0", "--port", "8
 ```bash
 docker build -t abstractcore-server .
 docker run -p 8000:8000 \
-  -e ABSTRACTCORE_SERVER_API_KEY=$ABSTRACTCORE_SERVER_API_KEY \
+  -e ABSTRACTCORE_AUTH_TOKEN=$ABSTRACTCORE_AUTH_TOKEN \
   -e OPENAI_API_KEY=$OPENAI_API_KEY \
   abstractcore-server
 ```
@@ -8271,7 +8280,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - ABSTRACTCORE_SERVER_API_KEY=${ABSTRACTCORE_SERVER_API_KEY}
+      - ABSTRACTCORE_AUTH_TOKEN=${ABSTRACTCORE_AUTH_TOKEN}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
     restart: unless-stopped
@@ -8424,7 +8433,7 @@ ollama list
 
 ```bash
 # Set API keys
-export ABSTRACTCORE_SERVER_API_KEY="acore-server-secret"
+export ABSTRACTCORE_AUTH_TOKEN="acore-server-secret"
 export OPENAI_API_KEY="sk-..."
 export ANTHROPIC_API_KEY="sk-ant-..."
 
@@ -9587,7 +9596,7 @@ You can use environment variables, or persist settings via the config CLI:
 abstractcore --config
 abstractcore --set-api-key openai sk-...
 abstractcore --set-api-key anthropic sk-ant-...
-abstractcore --set-server-api-key acore-server-secret
+abstractcore --set-server-auth-token acore-server-secret
 abstractcore --status
 ```
 
@@ -9595,11 +9604,11 @@ Config is stored in `~/.abstractcore/config/abstractcore.json`. See [Centralized
 
 ## Can I use the HTTP server with only provider API keys?
 
-Yes. You do not have to give a client the AbstractCore server master key. If `ABSTRACTCORE_SERVER_API_KEY` is not configured, a client can bring its own upstream provider key, for example an Anthropic, OpenRouter, or Portkey key, by sending it as `Authorization: Bearer <provider-key>` or `X-AbstractCore-Provider-API-Key`.
+Yes. You do not have to give a client the AbstractCore server auth token. If `ABSTRACTCORE_AUTH_TOKEN` is not configured, a client can bring its own upstream provider key, for example an Anthropic, OpenRouter, or Portkey key, by sending it as `Authorization: Bearer <provider-key>` or `X-AbstractCore-Provider-API-Key`.
 
 That key is forwarded only to the provider requested by the model route, such as `anthropic/...`, `openrouter/...`, or `portkey/...`. It does not unlock other server-configured provider keys, and it does not grant access to providers the client did not supply credentials for.
 
-If `ABSTRACTCORE_SERVER_API_KEY` is configured, `Authorization` is reserved for the AbstractCore server key. In that mode, use `X-AbstractCore-Provider-API-Key` only when you want to override the upstream provider key for a single request. Provider keys in request bodies or query strings are disabled.
+If `ABSTRACTCORE_AUTH_TOKEN` is configured, `Authorization` is reserved for the AbstractCore server auth token. In that mode, use `X-AbstractCore-Provider-API-Key` only when you want to override the upstream provider key for a single request. Provider keys in request bodies remain disabled; select discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI convenience.
 
 ## Why aren’t tools executed automatically?
 

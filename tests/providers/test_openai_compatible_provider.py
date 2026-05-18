@@ -2,7 +2,7 @@
 Tests for OpenAI-compatible generic provider.
 
 Note: These tests require an OpenAI-compatible server running.
-Set OPENAI_COMPATIBLE_BASE_URL environment variable to point to your server.
+Set OPENAI_BASE_URL environment variable to point to your server.
 
 Compatible servers:
 - llama.cpp server (--host 0.0.0.0 --port 8080)
@@ -15,10 +15,10 @@ Compatible servers:
 
 Example:
     # Explicit (recommended)
-    export OPENAI_COMPATIBLE_BASE_URL="http://127.0.0.1:1234/v1"   # LM Studio
+    export OPENAI_BASE_URL="http://127.0.0.1:1234/v1"   # LM Studio
     # or
-    export OPENAI_COMPATIBLE_BASE_URL="http://127.0.0.1:11434/v1"  # Ollama (OpenAI-compatible API)
-    export OPENAI_COMPATIBLE_API_KEY="optional-key"  # If server requires auth
+    export OPENAI_BASE_URL="http://127.0.0.1:11434/v1"  # Ollama (OpenAI-compatible API)
+    export OPENAI_API_KEY="optional-key"  # If server requires auth
     pytest tests/providers/test_openai_compatible_provider.py -v
 """
 
@@ -32,7 +32,7 @@ from abstractcore.providers import OpenAICompatibleProvider
 
 
 def _candidate_base_urls() -> list[str]:
-    env = os.getenv("OPENAI_COMPATIBLE_BASE_URL")
+    env = os.getenv("OPENAI_BASE_URL")
     if isinstance(env, str) and env.strip():
         return [env.strip().rstrip("/")]
     # Sensible defaults for local development machines.
@@ -44,7 +44,7 @@ def _candidate_base_urls() -> list[str]:
 
 
 def _fetch_models(base_url: str) -> dict | None:
-    api_key = os.getenv("OPENAI_COMPATIBLE_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     headers = {"Authorization": f"Bearer {api_key}"} if isinstance(api_key, str) and api_key.strip() else None
     try:
         res = httpx.get(f"{base_url}/models", headers=headers, timeout=2.0)
@@ -112,7 +112,7 @@ pytestmark = pytest.mark.skipif(
     not server_available(),
     reason=(
         "OpenAI-compatible integration tests disabled by default. Set "
-        "ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1 and configure OPENAI_COMPATIBLE_BASE_URL "
+        "ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1 and configure OPENAI_BASE_URL "
         "(or run LM Studio on :1234 or Ollama OpenAI API on :11434)."
     ),
 )
@@ -149,42 +149,47 @@ class TestProviderBasics:
     def test_environment_variable_base_url(self):
         """Test base_url can be set via environment variable"""
         test_url = "http://custom-server:1234/v1"
-        os.environ["OPENAI_COMPATIBLE_BASE_URL"] = test_url
+        os.environ["OPENAI_BASE_URL"] = test_url
         try:
             llm = OpenAICompatibleProvider(model="default")
             assert llm.base_url == test_url
         finally:
             # Cleanup
-            if "OPENAI_COMPATIBLE_BASE_URL" in os.environ:
-                del os.environ["OPENAI_COMPATIBLE_BASE_URL"]
+            if "OPENAI_BASE_URL" in os.environ:
+                del os.environ["OPENAI_BASE_URL"]
 
     def test_api_key_optional(self):
         """Test API key is optional"""
-        llm = OpenAICompatibleProvider(model="default", base_url="http://127.0.0.1:1234/v1")
-        assert llm.api_key is None or llm.api_key == ""
+        original = os.environ.pop("OPENAI_API_KEY", None)
+        try:
+            llm = OpenAICompatibleProvider(model="default", base_url="http://127.0.0.1:1234/v1")
+            assert llm.api_key is None or llm.api_key == ""
+        finally:
+            if original is not None:
+                os.environ["OPENAI_API_KEY"] = original
 
     def test_api_key_environment_variable(self):
         """Test API key can be set via environment variable"""
         test_key = "sk-test-key-12345"
-        os.environ["OPENAI_COMPATIBLE_API_KEY"] = test_key
+        os.environ["OPENAI_API_KEY"] = test_key
         try:
             llm = OpenAICompatibleProvider(model="default")
             assert llm.api_key == test_key
         finally:
             # Cleanup
-            if "OPENAI_COMPATIBLE_API_KEY" in os.environ:
-                del os.environ["OPENAI_COMPATIBLE_API_KEY"]
+            if "OPENAI_API_KEY" in os.environ:
+                del os.environ["OPENAI_API_KEY"]
 
     def test_api_key_parameter_priority(self):
         """Test programmatic api_key parameter takes precedence"""
         test_key = "sk-programmatic-key"
-        os.environ["OPENAI_COMPATIBLE_API_KEY"] = "sk-env-key"
+        os.environ["OPENAI_API_KEY"] = "sk-env-key"
         try:
             llm = OpenAICompatibleProvider(model="default", api_key=test_key)
             assert llm.api_key == test_key
         finally:
-            if "OPENAI_COMPATIBLE_API_KEY" in os.environ:
-                del os.environ["OPENAI_COMPATIBLE_API_KEY"]
+            if "OPENAI_API_KEY" in os.environ:
+                del os.environ["OPENAI_API_KEY"]
 
     def test_list_available_models(self, llm):
         """Test listing models from OpenAI-compatible server"""
@@ -381,5 +386,5 @@ if __name__ == "__main__":
         print("  llama.cpp: ./server --host 0.0.0.0 --port 8080")
         print("  text-generation-webui: Start with OpenAI extension enabled")
         print("  LocalAI: docker run -p 8080:8080 localai/localai")
-        print("\nThen set OPENAI_COMPATIBLE_BASE_URL environment variable:")
-        print("  export OPENAI_COMPATIBLE_BASE_URL='http://127.0.0.1:1234/v1'")
+        print("\nThen set OPENAI_BASE_URL environment variable:")
+        print("  export OPENAI_BASE_URL='http://127.0.0.1:1234/v1'")

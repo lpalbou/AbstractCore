@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.15] - 2026-05-18
+
+### Added
+- **Voice and vision provider-availability catalogs**: the capability registry now exposes lightweight `available_providers()` queries for voice and vision backends so server routes can report what is configured without constructing heavy local runtimes.
+- **Qwen3.6 MTP GGUF catalog entries**: added capability metadata for `unsloth/Qwen3.6-27B-MTP-GGUF` and `unsloth/Qwen3.6-35B-A3B-MTP-GGUF`, plus explicit GGUF quant selector resolution for model ids such as `:Q4_K_M` and `:UD-Q4_K_M`.
+
+### Changed
+- **Canonical server auth naming**: the HTTP gateway now uses `ABSTRACTCORE_AUTH_TOKEN` consistently across runtime config, CLI commands, Python config helpers, docs, and Swagger guidance.
+- **Swagger auth behavior**: `/docs` keeps the native Swagger `Authorize` flow, but only advertises the AbstractCore bearer scheme when server auth is actually enabled and validates the token through `/acore/auth/validate` before storing it client-side.
+- **Media gateway consistency**: image/audio catalog and generation routes now share a cleaner provider/model/base_url override contract and use the current AbstractVoice/AbstractVision capability package floors (`abstractvoice>=0.10.3`, `abstractvision>=0.3.6`).
+- **Apple aggregate profile alignment**: `abstractcore[all-apple]` now matches the current Apple-local dependency stack required by `abstractvoice[all-apple]`, `abstractvision[all-apple]`, `mflux`, and the newer llama.cpp bindings.
+- **OpenAI-compatible env surface**: the generic OpenAI-compatible provider, registry, config manager, and related docs/tests now consistently use `OPENAI_BASE_URL` and `OPENAI_API_KEY`.
+
+### Fixed
+- **`all-apple` install resolution**: repaired the resolver conflict between `numpy`, `Pillow`, `torch`, `mflux`, and plugin extra floors so `pip install -e ".[all-apple]"` no longer backtracks across an impossible dependency graph.
+- **Swagger false authorization state**: the browser docs no longer show a misleading authorized state for arbitrary bearer values when server auth is configured.
+- **Generated media provider metadata**: multimodal output routing now preserves explicit voice/vision provider selectors in generated artifacts and resource metadata instead of collapsing them back to the active LLM provider class name.
+
 ## [2.13.14] - 2026-05-13
 
 ### Fixed

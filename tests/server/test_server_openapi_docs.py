@@ -25,12 +25,25 @@ def test_core_endpoint_tags_are_documentation_friendly():
     assert schema["paths"]["/providers"]["get"]["tags"] == ["providers"]
     assert schema["paths"]["/v1/embeddings"]["post"]["tags"] == ["embeddings"]
     assert schema["paths"]["/v1/audio/speech"]["post"]["tags"] == ["audio"]
+    assert schema["paths"]["/{provider}/v1/audio/speech"]["post"]["tags"] == ["audio"]
     assert schema["paths"]["/v1/audio/speech/models"]["get"]["tags"] == ["audio"]
+    assert schema["paths"]["/v1/audio/speech/providers"]["get"]["tags"] == ["audio"]
     assert schema["paths"]["/v1/audio/transcriptions"]["post"]["tags"] == ["audio"]
+    assert schema["paths"]["/{provider}/v1/audio/transcriptions"]["post"]["tags"] == ["audio"]
+    assert schema["paths"]["/v1/audio/transcriptions/models"]["get"]["tags"] == ["audio"]
+    assert schema["paths"]["/v1/audio/transcriptions/providers"]["get"]["tags"] == ["audio"]
     assert schema["paths"]["/v1/audio/voices"]["get"]["tags"] == ["audio"]
+    assert "/v1/audio/voices/models" not in schema["paths"]
     assert schema["paths"]["/v1/voice/clone"]["post"]["tags"] == ["audio"]
+    assert schema["paths"]["/v1/voice/clone/providers"]["get"]["tags"] == ["audio"]
+    assert schema["paths"]["/v1/voice/clone/models"]["get"]["tags"] == ["audio"]
+    assert schema["paths"]["/{provider}/v1/voice/clone"]["post"]["tags"] == ["audio"]
     assert schema["paths"]["/v1/images/generations"]["post"]["tags"] == ["vision"]
-    assert schema["paths"]["/v1/vision/provider_models"]["get"]["tags"] == ["vision"]
+    assert schema["paths"]["/{provider}/v1/images/generations"]["post"]["tags"] == ["vision"]
+    assert schema["paths"]["/{provider}/v1/images/edits"]["post"]["tags"] == ["vision"]
+    assert schema["paths"]["/v1/vision/providers/"]["get"]["tags"] == ["vision"]
+    assert "/v1/vision/provider_models" not in schema["paths"]
+    assert "/v1/vision/model" not in schema["paths"]
     assert schema["paths"]["/v1/responses"]["post"]["tags"] == ["responses"]
     assert schema["paths"]["/acore/prompt_cache/stats"]["get"]["tags"] == ["prompt-cache"]
 
@@ -52,8 +65,11 @@ def test_media_swagger_examples_are_complete_and_executable_defaults():
     image_example = schema["components"]["schemas"]["ImageGenerationBody"]["examples"][0]
     assert set(image_example) == {
         "model",
+        "provider",
         "prompt",
         "n",
+        "base_url",
+        "size",
         "width",
         "height",
         "response_format",
@@ -80,9 +96,12 @@ def test_media_swagger_examples_are_complete_and_executable_defaults():
         "input",
         "text",
         "voice",
+        "profile",
         "response_format",
         "format",
         "speed",
+        "quality_preset",
+        "quality",
         "instructions",
         "provider",
         "base_url",

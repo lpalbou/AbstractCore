@@ -107,11 +107,13 @@ Config is stored in `~/.abstractcore/config/abstractcore.json`. See [Centralized
 
 ## Can I use the HTTP server with only provider API keys?
 
-Yes. You do not have to give a client the AbstractCore server master key. If `ABSTRACTCORE_SERVER_API_KEY` is not configured, a client can bring its own upstream provider key, for example an Anthropic, OpenRouter, or Portkey key, by sending it as `Authorization: Bearer <provider-key>` or `X-AbstractCore-Provider-API-Key`.
+Yes. You do not have to give a client the AbstractCore server auth token. If `ABSTRACTCORE_AUTH_TOKEN` is not configured, a client can bring its own upstream provider key, for example an Anthropic, OpenRouter, or Portkey key, by sending it as `X-AbstractCore-Provider-API-Key`.
 
 That key is forwarded only to the provider requested by the model route, such as `anthropic/...`, `openrouter/...`, or `portkey/...`. It does not unlock other server-configured provider keys, and it does not grant access to providers the client did not supply credentials for.
 
-If `ABSTRACTCORE_SERVER_API_KEY` is configured, `Authorization` is reserved for the AbstractCore server key. In that mode, use `X-AbstractCore-Provider-API-Key` only when you want to override the upstream provider key for a single request. Provider keys in request bodies or query strings are disabled.
+If `ABSTRACTCORE_AUTH_TOKEN` is configured, `Authorization` is reserved for the AbstractCore server auth token. In that mode, use `X-AbstractCore-Provider-API-Key` only when you want to override the upstream provider key for a single request.
+
+Provider keys in request bodies remain disabled. Select discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI convenience, but headers remain preferred.
 
 ## Why aren’t tools executed automatically?
 

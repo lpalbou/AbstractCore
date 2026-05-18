@@ -1867,6 +1867,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
             spec,
             exclude={"format", "content_type", "mime_type", "provider", "response_format"},
         )
+        if spec.get("provider") is not None:
+            kwargs["provider"] = spec.get("provider")
         if artifact_store is not None:
             kwargs["artifact_store"] = artifact_store
 
@@ -1906,7 +1908,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             content_type=content_type,
             format=fmt,
             backend_id=getattr(self.vision, "backend_id", None),
-            provider=self.__class__.__name__,
+            provider=str(spec.get("provider") or getattr(self.vision, "backend_id", None) or self.__class__.__name__),
             model=str(spec.get("model") or self.model),
             metadata=metadata,
         )
@@ -1931,6 +1933,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if len(audio_items) != 1:
                 raise ValueError("Voice cloning requires exactly one audio media item in v1.")
             kwargs = self._output_plugin_kwargs(spec, exclude={"voice", "voice_id", "format", "provider"})
+            if spec.get("provider") is not None:
+                kwargs["provider"] = spec.get("provider")
             reference_text = kwargs.pop("reference_text", None)
             if reference_text is None and prompt:
                 reference_text = prompt
@@ -1942,6 +1946,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 **kwargs,
             )
             resource_id, metadata = self._resource_id_from_clone_result(raw)
+            voice_provider = str(spec.get("provider") or spec.get("tts_provider") or getattr(self.voice, "backend_id", None) or self.__class__.__name__)
+            voice_model = spec.get("model") or spec.get("tts_model")
             result.add_resource(
                 "voice",
                 GeneratedResource(
@@ -1951,8 +1957,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     resource_id=resource_id,
                     name=str(spec.get("name")) if spec.get("name") is not None else None,
                     backend_id=getattr(self.voice, "backend_id", None),
-                    provider=self.__class__.__name__,
-                    model=str(spec.get("model") or self.model),
+                    provider=voice_provider,
+                    model=str(voice_model) if voice_model is not None else None,
                     metadata=metadata,
                 ),
             )
@@ -1960,6 +1966,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         fmt = str(spec.get("format") or "wav")
         kwargs = self._output_plugin_kwargs(spec, exclude={"voice", "voice_id", "format", "provider"})
+        if spec.get("provider") is not None:
+            kwargs["provider"] = spec.get("provider")
         kwargs["voice"] = str(voice_id) if voice_id is not None else None
         kwargs["format"] = fmt
         if audio_items:
@@ -1971,6 +1979,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
         raw = self.voice.tts(prompt, **kwargs)
         data, artifact_ref, metadata = self._artifact_or_data(raw)
         content_type = str(metadata.get("content_type") or metadata.get("mime_type") or f"audio/{fmt}")
+        voice_provider = str(spec.get("provider") or spec.get("tts_provider") or getattr(self.voice, "backend_id", None) or self.__class__.__name__)
+        voice_model = spec.get("model") or spec.get("tts_model") or metadata.get("model") or metadata.get("model_id")
+        tts_meta = metadata.get("abstractvoice_tts")
+        if voice_model is None and isinstance(tts_meta, dict):
+            voice_model = tts_meta.get("model") or tts_meta.get("model_id") or tts_meta.get("tts_model")
+        if voice_model is None and voice_id is not None:
+            voice_model = voice_id
         if artifact_ref is None:
             data, stored_ref = self._store_generated_data(
                 data,
@@ -1989,8 +2004,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 content_type=content_type,
                 format=fmt,
                 backend_id=getattr(self.voice, "backend_id", None),
-                provider=self.__class__.__name__,
-                model=str(spec.get("model") or self.model),
+                provider=voice_provider,
+                model=str(voice_model) if voice_model is not None else None,
                 metadata=metadata,
             ),
         )
@@ -2010,6 +2025,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
         kwargs: Dict[str, Any] = {}
         if spec.get("language") is not None:
             kwargs["language"] = spec.get("language")
+        if spec.get("provider") is not None:
+            kwargs["provider"] = spec.get("provider")
         if spec.get("model") is not None:
             kwargs["model"] = spec.get("model")
         if artifact_store is not None:

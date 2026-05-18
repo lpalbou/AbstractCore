@@ -751,7 +751,7 @@ The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top o
 - **Streaming Support**: Server-sent events for real-time responses
 - **Model Discovery**: Dynamic model listing across all providers
 - **Embedding Support**: Multi-provider embedding generation (remote OpenAI-compatible providers plus local backends)
-- **Optional Vision Endpoints**: OpenAI-compatible `/v1/images/generations` and `/v1/images/edits` can proxy to an upstream image server without local vision runtimes; `/v1/vision/*` local model control remains delegated to `abstractvision` when installed and configured. Deep provider catalog discovery is exposed separately at `/v1/vision/provider_models`.
+- **Optional Vision Endpoints**: OpenAI-compatible `/v1/images/generations` and `/v1/images/edits` can proxy to an upstream image server without local vision runtimes; `/v1/vision/*` local model control remains delegated to `abstractvision` when installed and configured. Deep provider catalog discovery is exposed separately at `/v1/vision/providers/` and `/v1/vision/models`.
 - **Optional Audio Endpoints**: OpenAI-compatible `/v1/audio/transcriptions` and `/v1/audio/speech` delegated to capability plugins (typically `abstractvoice`). Voice/profile and TTS model discovery are exposed at `/v1/audio/voices` and `/v1/audio/speech/models`.
 - **Prompt Cache Control Plane**: `/acore/prompt_cache/*` proxy endpoints for cache stats/set/update/fork/clear (best-effort; typically targets an `abstractcore.endpoint` upstream).
 
