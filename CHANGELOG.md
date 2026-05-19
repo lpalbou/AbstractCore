@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.17] - 2026-05-19
+
+### Added
+- **Shared Responses/chat request surface**: `/v1/responses` now accepts the same shared text-inference controls as `/v1/chat/completions` for OpenAI-style `input` payloads, including routing (`base_url`), agent format conversion, reasoning control, prompt-cache fields, and standard generation knobs such as `stop`/`seed`/penalties.
+
+### Changed
+- **Prompt-cache control-plane consistency**: `/acore/prompt_cache/update` now accepts optional `thinking` on both the gateway and `AbstractEndpoint`, and `BaseProvider.prompt_cache_update()` applies reasoning control before appending cached prompt state so cache-prefilled requests stay aligned with later generation calls.
 ## [2.13.16] - 2026-05-19
 
 ### Added

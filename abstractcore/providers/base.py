@@ -3831,6 +3831,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
         Semantics:
         - Local runtimes can implement true KV prefill updates (append-only).
         - Remote providers typically cannot be “pre-filled” explicitly; they may ignore this.
+        - `thinking` is applied through the same unified reasoning-control path as `generate()`
+          before the cache fragment is appended.
 
         Arguments are intentionally similar to `generate()` so higher-level code can reuse its own
         prompt/module construction logic.
@@ -3864,9 +3866,26 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     capabilities=caps,
                 )
 
+        thinking = kwargs.pop("thinking", None)
+        carried_thinking_meta = kwargs.pop("_acore_thinking_meta", None)
+        if carried_thinking_meta is not None and not isinstance(carried_thinking_meta, dict):
+            carried_thinking_meta = None
+
+        prompt_text = str(prompt or "")
+        prompt_text, messages, system_prompt, kwargs, thinking_meta = self._apply_thinking_request(
+            thinking=thinking,
+            prompt=prompt_text,
+            messages=messages,
+            system_prompt=system_prompt,
+            kwargs=kwargs,
+        )
+        if thinking_meta is None and carried_thinking_meta is not None:
+            thinking_meta = carried_thinking_meta
+        _ = thinking_meta
+
         ok = self._prompt_cache_backend_append(
             cache_value,
-            prompt=str(prompt or ""),
+            prompt=prompt_text,
             messages=messages,
             system_prompt=system_prompt,
             tools=tools,

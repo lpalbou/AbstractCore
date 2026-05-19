@@ -893,6 +893,22 @@ def _custom_openapi() -> Dict[str, Any]:
             ),
         }
     schemas = components.setdefault("schemas", {})
+
+    def _register_schema_model(model_cls: type[BaseModel]) -> None:
+        try:
+            model_schema = model_cls.model_json_schema(ref_template="#/components/schemas/{model}")
+        except Exception:
+            return
+        defs = model_schema.pop("$defs", {})
+        if isinstance(defs, dict):
+            for name, definition in defs.items():
+                if isinstance(name, str) and isinstance(definition, dict):
+                    schemas.setdefault(name, definition)
+        schemas.setdefault(model_cls.__name__, model_schema)
+
+    _register_schema_model(OpenAIResponsesRequest)
+    _register_schema_model(ChatCompletionRequest)
+
     schemas.setdefault(
         "AbstractCoreError",
         {
@@ -932,7 +948,47 @@ def _custom_openapi() -> Dict[str, Any]:
         content = operation.get("requestBody", {}).get("content", {})
         media = content.get(content_type)
         if isinstance(media, dict):
-            media["examples"] = {name: {"summary": summary, "value": value}}
+            examples = media.get("examples")
+            if not isinstance(examples, dict):
+                examples = {}
+                media["examples"] = examples
+            examples[name] = {"summary": summary, "value": value}
+
+    _request_example(
+        "/v1/responses",
+        "post",
+        "application/json",
+        "responses_openai_format",
+        "Responses API format",
+        {
+            "model": "openai/gpt-4o",
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "input_text", "text": "Analyze this document"},
+                        {"type": "input_file", "file_url": "https://example.com/doc.pdf"},
+                    ],
+                }
+            ],
+            "thinking": "off",
+            "prompt_cache_key": "tenantA:doc-review",
+            "stream": False,
+        },
+    )
+    _request_example(
+        "/v1/responses",
+        "post",
+        "application/json",
+        "responses_legacy_format",
+        "Legacy chat format",
+        {
+            "model": "openai/gpt-4",
+            "messages": [{"role": "user", "content": "Tell me a story"}],
+            "thinking": "high",
+            "stream": False,
+        },
+    )
 
     _component_examples(
         "AudioSpeechRequest",
@@ -1001,6 +1057,7 @@ def _custom_openapi() -> Dict[str, Any]:
             "messages": None,
             "system_prompt": None,
             "tools": None,
+            "thinking": "off",
             "add_generation_prompt": False,
             "ttl_s": 3600,
         },
@@ -1535,6 +1592,90 @@ class OpenAIResponsesRequest(BaseModel):
         default=False,
         description="Enable streaming (false by default, set to true for real-time responses)"
     )
+    stop: Optional[List[str]] = Field(
+        default=None,
+        description="Up to 4 sequences where the API will stop generating further tokens. "
+                    "The returned text will not contain the stop sequence.",
+        example=None,
+    )
+    seed: Optional[int] = Field(
+        default=None,
+        description="If specified, the system will make a best effort to sample deterministically, "
+                    "such that repeated requests with the same seed and parameters should return the same result. "
+                    "Determinism is not guaranteed.",
+        example=None,
+    )
+    frequency_penalty: Optional[float] = Field(
+        default=0.0,
+        ge=-2.0,
+        le=2.0,
+        description="Number between -2.0 and 2.0. Positive values penalize new tokens based on their existing frequency in the text so far, "
+                    "decreasing the model's likelihood to repeat the same line verbatim.",
+        example=0.0,
+    )
+    presence_penalty: Optional[float] = Field(
+        default=0.0,
+        ge=-2.0,
+        le=2.0,
+        description="Number between -2.0 and 2.0. Positive values penalize new tokens based on whether they appear in the text so far, "
+                    "increasing the model's likelihood to talk about new topics.",
+        example=0.0,
+    )
+    thinking: Optional[Union[bool, str]] = Field(
+        default=None,
+        description="Unified thinking/reasoning control (best-effort across providers/models). "
+                    "Accepted values: null/'auto'/'on'/'off'/'none' or 'low'/'medium'/'high'/'xhigh' when supported. "
+                    "Note: 'none' is treated as an alias for 'off'.",
+        example="off",
+    )
+    prompt_cache_key: Optional[str] = Field(
+        default=None,
+        description="Provider-specific prompt cache key for prefix caching (best-effort).",
+        example="tenantA:session123"
+    )
+    prompt_cache_retention: Optional[str] = Field(
+        default=None,
+        description="Prompt cache retention policy (provider-specific; OpenAI: 'in_memory' or '24h').",
+        example="24h",
+    )
+    agent_format: Optional[str] = Field(
+        default=None,
+        description="Target agent format for tool call syntax conversion (AbstractCore-specific feature). "
+                    "Options: 'auto' (auto-detect), 'openai', 'codex', 'qwen3', 'llama3', 'passthrough'. "
+                    "Use 'auto' for automatic format detection based on model and user-agent.",
+        example="auto",
+    )
+    api_key: Optional[str] = Field(
+        default=None,
+        description="Deprecated/disabled for HTTP requests. Provider API keys must be supplied via "
+                    "X-AbstractCore-Provider-API-Key, or configured on the server (e.g., OPENAI_API_KEY, ANTHROPIC_API_KEY, "
+                    "OPENROUTER_API_KEY, PORTKEY_API_KEY).",
+        example=None,
+    )
+    base_url: Optional[str] = Field(
+        default=None,
+        description="Base URL for the provider API endpoint (AbstractCore-specific feature). "
+                    "Useful for OpenAI-compatible providers (lmstudio, vllm, openrouter, portkey, openai-compatible) and custom/proxied endpoints. "
+                    "Example: 'http://localhost:1234/v1' for LMStudio, 'http://localhost:8080/v1' for llama.cpp. "
+                    "If not specified, uses provider's default or environment variable.",
+        example="http://localhost:1234/v1",
+    )
+    timeout_s: Optional[float] = Field(
+        default=None,
+        description="Per-request provider HTTP timeout in seconds (AbstractCore-specific feature). "
+                    "Intended for orchestrators (e.g. AbstractRuntime) to enforce execution policy. "
+                    "If omitted, the server uses its own defaults. "
+                    "Values <= 0 are treated as unlimited.",
+        example=7200.0,
+    )
+    unload_after: bool = Field(
+        default=False,
+        description="If true, call `llm.unload_model(model)` after the request completes (AbstractCore-specific feature). "
+                    "This is useful for explicit memory hygiene in single-tenant or batch scenarios. "
+                    "WARNING: for providers that unload shared server state (e.g. Ollama), this can disrupt other "
+                    "clients and is disabled by default unless explicitly enabled by the server operator.",
+        example=False,
+    )
 
 # ============================================================================
 # Models
@@ -2056,7 +2197,9 @@ class ResponsesAPIRequest(BaseModel):
                                 ]
                             }
                         ],
-                        "stream": False
+                        "stream": False,
+                        "thinking": "off",
+                        "prompt_cache_key": "tenantA:doc-review",
                     }
                 },
                 "legacy_format": {
@@ -2125,7 +2268,19 @@ def convert_openai_responses_to_chat_completion(openai_request: OpenAIResponsesR
         max_tokens=openai_request.max_tokens,
         temperature=openai_request.temperature,
         top_p=openai_request.top_p,
-        stream=openai_request.stream
+        stream=openai_request.stream,
+        stop=openai_request.stop,
+        seed=openai_request.seed,
+        frequency_penalty=openai_request.frequency_penalty,
+        presence_penalty=openai_request.presence_penalty,
+        thinking=openai_request.thinking,
+        prompt_cache_key=openai_request.prompt_cache_key,
+        prompt_cache_retention=openai_request.prompt_cache_retention,
+        agent_format=openai_request.agent_format,
+        api_key=openai_request.api_key,
+        base_url=openai_request.base_url,
+        timeout_s=openai_request.timeout_s,
+        unload_after=bool(openai_request.unload_after),
     )
 
 # ============================================================================
@@ -2138,23 +2293,6 @@ def _parse_bool_env(var_name: str) -> bool:
     if val is None:
         return False
     return str(val).strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _parse_boolish(value: Any) -> bool:
-    """Parse a request-supplied bool-ish value (bool/int/str/None)."""
-    if value is None:
-        return False
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if isinstance(value, str):
-        normalized = value.strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off", ""}:
-            return False
-    raise ValueError(f"Expected boolean, got {type(value).__name__}: {value!r}")
 
 
 def _csv_env(var_name: str) -> List[str]:
@@ -3285,6 +3423,11 @@ class PromptCacheUpdateProxyRequest(PromptCacheProxyBase):
     messages: Optional[List[Dict[str, Any]]] = Field(default=None, description="Chat messages to prepare/cache upstream.")
     system_prompt: Optional[str] = Field(default=None, description="Optional system prompt to include in the prepared cache state.")
     tools: Optional[List[Dict[str, Any]]] = Field(default=None, description="Optional tool schemas to include in the prepared cache state.")
+    thinking: Optional[Union[bool, str]] = Field(
+        default=None,
+        description="Optional unified thinking/reasoning control to apply while preparing the cache state.",
+        example="off",
+    )
     add_generation_prompt: bool = Field(default=False, description="Whether to ask the upstream endpoint to add a generation prompt marker.")
     ttl_s: Optional[float] = Field(default=None, description="Optional upstream cache TTL in seconds.", example=3600)
 
@@ -3750,6 +3893,7 @@ def acore_prompt_cache_update(req: PromptCacheUpdateProxyRequest, http_request: 
                     messages=req.messages,
                     system_prompt=req.system_prompt,
                     tools=req.tools,
+                    thinking=req.thinking,
                     add_generation_prompt=bool(req.add_generation_prompt),
                     ttl_s=req.ttl_s,
                 )
@@ -4657,16 +4801,6 @@ async def create_response(
                 status_code=400,
                 detail={"error": {"message": "Request must contain either 'input' (OpenAI format) or 'messages' (legacy format)", "type": "invalid_request"}}
             )
-
-        # AbstractCore extension: allow opt-in unload-after-request even for OpenAI Responses format.
-        if "unload_after" in request_data:
-            try:
-                chat_request = chat_request.model_copy(update={"unload_after": _parse_boolish(request_data.get("unload_after"))})
-            except Exception as e:
-                raise HTTPException(
-                    status_code=422,
-                    detail={"error": {"message": f"Invalid unload_after value: {e}", "type": "validation_error"}},
-                )
 
         # Respect user's streaming preference (defaults to False)
 

@@ -3,7 +3,7 @@
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
 Last updated: 2026-05-19
-Package version: 2.13.16
+Package version: 2.13.17
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -7950,9 +7950,13 @@ AbstractCore implements an OpenAI-compatible Responses-style API, including `inp
   ],
   "stream": false,
   "max_tokens": 2000,
-  "temperature": 0.7
+  "temperature": 0.7,
+  "thinking": "off",
+  "prompt_cache_key": "tenantA:doc-review"
 }
 ```
+
+OpenAI-format `/v1/responses` requests accept the same shared text-inference extensions as `/v1/chat/completions` where they apply, including `stop`, `seed`, `frequency_penalty`, `presence_penalty`, `base_url`, `agent_format`, `thinking`, `prompt_cache_key`, `prompt_cache_retention`, `timeout_s`, and `unload_after`.
 
 **Legacy Format (Still Supported):**
 ```json
@@ -8550,6 +8554,8 @@ Response contract:
   - runtime/provider failure: `supported=false`, `code="prompt_cache_error"`
 
 The `capabilities` object is always included on prompt-cache control-plane responses so callers can branch on `mode` / `supports_*` flags without re-probing the provider.
+
+`POST /acore/prompt_cache/update` also accepts optional `thinking`, which is applied before the provider appends the cached fragment so cache-prefilled prompt state stays aligned with later generation calls.
 
 For caching concepts, see [Session Management](session.md) and [Architecture](architecture.md).
 For a dedicated overview, see [Prompt Caching](prompt-caching.md).

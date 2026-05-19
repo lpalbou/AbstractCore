@@ -193,7 +193,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Discovery | GET | `/v1/voice/clone/providers` | AbstractVoice voice clone provider catalog | optional `base_url` |
 | Chat | POST | `/v1/chat/completions` | OpenAI-compatible chat, streaming, tools, media | `model`, `messages`, `stream`, `tools`, `tool_choice`, `temperature`, `max_tokens`, `base_url`, `agent_format`, `thinking` |
 | Chat | POST | `/{provider}/v1/chat/completions` | Provider-scoped chat route where body model is unprefixed | path `provider`, body `model`, `messages`, chat parameters |
-| Responses | POST | `/v1/responses` | Responses-style input API plus legacy chat body fallback | `model`, `input` or `messages`, `stream`, generation parameters |
+| Responses | POST | `/v1/responses` | Responses-style input API plus legacy chat body fallback | `model`, `input` or `messages`, `stream`, generation parameters, `base_url`, `agent_format`, `thinking`, `prompt_cache_key` |
 | Embeddings | POST | `/v1/embeddings` | OpenAI-compatible embedding vectors | `model`, `input`, `dimensions`, `encoding_format`, `user`, `base_url` |
 | Images | POST | `/v1/images/generations` | Text-to-image generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `size`, `n`, `steps`, `guidance_scale`, `seed`, `quality`, `extra` |
 | Images | POST | `/{provider}/v1/images/generations` | Provider-scoped text-to-image route where body model is unprefixed | path `provider`, body `model`, optional `base_url`, image generation parameters |
@@ -219,7 +219,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Prompt Cache | GET | `/acore/prompt_cache/stats` | Cache stats on a loaded gateway runtime or upstream AbstractEndpoint | `provider` + `model` or `base_url`; provider key header if required |
 | Prompt Cache | GET | `/acore/prompt_cache/capabilities` | Cache capability discovery on a loaded gateway runtime or upstream AbstractEndpoint | `provider` + `model` or `base_url`; provider key header if required |
 | Prompt Cache | POST | `/acore/prompt_cache/set` | Select/create a cache key locally or upstream | `provider` + `model` or `base_url`, `key`, `make_default`, `ttl_s` |
-| Prompt Cache | POST | `/acore/prompt_cache/update` | Prepare prompt/messages/tools locally or upstream | `provider` + `model` or `base_url`, `key`, `prompt` or `messages`, `system_prompt`, `tools`, `ttl_s` |
+| Prompt Cache | POST | `/acore/prompt_cache/update` | Prepare prompt/messages/tools locally or upstream | `provider` + `model` or `base_url`, `key`, `prompt` or `messages`, `system_prompt`, `tools`, optional `thinking`, `ttl_s` |
 | Prompt Cache | POST | `/acore/prompt_cache/fork` | Fork one cache key to another locally or upstream | `provider` + `model` or `base_url`, `from_key`, `to_key`, `make_default`, `ttl_s` |
 | Prompt Cache | POST | `/acore/prompt_cache/clear` | Clear local or upstream cache state | `provider` + `model` or `base_url`, optional `key` |
 | Prompt Cache | POST | `/acore/prompt_cache/prepare_modules` | Prepare reusable module/tool context locally or upstream | `provider` + `model` or `base_url`, `namespace`, `modules`, `make_default`, `ttl_s`, `version` |
@@ -1087,8 +1087,8 @@ Key parameters:
 | `input` | yes, unless `messages` is used | Responses-style array of input messages. Content items use `input_text` and `input_file`. |
 | `messages` | yes, unless `input` is used | Backward-compatible chat-completions request shape. |
 | `stream` | no | When `true`, returns server-sent events. |
-| `max_tokens`, `temperature`, `top_p` | no | Standard generation controls, forwarded where supported. |
-| `base_url`, `agent_format`, `thinking` | no | AbstractCore extensions with the same behavior as `/v1/chat/completions`. |
+| `max_tokens`, `temperature`, `top_p`, `stop`, `seed`, `frequency_penalty`, `presence_penalty` | no | Standard generation controls, forwarded where supported. |
+| `base_url`, `agent_format`, `thinking`, `prompt_cache_key`, `prompt_cache_retention`, `timeout_s`, `unload_after` | no | AbstractCore text-inference extensions with the same behavior as `/v1/chat/completions` for shared fields. |
 
 **Legacy Format (Still Supported):**
 ```json
@@ -1141,7 +1141,9 @@ curl -X POST http://localhost:8000/v1/responses \
           {"type": "input_file", "file_url": "https://www.berkshirehathaway.com/letters/2024ltr.pdf"}
         ]
       }
-    ]
+    ],
+    "thinking": "off",
+    "prompt_cache_key": "tenantA:doc-review"
   }'
 ```
 
@@ -1411,7 +1413,7 @@ Operations:
 | `/acore/prompt_cache/capabilities` | GET | `provider` + `model` or `base_url` | Cache features on the selected local or upstream runtime. |
 | `/acore/prompt_cache/stats` | GET | `provider` + `model` or `base_url` | Cache stats on the selected local or upstream runtime. |
 | `/acore/prompt_cache/set` | POST | `provider` + `model` or `base_url`, `key`, `make_default`, `ttl_s` | Select/create a cache key locally or upstream. |
-| `/acore/prompt_cache/update` | POST | `provider` + `model` or `base_url`, `key`, `prompt` or `messages`, `system_prompt`, `tools`, `add_generation_prompt`, `ttl_s` | Prepare prompt/messages/tools into a local or upstream cache key. |
+| `/acore/prompt_cache/update` | POST | `provider` + `model` or `base_url`, `key`, `prompt` or `messages`, `system_prompt`, `tools`, optional `thinking`, `add_generation_prompt`, `ttl_s` | Prepare prompt/messages/tools into a local or upstream cache key. |
 | `/acore/prompt_cache/fork` | POST | `provider` + `model` or `base_url`, `from_key`, `to_key`, `make_default`, `ttl_s` | Fork an existing local or upstream key. |
 | `/acore/prompt_cache/clear` | POST | `provider` + `model` or `base_url`, optional `key` | Clear a local or upstream key, or default/all cache state depending on backend support. |
 | `/acore/prompt_cache/prepare_modules` | POST | `provider` + `model` or `base_url`, `namespace`, `modules`, `make_default`, `ttl_s`, `version` | Prepare reusable module/tool context locally or upstream. |
@@ -1426,9 +1428,12 @@ curl -X POST http://localhost:8000/acore/prompt_cache/update \
     "base_url": "http://127.0.0.1:8001/v1",
     "key": "project-default",
     "messages": [{"role": "system", "content": "You are concise."}],
+    "thinking": "off",
     "ttl_s": 3600
   }'
 ```
+
+`thinking` on `/acore/prompt_cache/update` is applied before the provider appends the cached fragment. This keeps cache-prefilled prompt state aligned with later `/v1/chat/completions` or `/v1/responses` calls when reasoning control changes prompt serialization.
 
 ### Memory Blocs Control Plane
 

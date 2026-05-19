@@ -57,6 +57,8 @@ resp = client.chat.completions.create(
 print(resp.choices[0].message.content)
 ```
 
+The endpoint accepts the same unified `thinking` control as the gateway on `/v1/chat/completions`, so a dedicated local worker can expose provider-native reasoning toggles without any extra adapter layer.
+
 ## Prompt cache control plane (optional)
 
 If the underlying provider exposes prompt-cache controls, the endpoint also exposes a small control plane under `/acore/prompt_cache/*` (see `abstractcore/endpoint/app.py`):
@@ -78,6 +80,8 @@ Response contract:
   - runtime/provider failure: `supported=false`, `code="prompt_cache_error"`
 
 The `capabilities` object is always included on prompt-cache control-plane responses so callers can branch on `mode` / `supports_*` flags without re-probing the provider.
+
+`POST /acore/prompt_cache/update` also accepts optional `thinking`, which is applied before the provider appends the cached fragment. This matters for local backends where reasoning control changes prompt serialization.
 
 For caching concepts, see [Session Management](session.md) and [Architecture](architecture.md).
 For a dedicated overview, see [Prompt Caching](prompt-caching.md).

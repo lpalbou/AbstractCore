@@ -56,6 +56,28 @@ def test_core_endpoint_tags_are_documentation_friendly():
     assert schema["paths"]["/acore/blocs/kv/load"]["post"]["tags"] == ["memory-blocs"]
 
 
+def test_openapi_documents_shared_responses_controls_and_prompt_cache_thinking():
+    schema = TestClient(app).get("/openapi.json").json()
+    responses_props = schema["components"]["schemas"]["OpenAIResponsesRequest"]["properties"]
+    prompt_cache_update_props = schema["components"]["schemas"]["PromptCacheUpdateProxyRequest"]["properties"]
+
+    for key in (
+        "stop",
+        "seed",
+        "frequency_penalty",
+        "presence_penalty",
+        "base_url",
+        "agent_format",
+        "thinking",
+        "prompt_cache_key",
+        "prompt_cache_retention",
+        "timeout_s",
+        "unload_after",
+    ):
+        assert key in responses_props
+    assert "thinking" in prompt_cache_update_props
+
+
 def test_audio_speech_documents_binary_audio_response():
     schema = TestClient(app).get("/openapi.json").json()
     response = schema["paths"]["/v1/audio/speech"]["post"]["responses"]["200"]

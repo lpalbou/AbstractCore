@@ -56,6 +56,10 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: Optional[int] = None
     top_p: Optional[float] = 1.0
     stream: bool = False
+    thinking: Optional[bool | str] = Field(
+        default=None,
+        description="Unified thinking/reasoning control (best-effort across providers/models).",
+    )
 
     tools: Optional[List[Dict[str, Any]]] = None
     tool_choice: Optional[Any] = None
@@ -82,6 +86,10 @@ class PromptCacheUpdateRequest(BaseModel):
     messages: Optional[List[Dict[str, Any]]] = Field(default=None, description="Optional message list to append (provider-dependent)")
     system_prompt: Optional[str] = Field(default=None, description="Optional system prompt to append")
     tools: Optional[List[Dict[str, Any]]] = Field(default=None, description="Optional tool definitions to append")
+    thinking: Optional[bool | str] = Field(
+        default=None,
+        description="Optional unified thinking/reasoning control to apply while preparing the cache state.",
+    )
     add_generation_prompt: bool = Field(default=False, description="If true, append an assistant preamble (backend-dependent)")
     ttl_s: Optional[float] = Field(default=None, description="Optional TTL update (seconds)")
 
@@ -479,6 +487,7 @@ def create_app(
                     messages=req.messages,
                     system_prompt=req.system_prompt,
                     tools=req.tools,
+                    thinking=req.thinking,
                     add_generation_prompt=bool(req.add_generation_prompt),
                     ttl_s=req.ttl_s,
                 )
@@ -739,6 +748,8 @@ def create_app(
             gen_kwargs["max_tokens"] = request.max_tokens
         if request.top_p is not None:
             gen_kwargs["top_p"] = request.top_p
+        if request.thinking is not None:
+            gen_kwargs["thinking"] = request.thinking
         if request.seed is not None:
             gen_kwargs["seed"] = request.seed
         if request.frequency_penalty is not None:

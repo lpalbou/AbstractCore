@@ -230,6 +230,7 @@ def test_server_loaded_runtime_supports_local_bloc_kv_and_chat_reuse(monkeypatch
         json={
             "model": "mlx/mlx-community/Qwen3.6-27B-4bit",
             "messages": [{"role": "user", "content": "Summarize the loaded notes."}],
+            "thinking": "off",
             "prompt_cache_key": "work:orbit",
         },
     )
@@ -298,3 +299,47 @@ def test_server_local_control_plane_can_target_runtime_loaded_with_base_url(monk
     assert stats.status_code == 200
     assert stats.json()["supported"] is True
     assert len(created) == 1
+
+
+def test_server_local_prompt_cache_update_applies_thinking_before_cache_append(monkeypatch, tmp_path: Path) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    server_app._GATEWAY_LOADED_RUNTIMES.clear()
+    server_app._GATEWAY_RUNTIME_IDS.clear()
+    server_app._SERVER_BLOC_STORE = server_app.FileBlocStore(root_dir=tmp_path / "gateway-blocs")
+
+    created: List[_StubGatewayMLXProvider] = []
+
+    def fake_create_llm(provider: str, model: str, **kwargs: Any) -> _StubGatewayMLXProvider:
+        _ = (provider, kwargs)
+        llm = _StubGatewayMLXProvider(model=model)
+        llm.model_capabilities = {"thinking_support": True}
+        llm.architecture_config = {"thinking_control": "/nothink"}
+        created.append(llm)
+        return llm
+
+    monkeypatch.setattr(server_app, "create_llm", fake_create_llm)
+
+    client = TestClient(server_app.app)
+    load = client.post(
+        "/acore/models/load",
+        json={"provider": "mlx", "model": "mlx-community/Qwen3.6-27B-4bit"},
+    )
+    assert load.status_code == 200
+
+    update = client.post(
+        "/acore/prompt_cache/update",
+        json={
+            "provider": "mlx",
+            "model": "mlx-community/Qwen3.6-27B-4bit",
+            "key": "session-1",
+            "prompt": "Remember the launch window.",
+            "thinking": "off",
+        },
+    )
+    assert update.status_code == 200
+    assert update.json()["supported"] is True
+    assert update.json()["ok"] is True
+
+    cache = created[0]._prompt_cache_store.get("session-1")
+    assert isinstance(cache, _FakePersistentCache)
+    assert cache.chunks[-1]["serialized"].endswith("Remember the launch window.\n/nothink<|im_end|>\n")

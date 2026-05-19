@@ -21,6 +21,11 @@ class _StubModularCacheProvider(BaseProvider):
         super().__init__(model, **kwargs)
         self.append_calls = 0
         self.last_kwargs: Dict[str, Any] = {}
+        self.last_generate_kwargs: Dict[str, Any] = {}
+
+    def generate(self, *args: Any, **kwargs: Any) -> Any:
+        self.last_generate_kwargs = dict(kwargs)
+        return super().generate(*args, **kwargs)
 
     def supports_prompt_cache(self) -> bool:
         return True
@@ -122,6 +127,15 @@ class _KeyOnlyPromptCacheProvider(BaseProvider):
         return ["stub"]
 
 
+class _StubGGUFQwenPromptCacheProvider(_StubModularCacheProvider):
+    def __init__(self, model: str = "unsloth/Qwen3.6-27B-GGUF", **kwargs: Any):
+        super().__init__(model=model, **kwargs)
+        self.provider = "huggingface"
+        self.model_type = "gguf"
+        self.architecture = "qwen3_6"
+        self.model_capabilities = {"thinking_support": True}
+
+
 def test_prompt_cache_update_fork_and_prepare_modules():
     llm = _StubModularCacheProvider()
 
@@ -183,6 +197,27 @@ def test_prompt_cache_token_count_reports_live_backend_value() -> None:
 
     llm.prompt_cache_update("k1", prompt="b")
     assert llm.prompt_cache_token_count("k1") == 2
+
+
+def test_prompt_cache_update_applies_thinking_control_before_backend_append() -> None:
+    llm = _StubGGUFQwenPromptCacheProvider()
+
+    expected_prompt, expected_messages, expected_system_prompt, _expected_kwargs, _meta = llm._apply_thinking_request(
+        thinking="off",
+        prompt="Explain the file.",
+        messages=None,
+        system_prompt=None,
+        kwargs={},
+    )
+
+    assert llm.prompt_cache_update("k1", prompt="Explain the file.", thinking="off") is True
+
+    cache = llm._prompt_cache_store.get("k1")
+    assert isinstance(cache, _FakeCache)
+    chunk = cache.chunks[-1]
+    assert chunk["prompt"] == expected_prompt
+    assert chunk["messages"] == expected_messages
+    assert chunk["system_prompt"] == expected_system_prompt
 
 
 def test_prompt_cache_prepare_modules_errors_on_non_json_modules() -> None:
@@ -253,6 +288,51 @@ def test_abstractendpoint_prompt_cache_control_plane_endpoints():
     assert r.status_code == 200
     assert r.json()["supported"] is True
     assert r.json()["ok"] is True
+
+
+def test_abstractendpoint_prompt_cache_update_forwards_thinking() -> None:
+    llm = _StubGGUFQwenPromptCacheProvider(model="stub-model")
+    app = create_app(provider_instance=llm)
+    client = TestClient(app)
+
+    expected_prompt, expected_messages, expected_system_prompt, _expected_kwargs, _meta = llm._apply_thinking_request(
+        thinking="off",
+        prompt="hello",
+        messages=None,
+        system_prompt=None,
+        kwargs={},
+    )
+
+    r = client.post(
+        "/acore/prompt_cache/update",
+        json={"key": "k1", "prompt": "hello", "thinking": "off"},
+    )
+    assert r.status_code == 200
+    assert r.json()["supported"] is True
+    assert r.json()["ok"] is True
+
+    cache = llm._prompt_cache_store.get("k1")
+    assert isinstance(cache, _FakeCache)
+    assert cache.chunks[-1]["prompt"] == expected_prompt
+    assert cache.chunks[-1]["messages"] == expected_messages
+    assert cache.chunks[-1]["system_prompt"] == expected_system_prompt
+
+
+def test_abstractendpoint_chat_completions_forward_thinking() -> None:
+    llm = _StubModularCacheProvider(model="stub-model")
+    app = create_app(provider_instance=llm)
+    client = TestClient(app)
+
+    r = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "stub-model",
+            "messages": [{"role": "user", "content": "hello"}],
+            "thinking": "high",
+        },
+    )
+    assert r.status_code == 200
+    assert llm.last_generate_kwargs.get("thinking") == "high"
 
 
 def test_abstractendpoint_prompt_cache_reports_structured_unsupported_operation():

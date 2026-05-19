@@ -28,6 +28,8 @@ Prompt caching is most useful when many calls share a long, stable prefix (syste
     - `prompt_cache_load(filename, ...)`
 - Unsupported control-plane calls raise structured prompt-cache errors (for example `PromptCacheUnsupportedError`) with `operation`, `code`, and `capabilities` so higher layers can catch and downgrade cleanly.
 
+`prompt_cache_update(...)` accepts the same unified `thinking` control as `generate(...)`. When a backend implements reasoning control by changing prompt serialization, applying `thinking` during cache preparation keeps the cached prefix aligned with later generation calls.
+
 ## Capability modes (examples)
 
 Query at runtime:
@@ -251,6 +253,8 @@ Endpoint responses use a stable JSON shape:
 - other errors: `{"supported": false, "operation": "...", "code": "prompt_cache_error", "capabilities": {...}}`
 
 This makes the same capability contract available over HTTP, not only in-process.
+
+The HTTP control plane mirrors this: `/acore/prompt_cache/update` accepts optional `thinking` so warm cache state can be prepared with the same reasoning mode you intend to use at inference time.
 
 Gateway/operator note:
 
