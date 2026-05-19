@@ -19,7 +19,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -56,7 +56,7 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: Optional[int] = None
     top_p: Optional[float] = 1.0
     stream: bool = False
-    thinking: Optional[bool | str] = Field(
+    thinking: Optional[Union[bool, str]] = Field(
         default=None,
         description="Unified thinking/reasoning control (best-effort across providers/models).",
     )
@@ -86,7 +86,7 @@ class PromptCacheUpdateRequest(BaseModel):
     messages: Optional[List[Dict[str, Any]]] = Field(default=None, description="Optional message list to append (provider-dependent)")
     system_prompt: Optional[str] = Field(default=None, description="Optional system prompt to append")
     tools: Optional[List[Dict[str, Any]]] = Field(default=None, description="Optional tool definitions to append")
-    thinking: Optional[bool | str] = Field(
+    thinking: Optional[Union[bool, str]] = Field(
         default=None,
         description="Optional unified thinking/reasoning control to apply while preparing the cache state.",
     )
@@ -324,7 +324,7 @@ def create_app(
     def _shutdown_provider_executor():
         provider_executor.shutdown(wait=False, cancel_futures=True)
 
-    def _bloc_error(operation: str, error: Exception | str, *, status_code: int) -> JSONResponse:
+    def _bloc_error(operation: str, error: Union[Exception, str], *, status_code: int) -> JSONResponse:
         return JSONResponse(
             status_code=int(status_code),
             content={

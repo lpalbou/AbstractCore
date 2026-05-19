@@ -3979,7 +3979,7 @@ def _proxy_endpoint_control_request(
     return {"ok": True, "data": payload}
 
 
-def _local_bloc_error(operation: str, error: Exception | str, *, status_code: int) -> JSONResponse:
+def _local_bloc_error(operation: str, error: Union[Exception, str], *, status_code: int) -> JSONResponse:
     return JSONResponse(
         status_code=int(status_code),
         content={

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.19] - 2026-05-19
+
+### Fixed
+- **Python 3.9 server imports**: replaced Python 3.10 union annotations in the gateway and single-model endpoint request paths so the release test matrix passes on the project-supported Python 3.9 runtime.
+
 ## [2.13.18] - 2026-05-19
 
 ### Added
