@@ -11,6 +11,7 @@ from abstractcore.providers.base import BaseProvider
 class _CaptureProvider(BaseProvider):
     def __init__(self) -> None:
         super().__init__(model="stub", enable_tracing=False)
+        self.last_messages: Any = None
         self.last_system_prompt: Any = None
         self.last_kwargs: Dict[str, Any] = {}
 
@@ -34,7 +35,8 @@ class _CaptureProvider(BaseProvider):
         stream: bool = False,
         **kwargs: Any,
     ) -> GenerateResponse:
-        _ = (prompt, messages, tools, media, stream)
+        _ = (prompt, tools, media, stream)
+        self.last_messages = messages
         self.last_system_prompt = system_prompt
         self.last_kwargs = dict(kwargs)
         return GenerateResponse(content="ok", model=self.model, finish_reason="stop")
@@ -51,7 +53,8 @@ class _NativeAsyncCaptureProvider(_CaptureProvider):
         stream: bool,
         **kwargs: Any,
     ) -> GenerateResponse:
-        _ = (prompt, messages, tools, media, stream)
+        _ = (prompt, tools, media, stream)
+        self.last_messages = messages
         self.last_system_prompt = system_prompt
         self.last_kwargs = dict(kwargs)
         return GenerateResponse(content="ok", model=self.model, finish_reason="stop")
@@ -82,6 +85,23 @@ def test_generate_prefers_system_prompt_when_both_system_forms_are_provided() ->
     assert "system" not in provider.last_kwargs
 
 
+def test_generate_normalizes_developer_messages_to_system_prompt() -> None:
+    provider = _CaptureProvider()
+
+    response = provider.generate(
+        "",
+        messages=[
+            {"role": "developer", "content": "Answer in JSON."},
+            {"role": "user", "content": "ping"},
+        ],
+        system_prompt="You are concise.",
+    )
+
+    assert response.content == "ok"
+    assert provider.last_system_prompt == "You are concise.\n\nAnswer in JSON."
+    assert provider.last_messages == [{"role": "user", "content": "ping"}]
+
+
 @pytest.mark.asyncio
 async def test_agenerate_accepts_system_alias_for_native_async_provider() -> None:
     provider = _NativeAsyncCaptureProvider()
@@ -92,3 +112,20 @@ async def test_agenerate_accepts_system_alias_for_native_async_provider() -> Non
     assert response.content == "ok"
     assert provider.last_system_prompt == "You are concise."
     assert "system" not in provider.last_kwargs
+
+
+@pytest.mark.asyncio
+async def test_agenerate_normalizes_developer_messages_for_native_async_provider() -> None:
+    provider = _NativeAsyncCaptureProvider()
+
+    response = await provider.agenerate(
+        "",
+        messages=[
+            {"role": "developer", "content": "Use terse answers."},
+            {"role": "user", "content": "ping"},
+        ],
+    )
+
+    assert response.content == "ok"
+    assert provider.last_system_prompt == "Use terse answers."
+    assert provider.last_messages == [{"role": "user", "content": "ping"}]

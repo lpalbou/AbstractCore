@@ -23,7 +23,7 @@ try:
 except ImportError:
     OUTLINES_AVAILABLE = False
 
-from .base import BaseProvider
+from .base import BaseProvider, ThinkingControlHandling
 from ..core.types import GenerateResponse
 from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
@@ -65,6 +65,30 @@ class MLXProvider(BaseProvider):
     def prompt_cache_supports_kv_source_of_truth(self) -> bool:
         """MLX KV caches are mutable and can serve as the context source-of-truth."""
         return True
+
+    def _apply_provider_thinking_kwargs(self, *, enabled, level=None, kwargs: Dict[str, Any]):
+        """Map unified thinking control into MLX prompt serialization state.
+
+        mlx-lm local generation takes an already-serialized prompt. For Qwen reasoning
+        templates, the robust local disable control is to serialize the assistant
+        generation prompt in no-thinking mode (`<think>\n\n</think>\n\n`) before
+        generation. The actual serialization happens in `_build_prompt_fragment`.
+        """
+        new_kwargs = dict(kwargs or {})
+        if self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
+            if enabled is False:
+                new_kwargs["_acore_mlx_enable_thinking"] = False
+                return new_kwargs, ThinkingControlHandling(
+                    handled_enable_disable=True,
+                    handled_level=False,
+                )
+            if enabled is True or level is not None:
+                new_kwargs["_acore_mlx_enable_thinking"] = True
+                return new_kwargs, ThinkingControlHandling(
+                    handled_enable_disable=True,
+                    handled_level=False,
+                )
+        return new_kwargs, ThinkingControlHandling()
 
     def _prompt_cache_backend_create(self) -> Optional[Any]:
         try:
@@ -187,6 +211,7 @@ class MLXProvider(BaseProvider):
         tools: Optional[List[Dict[str, Any]]] = None,
         add_generation_prompt: bool = False,
         prefilled_modules: Optional[List[str]] = None,
+        enable_thinking: Optional[bool] = None,
     ) -> str:
         """Build a prompt fragment intended to be appended to an existing prompt_cache."""
 
@@ -253,7 +278,12 @@ class MLXProvider(BaseProvider):
                 parts.append(f"user: {prompt}\n")
 
         if add_generation_prompt:
-            parts.append("<|im_start|>assistant\n" if is_qwen else "assistant:")
+            if is_qwen:
+                parts.append("<|im_start|>assistant\n")
+                if enable_thinking is False:
+                    parts.append("<think>\n\n</think>\n\n")
+            else:
+                parts.append("assistant:")
 
         return "".join(parts)
 
@@ -278,6 +308,7 @@ class MLXProvider(BaseProvider):
             system_prompt=system_prompt,
             tools=tools,
             add_generation_prompt=bool(add_generation_prompt),
+            enable_thinking=kwargs.get("_acore_mlx_enable_thinking"),
         )
         if not fragment:
             return True
@@ -848,6 +879,7 @@ class MLXProvider(BaseProvider):
             prompt_cache_prefilled_modules = [prompt_cache_prefilled_modules]
         if not isinstance(prompt_cache_prefilled_modules, list):
             prompt_cache_prefilled_modules = None
+        mlx_enable_thinking = kwargs.get("_acore_mlx_enable_thinking")
 
         # Native structured output via Outlines (if configured and available)
         should_use_outlines = (
@@ -947,6 +979,7 @@ class MLXProvider(BaseProvider):
             system_prompt,
             tools,
             prefilled_modules=prompt_cache_prefilled_modules,
+            enable_thinking=mlx_enable_thinking if isinstance(mlx_enable_thinking, bool) else None,
         )
 
         # MLX generation parameters using unified system
@@ -997,8 +1030,16 @@ class MLXProvider(BaseProvider):
                 finish_reason="error"
             )
 
-    def _build_prompt(self, prompt: str, messages: Optional[List[Dict[str, str]]],
-                     system_prompt: Optional[str], tools: Optional[List[Dict[str, Any]]] = None, *, prefilled_modules: Optional[List[str]] = None) -> str:
+    def _build_prompt(
+        self,
+        prompt: str,
+        messages: Optional[List[Dict[str, str]]],
+        system_prompt: Optional[str],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        *,
+        prefilled_modules: Optional[List[str]] = None,
+        enable_thinking: Optional[bool] = None,
+    ) -> str:
         """Build prompt for MLX model with tool support."""
         return self._build_prompt_fragment(
             prompt=str(prompt or ""),
@@ -1007,6 +1048,7 @@ class MLXProvider(BaseProvider):
             tools=tools,
             add_generation_prompt=True,
             prefilled_modules=prefilled_modules,
+            enable_thinking=enable_thinking,
         )
 
     def _single_generate(

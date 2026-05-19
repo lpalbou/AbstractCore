@@ -176,7 +176,7 @@ def test_server_loaded_runtime_supports_local_bloc_kv_and_chat_reuse(monkeypatch
     runtime_id = load_body["runtime"]["runtime_id"]
     assert len(created) == 1
 
-    loaded = client.get("/acore/models/loaded?provider=mlx")
+    loaded = client.get("/acore/models/loaded?task=text_generation&provider=mlx")
     assert loaded.status_code == 200
     assert len(loaded.json()["data"]) == 1
 
@@ -242,7 +242,7 @@ def test_server_loaded_runtime_supports_local_bloc_kv_and_chat_reuse(monkeypatch
     assert unload.status_code == 200
     assert created[0].unload_model_calls == ["mlx-community/Qwen3.6-27B-4bit"]
 
-    loaded_after = client.get("/acore/models/loaded?provider=mlx")
+    loaded_after = client.get("/acore/models/loaded?task=text_generation&provider=mlx")
     assert loaded_after.status_code == 200
     assert loaded_after.json()["data"] == []
 

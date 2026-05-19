@@ -19,6 +19,7 @@ Out-of-the-box behavior:
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import platform
@@ -51,6 +52,7 @@ provider_router = APIRouter(tags=["vision"])
 
 _BACKEND_CACHE_LOCK = threading.Lock()
 _BACKEND_CACHE: Dict[Tuple[Any, ...], Tuple[Any, threading.Lock, float]] = {}
+_RESIDENCY_RECORDS: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
 
 _ACTIVE_LOCK = threading.Lock()
 _ACTIVE_MODEL_ID: Optional[str] = None
@@ -234,21 +236,6 @@ class _OpenAICompatibleImageProxyBackend:
         if not isinstance(data, dict):
             raise ValueError("Invalid upstream image edit response: expected JSON object")
         return self._parse_media(data, fallback_mime="image/png")
-
-
-class VisionModelLoadRequest(BaseModel):
-    """Request body for loading a local vision generation model into memory."""
-
-    model_id: Optional[str] = Field(
-        default=None,
-        description="Vision model id or local model path to load. Required unless using the `model` alias.",
-        examples=["Qwen/Qwen-Image-2512"],
-    )
-    model: Optional[str] = Field(
-        default=None,
-        description="Alias for `model_id`.",
-        examples=["Qwen/Qwen-Image-2512"],
-    )
 
 
 class ImageGenerationBody(BaseModel):
@@ -478,6 +465,7 @@ def _job_finish(job_id: str, *, ok: bool, result: Optional[Dict[str, Any]] = Non
 
 
 def _get_or_create_cached_backend(key: Tuple[Any, ...], factory):
+    evicted: list[Tuple[Any, threading.Lock]] = []
     with _BACKEND_CACHE_LOCK:
         now = time.time()
         cached = _BACKEND_CACHE.get(key)
@@ -503,9 +491,330 @@ def _get_or_create_cached_backend(key: Tuple[Any, ...], factory):
             for k, _ in items[: max(0, len(_BACKEND_CACHE) - max_entries)]:
                 if k == key:
                     continue
-                _BACKEND_CACHE.pop(k, None)
+                removed = _BACKEND_CACHE.pop(k, None)
+                _RESIDENCY_RECORDS.pop(k, None)
+                if removed is not None:
+                    evicted.append((removed[0], removed[1]))
 
-        return backend, call_lock
+    for evicted_backend, evicted_lock in evicted:
+        with evicted_lock:
+            _unload_backend_best_effort(evicted_backend)
+    return backend, call_lock
+
+
+def _vision_api_key_fingerprint(api_key: Optional[str]) -> Optional[str]:
+    if not isinstance(api_key, str) or not api_key.strip():
+        return None
+    return hashlib.sha256(api_key.strip().encode("utf-8")).hexdigest()[:16]
+
+
+def _vision_request_model_from_residency_payload(payload: Dict[str, Any]) -> Optional[str]:
+    provider = payload.get("provider") or payload.get("backend") or payload.get("backend_kind")
+    model = payload.get("model") or payload.get("load_id") or payload.get("runtime_id")
+    if isinstance(model, str) and model.strip() and isinstance(provider, str) and provider.strip():
+        return str(_scoped_request_model(model, provider))
+    if isinstance(model, str) and model.strip():
+        return model.strip()
+    if isinstance(provider, str) and provider.strip():
+        return str(_scoped_request_model(None, provider))
+    return None
+
+
+def _vision_load_id_for_key(key: Tuple[Any, ...]) -> str:
+    kind = str(key[0] if key else "").strip()
+    if kind == "openai_compatible_proxy":
+        model = str(key[3] if len(key) > 3 and key[3] else "default").strip()
+        return f"openai-compatible/{model}"
+    if kind == "diffusers":
+        return f"diffusers/{key[1]}"
+    if kind == "mflux":
+        return f"mflux/{key[1] or key[2] or 'default'}"
+    if kind == "sdcpp":
+        model = key[2] if len(key) > 2 and key[2] else key[3] if len(key) > 3 and key[3] else "default"
+        return f"sdcpp/{model}"
+    if kind == "configured" and len(key) >= 5:
+        return f"{key[1]}/{key[4] or 'default'}"
+    return hashlib.sha256(repr(key).encode("utf-8")).hexdigest()[:16]
+
+
+def _vision_record_for_key(
+    key: Tuple[Any, ...],
+    *,
+    cache_ts: Optional[float] = None,
+    meta: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    meta = dict(meta or {})
+    kind = str(key[0] if key else "").strip()
+    loaded_at = meta.get("loaded_at_s") or cache_ts or time.time()
+    last_used_at = cache_ts or meta.get("last_used_at_s") or loaded_at
+    resident = bool(meta.get("resident"))
+    source = str(meta.get("source") or ("explicit_preload" if resident else "request"))
+    options: Dict[str, Any] = {}
+    provider = kind
+    model = "default"
+    backend_kind = kind
+    isolation = "in_process"
+    scope = "process"
+
+    if kind == "openai_compatible_proxy":
+        provider = "openai-compatible"
+        backend_kind = "openai-compatible"
+        model = str(key[3] if len(key) > 3 and key[3] else "default")
+        options = {
+            "base_url": key[1] if len(key) > 1 else None,
+            "timeout_s": key[4] if len(key) > 4 else None,
+        }
+        isolation = "remote"
+        if not resident:
+            source = "configured"
+    elif kind == "diffusers":
+        provider = "huggingface"
+        backend_kind = "diffusers"
+        model = str(key[1] if len(key) > 1 else "default")
+        options = {
+            "device": key[2] if len(key) > 2 else None,
+            "torch_dtype": key[3] if len(key) > 3 else None,
+            "allow_download": key[4] if len(key) > 4 else None,
+            "auto_retry_fp32": key[5] if len(key) > 5 else None,
+        }
+    elif kind == "mflux":
+        provider = "mflux"
+        backend_kind = "mflux"
+        model = str(key[1] if len(key) > 1 and key[1] else key[2] if len(key) > 2 and key[2] else "default")
+        options = {
+            "base_model": key[2] if len(key) > 2 else None,
+            "model_dir": key[3] if len(key) > 3 else None,
+            "quantize": key[4] if len(key) > 4 else None,
+            "allow_download": key[5] if len(key) > 5 else None,
+        }
+    elif kind == "sdcpp":
+        provider = "sdcpp"
+        backend_kind = "sdcpp"
+        model = str(key[2] if len(key) > 2 and key[2] else key[3] if len(key) > 3 and key[3] else "default")
+        options = {
+            "sd_cli_path": key[1] if len(key) > 1 else None,
+            "diffusion_model": key[3] if len(key) > 3 else None,
+            "timeout_s": key[11] if len(key) > 11 else None,
+        }
+    elif kind == "configured" and len(key) >= 5:
+        provider = str(key[1])
+        backend_kind = str(key[2])
+        model = str(key[4] or "default")
+        options = {"base_url": key[3] if len(key) > 3 else None}
+        isolation = "remote"
+        scope = "remote"
+
+    options = {str(k): v for k, v in options.items() if v is not None}
+    load_id = _vision_load_id_for_key(key)
+    return {
+        "runtime_id": load_id,
+        "load_id": load_id,
+        "task": "image_generation",
+        "tasks": ["image_generation", "text_to_image", "image_to_image"],
+        "provider": provider,
+        "model": model,
+        "backend_kind": backend_kind,
+        "state": "resident" if resident else "configured" if isolation == "remote" else "active",
+        "resident": bool(resident),
+        "loaded": isolation == "in_process",
+        "loaded_at": int(float(loaded_at)),
+        "last_used_at": int(float(last_used_at)),
+        "request_count": int(meta.get("request_count") or 0),
+        "pinned": bool(meta.get("pinned", resident)),
+        "source": source,
+        "scope": scope,
+        "isolation": isolation,
+        "health": "ok",
+        "error": None,
+        "options": options,
+    }
+
+
+def _vision_backend_cache_key_for_backend(backend: Any) -> Optional[Tuple[Any, ...]]:
+    with _BACKEND_CACHE_LOCK:
+        for key, (candidate, _call_lock, _ts) in _BACKEND_CACHE.items():
+            if candidate is backend:
+                return key
+    return None
+
+
+def _vision_configured_key(
+    *,
+    provider: str,
+    backend_kind: str,
+    base_url: Optional[str],
+    api_key: Optional[str],
+    model: Optional[str],
+) -> Tuple[Any, ...]:
+    return (
+        "configured",
+        str(provider or "").strip().lower(),
+        str(backend_kind or "").strip().lower(),
+        str(base_url or "").strip().rstrip("/"),
+        str(model or "default").strip() or "default",
+        _vision_api_key_fingerprint(api_key),
+    )
+
+
+def _vision_record_matches(record: Dict[str, Any], filters: Dict[str, Any]) -> bool:
+    task = str(filters.get("task") or "").strip().lower()
+    if task and task not in {"image", "vision", "image_generation", "text_to_image", "t2i", "image_to_image", "i2i"}:
+        return False
+    provider = _normalize_vision_provider_filter(filters.get("provider") or filters.get("backend"))
+    if provider:
+        record_provider = _normalize_vision_provider_filter(record.get("provider"))
+        record_backend = _normalize_vision_provider_filter(record.get("backend_kind"))
+        if provider not in {record_provider, record_backend}:
+            return False
+    backend_kind = _normalize_vision_provider_filter(filters.get("backend_kind"))
+    if backend_kind and backend_kind != _normalize_vision_provider_filter(record.get("backend_kind")):
+        return False
+    model = str(filters.get("model") or "").strip()
+    if model and model not in {str(record.get("model") or ""), str(record.get("load_id") or ""), str(record.get("runtime_id") or "")}:
+        return False
+    runtime_id = str(filters.get("runtime_id") or filters.get("load_id") or "").strip()
+    if runtime_id and runtime_id not in {str(record.get("runtime_id") or ""), str(record.get("load_id") or "")}:
+        return False
+    return True
+
+
+def _vision_loaded_records(filters: Optional[Dict[str, Any]] = None) -> list[Dict[str, Any]]:
+    filters = dict(filters or {})
+    with _BACKEND_CACHE_LOCK:
+        records = [
+            _vision_record_for_key(key, cache_ts=ts, meta=_RESIDENCY_RECORDS.get(key))
+            for key, (_backend, _call_lock, ts) in _BACKEND_CACHE.items()
+        ]
+        cached_keys = set(_BACKEND_CACHE)
+        for key, meta in _RESIDENCY_RECORDS.items():
+            if key not in cached_keys:
+                records.append(_vision_record_for_key(key, meta=meta))
+    out = [record for record in records if _vision_record_matches(record, filters)]
+    return sorted(out, key=lambda item: str(item.get("load_id") or item.get("runtime_id") or ""))
+
+
+def list_server_vision_resident_models(filters: Optional[Dict[str, Any]] = None) -> list[Dict[str, Any]]:
+    """List server-local image backends visible to `/v1/images/*`."""
+    return _vision_loaded_records(filters)
+
+
+def load_server_vision_resident_model(
+    request: Dict[str, Any],
+    *,
+    api_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    payload = dict(request or {})
+    options = payload.get("options")
+    if isinstance(options, dict):
+        merged = dict(options)
+        merged.update({k: v for k, v in payload.items() if k != "options"})
+        payload = merged
+    request_model = _vision_request_model_from_residency_payload(payload)
+    backend_kind = _effective_backend_kind(request_model)
+    base_url = payload.get("base_url")
+    model_id = str(payload.get("model") or "").strip() or None
+
+    if backend_kind == "openai_compatible_proxy":
+        base_url_s = _validate_request_base_url(base_url) if isinstance(base_url, str) and base_url.strip() else _upstream_base_url_for_request(request_model)
+        configured_key = _vision_configured_key(
+            provider="openai-compatible",
+            backend_kind="openai-compatible",
+            base_url=base_url_s,
+            api_key=api_key,
+            model=model_id or _upstream_model_env(),
+        )
+        now = time.time()
+        with _BACKEND_CACHE_LOCK:
+            loaded_new = configured_key not in _RESIDENCY_RECORDS
+            _RESIDENCY_RECORDS[configured_key] = {
+                "resident": False,
+                "source": "configured",
+                "loaded_at_s": now,
+                "last_used_at_s": now,
+                "pinned": False,
+            }
+            record = _vision_record_for_key(configured_key, meta=_RESIDENCY_RECORDS[configured_key])
+        record["loaded_new"] = bool(loaded_new)
+        return record
+
+    backend, call_lock, _missing, _gen_req, _edit_req = _resolve_backend(
+        request_model,
+        base_url=payload.get("base_url"),
+        api_key=api_key,
+    )
+    preload = getattr(backend, "preload", None)
+    if callable(preload):
+        with call_lock:
+            preload()
+    key = _vision_backend_cache_key_for_backend(backend)
+    if key is None:
+        raise RuntimeError("Vision backend was loaded but not present in the server backend cache.")
+    now = time.time()
+    with _BACKEND_CACHE_LOCK:
+        loaded_new = key not in _RESIDENCY_RECORDS
+        _RESIDENCY_RECORDS[key] = {
+            "resident": True,
+            "source": "explicit_preload",
+            "loaded_at_s": now,
+            "last_used_at_s": now,
+            "pinned": bool(payload.get("pin", True)),
+        }
+        record = _vision_record_for_key(key, cache_ts=now, meta=_RESIDENCY_RECORDS[key])
+    record["loaded_new"] = bool(loaded_new)
+    return record
+
+
+def unload_server_vision_resident_model(request: Dict[str, Any]) -> Dict[str, Any]:
+    filters = dict(request or {})
+    matches = _vision_loaded_records(filters)
+    if len(matches) > 1:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "message": "Ambiguous image model unload request. Specify runtime_id/load_id or provider+model.",
+                    "type": "invalid_request",
+                }
+            },
+        )
+    if not matches:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"message": "Loaded image model not found.", "type": "not_found"}},
+        )
+
+    target = matches[0]
+    target_id = str(target.get("load_id") or target.get("runtime_id") or "")
+    removed_backend: Any = None
+    removed_lock: Optional[threading.Lock] = None
+    with _BACKEND_CACHE_LOCK:
+        target_key = None
+        for key, (backend, call_lock, _ts) in list(_BACKEND_CACHE.items()):
+            record = _vision_record_for_key(key, meta=_RESIDENCY_RECORDS.get(key))
+            if str(record.get("load_id") or record.get("runtime_id") or "") == target_id:
+                target_key = key
+                removed_backend = backend
+                removed_lock = call_lock
+                _BACKEND_CACHE.pop(key, None)
+                _RESIDENCY_RECORDS.pop(key, None)
+                break
+        if target_key is None:
+            for key in list(_RESIDENCY_RECORDS):
+                record = _vision_record_for_key(key, meta=_RESIDENCY_RECORDS.get(key))
+                if str(record.get("load_id") or record.get("runtime_id") or "") == target_id:
+                    _RESIDENCY_RECORDS.pop(key, None)
+                    break
+
+    if removed_backend is not None:
+        if removed_lock is not None:
+            with removed_lock:
+                _unload_backend_best_effort(removed_backend)
+        else:
+            _unload_backend_best_effort(removed_backend)
+
+    out = dict(target)
+    out.update({"state": "unloaded", "resident": False, "loaded": False, "unloaded": True})
+    return out
 
 
 def _env(name: str, default: Optional[str] = None) -> Optional[str]:
@@ -2532,121 +2841,6 @@ async def list_cached_vision_models(
         }
     )
     return out
-
-
-@router.get("/vision/model", include_in_schema=False)
-async def get_active_vision_model() -> Dict[str, Any]:
-    """Get the currently loaded (in-memory) vision model for this server process."""
-    return {"active": _active_state()}
-
-
-@router.post("/vision/model/unload")
-async def unload_active_vision_model() -> Dict[str, Any]:
-    """Unload the currently active in-memory vision model (best-effort)."""
-    _unload_active_backend()
-    return {"ok": True, "active": _active_state()}
-
-
-@router.post("/vision/model/load")
-async def load_active_vision_model(payload: VisionModelLoadRequest = Body(...)) -> Dict[str, Any]:
-    """Unload any active model, then load the requested one into memory (best-effort)."""
-    data = _model_payload(payload)
-    model_id = str(data.get("model_id") or data.get("model") or "").strip()
-    if not model_id:
-        raise HTTPException(status_code=400, detail="Missing required field: model_id")
-
-    VisionModelCapabilitiesRegistry = _import_registry()
-    reg = VisionModelCapabilitiesRegistry()
-    try:
-        _spec = reg.get(model_id)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Unknown model id: {model_id!r}") from e
-
-    # Always switch single active model (free memory) for the playground UX.
-    _unload_active_backend()
-
-    start = time.time()
-    backend_kind = _infer_backend_kind(model_id)
-    if backend_kind not in {"diffusers", "sdcpp"}:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Model {model_id!r} cannot be loaded into memory (unsupported backend kind: {backend_kind!r}).",
-        )
-
-    (
-        _OpenAICompatibleBackendConfig,
-        _OpenAICompatibleVisionBackend,
-        HuggingFaceDiffusersBackendConfig,
-        HuggingFaceDiffusersVisionBackend,
-        StableDiffusionCppBackendConfig,
-        StableDiffusionCppVisionBackend,
-        _OptionalDependencyMissingError,
-        _req_types,
-    ) = _import_abstractvision()
-
-    backend: Any = None
-    try:
-        if backend_kind == "diffusers":
-            cfg = HuggingFaceDiffusersBackendConfig(
-                model_id=model_id,
-                device=_env_first("ABSTRACTCORE_VISION_DEVICE", "ABSTRACTVISION_DIFFUSERS_DEVICE", default="auto") or "auto",
-                torch_dtype=_env_first("ABSTRACTCORE_VISION_TORCH_DTYPE", "ABSTRACTVISION_DIFFUSERS_TORCH_DTYPE"),
-                allow_download=_env_bool_first(
-                    "ABSTRACTCORE_VISION_ALLOW_DOWNLOAD",
-                    "ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD",
-                    default=False,
-                ),
-                auto_retry_fp32=_env_bool_first(
-                    "ABSTRACTCORE_VISION_AUTO_RETRY_FP32",
-                    "ABSTRACTVISION_DIFFUSERS_AUTO_RETRY_FP32",
-                    default=True,
-                ),
-            )
-            backend = HuggingFaceDiffusersVisionBackend(config=cfg)
-        else:
-            # stable-diffusion.cpp: treat `model_id` as a local path when used here.
-            model_path, diffusion_model_path = _require_sdcpp_model_or_diffusion_model(model_id)
-            extra_args = _sdcpp_env("EXTRA_ARGS")
-            cfg = StableDiffusionCppBackendConfig(
-                sd_cli_path=_sdcpp_env("BIN") or "sd-cli",
-                model=model_path,
-                diffusion_model=diffusion_model_path,
-                vae=_sdcpp_env("VAE"),
-                llm=_sdcpp_env("LLM"),
-                llm_vision=_sdcpp_env("LLM_VISION"),
-                clip_l=_sdcpp_env("CLIP_L"),
-                clip_g=_sdcpp_env("CLIP_G"),
-                t5xxl=_sdcpp_env("T5XXL"),
-                extra_args=shlex.split(str(extra_args)) if extra_args else (),
-                timeout_s=float(_env_first("ABSTRACTCORE_VISION_TIMEOUT_S", "ABSTRACTVISION_TIMEOUT_S", default="3600") or "3600"),
-            )
-            backend = StableDiffusionCppVisionBackend(config=cfg)
-
-        call_lock = threading.Lock()
-        preload = getattr(backend, "preload", None)
-        if callable(preload):
-            with call_lock:
-                preload()
-
-        global _ACTIVE_MODEL_ID, _ACTIVE_BACKEND_KIND, _ACTIVE_BACKEND, _ACTIVE_CALL_LOCK, _ACTIVE_LOADED_AT_S
-        with _ACTIVE_LOCK:
-            _ACTIVE_MODEL_ID = model_id
-            _ACTIVE_BACKEND_KIND = backend_kind
-            _ACTIVE_BACKEND = backend
-            _ACTIVE_CALL_LOCK = call_lock
-            _ACTIVE_LOADED_AT_S = time.time()
-
-        return {
-            "ok": True,
-            "active": _active_state(),
-            "load_ms": int((time.time() - start) * 1000),
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        if backend is not None:
-            _unload_backend_best_effort(backend)
-        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 async def _images_generations_impl(

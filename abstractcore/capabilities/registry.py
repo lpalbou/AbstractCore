@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import importlib
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, TypeVar
 
 from .errors import CapabilityUnavailableError
 from .types import AudioCapability, MusicCapability, VisionCapability, VoiceCapability
@@ -353,6 +353,68 @@ class CapabilityRegistry:
         return out
 
 
+def _call_residency_mapping_method(
+    backend: Any,
+    capability: str,
+    method_names: Tuple[str, ...],
+    request: Mapping[str, Any],
+    *,
+    install_hint: Optional[str],
+) -> Dict[str, Any]:
+    for method_name in method_names:
+        method = getattr(backend, method_name, None)
+        if callable(method):
+            out = method(dict(request or {}))
+            if not isinstance(out, dict):
+                raise CapabilityUnavailableError(
+                    capability=capability,
+                    reason=f"The selected {capability} capability backend returned a non-object residency payload.",
+                    install_hint=install_hint,
+                    details={"backend_id": getattr(backend, "backend_id", None), "method": method_name},
+                )
+            return dict(out)
+    raise CapabilityUnavailableError(
+        capability=capability,
+        reason=(
+            f"The selected {capability} capability backend does not expose "
+            "load_resident_model/list_resident_models/unload_resident_model."
+        ),
+        install_hint=install_hint,
+        details={"backend_id": getattr(backend, "backend_id", None), "methods": list(method_names)},
+    )
+
+
+def _call_residency_list_method(
+    backend: Any,
+    capability: str,
+    method_names: Tuple[str, ...],
+    filters: Optional[Mapping[str, Any]],
+    *,
+    install_hint: Optional[str],
+) -> List[Dict[str, Any]]:
+    for method_name in method_names:
+        method = getattr(backend, method_name, None)
+        if callable(method):
+            out = method(dict(filters or {}))
+            if not isinstance(out, list):
+                raise CapabilityUnavailableError(
+                    capability=capability,
+                    reason=f"The selected {capability} capability backend returned a non-list residency payload.",
+                    install_hint=install_hint,
+                    details={"backend_id": getattr(backend, "backend_id", None), "method": method_name},
+                )
+            return [dict(item) for item in out if isinstance(item, dict)]
+    raise CapabilityUnavailableError(
+        capability=capability,
+        reason=(
+            f"The selected {capability} capability backend does not expose "
+            "list_loaded_models/list_resident_models."
+        ),
+        install_hint=install_hint,
+        details={"backend_id": getattr(backend, "backend_id", None), "methods": list(method_names)},
+    )
+
+
 class _VoiceFacade:
     def __init__(self, registry: CapabilityRegistry) -> None:
         self._registry = registry
@@ -369,6 +431,42 @@ class _VoiceFacade:
 
     def stt(self, audio: Any, **kwargs: Any) -> Any:
         return self._registry.get_voice().stt(audio, **kwargs)
+
+    def load_resident_model(self, request: Mapping[str, Any]) -> Dict[str, Any]:
+        return _call_residency_mapping_method(
+            self._registry.get_voice(),
+            "voice",
+            ("load_resident_model", "load_model"),
+            request,
+            install_hint=self._registry._default_install_hint("voice"),
+        )
+
+    def list_loaded_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Dict[str, Any]]:
+        return _call_residency_list_method(
+            self._registry.get_voice(),
+            "voice",
+            ("list_loaded_models", "list_resident_models"),
+            filters,
+            install_hint=self._registry._default_install_hint("voice"),
+        )
+
+    def list_resident_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Dict[str, Any]]:
+        return _call_residency_list_method(
+            self._registry.get_voice(),
+            "voice",
+            ("list_resident_models",),
+            filters,
+            install_hint=self._registry._default_install_hint("voice"),
+        )
+
+    def unload_resident_model(self, request: Mapping[str, Any]) -> Dict[str, Any]:
+        return _call_residency_mapping_method(
+            self._registry.get_voice(),
+            "voice",
+            ("unload_resident_model", "unload_model"),
+            request,
+            install_hint=self._registry._default_install_hint("voice"),
+        )
 
     def list_profiles(self, *, kind: str = "tts") -> List[Dict[str, Any]]:
         backend = self._registry.get_voice()
@@ -536,6 +634,42 @@ class _AudioFacade:
     def transcribe(self, audio: Any, **kwargs: Any) -> Any:
         return self._registry.get_audio().transcribe(audio, **kwargs)
 
+    def load_resident_model(self, request: Mapping[str, Any]) -> Dict[str, Any]:
+        return _call_residency_mapping_method(
+            self._registry.get_audio(),
+            "audio",
+            ("load_resident_model", "load_model"),
+            request,
+            install_hint=self._registry._default_install_hint("audio"),
+        )
+
+    def list_loaded_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Dict[str, Any]]:
+        return _call_residency_list_method(
+            self._registry.get_audio(),
+            "audio",
+            ("list_loaded_models", "list_resident_models"),
+            filters,
+            install_hint=self._registry._default_install_hint("audio"),
+        )
+
+    def list_resident_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Dict[str, Any]]:
+        return _call_residency_list_method(
+            self._registry.get_audio(),
+            "audio",
+            ("list_resident_models",),
+            filters,
+            install_hint=self._registry._default_install_hint("audio"),
+        )
+
+    def unload_resident_model(self, request: Mapping[str, Any]) -> Dict[str, Any]:
+        return _call_residency_mapping_method(
+            self._registry.get_audio(),
+            "audio",
+            ("unload_resident_model", "unload_model"),
+            request,
+            install_hint=self._registry._default_install_hint("audio"),
+        )
+
 
 class _VisionFacade:
     def __init__(self, registry: CapabilityRegistry) -> None:
@@ -550,6 +684,42 @@ class _VisionFacade:
 
     def t2i(self, prompt: str, **kwargs: Any) -> Any:
         return self._registry.get_vision().t2i(prompt, **kwargs)
+
+    def load_resident_model(self, request: Mapping[str, Any]) -> Dict[str, Any]:
+        return _call_residency_mapping_method(
+            self._registry.get_vision(),
+            "vision",
+            ("load_resident_model", "load_model"),
+            request,
+            install_hint=self._registry._default_install_hint("vision"),
+        )
+
+    def list_loaded_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Dict[str, Any]]:
+        return _call_residency_list_method(
+            self._registry.get_vision(),
+            "vision",
+            ("list_loaded_models", "list_resident_models"),
+            filters,
+            install_hint=self._registry._default_install_hint("vision"),
+        )
+
+    def list_resident_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Dict[str, Any]]:
+        return _call_residency_list_method(
+            self._registry.get_vision(),
+            "vision",
+            ("list_resident_models",),
+            filters,
+            install_hint=self._registry._default_install_hint("vision"),
+        )
+
+    def unload_resident_model(self, request: Mapping[str, Any]) -> Dict[str, Any]:
+        return _call_residency_mapping_method(
+            self._registry.get_vision(),
+            "vision",
+            ("unload_resident_model", "unload_model"),
+            request,
+            install_hint=self._registry._default_install_hint("vision"),
+        )
 
     def list_provider_models(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]:
         backend = self._registry.get_vision()

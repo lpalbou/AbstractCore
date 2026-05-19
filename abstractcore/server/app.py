@@ -55,6 +55,7 @@ from pydantic import BaseModel, Field, ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..core.bloc_kv import ensure_bloc_kv_artifact, load_bloc_kv_artifact, read_bloc_kv_manifest
+from ..capabilities.errors import CapabilityUnavailableError
 from ..core.factory import create_llm
 from ..core.file_blocs import FileBlocStore
 from ..exceptions import AuthenticationError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
@@ -1082,8 +1083,6 @@ def _custom_openapi() -> Dict[str, Any]:
             "version": 1,
         },
     )
-    _component_examples("VisionModelLoadRequest", {"model_id": "Qwen/Qwen-Image-2512", "model": None})
-
     _request_example(
         "/v1/audio/speech",
         "post",
@@ -1224,7 +1223,6 @@ def _custom_openapi() -> Dict[str, Any]:
             "consent": None,
         },
     )
-    _request_example("/v1/vision/model/load", "post", "application/json", "load_local_model", "Load local vision model", {"model_id": "Qwen/Qwen-Image-2512", "model": None})
     _request_example("/acore/prompt_cache/set", "post", "application/json", "set_cache_key", "Set prompt cache key", {"base_url": "http://localhost:8001/v1", "api_key": None, "key": "project-default", "make_default": True, "ttl_s": 3600})
     _request_example(
         "/acore/prompt_cache/update",
@@ -1701,8 +1699,12 @@ class ContentItem(BaseModel):
 
 class ChatMessage(BaseModel):
     """Enhanced OpenAI-compatible message format with media support"""
-    role: Literal["system", "user", "assistant", "tool"] = Field(
-        description="The role of the message author. One of 'system', 'user', 'assistant', or 'tool'.",
+    role: Literal["system", "developer", "user", "assistant", "tool"] = Field(
+        description=(
+            "The role of the message author. One of 'system', 'developer', 'user', 'assistant', or 'tool'. "
+            "Developer messages are accepted for OpenAI compatibility and normalized for providers that do not "
+            "support that role natively."
+        ),
         example="user"
     )
     content: Optional[Union[str, List[ContentItem]]] = Field(
@@ -1735,9 +1737,10 @@ class ChatCompletionRequest(BaseModel):
         example="openai/gpt-4"
     )
     messages: List[ChatMessage] = Field(
-        description="A list of messages comprising the conversation so far. Each message has a role (system/user/assistant/tool) "
-                    "and content. System messages set the assistant's behavior, user messages are from the end user, "
-                    "assistant messages are from the AI, and tool messages contain function call results."
+        description="A list of messages comprising the conversation so far. Each message has a role "
+                    "(system/developer/user/assistant/tool) and content. System and developer messages set "
+                    "assistant behavior, user messages are from the end user, assistant messages are from the AI, "
+                    "and tool messages contain function call results."
     )
 
     # Core parameters
@@ -3165,9 +3168,214 @@ def create_syntax_rewriter(target_format: SyntaxFormat, model_name: str) -> Tool
         return ToolCallSyntaxRewriter(target_format, model_name=model_name)
 
 
+def _normalize_model_residency_task(task: Optional[str]) -> str:
+    raw = str(task or "").strip().lower().replace("-", "_")
+    if not raw:
+        return "text_generation"
+    aliases = {
+        "text": "text_generation",
+        "chat": "text_generation",
+        "chat_completion": "text_generation",
+        "chat_completions": "text_generation",
+        "llm": "text_generation",
+        "completion": "text_generation",
+        "text_generation": "text_generation",
+        "image": "image_generation",
+        "vision": "image_generation",
+        "image_generation": "image_generation",
+        "text_to_image": "image_generation",
+        "t2i": "image_generation",
+        "image_to_image": "image_generation",
+        "i2i": "image_generation",
+        "speech": "tts",
+        "voice": "tts",
+        "audio_speech": "tts",
+        "text_to_speech": "tts",
+        "tts": "tts",
+        "transcription": "stt",
+        "transcriptions": "stt",
+        "speech_to_text": "stt",
+        "audio_transcription": "stt",
+        "audio_transcriptions": "stt",
+        "stt": "stt",
+        "music": "music_generation",
+        "music_generation": "music_generation",
+        "text_to_music": "music_generation",
+        "t2m": "music_generation",
+    }
+    if raw not in aliases:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"message": f"Unknown model residency task: {task}", "type": "invalid_request"}},
+        )
+    return aliases[raw]
+
+
+def _model_residency_payload(req: BaseModel) -> Dict[str, Any]:
+    data = req.model_dump(exclude_none=True)
+    options = data.get("options")
+    if not isinstance(options, dict):
+        data["options"] = {}
+    return data
+
+
+def _capability_residency_core_for_request(task: str, http_request: Request) -> Any:
+    if task in {"tts", "stt"}:
+        from .audio_endpoints import _audio_catalog_core, _get_capability_core
+
+        base_url = None
+        provider_key = _provider_api_key_from_request(http_request)
+        if provider_key:
+            return _audio_catalog_core(http_request, base_url=base_url, api_key=provider_key)
+        return _get_capability_core()
+    from .capability_generation import create_capability_generation_core
+
+    return create_capability_generation_core()
+
+
+def _capability_residency_error(exc: Exception, *, task: str) -> HTTPException:
+    if isinstance(exc, HTTPException):
+        return exc
+    detail = {
+        "error": {
+            "message": str(exc),
+            "type": "capability_unavailable" if isinstance(exc, CapabilityUnavailableError) else "residency_error",
+            "task": task,
+        }
+    }
+    if isinstance(exc, CapabilityUnavailableError):
+        return HTTPException(status_code=501, detail=detail)
+    return HTTPException(status_code=500, detail=detail)
+
+
+def _model_residency_bool(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        raw = value.strip().lower()
+        if raw in {"1", "true", "yes", "on"}:
+            return True
+        if raw in {"0", "false", "no", "off"}:
+            return False
+    return None
+
+
+def _model_residency_loaded_new(runtime: Dict[str, Any]) -> bool:
+    for key in ("loaded_new", "created_new", "created", "warmed_new", "preloaded_new"):
+        if key in runtime:
+            return bool(_model_residency_bool(runtime.get(key)))
+
+    details = runtime.get("details")
+    if isinstance(details, dict):
+        for key in ("loaded_new", "created_new", "created", "warmed_new", "preloaded_new"):
+            if key in details:
+                return bool(_model_residency_bool(details.get(key)))
+
+        resident = _model_residency_bool(runtime.get("resident"))
+        engine_cached = _model_residency_bool(details.get("engine_cached"))
+        if resident is True and engine_cached is not None:
+            return not engine_cached
+
+    return False
+
+
+def _capability_residency_load(task: str, payload: Dict[str, Any], http_request: Request) -> Dict[str, Any]:
+    if task == "image_generation":
+        from . import vision_endpoints as _vision_endpoints
+
+        provider_key = _provider_api_key_from_request(http_request)
+        try:
+            runtime = _vision_endpoints.load_server_vision_resident_model(payload, api_key=provider_key)
+        except Exception as e:
+            raise _capability_residency_error(e, task=task) from e
+        return {"ok": True, "loaded_new": _model_residency_loaded_new(runtime), "runtime": runtime}
+
+    if task in {"tts", "stt"}:
+        core = _capability_residency_core_for_request(task, http_request)
+        target = core.voice if task == "tts" else core.audio
+        method = getattr(target, "load_resident_model", None)
+        if not callable(method):
+            raise HTTPException(
+                status_code=501,
+                detail={"error": {"message": f"{task} capability does not expose load_resident_model.", "type": "not_implemented"}},
+            )
+        try:
+            runtime = method(payload)
+        except Exception as e:
+            raise _capability_residency_error(e, task=task) from e
+        runtime_out = dict(runtime)
+        return {"ok": True, "loaded_new": _model_residency_loaded_new(runtime_out), "runtime": runtime_out}
+
+    raise HTTPException(
+        status_code=501,
+        detail={"error": {"message": f"Model residency task {task!r} is not implemented yet.", "type": "not_implemented"}},
+    )
+
+
+def _capability_residency_loaded(task: Optional[str], filters: Dict[str, Any], http_request: Request) -> list[Dict[str, Any]]:
+    tasks = [task] if task else ["image_generation", "tts", "stt"]
+    records: list[Dict[str, Any]] = []
+    for item_task in tasks:
+        if item_task == "image_generation":
+            from . import vision_endpoints as _vision_endpoints
+
+            records.extend(_vision_endpoints.list_server_vision_resident_models(filters))
+            continue
+        if item_task in {"tts", "stt"}:
+            try:
+                core = _capability_residency_core_for_request(item_task, http_request)
+                target = core.voice if item_task == "tts" else core.audio
+                method = getattr(target, "list_loaded_models", None)
+                if not callable(method):
+                    method = getattr(target, "list_resident_models", None)
+                if callable(method):
+                    records.extend([dict(entry) for entry in list(method(filters) or []) if isinstance(entry, dict)])
+            except Exception:
+                continue
+    return records
+
+
+def _capability_residency_unload(task: str, payload: Dict[str, Any], http_request: Request) -> Dict[str, Any]:
+    if task == "image_generation":
+        from . import vision_endpoints as _vision_endpoints
+
+        try:
+            runtime = _vision_endpoints.unload_server_vision_resident_model(payload)
+        except Exception as e:
+            raise _capability_residency_error(e, task=task) from e
+        return {"ok": True, "runtime": runtime, "unloaded": bool(runtime.get("unloaded", True))}
+
+    if task in {"tts", "stt"}:
+        core = _capability_residency_core_for_request(task, http_request)
+        target = core.voice if task == "tts" else core.audio
+        method = getattr(target, "unload_resident_model", None)
+        if not callable(method):
+            raise HTTPException(
+                status_code=501,
+                detail={"error": {"message": f"{task} capability does not expose unload_resident_model.", "type": "not_implemented"}},
+            )
+        try:
+            runtime = method(payload)
+        except Exception as e:
+            raise _capability_residency_error(e, task=task) from e
+        return {"ok": True, "runtime": dict(runtime), "unloaded": bool(runtime.get("unloaded", True))}
+
+    raise HTTPException(
+        status_code=501,
+        detail={"error": {"message": f"Model residency task {task!r} is not implemented yet.", "type": "not_implemented"}},
+    )
+
+
 class LoadedModelRequest(BaseModel):
-    provider: str = Field(..., description="Provider name to load into the gateway runtime registry.", example="mlx")
-    model: str = Field(..., description="Model identifier to keep warm inside the gateway.", example="mlx-community/Qwen3.6-27B-4bit")
+    task: Optional[str] = Field(
+        default=None,
+        description="Residency task. Omit for backward-compatible text generation runtimes.",
+        example="text_generation",
+    )
+    provider: Optional[str] = Field(default=None, description="Provider/backend name to load.", example="mlx")
+    model: Optional[str] = Field(default=None, description="Model identifier to keep warm.", example="mlx-community/Qwen3.6-27B-4bit")
     base_url: Optional[str] = Field(
         default=None,
         description="Optional provider base URL override. Useful for OpenAI-compatible local runtimes.",
@@ -3178,6 +3386,9 @@ class LoadedModelRequest(BaseModel):
         description="Optional provider timeout in seconds for the loaded runtime.",
         example=7200.0,
     )
+    options: Dict[str, Any] = Field(default_factory=dict, description="Task/backend-specific residency options.")
+    pin: Optional[bool] = Field(default=True, description="Whether the model should be explicitly kept resident when supported.")
+    ttl_s: Optional[float] = Field(default=None, description="Optional future TTL hint in seconds. Currently advisory.")
 
     class Config:
         json_schema_extra = {
@@ -3190,16 +3401,36 @@ class LoadedModelRequest(BaseModel):
                         "base_url": None,
                         "timeout_s": 7200.0,
                     },
-                }
+                },
+                {
+                    "summary": "Load Image Runtime",
+                    "value": {
+                        "task": "image_generation",
+                        "provider": "diffusers",
+                        "model": "runwayml/stable-diffusion-v1-5",
+                        "pin": True,
+                    },
+                },
+                {
+                    "summary": "Load Cloned TTS Runtime",
+                    "value": {
+                        "task": "tts",
+                        "provider": "cloned",
+                        "model": "omnivoice",
+                        "options": {"voice": "my_voice"},
+                    },
+                },
             ]
         }
 
 
 class UnloadModelRequest(BaseModel):
+    task: Optional[str] = Field(default=None, description="Residency task. Omit for backward-compatible text runtime unload when runtime_id/provider+model matches text.")
     runtime_id: Optional[str] = Field(default=None, description="Specific loaded runtime identifier returned by `/acore/models/load`.")
     provider: Optional[str] = Field(default=None, description="Provider name for runtime selection when `runtime_id` is omitted.", example="mlx")
     model: Optional[str] = Field(default=None, description="Model identifier for runtime selection when `runtime_id` is omitted.", example="mlx-community/Qwen3.6-27B-4bit")
     base_url: Optional[str] = Field(default=None, description="Optional provider base URL used when the runtime was loaded.", example=None)
+    options: Dict[str, Any] = Field(default_factory=dict, description="Task/backend-specific unload selectors.")
 
     class Config:
         json_schema_extra = {
@@ -3238,22 +3469,42 @@ async def health_check():
     "/acore/models/loaded",
     tags=["runtime"],
     summary="List Loaded Gateway Runtimes",
-    description="List provider/model runtimes currently kept warm inside the gateway process.",
+    description="List task-aware provider/model runtimes currently kept warm inside the gateway process.",
 )
 def acore_models_loaded(
+    http_request: Request,
+    task: Optional[str] = Query(None, description="Optional task filter. Omit to include text, image, TTS, and STT residency records.", example="image_generation"),
     provider: Optional[str] = Query(None, description="Optional provider filter.", example="mlx"),
     model: Optional[str] = Query(None, description="Optional exact model filter.", example="mlx-community/Qwen3.6-27B-4bit"),
 ):
+    task_filter = _normalize_model_residency_task(task) if task else None
     provider_filter = str(provider or "").strip().lower()
     model_filter = str(model or "").strip()
-    with _GATEWAY_RUNTIME_LOCK:
-        runtimes = [
-            _gateway_runtime_to_dict(runtime)
-            for runtime in _GATEWAY_LOADED_RUNTIMES.values()
-            if (not provider_filter or runtime.provider == provider_filter)
-            and (not model_filter or runtime.model == model_filter)
-        ]
-    return {"object": "list", "data": sorted(runtimes, key=lambda item: item["runtime_id"])}
+    runtimes: list[Dict[str, Any]] = []
+    if task_filter in {None, "text_generation"}:
+        with _GATEWAY_RUNTIME_LOCK:
+            runtimes.extend(
+                {
+                    **_gateway_runtime_to_dict(runtime),
+                    "task": "text_generation",
+                    "state": "resident",
+                    "resident": True,
+                    "loaded": True,
+                    "pinned": True,
+                    "isolation": "in_process",
+                    "health": "ok",
+                    "error": None,
+                }
+                for runtime in _GATEWAY_LOADED_RUNTIMES.values()
+                if (not provider_filter or runtime.provider == provider_filter)
+                and (not model_filter or runtime.model == model_filter)
+            )
+    if task_filter != "text_generation":
+        filters = {"provider": provider_filter, "model": model_filter}
+        if task_filter:
+            filters["task"] = task_filter
+        runtimes.extend(_capability_residency_loaded(task_filter, filters, http_request))
+    return {"object": "list", "data": sorted(runtimes, key=lambda item: str(item.get("runtime_id") or item.get("load_id") or ""))}
 
 
 @app.post(
@@ -3261,11 +3512,17 @@ def acore_models_loaded(
     tags=["runtime"],
     summary="Load Gateway Runtime",
     description=(
-        "Load a provider/model into the gateway runtime registry so subsequent chat requests and local "
-        "prompt-cache / memory-bloc control-plane calls can reuse the same warm provider instance."
+        "Load a task-specific provider/model into the gateway runtime registry so subsequent text, image, "
+        "voice, and transcription calls can reuse warm in-process providers when supported."
     ),
 )
 def acore_models_load(req: LoadedModelRequest, http_request: Request):
+    task = _normalize_model_residency_task(req.task)
+    payload = _model_residency_payload(req)
+    payload["task"] = task
+    if task != "text_generation":
+        return _capability_residency_load(task, payload, http_request)
+
     provider = str(req.provider or "").strip().lower()
     model = str(req.model or "").strip()
     if not provider or not model:
@@ -3333,7 +3590,17 @@ def acore_models_load(req: LoadedModelRequest, http_request: Request):
     return {
         "ok": True,
         "loaded_new": bool(loaded_new),
-        "runtime": _gateway_runtime_to_dict(runtime),
+        "runtime": {
+            **_gateway_runtime_to_dict(runtime),
+            "task": "text_generation",
+            "state": "resident",
+            "resident": True,
+            "loaded": True,
+            "pinned": True,
+            "isolation": "in_process",
+            "health": "ok",
+            "error": None,
+        },
         "prompt_cache_capabilities": _gateway_prompt_cache_capabilities_dict(runtime.llm),
     }
 
@@ -3342,9 +3609,18 @@ def acore_models_load(req: LoadedModelRequest, http_request: Request):
     "/acore/models/unload",
     tags=["runtime"],
     summary="Unload Gateway Runtime",
-    description="Unload a previously loaded provider/model runtime from the gateway process.",
+    description="Unload a previously loaded task-specific provider/model runtime from the gateway process.",
 )
 def acore_models_unload(req: UnloadModelRequest, http_request: Request):
+    task = _normalize_model_residency_task(req.task) if req.task else None
+    payload = _model_residency_payload(req)
+    if isinstance(payload.get("options"), dict):
+        for k, v in dict(payload["options"]).items():
+            payload.setdefault(k, v)
+    if task and task != "text_generation":
+        payload["task"] = task
+        return _capability_residency_unload(task, payload, http_request)
+
     runtime_id = str(req.runtime_id or "").strip() or None
     provider = str(req.provider or "").strip().lower() or None
     model = str(req.model or "").strip() or None
@@ -3358,15 +3634,43 @@ def acore_models_unload(req: UnloadModelRequest, http_request: Request):
                 }
             },
         )
-    runtime = _resolve_local_runtime_for_control(
+    runtime = _get_loaded_gateway_runtime(
         provider=provider,
         model=model,
         base_url=req.base_url,
+        explicit_provider_key_hash=_provider_key_fingerprint(_provider_api_key_from_request(http_request)),
         runtime_id=runtime_id,
-        http_request=http_request,
     )
-    _unload_loaded_gateway_runtime(runtime)
-    return {"ok": True, "runtime": _gateway_runtime_to_dict(runtime), "unloaded": True}
+    if runtime is not None:
+        _unload_loaded_gateway_runtime(runtime)
+        return {
+            "ok": True,
+            "runtime": {
+                **_gateway_runtime_to_dict(runtime),
+                "task": "text_generation",
+                "state": "unloaded",
+                "resident": False,
+                "loaded": False,
+                "pinned": False,
+                "isolation": "in_process",
+                "health": "ok",
+                "error": None,
+            },
+            "unloaded": True,
+        }
+    if task is None:
+        for candidate_task in ("image_generation", "tts", "stt"):
+            try:
+                payload["task"] = candidate_task
+                return _capability_residency_unload(candidate_task, payload, http_request)
+            except HTTPException as exc:
+                if exc.status_code not in {404, 501}:
+                    raise
+                continue
+    raise HTTPException(
+        status_code=404,
+        detail={"error": {"message": "Loaded model runtime not found.", "type": "not_found"}},
+    )
 
 
 class PromptCacheProxyBase(BaseModel):

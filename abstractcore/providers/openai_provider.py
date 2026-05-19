@@ -139,6 +139,9 @@ class OpenAIProvider(BaseProvider):
         new_kwargs["reasoning_effort"] = effort
         return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=True)
 
+    def _supports_developer_messages(self) -> bool:
+        return True
+
     @property
     def async_client(self):
         """Lazy-load AsyncOpenAI client for native async operations."""

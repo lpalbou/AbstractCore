@@ -1470,6 +1470,81 @@ class BaseProvider(AbstractCoreInterface, ABC):
         _ = (enabled, level)
         return kwargs, False
 
+    def _supports_developer_messages(self) -> bool:
+        """Return True when the provider API can accept OpenAI `developer` messages directly."""
+        return False
+
+    @staticmethod
+    def _message_content_to_text(content: Any) -> str:
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: List[str] = []
+            for item in content:
+                if isinstance(item, dict):
+                    typ = str(item.get("type") or "").strip()
+                    if typ == "text" and item.get("text") is not None:
+                        parts.append(str(item.get("text") or ""))
+                    elif item.get("text") is not None:
+                        parts.append(str(item.get("text") or ""))
+                    else:
+                        try:
+                            parts.append(json.dumps(item, ensure_ascii=False))
+                        except Exception:
+                            parts.append(str(item))
+                elif hasattr(item, "type") and getattr(item, "text", None) is not None:
+                    parts.append(str(getattr(item, "text") or ""))
+                else:
+                    parts.append(str(item))
+            return "\n".join(part for part in parts if part)
+        try:
+            return json.dumps(content, ensure_ascii=False)
+        except Exception:
+            return str(content)
+
+    def _normalize_developer_messages(
+        self,
+        messages: Optional[List[Dict[str, Any]]],
+        system_prompt: Optional[str],
+    ) -> Tuple[Optional[List[Dict[str, Any]]], Optional[str]]:
+        """Normalize OpenAI `developer` messages for providers that only support system/user roles."""
+        if not isinstance(messages, list) or not messages:
+            return messages, system_prompt
+        if self._supports_developer_messages():
+            return messages, system_prompt
+
+        developer_parts: List[str] = []
+        normalized_messages: List[Dict[str, Any]] = []
+        changed = False
+
+        for msg in messages:
+            if not isinstance(msg, dict):
+                normalized_messages.append(msg)
+                continue
+            role = msg.get("role")
+            role_norm = str(role or "").strip().lower()
+            if role_norm != "developer":
+                normalized_messages.append(dict(msg))
+                continue
+
+            changed = True
+            text = self._message_content_to_text(msg.get("content")).strip()
+            if text:
+                developer_parts.append(text)
+
+        if not changed:
+            return messages, system_prompt
+
+        prompt_parts: List[str] = []
+        if isinstance(system_prompt, str) and system_prompt.strip():
+            prompt_parts.append(system_prompt.strip())
+        prompt_parts.extend(developer_parts)
+        merged_system_prompt = "\n\n".join(prompt_parts) if prompt_parts else system_prompt
+
+        return normalized_messages, merged_system_prompt
+
     @staticmethod
     def _normalize_system_prompt_alias(
         system_prompt: Optional[str],
@@ -2134,6 +2209,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Prompt caching: apply a default `prompt_cache_key` if configured.
         self._apply_default_prompt_cache_key(kwargs)
+        messages, system_prompt = self._normalize_developer_messages(messages, system_prompt)
 
         # Apply unified thinking controls (provider-agnostic + provider-specific mappings).
         prompt, messages, system_prompt, kwargs, thinking_meta = self._apply_thinking_request(
@@ -3872,6 +3948,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             carried_thinking_meta = None
 
         prompt_text = str(prompt or "")
+        messages, system_prompt = self._normalize_developer_messages(messages, system_prompt)
         prompt_text, messages, system_prompt, kwargs, thinking_meta = self._apply_thinking_request(
             thinking=thinking,
             prompt=prompt_text,
@@ -5078,6 +5155,7 @@ Please provide a structured response."""
             )
 
         self._apply_default_prompt_cache_key(kwargs)
+        messages, system_prompt = self._normalize_developer_messages(messages, system_prompt)
         response = await self._agenerate_internal(
             prompt, messages, system_prompt, tools, media, stream, **kwargs
         )

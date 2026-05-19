@@ -30,8 +30,6 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/v1/images/edits` | POST | Image editing (optional) | `prompt`, `image`, `model`, `provider`, `base_url`, `mask`, `size` |
 | `/{provider}/v1/images/edits` | POST | Provider-scoped image editing | `model` (no prefix), `prompt`, `image`, `base_url` |
 | `/v1/vision/models` | GET | Available vision model catalog | `task`, `provider`, `base_url`, `api_key` |
-| `/v1/vision/model/load` | POST | Load local vision model | `model_id` / `model` |
-| `/v1/vision/model/unload` | POST | Unload active local vision model | - |
 | `/v1/vision/jobs/*` | GET/POST | Async image jobs | `job_id`, `consume`, image parameters |
 | `/v1/audio/transcriptions` | POST | Speech-to-text (optional) | `file`, `provider`, `model`, `base_url` |
 | `/{provider}/v1/audio/transcriptions` | POST | Provider-scoped speech-to-text | `model` (no prefix), `file`, `base_url` |
@@ -42,11 +40,13 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/{provider}/v1/voice/clone` | POST | Provider-scoped voice clone/custom voice extension | `model` (no prefix), `file`, `base_url`, `name` |
 | `/v1/audio/music` | POST | Text-to-music (optional) | `prompt`, `format` |
 | `/{provider}/v1/chat/completions` | POST | Provider-specific endpoint | `model` (no prefix) |
-| `/acore/models/load` | POST | Load a provider/model into the gateway runtime registry | `provider`, `model`, optional `base_url`, `timeout_s` |
-| `/acore/models/loaded` | GET | List currently loaded gateway runtimes | optional `provider`, `model` |
-| `/acore/models/unload` | POST | Unload a gateway runtime | `runtime_id` or `provider` + `model`, optional `base_url` |
+| `/acore/models/load` | POST | Load a task-specific provider/model runtime | optional `task` (`text_generation` default, `image_generation`, `tts`, `stt`), `provider`, `model`, `options`, `pin`, `base_url`, `timeout_s` |
+| `/acore/models/loaded` | GET | List currently loaded task-aware runtimes | optional `task`, `provider`, `model` |
+| `/acore/models/unload` | POST | Unload a task-specific runtime | `runtime_id` or `provider` + `model`, optional `task`, `base_url`, `options` |
 | `/acore/prompt_cache/*` | GET/POST | Prompt-cache control plane on a loaded gateway runtime or proxied AbstractEndpoint | `provider` + `model` or `base_url`, cache operation fields |
 | `/acore/blocs/*` | GET/POST | Memory-bloc / MLX bloc-KV control plane on a loaded gateway runtime or proxied AbstractEndpoint | local store by default, or `runtime_id` / `provider` + `model` / `base_url` as required |
+
+Runtime note: omitted `task` on `/acore/models/load` keeps the existing text-generation runtime behavior. Non-text tasks route to capability-owned residency where supported: `image_generation` uses the same server image backend cache as `/v1/images/*`, while `tts` and `stt` use the shared AbstractVoice capability core. `loaded_new` reports whether the load call created or warmed a new resident runtime; it is not a synonym for `resident`.
 
 ### Common Request Patterns
 

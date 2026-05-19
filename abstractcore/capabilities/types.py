@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Protocol, Union, runtime_checkable, TYPE_CHECKING
+from typing import Any, Dict, List, Mapping, Optional, Protocol, Union, runtime_checkable, TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover
     from ..core.types import GenerateResponse
@@ -38,6 +38,14 @@ class ArtifactStoreLike(Protocol):
 
 class VoiceCapability(Protocol):
     backend_id: str
+
+    def load_resident_model(self, request: Mapping[str, Any]) -> Mapping[str, Any]: ...
+
+    def list_loaded_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Mapping[str, Any]]: ...
+
+    def list_resident_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Mapping[str, Any]]: ...
+
+    def unload_resident_model(self, request: Mapping[str, Any]) -> Mapping[str, Any]: ...
 
     def list_profiles(self, *, kind: str = "tts") -> List[Dict[str, Any]]: ...
 
@@ -90,6 +98,14 @@ class VoiceCapability(Protocol):
 class AudioCapability(Protocol):
     backend_id: str
 
+    def load_resident_model(self, request: Mapping[str, Any]) -> Mapping[str, Any]: ...
+
+    def list_loaded_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Mapping[str, Any]]: ...
+
+    def list_resident_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Mapping[str, Any]]: ...
+
+    def unload_resident_model(self, request: Mapping[str, Any]) -> Mapping[str, Any]: ...
+
     def transcribe(
         self,
         audio: Union[bytes, ArtifactRef, str],
@@ -102,6 +118,14 @@ class AudioCapability(Protocol):
 
 class VisionCapability(Protocol):
     backend_id: str
+
+    def load_resident_model(self, request: Mapping[str, Any]) -> Mapping[str, Any]: ...
+
+    def list_loaded_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Mapping[str, Any]]: ...
+
+    def list_resident_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Mapping[str, Any]]: ...
+
+    def unload_resident_model(self, request: Mapping[str, Any]) -> Mapping[str, Any]: ...
 
     def list_provider_models(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]: ...
 

@@ -5,6 +5,7 @@ import pytest
 from abstractcore.core.types import GenerateResponse
 from abstractcore.providers.ollama_provider import OllamaProvider
 from abstractcore.providers.lmstudio_provider import LMStudioProvider
+from abstractcore.providers.mlx_provider import MLXProvider
 from abstractcore.providers.openai_provider import OpenAIProvider
 from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
 from abstractcore.providers.vllm_provider import VLLMProvider
@@ -316,6 +317,60 @@ def test_lmstudio_qwen3_6_thinking_off_sets_chat_template_enable_thinking_false(
 
     payload = captured["payload"]
     assert payload["chat_template_kwargs"]["enable_thinking"] is False
+
+
+def _make_unloaded_mlx_provider(model: str) -> MLXProvider:
+    provider = MLXProvider.__new__(MLXProvider)
+    BaseProvider.__init__(provider, model)
+    provider.provider = "mlx"
+    return provider
+
+
+def test_mlx_qwen_thinking_off_serializes_assistant_no_think_marker() -> None:
+    provider = _make_unloaded_mlx_provider("mlx-community/Qwen3.6-27B-4bit")
+
+    prompt, messages, system_prompt, kwargs, meta = provider._apply_thinking_request(
+        thinking="off",
+        prompt="Reply with exactly: OK",
+        messages=None,
+        system_prompt=None,
+        kwargs={},
+    )
+
+    assert kwargs["_acore_mlx_enable_thinking"] is False
+    assert meta is not None
+    assert meta["thinking_effective"] == "off"
+    assert meta["thinking_handled_enable_disable"] is True
+
+    rendered = provider._build_prompt(
+        prompt,
+        messages,
+        system_prompt,
+        tools=None,
+        enable_thinking=kwargs["_acore_mlx_enable_thinking"],
+    )
+    assert rendered.endswith("<|im_start|>assistant\n<think>\n\n</think>\n\n")
+    assert "/no_think" not in rendered
+
+
+def test_mlx_qwen_thinking_level_warns_and_degrades_to_enabled() -> None:
+    provider = _make_unloaded_mlx_provider("mlx-community/Qwen3.6-27B-4bit")
+
+    with pytest.warns(RuntimeWarning, match="cannot enforce effort scaling"):
+        _prompt, _messages, _system_prompt, kwargs, meta = provider._apply_thinking_request(
+            thinking="high",
+            prompt="Reply with exactly: OK",
+            messages=None,
+            system_prompt=None,
+            kwargs={},
+        )
+
+    assert kwargs["_acore_mlx_enable_thinking"] is True
+    assert meta is not None
+    assert meta["thinking_requested"] == "high"
+    assert meta["thinking_effective"] == "on"
+    assert meta["thinking_handled_enable_disable"] is True
+    assert meta["thinking_handled_level"] is False
 
 
 def test_lmstudio_seed_oss_thinking_high_sets_chat_template_thinking_budget(monkeypatch) -> None:

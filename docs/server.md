@@ -203,8 +203,6 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Vision Jobs | POST | `/v1/vision/jobs/images/edits` | Async image edit with polling | same form fields as `/v1/images/edits` |
 | Vision Jobs | GET | `/v1/vision/jobs/{job_id}` | Poll/consume async job state | path `job_id`, query `consume` |
 | Vision Models | GET | `/v1/vision/models` | Available AbstractVision model catalog | optional `task`, `provider`, `base_url`, `api_key` |
-| Vision Models | POST | `/v1/vision/model/load` | Load a local model into memory | `model_id` or `model` |
-| Vision Models | POST | `/v1/vision/model/unload` | Best-effort unload active local model | none |
 | Audio | POST | `/v1/audio/transcriptions` | Speech-to-text multipart endpoint | `file`, optional `provider`, `model`, `language`, `prompt`, `response_format`, `temperature`, `format`, `base_url` |
 | Audio | POST | `/{provider}/v1/audio/transcriptions` | Provider-scoped speech-to-text route where body model is unprefixed | path `provider`, optional `base_url`, STT form fields |
 | Audio | POST | `/v1/audio/speech` | Text-to-speech endpoint | `input`/`text`, optional `provider`, `model`, `voice`, `response_format`/`format`, `speed`, `instructions`, `profile`, `quality_preset`, `quality`, `base_url` |
@@ -213,9 +211,9 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Audio | POST | `/{provider}/v1/voice/clone` | Provider-scoped voice-clone route where body model is unprefixed | path `provider`, optional `base_url`, voice-clone form fields |
 | Audio | POST | `/v1/audio/translations` | Reserved OpenAI-compatible translation route | `file`, `model`; returns `501` in this version |
 | Audio | POST | `/v1/audio/music` | Extension endpoint for text-to-music plugins | `prompt`/`input`/`text`, `lyrics`, `format`; requires a music capability plugin |
-| Runtime | POST | `/acore/models/load` | Load and keep warm a gateway-local provider/model runtime | `provider`, `model`, optional `base_url`, `timeout_s` |
-| Runtime | GET | `/acore/models/loaded` | List gateway-local loaded runtimes | optional `provider`, `model` |
-| Runtime | POST | `/acore/models/unload` | Unload a gateway-local runtime | `runtime_id` or `provider` + `model`, optional `base_url` |
+| Runtime | POST | `/acore/models/load` | Load and keep warm a task-specific model runtime | optional `task` (`text_generation` default, `image_generation`, `tts`, `stt`), `provider`, `model`, `options`, `pin`, `base_url`, `timeout_s` |
+| Runtime | GET | `/acore/models/loaded` | List task-aware loaded runtimes | optional `task`, `provider`, `model` |
+| Runtime | POST | `/acore/models/unload` | Unload a task-specific runtime | `runtime_id` or `provider` + `model`, optional `task`, `base_url`, `options` |
 | Prompt Cache | GET | `/acore/prompt_cache/stats` | Cache stats on a loaded gateway runtime or upstream AbstractEndpoint | `provider` + `model` or `base_url`; provider key header if required |
 | Prompt Cache | GET | `/acore/prompt_cache/capabilities` | Cache capability discovery on a loaded gateway runtime or upstream AbstractEndpoint | `provider` + `model` or `base_url`; provider key header if required |
 | Prompt Cache | POST | `/acore/prompt_cache/set` | Select/create a cache key locally or upstream | `provider` + `model` or `base_url`, `key`, `make_default`, `ttl_s` |
@@ -590,13 +588,11 @@ curl -sS -X POST "$BASE/v1/images/generations" \
   -d '{"prompt":"a red fox in snow","width":512,"height":512,"response_format":"b64_json"}'
 ```
 
-Local vision model helper endpoints:
+Local vision model helper endpoint:
 
 | Endpoint | Purpose | Notes |
 |---|---|---|
 | `GET /v1/vision/models` | List available AbstractVision provider models. | Includes remote providers when their API key/base URL is configured and local models when they are present in known caches. |
-| `POST /v1/vision/model/load` | Preload a local model into memory. | JSON body accepts `model_id` or `model`; intended for local Diffusers/sdcpp backends, not remote proxy models. |
-| `POST /v1/vision/model/unload` | Best-effort unload of the active local model. | Frees memory when the backend supports unloading. |
 
 #### Audio (STT/TTS)
 
@@ -1375,11 +1371,24 @@ If you want the gateway itself to keep a local model warm, use:
 - `GET /acore/models/loaded`
 - `POST /acore/models/unload`
 
-`/acore/models/load` creates or reuses a gateway-local runtime keyed by
-`provider`, `model`, optional `base_url`, and the explicit provider-key
-override when one is supplied. Later `/v1/chat/completions` calls that target
-the same provider/model automatically reuse that warm runtime instead of
-creating a fresh provider instance per request.
+`/acore/models/load` creates or reuses a task-specific runtime. Omitted `task`
+keeps the existing text behavior, keyed by `provider`, `model`, optional
+`base_url`, and the explicit provider-key override when one is supplied. Later
+`/v1/chat/completions` calls that target the same provider/model automatically
+reuse that warm runtime instead of creating a fresh provider instance per
+request.
+
+For non-text tasks, the same route delegates to capability-owned residency:
+`image_generation` reuses the server's `/v1/images/*` AbstractVision backend
+cache, while `tts` and `stt` delegate through the shared AbstractVoice
+capability core when the selected plugin exposes residency hooks. Remote
+OpenAI-compatible image/audio providers are reported as configured rather than
+locally resident unless the upstream exposes a real loaded-state signal.
+
+`loaded_new` is an event signal for the load call, not a synonym for
+`resident`. For capability-backed tasks it is true only when the backend reports
+or clearly implies that this request created or warmed a new resident model.
+Already-resident models should return `loaded_new=false`.
 
 ### Prompt Cache Control Plane
 

@@ -44,6 +44,8 @@ def test_core_endpoint_tags_are_documentation_friendly():
     assert schema["paths"]["/v1/vision/providers/"]["get"]["tags"] == ["vision"]
     assert "/v1/vision/provider_models" not in schema["paths"]
     assert "/v1/vision/model" not in schema["paths"]
+    assert "/v1/vision/model/load" not in schema["paths"]
+    assert "/v1/vision/model/unload" not in schema["paths"]
     assert schema["paths"]["/v1/responses"]["post"]["tags"] == ["responses"]
     assert schema["paths"]["/acore/models/loaded"]["get"]["tags"] == ["runtime"]
     assert schema["paths"]["/acore/models/load"]["post"]["tags"] == ["runtime"]

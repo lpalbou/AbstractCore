@@ -77,7 +77,8 @@ The multi-provider gateway `abstractcore.server.app` now exposes two modes:
 Important boundary:
 
 - the durable artifact is bloc-only
-- in direct gateway mode, loaded cache keys live on the loaded gateway runtime selected by `provider` + `model`
-- `runtime_id` from `/acore/models/load` is the most precise selector when multiple warm runtimes share the same `provider` + `model`
+- in direct gateway mode, text loaded cache keys live on the loaded gateway runtime selected by `provider` + `model`
+- `/acore/models/load` is task-aware; omitted `task` keeps the text runtime behavior used by bloc-KV, while `image_generation`, `tts`, and `stt` route to capability residency where supported
+- `runtime_id` from `/acore/models/load` is the most precise selector when multiple warm runtimes share the same `task` + `provider` + `model`
 - in proxy mode, loaded cache keys live on the upstream endpoint worker/provider instance
 - `/acore/blocs/kv/load` returns `artifact.key`; use that value as `prompt_cache_key` on the next chat call

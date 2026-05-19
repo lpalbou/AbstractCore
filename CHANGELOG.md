@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.18] - 2026-05-19
+
+### Added
+- **Task-aware model residency**: generalized `/acore/models/load`, `/acore/models/loaded`, and `/acore/models/unload` into a single residency control plane for `text_generation`, `image_generation`, `tts`, and `stt`, while keeping omitted `task` backward-compatible with existing text-generation runtime loading.
+- **Capability residency facade methods**: exposed optional Python residency hooks on `llm.vision`, `llm.voice`, and `llm.audio`: `load_resident_model(...)`, `list_loaded_models(...)`, `list_resident_models(...)`, and `unload_resident_model(...)`.
+- **Developer message compatibility**: server chat requests now accept OpenAI-style `developer` messages, preserving them for OpenAI and normalizing them for providers that only support system/user/assistant/tool roles.
+
+### Changed
+- **Server image residency reuse**: image residency now uses the same server backend cache as `/v1/images/*`, calls backend preload/unload hooks when available, clears residency records on cache eviction, and reports remote OpenAI-compatible image providers as `configured` rather than locally resident.
+- **Voice/audio residency routing**: `task=tts` and `task=stt` now route through the shared AbstractVoice-backed capability core used by speech and transcription endpoints, so Core owns the stable control-plane contract while AbstractVoice owns model-specific warmup semantics.
+- **Model residency contract**: `loaded_new` is now treated as a load-call event signal, not a `resident` alias. Capability-backed loads return `loaded_new=true` only when the backend explicitly reports or clearly implies that the call created or warmed a new resident model.
+- **Runtime documentation and backlog status**: documented task-aware residency in the server docs, server module README, memory-bloc docs, and moved the residency proposal to completed with an implementation report.
+
+### Fixed
+- **MLX Qwen no-thinking control**: `thinking="off"` for Qwen-family MLX models now serializes the Qwen no-thinking assistant prefill so models such as Qwen3.6 stop emitting visible `<think>` content when reasoning is disabled.
+
+### Removed
+- **Vision-specific model control endpoints**: removed the public `/v1/vision/model/load` and `/v1/vision/model/unload` endpoints from the server surface and OpenAPI docs now that `/acore/models/*` is the stable model residency API.
+
 ## [2.13.17] - 2026-05-19
 
 ### Added
