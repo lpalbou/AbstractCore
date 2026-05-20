@@ -113,6 +113,11 @@ print(caps.to_dict())
     tensor-list hybrid state, and Mamba-style tensor state when the Transformers cache class is
     constructible from model config. Other custom cache classes fail explicitly until an adapter is
     added.
+  - Quantized transformers checkpoints such as AWQ, GPTQ, or compressed-tensors variants are
+    runtime-gated. They must load correctly under the installed Transformers stack before
+    AbstractCore can make any durable-bloc claim. Loader diagnostics such as missing base weights,
+    unexpected packed weights, or nonsense output on a trivial prompt mean the target is
+    unsupported for validation until the quantization runtime is fixed.
   - Limitations: enabled only for standard text-generation models (decoder-only); vision/custom transformer backends do not currently expose prompt caching. There is no universal HuggingFace KV tensor format.
 - **HuggingFace GGUF** (`HuggingFaceProvider` with llama.cpp): always supports keyed in-process RAM caches (`LlamaRAMCache`), and reports `mode=local_control_plane` when AbstractCore can render the model's llama.cpp chat format exactly for cache reuse.
   - Current exact renderers: `chatml-function-calling`, `llama-3`, and Gemma4 `gemma_turn` through llama.cpp's model chat template.
@@ -326,6 +331,11 @@ Gateway/operator note:
 - Durable bloc artifacts are exact-prefix artifacts, not composable KV blocks. Do not merge
   independent cache artifacts or treat them as the durable source of truth; the bloc text remains
   primary.
+- HF transformers durable artifacts depend on a correctly loaded model. Optional quantization
+  runtimes are not installed by default because they can carry platform-specific kernels or
+  incompatible dependency pins. Prefer a trusted, already-supported model/runtime pair for
+  validation, and treat third-party quantized checkpoints as unsupported until a clean load and
+  semantic smoke test pass.
 - Many remote OpenAI-compatible backends ignore unknown fields or differ in cache semantics; treat `prompt_cache_key` as best-effort.
 - GGUF / llama.cpp: if you see crashes with Metal/MPS acceleration, force CPU for stability:
   - per-call/provider init: `create_llm("huggingface", ..., device="cpu", n_gpu_layers=0, ...)`

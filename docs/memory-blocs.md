@@ -90,6 +90,10 @@ The public API shape is shared. Provider internals and artifact formats remain b
   reconstruct. Current coverage includes standard `DynamicCache` layer state, Qwen3.5/Qwen3Next
   tensor-list hybrid state, and Mamba-style tensor state when the Transformers cache class can be
   constructed from model config.
+  Quantized transformers checkpoints such as AWQ, GPTQ, or compressed-tensors variants are only
+  supported when the installed Transformers stack can load that quantization family correctly. If
+  model loading reports missing base weights, unexpected packed weights, or trivial generation
+  fails, the model is not a valid durable-bloc proof target even if the cache API is available.
 - **HuggingFace GGUF**: `.npz`, gated on exact cached prompt renderers. Current exact renderer
   paths are `chatml-function-calling`, `llama-3`, and Gemma4 `gemma_turn` via llama.cpp chat
   templates; other GGUF chat formats remain keyed-only.

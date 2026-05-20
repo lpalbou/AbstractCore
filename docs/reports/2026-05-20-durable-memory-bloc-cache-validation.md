@@ -69,14 +69,12 @@ and produced strict-correct uncached and cached answers.
 | Gemma4 26B-A4B MLX 4-bit | `/Users/albou/.lmstudio/models/mlx-community/gemma-4-26b-a4b-4bit` | `abstractcore-mlx-prompt-cache/v1`, 287,772,618 bytes | 3,811 | 4.1853s | 0.2944s | 14.22x | 0.1138s | 5.5687s | 1.8616s | strict |
 | Gemma4 31B MLX MXFP4 | `/Users/albou/.lmstudio/models/mlx-community/gemma-4-31b-mxfp4` | `abstractcore-mlx-prompt-cache/v1`, 1,151,073,453 bytes | 3,811 | 20.0017s | 0.5807s | 34.44x | 0.6033s | 29.1899s | 4.3598s | strict |
 
-Gemma4 GGUF initially failed with local `llama_cpp==0.3.19`. After upgrading the environment to the
-package-declared requirement (`llama-cpp-python>=0.3.23,<1.0.0`) and adding Gemma4
-`gemma_turn`/chat-template exact rendering, the Gemma4 GGUF checks passed.
+Gemma4 GGUF checks require `llama-cpp-python>=0.3.23,<1.0.0`, matching AbstractCore's package
+requirement. Gemma4 exact rendering uses the model's llama.cpp chat template.
 
-The earlier Gemma4 MLX token count of 1,024 was bad observability, not the full cache length.
-Gemma4 MLX uses hybrid rotating and full KV cache layers; the first rotating layer reports the local
-window size, while later/full layers expose the effective offset. AbstractCore now reports the
-maximum layer offset/size for MLX cache token counts.
+Gemma4 MLX uses hybrid rotating and full KV cache layers. AbstractCore reports the effective cached
+prefix length from provider cache state, so the reported token count reflects the usable durable
+prefix rather than one individual layer's local window.
 
 For GGUF, cached generation metadata confirmed actual durable-prefix use:
 
@@ -107,11 +105,11 @@ The 4B baseline models are not quantization-equivalent:
 - HF GGUF used `Qwen3-4B-Instruct-2507-Q4_K_M.gguf`, a 2.33 GiB Q4_K_M llama.cpp artifact.
 - HF transformers used `Qwen/Qwen3.5-4B`, whose local safetensors payload is 8.68 GiB and is not the
   same 4-bit model family/runtime as the MLX and GGUF checks.
+  This report does not include a Q4-equivalent HF transformers proof.
 
-The three-run average no longer shows the earlier single-run HF-transformers processing result as a
-stable problem. HF transformers processed the full bloc in 1.51s and the cached suffix in 0.18s,
-for an 8.26x processing-only speedup. Its slower total generation numbers are decode/runtime
-throughput, not failed durable-prefix reuse.
+The three-run average shows HF transformers processing the full bloc in 1.51s and the cached suffix
+in 0.18s, for an 8.26x processing-only speedup. Its slower total generation numbers are
+decode/runtime throughput, not failed durable-prefix reuse.
 
 ## Compatibility Notes
 
@@ -119,6 +117,9 @@ throughput, not failed durable-prefix reuse.
 - HF transformers uses provider-native `Cache` objects persisted in `.safetensors`; current
   coverage includes standard `DynamicCache` layer state, Qwen3.5/Qwen3Next-style tensor-list hybrid
   state, and Mamba-style tensor state when the cache class can be constructed from model config.
+- Quantized HF transformers checkpoints require their quantization runtime to load the model
+  correctly before durable-bloc behavior can be validated. Missing base weights, unexpected packed
+  weights, or incorrect trivial generation invalidate the model as a proof target.
 - HF GGUF uses llama.cpp state snapshots in `.npz` and is exact-renderer gated. Current exact
   renderers are `chatml-function-calling`, `llama-3`, and Gemma4 `gemma_turn` through llama.cpp's
   model chat template.

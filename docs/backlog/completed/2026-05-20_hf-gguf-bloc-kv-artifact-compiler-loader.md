@@ -16,7 +16,8 @@ HuggingFace GGUF already has useful prompt-cache support, but it is narrower tha
 - keyed in-process cache support is broadly available
 - local prompt-cache control-plane support exists only when AbstractCore can render the active
   llama.cpp chat format exactly
-- current exact renderers are `chatml-function-calling` and `llama-3`
+- current exact renderers are `chatml-function-calling`, `llama-3`, and Gemma4 `gemma_turn` through
+  llama.cpp chat templates
 - unsupported chat formats must remain keyed-only
 
 That is still enough to add durable exact bloc artifacts for supported GGUF paths, as long as the
@@ -126,7 +127,8 @@ Extend `abstractcore.core.bloc_kv` with a backend adapter for supported GGUF pat
 
 - Unit tests with a lightweight/fake GGUF provider proving compile, manifest validation, load,
   reload-on-miss, fork, replacement, cleanup, and default-key preservation.
-- Tests for supported exact renderers: `chatml-function-calling` and `llama-3`.
+- Tests for supported exact renderers: `chatml-function-calling`, `llama-3`, and Gemma4
+  `gemma_turn`.
 - Negative tests for unsupported GGUF chat formats remaining keyed-only.
 - Server tests for `/acore/blocs/kv/ensure`, `/acore/blocs/kv/load`, and strict binding on a loaded
   GGUF runtime.
@@ -141,6 +143,7 @@ Extend `abstractcore.core.bloc_kv` with a backend adapter for supported GGUF pat
 - [x] Add binding metadata propagation.
 - [x] Add Python and server tests.
 - [x] Update docs and examples.
+- [x] Add Gemma4 chat-template exact rendering support.
 
 ## Guidance for the implementing agent
 
@@ -157,8 +160,9 @@ Summary:
   `ensure_bloc_kv_artifact(...)` / `load_bloc_kv_artifact(...)` flow.
 - Added provider render metadata for `hf-gguf`, provider artifact format
   `abstractcore-gguf-prompt-cache/v1`, and `.npz` artifact selection.
-- Preserved exact-renderer gating: only `chatml-function-calling` and `llama-3` local-control-plane
-  paths expose durable exact artifacts; other GGUF chat formats remain keyed-only.
+- Preserved exact-renderer gating: only `chatml-function-calling`, `llama-3`, and Gemma4
+  `gemma_turn` local-control-plane paths expose durable exact artifacts; other GGUF chat formats
+  remain keyed-only.
 - Fixed cached generation to treat the loaded GGUF bloc cache as the prefix source-of-truth, then
   append the live suffix. This prevents false-positive speedups where the cache object is attached
   but the request is actually question-only.
@@ -168,7 +172,7 @@ Summary:
   validation, load/reload/fork behavior, and request-time binding.
 
 Validation:
-- `pytest -q` -> `1409 passed, 243 skipped`.
+- `pytest -q` -> `1422 passed, 243 skipped, 106 warnings`.
 - Focused: `pytest -q tests/test_bloc_kv.py tests/huggingface/test_gguf_prompt_cache_control_plane.py`.
 - Earlier lightweight smoke proof with local Qwen3 0.6B GGUF Q4_K_M on CPU: local-control-plane
   capability, exact renderer `chatml-function-calling`, `.npz` artifact, backend `hf-gguf`,
@@ -177,12 +181,15 @@ Validation:
 - Updated focused validation: `pytest -q tests/huggingface/test_gguf_prompt_cache_control_plane.py`
   -> 11 passed.
 - Real-provider 4B proof with local `unsloth/Qwen3-4B-Instruct-2507-GGUF` Q4_K_M:
-  `.npz` artifact, backend `hf-gguf`, 490,639,611-byte artifact, 3,642 cached bloc tokens,
-  binding validation, correct uncached and cached answers, full prompt processing 1.3672s,
-  cached suffix processing 0.1686s, processing-phase speedup 8.1091x.
+  `.npz` artifact, backend `hf-gguf`, 490,639,617-byte artifact, 3,642 cached bloc tokens,
+  binding validation, strict-correct uncached and cached answers over three isolated runs, average
+  full prompt processing 1.5457s, average cached suffix processing 0.1645s, processing-phase
+  speedup 9.39x.
 - Cached-generation metadata confirmed actual durable-prefix use:
   `prompt_cache_prefix_source=loaded_cache`, `prompt_cache_prefix_token_count=3642`,
   `prompt_cache_suffix_token_count=44`.
+- Additional Gemma4 GGUF proofs covered E4B, 26B-A4B, and 31B Q4_K_M local models with
+  strict-correct cached answers and processing-phase speedups from 5.39x to 14.85x.
 - Detailed local proof: `docs/reports/2026-05-20-durable-memory-bloc-cache-validation.md`.
 
 Residual risks:

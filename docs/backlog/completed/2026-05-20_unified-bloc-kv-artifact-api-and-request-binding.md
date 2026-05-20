@@ -216,7 +216,7 @@ Files and symbols touched:
 - `docs/endpoint.md`
 
 Validation:
-- `pytest -q` -> `1409 passed, 243 skipped`.
+- `pytest -q` -> `1422 passed, 243 skipped, 106 warnings`.
 - Focused contract tests: `tests/test_bloc_kv.py`, `tests/test_bloc_kv_endpoint.py`, and
   `tests/server/test_server_loaded_runtime_control_plane.py`.
 - Prompt-cache regression suites: `tests/test_prompt_cache_control_plane.py`,
@@ -225,14 +225,20 @@ Validation:
   `tests/huggingface/test_gguf_prompt_cache_control_plane.py`, and related server proxy tests.
 - Real-provider smoke proofs ran one model at a time:
   - MLX `mlx-community/Qwen3-4B-Instruct-2507-4bit`: `.safetensors`, backend `mlx`, artifact
-    536,600,383 bytes, binding validated, correct cached answer, full prompt processing 0.9061s,
-    cached suffix processing 0.1422s.
+    536,600,383 bytes, binding validated, strict-correct uncached and cached answers over three
+    isolated runs, average full prompt processing 0.6796s, average cached suffix processing
+    0.1144s, processing-phase speedup 5.96x.
   - HuggingFace transformers `Qwen/Qwen3.5-4B`: `.safetensors`, backend `hf-transformers`,
-    artifact 173,923,172 bytes, binding validated, correct cached answer, full prompt processing
-    2.5437s, cached suffix processing 0.8196s.
+    artifact 173,923,172 bytes, binding validated, strict-correct uncached and cached answers over
+    three isolated runs, average full prompt processing 1.5133s, average cached suffix processing
+    0.1840s, processing-phase speedup 8.26x.
   - HuggingFace GGUF `unsloth/Qwen3-4B-Instruct-2507-GGUF` Q4_K_M: `.npz`, backend `hf-gguf`,
-    artifact 490,639,611 bytes, binding validated, correct cached answer, full prompt processing
-    1.3672s, cached suffix processing 0.1686s.
+    artifact 490,639,617 bytes, binding validated, strict-correct uncached and cached answers over
+    three isolated runs, average full prompt processing 1.5457s, average cached suffix processing
+    0.1645s, processing-phase speedup 9.39x.
+- Additional real-provider proofs covered Qwen3.6 27B GGUF Q4_K_M, Qwen3.5 27B MLX 4-bit,
+  Gemma4 GGUF Q4_K_M variants, and Gemma4 MLX quantized variants with strict-correct cached
+  answers.
 - Detailed local proof: `docs/reports/2026-05-20-durable-memory-bloc-cache-validation.md`.
 
 Residual risks and follow-ups:

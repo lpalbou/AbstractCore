@@ -168,7 +168,7 @@ Summary:
   validation, load/reload/fork behavior, and request-time binding.
 
 Validation:
-- `pytest -q` -> `1409 passed, 243 skipped`.
+- `pytest -q` -> `1422 passed, 243 skipped, 106 warnings`.
 - Focused: `pytest -q tests/test_bloc_kv.py tests/huggingface/test_transformers_prompt_cache_control_plane_unit.py`.
 - Earlier lightweight smoke proof with `sshleifer/tiny-gpt2` on CPU: local-control-plane capability,
   `.safetensors` artifact, backend `hf-transformers`, 4,668-byte artifact, binding validation, and
@@ -177,8 +177,8 @@ Validation:
   -> 6 passed.
 - Real-provider 4B proof with `Qwen/Qwen3.5-4B`: `.safetensors` artifact, backend
   `hf-transformers`, 173,923,172-byte artifact, 3,723 cached bloc tokens, binding validation,
-  correct uncached and cached answers, full prompt processing 2.5437s, cached suffix processing
-  0.8196s, processing-phase speedup 3.1036x.
+  strict-correct uncached and cached answers over three isolated runs, average full prompt
+  processing 1.5133s, average cached suffix processing 0.1840s, processing-phase speedup 8.26x.
 - Detailed local proof: `docs/reports/2026-05-20-durable-memory-bloc-cache-validation.md`.
 
 Residual risks:
@@ -186,4 +186,7 @@ Residual risks:
   save/load are supported. Vision/custom transformer paths remain out of scope.
 - There is no universal HuggingFace KV tensor format. New model-specific cache families may need a
   small provider-native adapter before durable artifacts can be promised.
+- The completed benchmark used the full `Qwen/Qwen3.5-4B` transformers repository, not a
+  quantization-equivalent 4-bit transformers artifact. A Q4-compatible transformers proof should be
+  recorded separately when a loadable local runtime target is available.
 - Real model proof depends on a locally cached model and is intentionally not default CI.
