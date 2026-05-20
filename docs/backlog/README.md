@@ -1,10 +1,13 @@
-# Backlog (migrated)
+# Backlog
 
-The AbstractCore package backlog has been migrated to the centralized framework backlog:
+Use [overview.md](overview.md) as the canonical entry point for package planning status.
+
+Backlog state directories:
 
 - Planned: `docs/backlog/planned/`
+- Proposed: `docs/backlog/proposed/`
 - Completed: `docs/backlog/completed/`
 
-Rationale: the centralized backlog provides a single naming convention, a shared task template, and global prioritization across packages.
-
+The backlog is planning memory, not code truth. Inspect the repository before writing or
+implementing against any item.
 

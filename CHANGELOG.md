@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.21] - 2026-05-20
+
+### Added
+- **ADR baseline**: added an accepted ADR set covering engineering guardrails, validation/evidence, provider and capability ownership boundaries, server trust boundaries, source-first fixes, and the planned text-generation adapter lifecycle contract.
+- **Prompt-cache research backlog**: recorded narrower proposed backlog items for exact-prefix memory-cluster recipes, external cache-binding semantics, and transformers/GGUF parity boundaries so future cache work starts from current code reality instead of stale assumptions.
+
+### Changed
+- **Loaded-runtime execution model**: gateway-loaded local runtimes now route prompt-cache control-plane calls, bloc-KV ensure/load operations, and chat generation through one stable provider worker thread, while streaming responses bridge out through an unbounded queue instead of tying provider progress to client drain speed.
+- **Planning and docs ownership**: the package backlog now points to `docs/backlog/overview.md` as the canonical planning entry point, the old ad hoc `docs/KnowledgeBase.md` was retired in favor of ADR-backed durable policy, and the adapter example docs now describe the current vLLM lifecycle reality without claiming portable `model=` hot-switching.
+
+### Fixed
+- **Loaded-runtime thread affinity**: resident local runtimes no longer risk wedging when streaming cleanup happens on a different ASGI worker thread, and thread-affine local prompt-cache/bloc reuse paths now stay on the same provider thread across save/load/update/generate operations.
+
 ## [2.13.20] - 2026-05-20
 
 ### Added

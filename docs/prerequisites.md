@@ -541,9 +541,21 @@ response = llm.generate(
 llm.load_adapter("sql-expert", "/models/adapters/sql-lora")
 llm.load_adapter("react-dev", "/models/adapters/react-lora")
 
-# Route to specialized adapter
-response = llm.generate("Write SQL query", model="sql-expert")
+# Inspect currently loaded adapters
+loaded_adapters = llm.list_adapters()
+print(loaded_adapters)
 ```
+
+Current status:
+
+- adapter load/unload/list is available on the `vllm` provider;
+- AbstractCore does not yet define a portable request-time `adapter=...` contract for text
+  generation;
+- do not rely on `llm.generate(..., model="sql-expert")` as shared Core behavior until
+  `docs/backlog/planned/2026-05-04_unified-lora-adapter-serving.md` lands.
+
+Some vLLM deployments may surface loaded adapters as model ids on `/v1/models`, but AbstractCore
+does not currently normalize that behavior across providers or across its own loaded-runtime path.
 
 **Beam Search** (higher accuracy for complex tasks):
 ```python
