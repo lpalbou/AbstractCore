@@ -22,7 +22,6 @@ import base64
 import hashlib
 import json
 import os
-import platform
 import shlex
 import time
 import threading
@@ -36,6 +35,7 @@ import httpx
 from fastapi import APIRouter, Body, File, Form, HTTPException, Path as FastAPIPath, Query, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ..capabilities import vision_catalog as _vision_catalog
 from ..capabilities.errors import CapabilityUnavailableError
 from .capability_generation import ServerVisionFacade, create_capability_generation_core
 
@@ -1444,297 +1444,6 @@ def _effective_backend_kind(request_model: Any) -> str:
     return env_kind
 
 
-def _default_hf_hub_cache_dirs() -> list[Path]:
-    dirs: list[str] = []
-    # Explicit overrides.
-    for k in ("HF_HUB_CACHE", "HF_HUB_CACHE_DIR", "ABSTRACTCORE_VISION_HF_HUB_CACHE", "ABSTRACTVISION_HF_HUB_CACHE"):
-        v = _env(k)
-        if v:
-            dirs.append(v)
-
-    # HF_HOME implies <HF_HOME>/hub.
-    hf_home = _env("HF_HOME")
-    if hf_home:
-        dirs.append(str(Path(hf_home).expanduser() / "hub"))
-
-    # Other common env vars used by Transformers/Diffusers. These may or may not be hub-style dirs.
-    for k in ("TRANSFORMERS_CACHE", "DIFFUSERS_CACHE"):
-        v = _env(k)
-        if v:
-            dirs.append(v)
-
-    # Default from huggingface_hub if available.
-    try:
-        from huggingface_hub.constants import HF_HUB_CACHE  # type: ignore
-
-        dirs.append(str(HF_HUB_CACHE))
-    except Exception:
-        # Fallback: common default.
-        dirs.append(str(Path.home() / ".cache" / "huggingface" / "hub"))
-
-    for root in _framework_candidate_roots():
-        dirs.append(str(root / "runtime" / "hf-hub"))
-        quarantine = root / "runtime" / "model-quarantine"
-        try:
-            if quarantine.is_dir():
-                dirs.extend(str(path / "hf-hub") for path in quarantine.iterdir() if path.is_dir())
-        except Exception:
-            pass
-
-    out: list[Path] = []
-    seen: set[str] = set()
-    for d in dirs:
-        p = Path(d).expanduser()
-        key = str(p)
-        if key in seen:
-            continue
-        seen.add(key)
-        if p.is_dir():
-            out.append(p)
-    return out
-
-
-def _framework_candidate_roots() -> list[Path]:
-    roots: list[Path] = []
-    for candidate in [Path.cwd(), *Path(__file__).resolve().parents]:
-        try:
-            root = candidate.expanduser().resolve()
-        except Exception:
-            continue
-        if root not in roots:
-            roots.append(root)
-        if (root / "runtime").is_dir() or (root / "untracked").is_dir():
-            parent = root.parent
-            if parent not in roots:
-                roots.append(parent)
-    return roots[:16]
-
-
-def _default_local_diffusers_model_dirs() -> list[Path]:
-    dirs: list[str] = []
-    for k in (
-        "ABSTRACTCORE_VISION_MODELS_DIR",
-        "ABSTRACTCORE_VISION_MODEL_DIR",
-        "ABSTRACTVISION_MODELS_DIR",
-        "ABSTRACTVISION_MODEL_DIR",
-    ):
-        v = _env(k)
-        if v:
-            dirs.append(v)
-    for root in _framework_candidate_roots():
-        dirs.append(str(root / "untracked" / "models" / "abstractvision"))
-        dirs.append(str(root / "runtime" / "models" / "abstractvision"))
-        quarantine = root / "runtime" / "model-quarantine"
-        try:
-            if quarantine.is_dir():
-                dirs.extend(str(path / "models") for path in quarantine.iterdir() if path.is_dir())
-        except Exception:
-            pass
-    out: list[Path] = []
-    seen: set[str] = set()
-    for d in dirs:
-        p = Path(d).expanduser()
-        key = str(p)
-        if key in seen:
-            continue
-        seen.add(key)
-        if p.is_dir():
-            out.append(p)
-    return out
-
-
-_DIFFUSERS_NON_IMAGE_TOKENS = (
-    "acestep",
-    "ace_step",
-    "audio",
-    "music",
-    "sound",
-    "speech",
-    "spectrogram",
-    "mel",
-    "oobleck",
-    "audioldm",
-    "stableaudio",
-    "stable_audio",
-    "musicldm",
-)
-
-_DIFFUSERS_IMAGE_PIPELINE_TOKENS = (
-    "image",
-    "stable",
-    "flux",
-    "qwenimage",
-    "qwen_image",
-    "qwen-image",
-    "pixart",
-    "kolors",
-    "kandinsky",
-    "wuerstchen",
-    "deepfloyd",
-    "paint",
-    "controlnet",
-    "consistency",
-    "unclip",
-    "hunyuandit",
-    "hunyuan",
-    "lumina",
-    "sana",
-    "chroma",
-    "omnigen",
-    "hidream",
-    "cogview",
-    "zimage",
-    "z-image",
-)
-
-
-def _diffusers_model_index_supports_image(model_index: Path, *, model_id: Optional[str] = None) -> bool:
-    try:
-        data = json.loads(model_index.read_text(encoding="utf-8"))
-    except Exception:
-        return False
-    if not isinstance(data, dict):
-        return False
-
-    class_name = str(data.get("_class_name") or "").strip().lower()
-    model_s = str(model_id or model_index.parent.name or "").strip().lower()
-    try:
-        blob = json.dumps(data, sort_keys=True).lower()
-    except Exception:
-        blob = class_name
-
-    for token in _DIFFUSERS_NON_IMAGE_TOKENS:
-        if token in class_name or token in model_s or token in blob:
-            return False
-    return any(token in class_name or token in model_s for token in _DIFFUSERS_IMAGE_PIPELINE_TOKENS)
-
-
-def _hf_snapshot_model_indexes(folder: Path) -> list[Path]:
-    snapshots = folder / "snapshots"
-    try:
-        if not snapshots.is_dir():
-            return []
-        return [snap.joinpath("model_index.json") for snap in snapshots.iterdir() if snap.is_dir() and snap.joinpath("model_index.json").exists()]
-    except Exception:
-        return []
-
-
-def _is_hf_model_cached(model_id: str, cache_dirs: list[Path]) -> bool:
-    s = str(model_id or "").strip()
-    if "/" not in s:
-        return False
-    # HF hub cache uses folder names like: models--org--name
-    folder = "models--" + s.replace("/", "--")
-    for base in cache_dirs:
-        cached = base / folder
-        for model_index in _hf_snapshot_model_indexes(cached):
-            if _diffusers_model_index_supports_image(model_index, model_id=s):
-                return True
-    return False
-
-
-def _discover_cached_hf_diffusers_models(cache_dirs: list[Path]) -> list[str]:
-    """Discover complete local Hugging Face diffusers repos from hub cache folders.
-
-    We only list repos with a cached ``model_index.json`` snapshot because those
-    are the ones the diffusers backend can plausibly load without guessing.
-    Partial refs/blobs-only cache entries are intentionally excluded.
-    """
-    out: list[str] = []
-    seen: set[str] = set()
-    for base in cache_dirs:
-        try:
-            candidates = list(base.glob("models--*"))
-        except Exception:
-            continue
-        for folder in candidates:
-            name = folder.name
-            if not name.startswith("models--"):
-                continue
-            model_id = name[len("models--") :].replace("--", "/")
-            if "/" not in model_id or model_id in seen:
-                continue
-            if not any(_diffusers_model_index_supports_image(path, model_id=model_id) for path in _hf_snapshot_model_indexes(folder)):
-                continue
-            seen.add(model_id)
-            out.append(model_id)
-    return sorted(out)
-
-
-def _discover_local_diffusers_models(model_dirs: list[Path]) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-    for base in model_dirs:
-        try:
-            model_indexes = list(base.rglob("model_index.json"))
-        except Exception:
-            continue
-        for model_index in model_indexes:
-            if not _diffusers_model_index_supports_image(model_index):
-                continue
-            folder = model_index.parent
-            name = folder.name
-            if "__" in name:
-                model_id = name.replace("__", "/")
-            else:
-                model_id = str(folder)
-            if not model_id or model_id in seen:
-                continue
-            seen.add(model_id)
-            out.append(model_id)
-    return sorted(out)
-
-
-def _default_lmstudio_model_dirs() -> list[Path]:
-    dirs: list[str] = []
-    for k in ("LMSTUDIO_MODELS_DIR", "LMSTUDIO_MODEL_DIR", "LM_STUDIO_MODELS_DIR"):
-        v = _env(k)
-        if v:
-            dirs.append(v)
-
-    sysname = platform.system().lower()
-    home = Path.home()
-    if sysname == "darwin":
-        dirs.append(str(home / "Library" / "Application Support" / "LM Studio" / "models"))
-    elif sysname == "linux":
-        dirs.append(str(home / ".cache" / "lm-studio" / "models"))
-        dirs.append(str(home / ".cache" / "lmstudio" / "models"))
-    elif sysname == "windows":
-        local = os.getenv("LOCALAPPDATA") or ""
-        roaming = os.getenv("APPDATA") or ""
-        if local:
-            dirs.append(str(Path(local) / "LM Studio" / "models"))
-        if roaming:
-            dirs.append(str(Path(roaming) / "LM Studio" / "models"))
-
-    out: list[Path] = []
-    seen: set[str] = set()
-    for d in dirs:
-        p = Path(d).expanduser()
-        key = str(p)
-        if key in seen:
-            continue
-        seen.add(key)
-        if p.is_dir():
-            out.append(p)
-    return out
-
-
-def _is_lmstudio_model_cached(model_id: str, cache_dirs: list[Path]) -> bool:
-    s = str(model_id or "").strip()
-    if "/" not in s:
-        return False
-    org, name = s.split("/", 1)
-    for base in cache_dirs:
-        p = base / org / name
-        try:
-            if p.is_dir() and any(p.iterdir()):
-                return True
-        except Exception:
-            continue
-    return False
-
-
 def _require_upstream_base_url() -> str:
     base_url = _upstream_base_url_env()
     if not base_url:
@@ -2244,17 +1953,6 @@ def _first_generated_image_bytes(result: Any) -> bytes:
     return bytes(data)
 
 
-def _import_registry() -> Any:
-    try:
-        from abstractvision import VisionModelCapabilitiesRegistry  # type: ignore
-    except Exception as e:  # pragma: no cover
-        raise HTTPException(
-            status_code=501,
-            detail="AbstractVision is required for vision model registry endpoints. Install `abstractvision`.",
-        ) from e
-    return VisionModelCapabilitiesRegistry
-
-
 def _vision_catalog_error(exc: Exception) -> HTTPException:
     detail = {
         "available": False,
@@ -2432,6 +2130,7 @@ async def _vision_provider_catalog(
     task: Optional[str],
     base_url: Optional[str],
     api_key: Optional[str],
+    local_catalog: Optional[Dict[str, Any]] = None,
 ) -> tuple[Optional[Any], Dict[str, Any], list[Dict[str, Any]], Optional[Exception]]:
     catalog_error: Optional[Exception] = None
     core = None
@@ -2454,7 +2153,8 @@ async def _vision_provider_catalog(
         catalog_error = e
 
     try:
-        cached_models = _cached_vision_provider_model_entries(await _local_vision_model_catalog(), task)
+        cached_catalog = dict(local_catalog) if isinstance(local_catalog, dict) else await _local_vision_model_catalog()
+        cached_models = _cached_vision_provider_model_entries(cached_catalog, task)
     except Exception:
         cached_models = []
     configured_models = _configured_vision_provider_model_entries(task)
@@ -2641,102 +2341,10 @@ async def list_vision_provider_models(
 
 
 async def _local_vision_model_catalog() -> Dict[str, Any]:
-    """List vision models from the AbstractVision registry that are present in local caches."""
-    hf_dirs = _default_hf_hub_cache_dirs()
-    local_diffusers_dirs = _default_local_diffusers_model_dirs()
-    lms_dirs = _default_lmstudio_model_dirs()
-    try:
-        VisionModelCapabilitiesRegistry = _import_registry()
-        reg = VisionModelCapabilitiesRegistry()
-    except HTTPException as exc:
-        return {
-            "models": [],
-            "registry_available": False,
-            "registry_total": 0,
-            "cached_total": 0,
-            "active": _active_state(),
-            "cache_dirs": {
-                "huggingface": [str(p) for p in hf_dirs],
-                "local_diffusers": [str(p) for p in local_diffusers_dirs],
-                "lmstudio": [str(p) for p in lms_dirs],
-            },
-            "error": str(exc.detail),
-        }
-
-    models: list[Dict[str, Any]] = []
-    seen_model_ids: set[str] = set()
-    for model_id in reg.list_models():
-        spec = reg.get(model_id)
-        # Only list models relevant to this UI (t2i / i2i).
-        supported_tasks = sorted(spec.tasks.keys())
-        if "text_to_image" not in spec.tasks and "image_to_image" not in spec.tasks:
-            continue
-
-        cached_in: list[str] = []
-        if _is_hf_model_cached(model_id, hf_dirs):
-            cached_in.append("huggingface")
-        if _is_lmstudio_model_cached(model_id, lms_dirs):
-            cached_in.append("lmstudio")
-        if not cached_in:
-            continue
-
-        models.append(
-            {
-                "id": model_id,
-                "provider": spec.provider,
-                "license": spec.license,
-                "tasks": supported_tasks,
-                "notes": spec.notes,
-                "cached_in": cached_in,
-            }
-        )
-        seen_model_ids.add(str(model_id))
-
-    for model_id in _discover_cached_hf_diffusers_models(hf_dirs):
-        if model_id in seen_model_ids:
-            continue
-        models.append(
-            {
-                "id": model_id,
-                "provider": "huggingface",
-                "license": "unknown",
-                "tasks": ["image_to_image", "text_to_image"],
-                "notes": "Discovered from the local Hugging Face cache (image-capable diffusers model_index.json present).",
-                "cached_in": ["huggingface"],
-                "discovered": True,
-            }
-        )
-        seen_model_ids.add(model_id)
-
-    for model_id in _discover_local_diffusers_models(local_diffusers_dirs):
-        if model_id in seen_model_ids:
-            continue
-        models.append(
-            {
-                "id": model_id,
-                "provider": "huggingface" if "/" in model_id else "local",
-                "license": "unknown",
-                "tasks": ["image_to_image", "text_to_image"],
-                "notes": "Discovered from a local AbstractVision Diffusers model directory (image-capable model_index.json present).",
-                "cached_in": ["local_diffusers"],
-                "discovered": True,
-            }
-        )
-        seen_model_ids.add(model_id)
-
-    models.sort(key=lambda x: str(x.get("id") or ""))
-    return {
-        "models": models,
-        "registry_available": True,
-        "registry_total": len(reg.list_models()),
-        "cached_total": len(models),
-        "active": _active_state(),
-        "cache_dirs": {
-            "huggingface": [str(p) for p in hf_dirs],
-            "local_diffusers": [str(p) for p in local_diffusers_dirs],
-            "lmstudio": [str(p) for p in lms_dirs],
-        },
-    }
+    """List vision models from the public local cached-vision catalog helper."""
+    payload = dict(_vision_catalog.get_local_vision_cache_catalog())
+    payload["active"] = _active_state()
+    return payload
 
 
 @router.get("/vision/models")
@@ -2787,6 +2395,7 @@ async def list_cached_vision_models(
         task=task,
         base_url=base_url,
         api_key=api_key,
+        local_catalog=local_catalog,
     )
     if not models and catalog_error is not None:
         raise _vision_catalog_error(catalog_error) from catalog_error

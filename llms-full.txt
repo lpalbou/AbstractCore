@@ -636,7 +636,7 @@ abstractcore --set-stt-language en
 AbstractCore supports optional capability plugins discovered via Python entry points:
 - install `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
 - install `abstractvision` -> enables `llm.vision` (generative vision; often via an OpenAI-compatible images endpoint)
-- current plugin floors in this source: `abstractvoice>=0.10.3`, `abstractvision>=0.3.6`
+- current plugin floors in this source: `abstractvoice>=0.10.3`, `abstractvision>=0.3.8`
 
 Server note:
 - the server can optionally expose `/v1/images/*` (requires `abstractvision`)

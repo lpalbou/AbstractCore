@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.20] - 2026-05-20
+
+### Added
+- **Public local vision cache catalog helper**: added `abstractcore.capabilities.get_local_vision_cache_catalog()` and `abstractcore.capabilities.vision_catalog.get_local_vision_cache_catalog()` as dependency-light local cached-vision snapshot helpers for Runtime, Gateway, and other in-process consumers.
+
+### Changed
+- **Server local vision catalog delegation**: `/v1/vision/models` now delegates its local cache snapshot to the public helper, keeps server-only active-backend state in the route layer, and avoids duplicate local cache scans within the same request path.
+- **AbstractVision release target**: optional vision-enabled install profiles now target `abstractvision>=0.3.8`, the current validated plugin release for this Core boundary update.
+
+### Fixed
+- **Runtime/Core discovery boundary**: local cached-vision discovery no longer needs to import `abstractcore.server.vision_endpoints`, which removes accidental FastAPI/server-extra coupling from non-server consumers.
+
 ## [2.13.19] - 2026-05-19
 
 ### Fixed

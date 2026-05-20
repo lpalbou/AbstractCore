@@ -265,21 +265,26 @@ def test_vision_models_catalog_route_includes_provider_models(monkeypatch):
 
     monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
     monkeypatch.setattr(vision_endpoints, "_vision_catalog_core", lambda request, *, base_url=None, api_key=None: _FakeCore())
+    calls = {"count": 0}
 
-    async def local_catalog():
+    def local_catalog():
+        calls["count"] += 1
         return {"models": [], "registry_available": True, "cached_total": 0}
 
-    monkeypatch.setattr(vision_endpoints, "_local_vision_model_catalog", local_catalog)
+    monkeypatch.setattr("abstractcore.capabilities.vision_catalog.get_local_vision_cache_catalog", local_catalog)
+    monkeypatch.setattr(vision_endpoints, "_active_state", lambda: {"has_backend": False})
     monkeypatch.setattr(vision_endpoints, "_configured_vision_provider_model_entries", lambda *_args, **_kwargs: [])
 
     response = TestClient(app).get("/v1/vision/models?task=text_to_image")
 
     assert response.status_code == 200
     payload = response.json()
+    assert calls["count"] == 1
     assert payload["providers"] == ["fake-vision"]
     assert payload["models_by_provider"] == {"fake-vision": ["fake-vision/image-test"]}
     assert payload["models"][0]["provider"] == "fake-vision"
     assert payload["local_models"] == []
+    assert payload["active"] == {"has_backend": False}
 
 
 def test_vision_provider_models_rejects_unknown_task(monkeypatch):
@@ -290,7 +295,7 @@ def test_vision_provider_models_rejects_unknown_task(monkeypatch):
 
 
 def test_vision_cached_diffusers_discovery_filters_non_image_pipelines(tmp_path):
-    from abstractcore.server import vision_endpoints
+    from abstractcore.capabilities import vision_catalog
 
     def write_model_index(model_id: str, class_name: str, extra: dict | None = None):
         folder = tmp_path / ("models--" + model_id.replace("/", "--")) / "snapshots" / "abc"
@@ -307,8 +312,8 @@ def test_vision_cached_diffusers_discovery_filters_non_image_pipelines(tmp_path)
         {"vae": ["diffusers", "AutoencoderOobleck"], "transformer": ["diffusers", "AceStepTransformer1DModel"]},
     )
 
-    assert vision_endpoints._discover_cached_hf_diffusers_models([tmp_path]) == ["black-forest-labs/FLUX.2-dev"]
-    assert not vision_endpoints._is_hf_model_cached("ACE-Step/acestep-v15-xl-turbo-diffusers", [tmp_path])
+    assert vision_catalog._discover_cached_hf_diffusers_models([tmp_path]) == ["black-forest-labs/FLUX.2-dev"]
+    assert not vision_catalog._is_hf_model_cached("ACE-Step/acestep-v15-xl-turbo-diffusers", [tmp_path])
 
 
 def test_vision_provider_models_do_not_synthesize_openai_default(monkeypatch):

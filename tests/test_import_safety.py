@@ -47,3 +47,28 @@ print(json.dumps({m: (m in sys.modules) for m in targets}))
     assert data["pymupdf"] is False
     assert data["fitz"] is False
     assert data["pymupdf4llm"] is False
+
+
+def test_public_vision_catalog_helper_does_not_import_server_stack() -> None:
+    code = r"""
+import json
+import sys
+
+from abstractcore.capabilities import get_local_vision_cache_catalog  # noqa: F401
+
+targets = [
+    "fastapi",
+    "multipart",
+    "abstractcore.server.vision_endpoints",
+]
+
+print(json.dumps({m: (m in sys.modules) for m in targets}))
+"""
+
+    repo_root = Path(__file__).resolve().parents[1]
+    out = subprocess.check_output([sys.executable, "-c", code], text=True, cwd=str(repo_root)).strip()
+    data = json.loads(out)
+
+    assert data["fastapi"] is False
+    assert data["multipart"] is False
+    assert data["abstractcore.server.vision_endpoints"] is False

@@ -23,6 +23,7 @@ from .types import (
     VoiceCapability,
     is_artifact_ref,
 )
+from .vision_catalog import get_local_vision_cache_catalog
 
 __all__ = [
     "ArtifactRef",
@@ -32,9 +33,9 @@ __all__ = [
     "CapabilityRegistry",
     "CapabilityUnavailableError",
     "GenerateWithOutputsResult",
+    "get_local_vision_cache_catalog",
     "MusicCapability",
     "VisionCapability",
     "VoiceCapability",
     "is_artifact_ref",
 ]
-
