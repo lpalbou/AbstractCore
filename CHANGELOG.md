@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Generation defaults**: providers now consume `inference_parameters` from model/architecture metadata for omitted sampling knobs such as `temperature`, `top_p`, and `top_k`; Hugging Face Transformers also applies loaded `generation_config.json` defaults when present.
+- **MLX sampling controls**: MLX generation now builds an `mlx-lm` sampler from unified `temperature`, `top_p`, and `top_k` values instead of ignoring those controls at decode time.
+- **Voice/audio compatibility floors**: optional voice/audio install profiles now target `abstractvoice>=0.10.11` and `omnivoice>=0.1.5`.
+
+### Fixed
+- **HuggingFace greedy decoding**: Transformers pipeline generation now treats `temperature=0` as greedy decoding (`do_sample=false`) instead of forwarding an invalid sampling temperature.
+
 ## [2.13.21] - 2026-05-20
 
 ### Added

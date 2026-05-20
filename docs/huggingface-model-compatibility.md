@@ -12,12 +12,16 @@ specific to prompt caching, memory blocs, tools, or structured output.
 - `torch`
 - `torchvision`
 - `torchaudio`
+- `sentencepiece`
 - `llama-cpp-python`
 - `outlines`
 
 This baseline supports standard Transformers checkpoints and GGUF files. It intentionally does not
 install every optional Transformers quantization runtime, because those runtimes are
 platform-specific and can carry dependency pins that conflict with the rest of the local stack.
+Fresh installs resolve the newest compatible Transformers release allowed by AbstractCore's
+dependency range. Very new architectures such as Gemma4 require a recent Transformers build.
+Audio/voice extras use `abstractvoice>=0.10.11` and `omnivoice>=0.1.5`.
 
 ## Quantized Transformers Checkpoints
 
@@ -81,6 +85,12 @@ Use provider-native paths for those artifacts:
 - GGUF quantized models: `create_llm("huggingface", model="/path/to/model.gguf")`
 - Transformers-native quantized models: only when the required Transformers quantization runtime is
   installed and a clean load plus semantic smoke test passes
+
+Gemma4 official HF transformers targets such as `google/gemma-4-E4B-it` are valid
+HuggingFace-provider targets when the local Transformers build recognizes `model_type=gemma4`.
+Dense Gemma4 E4B-it was validated on Apple/MPS in an isolated Transformers 5.9.0 environment.
+Durable bloc cache support depends on preserving dynamic sliding-window cache sequence lengths
+across save/load; AbstractCore records that in the transformers cache artifact metadata.
 
 ## AbstractCore Policy
 

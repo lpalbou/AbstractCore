@@ -438,6 +438,7 @@ class HuggingFaceProvider(BaseProvider):
                     "architecture": architecture,
                     "template_hash": template_hash,
                     "cache_implementation": "dynamic",
+                    "cache_position_strategy": self._transformers_cache_position_strategy(),
                 },
             )
 
@@ -1306,6 +1307,73 @@ class HuggingFaceProvider(BaseProvider):
             "cache_module": str(getattr(cls, "__module__", "") or ""),
         }
 
+    def _transformers_cache_position_strategy(self) -> str:
+        cfg = getattr(self, "architecture_config", None)
+        if isinstance(cfg, dict):
+            strategy = str(cfg.get("prompt_cache_position_strategy") or "").strip().lower()
+            if strategy:
+                return strategy
+        return "cache_seq_length"
+
+    @staticmethod
+    def _decode_transformers_cache_json_attrs(meta: Dict[str, Any]) -> Dict[str, Any]:
+        try:
+            raw = json.loads(str(meta.get("cache_json_attrs") or "{}"))
+            return raw if isinstance(raw, dict) else {}
+        except Exception:
+            return {}
+
+    def _transformers_dynamic_layer_lengths(self, cache: Any, prompt_len: int) -> List[int]:
+        lengths: List[int] = []
+        layers = getattr(cache, "layers", None)
+        if not isinstance(layers, list):
+            return lengths
+        for layer in layers:
+            length = 0
+            try:
+                if hasattr(layer, "cumulative_length"):
+                    length = int(getattr(layer, "cumulative_length") or 0)
+            except Exception:
+                length = 0
+            if length <= 0:
+                try:
+                    length = int(layer.get_seq_length())
+                except Exception:
+                    length = 0
+            if length <= 0 and bool(getattr(layer, "is_initialized", False)):
+                length = int(prompt_len)
+            lengths.append(max(0, int(length)))
+        return lengths
+
+    def _restore_transformers_dynamic_layer_lengths(
+        self,
+        cache: Any,
+        *,
+        prompt_len: int,
+        layer_lengths: Optional[List[Any]] = None,
+    ) -> None:
+        layers = getattr(cache, "layers", None)
+        if not isinstance(layers, list):
+            return
+        for idx, layer in enumerate(layers):
+            if not hasattr(layer, "cumulative_length"):
+                continue
+            if not bool(getattr(layer, "is_initialized", False)):
+                continue
+            length = 0
+            if isinstance(layer_lengths, list) and idx < len(layer_lengths):
+                try:
+                    length = int(layer_lengths[idx] or 0)
+                except Exception:
+                    length = 0
+            if length <= 0:
+                length = int(prompt_len)
+            if length > 0:
+                try:
+                    setattr(layer, "cumulative_length", int(length))
+                except Exception:
+                    pass
+
     def _transformers_instantiate_cache_from_meta(self, meta: Dict[str, Any]) -> Any:
         module_name = str(meta.get("cache_module") or "").strip()
         class_name = str(meta.get("cache_class") or "").strip()
@@ -1970,10 +2038,15 @@ class HuggingFaceProvider(BaseProvider):
             if isinstance(cache, DynamicCache) and getattr(cache, "layers", None) is not None:
                 cache_schema = "dynamic-cache-layers/v1"
                 layers = getattr(cache, "layers", []) or []
+                prompt_len = len(prompt_tokens)
                 json_attrs["cache_layer_classes"] = [
                     f"{layer.__class__.__module__}.{layer.__class__.__name__}"
                     for layer in layers
                 ]
+                layer_lengths = self._transformers_dynamic_layer_lengths(cache, prompt_len)
+                if layer_lengths:
+                    json_attrs["cache_layer_sequence_lengths"] = layer_lengths
+                json_attrs["cache_position_strategy"] = self._transformers_cache_position_strategy()
                 for idx, layer in enumerate(layers):
                     if not bool(getattr(layer, "is_initialized", False)):
                         continue
@@ -2167,6 +2240,7 @@ class HuggingFaceProvider(BaseProvider):
             prompt_tokens = tuple(int(tok) for tok in prompt_tok_tensor.to("cpu").tolist())
 
             cache_schema = str(meta.get("cache_schema") or "").strip()
+            json_attrs = self._decode_transformers_cache_json_attrs(meta)
             if cache_schema == "tensor-list-cache/v1":
                 cache = self._transformers_instantiate_cache_from_meta(meta)
                 if cache is None:
@@ -2197,11 +2271,6 @@ class HuggingFaceProvider(BaseProvider):
                     if values or hasattr(cache, attr):
                         setattr(cache, attr, values)
 
-                try:
-                    json_attrs_raw = json.loads(str(meta.get("cache_json_attrs") or "{}"))
-                    json_attrs = json_attrs_raw if isinstance(json_attrs_raw, dict) else {}
-                except Exception:
-                    json_attrs = {}
                 for attr in _TRANSFORMERS_JSON_CACHE_ATTRS:
                     if attr in json_attrs and hasattr(cache, attr):
                         try:
@@ -2242,6 +2311,12 @@ class HuggingFaceProvider(BaseProvider):
                         layer.keys = keys
                         layer.values = values
                         layer.is_initialized = True
+                    layer_lengths = json_attrs.get("cache_layer_sequence_lengths")
+                    self._restore_transformers_dynamic_layer_lengths(
+                        cache,
+                        prompt_len=len(prompt_tokens),
+                        layer_lengths=layer_lengths if isinstance(layer_lengths, list) else None,
+                    )
             else:
                 raise ValueError(f"Unsupported transformers prompt cache schema: {cache_schema}")
 
@@ -2711,6 +2786,38 @@ class HuggingFaceProvider(BaseProvider):
             return result[0], result[1]
         return result, {}
 
+    @staticmethod
+    def _generation_config_defaults(config: Any) -> Dict[str, Any]:
+        """Extract safe sampling defaults from a Transformers GenerationConfig-like object."""
+        out: Dict[str, Any] = {}
+        for key in ("temperature", "top_p", "top_k"):
+            value = getattr(config, key, None)
+            if value is None:
+                continue
+            try:
+                if key == "top_k":
+                    value_i = int(value)
+                    if value_i <= 0:
+                        continue
+                    out[key] = value_i
+                else:
+                    out[key] = float(value)
+            except Exception:
+                continue
+        return out
+
+    def _apply_loaded_generation_config_defaults(self) -> None:
+        """Apply defaults published by the loaded HF model when present.
+
+        The model repo's `generation_config.json` is more specific than an
+        architecture family default, but explicit caller values still win.
+        """
+        model = getattr(self, "model_instance", None)
+        config = getattr(model, "generation_config", None)
+        params = self._generation_config_defaults(config)
+        if params:
+            self._apply_generation_parameter_defaults(params)
+
     def _validate_transformers_weight_load(
         self,
         loading_info: Dict[str, Any],
@@ -2806,6 +2913,7 @@ class HuggingFaceProvider(BaseProvider):
             # Move to device (only if not using device_map)
             if self.device in ["cuda", "mps"] and 'device_map' not in self.transformers_kwargs:
                 self.model_instance = self.model_instance.to(self.device)
+            self._apply_loaded_generation_config_defaults()
 
             # Create pipeline - handle custom models that don't support text-generation
             device_arg = 0 if self.device == "cuda" else -1
@@ -2909,6 +3017,7 @@ class HuggingFaceProvider(BaseProvider):
                     self.logger.debug(f"Loading model from local cache: {local_path}")
 
             self.model_instance = AutoModelForImageTextToText.from_pretrained(model_path, **vision_kwargs)
+            self._apply_loaded_generation_config_defaults()
 
             # Restore logging levels if they were suppressed
             if not self.debug:
@@ -3613,7 +3722,8 @@ class HuggingFaceProvider(BaseProvider):
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
         max_new_tokens = self._get_provider_max_tokens_param(generation_kwargs)
         temperature = generation_kwargs.get("temperature", self.temperature)
-        top_p = kwargs.get("top_p", 0.9)
+        top_p = generation_kwargs.get("top_p", 0.9)
+        top_k = generation_kwargs.get("top_k")
         seed_value = generation_kwargs.get("seed")
         hf_transformers_enable_thinking = kwargs.get("_acore_hf_transformers_enable_thinking")
 
@@ -3635,6 +3745,7 @@ class HuggingFaceProvider(BaseProvider):
                     max_new_tokens=max_new_tokens,
                     temperature=float(temperature) if temperature is not None else None,
                     top_p=float(top_p) if top_p is not None else 0.9,
+                    top_k=int(top_k) if top_k is not None else None,
                     seed=seed_value,
                     enable_thinking=hf_transformers_enable_thinking if isinstance(hf_transformers_enable_thinking, bool) else None,
                 )
@@ -3713,9 +3824,9 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             if stream:
-                return self._stream_generate_transformers_with_tools(input_text, max_new_tokens, temperature, top_p, tools, kwargs.get('tool_call_tags'), seed_value)
+                return self._stream_generate_transformers_with_tools(input_text, max_new_tokens, temperature, top_p, top_k, tools, kwargs.get('tool_call_tags'), seed_value)
             else:
-                response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p, seed_value)
+                response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p, top_k, seed_value)
                 if media_enrichment:
                     from ..media.enrichment import merge_enrichment_metadata
 
@@ -4216,10 +4327,17 @@ class HuggingFaceProvider(BaseProvider):
 
             generation_kwargs = {
                 "max_new_tokens": max_new_tokens_value,
-                "temperature": temperature_value,
                 "do_sample": do_sample,
                 "pad_token_id": self.processor.tokenizer.eos_token_id,
             }
+            if do_sample:
+                generation_kwargs["temperature"] = temperature_value
+                top_p_value = kwargs.get("top_p", getattr(self, "top_p", None))
+                if top_p_value is not None:
+                    generation_kwargs["top_p"] = top_p_value
+                top_k_value = kwargs.get("top_k", getattr(self, "top_k", None))
+                if top_k_value is not None:
+                    generation_kwargs["top_k"] = int(top_k_value)
 
             # Add seed if provided
             seed_value = self._normalize_seed(kwargs.get("seed", self.seed))
@@ -4473,7 +4591,7 @@ class HuggingFaceProvider(BaseProvider):
             "messages": chat_messages,
             "max_tokens": max_output_tokens,  # This is max_output_tokens for llama-cpp
             "temperature": unified_kwargs.get("temperature", self.temperature),
-            "top_p": kwargs.get("top_p", 0.9),
+            "top_p": unified_kwargs.get("top_p", 0.9),
             "stream": stream
         }
 
@@ -4533,7 +4651,7 @@ class HuggingFaceProvider(BaseProvider):
                     max_output_tokens=int(max_output_tokens),
                     temperature=float(generation_kwargs.get("temperature") or 0.2),
                     top_p=float(generation_kwargs.get("top_p") or 0.95),
-                    top_k=int(kwargs.get("top_k", 40) or 40),
+                    top_k=int(generation_kwargs.get("top_k", 40) or 40),
                     min_p=float(kwargs.get("min_p", 0.05) or 0.05),
                     typical_p=float(kwargs.get("typical_p", 1.0) or 1.0),
                     repeat_penalty=float(kwargs.get("repeat_penalty", 1.1) or 1.1),
@@ -5033,6 +5151,7 @@ class HuggingFaceProvider(BaseProvider):
         max_new_tokens: int,
         temperature: Optional[float],
         top_p: float,
+        top_k: Optional[int] = None,
         seed: Optional[int] = None,
         enable_thinking: Optional[bool] = None,
     ) -> GenerateResponse:
@@ -5139,13 +5258,16 @@ class HuggingFaceProvider(BaseProvider):
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "max_new_tokens": int(max_new_tokens),
-            "temperature": temp_val,
-            "top_p": float(top_p),
             "do_sample": bool(do_sample),
             "use_cache": True,
             "return_dict_in_generate": True,
             "pad_token_id": pad_i,
         }
+        if do_sample:
+            generate_kwargs["temperature"] = temp_val
+            generate_kwargs["top_p"] = float(top_p)
+            if top_k is not None:
+                generate_kwargs["top_k"] = int(top_k)
         if eos_i is not None:
             generate_kwargs["eos_token_id"] = eos_i
 
@@ -5224,7 +5346,8 @@ class HuggingFaceProvider(BaseProvider):
         )
 
     def _single_generate_transformers(self, input_text: str, max_new_tokens: int,
-                                     temperature: float, top_p: float, seed: Optional[int] = None) -> GenerateResponse:
+                                     temperature: float, top_p: float, top_k: Optional[int] = None,
+                                     seed: Optional[int] = None) -> GenerateResponse:
         """Generate single response using transformers (original implementation)"""
         try:
             # Set seed for deterministic generation if provided
@@ -5240,17 +5363,29 @@ class HuggingFaceProvider(BaseProvider):
             # Track generation time
             start_time = time.time()
 
-            outputs = self.pipeline(
-                input_text,
-                max_new_tokens=max_new_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                num_return_sequences=1,
-                pad_token_id=self.tokenizer.eos_token_id,
-                do_sample=True,
-                truncation=True,
-                return_full_text=False
-            )
+            do_sample = True
+            try:
+                temperature_value = float(temperature)
+                if temperature_value <= 0:
+                    do_sample = False
+            except Exception:
+                temperature_value = temperature
+
+            pipeline_kwargs = {
+                "max_new_tokens": max_new_tokens,
+                "num_return_sequences": 1,
+                "pad_token_id": self.tokenizer.eos_token_id,
+                "do_sample": bool(do_sample),
+                "truncation": True,
+                "return_full_text": False,
+            }
+            if do_sample:
+                pipeline_kwargs["temperature"] = temperature_value
+                pipeline_kwargs["top_p"] = top_p
+                if top_k is not None:
+                    pipeline_kwargs["top_k"] = int(top_k)
+
+            outputs = self.pipeline(input_text, **pipeline_kwargs)
 
             gen_time = round((time.time() - start_time) * 1000, 1)
 
@@ -5302,11 +5437,12 @@ class HuggingFaceProvider(BaseProvider):
         }
 
     def _stream_generate_transformers(self, input_text: str, max_new_tokens: int,
-                                     temperature: float, top_p: float, tool_call_tags: Optional[str] = None, seed: Optional[int] = None) -> Iterator[GenerateResponse]:
+                                     temperature: float, top_p: float, top_k: Optional[int] = None,
+                                     tool_call_tags: Optional[str] = None, seed: Optional[int] = None) -> Iterator[GenerateResponse]:
         """Stream response using transformers (simulated, original implementation) with tool tag rewriting support"""
         try:
             # HuggingFace doesn't have native streaming, so we simulate it
-            full_response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p, seed)
+            full_response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p, top_k, seed)
 
             if full_response.content:
                 # Apply tool tag rewriting if enabled
@@ -5453,14 +5589,14 @@ class HuggingFaceProvider(BaseProvider):
 
 
     def _stream_generate_transformers_with_tools(self, input_text: str, max_new_tokens: int,
-                                               temperature: float, top_p: float,
+                                               temperature: float, top_p: float, top_k: Optional[int] = None,
                                                tools: Optional[List[Dict[str, Any]]] = None,
                                                tool_call_tags: Optional[str] = None, seed: Optional[int] = None) -> Iterator[GenerateResponse]:
         """Stream generate with tool execution at the end"""
         collected_content = ""
 
         # Stream the response content
-        for chunk in self._stream_generate_transformers(input_text, max_new_tokens, temperature, top_p, tool_call_tags, seed):
+        for chunk in self._stream_generate_transformers(input_text, max_new_tokens, temperature, top_p, top_k, tool_call_tags, seed):
             collected_content += chunk.content
             yield chunk
 

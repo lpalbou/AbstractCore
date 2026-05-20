@@ -503,6 +503,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
     def __init__(self, model: str, **kwargs):
         AbstractCoreInterface.__init__(self, model, **kwargs)
         self.provider = None
+        self._explicit_generation_params = frozenset(
+            key
+            for key, value in kwargs.items()
+            if key in {"temperature", "top_p", "top_k"} and value is not None
+        )
+        for key in ("top_p", "top_k"):
+            if key in kwargs and kwargs.get(key) is not None:
+                setattr(self, key, kwargs[key])
 
         # Setup structured logging
         self.logger = get_logger(self.__class__.__name__)
@@ -511,6 +519,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         self.architecture = detect_architecture(model)
         self.architecture_config = get_architecture_format(self.architecture)
         self.model_capabilities = get_model_capabilities(model)
+        self._apply_metadata_generation_defaults()
 
         # #[WARNING:TIMEOUT]
         # Setup timeout configuration (centralized defaults).
@@ -606,6 +615,39 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Set default token limits if not provided
         self._initialize_token_limits()
+
+    def _metadata_inference_parameters(self) -> Dict[str, Any]:
+        """Return generation defaults declared by architecture/model metadata.
+
+        Model-specific capabilities override architecture defaults.
+        """
+        merged: Dict[str, Any] = {}
+        for source in (getattr(self, "architecture_config", None), getattr(self, "model_capabilities", None)):
+            if not isinstance(source, dict):
+                continue
+            params = source.get("inference_parameters")
+            if isinstance(params, dict):
+                merged.update({k: v for k, v in params.items() if v is not None})
+        return merged
+
+    def _metadata_generation_default(self, name: str, fallback: Any = None) -> Any:
+        params = self._metadata_inference_parameters()
+        return params.get(name, fallback)
+
+    def _apply_generation_parameter_defaults(self, params: Dict[str, Any]) -> None:
+        """Apply generated/model defaults unless the caller set the value explicitly."""
+        if not isinstance(params, dict) or not params:
+            return
+        explicit = set(getattr(self, "_explicit_generation_params", frozenset()))
+        if "temperature" not in explicit and params.get("temperature") is not None:
+            self.temperature = params["temperature"]
+        for key in ("top_p", "top_k"):
+            if key not in explicit and params.get(key) is not None:
+                setattr(self, key, params[key])
+
+    def _apply_metadata_generation_defaults(self) -> None:
+        """Promote model/architecture generation defaults onto the provider instance."""
+        self._apply_generation_parameter_defaults(self._metadata_inference_parameters())
 
     def __init_subclass__(cls, **kwargs):  # pragma: no cover
         super().__init_subclass__(**kwargs)
@@ -3461,11 +3503,23 @@ class BaseProvider(AbstractCoreInterface, ABC):
         result_kwargs = kwargs.copy()
         result_kwargs["max_output_tokens"] = effective_max_output_i
 
-        # Add unified generation parameters with fallback hierarchy: kwargs → instance → defaults
+        # Add unified generation parameters with fallback hierarchy:
+        # kwargs -> constructor/model metadata -> legacy defaults.
         temperature = result_kwargs.get("temperature", self.temperature)
         if temperature is None:
             temperature = self.temperature
         result_kwargs["temperature"] = temperature
+
+        for key in ("top_p", "top_k"):
+            if key in result_kwargs:
+                if result_kwargs.get(key) is None:
+                    result_kwargs.pop(key, None)
+                continue
+            value = getattr(self, key, None)
+            if value is None:
+                value = self._metadata_generation_default(key, None)
+            if value is not None:
+                result_kwargs[key] = value
 
         seed_value = self._normalize_seed(result_kwargs.get("seed", self.seed))
         if seed_value is not None:
@@ -3507,6 +3561,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if temperature is None:
             temperature = self.temperature
         params["temperature"] = temperature
+
+        for key in ("top_p", "top_k"):
+            if key in kwargs:
+                value = kwargs.get(key)
+            else:
+                value = getattr(self, key, self._metadata_generation_default(key, None))
+            if value is not None:
+                params[key] = value
 
         # Seed (only if not None)
         seed_value = self._normalize_seed(kwargs.get("seed", self.seed))

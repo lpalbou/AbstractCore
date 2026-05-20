@@ -77,7 +77,7 @@ class OpenAIProvider(BaseProvider):
         self._validate_model_exists()
 
         # Store provider-specific configuration
-        self.top_p = kwargs.get("top_p", 1.0)
+        self.top_p = kwargs.get("top_p", getattr(self, "top_p", 1.0))
         self.frequency_penalty = kwargs.get("frequency_penalty", 0.0)
         self.presence_penalty = kwargs.get("presence_penalty", 0.0)
 
@@ -297,7 +297,7 @@ class OpenAIProvider(BaseProvider):
 
         sampling_params = {
             "temperature": generation_kwargs.get("temperature", self.temperature),
-            "top_p": kwargs.get("top_p", self.top_p),
+            "top_p": generation_kwargs.get("top_p", self.top_p),
             "frequency_penalty": kwargs.get("frequency_penalty", self.frequency_penalty),
             "presence_penalty": kwargs.get("presence_penalty", self.presence_penalty),
         }
@@ -535,7 +535,7 @@ class OpenAIProvider(BaseProvider):
 
         sampling_params = {
             "temperature": generation_kwargs.get("temperature", self.temperature),
-            "top_p": kwargs.get("top_p", self.top_p),
+            "top_p": generation_kwargs.get("top_p", self.top_p),
             "frequency_penalty": kwargs.get("frequency_penalty", self.frequency_penalty),
             "presence_penalty": kwargs.get("presence_penalty", self.presence_penalty),
         }

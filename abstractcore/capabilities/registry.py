@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import importlib
-from pathlib import Path
+import inspect
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, TypeVar
 
 from .errors import CapabilityUnavailableError
@@ -415,6 +415,76 @@ def _call_residency_list_method(
     )
 
 
+def _call_capability_discovery_method(
+    method: Callable[..., Any],
+    *,
+    kind: Optional[str] = None,
+    provider: Optional[str] = None,
+) -> Any:
+    params: Dict[str, inspect.Parameter] = {}
+    accepts_kwargs = False
+    try:
+        params = dict(inspect.signature(method).parameters)
+        accepts_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values())
+    except (TypeError, ValueError):
+        accepts_kwargs = True
+
+    kwargs: Dict[str, Any] = {}
+    if kind is not None and (accepts_kwargs or "kind" in params):
+        kwargs["kind"] = str(kind or "")
+    if provider is not None and (accepts_kwargs or "provider" in params):
+        kwargs["provider"] = provider
+    if kwargs:
+        return method(**kwargs)
+    return method()
+
+
+def _normalized_provider_id(value: Any) -> str:
+    return str(value or "").strip().lower().replace("_", "-")
+
+
+def _provider_ids_match(left: Any, right: Any) -> bool:
+    return bool(_normalized_provider_id(left)) and _normalized_provider_id(left) == _normalized_provider_id(right)
+
+
+def _clone_models_from_voice_catalog(catalog: Any, *, provider: Optional[str] = None) -> List[str]:
+    if not isinstance(catalog, dict):
+        return []
+
+    mapping = catalog.get("cloning_models_by_provider")
+    if isinstance(mapping, dict):
+        out: List[str] = []
+        for provider_id, values in mapping.items():
+            if provider is not None and not _provider_ids_match(provider_id, provider):
+                continue
+            if isinstance(values, list):
+                out.extend(str(item).strip() for item in values if isinstance(item, str) and str(item).strip())
+        return list(dict.fromkeys(out))
+
+    compat = catalog.get("compatibility_catalog")
+    if not isinstance(compat, dict):
+        return []
+    providers = compat.get("providers")
+    if not isinstance(providers, dict):
+        return []
+    cloning = providers.get("cloning")
+    if not isinstance(cloning, dict):
+        return []
+
+    out: List[str] = []
+    for provider_id, entry in cloning.items():
+        if provider is not None and not _provider_ids_match(provider_id, provider):
+            continue
+        models = entry.get("models") if isinstance(entry, dict) else None
+        if not isinstance(models, dict):
+            continue
+        for model_name in models:
+            text = str(model_name or "").strip()
+            if text and text != "*":
+                out.append(text)
+    return list(dict.fromkeys(out))
+
+
 class _VoiceFacade:
     def __init__(self, registry: CapabilityRegistry) -> None:
         self._registry = registry
@@ -481,29 +551,84 @@ class _VoiceFacade:
         out = method(kind=str(kind or "tts"))
         return list(out or [])
 
-    def list_tts_models(self) -> List[str]:
+    def list_models(self, *, kind: str = "tts", provider: Optional[str] = None) -> List[str]:
+        backend = self._registry.get_voice()
+        normalized_kind = str(kind or "tts").strip().lower() or "tts"
+        method = getattr(backend, "list_models", None)
+        if callable(method):
+            out = _call_capability_discovery_method(method, kind=normalized_kind, provider=provider)
+            return [str(item) for item in list(out or []) if str(item or "").strip()]
+        if normalized_kind == "tts":
+            return self.list_tts_models(provider=provider)
+        if normalized_kind == "stt":
+            return self.list_stt_models(provider=provider)
+        if normalized_kind == "cloning":
+            return self.list_cloning_models(provider=provider)
+        raise CapabilityUnavailableError(
+            capability="voice",
+            reason=f"The selected voice capability backend does not expose list_models(kind={normalized_kind!r}, provider=...).",
+            install_hint=self._registry._default_install_hint("voice"),
+            details={"backend_id": getattr(backend, "backend_id", None), "kind": normalized_kind, "provider": provider},
+        )
+
+    def list_tts_models(self, provider: Optional[str] = None) -> List[str]:
         backend = self._registry.get_voice()
         method = getattr(backend, "list_tts_models", None)
         if not callable(method):
+            generic = getattr(backend, "list_models", None)
+            if callable(generic):
+                out = _call_capability_discovery_method(generic, kind="tts", provider=provider)
+                return [str(item) for item in list(out or []) if str(item or "").strip()]
             raise CapabilityUnavailableError(
                 capability="voice",
-                reason="The selected voice capability backend does not expose list_tts_models().",
+                reason="The selected voice capability backend does not expose list_tts_models(provider=...).",
                 install_hint=self._registry._default_install_hint("voice"),
-                details={"backend_id": getattr(backend, "backend_id", None)},
+                details={"backend_id": getattr(backend, "backend_id", None), "provider": provider},
             )
-        return [str(item) for item in list(method() or []) if str(item or "").strip()]
+        out = _call_capability_discovery_method(method, provider=provider)
+        return [str(item) for item in list(out or []) if str(item or "").strip()]
 
-    def list_stt_models(self) -> List[str]:
+    def list_stt_models(self, provider: Optional[str] = None) -> List[str]:
         backend = self._registry.get_voice()
         method = getattr(backend, "list_stt_models", None)
         if not callable(method):
+            generic = getattr(backend, "list_models", None)
+            if callable(generic):
+                out = _call_capability_discovery_method(generic, kind="stt", provider=provider)
+                return [str(item) for item in list(out or []) if str(item or "").strip()]
             raise CapabilityUnavailableError(
                 capability="voice",
-                reason="The selected voice capability backend does not expose list_stt_models().",
+                reason="The selected voice capability backend does not expose list_stt_models(provider=...).",
                 install_hint=self._registry._default_install_hint("voice"),
-                details={"backend_id": getattr(backend, "backend_id", None)},
+                details={"backend_id": getattr(backend, "backend_id", None), "provider": provider},
             )
-        return [str(item) for item in list(method() or []) if str(item or "").strip()]
+        out = _call_capability_discovery_method(method, provider=provider)
+        return [str(item) for item in list(out or []) if str(item or "").strip()]
+
+    def list_cloning_models(self, provider: Optional[str] = None) -> List[str]:
+        backend = self._registry.get_voice()
+        method = getattr(backend, "list_cloning_models", None)
+        if callable(method):
+            out = _call_capability_discovery_method(method, provider=provider)
+            return [str(item) for item in list(out or []) if str(item or "").strip()]
+
+        generic = getattr(backend, "list_models", None)
+        if callable(generic):
+            out = _call_capability_discovery_method(generic, kind="cloning", provider=provider)
+            return [str(item) for item in list(out or []) if str(item or "").strip()]
+
+        catalog_method = getattr(backend, "voice_catalog", None)
+        if callable(catalog_method):
+            models = _clone_models_from_voice_catalog(catalog_method(), provider=provider)
+            if models:
+                return models
+
+        raise CapabilityUnavailableError(
+            capability="voice",
+            reason="The selected voice capability backend does not expose clone model discovery.",
+            install_hint=self._registry._default_install_hint("voice"),
+            details={"backend_id": getattr(backend, "backend_id", None), "provider": provider},
+        )
 
     def voice_catalog(self) -> Dict[str, Any]:
         backend = self._registry.get_voice()
@@ -558,33 +683,6 @@ class _VoiceFacade:
             method = getattr(backend, method_name, None)
             if callable(method):
                 return method(audio, **kwargs)
-
-        # AbstractVoice 0.9.x keeps clone methods on VoiceManager, not on the
-        # AbstractCore capability shim. Use that existing manager when present
-        # so the library API and server route share the same clone semantics.
-        get_vm = getattr(backend, "_get_vm", None)
-        if callable(get_vm):
-            vm = get_vm()
-            clone_voice = getattr(vm, "clone_voice", None)
-            clone_from_bytes = getattr(vm, "clone_voice_from_wav_bytes", None)
-            name = kwargs.get("name")
-            reference_text = kwargs.get("reference_text")
-            engine = kwargs.get("engine") or kwargs.get("cloning_engine")
-            if isinstance(audio, str) and callable(clone_voice):
-                return clone_voice(
-                    audio,
-                    name=str(name) if name is not None else None,
-                    reference_text=str(reference_text) if reference_text is not None else None,
-                    engine=str(engine) if engine is not None else None,
-                )
-            if callable(clone_from_bytes):
-                audio_bytes = self._clone_audio_bytes(audio, artifact_store=kwargs.get("artifact_store"))
-                return clone_from_bytes(
-                    audio_bytes,
-                    name=str(name) if name is not None else None,
-                    reference_text=str(reference_text) if reference_text is not None else None,
-                    engine=str(engine) if engine is not None else None,
-                )
         raise CapabilityUnavailableError(
             capability="voice",
             reason=(
@@ -593,30 +691,6 @@ class _VoiceFacade:
                 "that implements voice cloning."
             ),
             install_hint=self._registry._default_install_hint("voice"),
-        )
-
-    @staticmethod
-    def _clone_audio_bytes(audio: Any, *, artifact_store: Any = None) -> bytes:
-        if isinstance(audio, (bytes, bytearray)):
-            return bytes(audio)
-        if isinstance(audio, str) and audio.strip():
-            return Path(audio).expanduser().read_bytes()
-        if isinstance(audio, dict):
-            for key in ("data", "bytes", "content"):
-                value = audio.get(key)
-                if isinstance(value, (bytes, bytearray)):
-                    return bytes(value)
-            artifact_id = audio.get("$artifact")
-            if isinstance(artifact_id, str) and artifact_id and artifact_store is not None:
-                loaded = artifact_store.load(artifact_id)
-                return _VoiceFacade._clone_audio_bytes(loaded, artifact_store=artifact_store)
-        for key in ("data", "bytes", "content"):
-            value = getattr(audio, key, None)
-            if isinstance(value, (bytes, bytearray)):
-                return bytes(value)
-        raise CapabilityUnavailableError(
-            capability="voice",
-            reason="Voice clone audio must be bytes, a readable file path, or an artifact ref with an artifact_store.",
         )
 
 

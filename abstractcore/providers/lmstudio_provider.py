@@ -85,6 +85,10 @@ class LMStudioProvider(OpenAICompatibleProvider):
             "temperature": generation_kwargs.get("temperature", self.temperature),
             "max_output_tokens": int(max_output_tokens),
         }
+        for key in ("top_p", "top_k"):
+            value = generation_kwargs.get(key)
+            if value is not None:
+                payload[key] = value
         if isinstance(system_prompt, str) and system_prompt.strip():
             payload["system_prompt"] = system_prompt.strip()
         if isinstance(reasoning, str) and reasoning.strip():

@@ -71,6 +71,34 @@ def test_mlx_gemma4_postprocess_truncates_turn_delimiter() -> None:
     assert reasoning is None
 
 
+def test_mlx_single_generate_passes_sampler_to_mlx_lm() -> None:
+    provider = MLXProvider.__new__(MLXProvider)
+    provider.model = "mlx-community/Qwen3.6-27B-4bit"
+    provider.architecture_config = {}
+    provider.model_capabilities = {}
+    provider.llm = object()
+    provider.tokenizer = object()
+    sampler = object()
+    captured = {}
+
+    provider._build_mlx_sampler = lambda temperature, top_p, top_k=None: sampler  # type: ignore[method-assign]
+
+    def _fake_generate(llm, tokenizer, **kwargs):
+        captured["llm"] = llm
+        captured["tokenizer"] = tokenizer
+        captured.update(kwargs)
+        return "ok"
+
+    provider.generate_fn = _fake_generate
+
+    response = provider._single_generate("prompt", 8, 1.0, 0.95, 64)
+
+    assert response.content == "ok"
+    assert captured["sampler"] is sampler
+    assert captured["max_tokens"] == 8
+    assert captured["prompt"] == "prompt"
+
+
 def test_mlx_prompt_cache_load_accepts_equivalent_resolved_model_id(monkeypatch, tmp_path: Path) -> None:
     module = types.ModuleType("mlx_lm.models.cache")
 

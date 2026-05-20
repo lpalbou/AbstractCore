@@ -190,6 +190,25 @@ def test_ollama_gpt_oss_thinking_level_sets_payload_think_string(monkeypatch):
     assert payload.get("think") == "high"
 
 
+def test_ollama_payload_uses_metadata_sampling_defaults(monkeypatch):
+    provider = OllamaProvider(model="google/gemma-4-E4B-it", base_url="http://127.0.0.1:11434")
+
+    captured = {}
+
+    def _capture_single_generate(endpoint, payload, tools=None, media_metadata=None):
+        captured["payload"] = payload
+        return GenerateResponse(content="ok", model=provider.model, finish_reason="stop")
+
+    monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
+
+    provider.generate("hi")
+
+    options = captured["payload"]["options"]
+    assert options["temperature"] == 1.0
+    assert options["top_p"] == 0.95
+    assert options["top_k"] == 64
+
+
 def test_harmony_thinking_injects_reasoning_system_prompt(monkeypatch):
     monkeypatch.setattr(OpenAICompatibleProvider, "_validate_model", lambda self: None, raising=False)
     provider = OpenAICompatibleProvider(model="openai/gpt-oss-20b", base_url="http://127.0.0.1:1234/v1")
@@ -317,6 +336,26 @@ def test_lmstudio_qwen3_6_thinking_off_sets_chat_template_enable_thinking_false(
 
     payload = captured["payload"]
     assert payload["chat_template_kwargs"]["enable_thinking"] is False
+
+
+def test_lmstudio_payload_uses_metadata_sampling_defaults(monkeypatch) -> None:
+    monkeypatch.setattr(LMStudioProvider, "_validate_model", lambda self: None)
+    provider = LMStudioProvider(model="google/gemma-4-E4B-it", base_url="http://localhost:1234/v1")
+
+    captured = {}
+
+    def _capture_single_generate(payload):
+        captured["payload"] = payload
+        return GenerateResponse(content="ok", model=provider.model, finish_reason="stop")
+
+    monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
+
+    provider.generate("hi")
+
+    payload = captured["payload"]
+    assert payload["temperature"] == 1.0
+    assert payload["top_p"] == 0.95
+    assert payload["top_k"] == 64
 
 
 def _make_unloaded_mlx_provider(model: str) -> MLXProvider:

@@ -614,8 +614,11 @@ class OpenAICompatibleProvider(BaseProvider):
             "stream": stream,
             "temperature": generation_kwargs.get("temperature", self.temperature),
             "max_tokens": max_output_tokens,
-            "top_p": kwargs.get("top_p", 0.9),
+            "top_p": generation_kwargs.get("top_p", 0.9),
         }
+        top_k_value = generation_kwargs.get("top_k")
+        if top_k_value is not None and str(getattr(self, "provider", "") or "").strip().lower() == "lmstudio":
+            payload["top_k"] = top_k_value
 
         # Prompt caching (best-effort): pass through `prompt_cache_key` when provided.
         prompt_cache_key = kwargs.get("prompt_cache_key")
@@ -904,8 +907,11 @@ class OpenAICompatibleProvider(BaseProvider):
             "stream": stream,
             "temperature": generation_kwargs.get("temperature", self.temperature),
             "max_tokens": max_output_tokens,
-            "top_p": kwargs.get("top_p", 0.9),
+            "top_p": generation_kwargs.get("top_p", 0.9),
         }
+        top_k_value = generation_kwargs.get("top_k")
+        if top_k_value is not None and str(getattr(self, "provider", "") or "").strip().lower() == "lmstudio":
+            payload["top_k"] = top_k_value
 
         # Native tools (OpenAI-compatible): send structured tools/tool_choice when supported.
         if tools and self.tool_handler.supports_native:

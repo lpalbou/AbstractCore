@@ -41,6 +41,12 @@ _PROVIDER_API_KEY_HEADERS = (
 _PLACEHOLDER_API_KEYS = {"not-needed", "not_needed", "notneeded", "unused", "dummy", "empty", "none"}
 _SUPPORTED_REMOTE_AUDIO_PROVIDERS = {"openai", "openrouter", "portkey", "openai-compatible"}
 _REMOTE_AUDIO_PROVIDER_ALIASES = {"openai", "openrouter", "portkey", "openai-compatible", "remote"}
+_PLUGIN_SERVICE_UNAVAILABLE_NEEDLES = (
+    "requires openai_api_key",
+    "requires openai api key",
+    "requires remote_api_key",
+    "requires remote api key",
+)
 _LOCAL_AUDIO_MODEL_ALIASES = {
     # `local/abstractvoice` is kept as a backward-compatible alias; prefer
     # provider/model-style `abstractvoice/default` in docs and examples.
@@ -517,6 +523,16 @@ def _provider_exception_status(exc: Exception) -> int:
     return 500
 
 
+def _plugin_exception_status(exc: Exception) -> int:
+    if isinstance(exc, (AuthenticationError, RateLimitError, ModelNotFoundError, InvalidRequestError, ProviderAPIError)):
+        return _provider_exception_status(exc)
+
+    text = str(exc).lower()
+    if any(needle in text for needle in _PLUGIN_SERVICE_UNAVAILABLE_NEEDLES):
+        return 503
+    return 500
+
+
 def _optional_text(value: Any) -> Optional[str]:
     return str(value).strip() if isinstance(value, str) and value.strip() else None
 
@@ -717,7 +733,7 @@ async def audio_transcriptions(
     except CapabilityUnavailableError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Audio transcription failed: {e}") from e
+        raise HTTPException(status_code=_plugin_exception_status(e), detail=f"Audio transcription failed: {e}") from e
 
     return {"text": str(text or "").strip()}
 
@@ -996,6 +1012,14 @@ def _audio_mapping_strings(value: Any) -> Dict[str, list[str]]:
     return out
 
 
+def _audio_provider_key(value: Any) -> str:
+    return str(value or "").strip().lower().replace("_", "-")
+
+
+def _audio_provider_matches(left: Any, right: Any) -> bool:
+    return bool(_audio_provider_key(left)) and _audio_provider_key(left) == _audio_provider_key(right)
+
+
 def _audio_catalog_available_provider_ids(catalog: Dict[str, Any], kind: str) -> list[str]:
     available = catalog.get("available_providers")
     if isinstance(available, dict):
@@ -1048,10 +1072,38 @@ def _audio_models_by_provider(
 ) -> Dict[str, list[str]]:
     if kind == "stt":
         mapping = _audio_mapping_strings(catalog.get("stt_models_by_provider"))
+    elif kind == "cloning":
+        mapping = _audio_mapping_strings(catalog.get("cloning_models_by_provider"))
+        if not mapping:
+            compat = catalog.get("compatibility_catalog")
+            providers_by_kind = compat.get("providers") if isinstance(compat, dict) else None
+            cloning = providers_by_kind.get("cloning") if isinstance(providers_by_kind, dict) else None
+            if isinstance(cloning, dict):
+                derived: Dict[str, list[str]] = {}
+                for provider_id, entry in cloning.items():
+                    provider_name = str(provider_id or "").strip()
+                    if not provider_name or not isinstance(entry, dict):
+                        continue
+                    entries = entry.get("models")
+                    if not isinstance(entries, dict):
+                        continue
+                    provider_models = _audio_dedupe_strings(
+                        [str(model_name).strip() for model_name in entries if str(model_name or "").strip() and str(model_name).strip() != "*"]
+                    )
+                    if provider_models:
+                        derived[provider_name] = provider_models
+                mapping = derived
     else:
         mapping = _audio_mapping_strings(catalog.get("tts_models_by_provider"))
     if not mapping and len(providers) == 1 and models:
         mapping[providers[0]] = list(models)
+    if models and mapping:
+        allowed = {str(model).strip().lower() for model in models if str(model).strip()}
+        mapping = {
+            provider: [model for model in provider_models if str(model).strip().lower() in allowed]
+            for provider, provider_models in mapping.items()
+        }
+        mapping = {provider: provider_models for provider, provider_models in mapping.items() if provider_models}
     return mapping
 
 
@@ -1474,7 +1526,7 @@ async def voice_clone_models(
     request: Request,
     provider: Optional[str] = Query(
         default=None,
-        description="Optional provider filter (e.g. openai-compatible, elevenlabs, supertonic).",
+        description="Optional provider filter (e.g. openai-compatible, openai, omnivoice, f5-tts, chroma).",
         examples=["openai-compatible"],
     ),
     base_url: Optional[str] = Query(
@@ -1497,33 +1549,31 @@ async def voice_clone_models(
     """Discover voice cloning model ids (if any) through the AbstractVoice plugin boundary."""
     try:
         core = _audio_catalog_core(request, base_url=base_url, api_key=api_key)
-        availability = _audio_voice_available_providers(core)
-        if availability:
-            catalog = {
-                "cloning_providers": availability.get("known_cloning_providers") or availability.get("cloning_providers") or availability.get("cloning"),
-                "available_providers": availability,
-                "available_cloning_providers": availability.get("cloning"),
-                "active_cloning_provider": availability.get("active_cloning_provider"),
-            }
-            payload = _audio_model_catalog_payload(core=core, kind="cloning", catalog=catalog, models=[])
-            provider_norm = str(provider or "").strip()
-            if provider_norm:
-                payload["providers"] = [provider_norm]
-                payload["available_providers"] = [p for p in payload.get("available_providers") or [] if str(p).strip().lower() == provider_norm.lower()] or [provider_norm]
-                payload["models_by_provider"] = {}
-                payload["models"] = []
-                payload["provider_models"] = []
-            return payload
-
+        provider_norm = _optional_text(provider)
         catalog = _audio_voice_catalog_or_available(core)
-        payload = _audio_model_catalog_payload(core=core, kind="cloning", catalog=catalog, models=[])
-        provider_norm = str(provider or "").strip()
+        models = _audio_list_strings(core.voice.list_cloning_models(provider=provider_norm))
+        payload = _audio_model_catalog_payload(core=core, kind="cloning", catalog=catalog, models=models)
         if provider_norm:
-            payload["providers"] = [provider_norm]
-            payload["available_providers"] = [p for p in payload.get("available_providers") or [] if str(p).strip().lower() == provider_norm.lower()] or [provider_norm]
-            payload["models_by_provider"] = {}
-            payload["models"] = []
-            payload["provider_models"] = []
+            filtered_mapping = {
+                provider_id: provider_models
+                for provider_id, provider_models in dict(payload.get("models_by_provider") or {}).items()
+                if _audio_provider_matches(provider_id, provider_norm)
+            }
+            payload["models_by_provider"] = filtered_mapping
+            payload["provider_models"] = _audio_provider_models(filtered_mapping)
+            payload["models"] = _audio_dedupe_strings(
+                [model_name for provider_models in filtered_mapping.values() for model_name in provider_models]
+            ) or models
+            payload["providers"] = list(filtered_mapping) or [
+                provider_id
+                for provider_id in payload.get("providers") or []
+                if _audio_provider_matches(provider_id, provider_norm)
+            ] or [provider_norm]
+            payload["available_providers"] = [
+                provider_id
+                for provider_id in payload.get("available_providers") or []
+                if _audio_provider_matches(provider_id, provider_norm)
+            ] or payload["providers"]
         return payload
     except HTTPException:
         raise
@@ -1635,7 +1685,7 @@ async def _audio_speech_impl(
     except CapabilityUnavailableError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Audio synthesis failed: {e}") from e
+        raise HTTPException(status_code=_plugin_exception_status(e), detail=f"Audio synthesis failed: {e}") from e
 
     if not isinstance(audio, (bytes, bytearray)):
         raise HTTPException(
@@ -1734,6 +1784,8 @@ async def voice_clone(
     _enforce_audio_size(bytes(audio_bytes))
 
     request_provider, model, local_model = _resolve_audio_request_routing(model=model, provider=provider)
+    if request_provider in _REMOTE_AUDIO_PROVIDER_ALIASES and not model:
+        model = f"{request_provider}/default"
 
     filename = str(getattr(file, "filename", "") or "reference.wav")
     content_type = str(getattr(file, "content_type", "") or "audio/wav")
@@ -1805,7 +1857,7 @@ async def voice_clone(
     except CapabilityUnavailableError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Voice clone failed: {e}") from e
+        raise HTTPException(status_code=_plugin_exception_status(e), detail=f"Voice clone failed: {e}") from e
 
 
 @provider_router.post("/{provider}/v1/voice/clone")

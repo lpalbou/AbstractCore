@@ -197,7 +197,10 @@ imply “the framework can always make it work” via optional enrichment plugin
 
 #### Generation Parameter Support
 - `unsupported_parameters` - List of generation parameter names (strings) that this model's API rejects (e.g. `["temperature", "top_p", "frequency_penalty", "presence_penalty"]`). Used by providers to silently strip unsupported params before API calls. Absent field means all standard parameters are supported (backward-compatible default for all models that predate this field).
+- `inference_parameters` - Optional model- or architecture-recommended generation defaults such as `temperature`, `top_p`, and `top_k`. Providers use these only when the caller did not set the parameter explicitly; constructor and per-call values always override these defaults for backends that accept the parameter.
 - `token_param_name` - The API parameter name for output token limit: `"max_tokens"` or `"max_completion_tokens"`. Default when absent: `"max_tokens"`. Newer OpenAI models (o-series, GPT-5 family, GPT-4.1 family) use `"max_completion_tokens"`.
+
+Static `inference_parameters` should represent stable model- or architecture-level defaults. When a backend exposes richer per-checkpoint metadata at load time, providers may use that directly instead of duplicating every model card into these assets; for example, the Hugging Face Transformers provider reads safe defaults from a loaded model's `generation_config.json` when available.
 
 #### Metadata
 - `notes` - Additional notes about the model

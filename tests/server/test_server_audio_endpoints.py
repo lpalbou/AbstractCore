@@ -552,6 +552,46 @@ def test_provider_scoped_voice_clone_prefixes_plain_model(client, monkeypatch):
     assert captured["clone"]["name"] == "my_voice"
 
 
+def test_voice_clone_global_route_prefixes_plain_remote_provider(client, monkeypatch):
+    from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
+
+    captured = {}
+
+    def fake_init(self, model: str, **kwargs):
+        self.model = model
+        captured["init"] = {"model": model, **kwargs}
+
+    def fake_clone(self, audio: bytes, **kwargs):
+        captured["clone"] = {"audio": audio, **kwargs}
+        return {"ok": True, "voice_id": "voice-789"}
+
+    monkeypatch.setattr(OpenAICompatibleProvider, "__init__", fake_init)
+    monkeypatch.setattr(OpenAICompatibleProvider, "clone_voice", fake_clone)
+
+    resp = client.post(
+        "/v1/voice/clone",
+        headers={"X-AbstractCore-Provider-API-Key": "sk-provider-key"},
+        files={"file": ("reference.wav", b"wavref", "audio/wav")},
+        data={
+            "provider": "openai-compatible",
+            "base_url": "http://127.0.0.1:5000/v1",
+            "name": "my_voice",
+            "reference_text": "hello there",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "voice_id": "voice-789"}
+    assert captured["init"] == {
+        "model": "default",
+        "api_key": "sk-provider-key",
+        "base_url": "http://127.0.0.1:5000/v1",
+    }
+    assert captured["clone"]["audio"] == b"wavref"
+    assert captured["clone"]["filename"] == "reference.wav"
+    assert captured["clone"]["content_type"] == "audio/wav"
+
+
 def test_provider_scoped_voice_clone_routes_local_engine_to_capability_plugin(client, monkeypatch):
     captured = {}
 
@@ -591,3 +631,50 @@ def test_provider_scoped_voice_clone_routes_local_engine_to_capability_plugin(cl
     assert captured["clone"]["name"] == "my_voice"
     assert captured["clone"]["reference_text"] == "hello there"
     assert captured["clone"]["cloning_engine"] == "omnivoice"
+
+
+def test_plugin_backed_audio_routes_return_503_for_missing_plugin_credentials(client, monkeypatch):
+    def register(registry):
+        class _Voice:
+            backend_id = "fake-voice"
+
+            def tts(self, text: str, **kwargs):
+                _ = text, kwargs
+                raise ValueError("OpenAI audio requires OPENAI_API_KEY or remote_api_key=...")
+
+            def stt(self, audio, **kwargs):
+                _ = audio, kwargs
+                return "transcript"
+
+            def clone(self, audio, **kwargs):
+                _ = audio, kwargs
+                raise ValueError("OpenAI audio requires OPENAI_API_KEY or remote_api_key=...")
+
+        class _Audio:
+            backend_id = "fake-audio"
+
+            def transcribe(self, audio, **kwargs):
+                _ = audio, kwargs
+                raise ValueError("OpenAI audio requires OPENAI_API_KEY or remote_api_key=...")
+
+        registry.register_voice_backend(backend_id="fake-voice", factory=lambda _owner: _Voice(), priority=0)
+        registry.register_audio_backend(backend_id="fake-audio", factory=lambda _owner: _Audio(), priority=0)
+
+    monkeypatch.setattr(
+        importlib.metadata,
+        "entry_points",
+        lambda: _EntryPoints([_FakeEntryPoint(name="fake", value="tests.fake_voice_audio:register", obj=register)]),
+    )
+    _reset_audio_core(monkeypatch)
+
+    tts = client.post("/v1/audio/speech", json={"input": "hello", "format": "wav"})
+    assert tts.status_code == 503
+    assert "OPENAI_API_KEY" in tts.json()["error"]["message"]
+
+    stt = client.post("/v1/audio/transcriptions", files={"file": ("audio.wav", b"abc", "audio/wav")})
+    assert stt.status_code == 503
+    assert "OPENAI_API_KEY" in stt.json()["error"]["message"]
+
+    clone = client.post("/v1/voice/clone", files={"file": ("reference.wav", b"abc", "audio/wav")})
+    assert clone.status_code == 503
+    assert "OPENAI_API_KEY" in clone.json()["error"]["message"]

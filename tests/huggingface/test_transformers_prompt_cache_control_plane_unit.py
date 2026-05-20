@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import threading
+from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 
 import pytest
@@ -138,6 +139,83 @@ def test_transformers_prompt_cache_capabilities_report_local_control_plane() -> 
     assert provider.prompt_cache_supports_kv_source_of_truth() is True
 
 
+def test_transformers_zero_temperature_pipeline_uses_greedy_decoding() -> None:
+    provider = _new_provider()
+    captured: Dict[str, Any] = {}
+
+    class _Pipeline:
+        def __call__(self, text: str, **kwargs: Any) -> List[Dict[str, str]]:
+            captured["text"] = text
+            captured.update(kwargs)
+            return [{"generated_text": "ok"}]
+
+    provider.pipeline = _Pipeline()
+
+    response = provider._single_generate_transformers("hello", 8, 0.0, 0.95, seed=None)
+
+    assert response.finish_reason == "stop"
+    assert response.content == "ok"
+    assert captured["do_sample"] is False
+    assert "temperature" not in captured
+    assert "top_p" not in captured
+
+
+def test_transformers_pipeline_forwards_top_k_when_sampling() -> None:
+    provider = _new_provider()
+    captured: Dict[str, Any] = {}
+
+    class _Pipeline:
+        def __call__(self, text: str, **kwargs: Any) -> List[Dict[str, str]]:
+            captured["text"] = text
+            captured.update(kwargs)
+            return [{"generated_text": "ok"}]
+
+    provider.pipeline = _Pipeline()
+
+    response = provider._single_generate_transformers("hello", 8, 0.5, 0.8, top_k=20, seed=None)
+
+    assert response.finish_reason == "stop"
+    assert response.content == "ok"
+    assert captured["do_sample"] is True
+    assert captured["temperature"] == 0.5
+    assert captured["top_p"] == 0.8
+    assert captured["top_k"] == 20
+
+
+def test_transformers_loaded_generation_config_defaults_apply_when_omitted() -> None:
+    provider = _new_provider()
+    provider.model_instance.generation_config = SimpleNamespace(
+        temperature=0.33,
+        top_p=0.44,
+        top_k=17,
+    )
+
+    provider._apply_loaded_generation_config_defaults()
+
+    assert provider.temperature == 0.33
+    assert provider.top_p == 0.44
+    assert provider.top_k == 17
+
+
+def test_transformers_loaded_generation_config_respects_explicit_constructor_values() -> None:
+    provider = _new_provider()
+    provider._explicit_generation_params = frozenset({"temperature", "top_p", "top_k"})
+    provider.temperature = 0.2
+    provider.top_p = 0.5
+    provider.top_k = 10
+    provider.model_instance.generation_config = SimpleNamespace(
+        temperature=0.33,
+        top_p=0.44,
+        top_k=17,
+    )
+
+    provider._apply_loaded_generation_config_defaults()
+
+    assert provider.temperature == 0.2
+    assert provider.top_p == 0.5
+    assert provider.top_k == 10
+
+
 def test_transformers_prompt_cache_prepare_modules_fork_update_and_save_load(tmp_path) -> None:
     provider = _new_provider()
 
@@ -205,6 +283,7 @@ def test_transformers_dynamic_cache_load_preserves_configured_layer_types(tmp_pa
     filename = tmp_path / "sliding.safetensors"
     saved = provider.prompt_cache_save("sliding", str(filename))
     assert saved["meta"]["cache_schema"] == "dynamic-cache-layers/v1"
+    assert "cache_layer_sequence_lengths" in saved["meta"]["cache_json_attrs"]
 
     provider.prompt_cache_clear()
     loaded = provider.prompt_cache_load(str(filename), key="loaded-sliding", make_default=False)
@@ -215,6 +294,8 @@ def test_transformers_dynamic_cache_load_preserves_configured_layer_types(tmp_pa
         "DynamicSlidingWindowLayer",
         "DynamicSlidingWindowLayer",
     ]
+    assert loaded_state.cache.get_seq_length() == 4
+    assert [layer.cumulative_length for layer in loaded_state.cache.layers] == [4, 4]
     assert torch.equal(loaded_state.cache.layers[1].keys, torch.full((1, 1, 4, 1), 1.0))
     assert torch.equal(loaded_state.cache.layers[1].values, torch.full((1, 1, 4, 1), 2.0))
 

@@ -10,7 +10,7 @@ Use this file as the entry point for planning status, recommended next work, and
 ## Counts
 
 - Planned: 12
-- Proposed: 6
+- Proposed: 9
 - Completed: 11
 - Deprecated: 1
 - Recurrent: 0
@@ -53,6 +53,9 @@ Use this file as the entry point for planning status, recommended next work, and
 | `proposed/2026-05-08_dual-server-docker-image-profiles.md` | Promote when packaging/deployment scope becomes active. |
 | `proposed/2026-05-18_native-mtp-and-speculative-decoding-support.md` | Promote when serving backends and benchmarks justify active implementation. |
 | `proposed/2026-05-20_composable-prompt-cache-recipes-for-immutable-memory-clusters.md` | Keep proposed until real workloads show stable superbloc reuse beyond single-bloc caches and the work is narrowed to one deterministic exact-prefix recipe per target backend. |
+| `proposed/2026-05-20_audio-capability-matrix-consumption-from-abstractvoice.md` | Promote when Core needs truthful audio feature filtering, validation, or UI behavior beyond legacy `controls` booleans. |
+| `proposed/0792_hf_transformers_metal_quantization_on_apple.md` | Promote after `Qwen/Qwen3.5-4B` proves MPS `MetalConfig(bits=4)` load/generation/cache correctness with optional `kernels`, clear failure modes, and measured memory/performance deltas. |
+| `proposed/0793_public_prompt_cache_persistence_control_plane.md` | Promote when Core maintainers decide whether generic prompt-cache snapshot persistence remains a supported public Gateway/server feature or should be explicitly de-scoped in favor of bloc KV artifacts. |
 
 ## Completed ledger
 

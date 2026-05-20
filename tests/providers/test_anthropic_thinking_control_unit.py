@@ -34,6 +34,28 @@ def test_anthropic_opus_4_6_thinking_high_maps_to_adaptive_effort(monkeypatch) -
     assert call_params["output_config"]["effort"] == "high"
 
 
+def test_anthropic_sampling_knobs_are_forwarded_only_when_requested(monkeypatch) -> None:
+    provider = AnthropicProvider(model="claude-opus-4-6", api_key="test")
+
+    captured = {}
+
+    def fake_create(**call_params):
+        captured["call_params"] = call_params
+        return _fake_response(blocks=[SimpleNamespace(type="text", text="ok")], model=provider.model)
+
+    monkeypatch.setattr(provider.client.messages, "create", fake_create)
+
+    provider.generate(prompt="hi", temperature=0, max_output_tokens=16)
+    call_params = captured["call_params"]
+    assert "top_p" not in call_params
+    assert "top_k" not in call_params
+
+    provider.generate(prompt="hi", temperature=0, top_p=0.8, top_k=20, max_output_tokens=16)
+    call_params = captured["call_params"]
+    assert call_params["top_p"] == 0.8
+    assert call_params["top_k"] == 20
+
+
 def test_anthropic_opus_4_6_thinking_xhigh_maps_to_max_effort(monkeypatch) -> None:
     provider = AnthropicProvider(model="claude-opus-4-6", api_key="test")
 
@@ -126,4 +148,3 @@ def test_anthropic_thinking_blocks_are_captured_as_reasoning(monkeypatch) -> Non
     assert resp.content == "final"
     assert isinstance(resp.metadata, dict)
     assert resp.metadata.get("reasoning") == "r"
-

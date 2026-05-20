@@ -135,6 +135,99 @@ def test_voice_facade_delegates_local_profile_voice_to_backend(monkeypatch):
     )
 
 
+@pytest.mark.basic
+def test_voice_clone_uses_public_backend_clone_method(monkeypatch):
+    def register(registry):
+        class _Voice:
+            backend_id = "abstractvoice:default"
+
+            def clone(self, audio, **kwargs):
+                return {
+                    "audio": audio,
+                    "name": kwargs.get("name"),
+                    "reference_text": kwargs.get("reference_text"),
+                    "provider": kwargs.get("provider"),
+                }
+
+            def tts(self, text: str, **kwargs):
+                _ = text, kwargs
+                return b"wav"
+
+            def stt(self, audio, **kwargs):
+                _ = audio, kwargs
+                return "transcript"
+
+        registry.register_voice_backend(backend_id="abstractvoice:default", factory=lambda _owner: _Voice(), priority=0)
+
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_FakeEntryPoint(name="fake", value="tests.fake_legacy_clone:register", obj=register)]))
+
+    llm = _DummyProvider(model="dummy")
+    out = llm.voice.clone(b"abc", name="voice-a", reference_text="hello", provider="omnivoice")
+    assert out == {
+        "audio": b"abc",
+        "name": "voice-a",
+        "reference_text": "hello",
+        "provider": "omnivoice",
+    }
+
+
+@pytest.mark.basic
+def test_voice_clone_uses_public_backend_clone_voice_alias(monkeypatch):
+    def register(registry):
+        class _Voice:
+            backend_id = "alias-voice"
+
+            def clone_voice(self, audio, **kwargs):
+                return {"audio": audio, "model": kwargs.get("model"), "provider": kwargs.get("provider")}
+
+            def tts(self, text: str, **kwargs):
+                _ = text, kwargs
+                return b"wav"
+
+            def stt(self, audio, **kwargs):
+                _ = audio, kwargs
+                return "transcript"
+
+        registry.register_voice_backend(backend_id="alias-voice", factory=lambda _owner: _Voice(), priority=0)
+
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_FakeEntryPoint(name="fake", value="tests.fake_clone_voice_alias:register", obj=register)]))
+
+    llm = _DummyProvider(model="dummy")
+    out = llm.voice.clone(b"abc", provider="f5-tts", model="f5-tts/F5TTS_v1_Base")
+    assert out == {"audio": b"abc", "model": "f5-tts/F5TTS_v1_Base", "provider": "f5-tts"}
+
+
+@pytest.mark.basic
+def test_voice_list_cloning_models_uses_backend_discovery_surface(monkeypatch):
+    def register(registry):
+        class _Voice:
+            backend_id = "fake-voice"
+
+            def tts(self, text: str, **kwargs):
+                _ = text, kwargs
+                return b"wav"
+
+            def stt(self, audio, **kwargs):
+                _ = audio, kwargs
+                return "transcript"
+
+            def list_cloning_models(self, provider=None):
+                if provider == "fake-clone":
+                    return ["clone-test"]
+                if provider:
+                    return []
+                return ["clone-test", "clone-backup"]
+
+        registry.register_voice_backend(backend_id="fake-voice", factory=lambda _owner: _Voice(), priority=0)
+
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_FakeEntryPoint(name="fake", value="tests.fake_clone_discovery:register", obj=register)]))
+
+    llm = _DummyProvider(model="dummy")
+    assert llm.voice.list_cloning_models() == ["clone-test", "clone-backup"]
+    assert llm.voice.list_cloning_models(provider="fake-clone") == ["clone-test"]
+    assert llm.voice.list_models(kind="cloning", provider="fake-clone") == ["clone-test"]
+
+
 def _make_fake_plugin_ep():
     def register(registry):
         class _Voice:

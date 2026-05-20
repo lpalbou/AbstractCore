@@ -77,6 +77,53 @@ class TestSeedTemperatureParameters:
         prepared = provider._prepare_generation_kwargs()
         assert "seed" not in prepared, "Unset seed should not be forwarded in generation kwargs"
 
+    def test_metadata_generation_defaults(self):
+        """Model/architecture metadata should provide defaults when callers omit them."""
+        provider = DummyProvider(model="google/gemma-4-E4B-it")
+
+        assert provider.temperature == 1.0
+        assert provider.top_p == 0.95
+        assert provider.top_k == 64
+
+        prepared = provider._prepare_generation_kwargs()
+        assert prepared["temperature"] == 1.0
+        assert prepared["top_p"] == 0.95
+        assert prepared["top_k"] == 64
+
+    def test_explicit_generation_parameters_override_metadata(self):
+        provider = DummyProvider(
+            model="google/gemma-4-E4B-it",
+            temperature=0.0,
+            top_p=0.5,
+            top_k=10,
+        )
+
+        prepared = provider._prepare_generation_kwargs()
+        assert prepared["temperature"] == 0.0
+        assert prepared["top_p"] == 0.5
+        assert prepared["top_k"] == 10
+
+    def test_per_call_generation_parameters_override_metadata(self):
+        provider = DummyProvider(model="google/gemma-4-E4B-it")
+
+        prepared = provider._prepare_generation_kwargs(
+            temperature=0.2,
+            top_p=0.6,
+            top_k=12,
+        )
+        params = provider._extract_generation_params(
+            temperature=0.2,
+            top_p=0.6,
+            top_k=12,
+        )
+
+        assert prepared["temperature"] == 0.2
+        assert prepared["top_p"] == 0.6
+        assert prepared["top_k"] == 12
+        assert params["temperature"] == 0.2
+        assert params["top_p"] == 0.6
+        assert params["top_k"] == 12
+
     def test_seed_normalization_prepare_kwargs(self):
         provider = DummyProvider(model="dummy", seed=-1)
         assert "seed" not in provider._prepare_generation_kwargs(), "Negative seed should be treated as unset"

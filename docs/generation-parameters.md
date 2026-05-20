@@ -1,6 +1,6 @@
 # Generation Parameters Architecture
 
-This document explains the design and implementation of unified generation parameters (temperature, seed, thinking/reasoning) across all AbstractCore providers.
+This document explains the design and implementation of unified generation parameters (`temperature`, `top_p`, `top_k`, `seed`, and thinking/reasoning controls) across AbstractCore providers.
 
 ## Design Principles
 
@@ -35,8 +35,9 @@ AbstractCoreInterface (interface.py)
 BaseProvider (base.py)
 ├── _prepare_generation_kwargs()     # Unified parameter processing
 ├── _extract_generation_params()     # Parameter extraction helper
+├── _metadata_inference_parameters() # Asset-driven model/architecture defaults
 ├── _apply_thinking_request()        # Provider-agnostic + provider-specific thinking mapping
-└── Parameter fallback hierarchy     # kwargs → instance → defaults
+└── Parameter fallback hierarchy     # kwargs → instance/assets → defaults
 
 Individual Providers
 ├── Provider-specific parameters only (top_p, frequency_penalty, etc.)
@@ -58,22 +59,55 @@ Parameters follow a clear precedence order:
    llm = create_llm("openai", temperature=0.5, seed=42)
    ```
 
-3. **Interface defaults** (lowest priority)
+3. **Loaded model generation metadata**
+   Hugging Face Transformers models may publish `generation_config.json`; when present, AbstractCore reads safe defaults such as `temperature`, `top_p`, and `top_k` from the loaded model. Explicit kwargs and constructor values still win.
+
+4. **Static model / architecture metadata**
+   ```json
+   {
+     "inference_parameters": {
+       "temperature": 1.0,
+       "top_p": 0.95,
+       "top_k": 64
+     }
+   }
+   ```
+
+5. **Interface defaults** (lowest priority)
    ```python
    # temperature=0.7, seed=None (from AbstractCoreInterface)
    ```
 
+### Override Guarantee
+
+`inference_parameters` in `model_capabilities.json`, `architecture_formats.json`, and loaded HF `generation_config.json` are defaults only. They are never hard requirements. For providers/backends that accept a parameter, caller-supplied values always win:
+
+```python
+llm = create_llm("huggingface", model="google/gemma-4-E4B-it")  # metadata default: top_k=64
+llm.generate("Hello", temperature=0.2, top_p=0.6, top_k=12)      # uses caller values
+```
+
+If a backend does not support a parameter, provider-specific compatibility rules still apply. For example, strict gateway providers may drop unsupported parameters rather than forwarding invalid requests.
+
 ## Provider-Specific Implementation
 
-### Native Support (OpenAI, Ollama, LMStudio, HuggingFace)
+### Native Support (OpenAI, Ollama, LM Studio, Hugging Face, MLX)
 ```python
 # Direct parameter mapping to provider API
 call_params["temperature"] = params["temperature"]
+call_params["top_p"] = params["top_p"]
+call_params["top_k"] = params["top_k"]  # when the backend exposes this control
 if "seed" in params:
     call_params["seed"] = params["seed"]
 ```
 
-### Graceful Fallback (Anthropic, MLX)
+Notes:
+- Hugging Face Transformers applies loaded `generation_config` defaults and forwards `temperature`, `top_p`, and `top_k` into `generate()` / pipeline calls where supported.
+- Hugging Face GGUF and Ollama forward sampling controls through their local runtime APIs.
+- MLX uses an `mlx-lm` sampler so `temperature`, `top_p`, and `top_k` affect actual decoding rather than only AbstractCore metadata.
+- LM Studio receives `top_k` when using the LM Studio provider; the generic OpenAI-compatible provider keeps stricter OpenAI-compatible behavior unless a backend-specific hook handles the parameter.
+
+### Graceful Fallback (Anthropic)
 ```python
 # Accept parameters but log limitation
 if "seed" in params:
@@ -109,7 +143,7 @@ print(response.reasoning)
 
 **Accepted values**: `None|"auto"|"on"|"off"|"none"|True|False|"low"|"medium"|"high"` (legacy aliases: `"minimal"`, `"xhigh"`, `"extra high"`).
 
-**Best-effort mappings (as of Mar 2026):**
+**Best-effort mappings (as of May 2026):**
 - **OpenAI** (`OpenAIProvider`): Chat Completions `reasoning_effort` (values come from `reasoning_levels` in `model_capabilities.json`). `thinking="off"` maps to `reasoning_effort="none"` when supported; otherwise it falls back to the minimum supported effort with a warning (e.g., `gpt-5.2-pro` → `"medium"`).
 - **Anthropic** (`AnthropicProvider`): Messages API `thinking` + (for Claude 4.6 adaptive thinking) `output_config.effort`.
   - Unified levels map to effort: `low|medium|high|xhigh` → `low|medium|high|max` (when supported); `xhigh` falls back to `high` with a warning when `max` is unavailable.
@@ -199,18 +233,21 @@ def __init__(self, ..., temperature: float = 0.7, seed: Optional[int] = None):
 def _extract_generation_params(self, **kwargs) -> Dict[str, Any]:
     return {
         "temperature": kwargs.get("temperature", self.temperature),
+        "top_p": kwargs.get("top_p", getattr(self, "top_p", None)),
+        "top_k": kwargs.get("top_k", getattr(self, "top_k", None)),
         "seed": kwargs.get("seed", self.seed) if self.seed is not None else None
     }
 ```
 
 ## Future Extensibility
 
-Adding new parameters requires only:
+Adding new common parameters requires:
 1. Declaration in `AbstractCoreInterface`
 2. Logic in `BaseProvider._extract_generation_params()`
-3. Provider-specific mapping where supported
+3. Optional static metadata in `assets/model_capabilities.json` or `assets/architecture_formats.json`
+4. Provider-specific mapping where supported
 
-No changes needed in individual provider `__init__` methods.
+Provider constructors should only keep provider-specific state. Common defaults should flow through the base fallback hierarchy.
 
 ## Testing Strategy
 

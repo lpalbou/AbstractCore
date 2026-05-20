@@ -24,7 +24,7 @@ pip install "abstractcore[voice]"
 pip install "abstractcore[vision]"
 ```
 
-`abstractvoice` 0.10.3+ can install its base AbstractCore plugin path on
+`abstractvoice` 0.10.11+ can install its base AbstractCore plugin path on
 Python 3.9, but Python 3.10+ is recommended. Optional/heavier engines such as
 OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths, and AEC requires
 Python 3.11+.

@@ -2147,10 +2147,10 @@
         "qwen3.5:9b",
         "Jackrong/Qwopus3.5-9B-v3-GGUF"
       ],
-      "max_tokens": 262144,
-      "video_support": false,
-      "max_tools": -1,
-      "video_input_mode": "frames"
+		      "max_tokens": 262144,
+		      "video_support": false,
+		      "max_tools": -1,
+		      "video_input_mode": "frames"
     },
     "qwen3.5-0.8b": {
       "max_output_tokens": 81920,
@@ -2168,10 +2168,15 @@
         "qwen/qwen3.5-0.8b",
         "qwen3.5:0.8b"
       ],
-      "max_tokens": 262144,
-      "video_support": false,
-      "max_tools": -1,
-      "video_input_mode": "frames"
+	      "max_tokens": 262144,
+	      "inference_parameters": {
+	        "temperature": 1.0,
+	        "top_p": 0.95,
+	        "top_k": 20
+	      },
+	      "video_support": false,
+	      "max_tools": -1,
+	      "video_input_mode": "frames"
     },
     "qwen3.5-2b": {
       "max_output_tokens": 81920,
@@ -2189,10 +2194,10 @@
         "qwen/qwen3.5-2b",
         "qwen3.5:2b"
       ],
-      "max_tokens": 262144,
-      "video_support": false,
-      "max_tools": -1,
-      "video_input_mode": "frames"
+		      "max_tokens": 262144,
+		      "video_support": false,
+	      "max_tools": -1,
+	      "video_input_mode": "frames"
     },
     "qwen3.5-4b": {
       "max_output_tokens": 81920,
@@ -2209,11 +2214,11 @@
       "aliases": [
         "qwen/qwen3.5-4b",
         "qwen3.5:4b"
-      ],
-      "max_tokens": 262144,
-      "video_support": false,
-      "max_tools": -1,
-      "video_input_mode": "frames"
+	      ],
+	      "max_tokens": 262144,
+	      "video_support": false,
+	      "max_tools": -1,
+	      "video_input_mode": "frames"
     },
     "qwen3.5-27b": {
       "max_output_tokens": 81920,
@@ -2231,11 +2236,16 @@
         "qwen/qwen3.5-27b",
         "qwen3.5:27b",
         "Jackrong/Qwopus3.5-27B-v3"
-      ],
-      "max_tokens": 262144,
-      "video_support": false,
-      "max_tools": -1,
-      "video_input_mode": "frames"
+	      ],
+	      "max_tokens": 262144,
+	      "inference_parameters": {
+	        "temperature": 0.6,
+	        "top_p": 0.95,
+	        "top_k": 20
+	      },
+	      "video_support": false,
+	      "max_tools": -1,
+	      "video_input_mode": "frames"
     },
     "qwen3.5-35b-a3b": {
       "max_output_tokens": 81920,
@@ -2256,11 +2266,16 @@
       "aliases": [
         "qwen/qwen3.5-35b-a3b",
         "qwen3.5:35b"
-      ],
-      "max_tokens": 262144,
-      "video_support": false,
-      "max_tools": -1,
-      "video_input_mode": "frames"
+	      ],
+	      "max_tokens": 262144,
+	      "inference_parameters": {
+	        "temperature": 1.0,
+	        "top_p": 0.95,
+	        "top_k": 20
+	      },
+	      "video_support": false,
+	      "max_tools": -1,
+	      "video_input_mode": "frames"
     },
     "qwen3.5-397b-a17b": {
       "max_output_tokens": 81920,
@@ -2280,11 +2295,16 @@
       "canonical_name": "qwen3.5-397b-a17b",
       "aliases": [
         "qwen/qwen3.5-397b-a17b"
-      ],
-      "max_tokens": 262144,
-      "video_support": false,
-      "max_tools": -1,
-      "video_input_mode": "frames"
+	      ],
+	      "max_tokens": 262144,
+	      "inference_parameters": {
+	        "temperature": 0.6,
+	        "top_p": 0.95,
+	        "top_k": 20
+	      },
+	      "video_support": false,
+	      "max_tools": -1,
+	      "video_input_mode": "frames"
     },
     "qwen3.5-122b-a10b": {
       "max_output_tokens": 81920,
@@ -2305,11 +2325,16 @@
       "aliases": [
         "qwen/qwen3.5-122b-a10b",
         "qwen3.5:122b"
-      ],
-      "max_tokens": 262144,
-      "video_support": false,
-      "max_tools": -1,
-      "video_input_mode": "frames"
+	      ],
+	      "max_tokens": 262144,
+	      "inference_parameters": {
+	        "temperature": 0.6,
+	        "top_p": 0.95,
+	        "top_k": 20
+	      },
+	      "video_support": false,
+	      "max_tools": -1,
+	      "video_input_mode": "frames"
     },
     "qwen3.6-27b": {
       "max_output_tokens": 81920,

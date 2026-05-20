@@ -49,9 +49,15 @@ class VoiceCapability(Protocol):
 
     def list_profiles(self, *, kind: str = "tts") -> List[Dict[str, Any]]: ...
 
-    def list_tts_models(self) -> List[str]: ...
+    def available_providers(self) -> Dict[str, Any]: ...
 
-    def list_stt_models(self) -> List[str]: ...
+    def list_models(self, *, kind: str = "tts", provider: Optional[str] = None) -> List[str]: ...
+
+    def list_tts_models(self, provider: Optional[str] = None) -> List[str]: ...
+
+    def list_stt_models(self, provider: Optional[str] = None) -> List[str]: ...
+
+    def list_cloning_models(self, provider: Optional[str] = None) -> List[str]: ...
 
     def voice_catalog(self) -> Dict[str, Any]: ...
 
@@ -83,10 +89,12 @@ class VoiceCapability(Protocol):
 
     def clone(
         self,
-        audio: Union[bytes, ArtifactRef, str],
+        audio: Union[bytes, Dict[str, Any], str],
         *,
         name: Optional[str] = None,
         reference_text: Optional[str] = None,
+        model: Optional[str] = None,
+        provider: Optional[str] = None,
         consent: Optional[str] = None,
         validate: Optional[bool] = None,
         artifact_store: Optional[ArtifactStoreLike] = None,

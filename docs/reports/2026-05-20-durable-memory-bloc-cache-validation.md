@@ -69,6 +69,34 @@ and produced strict-correct uncached and cached answers.
 | Gemma4 26B-A4B MLX 4-bit | `/Users/albou/.lmstudio/models/mlx-community/gemma-4-26b-a4b-4bit` | `abstractcore-mlx-prompt-cache/v1`, 287,772,618 bytes | 3,811 | 4.1853s | 0.2944s | 14.22x | 0.1138s | 5.5687s | 1.8616s | strict |
 | Gemma4 31B MLX MXFP4 | `/Users/albou/.lmstudio/models/mlx-community/gemma-4-31b-mxfp4` | `abstractcore-mlx-prompt-cache/v1`, 1,151,073,453 bytes | 3,811 | 20.0017s | 0.5807s | 34.44x | 0.6033s | 29.1899s | 4.3598s | strict |
 
+HF transformers Gemma4 E4B-it was also checked in an isolated transformers 5.9.0 environment,
+because the base environment's transformers 5.3.0 does not recognize `model_type=gemma4`.
+`google/gemma-4-E4B-it` loaded on MPS and simple uncached/cached bloc-bound prompts both returned
+the expected facts. The durable artifact used `abstractcore-transformers-prompt-cache/v1`, restored
+50 cached prefix tokens with `cache.get_seq_length() == 50`, and validated the request binding. A
+larger benchmark-shaped prompt compiled and reused durable artifacts, but the E4B model missed the
+synthetic checksum target in both uncached and cached answers. That checksum prompt is therefore
+recorded as a cache compatibility/timing probe, not a strict semantic benchmark row.
+
+Repeated local Gemma4 E4B-it HF transformers checks:
+
+- Checksum prompt, three subprocess runs, 3,811 cached prefix tokens:
+  - full prompt processing mean: 4.8334s
+  - cached suffix processing mean: 0.4282s
+  - processing speedup mean: 21.40x, with high variance from the first cached suffix update
+  - uncached request mean: 10.3469s
+  - cached bound request mean: 4.1227s
+  - semantic result: not strict; uncached and cached both missed the expected checksum
+- Operator-only prompt, three in-process runs, 1,492 cached prefix tokens:
+  - full prompt processing mean: 0.3516s
+  - cached suffix processing mean: 0.1360s
+  - processing speedup mean: 4.03x
+  - artifact load mean: 0.0323s
+  - semantic result: 3/3 uncached and cached answers contained `Nia Sol`
+
+The current audio/voice compatibility floor used for this environment is `abstractvoice>=0.10.11`
+with `omnivoice>=0.1.5`.
+
 Gemma4 GGUF checks require `llama-cpp-python>=0.3.23,<1.0.0`, matching AbstractCore's package
 requirement. Gemma4 exact rendering uses the model's llama.cpp chat template.
 
@@ -93,10 +121,11 @@ For GGUF, cached generation metadata confirmed actual durable-prefix use:
 The speedup is in prompt processing, not model load. Artifact load is reported separately because a
 long-running loaded runtime should load once and reuse the cache repeatedly.
 
-Generation latency may also improve because the generation call no longer re-processes the full
-memory bloc, but AbstractCore should not claim decode itself became faster. The meaningful proof is
-that the full prompt processing phase drops to the suffix-only processing phase while the answer
-stays correct.
+Request latency may also improve because a provider `generate(...)` call usually includes prompt
+prefill plus autoregressive decode. Cached requests skip most of the prefill, so an
+`uncached_generation_s` / `cached_generation_s` comparison does not prove per-token decode became
+faster. The meaningful proof is that the full prompt processing phase drops to the suffix-only
+processing phase while the answer stays correct.
 
 The 4B baseline models are not quantization-equivalent:
 
@@ -123,7 +152,8 @@ prerequisite for cache validation.
 - MLX uses MLX-LM prompt-cache payloads.
 - HF transformers uses provider-native `Cache` objects persisted in `.safetensors`; current
   coverage includes standard `DynamicCache` layer state, Qwen3.5/Qwen3Next-style tensor-list hybrid
-  state, and Mamba-style tensor state when the cache class can be constructed from model config.
+  state, Gemma4 dynamic sliding-window layer state, and Mamba-style tensor state when the cache
+  class can be constructed from model config.
 - HF GGUF uses llama.cpp state snapshots in `.npz` and is exact-renderer gated. Current exact
   renderers are `chatml-function-calling`, `llama-3`, and Gemma4 `gemma_turn` through llama.cpp's
   model chat template.

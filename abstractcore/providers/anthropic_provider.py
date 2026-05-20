@@ -60,8 +60,8 @@ class AnthropicProvider(BaseProvider):
         self.tool_handler = UniversalToolHandler(model)
 
         # Store provider-specific configuration
-        self.top_p = kwargs.get("top_p", 1.0)
-        self.top_k = kwargs.get("top_k", None)
+        self.top_p = kwargs.get("top_p", getattr(self, "top_p", 1.0))
+        self.top_k = kwargs.get("top_k", getattr(self, "top_k", None))
 
     def generate(self, *args, **kwargs):
         """Public generate method that includes telemetry"""
@@ -303,12 +303,24 @@ class AnthropicProvider(BaseProvider):
             call_params["system"] = system_prompt
 
         # Add top_p if specified
-        if kwargs.get("top_p") or self.top_p < 1.0:
-            call_params["top_p"] = kwargs.get("top_p", self.top_p)
+        top_p_value = generation_kwargs.get("top_p", self.top_p)
+        top_p_is_requested = (
+            "top_p" in kwargs
+            or "top_p" in getattr(self, "_explicit_generation_params", frozenset())
+            or self._metadata_generation_default("top_p") is not None
+        )
+        if top_p_value is not None and (top_p_is_requested or top_p_value < 1.0):
+            call_params["top_p"] = top_p_value
 
         # Add top_k if specified
-        if kwargs.get("top_k") or self.top_k:
-            call_params["top_k"] = kwargs.get("top_k", self.top_k)
+        top_k_value = generation_kwargs.get("top_k", self.top_k)
+        top_k_is_requested = (
+            "top_k" in kwargs
+            or "top_k" in getattr(self, "_explicit_generation_params", frozenset())
+            or self._metadata_generation_default("top_k") is not None
+        )
+        if top_k_value is not None and top_k_is_requested:
+            call_params["top_k"] = top_k_value
 
         # Handle seed parameter (Anthropic doesn't support seed natively)
         seed_value = generation_kwargs.get("seed")
@@ -551,12 +563,24 @@ class AnthropicProvider(BaseProvider):
             call_params["system"] = system_prompt
 
         # Add top_p if specified
-        if kwargs.get("top_p") or self.top_p < 1.0:
-            call_params["top_p"] = kwargs.get("top_p", self.top_p)
+        top_p_value = generation_kwargs.get("top_p", self.top_p)
+        top_p_is_requested = (
+            "top_p" in kwargs
+            or "top_p" in getattr(self, "_explicit_generation_params", frozenset())
+            or self._metadata_generation_default("top_p") is not None
+        )
+        if top_p_value is not None and (top_p_is_requested or top_p_value < 1.0):
+            call_params["top_p"] = top_p_value
 
         # Add top_k if specified
-        if kwargs.get("top_k") or self.top_k:
-            call_params["top_k"] = kwargs.get("top_k", self.top_k)
+        top_k_value = generation_kwargs.get("top_k", self.top_k)
+        top_k_is_requested = (
+            "top_k" in kwargs
+            or "top_k" in getattr(self, "_explicit_generation_params", frozenset())
+            or self._metadata_generation_default("top_k") is not None
+        )
+        if top_k_value is not None and top_k_is_requested:
+            call_params["top_k"] = top_k_value
 
         # Handle seed parameter (Anthropic doesn't support seed natively)
         seed_value = generation_kwargs.get("seed")

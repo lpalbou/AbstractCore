@@ -310,7 +310,7 @@ Notes:
 - **Images**: use a vision-capable model, or configure **vision fallback** for text-only models (`abstractcore --config`; `abstractcore --set-vision-provider PROVIDER MODEL`).
 - **Video**: `video_policy="auto"` (default) uses native video when supported, otherwise samples frames (requires `ffmpeg`/`ffprobe`) and routes them through image/vision handling (so you still need a vision-capable model or vision fallback configured).
 - **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` and install `abstractcore[voice]` for speech-to-text.
-  `abstractvoice` 0.10.3+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines and cloning backends.
+  `abstractvoice` 0.10.11+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines and cloning backends.
 
 Configure defaults (optional):
 
@@ -428,7 +428,7 @@ Core features:
 - [Media Handling](docs/media-handling-system.md) — images/audio/video + documents (policies + fallbacks)
 - [Vision Capabilities](docs/vision-capabilities.md) — image/video input, vision fallback, and how this differs from generative vision
 - [Glyph Visual-Text Compression](docs/glyphs.md) — compress long documents into images for VLMs
-- [Generation Parameters](docs/generation-parameters.md) — unified parameter vocabulary and provider quirks
+- [Generation Parameters](docs/generation-parameters.md) — unified parameter vocabulary, default hierarchy, caller overrides, and provider quirks
 - [Session Management](docs/session.md) — conversation history, persistence, and compaction
 - [Embeddings](docs/embeddings.md) — embeddings API and RAG building blocks
 - [Async Guide](docs/async-guide.md) — async patterns, concurrency, best practices

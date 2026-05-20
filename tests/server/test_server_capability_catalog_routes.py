@@ -29,16 +29,47 @@ class _FakeVoice:
             "stt_models": ["stt-test"],
             "tts_models_by_provider": {"fake-tts": ["tts-test"]},
             "stt_models_by_provider": {"fake-stt": ["stt-test"]},
+            "compatibility_catalog": {
+                "providers": {
+                    "cloning": {
+                        "fake-clone": {
+                            "models": {
+                                "clone-test": {"surfaces": {"default": {"voice_clone": {"support": "native"}}}},
+                                "*": {"surfaces": {"default": {"voice_clone": {"support": "native"}}}},
+                            }
+                        }
+                    }
+                }
+            },
             "available_tts_providers": ["fake-tts"],
             "available_stt_providers": ["fake-stt"],
             "available_cloning_providers": ["fake-clone"],
         }
 
-    def list_tts_models(self):
+    def available_providers(self):
+        return {
+            "tts": ["fake-tts"],
+            "stt": ["fake-stt"],
+            "cloning": ["fake-clone"],
+            "active_tts_provider": "fake-tts",
+            "active_stt_provider": "fake-stt",
+            "active_cloning_provider": "fake-clone",
+        }
+
+    def list_tts_models(self, provider=None):
+        if provider and provider != "fake-tts":
+            return []
         return ["tts-test"]
 
-    def list_stt_models(self):
+    def list_stt_models(self, provider=None):
+        if provider and provider != "fake-stt":
+            return []
         return ["stt-test"]
+
+    def list_cloning_models(self, provider=None):
+        if provider and provider != "fake-clone":
+            return []
+        return ["clone-test"]
 
 
 class _FakeVision:
@@ -213,8 +244,10 @@ def test_voice_clone_models_catalog_route(monkeypatch):
     response = TestClient(app).get("/v1/voice/clone/models")
     assert response.status_code == 200
     payload = response.json()
-    assert payload["models"] == []
+    assert payload["models"] == ["clone-test"]
     assert payload["providers"] == ["fake-clone"]
+    assert payload["models_by_provider"] == {"fake-clone": ["clone-test"]}
+    assert payload["provider_models"][0]["model"] == "fake-clone/clone-test"
 
 
 def test_audio_voice_models_endpoint_removed(monkeypatch):

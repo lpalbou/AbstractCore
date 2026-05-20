@@ -83,10 +83,15 @@
       "user_suffix": "<|im_end|>\n",
         "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-      "tool_format": "special_token",
-      "tool_prefix": "<|tool_call|>",
-      "patterns": ["qwen3-next", "qwen3-coder-next", "qwen/qwen3-coder-next"]
-    },
+	      "tool_format": "special_token",
+	      "tool_prefix": "<|tool_call|>",
+	      "inference_parameters": {
+	        "temperature": 1.0,
+	        "top_p": 0.95,
+	        "top_k": 40
+	      },
+	      "patterns": ["qwen3-next", "qwen3-coder-next", "qwen/qwen3-coder-next"]
+	    },
     "qwen3_vl": {
       "description": "Alibaba's Qwen3-VL multimodal architecture (May 2025)",
       "message_format": "im_start_end",
@@ -96,9 +101,14 @@
       "user_suffix": "<|im_end|>\n",
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-      "tool_format": "native",
-      "patterns": ["qwen3-vl-2b", "qwen3-vl-4b", "qwen3-vl-8b"]
-    },
+	      "tool_format": "native",
+	      "inference_parameters": {
+	        "temperature": 0.7,
+	        "top_p": 0.8,
+	        "top_k": 20
+	      },
+	      "patterns": ["qwen3-vl-2b", "qwen3-vl-4b", "qwen3-vl-8b"]
+	    },
     "qwen3_vl_moe": {
       "description": "Alibaba's Qwen3-VL MoE multimodal architecture (May 2025)",
       "message_format": "im_start_end",
@@ -108,9 +118,14 @@
       "user_suffix": "<|im_end|>\n",
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-      "tool_format": "native",
-      "patterns": ["qwen3-vl-30b-a3b", "qwen3-vl-235b-a22b"]
-    },
+	      "tool_format": "native",
+	      "inference_parameters": {
+	        "temperature": 0.7,
+	        "top_p": 0.8,
+	        "top_k": 20
+	      },
+	      "patterns": ["qwen3-vl-30b-a3b", "qwen3-vl-235b-a22b"]
+	    },
       "qwen3_moe": {
         "description": "Alibaba's Qwen3 MoE architecture (April 2025)",
         "message_format": "im_start_end",
@@ -120,10 +135,15 @@
         "user_suffix": "<|im_end|>\n",
         "assistant_prefix": "<|im_start|>assistant\n",
         "assistant_suffix": "<|im_end|>\n",
-        "tool_format": "special_token",
-        "tool_prefix": "<|tool_call|>",
-        "patterns": ["qwen3-30b-a3b", "qwen3-235b-a22b", "qwen3:30b-a3b", "qwen3-coder:30b", "qwen/qwen3-coder-30b"]
-      },
+	        "tool_format": "special_token",
+	        "tool_prefix": "<|tool_call|>",
+	        "inference_parameters": {
+	          "temperature": 0.7,
+	          "top_p": 0.8,
+	          "top_k": 20
+	        },
+	        "patterns": ["qwen3-30b-a3b", "qwen3-235b-a22b", "qwen3:30b-a3b", "qwen3-coder:30b", "qwen/qwen3-coder-30b"]
+	      },
     "qwen2_5": {
       "description": "Alibaba's Qwen2.5 architecture (September 2024)",
       "message_format": "im_start_end",
@@ -204,11 +224,16 @@
       "tool_format": "xml",
       "tool_prefix": "<tool_call>",
       "tool_calling_format": "qwen3_coder",
-      "thinking_tags": ["<think>", "</think>"],
-      "thinking_control": "enable_thinking",
-      "reasoning_support": true,
-      "patterns": [
-        "qwen3.6-",
+	      "thinking_tags": ["<think>", "</think>"],
+	      "thinking_control": "enable_thinking",
+	      "reasoning_support": true,
+	      "inference_parameters": {
+	        "temperature": 1.0,
+	        "top_p": 0.95,
+	        "top_k": 20
+	      },
+	      "patterns": [
+	        "qwen3.6-",
         "qwen3.6:",
         "qwen3_6-",
         "qwen3_6:",
@@ -242,10 +267,15 @@
       "user_suffix": "<|im_end|>\n",
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-      "tool_format": "xml",
-      "thinking_tags": ["<think>", "</think>"],
-      "patterns": [
-        "sera-",
+	      "tool_format": "xml",
+	      "thinking_tags": ["<think>", "</think>"],
+	      "inference_parameters": {
+	        "temperature": 0.0,
+	        "top_p": 0.95,
+	        "top_k": 20
+	      },
+	      "patterns": [
+	        "sera-",
         "sera-32b",
         "sera-32b-ga",
         "sera-8b",
@@ -426,8 +456,16 @@
 	        "tool_format": "special_token",
 	        "tool_prefix": "<|tool_call>",
 		        "thinking_tags": ["<|channel>thought", "<channel|>"],
-	        "patterns": ["gemma-4", "gemma4", "google/gemma-4"]
-	      },
+		        "reasoning_support": true,
+		        "thinking_control": "enable_thinking",
+		        "inference_parameters": {
+		          "temperature": 1.0,
+		          "top_p": 0.95,
+		          "top_k": 64
+		        },
+		        "prompt_cache_position_strategy": "dynamic_cache_cumulative_length",
+		        "patterns": ["gemma-4", "gemma4", "google/gemma-4"]
+		      },
 	    "gemma2": {
 	      "description": "Google's Gemma 2 architecture (June 2024)",
 	      "message_format": "basic",
@@ -467,11 +505,16 @@
         "start": "<|begin_of_box|>",
         "end": "<|end_of_box|>"
       },
-      "thinking_output_field": "reasoning_content",
-      "thinking_tags": ["<think>", "</think>"],
-      "thinking_control": "/nothink",
-      "patterns": ["glm-4.6v", "glm4.6v", "zai-org/glm-4.6v", "glm-4.6v-flash", "glm-4.6v-fp8", "glm-4.6v-flash-fp8"]
-    },
+	      "thinking_output_field": "reasoning_content",
+	      "thinking_tags": ["<think>", "</think>"],
+	      "thinking_control": "/nothink",
+	      "inference_parameters": {
+	        "temperature": 0.8,
+	        "top_p": 0.6,
+	        "top_k": 2
+	      },
+	      "patterns": ["glm-4.6v", "glm4.6v", "zai-org/glm-4.6v", "glm-4.6v-flash", "glm-4.6v-fp8", "glm-4.6v-flash-fp8"]
+	    },
     "glm4_moe": {
       "description": "Zhipu AI's GLM-4.5+ MoE architecture (July 2025)",
       "message_format": "im_start_end",
@@ -481,11 +524,14 @@
       "user_suffix": "\n",
       "assistant_prefix": "<|assistant|>\n",
       "assistant_suffix": "\n",
-      "tool_format": "special_token",
-      "tool_prefix": "<|tool_call|>",
-      "thinking_output_field": "reasoning_content",
-      "patterns": ["glm-4.7", "glm-4.7-flash", "glm-4.6", "glm-4.5", "glm-4.5-air", "glm-5", "zai-org/glm-5", "z-ai/glm-5"]
-    },
+	      "tool_format": "special_token",
+	      "tool_prefix": "<|tool_call|>",
+	      "thinking_output_field": "reasoning_content",
+	      "inference_parameters": {
+	        "temperature": 1.0
+	      },
+	      "patterns": ["glm-4.7", "glm-4.7-flash", "glm-4.6", "glm-4.5", "glm-4.5-air", "glm-5", "zai-org/glm-5", "z-ai/glm-5"]
+	    },
     "glm4v": {
       "description": "Zhipu AI's GLM-4V multimodal architecture (June 2024)",
       "message_format": "glm_special_tokens",
@@ -546,12 +592,16 @@
       "assistant_prefix": "<\uff5cAssistant\uff5c>",
       "assistant_suffix": "<\uff5cend\u2581of\u2581sentence\uff5c>",
       "tool_format": "prompted",
-      "tool_prefix": "<\uff5cDSML\uff5ctool_calls>",
-      "tool_calling_format": "dsml",
-      "thinking_tags": ["<think>", "</think>"],
-      "reasoning_support": true,
-      "patterns": ["deepseek-v4", "deepseek-ai/deepseek-v4"]
-    },
+	      "tool_prefix": "<\uff5cDSML\uff5ctool_calls>",
+	      "tool_calling_format": "dsml",
+	      "thinking_tags": ["<think>", "</think>"],
+	      "reasoning_support": true,
+	      "inference_parameters": {
+	        "temperature": 1.0,
+	        "top_p": 1.0
+	      },
+	      "patterns": ["deepseek-v4", "deepseek-ai/deepseek-v4"]
+	    },
     "kimi_k2": {
       "description": "Moonshot AI Kimi K2.6 multimodal agentic reasoning architecture",
       "message_format": "openai_chat",
@@ -580,11 +630,16 @@
       "system_suffix": "<|im_end|>\n",
       "user_prefix": "<|im_start|>user\n",
       "user_suffix": "<|im_end|>\n",
-      "assistant_prefix": "<|im_start|>assistant\n",
-      "assistant_suffix": "<|im_end|>\n",
-      "tool_format": "native",
-      "patterns": ["minimax-m2.1", "minimaxai/minimax-m2.1", "minimax/minimax-m2.1"]
-    },
+	      "assistant_prefix": "<|im_start|>assistant\n",
+	      "assistant_suffix": "<|im_end|>\n",
+	      "tool_format": "native",
+	      "inference_parameters": {
+	        "temperature": 1.0,
+	        "top_p": 0.95,
+	        "top_k": 40
+	      },
+	      "patterns": ["minimax-m2.1", "minimaxai/minimax-m2.1", "minimax/minimax-m2.1"]
+	    },
     "minimax_m2": {
       "description": "MiniMax M2 family MoE architecture with interleaved thinking",
       "message_format": "im_start_end",
@@ -594,10 +649,15 @@
       "user_suffix": "<|im_end|>\n",
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-      "tool_format": "native",
-      "default_tool_support": "native",
-      "patterns": ["minimax-m2.5", "minimaxai/minimax-m2.5", "minimax/minimax-m2.5", "minimax-m2", "minimaxai/minimax-m2", "minimax/minimax-m2"]
-    },
+	      "tool_format": "native",
+	      "default_tool_support": "native",
+	      "inference_parameters": {
+	        "temperature": 1.0,
+	        "top_p": 0.95,
+	        "top_k": 40
+	      },
+	      "patterns": ["minimax-m2.5", "minimaxai/minimax-m2.5", "minimax/minimax-m2.5", "minimax-m2", "minimaxai/minimax-m2", "minimax/minimax-m2"]
+	    },
     "lfm2": {
       "description": "Liquid AI LFM2/LFM2.5 chat-template family",
       "message_format": "im_start_end",

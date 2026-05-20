@@ -269,6 +269,10 @@ class OllamaProvider(BaseProvider):
                 "num_predict": num_predict,  # Ollama uses num_predict for max output tokens
             }
         }
+        for key in ("top_p", "top_k"):
+            value = generation_kwargs.get(key)
+            if value is not None:
+                payload["options"][key] = value
 
         # Add seed if provided (Ollama supports seed for deterministic outputs)
         seed_value = generation_kwargs.get("seed")
@@ -599,6 +603,10 @@ class OllamaProvider(BaseProvider):
                 "num_predict": max_output_tokens,
             }
         }
+        for key in ("top_p", "top_k"):
+            value = generation_kwargs.get(key)
+            if value is not None:
+                payload["options"][key] = value
 
         seed_value = generation_kwargs.get("seed")
         if seed_value is not None:

@@ -42,7 +42,7 @@ Quick start:
 
 - [API (Python)](docs/api.md): public API map and common patterns
 - [API Reference](docs/api-reference.md): full function/class listing
-- [Generation parameters](docs/generation-parameters.md): max tokens / thinking / temperature semantics across providers
+- [Generation parameters](docs/generation-parameters.md): sampling defaults, caller overrides, max tokens, and thinking semantics across providers
 - [Prompt caching](docs/prompt-caching.md): `CachedSession`, cache keys, file attachments, and durable memory bloc bindings
 - [HuggingFace model compatibility](docs/huggingface-model-compatibility.md): Transformers/GGUF loading rules, quantized checkpoint caveats, and trusted proof targets
 - [Memory blocs](docs/memory-blocs.md): text/file -> bloc -> provider/model durable cache artifacts with optional request-time binding
@@ -57,7 +57,7 @@ Quick start:
 - [Provider registry](abstractcore/providers/registry.py): provider IDs, defaults, install extras
 - [Provider setup guide](docs/prerequisites.md): env vars + examples for OpenAI/Anthropic/Ollama/LMStudio/MLX/HuggingFace/vLLM/OpenRouter/Portkey/OpenAI-compatible
 - Install profile vocabulary: `abstractcore[apple]` is the hardware alias for the MLX local LLM stack, `abstractcore[gpu]` is the hardware alias for the vLLM local LLM stack, and `abstractcore[all-apple]` / `abstractcore[all-gpu]` are larger aggregate profiles.
-- Optional media plugin floors in this source: `abstractvoice>=0.10.3` and `abstractvision>=0.3.8`.
+- Optional media plugin floors in this source: `abstractvoice>=0.10.11` and `abstractvision>=0.3.8`.
 
 ## Server (OpenAI-compatible `/v1`)
 

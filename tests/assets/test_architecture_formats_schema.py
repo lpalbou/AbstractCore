@@ -89,6 +89,8 @@ def test_architecture_entries_conform_to_v0_template():
         "default_tool_support",
         "reasoning_support",
         "reasoning_levels",
+        "inference_parameters",
+        "prompt_cache_position_strategy",
     }
     allowed_keys = required_keys | prefix_suffix_keys | optional_keys
 
@@ -202,6 +204,29 @@ def test_architecture_entries_conform_to_v0_template():
                 assert level in allowed, (
                     f"architectures[{arch_name}].reasoning_levels must be subset of {sorted(allowed)}"
                 )
+
+        inference_parameters = cfg.get("inference_parameters")
+        if inference_parameters is not None:
+            assert isinstance(inference_parameters, dict), (
+                f"architectures[{arch_name}].inference_parameters must be an object"
+            )
+            allowed = {"temperature", "top_p", "top_k", "min_p", "typical_p", "repeat_penalty"}
+            extra = set(inference_parameters) - allowed
+            assert not extra, (
+                f"architectures[{arch_name}].inference_parameters has unknown keys: {sorted(extra)}"
+            )
+            for key, value in inference_parameters.items():
+                assert isinstance(value, (int, float)) and not isinstance(value, bool), (
+                    f"architectures[{arch_name}].inference_parameters[{key!r}] must be numeric"
+                )
+                if key in {"temperature", "top_p", "min_p", "typical_p", "repeat_penalty"}:
+                    assert float(value) >= 0, (
+                        f"architectures[{arch_name}].inference_parameters[{key!r}] must be non-negative"
+                    )
+                if key == "top_k":
+                    assert int(value) > 0, (
+                        f"architectures[{arch_name}].inference_parameters['top_k'] must be positive"
+                    )
 
 
 @pytest.mark.basic

@@ -49,6 +49,33 @@ def _validate_reasoning_levels(label: str, levels: Any) -> None:
         assert level in allowed, f"{label}.reasoning_levels must be subset of {sorted(allowed)}"
 
 
+def _validate_inference_parameters(label: str, params: Any) -> None:
+    assert isinstance(params, dict), f"{label}.inference_parameters must be an object"
+    allowed = {
+        "temperature",
+        "top_p",
+        "top_k",
+        "min_p",
+        "typical_p",
+        "repeat_penalty",
+        "enable_thinking",
+        "clear_thinking",
+    }
+    extra = set(params) - allowed
+    assert not extra, f"{label}.inference_parameters has unknown keys: {sorted(extra)}"
+    for key, value in params.items():
+        if key in {"enable_thinking", "clear_thinking"}:
+            assert isinstance(value, bool), f"{label}.inference_parameters[{key!r}] must be boolean"
+            continue
+        assert isinstance(value, (int, float)) and not isinstance(value, bool), (
+            f"{label}.inference_parameters[{key!r}] must be numeric"
+        )
+        if key in {"temperature", "top_p", "min_p", "typical_p", "repeat_penalty"}:
+            assert float(value) >= 0, f"{label}.inference_parameters[{key!r}] must be non-negative"
+        if key == "top_k":
+            assert int(value) > 0, f"{label}.inference_parameters['top_k'] must be positive"
+
+
 def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
     label = f"models[{model_key}]"
 
@@ -311,6 +338,10 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
         assert len(unsupported_parameters) == len(set(unsupported_parameters)), (
             f"{label}.unsupported_parameters must not contain duplicates"
         )
+
+    inference_parameters = cfg.get("inference_parameters")
+    if inference_parameters is not None:
+        _validate_inference_parameters(label, inference_parameters)
 
     token_param_name = cfg.get("token_param_name")
     if token_param_name is not None:

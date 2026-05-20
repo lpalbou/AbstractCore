@@ -1073,7 +1073,8 @@ class MLXProvider(BaseProvider):
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
         max_tokens = self._get_provider_max_tokens_param(generation_kwargs)
         temperature = generation_kwargs.get("temperature", self.temperature)
-        top_p = kwargs.get("top_p", 0.9)
+        top_p = generation_kwargs.get("top_p", 0.9)
+        top_k = generation_kwargs.get("top_k")
         seed_value = generation_kwargs.get("seed")
         prompt_cache = None
         prompt_cache_key = kwargs.get("prompt_cache_key")
@@ -1090,6 +1091,7 @@ class MLXProvider(BaseProvider):
                     max_tokens,
                     temperature,
                     top_p,
+                    top_k,
                     tools,
                     kwargs.get('tool_call_tags'),
                     seed_value,
@@ -1097,7 +1099,7 @@ class MLXProvider(BaseProvider):
                 )
             else:
                 response = self._single_generate(
-                    full_prompt, max_tokens, temperature, top_p, seed_value, prompt_cache
+                    full_prompt, max_tokens, temperature, top_p, top_k, seed_value, prompt_cache
                 )
                 if media_enrichment:
                     from ..media.enrichment import merge_enrichment_metadata
@@ -1138,12 +1140,37 @@ class MLXProvider(BaseProvider):
             enable_thinking=enable_thinking,
         )
 
+    def _build_mlx_sampler(self, temperature: float, top_p: float, top_k: Optional[int] = None) -> Optional[Any]:
+        """Create an mlx-lm sampler from AbstractCore generation parameters."""
+        try:
+            from mlx_lm.sample_utils import make_sampler
+        except Exception:
+            return None
+        try:
+            temp_value = float(temperature)
+        except Exception:
+            temp_value = 0.0
+        try:
+            top_p_value = float(top_p)
+        except Exception:
+            top_p_value = 0.0
+        try:
+            top_k_value = int(top_k) if top_k is not None else 0
+        except Exception:
+            top_k_value = 0
+        return make_sampler(
+            temp=max(0.0, temp_value),
+            top_p=max(0.0, top_p_value),
+            top_k=max(0, top_k_value),
+        )
+
     def _single_generate(
         self,
         prompt: str,
         max_tokens: int,
         temperature: float,
         top_p: float,
+        top_k: Optional[int] = None,
         seed: Optional[int] = None,
         prompt_cache: Optional[Any] = None,
     ) -> GenerateResponse:
@@ -1157,6 +1184,8 @@ class MLXProvider(BaseProvider):
 
         # Track generation time
         start_time = time.time()
+        sampler = self._build_mlx_sampler(temperature, top_p, top_k)
+        sampler_kwargs = {"sampler": sampler} if sampler is not None else {}
 
         # Try different MLX API signatures
         try:
@@ -1168,6 +1197,7 @@ class MLXProvider(BaseProvider):
                 max_tokens=max_tokens,
                 verbose=False,
                 prompt_cache=prompt_cache,
+                **sampler_kwargs,
             )
         except TypeError:
             try:
@@ -1218,6 +1248,7 @@ class MLXProvider(BaseProvider):
         max_tokens: int,
         temperature: float,
         top_p: float,
+        top_k: Optional[int] = None,
         tool_call_tags: Optional[str] = None,
         seed: Optional[int] = None,
         prompt_cache: Optional[Any] = None,
@@ -1241,12 +1272,15 @@ class MLXProvider(BaseProvider):
                     pass
 
             # Use MLX's native streaming with minimal parameters
+            sampler = self._build_mlx_sampler(temperature, top_p, top_k)
+            sampler_kwargs = {"sampler": sampler} if sampler is not None else {}
             for response in self.stream_generate_fn(
                 self.llm,
                 self.tokenizer,
                 prompt,
                 max_tokens=max_tokens,
                 prompt_cache=prompt_cache,
+                **sampler_kwargs,
             ):
                 # Each response has a .text attribute with the new token(s)
                 content = response.text
@@ -1292,6 +1326,7 @@ class MLXProvider(BaseProvider):
         max_tokens: int,
         temperature: float,
         top_p: float,
+        top_k: Optional[int] = None,
         tools: Optional[List[Dict[str, Any]]] = None,
         tool_call_tags: Optional[str] = None,
         seed: Optional[int] = None,
@@ -1302,7 +1337,7 @@ class MLXProvider(BaseProvider):
 
         # Stream the response content
         for chunk in self._stream_generate(
-            full_prompt, max_tokens, temperature, top_p, tool_call_tags, seed, prompt_cache
+            full_prompt, max_tokens, temperature, top_p, top_k, tool_call_tags, seed, prompt_cache
         ):
             collected_content += chunk.content or ""
             yield chunk
