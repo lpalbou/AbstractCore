@@ -7,13 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.22] - 2026-05-20
+
+### Added
+- **Provider-wide durable memory bloc caches**: unified exact durable bloc KV artifacts across MLX, HuggingFace Transformers, and HuggingFace GGUF, including shared Python/server APIs, provider-native artifact formats, manifest validation, and request-time `prompt_cache_binding` proof.
+- **Durable cache validation tooling and reports**: added the durable bloc cache benchmark script plus real-provider validation reports covering processing-phase speedups, correct cached answers, artifact sizes, and provider compatibility limits.
+- **HuggingFace cache-state coverage**: expanded Transformers prompt-cache save/load coverage for standard dynamic caches, sliding-window caches, Qwen3.5 hybrid cache state, and Mamba-style tensor state; expanded GGUF persistence around llama.cpp RAM-cache state.
+- **Prompt-cache planning records**: completed the unified bloc-cache, HF Transformers, and HF GGUF backlog items; accepted ADR 0007 for durable memory bloc cache binding; kept speculative superbloc/exact-prefix recipe and live snapshot persistence work proposed.
+
 ### Changed
 - **Generation defaults**: providers now consume `inference_parameters` from model/architecture metadata for omitted sampling knobs such as `temperature`, `top_p`, and `top_k`; Hugging Face Transformers also applies loaded `generation_config.json` defaults when present.
 - **MLX sampling controls**: MLX generation now builds an `mlx-lm` sampler from unified `temperature`, `top_p`, and `top_k` values instead of ignoring those controls at decode time.
+- **Prompt-cache compatibility metadata**: architecture and model capability assets now capture cache, reasoning/thinking, quantization, and generation-parameter defaults used by provider capability discovery.
 - **Voice/audio compatibility floors**: optional voice/audio install profiles now target `abstractvoice>=0.10.11` and `omnivoice>=0.1.5`.
 
 ### Fixed
 - **HuggingFace greedy decoding**: Transformers pipeline generation now treats `temperature=0` as greedy decoding (`do_sample=false`) instead of forwarding an invalid sampling temperature.
+- **HuggingFace model compatibility failures**: unsupported FP8-on-MPS and broken quantized Transformers load paths now fail explicitly instead of being mistaken for prompt-cache failures.
+- **Prompt-cache abstraction boundaries**: live prompt-cache snapshot persistence is now documented as a proposed local-admin decision, not as a durable bloc or thin-client binding surface.
 
 ## [2.13.21] - 2026-05-20
 

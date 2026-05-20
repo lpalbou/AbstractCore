@@ -3,7 +3,7 @@
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
 Last updated: 2026-05-20
-Package version: 2.13.17
+Package version: 2.13.22
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -98,6 +98,8 @@ AbstractCore is a unified Python interface over multiple LLM backends (cloud + l
 - **Structured output** via Pydantic (`response_model=...`)
 - **Media handling** for images/audio/video/documents via an explicit, policy-driven system
 - **Embeddings** (optional)
+- **Durable memory bloc cache artifacts** for exact local text/file prefix reuse across MLX,
+  HuggingFace Transformers, and supported HuggingFace GGUF exact-renderer paths
 - **An optional OpenAI-compatible HTTP server** (`/v1/chat/completions`, plus optional images/audio endpoints via plugins)
 
 ### What it is not

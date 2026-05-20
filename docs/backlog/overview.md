@@ -55,7 +55,7 @@ Use this file as the entry point for planning status, recommended next work, and
 | `proposed/2026-05-20_composable-prompt-cache-recipes-for-immutable-memory-clusters.md` | Keep proposed until real workloads show stable superbloc reuse beyond single-bloc caches and the work is narrowed to one deterministic exact-prefix recipe per target backend. |
 | `proposed/2026-05-20_audio-capability-matrix-consumption-from-abstractvoice.md` | Promote when Core needs truthful audio feature filtering, validation, or UI behavior beyond legacy `controls` booleans. |
 | `proposed/0792_hf_transformers_metal_quantization_on_apple.md` | Promote after `Qwen/Qwen3.5-4B` proves MPS `MetalConfig(bits=4)` load/generation/cache correctness with optional `kernels`, clear failure modes, and measured memory/performance deltas. |
-| `proposed/0793_public_prompt_cache_persistence_control_plane.md` | Promote when Core maintainers decide whether generic prompt-cache snapshot persistence remains a supported public Gateway/server feature or should be explicitly de-scoped in favor of bloc KV artifacts. |
+| `proposed/0793_public_prompt_cache_persistence_control_plane.md` | Keep proposed as an operator-only decision item. App-facing durable reuse should first ship through Runtime/Gateway exposure of `/acore/blocs/kv/*` and `prompt_cache_binding`; only promote this if hot local snapshot restore is still needed after that. |
 
 ## Completed ledger
 

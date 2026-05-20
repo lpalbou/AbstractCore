@@ -39,7 +39,7 @@ First-class support for:
 - universal tool calling (native + prompted tool syntax)
 - structured output (Pydantic)
 - unified generation parameters, capability detection, and provider quirks
-- session memory, prompt caching, events, tracing, and retry-aware reliability hooks
+- session memory, prompt caching, durable memory bloc cache artifacts, events, tracing, and retry-aware reliability hooks
 - media input (images/audio/video + documents) with explicit, policy-driven fallbacks (*)
 - optional capability plugins (`core.voice/core.audio/core.vision`) for deterministic TTS/STT and generative vision (via `abstractvoice` / `abstractvision`)
 - glyph visual-text compression for long documents (**)

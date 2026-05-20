@@ -1,4 +1,4 @@
-# Proposed: Public prompt-cache persistence control plane or explicit de-scope
+# Proposed: De-scope or opt-in local-admin prompt-cache snapshots
 
 ## Metadata
 - Created: 2026-05-20
@@ -6,426 +6,469 @@
 - Completed: N/A
 
 ## ADR status
-- Governing ADRs: `docs/adr/0007-durable-memory-bloc-cache-binding.md`
-- ADR impact: Needs a new ADR or an explicit ADR 0007 follow-up if this is promoted into a public server/runtime contract
+- Governing ADRs:
+  - `docs/adr/0004-operator-control-and-server-trust-boundary.md`
+  - `docs/adr/0007-durable-memory-bloc-cache-binding.md`
+- ADR impact: Branch B needs a new ADR, or an explicit ADR 0007 follow-up, before any
+  HTTP/server/runtime snapshot contract is accepted. Live prompt-cache snapshots must not be folded
+  into ADR 0007 exact bloc binding.
 
 ## Context
 
-AbstractCore now has a strong public prompt-cache story in two places:
+AbstractCore now has two separate local cache surfaces:
 
-- provider-level prompt-cache APIs for local runtimes;
-- durable bloc KV artifacts for exact-prefix persistence and binding.
+- exact durable bloc artifacts for immutable text/file memory snapshots;
+- in-process prompt-cache keys with provider-level `prompt_cache_save(...)` and
+  `prompt_cache_load(...)` hooks.
 
-That is enough for Python callers and for exact durable memory workflows. It is not enough for a
-clean gateway/runtime/server control-plane contract when a higher layer wants to persist or reload
-one provider-owned in-process cache snapshot without bypassing Runtime or reaching into provider
-internals.
+That is enough for Python callers and exact durable memory workflows. The unresolved product
+question is whether Core should expose any supported server/runtime admin surface for saving and
+restoring opaque live local prompt-cache snapshots.
 
-This matters because Gateway cleanup now removed most direct Core bypasses. The one remaining
-architectural exception is provider-private prompt-cache `save/load`.
+Important framework conclusion from the 2026-05-20 cross-repo review:
+
+- This item is **not** the primary path for app-facing durable prompt caching through Gateway.
+- The clean public durable path for apps is:
+  1. persist reusable text/file memory as blocs;
+  2. compile/load exact provider/model bloc artifacts through `/acore/blocs/*`;
+  3. carry `prompt_cache_binding` on generation when exactness matters;
+  4. let Runtime/Gateway orchestrate stable session keys and cache preparation on top.
+- Live prompt-cache snapshots remain an optional operator optimization for hot local runtime state.
+
+These snapshots are provider-native runtime state. They are not memory blocs, not exact durable
+memory artifacts, and must not return `prompt_cache_binding`, `binding_id`, or any other exact
+prompt proof.
+
+## Recommended framework direction
+
+For the framework-wide public contract, the preferred durable path should be:
+
+- immutable/extracted content becomes a bloc;
+- Core compiles or loads one provider/model cache artifact for that bloc;
+- higher layers reuse that artifact through a stable cache key and optional
+  `prompt_cache_binding`;
+- session/workflow/app cache reuse is expressed through deterministic keys,
+  module preparation, or explicit bloc loads, not opaque live snapshot files.
+
+In other words:
+
+- exact durable app-visible persistence should center on `/acore/blocs/kv/*`,
+  `stable_cache_key`, and `prompt_cache_binding`;
+- live prompt-cache snapshots, if they ever exist beyond Python/CLI, should be
+  treated only as an operator/admin optimization for preserving hot local state
+  across restart or eviction.
+
+This item is therefore not the blocker for durable Gateway/app prompt caching.
+The main public-contract gaps are in higher layers:
+
+- Runtime does not yet expose a public bloc-KV facade analogous to its prompt-cache
+  host facade.
+- Runtime/Gateway do not yet propagate `prompt_cache_binding` through their normal
+  generation surfaces, so higher layers cannot currently consume Core exact
+  binding semantics cleanly.
+- Gateway still carries provider-private prompt-cache save/load hacks that should
+  not become the app-facing durability model.
 
 ## Current code reality
 
 Inspected on 2026-05-20:
 
-- `abstractcore/providers/base.py`
-  - public provider methods exist:
-    - `prompt_cache_save(...)`
-    - `prompt_cache_load(...)`
-- `abstractcore/providers/mlx_provider.py`
-  - MLX overrides `prompt_cache_save(...)` / `prompt_cache_load(...)`
-- `abstractcore/providers/huggingface_provider.py`
-  - transformers and GGUF override `prompt_cache_save(...)` / `prompt_cache_load(...)`
-- `abstractcore/core/bloc_kv.py`
-  - durable bloc helpers already use the public provider methods internally
-- `abstractcore/server/app.py`
-  - exposes `/acore/prompt_cache/stats|capabilities|set|update|fork|clear|prepare_modules`
-  - exposes `/acore/blocs/kv/manifest|ensure|load`
-  - does **not** expose public `/acore/prompt_cache/save` or `/acore/prompt_cache/load`
-- `abstractcore/endpoint/app.py`
-  - same prompt-cache control-plane gap: no public save/load routes
-- `docs/prompt-caching.md`
-  - documents provider-level persistence methods
-  - still says `abstractgateway` can save/load local caches
-- `abstractvoice/abstractvoice/omnivoice/prompt_cache.py`
-  - package-owned OmniVoice prompt-token cache only
-- `abstractvoice/docs/backlog/proposed/042_capability_residency_hooks.md`
-  - clone/TTS residency work only
+- `abstractcore/providers/base.py` exposes public provider methods:
+  `prompt_cache_save(...)` and `prompt_cache_load(...)`.
+- `abstractcore/providers/mlx_provider.py` overrides save/load for MLX native cache artifacts.
+- `abstractcore/providers/huggingface_provider.py` overrides save/load for HuggingFace
+  transformers and GGUF native cache artifacts.
+- `abstractcore/core/bloc_kv.py` uses those provider hooks internally to build exact durable bloc
+  artifacts.
+- `abstractcore/server/app.py` exposes
+  `/acore/prompt_cache/stats|capabilities|set|update|fork|clear|prepare_modules`.
+- `abstractcore/server/app.py` exposes `/acore/blocs/kv/manifest|ensure|load`.
+- `abstractcore/server/app.py` does not expose public
+  `/acore/prompt_cache/snapshots/save` or `/acore/prompt_cache/snapshots/load`.
+- `abstractcore/endpoint/app.py` has the same gap: prompt-cache controls exist, but no generic
+  snapshot save/load routes.
+- `docs/prompt-caching.md` documents provider-level persistence methods and now distinguishes them
+  from public persistent HTTP bloc artifacts.
+- `ArtifactStoreLike` already exists for generated artifacts, but it is not currently wired to
+  prompt-cache snapshot persistence.
 
 Important distinction:
 
-- `abstractcore` already solved **exact durable persistence** for supported local providers through
-  bloc KV artifacts and `prompt_cache_binding`.
-- `abstractcore` has **not** solved a generic public server/runtime contract for ad hoc
-  provider-owned prompt-cache snapshots.
-- `abstractvoice` does not change that conclusion. Its caches are package-owned voice-conditioning
-  caches, not a cross-framework prompt-cache persistence surface for Gateway.
+- Core already solved exact durable persistence for supported local providers through bloc KV
+  artifacts and `prompt_cache_binding`.
+- Core has not solved a generic server/runtime admin contract for ad hoc provider-owned live
+  prompt-cache snapshots.
+- Runtime and Gateway still need their own public facades if the framework wants apps to consume
+  Core's existing bloc-KV durability through Gateway without bypassing Runtime.
+- Non-Core caches, including voice-conditioning caches, are out of scope for this item.
 
 ## Problem or opportunity
 
-Today there is no clean public Core contract for generic prompt-cache persistence across the
-runtime/server boundary.
+Today there is no clean Core contract for generic live prompt-cache snapshot persistence
+across the runtime/server boundary.
 
 That leaves higher layers with three bad options:
 
-1. reach into provider-private runtime state;
+1. reach into provider runtime state;
 2. keep a Gateway-local special case forever;
 3. overuse bloc KV artifacts for workflows that are not really durable exact-memory artifacts.
 
-The first option is the current architectural exception and should end. The second is a boundary
-smell. The third conflates two different semantics:
+The first option is a boundary violation. The second is a maintenance smell. The third conflates two
+different semantics:
 
 - exact, durable, binding-aware bloc artifacts;
-- ad hoc, model-locked, best-effort local runtime cache snapshots.
+- ad hoc, model-locked, best-effort local runtime snapshots.
 
-There is also a security/design concern: a naive HTTP `save/load` route that accepts arbitrary
+There is also a security/design concern: a naive HTTP save/load route that accepts arbitrary
 filesystem paths would be the wrong abstraction.
 
-## Concrete things higher layers should be able to do, but cannot do cleanly today
+## What apps actually need for durable caching
 
-### Example 1: Save a warmed local runtime cache after a long prefill
+When an app quits and relaunches, the clean framework-level durable behavior is:
 
-Suppose a loaded MLX or HuggingFace runtime has already paid the cost to build a large local cache
-key:
+1. the app (or its server-side host) still knows its provider/model/session/template identity;
+2. durable memory text/file content still exists as blocs in Core storage;
+3. provider/model-specific bloc artifacts still exist on disk and can be revalidated or rebuilt;
+4. Runtime/Gateway can re-load those artifacts into stable cache keys and optionally fork them for
+   session-specific live work;
+5. generation calls can carry `prompt_cache_binding` when exact bloc identity must be enforced.
 
-- provider: `mlx`
-- model: `mlx-community/Qwen3.6-27B-4bit`
-- key: `work:orbit`
+That workflow already matches Core's public durable model. What is still missing is mostly above
+Core:
 
-At the framework level, a clean operator flow should be possible:
+- Runtime does not yet expose a public bloc-KV facade comparable to its existing prompt-cache and
+  discovery facades.
+- Runtime/Gateway do not yet flow `prompt_cache_binding` through their durable LLM execution
+  contract.
+- Gateway session prompt-cache lifecycle currently orients around stable keys and prepared modules,
+  but not yet around durable bloc selectors/artifacts as a first-class public app contract.
 
-1. Gateway asks Runtime to save that live cache key.
-2. Runtime asks Core to persist it as a Core-owned artifact.
-3. Core returns an opaque artifact reference plus metadata.
-4. Gateway returns that result without ever touching provider-private cache state.
+So the framework should not treat this proposal as a prerequisite for durable app-facing caching.
+The real durable path is blocs + bindings. This proposal only matters if maintainers also want
+opaque live-cache checkpoint/restore across process restart or eviction.
 
-What cannot be done cleanly today:
+## Recommendation after 2026-05-20 code audit
 
-- Gateway cannot forward a public `save_prompt_cache(key="work:orbit")` call through Runtime to a
-  public Core route.
-- The only way to do this generically is to hold a provider instance and call
-  `provider.prompt_cache_save(...)` directly, which is exactly the boundary violation we are trying
-  to eliminate.
+For the concrete framework goal of **app quit/relaunch reuse through Gateway for local MLX,
+HuggingFace transformers, and HuggingFace GGUF**, this item is **not** the primary missing piece.
 
-### Example 2: Reload a saved local cache into a fresh runtime after restart or eviction
+Current code already solves most of the durable reuse problem in a cleaner way:
 
-Suppose a runtime was unloaded, restarted, or replaced, but an operator wants to restore a
-previously saved local cache snapshot into a new runtime key:
+- immutable text/file memory can be persisted and looked up through
+  `/acore/blocs/upsert_text` and `/acore/blocs/record`;
+- supported local providers can compile/load durable provider-native KV artifacts through
+  `/acore/blocs/kv/ensure` and `/acore/blocs/kv/load`;
+- callers can require exact request-time reuse with `prompt_cache_binding`.
 
-- artifact: `artifact_abc123`
-- target provider/model: same local provider/model pair
-- target key: `work:orbit-restored`
+What is still missing for that user goal is mostly **upper-layer exposure**, not a new Core cache
+snapshot primitive:
 
-The clean flow should be:
+- Runtime does not yet expose a public bloc facade analogous to the current host/discovery/run
+  facades;
+- Gateway does not yet expose a client-facing durable bloc surface backed by Runtime;
+- apps therefore cannot yet use the already-clean durable Core mechanism through Gateway alone.
 
-1. Gateway asks Runtime to load `artifact_abc123` into the selected loaded runtime.
-2. Runtime forwards that to a public Core load route.
-3. Core validates provider/model compatibility and loads the cache on the correct provider thread.
-4. Core returns the new active key and artifact metadata.
+That means:
 
-What cannot be done cleanly today:
+- if the product goal is **durable reusable memory/prefixes for apps**, prefer bloc KV and binding;
+- if the product goal is **hot runtime state restore without rebuilding the prefix**, that is where
+  live snapshots may still be useful.
 
-- there is no public Core HTTP/control-plane route to accept an artifact reference and perform that
-  load;
-- higher layers therefore cannot forward this capability without reintroducing provider-instance
-  reach-through.
+This distinction is critical. Bloc KV is the public durable application contract. Snapshot save/load
+would be an optional operator optimization.
 
-### Example 3: Runtime host facade cannot expose a fully clean prompt-cache persistence API
+## Concrete use cases if Branch B is chosen
 
-Runtime can expose host/admin facades only for surfaces that Core actually owns publicly.
+### Save a warmed local runtime cache after a long prefill
 
-Today Runtime can cleanly forward:
+A loaded MLX, HuggingFace transformers, or HuggingFace GGUF runtime has already paid the cost to
+build a large local cache key.
 
-- `/acore/prompt_cache/stats`
-- `/acore/prompt_cache/capabilities`
-- `/acore/prompt_cache/set`
-- `/acore/prompt_cache/update`
-- `/acore/prompt_cache/fork`
-- `/acore/prompt_cache/clear`
-- `/acore/prompt_cache/prepare_modules`
-- `/acore/blocs/kv/*`
+A clean operator flow would be:
 
-But Runtime cannot expose a clean generic persistence contract like:
+1. Gateway or Runtime asks Core to save that live cache key for the selected runtime.
+2. Core persists provider-native state through provider hooks on the correct provider thread.
+3. Core returns an opaque snapshot id plus compatibility metadata.
+4. Higher layers forward the opaque result without touching provider internals.
 
-- `save_prompt_cache(runtime_id=..., key=...)`
-- `load_prompt_cache(runtime_id=..., artifact=..., key=...)`
+This is intentionally **not** the recommended first answer for ordinary app relaunch reuse. If the
+same reusable prefix can be represented as immutable text/file memory, the cleaner path is:
 
-unless it either:
+1. persist/update the bloc source of truth with `/acore/blocs/upsert_text`;
+2. read or resolve the durable selector with `/acore/blocs/record` when needed;
+3. compile or validate the provider-native bloc artifact;
+4. load it into a runtime key when needed;
+5. use `prompt_cache_binding` on generation when exactness matters.
 
-- invents a Runtime-owned persistence implementation that bypasses Core, or
-- forces Gateway to keep the current special case.
+### Reload a saved local cache after restart or eviction
 
-Both are the wrong abstraction.
+A local runtime was restarted, unloaded, or replaced, and an operator wants to restore a saved live
+snapshot into a compatible loaded runtime under an explicit target key.
 
-### Example 4: Bloc KV is not a substitute for ad hoc live cache persistence
+A clean operator flow would be:
 
-Bloc KV already solves a different problem well:
+1. Gateway or Runtime asks Core to load a snapshot id into a selected loaded runtime.
+2. Core validates snapshot compatibility before native provider load.
+3. Core performs load on the provider thread and under key-level serialization.
+4. Core returns the active target key and snapshot metadata.
+
+### Keep bloc KV exactness separate
+
+Bloc KV already solves a different problem:
 
 - compile one immutable text/file memory snapshot into one exact provider/model artifact;
 - load it with binding-aware correctness;
 - use `prompt_cache_binding` to prove exactness at generation time.
 
-What bloc KV does **not** cleanly model:
+Live snapshots do not cleanly model that. They can represent evolved runtime state, but they do not
+prove a durable text/file source of truth. They also do not restore transcript, tools, run ledger, or
+memory state.
 
-- “save the current live session cache after system/tools/discussion have evolved”
-- “reload that exact live runtime snapshot later as operator/admin state”
-- “preserve one working keyed cache as a reusable runtime warm state without claiming it is a
-  durable memory source of truth”
+## Concrete examples of what snapshots would solve that blocs do not
 
-Trying to force all generic save/load workflows through bloc KV would blur an important semantic
-difference:
+Examples that **are already solved more cleanly by blocs**:
 
-- exact durable memory artifact
-- local admin snapshot of a live cache
+- "Keep a durable file/text memory chunk across app restarts and reload it later for the same
+  provider/model."
+- "Reuse the same immutable memory bloc for many sessions."
+- "Prove that a request still references the exact durable memory artifact that was prepared
+  earlier."
 
-That distinction should remain explicit.
+Examples that blocs do **not** directly solve, and where Branch B could still be useful:
 
-## Proposed direction
+- "Save the exact hot local prompt-cache state of an already-running session after a long chat
+  history prefill, then restore that opaque state after the worker restarts."
+- "Checkpoint a provider-native cache that reflects transient module ordering or evolved history
+  not represented as durable blocs."
+- "Warm-restore a long local context without reconstructing it from transcript/bloc inputs."
 
-AbstractCore should make an explicit product decision and own it publicly:
+Those are legitimate operator/performance use cases, but they are not the same as public durable
+memory artifacts.
 
-### Preferred direction
+For app relaunch through Gateway, the intended layering should therefore be:
 
-Add a **public artifact-backed local-admin persistence contract** for prompt-cache save/load.
+- app persists its own session/thread identity plus any durable bloc ids or sha256s;
+- Gateway exposes durable bloc routes to apps;
+- Runtime forwards those requests to Core through a public bloc facade;
+- Core compiles/loads the provider-native artifact and returns `prompt_cache_binding`;
+- generation reuses the loaded artifact through normal request parameters.
 
-That means:
+Snapshot save/load only enters the design if rebuild latency after runtime restart is still too
+expensive even when the app already has a durable bloc source of truth.
 
-- no raw caller-controlled filesystem paths in the public HTTP contract;
-- Core server owns where cache artifacts are written or retrieved;
-- save returns a Core-owned artifact descriptor or durable store reference;
-- load accepts an artifact id/reference plus a target key/runtime selection;
-- responses stay capability-gated and structured, like the existing prompt-cache control plane.
+## Decision branches
 
-This would let Runtime and Gateway forward the feature cleanly without reaching through provider
-internals.
+### Branch A: Explicit de-scope
 
-### Acceptable alternative
+Keep `prompt_cache_save(...)` and `prompt_cache_load(...)` as in-process Python, CLI, or
+provider-admin hooks only.
 
-If maintainers do not want to support generic cache snapshot persistence as a public server
-feature, then de-scope it explicitly:
+Keep `/acore/blocs/kv/*` as the only public persistent HTTP cache artifact surface.
 
-- keep `prompt_cache_save(...)` / `prompt_cache_load(...)` as in-process Python/CLI APIs;
-- keep bloc KV artifacts as the only public persistent HTTP cache artifact surface;
-- remove or narrow docs that imply Gateway/server-level generic cache save/load is part of the
-  supported public contract.
+Update docs that imply Gateway/server generic prompt-cache save/load is supported as a Core public
+contract.
 
-## Why this is the cleanest framework shape
+If Branch A is chosen, the framework can still deliver durable app-facing caching by:
 
-The cleanest design for the framework is:
+- adding Runtime facades for `/acore/blocs/*`;
+- forwarding `prompt_cache_binding` through Runtime/Gateway execution;
+- teaching Gateway session cache workflows to reference durable bloc artifacts instead of provider
+  snapshot files.
 
-`Flow / thin clients -> Gateway -> Runtime -> Core public control plane -> provider hooks`
+This is currently the recommended branch for the framework's app-facing contract unless and until a
+separate operator need for hot snapshot restore is proven.
 
-not:
+### Branch B: Authenticated opt-in local-admin snapshots
 
-`Gateway -> provider instance internals`
+Add an opt-in trusted admin surface for opaque live local prompt-cache snapshots.
 
-and not:
+This branch should be evaluated only after Runtime/Gateway expose bloc KV cleanly and real operator
+measurements still show unacceptable restart/rebuild cost for local MLX/transformers/GGUF runtimes.
 
-`Runtime reimplements provider-owned persistence outside Core`
+Promotion into this branch requires:
 
-The reasons are concrete:
+- route names that say `snapshot`, for example `/acore/prompt_cache/snapshots/save` and
+  `/acore/prompt_cache/snapshots/load`;
+- authenticated local-admin exposure only;
+- opt-in endpoint exposure, or no endpoint exposure unless routed through an authenticated gateway;
+- no raw caller-controlled filesystem paths;
+- no caller `format_hint`;
+- provider-native serialization chosen behind Core/provider hooks;
+- Core-owned snapshot ids and manifests;
+- provider-thread execution and key-level serialization;
+- explicit compatibility validation before load;
+- structured unsupported/error responses;
+- quota, retention, deletion, and size-limit policy;
+- no `prompt_cache_binding`, `binding_id`, or exact durable memory proof.
 
-1. **Provider serialization already belongs to Core**
-   - MLX, transformers, and GGUF each serialize different native cache formats.
-   - That logic is already encapsulated behind Core provider hooks.
-   - Re-implementing or bypassing that elsewhere is duplication and drift.
+## Candidate constraints if Branch B is promoted
 
-2. **Thread-affine local runtimes already belong to Core/Runtime control**
-   - loaded local runtimes keep prompt-cache operations on the provider executor thread;
-   - save/load should follow the same rule as stats/update/fork/clear;
-   - a public Core control plane keeps that execution rule in the right layer.
+This section is not implementation approval. It records constraints that a future planned item must
+satisfy if maintainers choose Branch B.
 
-3. **Gateway should forward opaque artifacts, not own provider cache formats**
-   - Gateway should not know whether the underlying cache artifact is `.safetensors`, `.npz`, or
-     some future provider-native format;
-   - Gateway should pass opaque artifact references and structured results only.
+### Route shape
 
-4. **Thin clients should never see filesystem paths**
-   - Flow, Assistant, or future operator tools should work with runtime ids, keys, and artifact
-     refs;
-   - they should not construct provider-specific filenames or server-local paths.
+Use snapshot-named routes, not generic save/load routes:
 
-5. **The same surface can serve multiple higher layers**
-   - Runtime host/admin facade
-   - Gateway operator endpoints
-   - CLI/admin tools
-   - possible future run-authored admin steps, if explicitly desired
+- `POST /acore/prompt_cache/snapshots/save`
+- `POST /acore/prompt_cache/snapshots/load`
 
-This is why the proposal is artifact-backed rather than path-backed.
+The admin payload should work with runtime selectors, keys, and opaque snapshot ids only.
 
-## Candidate public contract shape
+It must not accept or return:
 
-This proposal does **not** require locking the exact JSON today, but the intended shape should be
-clear enough for future agents.
+- raw server-local filesystem paths;
+- `artifact_path` or `manifest_path`;
+- provider-native cache filenames;
+- caller-selected native formats;
+- `prompt_cache_binding` or `binding_id`.
 
-### Save
+Default load behavior should avoid accidental key poisoning:
 
-Example request shape:
+- require an explicit target key;
+- default `make_default=false`;
+- validate runtime/provider/model ownership before touching live state.
 
-```json
-{
-  "runtime_id": "abc123",
-  "key": "work:orbit",
-  "format_hint": null,
-  "meta": {
-    "label": "orbit-prefill",
-    "source": "operator"
-  }
-}
-```
+### Snapshot manifest
 
-Example response shape:
+A snapshot manifest should record enough metadata to reject unsafe loads without parsing
+provider-private internals:
 
-```json
-{
-  "supported": true,
-  "operation": "save",
-  "runtime_id": "abc123",
-  "provider": "mlx",
-  "model": "mlx-community/Qwen3.6-27B-4bit",
-  "key": "work:orbit",
-  "artifact": {
-    "$artifact": "artifact_abc123"
-  },
-  "artifact_meta": {
-    "kind": "prompt_cache_snapshot",
-    "format": "abstractcore-prompt-cache/v1"
-  }
-}
-```
+- `snapshot_manifest_format`;
+- snapshot id and server/scope id;
+- provider family and resolved model identity;
+- model file identity or revision when known;
+- cache backend and cache implementation id;
+- native artifact format and native format/schema version;
+- provider package/library versions when available;
+- tokenizer/chat-template/rendering identifiers when known;
+- adapter, quantization, context-length, device/runtime, and GGUF runtime parameters when relevant;
+- prompt-cache options that affect serialized state, including thinking/template controls and lossy
+  quantization options;
+- artifact hash, size, created time, and token count when available;
+- source key, target key, and whether load replaces or preserves existing key state.
 
-### Load
+The manifest is compatibility metadata only. It is not an exact prompt proof and must never be
+accepted as `prompt_cache_binding`.
 
-Example request shape:
+### Storage and security
 
-```json
-{
-  "runtime_id": "abc123",
-  "artifact": {
-    "$artifact": "artifact_abc123"
-  },
-  "key": "work:orbit-restored",
-  "make_default": true
-}
-```
+Snapshot state can encode system prompts, tools, private transcript state, file contents, and other
+sensitive context. Any such admin surface must therefore define:
 
-Example response shape:
+- authenticated admin access;
+- deny-by-default route exposure;
+- safe server-owned storage root or configured artifact store;
+- atomic write plus manifest-last commit;
+- redacted logs;
+- retention and deletion behavior;
+- quotas and artifact-size limits;
+- corrupt-artifact and hash-mismatch rejection;
+- server-scope rules for proxied Gateway-to-endpoint deployments.
 
-```json
-{
-  "supported": true,
-  "operation": "load",
-  "runtime_id": "abc123",
-  "provider": "mlx",
-  "model": "mlx-community/Qwen3.6-27B-4bit",
-  "key": "work:orbit-restored",
-  "artifact": {
-    "$artifact": "artifact_abc123"
-  },
-  "loaded": true
-}
-```
+### Execution model
 
-Important properties of that shape:
+Save/load must follow the same provider-thread rule as loaded-runtime prompt-cache operations:
 
-- artifact reference is opaque;
-- provider/model validation stays in Core;
-- higher layers do not pass server-local file paths;
-- higher layers do not parse provider-native cache internals;
-- unsupported providers still return structured `supported=false` responses.
+- use the selected loaded runtime;
+- serialize against concurrent update, generation, fork, clear, and snapshot work for the same key;
+- reject unsupported providers with structured `supported=false`;
+- never silently fall back to an empty cache when a snapshot load fails.
 
-## Clean leverage path for Runtime, Gateway, and others
+## Why this might matter
 
-If Core provides this contract, the framework can align cleanly:
-
-### Runtime
-
-- host facade adds `save_prompt_cache(...)` / `load_prompt_cache(...)`
-- facade forwards directly to Core public control-plane routes
-- no provider-instance peeking in Runtime
-
-### Gateway
-
-- Gateway forwards operator/admin requests to Runtime only
-- Gateway no longer needs the remaining prompt-cache special case
-- Gateway remains agnostic to cache serialization details
-
-### Flow and other thin clients
-
-- Flow should only surface this if/when the operator UX is truly needed
-- if surfaced, it should operate on runtime ids, keys, and returned artifact refs
-- it should never construct filenames or talk to Core directly
-
-### Assistant / scripts / future tools
-
-- same public surface can be consumed from CLI/admin tooling without extra one-off logic
-- ledger-aware higher layers can record the returned artifact refs or load requests if they choose
-  to expose this in a workflow
-
-In other words, this proposal is not only about filling a missing route. It is about preserving a
-single framework boundary where all cache persistence flows remain:
-
-- Core-owned in semantics
-- Runtime-owned in forwarding/orchestration
-- Gateway-owned in HTTP exposure only
-- thin-client-safe at the edges
-
-## Why it might matter
-
-- It removes the last known Gateway prompt-cache boundary violation without inventing a new bypass.
-- It keeps Runtime as the sole execution/control-plane owner for forwarded work.
-- It preserves the distinction between:
-  - exact durable memory artifacts;
-  - local admin cache snapshots.
-- It prevents insecure public contracts based on arbitrary filenames or provider-private paths.
+- It removes a potential Gateway prompt-cache boundary violation without inventing a new provider
+  bypass.
+- It keeps Runtime as the forwarding/orchestration owner for admin work.
+- It preserves the distinction between exact durable memory artifacts and local admin snapshots.
+- It prevents unsafe contracts based on arbitrary filenames or provider-private paths.
+- It avoids using this item to solve the wrong problem: durable app-facing memory reuse already has
+  a cleaner Core primitive in bloc KV artifacts.
 
 ## Promotion criteria
 
-Promote only when one of these becomes true:
+Keep this item in `proposed/` until maintainers choose Branch A or Branch B.
 
-1. Gateway must keep generic prompt-cache save/load as a supported operator feature.
-2. Runtime needs a public facade for cache snapshot persistence, not only bloc artifacts.
-3. Core maintainers decide that the current docs promise too much and want an explicit public
-   contract or de-scope.
+If Branch A is chosen, the next work is docs cleanup and any higher-layer de-scope required to stop
+advertising generic Gateway/server prompt-cache save/load as a Core public contract.
 
-Before promotion, confirm which semantic family this belongs to:
+If Branch B is chosen, promotion requires:
 
-- local-admin snapshotting, or
-- durable exact artifacts.
-
-Do not promote until that distinction is explicit.
+- one named consumer and operator workflow;
+- an explicit authenticated-admin trust model;
+- artifact-store or Core-owned storage ownership and retention policy;
+- route names and payloads that are snapshot-specific and pathless;
+- clear non-exact semantics versus bloc KV;
+- manifest compatibility requirements;
+- provider/model/backend/template/version mismatch behavior;
+- corrupt, missing, oversized, and stale snapshot failure behavior;
+- provider-thread and key-serialization validation plan;
+- docs plan that separates live snapshots from exact durable bloc artifacts.
 
 ## Validation ideas
 
-- Negative design review:
-  - reject any proposal that exposes raw filesystem paths in public HTTP routes.
-- If promoted into a public contract:
-  - route tests for save/load capability gating and structured unsupported/error payloads;
-  - artifact-store round-trip tests through server/runtime, not just provider unit tests;
-  - model-mismatch and stale-artifact rejection tests;
-  - docs updates that separate generic snapshot persistence from bloc KV exact binding.
-- If de-scoped instead:
-  - remove or revise docs that imply Gateway/server generic save/load support;
-  - verify higher layers no longer advertise or depend on that feature.
+If Branch B is promoted into implementation, tests should cover:
+
+- auth and opt-in exposure;
+- no-path payload validation;
+- unsupported provider response shape;
+- missing source key on save;
+- explicit target key on load;
+- provider-thread execution;
+- key-level serialization with concurrent update/generation/fork/clear;
+- provider/backend/model mismatch;
+- model revision or model-file mismatch where available;
+- tokenizer/chat-template/rendering mismatch where available;
+- native format or serializer-version mismatch;
+- artifact hash mismatch;
+- corrupt native artifact rejection;
+- oversized artifact rejection;
+- proxy/server-scope mismatch;
+- snapshot load usability, not just deserialization success;
+- no `prompt_cache_binding` or `binding_id` in snapshot responses.
+
+If Branch A is chosen instead, validation should cover:
+
+- docs no longer imply public Gateway/server generic prompt-cache save/load support;
+- higher layers do not advertise or depend on that feature;
+- bloc KV remains documented as the only public persistent HTTP cache artifact surface.
 
 ## Non-goals
 
 - Do not weaken ADR 0007 exact-binding semantics for bloc KV artifacts.
-- Do not expose provider-private cache-store metadata as the public contract.
-- Do not treat voice-conditioning caches in `abstractvoice` as a substitute for Core prompt-cache
-  persistence.
+- Do not return or accept `prompt_cache_binding`, `binding_id`, or exact durable memory proof for
+  live snapshots.
+- Do not treat restored snapshots as durable memory source of truth.
+- Do not restore transcript, tools, system prompt, run ledger, or memory state from a snapshot.
+- Do not expose this to thin clients or run-authored workflows by default.
+- Do not expose provider-private cache metadata as the public contract.
+- Do not expose raw filesystem paths or caller-selected provider artifact formats.
+- Do not make snapshots portable across provider/model/backend versions unless proven explicitly.
+- Do not let load silently fall back to an empty cache.
+- Do not fold this into superbloc or exact-prefix recipe research.
 - Do not make remote-provider best-effort cache hints look like local exact artifacts.
+
+## Related
+
+- `docs/adr/0004-operator-control-and-server-trust-boundary.md`
+- `docs/adr/0007-durable-memory-bloc-cache-binding.md`
+- `docs/prompt-caching.md`
+- `docs/memory-blocs.md`
+- `docs/backlog/completed/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
+- `docs/backlog/completed/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md`
+- `docs/backlog/completed/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md`
 
 ## Guidance for future agents
 
-Start from the boundary question, not from the existing Gateway workaround.
+Start from the boundary decision, not from any existing workaround.
 
 Re-check:
 
 - whether Gateway still carries any prompt-cache save/load special case;
-- whether Runtime already exposes a public facade that needs a Core counterpart;
+- whether Runtime exposes or needs a public facade that requires a Core counterpart;
 - whether Core docs still claim Gateway/server save/load support.
 
-If the answer is “generic save/load should remain public”, design it as an artifact-backed local
-admin surface. If the answer is “no”, de-scope it explicitly and keep bloc KV as the only public
-persistent cache contract.
+If generic save/load should be supported beyond Python/CLI, design it as authenticated opt-in
+local-admin snapshots.
+If not, de-scope it explicitly and keep bloc KV as the only public persistent HTTP cache artifact
+contract.

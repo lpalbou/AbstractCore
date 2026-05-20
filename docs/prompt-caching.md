@@ -316,10 +316,16 @@ This makes the same capability contract available over HTTP, not only in-process
 
 The HTTP control plane mirrors this: `/acore/prompt_cache/update` accepts optional `thinking` so warm cache state can be prepared with the same reasoning mode you intend to use at inference time.
 
-Gateway/operator note:
+Server/operator note:
 
-- `abstractgateway` can save/load MLX, HuggingFace transformers, and GGUF in-process prompt caches.
-- For GGUF, gateway save/load persists both the raw `LlamaRAMCache` state and the provider-side module metadata needed to keep cache keys/module branches meaningful after reload.
+- Core exposes provider-level `prompt_cache_save(...)` / `prompt_cache_load(...)` for Python and
+  CLI/operator use, but the HTTP server and endpoint do not currently expose generic
+  `/acore/prompt_cache/save` or `/acore/prompt_cache/load` routes.
+- Public persistent HTTP cache artifacts are represented by durable memory blocs through
+  `/acore/blocs/kv/*`, which return `prompt_cache_binding` for exact request-time verification.
+- Generic live prompt-cache snapshot save/load is intentionally not a thin-client contract. The
+  backlog tracks it separately as a possible authenticated local-admin snapshot surface or explicit
+  de-scope decision.
 
 ## Safety / limitations
 
