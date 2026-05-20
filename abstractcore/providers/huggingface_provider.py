@@ -2664,6 +2664,25 @@ class HuggingFaceProvider(BaseProvider):
                     f"{model_label!r} uses GPTQ quantization, but no supported GPTQ runtime is "
                     "installed. Install a compatible GPTQ runtime intentionally for this platform, "
                     "or choose an unquantized Transformers model, MLX model, or GGUF model."
+            )
+            return
+
+        if "fp8" in method:
+            try:
+                import torch  # type: ignore
+                from transformers.utils import is_torch_xpu_available  # type: ignore
+
+                supports_fp8_runtime = bool(torch.cuda.is_available() or is_torch_xpu_available())
+            except Exception:
+                supports_fp8_runtime = False
+
+            if not supports_fp8_runtime:
+                raise ImportError(
+                    "HuggingFace transformers model "
+                    f"{model_label!r} uses FP8 quantization. Transformers FP8 execution requires "
+                    "a CUDA/XPU runtime; this local HuggingFace provider instance cannot validate "
+                    "the model on CPU/MPS. Use an unquantized Transformers model, an MLX model, a "
+                    "GGUF model, or run this FP8 checkpoint on a supported CUDA/XPU stack."
                 )
             return
 

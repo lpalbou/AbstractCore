@@ -64,3 +64,34 @@ def test_quantized_weight_load_rejects_missing_and_unexpected_keys():
     assert "model/runtime compatibility issue" in message
     assert "missing_keys=" in message
     assert "unexpected_keys=" in message
+
+
+def test_transformers_fp8_quantization_requires_cuda_or_xpu(monkeypatch):
+    class TorchStub:
+        class cuda:
+            @staticmethod
+            def is_available():
+                return False
+
+    original_import = __import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "torch":
+            return TorchStub
+        if name == "transformers.utils" and "is_torch_xpu_available" in fromlist:
+            class UtilsStub:
+                @staticmethod
+                def is_torch_xpu_available():
+                    return False
+
+            return UtilsStub
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+    provider = _provider("Qwen/Qwen3.6-27B-FP8")
+
+    with pytest.raises(ImportError) as exc:
+        provider._validate_transformers_quantization_runtime({"quant_method": "fp8", "fmt": "e4m3"})
+
+    assert "uses FP8 quantization" in str(exc.value)
+    assert "requires a CUDA/XPU runtime" in str(exc.value)

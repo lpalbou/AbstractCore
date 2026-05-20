@@ -111,6 +111,13 @@ The three-run average shows HF transformers processing the full bloc in 1.51s an
 in 0.18s, for an 8.26x processing-only speedup. Its slower total generation numbers are
 decode/runtime throughput, not failed durable-prefix reuse.
 
+`Qwen/Qwen3.6-27B-FP8` was checked as a trusted official HF-transformers quantized candidate. The
+snapshot downloaded locally, but FP8 is not an Apple/MPS Transformers proof target today: upstream
+FP8 guidance targets CUDA-class accelerators, and Qwen's Apple guidance points to MLX. The local
+fallback load did not pass semantic smoke tests: trivial prompts produced incorrect text. No
+durable-cache benchmark was recorded for that model because model-load/generation correctness is a
+prerequisite for cache validation.
+
 ## Compatibility Notes
 
 - MLX uses MLX-LM prompt-cache payloads.

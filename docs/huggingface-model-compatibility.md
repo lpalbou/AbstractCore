@@ -63,6 +63,18 @@ The official Qwen namespace does not currently provide GPTQ-Int4 or AWQ reposito
 ecosystems, including GGUF, MLX, compressed-tensors, and AWQ conversions. Treat those as
 provider/runtime-specific targets rather than official Qwen Transformers proof targets.
 
+FP8 Transformers checkpoints are also runtime-specific. Hugging Face's fine-grained FP8
+documentation targets CUDA-class FP8 hardware, and the installed Transformers quantizer requires a
+CUDA or XPU runtime for native FP8 execution. Apple Silicon should use Apple-native quantization
+paths instead: Qwen's own local-use guidance points Apple users to MLX models, while Transformers
+documents Metal quantization separately for MPS with 2/4/8-bit affine kernels.
+
+In local Apple/MPS validation, `Qwen/Qwen3.6-27B-FP8` downloaded and initialized through the
+Transformers fallback path, but produced incorrect answers for trivial prompts. AbstractCore
+therefore rejects that pairing before cache, tool, or structured-output validation. If upstream
+adds a real MPS FP8 path later, enable it only after model-load correctness and semantic smoke tests
+pass in CI or an explicit validation report.
+
 Use provider-native paths for those artifacts:
 
 - MLX quantized models: `create_llm("mlx", model="mlx-community/...")`
