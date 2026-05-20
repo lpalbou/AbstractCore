@@ -2581,11 +2581,160 @@ class HuggingFaceProvider(BaseProvider):
 
         self.n_gpu_layers = int(-1 if (wants_metal or wants_cuda) else 0)
 
+    def _transformers_config_kwargs(self) -> Dict[str, Any]:
+        kwargs = {k: v for k, v in self.transformers_kwargs.items() if k in ["trust_remote_code"]}
+        if _config.should_force_local_files_only():
+            kwargs["local_files_only"] = True
+        return kwargs
+
+    @staticmethod
+    def _extract_quantization_config(config: Any) -> Dict[str, Any]:
+        quantization_config = getattr(config, "quantization_config", None)
+        if isinstance(quantization_config, dict):
+            return dict(quantization_config)
+        if quantization_config is not None and hasattr(quantization_config, "to_dict"):
+            try:
+                data = quantization_config.to_dict()
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                pass
+        if hasattr(config, "to_dict"):
+            try:
+                data = config.to_dict()
+                quantization_config = data.get("quantization_config")
+                if isinstance(quantization_config, dict):
+                    return dict(quantization_config)
+            except Exception:
+                pass
+        return {}
+
+    @staticmethod
+    def _quantization_method_from_config(quantization_config: Dict[str, Any]) -> str:
+        candidates = [
+            quantization_config.get("quant_method"),
+            quantization_config.get("format"),
+            quantization_config.get("mode"),
+            quantization_config.get("load_in_4bit"),
+            quantization_config.get("load_in_8bit"),
+        ]
+        return " ".join(str(v).strip().lower() for v in candidates if v is not None)
+
+    def _validate_transformers_quantization_runtime(self, quantization_config: Dict[str, Any]) -> None:
+        if not quantization_config:
+            return
+
+        method = self._quantization_method_from_config(quantization_config)
+        model_label = str(getattr(self, "model", ""))
+        model_lower = model_label.lower()
+
+        if "compressed-tensors" in method or method.startswith("pack-quantized"):
+            if not _module_available("compressed_tensors"):
+                raise ImportError(
+                    "HuggingFace transformers model "
+                    f"{model_label!r} uses compressed-tensors quantization, but the "
+                    "`compressed-tensors` package is not installed. Install it explicitly for this "
+                    "model family, or use an unquantized Transformers model, an MLX model with the "
+                    "MLX provider, or a GGUF model with the GGUF path."
+                )
+            return
+
+        if "awq" in method:
+            if not (
+                _module_available("autoawq")
+                or _module_available("awq")
+                or _module_available("gptqmodel")
+            ):
+                raise ImportError(
+                    "HuggingFace transformers model "
+                    f"{model_label!r} uses AWQ quantization, but no supported AWQ runtime is "
+                    "installed. Install the quantization runtime intentionally for this platform, "
+                    "or choose an unquantized Transformers model, MLX model, or GGUF model."
+                )
+            return
+
+        if "gptq" in method:
+            if not (
+                _module_available("gptqmodel")
+                or _module_available("auto_gptq")
+                or _module_available("optimum")
+            ):
+                raise ImportError(
+                    "HuggingFace transformers model "
+                    f"{model_label!r} uses GPTQ quantization, but no supported GPTQ runtime is "
+                    "installed. Install a compatible GPTQ runtime intentionally for this platform, "
+                    "or choose an unquantized Transformers model, MLX model, or GGUF model."
+                )
+            return
+
+        # MLX quantized repos expose safetensors and a compact config such as
+        # {"bits": 4, "group_size": 64, "mode": "affine"}, but they are not
+        # standard HuggingFace Transformers quantized checkpoints.
+        if (
+            "mlx" in model_lower
+            or (
+                quantization_config.get("mode") == "affine"
+                and "bits" in quantization_config
+                and "group_size" in quantization_config
+                and "quant_method" not in quantization_config
+            )
+        ):
+            raise ImportError(
+                "HuggingFace transformers model "
+                f"{model_label!r} looks like an MLX-format quantized checkpoint. Use "
+                "`create_llm('mlx', model=...)` for MLX models, or choose a Transformers-native "
+                "checkpoint for the HuggingFace provider."
+            )
+
+    @staticmethod
+    def _unpack_transformers_load_result(result: Any) -> tuple[Any, Dict[str, Any]]:
+        if isinstance(result, tuple) and len(result) == 2 and isinstance(result[1], dict):
+            return result[0], result[1]
+        return result, {}
+
+    def _validate_transformers_weight_load(
+        self,
+        loading_info: Dict[str, Any],
+        quantization_config: Dict[str, Any],
+    ) -> None:
+        if not quantization_config or not loading_info:
+            return
+
+        missing = list(loading_info.get("missing_keys") or [])
+        unexpected = list(loading_info.get("unexpected_keys") or [])
+        mismatched = list(loading_info.get("mismatched_keys") or [])
+        errors = list(loading_info.get("error_msgs") or [])
+        if not (missing or unexpected or mismatched or errors):
+            return
+
+        def sample(values: List[Any]) -> str:
+            shown = [str(v) for v in values[:8]]
+            suffix = "" if len(values) <= 8 else f", ... +{len(values) - 8} more"
+            return ", ".join(shown) + suffix
+
+        details = []
+        if missing:
+            details.append(f"missing_keys={sample(missing)}")
+        if unexpected:
+            details.append(f"unexpected_keys={sample(unexpected)}")
+        if mismatched:
+            details.append(f"mismatched_keys={sample(mismatched)}")
+        if errors:
+            details.append(f"errors={sample(errors)}")
+
+        raise RuntimeError(
+            "HuggingFace transformers model "
+            f"{getattr(self, 'model', '')!r} did not load its quantized weights cleanly. "
+            "This is a model/runtime compatibility issue, not a generation or cache issue. "
+            + "; ".join(details)
+        )
+
     def _load_transformers_model(self):
         """Load standard HuggingFace transformers model"""
         try:
             import torch  # type: ignore
             from transformers import (  # type: ignore
+                AutoConfig,
                 AutoModel,
                 AutoModelForCausalLM,
                 AutoTokenizer,
@@ -2599,12 +2748,18 @@ class HuggingFaceProvider(BaseProvider):
             if self._is_vision_model(self.model):
                 return self._load_vision_model()
 
+            quantization_config: Dict[str, Any] = {}
+            config = None
+            try:
+                config = AutoConfig.from_pretrained(self.model, **self._transformers_config_kwargs())
+            except Exception:
+                config = None
+            if config is not None:
+                quantization_config = self._extract_quantization_config(config)
+                self._validate_transformers_quantization_runtime(quantization_config)
+
             # Load tokenizer with transformers-specific parameters
-            tokenizer_kwargs = {k: v for k, v in self.transformers_kwargs.items() 
-                              if k in ['trust_remote_code']}
-            # Respect offline-first configuration
-            if _config.should_force_local_files_only():
-                tokenizer_kwargs['local_files_only'] = True
+            tokenizer_kwargs = self._transformers_config_kwargs()
             self.tokenizer = AutoTokenizer.from_pretrained(self.model, **tokenizer_kwargs)
 
             # Load model with all transformers-specific parameters
@@ -2613,13 +2768,19 @@ class HuggingFaceProvider(BaseProvider):
             # Respect offline-first configuration
             if _config.should_force_local_files_only():
                 model_kwargs['local_files_only'] = True
+            if quantization_config:
+                model_kwargs["output_loading_info"] = True
 
             try:
-                self.model_instance = AutoModelForCausalLM.from_pretrained(self.model, **model_kwargs)
+                loaded = AutoModelForCausalLM.from_pretrained(self.model, **model_kwargs)
+                self.model_instance, loading_info = self._unpack_transformers_load_result(loaded)
+                self._validate_transformers_weight_load(loading_info, quantization_config)
             except ValueError as e:
                 if "Unrecognized configuration class" in str(e) or "glm4v" in str(e).lower():
                     # Fall back to AutoModel for custom models like DeepSeek-OCR
-                    self.model_instance = AutoModel.from_pretrained(self.model, **model_kwargs)
+                    loaded = AutoModel.from_pretrained(self.model, **model_kwargs)
+                    self.model_instance, loading_info = self._unpack_transformers_load_result(loaded)
+                    self._validate_transformers_weight_load(loading_info, quantization_config)
                 else:
                     raise
 

@@ -117,9 +117,6 @@ decode/runtime throughput, not failed durable-prefix reuse.
 - HF transformers uses provider-native `Cache` objects persisted in `.safetensors`; current
   coverage includes standard `DynamicCache` layer state, Qwen3.5/Qwen3Next-style tensor-list hybrid
   state, and Mamba-style tensor state when the cache class can be constructed from model config.
-- Quantized HF transformers checkpoints require their quantization runtime to load the model
-  correctly before durable-bloc behavior can be validated. Missing base weights, unexpected packed
-  weights, or incorrect trivial generation invalidate the model as a proof target.
 - HF GGUF uses llama.cpp state snapshots in `.npz` and is exact-renderer gated. Current exact
   renderers are `chatml-function-calling`, `llama-3`, and Gemma4 `gemma_turn` through llama.cpp's
   model chat template.

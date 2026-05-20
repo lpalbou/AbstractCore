@@ -761,6 +761,14 @@ ollama pull gemma3:1b  # 1GB instead of 30GB
 llm = create_llm("mlx", model="mlx-community/Llama-3.2-3B-Instruct-4bit")
 ```
 
+### Issue: HuggingFace quantized Transformers model loads but generates nonsense
+
+Treat this as a model/runtime compatibility issue. AWQ, GPTQ, bitsandbytes, and
+compressed-tensors checkpoints require the matching optional Transformers quantization runtime; a
+downloaded `.safetensors` file is not enough. If loading reports missing base weights, unexpected
+packed weights, or mismatched shapes, choose a compatible runtime/model pair or use MLX/GGUF for
+that quantized artifact. See [HuggingFace Model Compatibility](huggingface-model-compatibility.md).
+
 ---
 
 ## Best Practices

@@ -44,6 +44,7 @@ Quick start:
 - [API Reference](docs/api-reference.md): full function/class listing
 - [Generation parameters](docs/generation-parameters.md): max tokens / thinking / temperature semantics across providers
 - [Prompt caching](docs/prompt-caching.md): `CachedSession`, cache keys, file attachments, and durable memory bloc bindings
+- [HuggingFace model compatibility](docs/huggingface-model-compatibility.md): Transformers/GGUF loading rules, quantized checkpoint caveats, and trusted proof targets
 - [Memory blocs](docs/memory-blocs.md): text/file -> bloc -> provider/model durable cache artifacts with optional request-time binding
 - [Tool calling](docs/tool-calling.md): `@tool`, passthrough vs execution, built-in tools
 - [Tool syntax rewriting](docs/tool-syntax-rewriting.md): preserve tool-call markup (`tool_call_tags`, server `agent_format`)

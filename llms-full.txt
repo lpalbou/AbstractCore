@@ -384,6 +384,14 @@ HuggingFace runs in-process and requires transformers/torch:
 pip install "abstractcore[huggingface]"
 ```
 
+Quantized Transformers checkpoints such as AWQ, GPTQ, bitsandbytes, and
+compressed-tensors may require optional quantization runtimes beyond the
+baseline HuggingFace extra. This is a general model-load compatibility issue,
+not a prompt-cache issue. If a model reports missing base weights, unexpected
+packed weights, or produces nonsense for a trivial prompt, choose a compatible
+runtime/model pair or use the provider-native MLX/GGUF path. See
+`docs/huggingface-model-compatibility.md`.
+
 ```python
 from abstractcore import create_llm
 
@@ -1618,6 +1626,11 @@ print(response.content)
 - `microsoft/DialoGPT-medium` - Good for conversation
 - `facebook/blenderbot-400M-distill` - Conversational AI
 - `microsoft/CodeBERT-base` - Code understanding
+
+Quantized Transformers checkpoints may need optional quantization runtimes
+beyond `abstractcore[huggingface]`. If loading reports missing weights,
+unexpected packed weights, or incorrect trivial output, treat it as a
+model/runtime compatibility issue. See `docs/huggingface-model-compatibility.md`.
 
 ### vLLM Setup
 

@@ -383,6 +383,13 @@ print(response.content)
 - `facebook/blenderbot-400M-distill` - Conversational AI
 - `microsoft/CodeBERT-base` - Code understanding
 
+#### Quantized Transformers Models
+
+Quantized Transformers checkpoints may need optional quantization runtimes beyond
+`abstractcore[huggingface]`. If a model reports missing weights, unexpected packed weights, or
+incorrect output for a trivial prompt, treat it as a model/runtime compatibility issue. See
+[HuggingFace Model Compatibility](huggingface-model-compatibility.md).
+
 ### vLLM Setup
 
 **Best for**: Production GPU deployments, high-throughput inference, tensor parallelism
