@@ -134,9 +134,7 @@ class AbstractCoreInterface(ABC):
                 if mbs_l in {"diffusers"}:
                     merged_prefs["music"] = "abstractmusic:diffusers"
                 elif mbs_l in {"acestep", "ace", "ace-step"}:
-                    merged_prefs["music"] = "abstractmusic:acestep-v15"
-                elif mbs_l in {"official", "acestep-official", "acestep_official"}:
-                    merged_prefs["music"] = "abstractmusic:acestep-official"
+                    merged_prefs["music"] = "abstractmusic:acestep-diffusers"
                 elif mbs_l in {"acestep_v15", "acestep-v15"}:
                     merged_prefs["music"] = "abstractmusic:acestep-v15"
                 else:
@@ -155,6 +153,11 @@ class AbstractCoreInterface(ABC):
 
             self._capability_registry = CapabilityRegistry(self, preferred_backends=merged_prefs or None)
         return self._capability_registry
+
+    @property
+    def capability_host_context(self):
+        """Narrow host services exposed to optional capability plugins."""
+        return self.capabilities.host_context
 
     @property
     def voice(self):

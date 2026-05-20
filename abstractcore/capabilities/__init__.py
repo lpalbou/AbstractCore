@@ -11,12 +11,21 @@ Design constraints:
 """
 
 from .errors import CapabilityUnavailableError
+from .host import DefaultCapabilityHostContext, DefaultCoreTextGenerationService
 from .registry import CapabilityRegistry
 from .types import (
     ArtifactRef,
     ArtifactStoreLike,
     AudioCapability,
     BytesOrArtifactRef,
+    CapabilityArtifactRef,
+    CapabilityHostContext,
+    CapabilityInvokeResult,
+    CapabilityModelInfo,
+    CapabilityOperationInfo,
+    CapabilityProviderInfo,
+    CoreTextGenerationService,
+    CoreTextResult,
     GenerateWithOutputsResult,
     MusicCapability,
     VisionCapability,
@@ -30,8 +39,18 @@ __all__ = [
     "ArtifactStoreLike",
     "AudioCapability",
     "BytesOrArtifactRef",
+    "CapabilityArtifactRef",
+    "CapabilityHostContext",
+    "CapabilityInvokeResult",
+    "CapabilityModelInfo",
+    "CapabilityOperationInfo",
+    "CapabilityProviderInfo",
     "CapabilityRegistry",
     "CapabilityUnavailableError",
+    "CoreTextGenerationService",
+    "CoreTextResult",
+    "DefaultCapabilityHostContext",
+    "DefaultCoreTextGenerationService",
     "GenerateWithOutputsResult",
     "get_local_vision_cache_catalog",
     "MusicCapability",

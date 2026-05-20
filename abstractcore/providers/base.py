@@ -1951,6 +1951,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if modality == "voice":
             self._run_voice_output(result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store)
             return
+        if modality == "music":
+            self._run_music_output(result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store)
+            return
         if modality == "text" and spec.get("task") == "transcription":
             self._run_transcription_output(result=result, spec=spec, media=media, artifact_store=artifact_store)
             return
@@ -2135,6 +2138,73 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 backend_id=getattr(self.voice, "backend_id", None),
                 provider=voice_provider,
                 model=str(voice_model) if voice_model is not None else None,
+                metadata=metadata,
+            ),
+        )
+
+    def _run_music_output(
+        self,
+        *,
+        result: MultimodalGenerateResponse,
+        spec: Dict[str, Any],
+        prompt: str,
+        media: Any,
+        artifact_store: Optional[Any],
+    ) -> None:
+        items = self._coerce_media_items(media)
+        audio_items = [
+            item
+            for item in items
+            if self._media_type(item, fallback="audio" if isinstance(item, (bytes, bytearray)) else None) == "audio"
+        ]
+        if audio_items:
+            raise ValueError("Music generation does not accept audio media in v1; pass lyrics/text fields instead.")
+
+        fmt = str(spec.get("format") or spec.get("response_format") or "wav").strip().lower() or "wav"
+        kwargs = self._output_plugin_kwargs(
+            spec,
+            exclude={"lyrics", "format", "response_format", "provider", "backend", "music_backend"},
+        )
+        if spec.get("provider") is not None:
+            kwargs["provider"] = spec.get("provider")
+        if spec.get("backend") is not None:
+            kwargs["backend"] = spec.get("backend")
+        if spec.get("music_backend") is not None:
+            kwargs["music_backend"] = spec.get("music_backend")
+        if artifact_store is not None:
+            kwargs["artifact_store"] = artifact_store
+
+        raw = self.music.generate(
+            prompt,
+            task=str(spec.get("task") or "music_generation"),
+            lyrics=spec.get("lyrics"),
+            format=fmt,
+            **kwargs,
+        )
+        data, artifact_ref, metadata = self._artifact_or_data(raw)
+        content_type = str(metadata.get("content_type") or metadata.get("mime_type") or f"audio/{fmt}")
+        music_provider = str(spec.get("provider") or getattr(self.music, "backend_id", None) or self.__class__.__name__)
+        music_model = spec.get("model") or metadata.get("model") or metadata.get("model_id")
+        if artifact_ref is None:
+            data, stored_ref = self._store_generated_data(
+                data,
+                artifact_store=artifact_store,
+                content_type=content_type,
+                spec=spec,
+            )
+            artifact_ref = stored_ref
+        result.add_output(
+            "music",
+            GeneratedItem(
+                modality="music",
+                task="music_generation",
+                data=data,
+                artifact_ref=artifact_ref,
+                content_type=content_type,
+                format=fmt,
+                backend_id=getattr(self.music, "backend_id", None),
+                provider=music_provider,
+                model=str(music_model) if music_model is not None else None,
                 metadata=metadata,
             ),
         )

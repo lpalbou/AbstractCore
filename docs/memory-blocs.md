@@ -47,6 +47,9 @@ Typical flow:
 3. (optional) compile a per-model KV artifact with `ensure_bloc_kv_artifact(...)`
 4. (optional) load or fork it later with `load_bloc_kv_artifact(...)`
 5. (optional) generate JSON-LD metadata with `generate_bloc_metadata_jsonld(...)`
+6. (optional) list, delete, or prune bloc KV artifacts with
+   `list_bloc_kv_artifacts(...)`, `delete_bloc_kv_artifact(...)`, and
+   `prune_bloc_kv_artifacts(...)`
 
 ```python
 from abstractcore import create_llm, ensure_bloc_kv_artifact, load_bloc_kv_artifact
@@ -77,7 +80,8 @@ response = llm.generate(
 
 See:
 - `abstractcore/core/file_blocs.py` for the store and record schema
-- `abstractcore/core/bloc_kv.py` for the unified bloc artifact compiler/loader
+- `abstractcore/core/bloc_kv.py` for the unified bloc artifact compiler/loader and deletion
+  helpers
 - `abstractcore/core/bloc_metadata.py` for JSON-LD schema + metadata generator/parser
 
 ## Supported local artifact backends
@@ -125,10 +129,15 @@ hash, bloc/content hashes, and token count when available.
 For a long-lived single-model local runtime, `AbstractEndpoint` exposes:
 
 - `POST /acore/blocs/upsert_text`
+- `GET /acore/blocs`
 - `GET /acore/blocs/record`
+- `POST /acore/blocs/delete`
 - `GET /acore/blocs/kv/manifest`
+- `GET /acore/blocs/kv/list`
 - `POST /acore/blocs/kv/ensure`
 - `POST /acore/blocs/kv/load`
+- `POST /acore/blocs/kv/delete`
+- `POST /acore/blocs/kv/prune`
 
 The multi-provider gateway `abstractcore.server.app` now exposes two modes:
 
@@ -137,10 +146,15 @@ The multi-provider gateway `abstractcore.server.app` now exposes two modes:
   - `GET /acore/models/loaded`
   - `POST /acore/models/unload`
   - local `POST /acore/blocs/upsert_text`
+  - local `GET /acore/blocs`
   - local `GET /acore/blocs/record`
+  - local `POST /acore/blocs/delete`
   - local `GET /acore/blocs/kv/manifest`
+  - local `GET /acore/blocs/kv/list`
   - local `POST /acore/blocs/kv/ensure`
   - local `POST /acore/blocs/kv/load`
+  - local `POST /acore/blocs/kv/delete`
+  - local `POST /acore/blocs/kv/prune`
 - proxy mode:
   - the same `/acore/blocs/*` routes with `base_url` pointing at an upstream `AbstractEndpoint`
 
@@ -155,3 +169,7 @@ Important boundary:
   `artifact.prompt_cache_binding`
 - use `artifact.prompt_cache_binding` on the next chat call when exact request-time binding is
   required
+- deletion is safe by default: deleting a loaded bloc KV artifact returns `409` until the caller
+  uses `clear_loaded=true` or explicitly opts into forced deletion
+- use `dry_run=true` on delete/prune calls to inspect matched files and live bindings before
+  removing artifacts

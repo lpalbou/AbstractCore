@@ -172,6 +172,13 @@ For server and endpoint use, `/acore/blocs/kv/load` returns
 `artifact.prompt_cache_binding`; pass that object to `/v1/chat/completions` as
 `prompt_cache_binding`.
 
+Deletion and pruning are also part of the public contract. Use
+`list_bloc_kv_artifacts(...)`, `find_bloc_kv_live_bindings(...)`,
+`delete_bloc_kv_artifact(...)`, `prune_bloc_kv_artifacts(...)`, and `delete_bloc(...)` in Python, or
+the matching `/acore/blocs` and `/acore/blocs/kv/*` delete/list/prune routes. Deleting a loaded KV
+artifact is blocked by default; pass `clear_loaded=true` to the route, or `clear_loaded=True` to
+the helper, when you want Core to clear matching runtime keys before removing artifact files.
+
 Set `debug=true` on the bloc ensure/load routes, pass `debug=True` to the Python helpers, or set
 `ABSTRACTCORE_BLOC_KV_DEBUG=1` to return verbose proof fields such as provider backend, artifact
 format, manifest path, artifact hash, binding id, rendered recipe hash, and token count when

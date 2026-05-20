@@ -2,8 +2,8 @@
 
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
-Last updated: 2026-05-20
-Package version: 2.13.22
+Last updated: 2026-05-21
+Package version: 2.13.23
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -645,16 +645,17 @@ abstractcore --set-audio-strategy auto
 abstractcore --set-stt-language en
 ```
 
-### Capability plugins (voice/audio/vision)
+### Capability plugins (voice/audio/vision/music)
 
 AbstractCore supports optional capability plugins discovered via Python entry points:
 - install `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
 - install `abstractvision` -> enables `llm.vision` (generative vision; often via an OpenAI-compatible images endpoint)
-- current plugin floors in this source: `abstractvoice>=0.10.11`, `abstractvision>=0.3.8`
+- install `abstractmusic` -> enables `llm.music` and music output routing for text-to-music
+- current plugin floors in this source: `abstractvoice>=0.10.11`, `abstractvision>=0.3.8`, `abstractmusic>=0.1.1`
 
 Server note:
 - the server can optionally expose `/v1/images/*` (requires `abstractvision`)
-- the server can optionally expose `/v1/audio/*` (requires an audio/voice plugin; commonly `abstractvoice`)
+- the server can optionally expose `/v1/audio/*` (requires an audio/voice/music plugin; commonly `abstractvoice` or `abstractmusic`)
 
 ### Glyph visual-text compression (optional, experimental)
 
@@ -8609,14 +8610,21 @@ For a dedicated overview, see [Prompt Caching](prompt-caching.md).
 provider/model cache artifact flow:
 
 - `POST /acore/blocs/upsert_text`
+- `GET /acore/blocs`
 - `GET /acore/blocs/record`
+- `POST /acore/blocs/delete`
 - `GET /acore/blocs/kv/manifest`
+- `GET /acore/blocs/kv/list`
 - `POST /acore/blocs/kv/ensure`
 - `POST /acore/blocs/kv/load`
+- `POST /acore/blocs/kv/delete`
+- `POST /acore/blocs/kv/prune`
 
 `/acore/blocs/kv/load` returns `artifact.key`, `artifact.binding_id`, and
 `artifact.prompt_cache_binding`. Pass `prompt_cache_binding` to `/v1/chat/completions` when exact
 request-time binding is required. `debug=true` on ensure/load returns verbose proof fields.
+Delete/prune routes are safe by default: a loaded artifact returns `409` until the caller clears
+the matching live key with `clear_loaded=true` or explicitly forces deletion.
 
 The shared route shape covers MLX, HuggingFace transformers, and supported HuggingFace GGUF
 exact-renderer paths. Artifact payloads are provider/model-native, not a universal KV tensor
@@ -9889,7 +9897,7 @@ If you're new to AbstractCore and want to start building quickly, read:
 Related docs (user-facing):
 - Media inputs (images/audio/video + documents): `docs/media-handling-system.md`
 - Vision input + fallback: `docs/vision-capabilities.md`
-- Capability plugins (voice/audio/vision): `docs/capabilities.md`
+- Capability plugins (voice/audio/vision/music): `docs/capabilities.md`
 - OpenAI-compatible gateway server: `docs/server.md`
 - Single-model OpenAI-compatible endpoint: `docs/endpoint.md`
 - Tool calling semantics (passthrough vs execution): `docs/tool-calling.md`
@@ -10181,14 +10189,19 @@ response = llm.generate(
 python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jpg"
 ```
 
-#### Capability plugins (voice/audio/vision)
+#### Capability plugins (voice/audio/vision/music)
 To keep the default `abstractcore` install dependency-light while still enabling deterministic modality APIs, AbstractCore supports optional **capability plugins**:
 - `abstractvoice` provides `core.voice` + `core.audio` (TTS/STT).
 - `abstractvision` provides `core.vision` (T2I/I2I/T2V/I2V; backend-pluggable).
+- `abstractmusic` can provide `core.music` (text-to-music) when installed.
 
 Discovery:
 - `llm.capabilities.status()` returns a JSON-safe snapshot (which backends are available/selected, plus install hints).
-- Convenience facades exist as properties: `llm.voice`, `llm.audio`, `llm.vision` (lazy; missing plugins raise actionable errors).
+- `llm.capabilities.list_backend_infos()` returns registered backend metadata without instantiating backend factories.
+- `llm.capabilities.available_providers(capability, task=...)` and
+  `llm.capabilities.list_models(capability, task=..., provider=...)` expose normalized plugin
+  discovery where supported.
+- Convenience facades exist as properties: `llm.voice`, `llm.audio`, `llm.vision`, and `llm.music` (lazy; missing plugins raise actionable errors).
 
 ### 4. Request Lifecycle
 

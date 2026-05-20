@@ -65,12 +65,12 @@ def _make_multi_audio_backend_plugin_ep():
 
 def _make_multi_music_backend_plugin_ep():
     def register(registry):
-        class _MusicOfficial:
-            backend_id = "abstractmusic:acestep-official"
+        class _MusicDiffusers:
+            backend_id = "abstractmusic:acestep-diffusers"
 
             def t2m(self, prompt, **kwargs):
                 _ = prompt, kwargs
-                return b"official"
+                return b"diffusers"
 
         class _MusicLegacy:
             backend_id = "abstractmusic:acestep-v15"
@@ -80,8 +80,8 @@ def _make_multi_music_backend_plugin_ep():
                 return b"legacy"
 
         registry.register_music_backend(
-            backend_id="abstractmusic:acestep-official",
-            factory=lambda _owner: _MusicOfficial(),
+            backend_id="abstractmusic:acestep-diffusers",
+            factory=lambda _owner: _MusicDiffusers(),
             priority=20,
         )
         registry.register_music_backend(
@@ -140,8 +140,8 @@ def test_music_backend_acestep_alias_selects_internal_backend(monkeypatch):
     )
 
     llm = _DummyProvider(model="dummy", music_backend="acestep")
-    assert llm.capabilities.status()["capabilities"]["music"]["selected_backend"] == "abstractmusic:acestep-v15"
-    assert llm.music.t2m("bright melodic synth loop") == b"legacy"
+    assert llm.capabilities.status()["capabilities"]["music"]["selected_backend"] == "abstractmusic:acestep-diffusers"
+    assert llm.music.t2m("bright melodic synth loop") == b"diffusers"
 
 
 @pytest.mark.basic

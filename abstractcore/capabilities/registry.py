@@ -6,7 +6,17 @@ import inspect
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, TypeVar
 
 from .errors import CapabilityUnavailableError
-from .types import AudioCapability, MusicCapability, VisionCapability, VoiceCapability
+from .host import DefaultCapabilityHostContext
+from .types import (
+    AudioCapability,
+    CapabilityHostContext,
+    CapabilityModelInfo,
+    CapabilityOperationInfo,
+    CapabilityProviderInfo,
+    MusicCapability,
+    VisionCapability,
+    VoiceCapability,
+)
 
 
 _PLUGIN_ENTRYPOINT_GROUP = "abstractcore.capabilities_plugins"
@@ -22,6 +32,20 @@ class CapabilityBackendInfo:
     description: Optional[str] = None
     install_hint: Optional[str] = None
     config_hint: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {
+            "capability": self.capability,
+            "backend_id": self.backend_id,
+            "priority": int(self.priority),
+        }
+        if self.description is not None:
+            out["description"] = self.description
+        if self.install_hint is not None:
+            out["install_hint"] = self.install_hint
+        if self.config_hint is not None:
+            out["config_hint"] = self.config_hint
+        return out
 
 
 @dataclass(frozen=True)
@@ -58,6 +82,13 @@ class CapabilityRegistry:
         self.audio = _AudioFacade(self)
         self.vision = _VisionFacade(self)
         self.music = _MusicFacade(self)
+        self._host_context: Optional[CapabilityHostContext] = None
+
+    @property
+    def host_context(self) -> CapabilityHostContext:
+        if self._host_context is None:
+            self._host_context = DefaultCapabilityHostContext(self._owner)
+        return self._host_context
 
     def set_preferred_backend(self, capability: str, backend_id: str) -> None:
         cap = str(capability or "").strip()
@@ -310,6 +341,87 @@ class CapabilityRegistry:
         out = self._get_instance("music")
         return out  # type: ignore[return-value]
 
+    def list_backend_infos(self, capability: Optional[str] = None) -> List[CapabilityBackendInfo]:
+        """Return registered backend metadata without instantiating backend factories."""
+        self._ensure_plugins_loaded()
+        cap_filter = str(capability or "").strip() or None
+        out: List[CapabilityBackendInfo] = []
+        for cap, regs in sorted(self._registrations.items()):
+            if cap_filter is not None and cap != cap_filter:
+                continue
+            out.extend(reg.info for reg in regs.values())
+        return sorted(out, key=lambda info: (info.capability, -int(info.priority), info.backend_id))
+
+    def list_capabilities(self) -> Dict[str, Any]:
+        return dict(self.status().get("capabilities") or {})
+
+    def available_providers(self, capability: str, *, task: Optional[str] = None) -> List[Dict[str, Any]]:
+        cap = str(capability or "").strip()
+        backend = self._get_instance(cap)
+        method = getattr(backend, "available_providers", None)
+        if not callable(method):
+            method = getattr(backend, "list_available_providers", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability=cap,
+                reason=f"The selected {cap} capability backend does not expose available_providers(task=...).",
+                install_hint=self._default_install_hint(cap),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        raw = _call_capability_discovery_method(method, task=task, kind=task)
+        return [item.to_dict() for item in _normalize_provider_records(raw, capability=cap, task=task, backend_id=getattr(backend, "backend_id", None))]
+
+    def list_models(
+        self,
+        capability: str,
+        *,
+        task: Optional[str] = None,
+        provider: Optional[str] = None,
+        provider_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        cap = str(capability or "").strip()
+        backend = self._get_instance(cap)
+        method = getattr(backend, "list_models", None)
+        if not callable(method):
+            method = getattr(backend, "list_provider_models", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability=cap,
+                reason=f"The selected {cap} capability backend does not expose list_models(task=..., provider=...).",
+                install_hint=self._default_install_hint(cap),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        provider_s = provider_id or provider
+        raw = _call_capability_discovery_method(method, task=task, kind=task, provider=provider_s, provider_id=provider_s)
+        return [
+            item.to_dict()
+            for item in _normalize_model_records(
+                raw,
+                capability=cap,
+                task=task,
+                provider_id=provider_s,
+                backend_id=getattr(backend, "backend_id", None),
+            )
+        ]
+
+    def list_operations(self, capability: str, *, task: Optional[str] = None) -> List[Dict[str, Any]]:
+        cap = str(capability or "").strip()
+        backend = self._get_instance(cap)
+        method = getattr(backend, "list_operations", None)
+        if not callable(method):
+            method = getattr(backend, "get_capabilities", None)
+        if not callable(method):
+            return []
+        raw = _call_capability_discovery_method(method, task=task, kind=task)
+        return [
+            item.to_dict()
+            for item in _normalize_operation_records(
+                raw,
+                capability=cap,
+                task=task,
+            )
+        ]
+
     def status(self) -> Dict[str, Any]:
         """Return a JSON-safe capability availability snapshot."""
         self._ensure_plugins_loaded()
@@ -419,7 +531,9 @@ def _call_capability_discovery_method(
     method: Callable[..., Any],
     *,
     kind: Optional[str] = None,
+    task: Optional[str] = None,
     provider: Optional[str] = None,
+    provider_id: Optional[str] = None,
 ) -> Any:
     params: Dict[str, inspect.Parameter] = {}
     accepts_kwargs = False
@@ -432,11 +546,181 @@ def _call_capability_discovery_method(
     kwargs: Dict[str, Any] = {}
     if kind is not None and (accepts_kwargs or "kind" in params):
         kwargs["kind"] = str(kind or "")
+    if task is not None and (accepts_kwargs or "task" in params):
+        kwargs["task"] = str(task or "")
     if provider is not None and (accepts_kwargs or "provider" in params):
         kwargs["provider"] = provider
+    if provider_id is not None and (accepts_kwargs or "provider_id" in params):
+        kwargs["provider_id"] = provider_id
     if kwargs:
         return method(**kwargs)
     return method()
+
+
+def _list_from_payload(raw: Any) -> List[Any]:
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return list(raw)
+    if isinstance(raw, tuple):
+        return list(raw)
+    if isinstance(raw, dict):
+        for key in ("providers", "models", "operations", "items"):
+            value = raw.get(key)
+            if isinstance(value, list):
+                return list(value)
+            if isinstance(value, dict):
+                return [dict(v, provider_id=k) if isinstance(v, dict) else {"provider_id": k, "value": v} for k, v in value.items()]
+        return [dict(v, provider_id=k) if isinstance(v, dict) else {"provider_id": k, "value": v} for k, v in raw.items()]
+    return [raw]
+
+
+def _str_list(value: Any, fallback: Optional[str] = None) -> List[str]:
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    if isinstance(value, (list, tuple, set)):
+        return [str(v).strip() for v in value if str(v or "").strip()]
+    if fallback:
+        return [fallback]
+    return []
+
+
+def _normalize_provider_records(
+    raw: Any,
+    *,
+    capability: str,
+    task: Optional[str],
+    backend_id: Any,
+) -> List[CapabilityProviderInfo]:
+    out: List[CapabilityProviderInfo] = []
+    for item in _list_from_payload(raw):
+        if isinstance(item, CapabilityProviderInfo):
+            out.append(item)
+            continue
+        if isinstance(item, str):
+            provider_id = item.strip()
+            data: Dict[str, Any] = {}
+        elif isinstance(item, Mapping):
+            data = dict(item)
+            provider_id = str(
+                data.get("provider_id")
+                or data.get("provider")
+                or data.get("id")
+                or data.get("name")
+                or ""
+            ).strip()
+        else:
+            continue
+        if not provider_id:
+            continue
+        tasks = _str_list(data.get("tasks"), task)
+        display = str(data.get("display_name") or data.get("name") or provider_id)
+        status = str(data.get("status") or "available")
+        metadata = dict(data.get("metadata") or {}) if isinstance(data.get("metadata"), dict) else {}
+        local = bool(data.get("local"))
+        remote = bool(data.get("remote"))
+        backend_id_s = str(data.get("backend_id") or backend_id or "").strip() or None
+        out.append(
+            CapabilityProviderInfo(
+                provider_id=provider_id,
+                display_name=display,
+                capability=capability,
+                tasks=tasks,
+                local=local,
+                remote=remote,
+                status=status,
+                backend_id=backend_id_s,
+                installed=data.get("installed") if isinstance(data.get("installed"), bool) else None,
+                configured=data.get("configured") if isinstance(data.get("configured"), bool) else None,
+                reachable=data.get("reachable") if isinstance(data.get("reachable"), bool) else None,
+                selected=data.get("selected") if isinstance(data.get("selected"), bool) else None,
+                install_hint=data.get("install_hint") if isinstance(data.get("install_hint"), str) else None,
+                config_hint=data.get("config_hint") if isinstance(data.get("config_hint"), str) else None,
+                metadata=metadata,
+            )
+        )
+    return out
+
+
+def _normalize_model_records(
+    raw: Any,
+    *,
+    capability: str,
+    task: Optional[str],
+    provider_id: Optional[str],
+    backend_id: Any,
+) -> List[CapabilityModelInfo]:
+    out: List[CapabilityModelInfo] = []
+    for item in _list_from_payload(raw):
+        if isinstance(item, CapabilityModelInfo):
+            out.append(item)
+            continue
+        if isinstance(item, str):
+            model_id = item.strip()
+            data: Dict[str, Any] = {}
+        elif isinstance(item, Mapping):
+            data = dict(item)
+            model_id = str(data.get("model_id") or data.get("model") or data.get("id") or data.get("name") or "").strip()
+        else:
+            continue
+        if not model_id:
+            continue
+        provider_s = str(data.get("provider_id") or data.get("provider") or provider_id or "").strip()
+        out.append(
+            CapabilityModelInfo(
+                model_id=model_id,
+                provider_id=provider_s,
+                capability=capability,
+                tasks=_str_list(data.get("tasks"), task),
+                modalities=_str_list(data.get("modalities")),
+                local=bool(data.get("local")),
+                remote=bool(data.get("remote")),
+                status=str(data.get("status") or "available"),
+                backend_id=str(data.get("backend_id") or backend_id or "") or None,
+                routed_model=data.get("routed_model") if isinstance(data.get("routed_model"), str) else None,
+                formats=_str_list(data.get("formats")),
+                source=data.get("source") if isinstance(data.get("source"), str) else None,
+                recommended=data.get("recommended") if isinstance(data.get("recommended"), bool) else None,
+                license=data.get("license") if isinstance(data.get("license"), str) else None,
+                commercial_allowed=data.get("commercial_allowed") if isinstance(data.get("commercial_allowed"), bool) else None,
+                raw_metadata=dict(data.get("raw_metadata") or data.get("metadata") or {})
+                if isinstance(data.get("raw_metadata") or data.get("metadata"), dict)
+                else {},
+            )
+        )
+    return out
+
+
+def _normalize_operation_records(raw: Any, *, capability: str, task: Optional[str]) -> List[CapabilityOperationInfo]:
+    out: List[CapabilityOperationInfo] = []
+    for item in _list_from_payload(raw):
+        if isinstance(item, CapabilityOperationInfo):
+            out.append(item)
+            continue
+        if isinstance(item, str):
+            operation_id = item.strip()
+            data: Dict[str, Any] = {}
+        elif isinstance(item, Mapping):
+            data = dict(item)
+            operation_id = str(data.get("operation_id") or data.get("operation") or data.get("task") or data.get("id") or "").strip()
+        else:
+            continue
+        if not operation_id:
+            continue
+        out.append(
+            CapabilityOperationInfo(
+                operation_id=operation_id,
+                capability=str(data.get("capability") or capability),
+                task=str(data.get("task") or task or operation_id),
+                input_modalities=_str_list(data.get("input_modalities")),
+                output_modalities=_str_list(data.get("output_modalities")),
+                parameter_schema=dict(data.get("parameter_schema")) if isinstance(data.get("parameter_schema"), dict) else None,
+                required_parameters=_str_list(data.get("required_parameters")),
+                artifact_output=data.get("artifact_output") if isinstance(data.get("artifact_output"), bool) else None,
+                metadata=dict(data.get("metadata") or {}) if isinstance(data.get("metadata"), dict) else {},
+            )
+        )
+    return out
 
 
 def _normalized_provider_id(value: Any) -> str:
@@ -845,5 +1129,71 @@ class _MusicFacade:
     def __init__(self, registry: CapabilityRegistry) -> None:
         self._registry = registry
 
+    @property
+    def backend_id(self) -> Optional[str]:
+        try:
+            return str(getattr(self._registry.get_music(), "backend_id"))
+        except Exception:
+            return None
+
+    def available_providers(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self._registry.available_providers("music", task=task)
+
+    def list_models(
+        self,
+        *,
+        task: Optional[str] = None,
+        provider: Optional[str] = None,
+        provider_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        return self._registry.list_models("music", task=task, provider=provider, provider_id=provider_id)
+
+    def list_provider_models(
+        self,
+        *,
+        task: Optional[str] = None,
+        provider: Optional[str] = None,
+        provider_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        return self.list_models(task=task, provider=provider, provider_id=provider_id)
+
+    def list_operations(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self._registry.list_operations("music", task=task)
+
+    def capability_catalog(self, *, task: Optional[str] = None) -> Dict[str, Any]:
+        return {
+            "capability": "music",
+            "backend_id": self.backend_id,
+            "task": task,
+            "providers": self.available_providers(task=task),
+            "models": self.list_models(task=task),
+            "operations": self.list_operations(task=task),
+        }
+
     def t2m(self, prompt: str, **kwargs: Any) -> Any:
         return self._registry.get_music().t2m(prompt, **kwargs)
+
+    def generate(self, prompt: str, *, task: Optional[str] = None, **kwargs: Any) -> Any:
+        """Generate music/audio through the selected music capability backend.
+
+        `t2m(...)` remains the minimal plugin contract. This alias gives Python
+        callers the same `generate(...)` shape used by other Core surfaces while
+        keeping backend implementations modality-specific.
+        """
+        normalized_task = str(task or kwargs.pop("operation", "") or "text_to_music").strip().lower()
+        normalized_task = normalized_task.replace("-", "_")
+        if normalized_task in {"", "music", "song", "t2m"}:
+            normalized_task = "text_to_music"
+        if normalized_task not in {"text_to_music", "music_generation", "lyrics_to_music", "text_to_audio"}:
+            raise CapabilityUnavailableError(
+                capability="music",
+                reason=f"Unsupported music generation task: {normalized_task!r}.",
+                install_hint=self._registry._default_install_hint("music"),
+                details={"backend_id": self.backend_id, "task": normalized_task},
+            )
+
+        backend = self._registry.get_music()
+        method = getattr(backend, "generate", None)
+        if callable(method):
+            return method(prompt, task=normalized_task, **kwargs)
+        return backend.t2m(prompt, **kwargs)

@@ -25,7 +25,16 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
-from ..core.bloc_kv import ensure_bloc_kv_artifact, load_bloc_kv_artifact, read_bloc_kv_manifest
+from ..core.bloc_kv import (
+    BlocKVArtifactInUseError,
+    delete_bloc,
+    delete_bloc_kv_artifact,
+    ensure_bloc_kv_artifact,
+    list_bloc_kv_artifacts,
+    load_bloc_kv_artifact,
+    prune_bloc_kv_artifacts,
+    read_bloc_kv_manifest,
+)
 from ..core.file_blocs import FileBlocStore
 from ..core.factory import create_llm
 from ..core.types import GenerateResponse
@@ -150,6 +159,30 @@ class BlocKVLoadRequest(BlocLookupRequest):
     make_default: bool = Field(default=False, description="Set the loaded/forked key as the provider default.")
     force_rebuild: bool = Field(default=False, description="Force artifact rebuild before loading.")
     debug: bool = Field(default=False, description="Return verbose bloc KV verification metadata.")
+
+
+class BlocDeleteRequest(BlocLookupRequest):
+    delete_kv: bool = Field(default=True, description="Also delete KV artifacts under the bloc directory.")
+    clear_loaded: bool = Field(default=False, description="Clear live prompt-cache keys bound to this bloc before deleting.")
+    force: bool = Field(default=False, description="Delete even if live keys are detected. Prefer clear_loaded for normal use.")
+    dry_run: bool = Field(default=False, description="Report what would be deleted without deleting files.")
+
+
+class BlocKVDeleteRequest(BlocLookupRequest):
+    artifact_path: Optional[str] = Field(default=None, description="Optional explicit artifact path selector.")
+    clear_loaded: bool = Field(default=False, description="Clear live prompt-cache keys bound to this artifact before deleting.")
+    force: bool = Field(default=False, description="Delete even if live keys are detected. Prefer clear_loaded for normal use.")
+    dry_run: bool = Field(default=False, description="Report what would be deleted without deleting files.")
+    debug: bool = Field(default=False, description="Return verbose safety metadata.")
+
+
+class BlocKVPruneRequest(BlocLookupRequest):
+    provider: Optional[str] = Field(default=None, description="Optional provider filter.")
+    model: Optional[str] = Field(default=None, description="Optional model filter.")
+    clear_loaded: bool = Field(default=False, description="Clear live prompt-cache keys bound to matching artifacts before deleting.")
+    force: bool = Field(default=False, description="Delete even if live keys are detected. Prefer clear_loaded for normal use.")
+    dry_run: bool = Field(default=False, description="Report matching artifacts without deleting files.")
+    debug: bool = Field(default=False, description="Return verbose safety metadata.")
 
 
 def _config_examples() -> Dict[str, Any]:
@@ -694,6 +727,41 @@ def create_app(
                 return _bloc_error("record", "bloc not found", status_code=404)
             return {"ok": True, "operation": "record", "record": rec.to_dict()}
 
+    @app.get("/acore/blocs")
+    def blocs_list(sha256: Optional[str] = None, bloc_id: Optional[int] = None):
+        with lock:
+            if sha256 or bloc_id is not None:
+                rec = _resolve_bloc_selector(sha256=sha256, bloc_id=bloc_id)
+                records = [rec.to_dict()] if rec is not None else []
+            else:
+                records = [rec.to_dict() for rec in bloc_store.list()]
+            return {"ok": True, "operation": "list", "records": records}
+
+    @app.post("/acore/blocs/delete")
+    def bloc_delete(req: BlocDeleteRequest):
+        with lock:
+            try:
+                result = _provider_call(
+                    lambda: delete_bloc(
+                        store=bloc_store,
+                        provider=provider,
+                        sha256=req.sha256,
+                        bloc_id=req.bloc_id,
+                        delete_kv=bool(req.delete_kv),
+                        clear_loaded=bool(req.clear_loaded),
+                        force=bool(req.force),
+                        dry_run=bool(req.dry_run),
+                    )
+                )
+                return {"ok": True, "operation": "delete", "result": result.to_dict()}
+            except BlocKVArtifactInUseError as e:
+                return JSONResponse(
+                    status_code=409,
+                    content={"ok": False, "operation": "delete", "error": str(e), "live_bindings": e.live_bindings},
+                )
+            except Exception as e:
+                return _bloc_error("delete", e, status_code=500)
+
     @app.get("/acore/blocs/kv/manifest")
     def bloc_kv_manifest(sha256: Optional[str] = None, bloc_id: Optional[int] = None, artifact_path: Optional[str] = None):
         with lock:
@@ -715,6 +783,23 @@ def create_app(
                 return {"ok": True, "operation": "kv_manifest", "manifest": manifest.to_dict()}
             except Exception as e:
                 return _bloc_error("kv_manifest", e, status_code=500)
+
+    @app.get("/acore/blocs/kv/list")
+    def bloc_kv_list(
+        sha256: Optional[str] = None,
+        bloc_id: Optional[int] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+    ):
+        with lock:
+            artifacts = list_bloc_kv_artifacts(
+                store=bloc_store,
+                sha256=sha256,
+                bloc_id=bloc_id,
+                provider=provider,
+                model=model,
+            )
+            return {"ok": True, "operation": "kv_list", "artifacts": artifacts}
 
     @app.post("/acore/blocs/kv/ensure")
     def bloc_kv_ensure(req: BlocKVEnsureRequest):
@@ -797,6 +882,59 @@ def create_app(
                 }
             except Exception as e:
                 return _bloc_error("kv_load", e, status_code=500)
+
+    @app.post("/acore/blocs/kv/delete")
+    def bloc_kv_delete(req: BlocKVDeleteRequest):
+        with lock:
+            try:
+                result = _provider_call(
+                    lambda: delete_bloc_kv_artifact(
+                        store=bloc_store,
+                        provider=provider,
+                        sha256=req.sha256,
+                        bloc_id=req.bloc_id,
+                        artifact_path=req.artifact_path,
+                        clear_loaded=bool(req.clear_loaded),
+                        force=bool(req.force),
+                        dry_run=bool(req.dry_run),
+                        debug=bool(req.debug),
+                    )
+                )
+                return {"ok": True, "operation": "kv_delete", "result": result.to_dict()}
+            except BlocKVArtifactInUseError as e:
+                return JSONResponse(
+                    status_code=409,
+                    content={"ok": False, "operation": "kv_delete", "error": str(e), "live_bindings": e.live_bindings},
+                )
+            except Exception as e:
+                return _bloc_error("kv_delete", e, status_code=500)
+
+    @app.post("/acore/blocs/kv/prune")
+    def bloc_kv_prune(req: BlocKVPruneRequest):
+        with lock:
+            try:
+                results = _provider_call(
+                    lambda: prune_bloc_kv_artifacts(
+                        store=bloc_store,
+                        provider=provider,
+                        sha256=req.sha256,
+                        bloc_id=req.bloc_id,
+                        provider_name=req.provider,
+                        model=req.model,
+                        clear_loaded=bool(req.clear_loaded),
+                        force=bool(req.force),
+                        dry_run=bool(req.dry_run),
+                        debug=bool(req.debug),
+                    )
+                )
+                return {"ok": True, "operation": "kv_prune", "results": [result.to_dict() for result in results]}
+            except BlocKVArtifactInUseError as e:
+                return JSONResponse(
+                    status_code=409,
+                    content={"ok": False, "operation": "kv_prune", "error": str(e), "live_bindings": e.live_bindings},
+                )
+            except Exception as e:
+                return _bloc_error("kv_prune", e, status_code=500)
 
     @app.post("/v1/chat/completions")
     def chat_completions(request: ChatCompletionRequest):

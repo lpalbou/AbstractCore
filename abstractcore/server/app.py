@@ -56,7 +56,18 @@ from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from ..core.bloc_kv import ensure_bloc_kv_artifact, load_bloc_kv_artifact, read_bloc_kv_manifest
+from ..core.bloc_kv import (
+    BlocKVArtifactInUseError,
+    delete_bloc,
+    delete_bloc_kv_artifact,
+    ensure_bloc_kv_artifact,
+    find_bloc_kv_live_bindings,
+    list_bloc_kv_artifacts,
+    load_bloc_kv_artifact,
+    prune_bloc_kv_artifacts,
+    read_bloc_kv_manifest,
+)
+from ..capabilities.registry import CapabilityRegistry
 from ..capabilities.errors import CapabilityUnavailableError
 from ..core.factory import create_llm
 from ..core.file_blocs import FileBlocStore
@@ -3986,6 +3997,82 @@ class BlocKVLoadProxyRequest(BlocProxyBase):
         }
 
 
+class BlocDeleteProxyRequest(BlocProxyBase):
+    sha256: Optional[str] = Field(default=None, description="Bloc sha256 selector.")
+    bloc_id: Optional[int] = Field(default=None, description="Stable integer bloc selector.")
+    delete_kv: bool = Field(default=True, description="Also delete KV artifacts under the bloc directory.")
+    clear_loaded: bool = Field(default=False, description="Clear live prompt-cache keys bound to this bloc before deleting.")
+    force: bool = Field(default=False, description="Delete even if live keys are detected. Prefer clear_loaded for normal use.")
+    dry_run: bool = Field(default=False, description="Report what would be deleted without deleting files.")
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "summary": "Delete Bloc Safely",
+                    "value": {
+                        "provider": "mlx",
+                        "model": "mlx-community/Qwen3.6-27B-4bit",
+                        "sha256": "abababababababababababababababababababababababababababababababab",
+                        "delete_kv": True,
+                        "clear_loaded": True,
+                    },
+                }
+            ]
+        }
+
+
+class BlocKVDeleteProxyRequest(BlocProxyBase):
+    sha256: Optional[str] = Field(default=None, description="Bloc sha256 selector.")
+    bloc_id: Optional[int] = Field(default=None, description="Stable integer bloc selector.")
+    artifact_path: Optional[str] = Field(default=None, description="Optional explicit artifact path selector.")
+    clear_loaded: bool = Field(default=False, description="Clear live prompt-cache keys bound to this artifact before deleting.")
+    force: bool = Field(default=False, description="Delete even if live keys are detected. Prefer clear_loaded for normal use.")
+    dry_run: bool = Field(default=False, description="Report what would be deleted without deleting files.")
+    debug: bool = Field(default=False, description="Return verbose safety metadata.")
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "summary": "Delete Bloc KV Artifact Safely",
+                    "value": {
+                        "provider": "mlx",
+                        "model": "mlx-community/Qwen3.6-27B-4bit",
+                        "sha256": "abababababababababababababababababababababababababababababababab",
+                        "clear_loaded": True,
+                        "debug": True,
+                    },
+                }
+            ]
+        }
+
+
+class BlocKVPruneProxyRequest(BlocProxyBase):
+    sha256: Optional[str] = Field(default=None, description="Optional bloc sha256 filter.")
+    bloc_id: Optional[int] = Field(default=None, description="Optional stable integer bloc filter.")
+    clear_loaded: bool = Field(default=False, description="Clear live prompt-cache keys bound to matching artifacts before deleting.")
+    force: bool = Field(default=False, description="Delete even if live keys are detected. Prefer clear_loaded for normal use.")
+    dry_run: bool = Field(default=False, description="Report matching artifacts without deleting files.")
+    debug: bool = Field(default=False, description="Return verbose safety metadata.")
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "summary": "Dry-run Prune Bloc KV Artifacts",
+                    "value": {
+                        "provider": "mlx",
+                        "model": "mlx-community/Qwen3.6-27B-4bit",
+                        "sha256": "abababababababababababababababababababababababababababababababab",
+                        "dry_run": True,
+                        "debug": True,
+                    },
+                }
+            ]
+        }
+
+
 def _normalize_control_plane_base_url(base_url: str) -> str:
     u = str(base_url or "").strip().rstrip("/")
     if u.endswith("/v1"):
@@ -4149,6 +4236,70 @@ def _resolve_local_bloc_selector(*, sha256: Optional[str], bloc_id: Optional[int
         if rec is not None:
             return rec
     return None
+
+
+def _optional_local_runtime_for_bloc_control(
+    *,
+    http_request: Optional[Request],
+    runtime_id: Optional[str],
+    provider: Optional[str],
+    model: Optional[str],
+    base_url: Optional[str],
+) -> Optional[_GatewayLoadedRuntime]:
+    explicit_provider_key_hash = _provider_key_fingerprint(_provider_api_key_from_request(http_request)) if http_request is not None else None
+    return _get_loaded_gateway_runtime(
+        provider=str(provider or "").strip().lower() or None,
+        model=str(model or "").strip() or None,
+        base_url=base_url,
+        explicit_provider_key_hash=explicit_provider_key_hash,
+        runtime_id=runtime_id,
+    )
+
+
+def _live_bloc_bindings_across_loaded_runtimes(record_sha256: Optional[str] = None) -> List[Dict[str, Any]]:
+    live: List[Dict[str, Any]] = []
+    with _GATEWAY_RUNTIME_LOCK:
+        runtimes = list(_GATEWAY_LOADED_RUNTIMES.values())
+    for runtime in runtimes:
+        try:
+            bindings = _run_loaded_gateway_runtime(
+                runtime,
+                lambda runtime=runtime: find_bloc_kv_live_bindings(
+                    provider=runtime.llm,
+                    sha256=record_sha256,
+                ),
+            )
+        except Exception:
+            bindings = []
+        for binding in bindings:
+            item = dict(binding)
+            item.setdefault("runtime_id", runtime.runtime_id)
+            item.setdefault("provider", runtime.provider)
+            item.setdefault("model", runtime.model)
+            live.append(item)
+    return live
+
+
+def _clear_live_bloc_bindings_across_loaded_runtimes(record_sha256: Optional[str] = None) -> List[str]:
+    cleared: List[str] = []
+    with _GATEWAY_RUNTIME_LOCK:
+        runtimes = list(_GATEWAY_LOADED_RUNTIMES.values())
+    for runtime in runtimes:
+        try:
+            keys = _run_loaded_gateway_runtime(
+                runtime,
+                lambda runtime=runtime: [
+                    str(binding.get("key"))
+                    for binding in find_bloc_kv_live_bindings(provider=runtime.llm, sha256=record_sha256)
+                    if isinstance(binding.get("key"), str) and str(binding.get("key")).strip()
+                ],
+            )
+            for key in keys:
+                _run_loaded_gateway_runtime(runtime, lambda runtime=runtime, key=key: runtime.llm.prompt_cache_clear(key))
+                cleared.append(key)
+        except Exception:
+            continue
+    return cleared
 
 
 @app.get(
@@ -4629,6 +4780,94 @@ def acore_bloc_record(
 
 
 @app.get(
+    "/acore/blocs",
+    tags=["memory-blocs"],
+    summary="List Bloc Records",
+    description="List gateway-local bloc records, or proxy the same operation to an upstream AbstractEndpoint when `base_url` is provided.",
+)
+def acore_blocs_list(
+    http_request: Request,
+    base_url: Optional[str] = Query(None, description="Upstream AbstractEndpoint base_url (optionally including /v1)"),
+    sha256: Optional[str] = Query(None, description="Optional bloc sha256 filter."),
+    bloc_id: Optional[int] = Query(None, description="Optional stable integer bloc filter."),
+    api_key: Optional[str] = Query(None, description="Deprecated/disabled. Use X-AbstractCore-Provider-API-Key for provider overrides."),
+):
+    _reject_query_api_key(api_key)
+    if not isinstance(base_url, str) or not base_url.strip():
+        if sha256 or bloc_id is not None:
+            rec = _resolve_local_bloc_selector(sha256=sha256, bloc_id=bloc_id)
+            records = [rec.to_dict()] if rec is not None else []
+        else:
+            records = [rec.to_dict() for rec in _SERVER_BLOC_STORE.list()]
+        return {"ok": True, "operation": "list", "records": records}
+    return _proxy_endpoint_control_request(
+        http_request=http_request,
+        base_url=base_url,
+        api_key=api_key,
+        method="GET",
+        path="/acore/blocs",
+        query_params={"sha256": sha256, "bloc_id": bloc_id},
+    )
+
+
+@app.post(
+    "/acore/blocs/delete",
+    tags=["memory-blocs"],
+    summary="Delete Bloc",
+    description="Delete one gateway-local bloc, with optional live prompt-cache safety checks, or proxy to an upstream AbstractEndpoint.",
+)
+def acore_bloc_delete(req: BlocDeleteProxyRequest, http_request: Request):
+    _reject_body_api_key(req.api_key)
+    if isinstance(req.base_url, str) and req.base_url.strip():
+        body = req.model_dump(exclude_none=True)
+        base_url = body.pop("base_url", None)
+        body.pop("runtime_id", None)
+        body.pop("provider", None)
+        body.pop("model", None)
+        api_key = body.pop("api_key", None)
+        return _proxy_endpoint_control_request(
+            http_request=http_request,
+            base_url=base_url,
+            api_key=api_key,
+            method="POST",
+            path="/acore/blocs/delete",
+            json_body=body,
+        )
+
+    rec = _resolve_local_bloc_selector(sha256=req.sha256, bloc_id=req.bloc_id)
+    if rec is None:
+        return _local_bloc_error("delete", "bloc not found", status_code=404)
+    try:
+        live = _live_bloc_bindings_across_loaded_runtimes(rec.sha256) if req.delete_kv else []
+        if live and not (req.clear_loaded or req.force):
+            return JSONResponse(
+                status_code=409,
+                content={"ok": False, "operation": "delete", "error": "bloc has loaded KV artifacts in live prompt-cache keys", "live_bindings": live},
+            )
+        if live and req.clear_loaded and not req.dry_run:
+            _clear_live_bloc_bindings_across_loaded_runtimes(rec.sha256)
+        result = delete_bloc(
+            store=_SERVER_BLOC_STORE,
+            sha256=rec.sha256,
+            delete_kv=bool(req.delete_kv),
+            clear_loaded=bool(req.clear_loaded),
+            force=bool(req.force),
+            dry_run=bool(req.dry_run),
+        )
+        payload = result.to_dict()
+        if live:
+            payload["live_bindings"] = live
+        return {"ok": True, "operation": "delete", "result": payload}
+    except BlocKVArtifactInUseError as e:
+        return JSONResponse(
+            status_code=409,
+            content={"ok": False, "operation": "delete", "error": str(e), "live_bindings": e.live_bindings},
+        )
+    except Exception as e:
+        return _local_bloc_error("delete", e, status_code=500)
+
+
+@app.get(
     "/acore/blocs/kv/manifest",
     tags=["memory-blocs"],
     summary="Get Bloc KV Manifest",
@@ -4676,6 +4915,41 @@ def acore_bloc_kv_manifest(
         method="GET",
         path="/acore/blocs/kv/manifest",
         query_params={"sha256": sha256, "bloc_id": bloc_id, "artifact_path": artifact_path},
+    )
+
+
+@app.get(
+    "/acore/blocs/kv/list",
+    tags=["memory-blocs"],
+    summary="List Bloc KV Artifacts",
+    description="List manifest-backed bloc KV artifacts locally or on an upstream AbstractEndpoint.",
+)
+def acore_bloc_kv_list(
+    http_request: Request,
+    base_url: Optional[str] = Query(None, description="Upstream AbstractEndpoint base_url (optionally including /v1)"),
+    provider: Optional[str] = Query(None, description="Optional provider filter."),
+    model: Optional[str] = Query(None, description="Optional model filter."),
+    sha256: Optional[str] = Query(None, description="Optional bloc sha256 filter."),
+    bloc_id: Optional[int] = Query(None, description="Optional stable integer bloc filter."),
+    api_key: Optional[str] = Query(None, description="Deprecated/disabled. Use X-AbstractCore-Provider-API-Key for provider overrides."),
+):
+    _reject_query_api_key(api_key)
+    if not isinstance(base_url, str) or not base_url.strip():
+        artifacts = list_bloc_kv_artifacts(
+            store=_SERVER_BLOC_STORE,
+            sha256=sha256,
+            bloc_id=bloc_id,
+            provider=provider,
+            model=model,
+        )
+        return {"ok": True, "operation": "kv_list", "artifacts": artifacts}
+    return _proxy_endpoint_control_request(
+        http_request=http_request,
+        base_url=base_url,
+        api_key=api_key,
+        method="GET",
+        path="/acore/blocs/kv/list",
+        query_params={"sha256": sha256, "bloc_id": bloc_id, "provider": provider, "model": model},
     )
 
 
@@ -4811,6 +5085,310 @@ def acore_bloc_kv_load(req: BlocKVLoadProxyRequest, http_request: Request):
         path="/acore/blocs/kv/load",
         json_body=body,
     )
+
+
+@app.post(
+    "/acore/blocs/kv/delete",
+    tags=["memory-blocs"],
+    summary="Delete Bloc KV Artifact",
+    description="Delete one bloc KV artifact, with optional live prompt-cache safety checks, locally or on an upstream AbstractEndpoint.",
+)
+def acore_bloc_kv_delete(req: BlocKVDeleteProxyRequest, http_request: Request):
+    _reject_body_api_key(req.api_key)
+    if isinstance(req.base_url, str) and req.base_url.strip():
+        body = req.model_dump(exclude_none=True)
+        base_url = body.pop("base_url", None)
+        body.pop("runtime_id", None)
+        body.pop("provider", None)
+        body.pop("model", None)
+        api_key = body.pop("api_key", None)
+        return _proxy_endpoint_control_request(
+            http_request=http_request,
+            base_url=base_url,
+            api_key=api_key,
+            method="POST",
+            path="/acore/blocs/kv/delete",
+            json_body=body,
+        )
+
+    provider_s = str(req.provider or "").strip().lower()
+    model_s = str(req.model or "").strip()
+    runtime = _optional_local_runtime_for_bloc_control(
+        http_request=http_request,
+        runtime_id=req.runtime_id,
+        provider=provider_s,
+        model=model_s,
+        base_url=req.base_url,
+    )
+    try:
+        if runtime is not None:
+            result = _run_loaded_gateway_runtime(
+                runtime,
+                lambda: delete_bloc_kv_artifact(
+                    store=_SERVER_BLOC_STORE,
+                    provider=runtime.llm,
+                    sha256=req.sha256,
+                    bloc_id=req.bloc_id,
+                    provider_name=provider_s or None,
+                    model=model_s or None,
+                    artifact_path=req.artifact_path,
+                    clear_loaded=bool(req.clear_loaded),
+                    force=bool(req.force),
+                    dry_run=bool(req.dry_run),
+                    debug=bool(req.debug),
+                ),
+            )
+        else:
+            rec_for_live = _resolve_local_bloc_selector(sha256=req.sha256, bloc_id=req.bloc_id)
+            live_sha = rec_for_live.sha256 if rec_for_live is not None else None
+            live = _live_bloc_bindings_across_loaded_runtimes(live_sha)
+            if live and not (req.clear_loaded or req.force):
+                return JSONResponse(
+                    status_code=409,
+                    content={"ok": False, "operation": "kv_delete", "error": "matching bloc KV artifact may be loaded in a live prompt-cache key", "live_bindings": live},
+                )
+            if live and req.clear_loaded and not req.dry_run:
+                _clear_live_bloc_bindings_across_loaded_runtimes(live_sha)
+            result = delete_bloc_kv_artifact(
+                store=_SERVER_BLOC_STORE,
+                sha256=req.sha256,
+                bloc_id=req.bloc_id,
+                provider_name=provider_s or None,
+                model=model_s or None,
+                artifact_path=req.artifact_path,
+                clear_loaded=False,
+                force=bool(req.force),
+                dry_run=bool(req.dry_run),
+                debug=bool(req.debug),
+            )
+        return {"ok": True, "operation": "kv_delete", "result": result.to_dict()}
+    except BlocKVArtifactInUseError as e:
+        return JSONResponse(
+            status_code=409,
+            content={"ok": False, "operation": "kv_delete", "error": str(e), "live_bindings": e.live_bindings},
+        )
+    except Exception as e:
+        status = 404 if "not found" in str(e).lower() else 500
+        return _local_bloc_error("kv_delete", e, status_code=status)
+
+
+@app.post(
+    "/acore/blocs/kv/prune",
+    tags=["memory-blocs"],
+    summary="Prune Bloc KV Artifacts",
+    description="Delete matching bloc KV artifacts by filter, with optional live prompt-cache safety checks, locally or on an upstream AbstractEndpoint.",
+)
+def acore_bloc_kv_prune(req: BlocKVPruneProxyRequest, http_request: Request):
+    _reject_body_api_key(req.api_key)
+    if isinstance(req.base_url, str) and req.base_url.strip():
+        body = req.model_dump(exclude_none=True)
+        base_url = body.pop("base_url", None)
+        body.pop("runtime_id", None)
+        api_key = body.pop("api_key", None)
+        return _proxy_endpoint_control_request(
+            http_request=http_request,
+            base_url=base_url,
+            api_key=api_key,
+            method="POST",
+            path="/acore/blocs/kv/prune",
+            json_body=body,
+        )
+
+    provider_s = str(req.provider or "").strip().lower()
+    model_s = str(req.model or "").strip()
+    runtime = _optional_local_runtime_for_bloc_control(
+        http_request=http_request,
+        runtime_id=req.runtime_id,
+        provider=provider_s,
+        model=model_s,
+        base_url=req.base_url,
+    )
+    try:
+        if runtime is not None:
+            results = _run_loaded_gateway_runtime(
+                runtime,
+                lambda: prune_bloc_kv_artifacts(
+                    store=_SERVER_BLOC_STORE,
+                    provider=runtime.llm,
+                    sha256=req.sha256,
+                    bloc_id=req.bloc_id,
+                    provider_name=provider_s or None,
+                    model=model_s or None,
+                    clear_loaded=bool(req.clear_loaded),
+                    force=bool(req.force),
+                    dry_run=bool(req.dry_run),
+                    debug=bool(req.debug),
+                ),
+            )
+        else:
+            rec_for_live = _resolve_local_bloc_selector(sha256=req.sha256, bloc_id=req.bloc_id)
+            live_sha = rec_for_live.sha256 if rec_for_live is not None else None
+            live = _live_bloc_bindings_across_loaded_runtimes(live_sha)
+            if live and not (req.clear_loaded or req.force):
+                return JSONResponse(
+                    status_code=409,
+                    content={"ok": False, "operation": "kv_prune", "error": "matching bloc KV artifacts may be loaded in live prompt-cache keys", "live_bindings": live},
+                )
+            if live and req.clear_loaded and not req.dry_run:
+                _clear_live_bloc_bindings_across_loaded_runtimes(live_sha)
+            results = prune_bloc_kv_artifacts(
+                store=_SERVER_BLOC_STORE,
+                sha256=req.sha256,
+                bloc_id=req.bloc_id,
+                provider_name=provider_s or None,
+                model=model_s or None,
+                clear_loaded=False,
+                force=bool(req.force),
+                dry_run=bool(req.dry_run),
+                debug=bool(req.debug),
+            )
+        return {"ok": True, "operation": "kv_prune", "results": [result.to_dict() for result in results]}
+    except BlocKVArtifactInUseError as e:
+        return JSONResponse(
+            status_code=409,
+            content={"ok": False, "operation": "kv_prune", "error": str(e), "live_bindings": e.live_bindings},
+        )
+    except Exception as e:
+        return _local_bloc_error("kv_prune", e, status_code=500)
+
+
+class _ServerCapabilityOwner:
+    config: Dict[str, Any] = {}
+    model: str = "abstractcore-server"
+
+    def generate(self, *args: Any, **kwargs: Any) -> Any:
+        _ = args, kwargs
+        raise RuntimeError("Server capability discovery owner does not expose text generation.")
+
+
+def _server_capability_registry() -> CapabilityRegistry:
+    try:
+        from .audio_endpoints import _get_capability_core
+
+        core = _get_capability_core()
+        capabilities = getattr(core, "capabilities", None)
+        if capabilities is not None:
+            return capabilities
+    except Exception:
+        pass
+    return CapabilityRegistry(_ServerCapabilityOwner())
+
+
+def _capability_error_response(error: Exception, *, operation: str) -> JSONResponse:
+    if isinstance(error, CapabilityUnavailableError):
+        return JSONResponse(status_code=501, content={"ok": False, "operation": operation, "error": str(error)})
+    return JSONResponse(status_code=500, content={"ok": False, "operation": operation, "error": str(error)})
+
+
+@app.get(
+    "/v1/capabilities",
+    tags=["capabilities"],
+    summary="List Capability Plugins",
+    description="Inspect optional capability plugin availability and registered backend metadata.",
+)
+def list_capability_plugins():
+    registry = _server_capability_registry()
+    try:
+        return {
+            "ok": True,
+            "operation": "capabilities",
+            "status": registry.status(),
+            "backends": [info.to_dict() for info in registry.list_backend_infos()],
+        }
+    except Exception as e:
+        return _capability_error_response(e, operation="capabilities")
+
+
+@app.get(
+    "/v1/capabilities/{capability}/providers",
+    tags=["capabilities"],
+    summary="List Capability Providers",
+    description="List normalized provider availability for one optional capability plugin.",
+)
+def list_capability_providers(
+    capability: str = FastAPIPath(..., description="Capability id such as voice, audio, vision, or music."),
+    task: Optional[str] = Query(None, description="Optional canonical task filter."),
+):
+    registry = _server_capability_registry()
+    try:
+        return {
+            "ok": True,
+            "operation": "capability_providers",
+            "capability": capability,
+            "task": task,
+            "providers": registry.available_providers(capability, task=task),
+        }
+    except Exception as e:
+        return _capability_error_response(e, operation="capability_providers")
+
+
+@app.get(
+    "/v1/capabilities/{capability}/models",
+    tags=["capabilities"],
+    summary="List Capability Models",
+    description="List normalized model availability for one optional capability plugin.",
+)
+def list_capability_models(
+    capability: str = FastAPIPath(..., description="Capability id such as voice, audio, vision, or music."),
+    task: Optional[str] = Query(None, description="Optional canonical task filter."),
+    provider: Optional[str] = Query(None, description="Optional provider filter."),
+):
+    registry = _server_capability_registry()
+    try:
+        return {
+            "ok": True,
+            "operation": "capability_models",
+            "capability": capability,
+            "task": task,
+            "provider": provider,
+            "models": registry.list_models(capability, task=task, provider=provider),
+        }
+    except Exception as e:
+        return _capability_error_response(e, operation="capability_models")
+
+
+@app.get(
+    "/v1/audio/music/providers",
+    tags=["audio"],
+    summary="List Music Providers",
+    description="List normalized provider availability for the music capability plugin.",
+)
+def list_music_providers(task: Optional[str] = Query("text_to_music", description="Optional music task filter.")):
+    registry = _server_capability_registry()
+    try:
+        return {
+            "ok": True,
+            "operation": "music_providers",
+            "capability": "music",
+            "task": task,
+            "providers": registry.available_providers("music", task=task),
+        }
+    except Exception as e:
+        return _capability_error_response(e, operation="music_providers")
+
+
+@app.get(
+    "/v1/audio/music/models",
+    tags=["audio"],
+    summary="List Music Models",
+    description="List normalized model availability for the music capability plugin.",
+)
+def list_music_models(
+    task: Optional[str] = Query("text_to_music", description="Optional music task filter."),
+    provider: Optional[str] = Query(None, description="Optional provider filter."),
+):
+    registry = _server_capability_registry()
+    try:
+        return {
+            "ok": True,
+            "operation": "music_models",
+            "capability": "music",
+            "task": task,
+            "provider": provider,
+            "models": registry.list_models("music", task=task, provider=provider),
+        }
+    except Exception as e:
+        return _capability_error_response(e, operation="music_models")
 
 
 @app.get("/v1/models", tags=["models"])

@@ -30,12 +30,20 @@ from .output_specs import (
 from .enums import ModelParameter, ModelCapability, MessageRole
 from .interface import AbstractCoreInterface
 from .bloc_kv import (
+    BlocDeleteResult,
     BlocKVArtifactManifest,
+    BlocKVArtifactInUseError,
     BlocKVCompileResult,
+    BlocKVDeleteResult,
     BlocKVLoadResult,
     compile_bloc_kv_artifact,
+    delete_bloc,
+    delete_bloc_kv_artifact,
     ensure_bloc_kv_artifact,
+    find_bloc_kv_live_bindings,
+    list_bloc_kv_artifacts,
     load_bloc_kv_artifact,
+    prune_bloc_kv_artifacts,
     read_bloc_kv_manifest,
 )
 
@@ -60,11 +68,19 @@ __all__ = [
     'ModelCapability',
     'MessageRole',
     'AbstractCoreInterface',
+    'BlocDeleteResult',
     'BlocKVArtifactManifest',
+    'BlocKVArtifactInUseError',
     'BlocKVCompileResult',
+    'BlocKVDeleteResult',
     'BlocKVLoadResult',
     'compile_bloc_kv_artifact',
+    'delete_bloc',
+    'delete_bloc_kv_artifact',
     'ensure_bloc_kv_artifact',
+    'find_bloc_kv_live_bindings',
+    'list_bloc_kv_artifacts',
     'load_bloc_kv_artifact',
+    'prune_bloc_kv_artifacts',
     'read_bloc_kv_manifest',
 ]

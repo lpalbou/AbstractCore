@@ -9,21 +9,25 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 12
+- Planned: 13
 - Proposed: 9
-- Completed: 11
+- Completed: 12
 - Deprecated: 1
 - Recurrent: 0
 
 ## Next recommended work
 
-1. `planned/2026-05-18_mlx-provider-continuous-batching.md`
+1. `planned/0794_generic_capability_plugin_contract.md`
+   Establish the shared extension contract for AbstractVoice, AbstractVision, AbstractMusic, and
+   future video plugins before each capability grows another bespoke Core/server adapter, including
+   a narrow host text-service path for plugins that need LLM planning without dependency cycles.
+2. `planned/2026-05-18_mlx-provider-continuous-batching.md`
    The durable bloc cache contract is now provider-wide for supported local backends. The next
    high-impact local-runtime work is batching/scheduler safety for MLX.
-2. `planned/2026-03-30_llama-cpp-python_expose_chat_template_kwargs.md`
+3. `planned/2026-03-30_llama-cpp-python_expose_chat_template_kwargs.md`
    GGUF durable bloc artifacts remain exact-renderer gated. Upstream template-kwargs support is
    still useful for clean reasoning/template control.
-3. `planned/2026-03-30_qwen3-5_lfm2_nemotron_capabilities_and_thinking_controls.md`
+4. `planned/2026-03-30_qwen3-5_lfm2_nemotron_capabilities_and_thinking_controls.md`
    Keep newer model-family reasoning controls aligned with cache preparation and generation.
 
 ## Planned ledger
@@ -38,6 +42,7 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/2026-05-06_robust-fallback-generate.md` | Stronger fallback behavior for generation paths. |
 | `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md` | Multimodal generation plus deterministic cache behavior. |
 | `planned/2026-05-18_mlx-provider-continuous-batching.md` | Shared MLX runtime and batching scheduler. |
+| `planned/0794_generic_capability_plugin_contract.md` | Shared capability plugin contract for provider/model discovery, operation metadata, artifacts, optional residency, typed modality reuse, and safe host text-service injection across AbstractVoice, AbstractVision, AbstractMusic, and future video plugins. |
 | `planned/788-response.md` | Responses-related planned work (legacy naming retained). |
 | `planned/789_server-auth-rate-limits.md` | Server auth and rate-limit controls. |
 | `planned/790_server-response-cache.md` | Server response-cache work. |
@@ -72,6 +77,7 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md` | `completed/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md` | 2026-05-20 | Done | Unified public durable bloc artifact API, strict optional binding, debug proof payloads, and ADR 0007 landed. | `pytest -q`; focused bloc/cache/server tests; real MLX, HF transformers, and HF GGUF smoke proofs. |
 | `planned/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md` | `completed/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md` | 2026-05-20 | Done | HuggingFace transformers exact bloc artifacts now use the unified API and `.safetensors` provider artifact format. | Focused unit tests; real `Qwen/Qwen3.5-4B` proof with 2.54s -> 0.82s processing-phase speedup and correct cached answer. |
 | `planned/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md` | `completed/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md` | 2026-05-20 | Done | HuggingFace GGUF exact-renderer paths now use the unified API and `.npz` artifact format. | Focused unit tests; real Qwen3-4B-Instruct GGUF proof with 1.37s -> 0.17s processing-phase speedup and correct cached answer. |
+| `planned/0795_memory_bloc_delete_prune_control_plane.md` | `completed/0795_memory_bloc_delete_prune_control_plane.md` | 2026-05-20 | Done | Public local helpers and matching gateway/endpoint routes now list, delete, and prune memory blocs and bloc KV artifacts with live-binding safety. | `tests/test_bloc_kv.py`, `tests/test_bloc_kv_endpoint.py`, and OpenAPI route coverage. |
 
 ## Deprecated ledger
 

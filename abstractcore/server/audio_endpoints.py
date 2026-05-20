@@ -173,10 +173,20 @@ class AudioMusicRequest(BaseModel):
         json_schema_extra={
             "examples": [
                 {
+                    "model": "ACE-Step/acestep-v15-xl-turbo-diffusers",
+                    "backend": "acestep",
+                    "provider": "ace-step",
                     "prompt": "A short calm piano loop.",
                     "input": None,
                     "text": None,
                     "lyrics": None,
+                    "duration_s": 8,
+                    "seed": 42,
+                    "num_inference_steps": 27,
+                    "guidance_scale": 15.0,
+                    "instrumental": True,
+                    "enhance_prompt": True,
+                    "text_planner_mode": "auto",
                     "response_format": "wav",
                     "format": None,
                 }
@@ -184,6 +194,32 @@ class AudioMusicRequest(BaseModel):
         },
     )
 
+    model: Optional[str] = Field(
+        default=None,
+        description=(
+            "Optional music model id. For local AbstractMusic backends this is commonly "
+            "a Hugging Face repo id such as `ACE-Step/acestep-v15-xl-turbo-diffusers`."
+        ),
+        examples=["ACE-Step/acestep-v15-xl-turbo-diffusers"],
+    )
+    provider: Optional[Union[str, Dict[str, Any]]] = Field(
+        default=None,
+        description=(
+            "Optional music provider/catalog filter forwarded to the selected music backend, "
+            "for example `ace-step`."
+        ),
+        examples=["ace-step"],
+    )
+    backend: Optional[str] = Field(
+        default=None,
+        description="Optional local music backend selector, e.g. `acestep`, `acestep-v15`, or `diffusers`.",
+        examples=["acestep"],
+    )
+    task: Optional[str] = Field(
+        default=None,
+        description="Optional music task selector. Defaults to `music_generation` / text-to-music.",
+        examples=["text_to_music"],
+    )
     prompt: Optional[str] = Field(
         default=None,
         description="Music prompt. Required unless using `input` or `text` alias.",
@@ -192,6 +228,15 @@ class AudioMusicRequest(BaseModel):
     input: Optional[str] = Field(default=None, description="Alias for `prompt`.", examples=["A short calm piano loop."])
     text: Optional[str] = Field(default=None, description="Alias for `prompt`.", examples=["A short calm piano loop."])
     lyrics: Optional[str] = Field(default=None, description="Optional lyrics for backends that support vocal music.")
+    duration_s: Optional[float] = Field(default=None, description="Requested output duration in seconds.", examples=[8.0])
+    seed: Optional[int] = Field(default=None, description="Optional deterministic seed.", examples=[42])
+    num_inference_steps: Optional[int] = Field(default=None, description="Optional diffusion/sampling step count.", examples=[27])
+    guidance_scale: Optional[float] = Field(default=None, description="Optional classifier-free guidance scale.", examples=[15.0])
+    instrumental: Optional[bool] = Field(default=None, description="Request instrumental output when supported.")
+    enhance_prompt: Optional[bool] = Field(default=None, description="Enable provider/plugin prompt enhancement when supported.")
+    structure_prompt: Optional[bool] = Field(default=None, description="Enable structured prompt planning when supported.")
+    auto_lyrics: Optional[bool] = Field(default=None, description="Ask the backend to infer or generate lyrics when supported.")
+    text_planner_mode: Optional[str] = Field(default=None, description="Music text-planner mode such as `auto`, `on`, or `off`.")
     response_format: Optional[str] = Field(default=None, description="Output format. Only `wav` is currently supported.", examples=["wav"])
     format: Optional[str] = Field(default=None, description="Alias for `response_format`. Only `wav` is currently supported.", examples=["wav"])
 
@@ -225,6 +270,16 @@ def _capability_config_from_env() -> Dict[str, Any]:
         "OPENAI_BASE_URL": "voice_remote_base_url",
         "ABSTRACTVOICE_REMOTE_TIMEOUT_S": "voice_remote_timeout_s",
         "ABSTRACTVOICE_TTS_DELIVERY_MODE": "voice_tts_delivery_mode",
+        "ABSTRACTMUSIC_BACKEND": "music_backend",
+        "ABSTRACTMUSIC_MODEL_ID": "music_model_id",
+        "ABSTRACTMUSIC_DEVICE": "music_device",
+        "ABSTRACTMUSIC_TORCH_DTYPE": "music_torch_dtype",
+        "ABSTRACTMUSIC_PIPELINE_CLASS": "music_pipeline_class",
+        "ABSTRACTMUSIC_NUM_INFERENCE_STEPS": "music_num_inference_steps",
+        "ABSTRACTMUSIC_DURATION_S": "music_duration_s",
+        "ABSTRACTMUSIC_GUIDANCE_SCALE": "music_guidance_scale",
+        "ABSTRACTMUSIC_TEXT_PLANNER": "music_text_planner_mode",
+        "ABSTRACTMUSIC_REVISION": "music_revision",
     }
     for env_name, config_name in env_map.items():
         value = os.getenv(env_name)
@@ -544,6 +599,84 @@ def _optional_float(value: Any, *, field: str) -> Optional[float]:
         return float(value)
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"Invalid {field}: expected a number.") from e
+
+
+def _optional_int(value: Any, *, field: str) -> Optional[int]:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=f"Invalid {field}: expected an integer.") from e
+
+
+_MUSIC_BACKEND_ALIASES = {
+    "abstractmusic:acestep-diffusers",
+    "abstractmusic:acestep-v15",
+    "abstractmusic:diffusers",
+    "acestep",
+    "ace-step",
+    "ace",
+    "acestep-diffusers",
+    "ace-step-diffusers",
+    "acestep_v15",
+    "acestep-v15",
+    "ace-step-v15",
+    "diffusers",
+}
+
+
+def _music_backend_selector(*values: Any) -> Optional[str]:
+    for value in values:
+        text = _request_provider_value(value)
+        if text and text in _MUSIC_BACKEND_ALIASES:
+            return text
+    return None
+
+
+def _music_provider_selector(*values: Any) -> Optional[str]:
+    for value in values:
+        text = _request_provider_value(value)
+        if text and text not in _MUSIC_BACKEND_ALIASES:
+            return text
+    return None
+
+
+def _music_capability_core_for_request(data: Dict[str, Any], *, path_provider: Optional[str] = None) -> Any:
+    """Return a capability host honoring request-level music backend/model overrides."""
+    backend = _music_backend_selector(data.get("backend"), data.get("music_backend"), path_provider)
+    model = _optional_text(data.get("model") or data.get("music_model_id"))
+
+    overrides: Dict[str, Any] = {}
+    if backend:
+        overrides["music_backend"] = backend
+    if model:
+        overrides["music_model_id"] = model
+
+    passthrough_config = {
+        "device": "music_device",
+        "torch_dtype": "music_torch_dtype",
+        "pipeline_class": "music_pipeline_class",
+        "revision": "music_revision",
+        "duration_s": "music_duration_s",
+        "num_inference_steps": "music_num_inference_steps",
+        "guidance_scale": "music_guidance_scale",
+        "text_planner_mode": "music_text_planner_mode",
+        "text_planner": "music_text_planner_mode",
+    }
+    for request_key, config_key in passthrough_config.items():
+        value = data.get(request_key)
+        if value is not None:
+            overrides[config_key] = value
+
+    if not overrides:
+        return _get_capability_core()
+
+    from .capability_generation import create_capability_generation_core
+
+    config = _capability_config_from_env()
+    config.update(overrides)
+    return create_capability_generation_core(**config)
 
 
 def _audio_max_bytes() -> int:
@@ -1923,8 +2056,18 @@ async def provider_voice_clone(
     )
 
 
-@router.post("/audio/music")
-async def audio_music(payload: AudioMusicRequest = Body(...)):
+_AUDIO_MUSIC_RESPONSES = {
+    200: {
+        "description": "Generated music/audio bytes.",
+        "content": {
+            "audio/wav": _AUDIO_BINARY_RESPONSE,
+            "application/octet-stream": _AUDIO_BINARY_RESPONSE,
+        },
+    }
+}
+
+
+async def _audio_music_impl(payload: AudioMusicRequest, *, path_provider: Optional[str] = None):
     """Text-to-music endpoint (extension; no official OpenAI equivalent).
 
     Delegates to the `music` capability plugin (typically `abstractmusic`).
@@ -1951,12 +2094,48 @@ async def audio_music(payload: AudioMusicRequest = Body(...)):
     if fmt != "wav":
         raise HTTPException(status_code=422, detail="Only format='wav' is supported for /v1/audio/music (v1).")
 
-    # Forward extra knobs (best-effort).
-    kwargs = {k: v for k, v in data.items() if k not in {"prompt", "input", "text", "lyrics", "format", "response_format"}}
+    provider_hint = _music_provider_selector(path_provider, data.get("provider"))
+    output_spec = {
+        k: v
+        for k, v in data.items()
+        if k
+        not in {
+            "prompt",
+            "input",
+            "text",
+            "lyrics",
+            "format",
+            "response_format",
+            "task",
+        }
+        and v is not None
+    }
+    output_spec.update(
+        {
+            "modality": "music",
+            "task": str(data.get("task") or "music_generation"),
+            "lyrics": lyrics,
+            "format": fmt,
+        }
+    )
+    if provider_hint:
+        output_spec["provider"] = provider_hint
+    if data.get("duration_s") is not None:
+        output_spec["duration_s"] = _optional_float(data.get("duration_s"), field="duration_s")
+    if data.get("guidance_scale") is not None:
+        output_spec["guidance_scale"] = _optional_float(data.get("guidance_scale"), field="guidance_scale")
+    if data.get("num_inference_steps") is not None:
+        output_spec["num_inference_steps"] = _optional_int(data.get("num_inference_steps"), field="num_inference_steps")
+    if data.get("seed") is not None:
+        output_spec["seed"] = _optional_int(data.get("seed"), field="seed")
 
-    core = _get_capability_core()
+    core = _music_capability_core_for_request(data, path_provider=path_provider)
     try:
-        audio = core.music.t2m(str(prompt), lyrics=lyrics, format=fmt, **kwargs)
+        result = core.generate(text=str(prompt), output=output_spec)
+        music_items = getattr(result, "outputs", {}).get("music", [])
+        music_item = music_items[0] if music_items else None
+        audio = getattr(music_item, "data", None)
+        content_type = getattr(music_item, "content_type", None)
     except CapabilityUnavailableError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
     except Exception as e:
@@ -1965,4 +2144,28 @@ async def audio_music(payload: AudioMusicRequest = Body(...)):
     if not isinstance(audio, (bytes, bytearray)):
         raise HTTPException(status_code=500, detail="Music backend returned an unexpected type (expected raw bytes).")
 
-    return Response(content=bytes(audio), media_type="audio/wav")
+    return Response(content=bytes(audio), media_type=str(content_type or "audio/wav"))
+
+
+@router.post(
+    "/audio/music",
+    response_class=Response,
+    responses=_AUDIO_MUSIC_RESPONSES,
+)
+async def audio_music(payload: AudioMusicRequest = Body(...)):
+    return await _audio_music_impl(payload)
+
+
+@provider_router.post(
+    "/{provider}/v1/audio/music",
+    response_class=Response,
+    responses=_AUDIO_MUSIC_RESPONSES,
+)
+async def provider_audio_music(
+    payload: AudioMusicRequest = Body(...),
+    provider: str = FastAPIPath(
+        ...,
+        description="Music backend/provider route prefix, e.g. `acestep`, `diffusers`, or a provider catalog id.",
+    ),
+):
+    return await _audio_music_impl(payload, path_provider=provider)

@@ -15,6 +15,11 @@ OUTPUT_STRING_VALUES = {
     "speech",
     "tts",
     "audio",
+    "music",
+    "song",
+    "t2m",
+    "text_to_music",
+    "music_generation",
 }
 
 OUTPUT_DICT_VALUES = {
@@ -33,6 +38,12 @@ OUTPUT_DICT_VALUES = {
     "tts",
     "voice_clone",
     "clone",
+    "music",
+    "song",
+    "t2m",
+    "text_to_music",
+    "music_generation",
+    "lyrics_to_music",
 }
 
 OUTPUT_MODALITY_ALIASES = {
@@ -47,6 +58,12 @@ OUTPUT_MODALITY_ALIASES = {
     "i2i": ("image", "image_edit"),
     "image_to_image": ("image", "image_edit"),
     "image_edit": ("image", "image_edit"),
+    "music": ("music", "music_generation"),
+    "song": ("music", "music_generation"),
+    "t2m": ("music", "music_generation"),
+    "text_to_music": ("music", "music_generation"),
+    "music_generation": ("music", "music_generation"),
+    "lyrics_to_music": ("music", "music_generation"),
 }
 
 OUTPUT_TASK_ALIASES = {
@@ -57,6 +74,10 @@ OUTPUT_TASK_ALIASES = {
     "t2i": "image_generation",
     "i2i": "image_edit",
     "image_to_image": "image_edit",
+    "song": "music_generation",
+    "t2m": "music_generation",
+    "text_to_music": "music_generation",
+    "lyrics_to_music": "music_generation",
 }
 
 OUTPUT_TASK_MODALITIES = {
@@ -66,6 +87,7 @@ OUTPUT_TASK_MODALITIES = {
     "image_edit": "image",
     "tts": "voice",
     "voice_clone": "voice",
+    "music_generation": "music",
 }
 
 OUTPUT_PLUGIN_EXCLUDE_KEYS = {

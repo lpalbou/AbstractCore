@@ -38,7 +38,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 - **[Events](events.md)** and **[Structured Logging](structured-logging.md)** — observability hooks
 - **[Interaction Tracing](interaction-tracing.md)** — record prompts/responses/usage for debugging
 - **[Capabilities](capabilities.md)** — what AbstractCore can and cannot do
-- **Capability plugins (voice/audio/vision)** — optional deterministic outputs via `llm.voice/llm.audio/llm.vision` (see `capabilities.md` and `server.md`)
+- **Capability plugins (voice/audio/vision/music)** — optional deterministic outputs via `llm.voice/llm.audio/llm.vision/llm.music`, plus shared provider/model discovery (see `capabilities.md` and `server.md`)
 
 ## Media, embeddings, and MCP (optional subsystems)
 

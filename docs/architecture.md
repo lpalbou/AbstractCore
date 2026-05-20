@@ -315,14 +315,22 @@ response = llm.generate(
 python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jpg"
 ```
 
-#### Capability plugins (voice/audio/vision)
+#### Capability plugins (voice/audio/vision/music)
 To keep the default `abstractcore` install dependency-light while still enabling deterministic modality APIs, AbstractCore supports optional **capability plugins**:
 - `abstractvoice` provides `core.voice` + `core.audio` (TTS/STT).
 - `abstractvision` provides `core.vision` (T2I/I2I/T2V/I2V; backend-pluggable).
+- `abstractmusic` can provide `core.music` (text-to-music) when installed.
 
 Discovery:
 - `llm.capabilities.status()` returns a JSON-safe snapshot (which backends are available/selected, plus install hints).
-- Convenience facades exist as properties: `llm.voice`, `llm.audio`, `llm.vision` (lazy; missing plugins raise actionable errors).
+- `llm.capabilities.list_backend_infos()` returns registered backend metadata without instantiating backend factories.
+- `llm.capabilities.available_providers(capability, task=...)` and
+  `llm.capabilities.list_models(capability, task=..., provider=...)` expose the shared discovery
+  contract for plugins that implement it.
+- Convenience facades exist as properties: `llm.voice`, `llm.audio`, `llm.vision`, and `llm.music`
+  (lazy; missing plugins raise actionable errors).
+- Plugins that need LLM text planning can use `llm.capability_host_context.text`; this is a
+  text-only service wrapper, not access to the raw provider object.
 
 ### 4. Request Lifecycle
 

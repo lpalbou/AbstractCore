@@ -521,6 +521,72 @@ class BlocKVLoadResult:
     debug: Optional[Dict[str, Any]] = None
 
 
+class BlocKVArtifactInUseError(ValueError):
+    def __init__(self, message: str, *, live_bindings: Optional[List[Dict[str, Any]]] = None) -> None:
+        super().__init__(message)
+        self.live_bindings = list(live_bindings or [])
+
+
+@dataclass(frozen=True)
+class BlocKVDeleteResult:
+    operation: str
+    deleted: bool
+    artifact_path: Optional[Path] = None
+    manifest_path: Optional[Path] = None
+    manifest: Optional[BlocKVArtifactManifest] = None
+    live_bindings: List[Dict[str, Any]] = field(default_factory=list)
+    cleared_keys: List[str] = field(default_factory=list)
+    deleted_paths: List[str] = field(default_factory=list)
+    missing_paths: List[str] = field(default_factory=list)
+    dry_run: bool = False
+    debug: Optional[Dict[str, Any]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {
+            "operation": self.operation,
+            "deleted": bool(self.deleted),
+            "dry_run": bool(self.dry_run),
+            "live_bindings": [dict(item) for item in self.live_bindings],
+            "cleared_keys": list(self.cleared_keys),
+            "deleted_paths": list(self.deleted_paths),
+            "missing_paths": list(self.missing_paths),
+        }
+        if self.artifact_path is not None:
+            out["artifact_path"] = str(self.artifact_path)
+        if self.manifest_path is not None:
+            out["manifest_path"] = str(self.manifest_path)
+        if self.manifest is not None:
+            out["manifest"] = self.manifest.to_dict()
+        if self.debug is not None:
+            out["debug"] = dict(self.debug)
+        return out
+
+
+@dataclass(frozen=True)
+class BlocDeleteResult:
+    operation: str
+    deleted: bool
+    record: Optional[FileBlocRecord] = None
+    deleted_path: Optional[Path] = None
+    kv_results: List[BlocKVDeleteResult] = field(default_factory=list)
+    live_bindings: List[Dict[str, Any]] = field(default_factory=list)
+    dry_run: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        out: Dict[str, Any] = {
+            "operation": self.operation,
+            "deleted": bool(self.deleted),
+            "dry_run": bool(self.dry_run),
+            "kv_results": [item.to_dict() for item in self.kv_results],
+            "live_bindings": [dict(item) for item in self.live_bindings],
+        }
+        if self.record is not None:
+            out["record"] = self.record.to_dict()
+        if self.deleted_path is not None:
+            out["deleted_path"] = str(self.deleted_path)
+        return out
+
+
 def read_bloc_kv_manifest(
     *,
     store: FileBlocStore,
@@ -546,6 +612,274 @@ def read_bloc_kv_manifest(
         return BlocKVArtifactManifest.from_dict(data) if isinstance(data, dict) else None
     except Exception:
         return None
+
+
+def list_bloc_kv_artifacts(
+    *,
+    store: FileBlocStore,
+    sha256: Optional[str] = None,
+    bloc_id: Optional[int] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    return store.list_kv_artifacts(sha256=sha256, bloc_id=bloc_id, provider=provider, model=model)
+
+
+def _manifest_from_artifact_entry(entry: Dict[str, Any]) -> Optional[BlocKVArtifactManifest]:
+    data = entry.get("manifest") if isinstance(entry, dict) else None
+    try:
+        return BlocKVArtifactManifest.from_dict(data) if isinstance(data, dict) else None
+    except Exception:
+        return None
+
+
+def _path_from_entry(entry: Dict[str, Any], name: str) -> Optional[Path]:
+    value = entry.get(name) if isinstance(entry, dict) else None
+    if isinstance(value, str) and value.strip():
+        return Path(value).expanduser()
+    return None
+
+
+def _provider_prompt_cache_keys(provider: Any) -> List[str]:
+    keys: List[str] = []
+    store = getattr(provider, "_prompt_cache_store", None)
+    if store is not None and hasattr(store, "keys"):
+        try:
+            keys.extend(str(k) for k in (store.keys() or []) if isinstance(k, str) and k.strip())
+        except Exception:
+            pass
+    stats_getter = getattr(provider, "get_prompt_cache_stats", None)
+    if callable(stats_getter):
+        try:
+            stats = stats_getter()
+            stats_keys = stats.get("keys") if isinstance(stats, dict) else None
+            if isinstance(stats_keys, list):
+                keys.extend(str(k) for k in stats_keys if isinstance(k, str) and k.strip())
+        except Exception:
+            pass
+    return list(dict.fromkeys(keys))
+
+
+def find_bloc_kv_live_bindings(
+    *,
+    provider: Any,
+    manifest: Optional[BlocKVArtifactManifest] = None,
+    artifact_path: Optional[Union[str, Path]] = None,
+    sha256: Optional[str] = None,
+    bloc_id: Optional[int] = None,
+    binding_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Return prompt-cache keys whose metadata points at a bloc KV artifact."""
+    artifact_s = str(Path(artifact_path).expanduser()) if artifact_path is not None else None
+    out: List[Dict[str, Any]] = []
+    for key in _provider_prompt_cache_keys(provider):
+        meta = _prompt_cache_key_meta(provider, key)
+        if not meta:
+            continue
+        if manifest is not None:
+            if str(meta.get("binding_id") or "") != manifest.binding_id:
+                continue
+            if str(meta.get("artifact_sha256") or "") != manifest.artifact_sha256:
+                continue
+            if str(meta.get("bloc_sha256") or "") != manifest.bloc_sha256:
+                continue
+        if artifact_s is not None and str(meta.get("loaded_from") or "") != artifact_s:
+            continue
+        if isinstance(sha256, str) and sha256.strip() and str(meta.get("bloc_sha256") or "") != sha256.strip().lower():
+            continue
+        if bloc_id is not None:
+            try:
+                meta_bloc_id = int(meta.get("bloc_id"))
+            except Exception:
+                meta_bloc_id = None
+            if meta_bloc_id != int(bloc_id):
+                continue
+        if isinstance(binding_id, str) and binding_id.strip() and str(meta.get("binding_id") or "") != binding_id.strip():
+            continue
+        out.append(
+            {
+                "key": key,
+                "binding_id": meta.get("binding_id"),
+                "loaded_from": meta.get("loaded_from"),
+                "artifact_sha256": meta.get("artifact_sha256"),
+                "bloc_sha256": meta.get("bloc_sha256"),
+                "provider": meta.get("provider"),
+                "model": meta.get("model"),
+            }
+        )
+    return out
+
+
+def _select_artifact_entries(
+    *,
+    store: FileBlocStore,
+    sha256: Optional[str] = None,
+    bloc_id: Optional[int] = None,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    artifact_path: Optional[Union[str, Path]] = None,
+) -> List[Dict[str, Any]]:
+    entries = store.list_kv_artifacts(sha256=sha256, bloc_id=bloc_id, provider=provider, model=model)
+    if artifact_path is None:
+        return entries
+    artifact_s = str(Path(artifact_path).expanduser())
+    return [e for e in entries if str(e.get("artifact_path") or "") == artifact_s or str(e.get("manifest_path") or "") == artifact_s]
+
+
+def delete_bloc_kv_artifact(
+    *,
+    store: FileBlocStore,
+    provider: Optional[Any] = None,
+    sha256: Optional[str] = None,
+    bloc_id: Optional[int] = None,
+    provider_name: Optional[str] = None,
+    model: Optional[str] = None,
+    artifact_path: Optional[Union[str, Path]] = None,
+    clear_loaded: bool = False,
+    force: bool = False,
+    dry_run: bool = False,
+    debug: bool = False,
+) -> BlocKVDeleteResult:
+    provider_filter = str(provider_name or "").strip().lower()
+    if provider is not None and not provider_filter:
+        provider_filter = _provider_name(provider)
+    model_s = str(model or getattr(provider, "model", "") or "").strip()
+
+    entries = _select_artifact_entries(
+        store=store,
+        sha256=sha256,
+        bloc_id=bloc_id,
+        provider=provider_filter or None,
+        model=model_s or None,
+        artifact_path=artifact_path,
+    )
+    if not entries:
+        raise ValueError("bloc KV artifact not found")
+    if len(entries) > 1:
+        raise ValueError("delete_bloc_kv_artifact requires a selector that resolves to exactly one artifact")
+
+    entry = entries[0]
+    manifest = _manifest_from_artifact_entry(entry)
+    artifact = _path_from_entry(entry, "artifact_path")
+    manifest_path = _path_from_entry(entry, "manifest_path")
+    live: List[Dict[str, Any]] = []
+    if provider is not None:
+        live = find_bloc_kv_live_bindings(provider=provider, manifest=manifest, artifact_path=artifact)
+    if live and not (clear_loaded or force):
+        raise BlocKVArtifactInUseError("bloc KV artifact is loaded in a live prompt-cache key", live_bindings=live)
+
+    cleared: List[str] = []
+    if live and clear_loaded and provider is not None and not dry_run:
+        for binding in live:
+            key = binding.get("key")
+            if isinstance(key, str) and key.strip():
+                provider.prompt_cache_clear(key.strip())
+                cleared.append(key.strip())
+
+    deleted_paths: List[str] = []
+    missing_paths: List[str] = []
+    if not dry_run:
+        deleted = store.delete_kv_artifact_paths(artifact_path=artifact, manifest_path=manifest_path)
+        deleted_paths = list(deleted.get("deleted_paths") or [])
+        missing_paths = list(deleted.get("missing_paths") or [])
+
+    return BlocKVDeleteResult(
+        operation="kv_delete",
+        deleted=bool(deleted_paths) if not dry_run else False,
+        artifact_path=artifact,
+        manifest_path=manifest_path,
+        manifest=manifest,
+        live_bindings=live,
+        cleared_keys=cleared,
+        deleted_paths=deleted_paths,
+        missing_paths=missing_paths,
+        dry_run=bool(dry_run),
+        debug={
+            "provider_checked": bool(provider is not None),
+            "force": bool(force),
+            "clear_loaded": bool(clear_loaded),
+        }
+        if _debug_enabled(debug)
+        else None,
+    )
+
+
+def prune_bloc_kv_artifacts(
+    *,
+    store: FileBlocStore,
+    provider: Optional[Any] = None,
+    sha256: Optional[str] = None,
+    bloc_id: Optional[int] = None,
+    provider_name: Optional[str] = None,
+    model: Optional[str] = None,
+    clear_loaded: bool = False,
+    force: bool = False,
+    dry_run: bool = False,
+    debug: bool = False,
+) -> List[BlocKVDeleteResult]:
+    entries = store.list_kv_artifacts(sha256=sha256, bloc_id=bloc_id, provider=provider_name, model=model)
+    results: List[BlocKVDeleteResult] = []
+    for entry in entries:
+        artifact = entry.get("artifact_path")
+        manifest = _manifest_from_artifact_entry(entry)
+        result = delete_bloc_kv_artifact(
+            store=store,
+            provider=provider,
+            sha256=manifest.bloc_sha256 if manifest is not None else sha256,
+            provider_name=manifest.provider if manifest is not None else provider_name,
+            model=manifest.model if manifest is not None else model,
+            artifact_path=artifact if isinstance(artifact, str) else None,
+            clear_loaded=clear_loaded,
+            force=force,
+            dry_run=dry_run,
+            debug=debug,
+        )
+        results.append(result)
+    return results
+
+
+def delete_bloc(
+    *,
+    store: FileBlocStore,
+    provider: Optional[Any] = None,
+    sha256: Optional[str] = None,
+    bloc_id: Optional[int] = None,
+    delete_kv: bool = True,
+    clear_loaded: bool = False,
+    force: bool = False,
+    dry_run: bool = False,
+) -> BlocDeleteResult:
+    record = _resolve_record(store=store, sha256=sha256, bloc_id=bloc_id)
+    kv_results: List[BlocKVDeleteResult] = []
+    live: List[Dict[str, Any]] = []
+    if delete_kv:
+        for entry in store.list_kv_artifacts(sha256=record.sha256):
+            manifest = _manifest_from_artifact_entry(entry)
+            artifact = _path_from_entry(entry, "artifact_path")
+            if provider is not None:
+                live.extend(find_bloc_kv_live_bindings(provider=provider, manifest=manifest, artifact_path=artifact))
+        if live and not (clear_loaded or force):
+            raise BlocKVArtifactInUseError("bloc has loaded KV artifacts in live prompt-cache keys", live_bindings=live)
+        if provider is not None:
+            kv_results = prune_bloc_kv_artifacts(
+                store=store,
+                provider=provider,
+                sha256=record.sha256,
+                clear_loaded=clear_loaded,
+                force=force,
+                dry_run=dry_run,
+            )
+    if not dry_run:
+        store.delete(record.sha256, delete_kv=delete_kv)
+    return BlocDeleteResult(
+        operation="bloc_delete",
+        deleted=not bool(dry_run),
+        record=record,
+        deleted_path=store._bloc_dir(record.sha256),
+        kv_results=kv_results,
+        live_bindings=live,
+        dry_run=bool(dry_run),
+    )
 
 
 def _validate_existing_manifest(

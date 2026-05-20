@@ -41,7 +41,7 @@ First-class support for:
 - unified generation parameters, capability detection, and provider quirks
 - session memory, prompt caching, durable memory bloc cache artifacts, events, tracing, and retry-aware reliability hooks
 - media input (images/audio/video + documents) with explicit, policy-driven fallbacks (*)
-- optional capability plugins (`core.voice/core.audio/core.vision`) for deterministic TTS/STT and generative vision (via `abstractvoice` / `abstractvision`)
+- optional capability plugins (`core.voice/core.audio/core.vision/core.music`) for deterministic TTS/STT, generative vision, and music backends (via packages such as `abstractvoice`, `abstractvision`, and `abstractmusic`)
 - glyph visual-text compression for long documents (**)
 - optional OpenAI-compatible `/v1` gateway server (multi-provider) and single-model endpoint
 
@@ -249,7 +249,7 @@ You can also persist settings (including API keys) via the config CLI:
 - Tool syntax rewriting: `tool_call_tags` (Python) and `agent_format` (server) → [Tool Syntax Rewriting](docs/tool-syntax-rewriting.md)
 - Structured output: Pydantic-first with provider-aware strategies → [Structured Output](docs/structured-output.md)
 - Media input: images/audio/video + documents (policies + fallbacks) → [Media Handling](docs/media-handling-system.md) and [Vision Capabilities](docs/vision-capabilities.md)
-- Capability plugins (optional): deterministic `llm.voice/llm.audio/llm.vision` surfaces → [Capabilities](docs/capabilities.md)
+- Capability plugins (optional): deterministic `llm.voice/llm.audio/llm.vision/llm.music` surfaces and shared provider/model discovery → [Capabilities](docs/capabilities.md)
 - Glyph visual-text compression: scale long-context document analysis via VLMs → [Glyph Visual-Text Compression](docs/glyphs.md)
 - Embeddings and semantic search → [Embeddings](docs/embeddings.md)
 - Observability: global event bus + interaction traces → [Architecture](docs/architecture.md), [API Reference (Events)](docs/api-reference.md#eventtype), [Interaction Tracing](docs/interaction-tracing.md)
@@ -340,6 +340,13 @@ edited = llm.generate("Make the mug blue.", media="mug.png", output="image")
 speech = llm.generate(text="Hello from AbstractCore.", output="voice")
 wav_bytes = speech.outputs["voice"][0].data
 
+# Music via abstractmusic.
+music = llm.generate(
+    text="A short calm piano loop.",
+    output={"modality": "music", "backend": "acestep", "duration_s": 8},
+)
+music_wav = music.outputs["music"][0].data
+
 # Voice clone/register: audio media + voice output returns a reusable voice id
 # when the selected AbstractVoice backend supports local or remote cloning.
 clone = llm.generate(text="Optional transcript.", media="reference.wav", output="voice")
@@ -347,10 +354,11 @@ voice_id = clone.resources["voice"][0].resource_id
 ```
 
 Text-only `generate(...)` is unchanged. For advanced/provider-specific work,
-the direct `llm.vision.*`, `llm.voice.*`, and `llm.audio.*` facades remain
+the direct `llm.vision.*`, `llm.voice.*`, `llm.audio.*`, and `llm.music.*` facades remain
 available. Configure `abstractvision` and `abstractvoice` backends first for
-real generation; lightweight remote paths use OpenAI/OpenAI-compatible base URLs
-and keys, while local model engines remain optional plugin extras.
+real generation; configure `abstractmusic` for music generation. Lightweight
+remote paths use OpenAI/OpenAI-compatible base URLs and keys, while local model
+engines remain optional plugin extras.
 
 Catalog helpers are available for UI/dropdown preflight:
 
@@ -359,12 +367,14 @@ image_models = llm.vision.list_provider_models(task="text_to_image")
 voices = llm.voice.voice_catalog()
 tts_models = llm.voice.list_tts_models()
 stt_models = llm.voice.list_stt_models()
+music_models = llm.capabilities.list_models("music", task="text_to_music")
 ```
 
 The HTTP server exposes equivalent discovery at
 `/v1/vision/providers/`, `/v1/vision/models`, `/v1/audio/voices`,
 `/v1/audio/speech/models`, `/v1/audio/transcriptions/models`, and
-`/v1/voice/clone/providers`.
+`/v1/voice/clone/providers`, plus `/v1/audio/music/providers` and
+`/v1/audio/music/models`.
 `/v1/models` remains focused on LLM and embedding provider models.
 
 ## HTTP server (OpenAI-compatible gateway)

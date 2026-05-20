@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.23] - 2026-05-21
+
+### Added
+- **Generic capability plugin contract**: added the planned Core/plugin contract record for optional modality plugins, including shared provider/model discovery, typed task methods, host text-generation access, and cycle-free plugin integration expectations.
+- **Music capability integration**: added first-class music output routing through `llm.generate(..., output="music")`, the `llm.music.generate(...)` facade, and typed server routes for `POST /v1/audio/music` and `POST /{provider}/v1/audio/music` when `abstractmusic` is installed.
+- **Memory bloc maintenance control plane**: added public local helpers and matching server operations to list, delete, and prune blocs or provider/model KV artifacts while preserving live-binding safety checks for loaded cache keys.
+
+### Changed
+- **Capability registry consistency**: normalized voice, audio, vision, and music plugin discovery around a shared Core-owned registry surface so optional plugins can expose capabilities without hard dependencies or import cycles.
+- **Server media routing**: music requests now support request-level backend/model/provider routing and typed music parameters instead of relying only on environment-selected plugin defaults.
+- **Documentation set**: refreshed README, API, server, capabilities, memory-bloc, backlog, and LLM index docs for the new music and bloc-maintenance surfaces.
+
+### Verified
+- **Music smoke proofs**: generated valid 3-second WAV outputs through both Python `generate(..., output="music")` and the server music route using the local AbstractMusic ACE-Step backend.
+
 ## [2.13.22] - 2026-05-20
 
 ### Added

@@ -74,7 +74,12 @@ For exact local-memory reuse, persist text/file content as a bloc, compile one p
 artifact, then load it into a runtime prompt-cache key:
 
 ```python
-from abstractcore import create_llm, ensure_bloc_kv_artifact, load_bloc_kv_artifact
+from abstractcore import (
+    create_llm,
+    ensure_bloc_kv_artifact,
+    load_bloc_kv_artifact,
+    delete_bloc_kv_artifact,
+)
 from abstractcore.core.file_blocs import FileBlocStore
 
 llm = create_llm("huggingface", model="/path/to/local/text-model")
@@ -88,9 +93,12 @@ resp = llm.generate("Use the loaded memory.", prompt_cache_binding=loaded.prompt
 ```
 
 The public helpers are exported from both `abstractcore` and `abstractcore.core`:
-`ensure_bloc_kv_artifact`, `load_bloc_kv_artifact`, `compile_bloc_kv_artifact`, and
-`read_bloc_kv_manifest`. The shared contract currently covers MLX, HuggingFace transformers, and
-supported HuggingFace GGUF exact-renderer paths. See **[Memory Blocs](memory-blocs.md)**.
+`ensure_bloc_kv_artifact`, `load_bloc_kv_artifact`, `compile_bloc_kv_artifact`,
+`read_bloc_kv_manifest`, `list_bloc_kv_artifacts`, `find_bloc_kv_live_bindings`,
+`delete_bloc_kv_artifact`, `prune_bloc_kv_artifacts`, and `delete_bloc`. Delete helpers are safe
+by default: a loaded artifact is blocked until you clear the bound runtime key or explicitly force
+the delete. The shared contract currently covers MLX, HuggingFace transformers, and supported
+HuggingFace GGUF exact-renderer paths. See **[Memory Blocs](memory-blocs.md)**.
 
 ### `tool` (decorator)
 
@@ -210,6 +218,7 @@ Install the relevant optional plugin first:
 ```bash
 pip install "abstractcore[vision]"  # image generation/edit
 pip install "abstractcore[voice]"   # TTS/STT/voice clone when backend supports it
+pip install abstractmusic           # text-to-music when available
 ```
 
 Then use `output=...` for simple media-generation tasks:
@@ -226,6 +235,12 @@ edited = llm.generate("Make the mug blue.", media="mug.png", output="image")
 
 # TTS.
 speech = llm.generate(text="Hello from AbstractCore.", output="voice")
+
+# Music generation.
+music = llm.generate(
+    text="A short calm piano loop.",
+    output={"modality": "music", "backend": "acestep", "duration_s": 8},
+)
 
 # Voice clone/register. Audio media plus output="voice" returns a voice
 # resource id when the selected AbstractVoice backend supports cloning.

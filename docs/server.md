@@ -210,7 +210,8 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Audio | POST | `/v1/voice/clone` | AbstractVoice-compatible voice-clone/custom-voice extension | `file`, optional `provider`, `model`, `tts_model`, `cloning_engine`, `base_url`, `name`, `reference_text`, `validate` |
 | Audio | POST | `/{provider}/v1/voice/clone` | Provider-scoped voice-clone route where body model is unprefixed | path `provider`, optional `base_url`, voice-clone form fields |
 | Audio | POST | `/v1/audio/translations` | Reserved OpenAI-compatible translation route | `file`, `model`; returns `501` in this version |
-| Audio | POST | `/v1/audio/music` | Extension endpoint for text-to-music plugins | `prompt`/`input`/`text`, `lyrics`, `format`; requires a music capability plugin |
+| Audio | POST | `/v1/audio/music` | Extension endpoint for text-to-music plugins | `prompt`/`input`/`text`, optional `backend`, `provider`, `model`, `lyrics`, `duration_s`, `seed`, `num_inference_steps`, `guidance_scale`, `format`; requires a music capability plugin |
+| Audio | POST | `/{provider}/v1/audio/music` | Provider/backend-scoped text-to-music route | path `provider`, music body fields |
 | Runtime | POST | `/acore/models/load` | Load and keep warm a task-specific model runtime | optional `task` (`text_generation` default, `image_generation`, `tts`, `stt`), `provider`, `model`, `options`, `pin`, `base_url`, `timeout_s` |
 | Runtime | GET | `/acore/models/loaded` | List task-aware loaded runtimes | optional `task`, `provider`, `model` |
 | Runtime | POST | `/acore/models/unload` | Unload a task-specific runtime | `runtime_id` or `provider` + `model`, optional `task`, `base_url`, `options` |
@@ -222,10 +223,20 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Prompt Cache | POST | `/acore/prompt_cache/clear` | Clear local or upstream cache state | `provider` + `model` or `base_url`, optional `key` |
 | Prompt Cache | POST | `/acore/prompt_cache/prepare_modules` | Prepare reusable module/tool context locally or upstream | `provider` + `model` or `base_url`, `namespace`, `modules`, `make_default`, `ttl_s`, `version` |
 | Memory Blocs | POST | `/acore/blocs/upsert_text` | Persist extracted text into the gateway-local bloc store or an upstream AbstractEndpoint bloc store | optional `base_url`, `path`, `content`, optional bloc metadata |
+| Memory Blocs | GET | `/acore/blocs` | List gateway-local or upstream bloc records | optional `base_url`, `sha256`, `bloc_id` |
 | Memory Blocs | GET | `/acore/blocs/record` | Inspect a gateway-local or upstream bloc record | optional `base_url`, `sha256` or `bloc_id` |
+| Memory Blocs | POST | `/acore/blocs/delete` | Delete one bloc with optional live KV safety checks | optional `base_url`, `sha256` or `bloc_id`, `delete_kv`, `clear_loaded`, `force`, `dry_run` |
 | Memory Blocs | GET | `/acore/blocs/kv/manifest` | Inspect a gateway-local or upstream bloc KV manifest | `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path` |
+| Memory Blocs | GET | `/acore/blocs/kv/list` | List manifest-backed bloc KV artifacts | optional `base_url`, `provider`, `model`, `sha256`, `bloc_id` |
 | Memory Blocs | POST | `/acore/blocs/kv/ensure` | Compile or validate a local or upstream provider-backed bloc KV artifact | `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path`, `force_rebuild`, `debug` |
 | Memory Blocs | POST | `/acore/blocs/kv/load` | Load or fork a local or upstream provider-backed bloc KV artifact into a cache key | `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path`, `stable_cache_key`, `key`, `make_default`, `force_rebuild`, `debug` |
+| Memory Blocs | POST | `/acore/blocs/kv/delete` | Delete one bloc KV artifact with live-binding safety | `provider` + `model` or `base_url` when checking live state, `sha256` or `bloc_id`, optional `artifact_path`, `clear_loaded`, `force`, `dry_run`, `debug` |
+| Memory Blocs | POST | `/acore/blocs/kv/prune` | Delete matching bloc KV artifacts by filter | optional `provider`, `model`, `base_url`, `sha256`, `bloc_id`, `clear_loaded`, `force`, `dry_run`, `debug` |
+| Capabilities | GET | `/v1/capabilities` | Inspect optional capability plugin availability and backend metadata | none |
+| Capabilities | GET | `/v1/capabilities/{capability}/providers` | List normalized providers for one capability plugin | path `capability`, optional `task` |
+| Capabilities | GET | `/v1/capabilities/{capability}/models` | List normalized models for one capability plugin | path `capability`, optional `task`, `provider` |
+| Audio | GET | `/v1/audio/music/providers` | List music capability providers | optional `task` |
+| Audio | GET | `/v1/audio/music/models` | List music capability models | optional `task`, `provider` |
 
 ### Shared Request Conventions
 
@@ -608,6 +619,7 @@ Endpoints:
 - `POST /{provider}/v1/voice/clone` (multipart; provider-scoped voice cloning)
 - `POST /v1/audio/translations` (multipart; reserved for compatibility, returns `501`)
 - `POST /v1/audio/music` (json; extension endpoint, requires a music capability plugin)
+- `POST /{provider}/v1/audio/music` (json; provider/backend-scoped music route)
 
 Local plugin fallback is enabled when `model` is omitted. OpenAI SDK-style
 clients that require a non-empty model string can use `abstractvoice/default`.
@@ -644,6 +656,7 @@ Install for local plugin fallback:
 ```bash
 pip install "abstractcore[server]"
 pip install "abstractcore[voice]"
+pip install abstractmusic
 ```
 
 Notes:
@@ -712,12 +725,22 @@ returns normal `audio/*` bytes and includes a filename in `Content-Disposition`.
 The returned `voice_id` / `id` can be used as the `voice` value in
 `/v1/audio/speech` when the selected backend supports custom voices.
 
-`POST /v1/audio/music` JSON parameters:
+`POST /v1/audio/music` and `POST /{provider}/v1/audio/music` JSON parameters:
 
 | Field | Required | Notes |
 |---|---:|---|
 | `prompt` or `input` or `text` | yes | Music generation prompt. |
+| `backend` | no | Local music backend selector, for example `acestep`, `acestep-v15`, or `diffusers`. The provider-scoped path can also select a backend, e.g. `/diffusers/v1/audio/music`. |
+| `provider` | no | Music provider/catalog hint forwarded to the selected backend, for example `ace-step`. |
+| `model` | no | Music model id for the selected backend, commonly a Hugging Face repo id for AbstractMusic. |
 | `lyrics` | no | Optional lyrics for vocal music backends. |
+| `duration_s` | no | Requested output duration in seconds. |
+| `seed` | no | Deterministic seed when supported. |
+| `num_inference_steps` | no | Diffusion/sampling step count when supported. |
+| `guidance_scale` | no | Guidance scale when supported. |
+| `instrumental` | no | Request instrumental output when supported. |
+| `enhance_prompt` / `structure_prompt` / `auto_lyrics` | no | Prompt/lyrics planning controls for compatible music backends. |
+| `text_planner_mode` | no | Host/plugin text-planning mode such as `auto`, `on`, or `off`. |
 | `response_format` or `format` | no | Only `wav` is supported in this server contract. |
 | extra top-level fields | no | Best-effort passthrough to the installed music capability plugin. |
 

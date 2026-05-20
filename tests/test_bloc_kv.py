@@ -10,9 +10,15 @@ import pytest
 
 import abstractcore.core.bloc_kv as bloc_kv_module
 from abstractcore.core.bloc_kv import (
+    BlocKVArtifactInUseError,
     _tmp_path,
+    delete_bloc,
+    delete_bloc_kv_artifact,
     ensure_bloc_kv_artifact,
+    find_bloc_kv_live_bindings,
+    list_bloc_kv_artifacts,
     load_bloc_kv_artifact,
+    prune_bloc_kv_artifacts,
     read_bloc_kv_manifest,
 )
 from abstractcore.core.bloc_metadata import generate_bloc_metadata_jsonld
@@ -389,6 +395,50 @@ def test_bloc_kv_prompt_cache_binding_guards_generation(tmp_path: Path) -> None:
         provider.generate(prompt="question", prompt_cache_key="work", prompt_cache_binding=loaded.prompt_cache_binding)
 
 
+def test_bloc_kv_delete_blocks_live_binding_then_clears_and_deletes(tmp_path: Path) -> None:
+    store = FileBlocStore(root_dir=tmp_path)
+    record = _upsert_record(store, tmp_path, sha="a1" * 32, path_name="doc.txt", content="hello world\n")
+    provider = _StubPersistentMLXProvider(model="qwen3-test")
+
+    loaded = load_bloc_kv_artifact(provider=provider, store=store, record=record, key="work")
+    artifacts = list_bloc_kv_artifacts(store=store, sha256=record.sha256, provider="mlx", model="qwen3-test")
+    assert len(artifacts) == 1
+    assert find_bloc_kv_live_bindings(provider=provider, manifest=loaded.manifest)
+
+    with pytest.raises(BlocKVArtifactInUseError):
+        delete_bloc_kv_artifact(provider=provider, store=store, sha256=record.sha256, model="qwen3-test")
+
+    result = delete_bloc_kv_artifact(
+        provider=provider,
+        store=store,
+        sha256=record.sha256,
+        model="qwen3-test",
+        clear_loaded=True,
+    )
+
+    assert result.deleted is True
+    assert result.cleared_keys == ["work"]
+    assert result.artifact_path and not result.artifact_path.exists()
+    assert result.manifest_path and not result.manifest_path.exists()
+    assert provider._prompt_cache_store.get("work") is None
+
+
+def test_bloc_kv_prune_and_delete_bloc_support_dry_run(tmp_path: Path) -> None:
+    store = FileBlocStore(root_dir=tmp_path)
+    record = _upsert_record(store, tmp_path, sha="a2" * 32, path_name="doc.txt", content="hello world\n")
+    provider = _StubPersistentMLXProvider(model="qwen3-test")
+    ensured = ensure_bloc_kv_artifact(provider=provider, store=store, record=record)
+
+    dry = prune_bloc_kv_artifacts(store=store, sha256=record.sha256, dry_run=True)
+    assert len(dry) == 1
+    assert dry[0].dry_run is True
+    assert ensured.artifact_path.exists()
+
+    deleted = delete_bloc(store=store, sha256=record.sha256, dry_run=True)
+    assert deleted.deleted is False
+    assert store.get(record.sha256) is not None
+
+
 def test_bloc_kv_incomplete_commit_is_rebuilt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     store = FileBlocStore(root_dir=tmp_path)
     provider = _StubPersistentMLXProvider(model="qwen3-test")
@@ -675,6 +725,14 @@ def test_bloc_kv_helpers_are_public_package_exports() -> None:
     assert abstractcore.ensure_bloc_kv_artifact is ensure_bloc_kv_artifact
     assert abstractcore.load_bloc_kv_artifact is load_bloc_kv_artifact
     assert abstractcore.read_bloc_kv_manifest is read_bloc_kv_manifest
+    assert abstractcore.delete_bloc_kv_artifact is delete_bloc_kv_artifact
+    assert abstractcore.list_bloc_kv_artifacts is list_bloc_kv_artifacts
+    assert abstractcore.prune_bloc_kv_artifacts is prune_bloc_kv_artifacts
+    assert abstractcore.delete_bloc is delete_bloc
     assert core.ensure_bloc_kv_artifact is ensure_bloc_kv_artifact
     assert core.load_bloc_kv_artifact is load_bloc_kv_artifact
     assert core.read_bloc_kv_manifest is read_bloc_kv_manifest
+    assert core.delete_bloc_kv_artifact is delete_bloc_kv_artifact
+    assert core.list_bloc_kv_artifacts is list_bloc_kv_artifacts
+    assert core.prune_bloc_kv_artifacts is prune_bloc_kv_artifacts
+    assert core.delete_bloc is delete_bloc

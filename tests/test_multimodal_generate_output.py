@@ -139,6 +139,16 @@ def _make_plugin_ep():
             def i2v(self, image, **kwargs):
                 return b"mp4"
 
+        class _Music:
+            backend_id = "fake-music"
+
+            def __init__(self, owner):
+                self.owner = owner
+
+            def t2m(self, prompt: str, *, lyrics=None, format="wav", **kwargs):
+                self.owner.plugin_calls.append(("t2m", prompt, lyrics, format, kwargs))
+                return b"music-bytes"
+
         registry.register_voice_backend(
             backend_id="fake-voice", factory=lambda owner: _Voice(owner)
         )
@@ -147,6 +157,9 @@ def _make_plugin_ep():
         )
         registry.register_vision_backend(
             backend_id="fake-vision", factory=lambda owner: _Vision(owner)
+        )
+        registry.register_music_backend(
+            backend_id="fake-music", factory=lambda owner: _Music(owner)
         )
 
     return _FakeEntryPoint(register)
@@ -301,6 +314,37 @@ def test_output_voice_tts_forwards_backend_kwargs(fake_plugins):
     assert llm.plugin_calls[0][4]["run_id"] == "run-1"
     assert llm.plugin_calls[0][4]["tags"] == {"case": "tts"}
     assert llm.plugin_calls[0][4]["metadata"] == {"source": "test"}
+
+
+@pytest.mark.basic
+def test_output_music_with_text_calls_music_generate(fake_plugins):
+    llm = _FakeProvider()
+
+    response = llm.generate(
+        text="A bright analog synth hook.",
+        output={
+            "modality": "music",
+            "lyrics": "[Instrumental]",
+            "format": "wav",
+            "duration_s": 8,
+            "provider": "ace-step",
+            "model": "ACE-Step/acestep-v15-xl-turbo-diffusers",
+        },
+    )
+
+    assert response.outputs["music"][0].task == "music_generation"
+    assert response.outputs["music"][0].data == b"music-bytes"
+    assert response.outputs["music"][0].content_type == "audio/wav"
+    assert llm.provider_calls == []
+    assert llm.plugin_calls[0][0:4] == (
+        "t2m",
+        "A bright analog synth hook.",
+        "[Instrumental]",
+        "wav",
+    )
+    assert llm.plugin_calls[0][4]["duration_s"] == 8
+    assert llm.plugin_calls[0][4]["provider"] == "ace-step"
+    assert llm.plugin_calls[0][4]["model"] == "ACE-Step/acestep-v15-xl-turbo-diffusers"
 
 
 @pytest.mark.basic

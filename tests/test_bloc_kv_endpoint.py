@@ -251,3 +251,16 @@ def test_endpoint_bloc_kv_routes_work_end_to_end(tmp_path: Path) -> None:
         },
     )
     assert stale_chat.status_code == 409
+
+    listed = client.get(f"/acore/blocs/kv/list?sha256={sha256}")
+    assert listed.status_code == 200
+    assert len(listed.json()["artifacts"]) == 1
+
+    blocked_delete = client.post("/acore/blocs/kv/delete", json={"sha256": sha256})
+    assert blocked_delete.status_code == 409
+    assert blocked_delete.json()["live_bindings"][0]["key"] == "stable:orbit"
+
+    deleted = client.post("/acore/blocs/kv/delete", json={"sha256": sha256, "clear_loaded": True})
+    assert deleted.status_code == 200
+    assert deleted.json()["result"]["deleted"] is True
+    assert not Path(ensured_body["artifact"]["artifact_path"]).exists()

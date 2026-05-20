@@ -20,6 +20,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import time
 from typing import Any, Dict, Iterator, List, Optional, Sequence, Tuple
 
@@ -614,6 +615,105 @@ class FileBlocStore:
         except Exception:
             return out
         return out
+
+    def list_kv_artifacts(
+        self,
+        *,
+        sha256: Optional[str] = None,
+        bloc_id: Optional[int] = None,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """List manifest-backed KV artifacts with lightweight filters."""
+        records: List[FileBlocRecord] = []
+        if isinstance(sha256, str) and sha256.strip():
+            rec = self.get(sha256.strip().lower())
+            if rec is not None:
+                records = [rec]
+        elif bloc_id is not None:
+            rec = self.get_by_bloc_id(bloc_id)
+            if rec is not None:
+                records = [rec]
+        else:
+            records = self.list()
+
+        provider_s = str(provider or "").strip().lower()
+        model_s = str(model or "").strip()
+        out: List[Dict[str, Any]] = []
+        for rec in records:
+            kv_dir = self._bloc_dir(rec.sha256) / "kv"
+            try:
+                manifest_paths = sorted(kv_dir.glob("*.manifest.json"))
+            except Exception:
+                manifest_paths = []
+            for manifest_path in manifest_paths:
+                try:
+                    data = json.loads(manifest_path.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+                if not isinstance(data, dict):
+                    continue
+                if provider_s and str(data.get("provider") or "").strip().lower() != provider_s:
+                    continue
+                if model_s and str(data.get("model") or "").strip() != model_s:
+                    continue
+                artifact_filename = str(data.get("artifact_filename") or "").strip()
+                artifact_path = manifest_path.with_name(artifact_filename) if artifact_filename else None
+                artifact_exists = bool(artifact_path and artifact_path.exists())
+                out.append(
+                    {
+                        "record": rec.to_dict(),
+                        "manifest": dict(data),
+                        "manifest_path": str(manifest_path),
+                        "artifact_path": str(artifact_path) if artifact_path is not None else None,
+                        "artifact_exists": artifact_exists,
+                        "artifact_size_bytes": int(artifact_path.stat().st_size) if artifact_exists and artifact_path is not None else None,
+                    }
+                )
+        return out
+
+    def delete_kv_artifact_paths(self, *, artifact_path: Optional[Path], manifest_path: Optional[Path]) -> Dict[str, Any]:
+        deleted: List[str] = []
+        missing: List[str] = []
+        for path in (artifact_path, manifest_path):
+            if path is None:
+                continue
+            try:
+                if path.exists():
+                    path.unlink()
+                    deleted.append(str(path))
+                else:
+                    missing.append(str(path))
+            except FileNotFoundError:
+                missing.append(str(path))
+        return {"deleted_paths": deleted, "missing_paths": missing}
+
+    def delete(self, sha256: str, *, delete_kv: bool = True) -> Dict[str, Any]:
+        """Delete one bloc directory from disk."""
+        rec = self.get(sha256)
+        if rec is None:
+            raise ValueError("bloc not found")
+        bloc_dir = self._bloc_dir(rec.sha256)
+        if not delete_kv:
+            for path in (self.content_path(rec.sha256), self.meta_path(rec.sha256), self.meta_jsonld_path(rec.sha256)):
+                try:
+                    if path.exists():
+                        path.unlink()
+                except FileNotFoundError:
+                    pass
+            try:
+                if bloc_dir.exists() and not any(bloc_dir.iterdir()):
+                    bloc_dir.rmdir()
+            except Exception:
+                pass
+        else:
+            shutil.rmtree(bloc_dir, ignore_errors=False)
+        try:
+            self._bloc_ids_loaded = False
+            self.ensure_bloc_ids()
+        except Exception:
+            pass
+        return {"record": rec.to_dict(), "deleted_path": str(bloc_dir), "delete_kv": bool(delete_kv)}
 
     def has_kv_cache(self, sha256: str, *, provider: str, model: str) -> bool:
         try:

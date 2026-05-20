@@ -12,12 +12,13 @@ AbstractCore is **production-ready LLM infrastructure**. It provides a unified, 
 - **Simplicity over complexity**
 - **Provider agnostic**
 
-## Optional capability plugins (voice/audio/vision)
+## Optional capability plugins (voice/audio/vision/music)
 
 AbstractCore stays dependency-light by default. Deterministic modality APIs (STT/TTS, generative vision) live in **optional packages** and are exposed through the capability plugin layer:
 
 - Install `abstractcore[voice]` → `llm.voice` / `llm.audio` via `abstractvoice` (TTS/STT)
 - Install `abstractcore[vision]` → `llm.vision` via `abstractvision` (text→image, image→image, …)
+- Install `abstractmusic` → `llm.music` for text→music backends when that package is installed
 
 ```bash
 pip install "abstractcore[voice]"
@@ -34,6 +35,7 @@ from abstractcore import create_llm
 
 llm = create_llm("openai", model="gpt-4o-mini")  # example; pick a provider/model you have access to
 print(llm.capabilities.status())  # availability + selected backend ids + install hints
+print(llm.capabilities.list_backend_infos())  # registered backend metadata, no backend instantiation
 
 # Voice/audio
 wav_bytes = llm.voice.tts("Hello", format="wav")
@@ -47,6 +49,18 @@ tts_models = llm.voice.list_tts_models()
 # Configure AbstractVision's backend/default first, or pass backend-specific kwargs.
 png_bytes = llm.vision.t2i("a red square", width=512, height=512, steps=20)
 image_models = llm.vision.list_provider_models(task="text_to_image")
+
+# Generic discovery for plugins that expose the shared contract.
+music_providers = llm.capabilities.available_providers("music", task="text_to_music")
+music_models = llm.capabilities.list_models("music", task="text_to_music")
+
+# Music via AbstractMusic when installed.
+wav_music = llm.music.generate(
+    "A short calm piano loop.",
+    backend="acestep",
+    model="ACE-Step/acestep-v15-xl-turbo-diffusers",
+    duration_s=8,
+)
 
 # Remote OpenAI-compatible path:
 # export ABSTRACTVISION_BACKEND=openai
@@ -69,6 +83,12 @@ edited = llm.generate("Make it blue.", media="red-square.png", output="image")
 
 # TTS. Text plus output="voice" returns generated audio.
 speech = llm.generate(text="Hello from AbstractCore.", output="voice")
+
+# Music. Text plus output="music" returns generated music/audio.
+music = llm.generate(
+    text="A short calm piano loop.",
+    output={"modality": "music", "backend": "acestep", "duration_s": 8},
+)
 
 # Voice clone/register. Audio media plus output="voice" returns a reusable voice id
 # when the selected AbstractVoice backend supports local or remote cloning.
@@ -94,10 +114,29 @@ The server exposes the same deep catalogs through:
 - `GET /v1/vision/models`
 - `GET /v1/audio/voices`
 - `GET /v1/audio/speech/models`
+- `GET /v1/capabilities`
+- `GET /v1/capabilities/{capability}/providers`
+- `GET /v1/capabilities/{capability}/models`
+- `POST /v1/audio/music`
+- `POST /{provider}/v1/audio/music`
+- `GET /v1/audio/music/providers`
+- `GET /v1/audio/music/models`
 
 Keep `/v1/models` for LLM/embedding provider discovery. Generated-media
 catalogs are intentionally separate so image and voice backends can expose their
 own provider-specific metadata without blurring the LLM model taxonomy.
+
+### Plugin host text service
+
+Plugins that need text planning can use the host context supplied by AbstractCore instead of
+constructing their own LLM provider. The public seam is narrow:
+
+- `owner.capability_host_context.text.generate_text(...)`
+- `owner.capability_host_context.text.generate_structured(..., response_model=...)`
+
+The service forces text-only generation (`output=None`, no media, no streaming) and prevents
+capability recursion. Plugins should treat it as an optional host service and keep their base
+package usable without importing AbstractCore.
 
 Direct `llm.voice` / `generate(..., output="voice")` calls are provided by
 `abstractvoice`. For remote OpenAI TTS/STT, configure the provider before

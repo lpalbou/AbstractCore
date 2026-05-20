@@ -29,6 +29,8 @@ class _EntryPoints:
 
 class _DummyProvider(AbstractCoreInterface):
     def generate(self, prompt: str, **kwargs):
+        self.last_generate_prompt = prompt
+        self.last_generate_kwargs = dict(kwargs)
         return GenerateResponse(content=str(prompt))
 
     def get_capabilities(self):
@@ -88,6 +90,101 @@ def test_plugin_registration_and_backend_resolution(monkeypatch):
         {"id": "image-test", "task": "text_to_image"}
     ]
     assert llm.music.t2m("hello") == b"mp3-bytes"
+    assert llm.music.generate("hello", duration_s=4) == b"mp3-bytes"
+
+
+@pytest.mark.basic
+def test_generic_capability_discovery_does_not_instantiate_for_backend_infos(monkeypatch):
+    calls = {"factory": 0}
+
+    def register(registry):
+        class _Music:
+            backend_id = "music-a"
+
+            def t2m(self, prompt: str, **kwargs):
+                _ = prompt, kwargs
+                return b"wav"
+
+        def factory(_owner):
+            calls["factory"] += 1
+            return _Music()
+
+        registry.register_music_backend(backend_id="music-a", factory=factory, priority=3, description="Music A")
+
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_FakeEntryPoint(name="fake", value="tests.fake_generic:register", obj=register)]))
+
+    llm = _DummyProvider(model="dummy")
+    infos = llm.capabilities.list_backend_infos()
+    assert [info.to_dict()["backend_id"] for info in infos] == ["music-a"]
+    assert calls["factory"] == 0
+
+
+@pytest.mark.basic
+def test_generic_capability_provider_model_and_operation_discovery(monkeypatch):
+    def register(registry):
+        class _Music:
+            backend_id = "music-a"
+
+            def available_providers(self, task=None):
+                return [{"provider_id": "local-music", "display_name": "Local Music", "tasks": [task], "local": True, "status": "available"}]
+
+            def list_models(self, task=None, provider=None):
+                return [{"model_id": "music-model", "provider_id": provider or "local-music", "tasks": [task], "modalities": ["audio"], "local": True}]
+
+            def list_operations(self, task=None):
+                return [{"operation_id": task or "text_to_music", "task": task or "text_to_music", "input_modalities": ["text"], "output_modalities": ["audio"]}]
+
+            def t2m(self, prompt: str, **kwargs):
+                _ = prompt, kwargs
+                return b"wav"
+
+        registry.register_music_backend(backend_id="music-a", factory=lambda _owner: _Music(), priority=0)
+
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_FakeEntryPoint(name="fake", value="tests.fake_generic_discovery:register", obj=register)]))
+
+    llm = _DummyProvider(model="dummy")
+    providers = llm.capabilities.available_providers("music", task="text_to_music")
+    models = llm.capabilities.list_models("music", task="text_to_music", provider="local-music")
+    operations = llm.capabilities.list_operations("music", task="text_to_music")
+
+    assert providers[0]["provider_id"] == "local-music"
+    assert providers[0]["capability"] == "music"
+    assert models[0]["model_id"] == "music-model"
+    assert models[0]["provider_id"] == "local-music"
+    assert operations[0]["operation_id"] == "text_to_music"
+    assert llm.music.available_providers(task="text_to_music")[0]["provider_id"] == "local-music"
+    assert llm.music.list_models(task="text_to_music", provider="local-music")[0]["model_id"] == "music-model"
+    assert llm.music.list_operations(task="text_to_music")[0]["operation_id"] == "text_to_music"
+    assert llm.music.capability_catalog(task="text_to_music")["models"][0]["model_id"] == "music-model"
+
+
+@pytest.mark.basic
+def test_capability_host_text_service_is_text_only_and_plugin_safe(monkeypatch):
+    def register(registry):
+        class _Music:
+            backend_id = "music-planner"
+
+            def __init__(self, owner):
+                self._text = owner.capability_host_context.text
+
+            def t2m(self, prompt: str, **kwargs):
+                _ = kwargs
+                planned = self._text.generate_text(prompt, purpose="music_prompt_plan", max_output_tokens=24)
+                return planned.to_dict()
+
+        registry.register_music_backend(backend_id="music-planner", factory=lambda owner: _Music(owner), priority=0)
+
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_FakeEntryPoint(name="fake", value="tests.fake_host_text:register", obj=register)]))
+
+    llm = _DummyProvider(model="dummy")
+    out = llm.music.t2m("make a short motif")
+
+    assert out["content"] == "make a short motif"
+    assert out["metadata"]["purpose"] == "music_prompt_plan"
+    assert llm.last_generate_kwargs["stream"] is False
+    assert llm.last_generate_kwargs["media"] is None
+    assert llm.last_generate_kwargs["output"] is None
+    assert llm.last_generate_kwargs["max_output_tokens"] == 24
 
 
 @pytest.mark.basic
