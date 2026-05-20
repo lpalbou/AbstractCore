@@ -1,4 +1,4 @@
-# Proposed: Exact-prefix cache recipes for immutable memory clusters
+# Proposed: Exact-prefix cache recipes for immutable superblocs
 
 ## Metadata
 - Created: 2026-05-20
@@ -15,17 +15,23 @@
 AbstractCore now has a credible exact-prefix prompt-cache story for narrow local artifacts:
 
 - one exact bloc text snapshot -> one per-model MLX KV artifact
-- if a higher layer materializes one immutable shelf text snapshot, it becomes one per-model exact
-  prefix candidate
+- if a higher layer materializes one immutable superbloc text snapshot, it could become one
+  per-model exact prefix candidate
 - one ordered `system -> tools -> discussion` prefix -> one provider-managed module chain
 
-That makes a later cluster-level question worth preserving:
+`../ai-space` uses `superbloc` for grouped bloc membership, including nested superblocs that
+transitively expand to leaf bloc members. AbstractCore does not currently expose a superbloc model,
+but that term is the right local vocabulary for "several blocs" if this idea ever moves beyond
+research.
+
+That makes a later superbloc-level question worth preserving:
 
 > if future memory systems repeatedly activate the same immutable groups of memories, should
 > AbstractCore compile those groups as exact prefixes rather than recomputing them every time?
 
-This is not required for current shelf-based memory work. It is a research question about whether a
-larger exact-prefix unit ever becomes worth compiling.
+This is not required for current bloc-only cache work. It is a research question about whether a
+larger exact-prefix unit ever becomes worth compiling after superbloc materialization exists above
+Core.
 
 ## Current code reality
 
@@ -35,21 +41,22 @@ larger exact-prefix unit ever becomes worth compiling.
 - [`abstractcore/core/cached_session.py`](/Users/albou/tmp/abstractframework/abstractcore/abstractcore/core/cached_session.py:138) prepares ordered prefix caches for `system` and `tools`, then forks them into a session key.
 - [`abstractcore/core/cached_session.py`](/Users/albou/tmp/abstractframework/abstractcore/abstractcore/core/cached_session.py:751) treats KV mode as context source-of-truth and sends only delta prompts after prefix prefill.
 - [`abstractcore/providers/base.py`](/Users/albou/tmp/abstractframework/abstractcore/abstractcore/providers/base.py:4073) already exposes hierarchical prefix reuse, but it does so by deriving deterministic keys for an ordered module list, cloning the longest known prefix, and appending missing modules. It does not merge arbitrary persisted cache artifacts.
-- There is no first-class shelf KV compiler/loader in the inspected Core code. Any future shelf
-  work would first need to materialize one immutable shelf text boundary above this layer.
+- There is no first-class superbloc model or superbloc KV compiler/loader in the inspected Core
+  code. Any future superbloc work would first need to materialize one immutable superbloc text
+  boundary above this layer.
 - [`abstractcore/providers/huggingface_provider.py`](/Users/albou/tmp/abstractframework/abstractcore/abstractcore/providers/huggingface_provider.py:340) shows provider capability asymmetry:
   - transformers: local control plane with save/load
   - GGUF: local control plane only when an exact cached prompt renderer exists
   - other GGUF chat formats: keyed only
 - [`docs/prompt-caching.md`](/Users/albou/tmp/abstractframework/abstractcore/docs/prompt-caching.md:192) documents module caches and file boxes as stable prefix reuse, not arbitrary cache composition.
 - [`docs/memory-blocs.md`](/Users/albou/tmp/abstractframework/abstractcore/docs/memory-blocs.md:41) documents bloc KV artifacts as optional per-model derived artifacts and explicitly points to the MLX bloc compiler/loader.
-- [`docs/backlog/planned/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md`](/Users/albou/tmp/abstractframework/abstractcore/docs/backlog/planned/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md:52) already records the key constraint: KV caches are exact prefix artifacts, not reusable blocks that can be merged in arbitrary order.
+- [`docs/backlog/completed/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md`](/Users/albou/tmp/abstractframework/abstractcore/docs/backlog/completed/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md:52) already records the key constraint: KV caches are exact prefix artifacts, not reusable blocks that can be merged in arbitrary order.
 - [`docs/backlog/planned/2026-05-18_mlx-provider-continuous-batching.md`](/Users/albou/tmp/abstractframework/abstractcore/docs/backlog/planned/2026-05-18_mlx-provider-continuous-batching.md:303) intentionally limits batched MLX v1 to keyed reuse and explicitly says not to attempt arbitrary cache composition there.
 
 ## Problem or opportunity
 
-If future memory retrieval repeatedly selects the same immutable evidence groups, shelf-only and
-single-bloc caching may stop being the right prefix size.
+If future memory retrieval repeatedly selects the same immutable evidence groups, single-bloc
+caching may stop being the right prefix size.
 
 The danger is scope drift:
 
@@ -62,23 +69,33 @@ The danger is scope drift:
 So the opportunity is real, but the wrong framing would over-promise behavior the runtime does not
 currently support.
 
+## Concerns to preserve
+
+- This item is intentionally still proposed, not planned.
+- No current Core abstraction materializes a superbloc into one deterministic text boundary.
+- No benchmark currently proves that grouped-bloc exact prefixes beat single-bloc reuse for real
+  workloads.
+- The filename says "composable", but this must not authorize KV-cache splicing or merging.
+- Promotion should require workload evidence and one deterministic recipe, not a generic memory
+  graph compiler.
+
 ## Proposed direction
 
-Keep this item as research into **compiled exact-prefix recipes for immutable memory clusters**.
+Keep this item as research into **compiled exact-prefix recipes for immutable superblocs**.
 
 The unit of study should remain:
 
-- one explicit cluster definition
+- one explicit superbloc definition
 - one deterministic rendered prompt recipe
 - one backend/model-specific artifact or derived prefix key
 
 Recommended framing order:
 
-1. Evaluate whether a cluster-sized exact prefix is ever better than shelf-sized exact prefixes for
-   real local-memory workloads.
+1. Evaluate whether a superbloc-sized exact prefix is ever better than single-bloc exact prefixes
+   for real local-memory workloads.
 2. If yes, define one narrow recipe at a time, for example:
-   - cluster-only full-memory prefix
-   - later, possibly, an explicitly compiled `system + tools + cluster` prefix
+   - superbloc-only full-memory prefix
+   - later, possibly, an explicitly compiled `system + tools + superbloc` prefix
 3. Treat any “recipe graph” only as recipe lineage metadata between exact compiled prefixes, not as
    permission to splice or merge independent KV artifacts.
 
@@ -89,7 +106,7 @@ higher proof burden than this proposal.
 
 - Larger immutable evidence groups may become the dominant repeated prefix in retrieval-heavy local
   memory systems.
-- A cluster-level exact prefix could offer a middle ground between tiny per-memory caches and one
+- A superbloc-level exact prefix could offer a middle ground between tiny per-memory caches and one
   giant cache for everything.
 - Narrow research memory is useful here because the risk is not only performance; it is also
   accidentally promising a composability model that breaks correctness.
@@ -98,10 +115,10 @@ higher proof burden than this proposal.
 
 Promote this item only when all of the following are true:
 
-- real workloads or benchmarks show repeated activation of stable memory groups that shelves do not
-  already cover well enough
-- the exact bloc/shelf path is already stable enough to treat as baseline, not moving target
-- cluster materialization rules live above Core and already define one immutable cluster boundary
+- real workloads or benchmarks show repeated activation of stable memory groups that single-bloc
+  caches do not already cover well enough
+- the exact bloc path is already stable enough to treat as baseline, not moving target
+- superbloc materialization rules live above Core and already define one immutable boundary
 - the work is narrowed to one deterministic recipe boundary, not “general composability”
 - at least one target backend has an exact renderer/control-plane path capable of proving the
   recipe end to end
@@ -117,16 +134,16 @@ backend is strong enough to deserve equal priority.
 - Benchmark the same workload with:
   - uncached construction
   - single-memory or single-bloc reuse
-  - shelf-level reuse
-  - one candidate cluster-level exact prefix
+  - superbloc-level reuse
+  - one candidate superbloc-level exact prefix
 - Verify correctness against uncached prompt construction, not only latency.
 - Require explicit recipe metadata for any candidate cluster artifact:
   - recipe id/version
   - rendered hash
   - model/provider binding
-  - stable cluster membership definition or membership hash
-- Reuse the same working-key safety expectation as exact bloc/shelf work:
-  - loading a new cluster into the key must replace the old one or fail explicitly
+  - stable superbloc membership definition or membership hash
+- Reuse the same working-key safety expectation as exact bloc work:
+  - loading a new superbloc into the key must replace the old one or fail explicitly
 - If multi-backend ambitions remain, compare MLX, transformers, and GGUF separately instead of
   assuming one answer applies to all three.
 
@@ -135,15 +152,16 @@ backend is strong enough to deserve equal priority.
 - Do not read this item as approval for arbitrary KV-cache composition or merging.
 - Do not claim `CachedSession` can hydrate transcript state from independent memory artifacts.
 - Do not broaden this into remote-provider cache parity.
-- Do not make this a prerequisite for current shelf-prefilter or bloc-only acceleration work.
+- Do not make this a prerequisite for current superbloc prefilter or bloc-only acceleration work.
 - Do not assume continuous batching v1 will support advanced prompt-cache control-plane behavior.
 
 ## Related
 
-- `docs/backlog/planned/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md`
+- `docs/backlog/completed/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md`
 - `docs/backlog/planned/2026-05-18_mlx-provider-continuous-batching.md`
-- `docs/backlog/proposed/2026-05-20_exact-bloc-and-shelf-cache-binding-for-external-clients.md`
-- `docs/backlog/proposed/2026-05-20_transformers-and-gguf-prompt-cache-parity-for-exact-blocs-and-shelves.md`
+- `docs/backlog/planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
+- `docs/backlog/planned/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md`
+- `docs/backlog/planned/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md`
 - `docs/prompt-caching.md`
 - `docs/memory-blocs.md`
 

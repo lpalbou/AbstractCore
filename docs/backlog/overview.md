@@ -9,23 +9,23 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 13
-- Proposed: 8
-- Completed: 7
-- Deprecated: 0
+- Planned: 15
+- Proposed: 6
+- Completed: 8
+- Deprecated: 1
 - Recurrent: 0
 
 ## Next recommended work
 
-1. `planned/2026-05-04_unified-lora-adapter-serving.md`
-   The repository already exposes provider-specific vLLM adapter methods and even documents a
-   routing story that the shared provider path does not actually implement. This is now the clearest
-   abstraction gap between provider-specific capability and first-class Core behavior.
-2. `planned/2026-05-04_vllm-base-model-swap-orchestration.md`
-   Keep this behind adapter lifecycle work. Base-model swap is a separate admin problem and should
-   not be mixed into first-pass adapter support.
-3. `planned/2026-05-18_mlx-provider-continuous-batching.md`
-   High-value throughput work, but orthogonal to the adapter gap and already well specified.
+1. `planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
+   Cache capabilities are release surface for both Python and server callers. Stabilize the shared
+   bloc artifact API and optional strict binding before adding more provider backends.
+2. `planned/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md`
+   HuggingFace transformers already has local prompt-cache save/load primitives, so this is the
+   lowest-friction non-MLX exact bloc artifact backend.
+3. `planned/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md`
+   Add durable bloc artifacts for GGUF only where exact cached prompt renderers exist; unsupported
+   chat formats must remain explicit keyed-only paths.
 
 ## Planned ledger
 
@@ -38,8 +38,10 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/2026-05-06_consensus-generate.md` | Consensus-generation orchestration work. |
 | `planned/2026-05-06_robust-fallback-generate.md` | Stronger fallback behavior for generation paths. |
 | `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md` | Multimodal generation plus deterministic cache behavior. |
-| `planned/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md` | MLX bloc KV compiler/loader support. |
 | `planned/2026-05-18_mlx-provider-continuous-batching.md` | Shared MLX runtime and batching scheduler. |
+| `planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md` | Public Python/server bloc artifact API plus optional strict request-time cache binding. |
+| `planned/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md` | Durable exact bloc artifacts for HuggingFace transformers through the unified API. |
+| `planned/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md` | Durable exact bloc artifacts for supported HuggingFace GGUF exact-renderer paths. |
 | `planned/788-response.md` | Responses-related planned work (legacy naming retained). |
 | `planned/789_server-auth-rate-limits.md` | Server auth and rate-limit controls. |
 | `planned/790_server-response-cache.md` | Server response-cache work. |
@@ -54,9 +56,7 @@ Use this file as the entry point for planning status, recommended next work, and
 | `proposed/2026-05-07_runtime-ready-multimodal-generation-abstraction.md` | Promote when runtime/kernel integration work is scheduled. |
 | `proposed/2026-05-08_dual-server-docker-image-profiles.md` | Promote when packaging/deployment scope becomes active. |
 | `proposed/2026-05-18_native-mtp-and-speculative-decoding-support.md` | Promote when serving backends and benchmarks justify active implementation. |
-| `proposed/2026-05-20_composable-prompt-cache-recipes-for-immutable-memory-clusters.md` | Promote when real workloads show stable cluster reuse beyond shelf/bloc caches and the work is narrowed to one deterministic exact-prefix recipe per target backend. |
-| `proposed/2026-05-20_exact-bloc-and-shelf-cache-binding-for-external-clients.md` | Promote when MLX bloc-derived `prompt_cache_key` reuse needs an explicit public binding contract beyond current load-time validation. |
-| `proposed/2026-05-20_transformers-and-gguf-prompt-cache-parity-for-exact-blocs-and-shelves.md` | Promote when exact bloc/shelf acceleration needs backend parity evidence outside MLX, or when another local backend appears strong enough to justify production support. |
+| `proposed/2026-05-20_composable-prompt-cache-recipes-for-immutable-memory-clusters.md` | Keep proposed until real workloads show stable superbloc reuse beyond single-bloc caches and the work is narrowed to one deterministic exact-prefix recipe per target backend. |
 
 ## Completed ledger
 
@@ -67,8 +67,15 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/2026-05-07_task-only-text-generation-output-normalization.md` | `completed/2026-05-07_task-only-text-generation-output-normalization.md` | 2026-05-07 | Done | Task-only text-generation selectors normalized correctly. | Item records targeted pytest, compile, lint, and package checks. |
 | `planned/2026-05-08_capability_plugin_catalog_discovery_routes.md` | `completed/2026-05-08_capability_plugin_catalog_discovery_routes.md` | 2026-05-08 | Done | Capability plugin catalog routes added. | Completion report in item. |
 | `planned/2026-05-08_core_install_profiles_and_gateway_config_boundary.md` | `completed/2026-05-08_core_install_profiles_and_gateway_config_boundary.md` | 2026-05-08 | Done | Install-profile and gateway-config boundaries clarified. | Completion report in item. |
+| `planned/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md` | `completed/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md` | 2026-05-19 | Done | MLX exact bloc artifact compiler/loader is the completed baseline for provider parity work. | `tests/test_bloc_kv.py`, endpoint tests, and loaded-runtime bloc/cache tests. |
 | `planned/2026-05-19_generalize_acore_models_residency.md` | `completed/2026-05-19_generalize_acore_models_residency.md` | 2026-05-19 | Done | Task-aware `/acore/models/*` residency control plane landed. | Item records targeted residency test suites and docs updates. |
 | `planned/2026-05-20_public_local_vision_cache_catalog_helper.md` | `completed/2026-05-20_public_local_vision_cache_catalog_helper.md` | 2026-05-20 | Done | Public non-server local vision cache catalog helper landed. | Item records focused Core/Runtime pytest and compile validation. |
+
+## Deprecated ledger
+
+| Item | Reason |
+| --- | --- |
+| `deprecated/2026-05-20_transformers-and-gguf-prompt-cache-parity-for-exact-blocs-and-superblocs.md` | Superseded by the unified API item plus provider-specific transformers and GGUF planned items. |
 
 ## Adding or updating work
 

@@ -1,9 +1,32 @@
-# Planned: Memory bloc MLX KV compiler and loader
+# Completed: Memory bloc MLX KV compiler and loader
 
 ## Metadata
 - Created: 2026-05-18
-- Status: Implemented
+- Status: Completed
 - Completed: 2026-05-19
+
+## Completion report
+
+Moved from `planned/` to `completed/` on 2026-05-20 because the codebase now contains the MLX
+bloc-KV compiler/loader baseline described by this item.
+
+Implemented evidence:
+
+- `abstractcore/core/bloc_kv.py` owns MLX exact bloc artifact compile/load/fork helpers.
+- `FileBlocStore` exposes KV artifact and manifest path helpers.
+- `AbstractEndpoint` and the gateway expose `/acore/blocs/kv/manifest`,
+  `/acore/blocs/kv/ensure`, and `/acore/blocs/kv/load`.
+- `tests/test_bloc_kv.py`, `tests/test_bloc_kv_endpoint.py`, and loaded-runtime server tests cover
+  manifest validation, reload-on-miss, artifact drift, default-key preservation, and cleanup.
+
+Residual follow-ups are now tracked separately:
+
+- provider-generic public API and request-time binding:
+  `docs/backlog/planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
+- HuggingFace transformers durable bloc artifacts:
+  `docs/backlog/planned/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md`
+- supported HuggingFace GGUF durable bloc artifacts:
+  `docs/backlog/planned/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md`
 
 ## Context
 
