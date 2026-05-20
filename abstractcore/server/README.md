@@ -38,7 +38,7 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/{provider}/v1/audio/speech` | POST | Provider-scoped text-to-speech | `model` (no prefix), `input`, `base_url` |
 | `/v1/voice/clone` | POST | Voice clone/custom voice extension (optional) | `file`, `provider`, `model`, `tts_model`, `cloning_engine`, `base_url`, `name` |
 | `/{provider}/v1/voice/clone` | POST | Provider-scoped voice clone/custom voice extension | `model` (no prefix), `file`, `base_url`, `name` |
-| `/v1/audio/music` | POST | Text-to-music (optional) | `prompt`, `format` |
+| `/v1/audio/music` | POST | Text-to-music (optional) | `prompt`, optional `backend`, `model`, `lyrics`, `duration_s`, `format` (`wav`, `mp3`, `flac`) |
 | `/{provider}/v1/chat/completions` | POST | Provider-specific endpoint | `model` (no prefix) |
 | `/acore/models/load` | POST | Load a task-specific provider/model runtime | optional `task` (`text_generation` default, `image_generation`, `tts`, `stt`), `provider`, `model`, `options`, `pin`, `base_url`, `timeout_s` |
 | `/acore/models/loaded` | GET | List currently loaded task-aware runtimes | optional `task`, `provider`, `model` |
@@ -62,7 +62,7 @@ Runtime note: omitted `task` on `/acore/models/load` keeps the existing text-gen
 | **Audio Translations** | `/v1/audio/translations` | `file` | Translate audio (not yet supported) |
 | **Text-to-Speech** | `/v1/audio/speech`, `/{provider}/v1/audio/speech` | `input`, optional `model`/`provider`/`base_url` | Generate audio (optional) |
 | **Voice Clone** | `/v1/voice/clone`, `/{provider}/v1/voice/clone` | `file`, optional `model`/`provider`/`base_url` | Create a compatible custom voice (optional) |
-| **Text-to-Music** | `/v1/audio/music` | `prompt` | Generate music/audio (optional) |
+| **Text-to-Music** | `/v1/audio/music` | `prompt` | Generate music/audio through optional AbstractMusic backends; `abstractmusic>=0.1.4` supports remote ACE Music with `ACEMUSIC_API_KEY` |
 | **Documents** | `/v1/chat/completions` | `content: [text, file_url]` | PDF/CSV processing |
 | **Tools** | `/v1/chat/completions` | `tools`, `tool_choice` | Function calling |
 | **Embeddings** | `/v1/embeddings` | `model`, `input` | Text embeddings |

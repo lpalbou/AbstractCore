@@ -3,7 +3,7 @@
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
 Last updated: 2026-05-21
-Package version: 2.13.23
+Package version: 2.13.24
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -650,8 +650,8 @@ abstractcore --set-stt-language en
 AbstractCore supports optional capability plugins discovered via Python entry points:
 - install `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
 - install `abstractvision` -> enables `llm.vision` (generative vision; often via an OpenAI-compatible images endpoint)
-- install `abstractmusic` -> enables `llm.music` and music output routing for text-to-music
-- current plugin floors in this source: `abstractvoice>=0.10.11`, `abstractvision>=0.3.8`, `abstractmusic>=0.1.1`
+- install `abstractcore[music]` -> enables `llm.music` and music output routing for text-to-music through `abstractmusic`
+- current plugin floors in this source: `abstractvoice>=0.10.11`, `abstractvision>=0.3.8`, `abstractmusic>=0.1.4`
 
 Server note:
 - the server can optionally expose `/v1/images/*` (requires `abstractvision`)
@@ -10193,7 +10193,7 @@ python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jp
 To keep the default `abstractcore` install dependency-light while still enabling deterministic modality APIs, AbstractCore supports optional **capability plugins**:
 - `abstractvoice` provides `core.voice` + `core.audio` (TTS/STT).
 - `abstractvision` provides `core.vision` (T2I/I2I/T2V/I2V; backend-pluggable).
-- `abstractmusic` can provide `core.music` (text-to-music) when installed.
+- `abstractmusic` can provide `core.music` (text-to-music) when installed; `abstractmusic>=0.1.4` includes the remote ACE Music backend through `ACEMUSIC_API_KEY`.
 
 Discovery:
 - `llm.capabilities.status()` returns a JSON-safe snapshot (which backends are available/selected, plus install hints).

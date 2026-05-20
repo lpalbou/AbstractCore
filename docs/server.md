@@ -656,7 +656,7 @@ Install for local plugin fallback:
 ```bash
 pip install "abstractcore[server]"
 pip install "abstractcore[voice]"
-pip install abstractmusic
+pip install "abstractcore[music]"
 ```
 
 Notes:
@@ -730,9 +730,9 @@ The returned `voice_id` / `id` can be used as the `voice` value in
 | Field | Required | Notes |
 |---|---:|---|
 | `prompt` or `input` or `text` | yes | Music generation prompt. |
-| `backend` | no | Local music backend selector, for example `acestep`, `acestep-v15`, or `diffusers`. The provider-scoped path can also select a backend, e.g. `/diffusers/v1/audio/music`. |
-| `provider` | no | Music provider/catalog hint forwarded to the selected backend, for example `ace-step`. |
-| `model` | no | Music model id for the selected backend, commonly a Hugging Face repo id for AbstractMusic. |
+| `backend` | no | Music backend selector, for example `acemusic`, `remote`, `acestep`, `acestep-v15`, or `diffusers`. The provider-scoped path can also select a backend, e.g. `/remote/v1/audio/music` or `/diffusers/v1/audio/music`. |
+| `provider` | no | Music provider/catalog hint forwarded to the selected backend, for example `ACE Music` or `ace-step`. |
+| `model` | no | Music model id for the selected backend, for example `acemusic/ace-step-api` for remote ACE Music or a Hugging Face repo id for local AbstractMusic backends. |
 | `lyrics` | no | Optional lyrics for vocal music backends. |
 | `duration_s` | no | Requested output duration in seconds. |
 | `seed` | no | Deterministic seed when supported. |
@@ -741,8 +741,13 @@ The returned `voice_id` / `id` can be used as the `voice` value in
 | `instrumental` | no | Request instrumental output when supported. |
 | `enhance_prompt` / `structure_prompt` / `auto_lyrics` | no | Prompt/lyrics planning controls for compatible music backends. |
 | `text_planner_mode` | no | Host/plugin text-planning mode such as `auto`, `on`, or `off`. |
-| `response_format` or `format` | no | Only `wav` is supported in this server contract. |
+| `response_format` or `format` | no | Server contract supports `wav`, `mp3`, and `flac`; backend support can be narrower. |
 | extra top-level fields | no | Best-effort passthrough to the installed music capability plugin. |
+
+With `abstractmusic>=0.1.4`, the base install includes the remote ACE Music
+backend. Configure `ACEMUSIC_API_KEY` in the server environment, optionally set
+`ACEMUSIC_BASE_URL`, and use `backend="acemusic"` or the `/remote/v1/audio/music`
+path. Local ACE-Step/Diffusers routes remain opt-in AbstractMusic extras.
 
 Examples:
 
@@ -784,6 +789,14 @@ curl -sS -X POST "$BASE/v1/audio/speech" \
   -H "Content-Type: application/json" \
   -d '{"model":"abstractvoice/default","input":"Hello!","voice":"alloy","format":"wav"}' \
   --output hello.wav
+
+# Remote ACE Music through AbstractMusic.
+# Start the server with ACEMUSIC_API_KEY set in its environment.
+curl -sS -X POST "$BASE/v1/audio/music" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"prompt":"A short calm piano loop.","backend":"acemusic","duration_s":8,"format":"mp3"}' \
+  --output music.mp3
 
 # Remote/local OpenAI-compatible voice clone endpoint
 curl -sS -X POST "$BASE/v1/voice/clone" \

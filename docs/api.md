@@ -218,7 +218,7 @@ Install the relevant optional plugin first:
 ```bash
 pip install "abstractcore[vision]"  # image generation/edit
 pip install "abstractcore[voice]"   # TTS/STT/voice clone when backend supports it
-pip install abstractmusic           # text-to-music when available
+pip install "abstractcore[music]"   # text-to-music via abstractmusic
 ```
 
 Then use `output=...` for simple media-generation tasks:
@@ -239,7 +239,7 @@ speech = llm.generate(text="Hello from AbstractCore.", output="voice")
 # Music generation.
 music = llm.generate(
     text="A short calm piano loop.",
-    output={"modality": "music", "backend": "acestep", "duration_s": 8},
+    output={"modality": "music", "backend": "acemusic", "duration_s": 8, "format": "wav"},
 )
 
 # Voice clone/register. Audio media plus output="voice" returns a voice

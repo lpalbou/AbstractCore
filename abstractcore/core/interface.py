@@ -131,7 +131,9 @@ class AbstractCoreInterface(ABC):
             if isinstance(mb, str) and mb.strip():
                 mbs = mb.strip()
                 mbs_l = mbs.lower()
-                if mbs_l in {"diffusers"}:
+                if mbs_l in {"acemusic", "ace-music", "remote", "api", "acemusic-api", "ace-music-api", "aceapi"}:
+                    merged_prefs["music"] = "abstractmusic:acemusic"
+                elif mbs_l in {"diffusers"}:
                     merged_prefs["music"] = "abstractmusic:diffusers"
                 elif mbs_l in {"acestep", "ace", "ace-step"}:
                     merged_prefs["music"] = "abstractmusic:acestep-diffusers"

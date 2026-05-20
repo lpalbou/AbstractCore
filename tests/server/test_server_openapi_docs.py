@@ -103,6 +103,17 @@ def test_audio_speech_documents_binary_audio_response():
     assert content["audio/mpeg"]["schema"] == {"type": "string", "format": "binary"}
 
 
+def test_audio_music_documents_remote_ace_formats():
+    schema = TestClient(app).get("/openapi.json").json()
+    response = schema["paths"]["/v1/audio/music"]["post"]["responses"]["200"]
+    content = response["content"]
+
+    assert "audio/wav" in content
+    assert "audio/mpeg" in content
+    assert "audio/flac" in content
+    assert content["audio/flac"]["schema"] == {"type": "string", "format": "binary"}
+
+
 def test_media_swagger_examples_are_complete_and_executable_defaults():
     schema = TestClient(app).get("/openapi.json").json()
 
@@ -154,6 +165,11 @@ def test_media_swagger_examples_are_complete_and_executable_defaults():
     assert speech_example["response_format"] == "wav"
     assert speech_example["base_url"] is None
     assert speech_example["format"] is None
+
+    music_example = schema["components"]["schemas"]["AudioMusicRequest"]["examples"][0]
+    assert music_example["backend"] == "acemusic"
+    assert music_example["model"] == "acemusic/ace-step-api"
+    assert music_example["response_format"] == "wav"
 
 
 def test_all_request_bodies_have_swagger_examples():

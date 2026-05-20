@@ -18,11 +18,12 @@ AbstractCore stays dependency-light by default. Deterministic modality APIs (STT
 
 - Install `abstractcore[voice]` → `llm.voice` / `llm.audio` via `abstractvoice` (TTS/STT)
 - Install `abstractcore[vision]` → `llm.vision` via `abstractvision` (text→image, image→image, …)
-- Install `abstractmusic` → `llm.music` for text→music backends when that package is installed
+- Install `abstractcore[music]` → `llm.music` for text→music through `abstractmusic`
 
 ```bash
 pip install "abstractcore[voice]"
 pip install "abstractcore[vision]"
+pip install "abstractcore[music]"
 ```
 
 `abstractvoice` 0.10.11+ can install its base AbstractCore plugin path on
@@ -57,9 +58,9 @@ music_models = llm.capabilities.list_models("music", task="text_to_music")
 # Music via AbstractMusic when installed.
 wav_music = llm.music.generate(
     "A short calm piano loop.",
-    backend="acestep",
-    model="ACE-Step/acestep-v15-xl-turbo-diffusers",
+    backend="acemusic",
     duration_s=8,
+    format="wav",
 )
 
 # Remote OpenAI-compatible path:
@@ -87,7 +88,7 @@ speech = llm.generate(text="Hello from AbstractCore.", output="voice")
 # Music. Text plus output="music" returns generated music/audio.
 music = llm.generate(
     text="A short calm piano loop.",
-    output={"modality": "music", "backend": "acestep", "duration_s": 8},
+    output={"modality": "music", "backend": "acemusic", "duration_s": 8, "format": "wav"},
 )
 
 # Voice clone/register. Audio media plus output="voice" returns a reusable voice id
@@ -121,6 +122,12 @@ The server exposes the same deep catalogs through:
 - `POST /{provider}/v1/audio/music`
 - `GET /v1/audio/music/providers`
 - `GET /v1/audio/music/models`
+
+For `abstractmusic>=0.1.4`, the default lightweight music backend is the
+remote ACE Music API path (`backend="acemusic"` or `/remote/v1/audio/music`).
+Set `ACEMUSIC_API_KEY` in the server or Python environment. The server music
+route accepts `wav`, `mp3`, and `flac`; individual backends may support fewer
+formats.
 
 Keep `/v1/models` for LLM/embedding provider discovery. Generated-media
 catalogs are intentionally separate so image and voice backends can expose their

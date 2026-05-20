@@ -41,6 +41,61 @@ def _make_fake_music_plugin_ep(calls=None):
     return _FakeEntryPoint(name="fake", value="tests.fake_music:register", obj=register)
 
 
+def _make_fake_multi_music_plugin_ep(calls=None):
+    def register(registry):
+        class _Music:
+            def __init__(self, backend_id: str):
+                self.backend_id = backend_id
+
+            def t2m(self, prompt: str, **kwargs):
+                if calls is not None:
+                    calls.append({"backend_id": self.backend_id, "prompt": prompt, **kwargs})
+                fmt = str(kwargs.get("format") or "wav").lower()
+                content_type = "audio/mpeg" if fmt == "mp3" else f"audio/{fmt}"
+                return {"data": f"{self.backend_id}:{fmt}".encode(), "mime_type": content_type}
+
+        registry.register_music_backend(
+            backend_id="abstractmusic:diffusers",
+            factory=lambda _owner: _Music("abstractmusic:diffusers"),
+            priority=20,
+        )
+        registry.register_music_backend(
+            backend_id="abstractmusic:acemusic",
+            factory=lambda _owner: _Music("abstractmusic:acemusic"),
+            priority=0,
+        )
+
+    return _FakeEntryPoint(name="fake", value="tests.fake_music_multi:register", obj=register)
+
+
+def _make_fake_unconfigured_ace_music_plugin_ep():
+    def register(registry):
+        class _Music:
+            backend_id = "abstractmusic:acemusic"
+
+            def t2m(self, prompt: str, **kwargs):
+                _ = prompt, kwargs
+                raise RuntimeError("Missing ACE Music API key. Set ACEMUSIC_API_KEY.")
+
+        registry.register_music_backend(backend_id="abstractmusic:acemusic", factory=lambda _owner: _Music(), priority=50)
+
+    return _FakeEntryPoint(name="fake", value="tests.fake_unconfigured_ace_music:register", obj=register)
+
+
+def _make_fake_timeout_ace_music_plugin_ep():
+    def register(registry):
+        class _Music:
+            backend_id = "abstractmusic:acemusic"
+
+            def t2m(self, prompt: str, **kwargs):
+                _ = prompt, kwargs
+                raise RuntimeError("ACE Music API request failed with HTTP 504: gateway time-out")
+
+        registry.register_music_backend(backend_id="abstractmusic:acemusic", factory=lambda _owner: _Music(), priority=50)
+
+    return _FakeEntryPoint(name="fake", value="tests.fake_timeout_ace_music:register", obj=register)
+
+
 @pytest.fixture()
 def client():
     return TestClient(app)
@@ -60,7 +115,7 @@ def test_audio_music_returns_501_when_plugin_unavailable(client, monkeypatch):
     assert resp.status_code == 501
     data = resp.json()
     assert "error" in data
-    assert "pip install abstractmusic" in data["error"]["message"]
+    assert 'pip install "abstractcore[music]"' in data["error"]["message"]
 
 
 def test_audio_music_happy_path_with_stubbed_plugin(client, monkeypatch):
@@ -104,3 +159,44 @@ def test_provider_scoped_audio_music_selects_backend_and_forwards_music_params(c
     assert calls[0]["prompt"] == "ambient pulse"
     assert calls[0]["num_inference_steps"] == 12
     assert calls[0]["guidance_scale"] == 4.5
+
+
+@pytest.mark.parametrize(
+    ("url", "body"),
+    [
+        ("/v1/audio/music", {"prompt": "remote pulse", "backend": "acemusic", "format": "mp3"}),
+        ("/remote/v1/audio/music", {"prompt": "remote pulse", "format": "mp3"}),
+    ],
+)
+def test_audio_music_remote_ace_aliases_select_acemusic_and_allow_mp3(client, monkeypatch, url, body):
+    calls = []
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_fake_multi_music_plugin_ep(calls)]))
+    _reset_audio_core(monkeypatch)
+
+    resp = client.post(url, json=body)
+
+    assert resp.status_code == 200
+    assert resp.headers.get("content-type", "").startswith("audio/mpeg")
+    assert resp.content == b"abstractmusic:acemusic:mp3"
+    assert calls[0]["backend_id"] == "abstractmusic:acemusic"
+    assert calls[0]["format"] == "mp3"
+
+
+def test_audio_music_missing_ace_key_is_service_configuration_error(client, monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_fake_unconfigured_ace_music_plugin_ep()]))
+    _reset_audio_core(monkeypatch)
+
+    resp = client.post("/v1/audio/music", json={"prompt": "remote pulse", "backend": "acemusic", "format": "wav"})
+
+    assert resp.status_code == 503
+    assert "ACEMUSIC_API_KEY" in resp.json()["error"]["message"]
+
+
+def test_audio_music_upstream_timeout_preserves_gateway_status(client, monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_fake_timeout_ace_music_plugin_ep()]))
+    _reset_audio_core(monkeypatch)
+
+    resp = client.post("/v1/audio/music", json={"prompt": "remote pulse", "backend": "acemusic", "format": "wav"})
+
+    assert resp.status_code == 504
+    assert "HTTP 504" in resp.json()["error"]["message"]

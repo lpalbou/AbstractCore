@@ -46,6 +46,7 @@ _PLUGIN_SERVICE_UNAVAILABLE_NEEDLES = (
     "requires openai api key",
     "requires remote_api_key",
     "requires remote api key",
+    "missing ace music api key",
 )
 _LOCAL_AUDIO_MODEL_ALIASES = {
     # `local/abstractvoice` is kept as a backward-compatible alias; prefer
@@ -173,9 +174,9 @@ class AudioMusicRequest(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "model": "ACE-Step/acestep-v15-xl-turbo-diffusers",
-                    "backend": "acestep",
-                    "provider": "ace-step",
+                    "model": "acemusic/ace-step-api",
+                    "backend": "acemusic",
+                    "provider": "ACE Music",
                     "prompt": "A short calm piano loop.",
                     "input": None,
                     "text": None,
@@ -197,23 +198,27 @@ class AudioMusicRequest(BaseModel):
     model: Optional[str] = Field(
         default=None,
         description=(
-            "Optional music model id. For local AbstractMusic backends this is commonly "
-            "a Hugging Face repo id such as `ACE-Step/acestep-v15-xl-turbo-diffusers`."
+            "Optional music model id. For remote ACE Music this is commonly "
+            "`acemusic/ace-step-api`; for local AbstractMusic backends this is commonly "
+            "a Hugging Face repo id."
         ),
-        examples=["ACE-Step/acestep-v15-xl-turbo-diffusers"],
+        examples=["acemusic/ace-step-api", "ACE-Step/acestep-v15-xl-turbo-diffusers"],
     )
     provider: Optional[Union[str, Dict[str, Any]]] = Field(
         default=None,
         description=(
             "Optional music provider/catalog filter forwarded to the selected music backend, "
-            "for example `ace-step`."
+            "for example `ACE Music` or `ace-step`."
         ),
-        examples=["ace-step"],
+        examples=["ACE Music", "ace-step"],
     )
     backend: Optional[str] = Field(
         default=None,
-        description="Optional local music backend selector, e.g. `acestep`, `acestep-v15`, or `diffusers`.",
-        examples=["acestep"],
+        description=(
+            "Optional music backend selector, e.g. `acemusic`, `remote`, `acestep`, "
+            "`acestep-v15`, or `diffusers`."
+        ),
+        examples=["acemusic"],
     )
     task: Optional[str] = Field(
         default=None,
@@ -237,8 +242,8 @@ class AudioMusicRequest(BaseModel):
     structure_prompt: Optional[bool] = Field(default=None, description="Enable structured prompt planning when supported.")
     auto_lyrics: Optional[bool] = Field(default=None, description="Ask the backend to infer or generate lyrics when supported.")
     text_planner_mode: Optional[str] = Field(default=None, description="Music text-planner mode such as `auto`, `on`, or `off`.")
-    response_format: Optional[str] = Field(default=None, description="Output format. Only `wav` is currently supported.", examples=["wav"])
-    format: Optional[str] = Field(default=None, description="Alias for `response_format`. Only `wav` is currently supported.", examples=["wav"])
+    response_format: Optional[str] = Field(default=None, description="Output format. Supported by the server contract: `wav`, `mp3`, or `flac`.", examples=["wav"])
+    format: Optional[str] = Field(default=None, description="Alias for `response_format`. Supported by the server contract: `wav`, `mp3`, or `flac`.", examples=["wav"])
 
 
 def _model_payload(model: BaseModel) -> Dict[str, Any]:
@@ -583,8 +588,20 @@ def _plugin_exception_status(exc: Exception) -> int:
         return _provider_exception_status(exc)
 
     text = str(exc).lower()
+    if "http 504" in text or "gateway time-out" in text or "gateway timeout" in text:
+        return 504
+    if "http 502" in text or "bad gateway" in text:
+        return 502
+    if "http 503" in text or "service unavailable" in text:
+        return 503
+    if "http 5" in text:
+        return 502
+    if "rate limit" in text or "too many requests" in text or "http 429" in text:
+        return 429
     if any(needle in text for needle in _PLUGIN_SERVICE_UNAVAILABLE_NEEDLES):
         return 503
+    if "api key" in text or "authentication" in text or "unauthorized" in text or "http 401" in text or "http 403" in text:
+        return 401
     return 500
 
 
@@ -610,33 +627,51 @@ def _optional_int(value: Any, *, field: str) -> Optional[int]:
         raise HTTPException(status_code=422, detail=f"Invalid {field}: expected an integer.") from e
 
 
-_MUSIC_BACKEND_ALIASES = {
-    "abstractmusic:acestep-diffusers",
-    "abstractmusic:acestep-v15",
-    "abstractmusic:diffusers",
-    "acestep",
-    "ace-step",
-    "ace",
-    "acestep-diffusers",
-    "ace-step-diffusers",
-    "acestep_v15",
-    "acestep-v15",
-    "ace-step-v15",
-    "diffusers",
+_MUSIC_BACKEND_ALIAS_MAP = {
+    "abstractmusic:acemusic": "abstractmusic:acemusic",
+    "acemusic": "abstractmusic:acemusic",
+    "ace-music": "abstractmusic:acemusic",
+    "acemusic-api": "abstractmusic:acemusic",
+    "ace-music-api": "abstractmusic:acemusic",
+    "aceapi": "abstractmusic:acemusic",
+    "remote": "abstractmusic:acemusic",
+    "api": "abstractmusic:acemusic",
+    "abstractmusic:acestep-diffusers": "abstractmusic:acestep-diffusers",
+    "acestep": "abstractmusic:acestep-diffusers",
+    "ace-step": "abstractmusic:acestep-diffusers",
+    "ace": "abstractmusic:acestep-diffusers",
+    "acestep-diffusers": "abstractmusic:acestep-diffusers",
+    "ace-step-diffusers": "abstractmusic:acestep-diffusers",
+    "abstractmusic:acestep-v15": "abstractmusic:acestep-v15",
+    "acestep-v15": "abstractmusic:acestep-v15",
+    "ace-step-v15": "abstractmusic:acestep-v15",
+    "abstractmusic:diffusers": "abstractmusic:diffusers",
+    "diffusers": "abstractmusic:diffusers",
 }
+_MUSIC_BACKEND_ALIASES = set(_MUSIC_BACKEND_ALIAS_MAP)
 
 
-def _music_backend_selector(*values: Any) -> Optional[str]:
+def _music_selector_value(value: Any) -> Optional[str]:
+    if isinstance(value, str) and value.strip():
+        return value.strip().lower().replace("_", "-")
+    return None
+
+
+def _music_backend_selector(*values: Any, allow_unknown: bool = False) -> Optional[str]:
     for value in values:
-        text = _request_provider_value(value)
-        if text and text in _MUSIC_BACKEND_ALIASES:
+        text = _music_selector_value(value)
+        if not text:
+            continue
+        if text in _MUSIC_BACKEND_ALIAS_MAP:
+            return _MUSIC_BACKEND_ALIAS_MAP[text]
+        if allow_unknown:
             return text
     return None
 
 
 def _music_provider_selector(*values: Any) -> Optional[str]:
     for value in values:
-        text = _request_provider_value(value)
+        text = _music_selector_value(value)
         if text and text not in _MUSIC_BACKEND_ALIASES:
             return text
     return None
@@ -644,7 +679,9 @@ def _music_provider_selector(*values: Any) -> Optional[str]:
 
 def _music_capability_core_for_request(data: Dict[str, Any], *, path_provider: Optional[str] = None) -> Any:
     """Return a capability host honoring request-level music backend/model overrides."""
-    backend = _music_backend_selector(data.get("backend"), data.get("music_backend"), path_provider)
+    backend = _music_backend_selector(data.get("backend"), data.get("music_backend"), allow_unknown=True)
+    if backend is None:
+        backend = _music_backend_selector(path_provider)
     model = _optional_text(data.get("model") or data.get("music_model_id"))
 
     overrides: Dict[str, Any] = {}
@@ -2061,6 +2098,9 @@ _AUDIO_MUSIC_RESPONSES = {
         "description": "Generated music/audio bytes.",
         "content": {
             "audio/wav": _AUDIO_BINARY_RESPONSE,
+            "audio/mpeg": _AUDIO_BINARY_RESPONSE,
+            "audio/mp3": _AUDIO_BINARY_RESPONSE,
+            "audio/flac": _AUDIO_BINARY_RESPONSE,
             "application/octet-stream": _AUDIO_BINARY_RESPONSE,
         },
     }
@@ -2071,7 +2111,7 @@ async def _audio_music_impl(payload: AudioMusicRequest, *, path_provider: Option
     """Text-to-music endpoint (extension; no official OpenAI equivalent).
 
     Delegates to the `music` capability plugin (typically `abstractmusic`).
-    Returns raw audio bytes (WAV baseline).
+    Returns raw audio bytes.
     """
 
     data = _model_payload(payload)
@@ -2091,8 +2131,8 @@ async def _audio_music_impl(payload: AudioMusicRequest, *, path_provider: Option
     if fmt is None:
         fmt = data.get("response_format")
     fmt = str(fmt).strip().lower() if isinstance(fmt, str) and fmt.strip() else "wav"
-    if fmt != "wav":
-        raise HTTPException(status_code=422, detail="Only format='wav' is supported for /v1/audio/music (v1).")
+    if fmt not in {"wav", "mp3", "flac"}:
+        raise HTTPException(status_code=422, detail="format must be one of: wav, mp3, flac.")
 
     provider_hint = _music_provider_selector(path_provider, data.get("provider"))
     output_spec = {
@@ -2139,7 +2179,7 @@ async def _audio_music_impl(payload: AudioMusicRequest, *, path_provider: Option
     except CapabilityUnavailableError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Music generation failed: {e}") from e
+        raise HTTPException(status_code=_plugin_exception_status(e), detail=f"Music generation failed: {e}") from e
 
     if not isinstance(audio, (bytes, bytearray)):
         raise HTTPException(status_code=500, detail="Music backend returned an unexpected type (expected raw bytes).")

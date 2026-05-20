@@ -266,7 +266,7 @@ class CapabilityRegistry:
         if cap == "vision":
             return 'pip install "abstractcore[vision]"'
         if cap == "music":
-            return "pip install abstractmusic"
+            return 'pip install "abstractcore[music]"'
         return None
 
     def _select_backend_id(self, capability: str) -> str:

@@ -268,7 +268,7 @@ all = [
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice>=0.10.11",
     "omnivoice>=0.1.5",
-    "abstractmusic>=0.1.1",
+    "abstractmusic>=0.1.4",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
@@ -311,7 +311,7 @@ all-apple = [
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice[all-apple]>=0.10.11",
     "omnivoice>=0.1.5",
-    "abstractmusic[all-apple]>=0.1.1",
+    "abstractmusic[all-apple]>=0.1.4",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
@@ -350,7 +350,7 @@ all-gpu = [
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice[all-gpu]>=0.10.11",
     "omnivoice>=0.1.5",
-    "abstractmusic[all-gpu]>=0.1.1",
+    "abstractmusic[all-gpu]>=0.1.4",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
@@ -390,7 +390,7 @@ all-non-mlx = [
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice>=0.10.11",
     "omnivoice>=0.1.5",
-    "abstractmusic>=0.1.1",
+    "abstractmusic>=0.1.4",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
@@ -441,7 +441,7 @@ vision-local = [
 ]
 
 music = [
-    "abstractmusic>=0.1.1",
+    "abstractmusic>=0.1.4",
 ]
 
 # Testing dependencies
@@ -508,7 +508,7 @@ full-dev = [
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice>=0.10.11",
     "omnivoice>=0.1.5",
-    "abstractmusic>=0.1.1",
+    "abstractmusic>=0.1.4",
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",

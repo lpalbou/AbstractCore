@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.24] - 2026-05-21
+
+### Changed
+- **Lightweight music integration**: raised the optional `abstractcore[music]` floor to `abstractmusic>=0.1.4`, which installs AbstractMusic's lightweight remote-capable base package without local model runtime extras.
+- **Remote ACE Music routing**: `music_backend` / server `backend` selectors now recognize `acemusic`, `ace-music`, `remote`, and related ACE aliases as `abstractmusic:acemusic`, while still allowing explicit plugin backend ids.
+- **Music server formats**: `/v1/audio/music` and `/{provider}/v1/audio/music` now accept and document `wav`, `mp3`, and `flac`, matching the remote ACE Music backend's advertised formats.
+
+### Fixed
+- **Music API diagnostics**: plugin-side upstream 5xx/timeouts, including ACE Music HTTP 504 responses, now preserve gateway-style HTTP statuses instead of being collapsed into generic 500 errors.
+
 ## [2.13.23] - 2026-05-21
 
 ### Added

@@ -72,7 +72,7 @@ def test_missing_music_capability_raises_actionable_error(monkeypatch):
     with pytest.raises(CapabilityUnavailableError) as e:
         llm.music.t2m("hello")
     assert "music:" in str(e.value)
-    assert "pip install abstractmusic" in str(e.value)
+    assert 'pip install "abstractcore[music]"' in str(e.value)
 
 
 @pytest.mark.basic

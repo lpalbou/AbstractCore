@@ -343,7 +343,7 @@ wav_bytes = speech.outputs["voice"][0].data
 # Music via abstractmusic.
 music = llm.generate(
     text="A short calm piano loop.",
-    output={"modality": "music", "backend": "acestep", "duration_s": 8},
+    output={"modality": "music", "backend": "acemusic", "duration_s": 8, "format": "wav"},
 )
 music_wav = music.outputs["music"][0].data
 
@@ -356,9 +356,10 @@ voice_id = clone.resources["voice"][0].resource_id
 Text-only `generate(...)` is unchanged. For advanced/provider-specific work,
 the direct `llm.vision.*`, `llm.voice.*`, `llm.audio.*`, and `llm.music.*` facades remain
 available. Configure `abstractvision` and `abstractvoice` backends first for
-real generation; configure `abstractmusic` for music generation. Lightweight
-remote paths use OpenAI/OpenAI-compatible base URLs and keys, while local model
-engines remain optional plugin extras.
+real generation; configure `abstractmusic` for music generation. With
+`abstractmusic>=0.1.4`, the default music backend is the lightweight remote
+ACE Music path; set `ACEMUSIC_API_KEY` before use. Local music engines remain
+optional plugin extras.
 
 Catalog helpers are available for UI/dropdown preflight:
 
