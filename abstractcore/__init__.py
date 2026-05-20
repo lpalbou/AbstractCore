@@ -39,6 +39,15 @@ from .core.multimodal_generation import (
     GenerationIssue,
     MultimodalGenerateResponse,
 )
+from .core.bloc_kv import (
+    BlocKVArtifactManifest,
+    BlocKVCompileResult,
+    BlocKVLoadResult,
+    compile_bloc_kv_artifact,
+    ensure_bloc_kv_artifact,
+    load_bloc_kv_artifact,
+    read_bloc_kv_manifest,
+)
 from .core.enums import ModelParameter, ModelCapability, MessageRole
 from .exceptions import ModelNotFoundError, ProviderAPIError, AuthenticationError
 
@@ -61,6 +70,13 @@ __all__ = [
     'GeneratedResource',
     'GenerationIssue',
     'MultimodalGenerateResponse',
+    'BlocKVArtifactManifest',
+    'BlocKVCompileResult',
+    'BlocKVLoadResult',
+    'compile_bloc_kv_artifact',
+    'ensure_bloc_kv_artifact',
+    'load_bloc_kv_artifact',
+    'read_bloc_kv_manifest',
     'Message',
     'ModelParameter',
     'ModelCapability',

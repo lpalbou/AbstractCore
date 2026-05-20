@@ -22,11 +22,11 @@ Implemented evidence:
 Residual follow-ups are now tracked separately:
 
 - provider-generic public API and request-time binding:
-  `docs/backlog/planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
+  `docs/backlog/completed/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
 - HuggingFace transformers durable bloc artifacts:
-  `docs/backlog/planned/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md`
+  `docs/backlog/completed/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md`
 - supported HuggingFace GGUF durable bloc artifacts:
-  `docs/backlog/planned/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md`
+  `docs/backlog/completed/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md`
 
 ## Context
 

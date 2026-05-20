@@ -193,7 +193,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Discovery | GET | `/v1/voice/clone/providers` | AbstractVoice voice clone provider catalog | optional `base_url` |
 | Chat | POST | `/v1/chat/completions` | OpenAI-compatible chat, streaming, tools, media | `model`, `messages`, `stream`, `tools`, `tool_choice`, `temperature`, `max_tokens`, `base_url`, `agent_format`, `thinking` |
 | Chat | POST | `/{provider}/v1/chat/completions` | Provider-scoped chat route where body model is unprefixed | path `provider`, body `model`, `messages`, chat parameters |
-| Responses | POST | `/v1/responses` | Responses-style input API plus legacy chat body fallback | `model`, `input` or `messages`, `stream`, generation parameters, `base_url`, `agent_format`, `thinking`, `prompt_cache_key` |
+| Responses | POST | `/v1/responses` | Responses-style input API plus legacy chat body fallback | `model`, `input` or `messages`, `stream`, generation parameters, `base_url`, `agent_format`, `thinking`, `prompt_cache_key`, `prompt_cache_binding` |
 | Embeddings | POST | `/v1/embeddings` | OpenAI-compatible embedding vectors | `model`, `input`, `dimensions`, `encoding_format`, `user`, `base_url` |
 | Images | POST | `/v1/images/generations` | Text-to-image generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `size`, `n`, `steps`, `guidance_scale`, `seed`, `quality`, `extra` |
 | Images | POST | `/{provider}/v1/images/generations` | Provider-scoped text-to-image route where body model is unprefixed | path `provider`, body `model`, optional `base_url`, image generation parameters |
@@ -224,8 +224,8 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Memory Blocs | POST | `/acore/blocs/upsert_text` | Persist extracted text into the gateway-local bloc store or an upstream AbstractEndpoint bloc store | optional `base_url`, `path`, `content`, optional bloc metadata |
 | Memory Blocs | GET | `/acore/blocs/record` | Inspect a gateway-local or upstream bloc record | optional `base_url`, `sha256` or `bloc_id` |
 | Memory Blocs | GET | `/acore/blocs/kv/manifest` | Inspect a gateway-local or upstream bloc KV manifest | `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path` |
-| Memory Blocs | POST | `/acore/blocs/kv/ensure` | Compile or validate a local or upstream MLX bloc KV artifact | `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path`, `force_rebuild` |
-| Memory Blocs | POST | `/acore/blocs/kv/load` | Load or fork a local or upstream MLX bloc KV artifact into a cache key | `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path`, `stable_cache_key`, `key`, `make_default`, `force_rebuild` |
+| Memory Blocs | POST | `/acore/blocs/kv/ensure` | Compile or validate a local or upstream provider-backed bloc KV artifact | `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path`, `force_rebuild`, `debug` |
+| Memory Blocs | POST | `/acore/blocs/kv/load` | Load or fork a local or upstream provider-backed bloc KV artifact into a cache key | `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path`, `stable_cache_key`, `key`, `make_default`, `force_rebuild`, `debug` |
 
 ### Shared Request Conventions
 
@@ -287,6 +287,9 @@ Server auth:
 - `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
 - `unload_after` (optional, AbstractCore extension): If `true`, calls `llm.unload_model(model)` after the request completes. Disabled for `ollama/*` unless `ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1`.
 - `prompt_cache_key` (optional, AbstractCore extension): Best-effort prompt caching key (semantics depend on provider/backend). See `docs/prompt-caching.md`.
+- `prompt_cache_binding` (optional, AbstractCore extension): Exact durable bloc binding returned
+  by `/acore/blocs/kv/load`. When supplied, the server verifies the cache key before generation or
+  streaming; stale/missing bindings return `409`.
 - `prompt_cache_retention` (optional, AbstractCore extension): Prompt cache retention policy (OpenAI: `"in_memory"` or `"24h"`; ignored by other providers). See `docs/prompt-caching.md`.
 - `thinking` (optional, AbstractCore extension): Unified thinking/reasoning control (`null|"auto"|"on"|"off"|"none"` or `"low"|"medium"|"high"|"xhigh"` when supported). Note: `"none"` is treated as an alias for `"off"`.
 - `temperature`, `max_tokens`, `top_p`: Standard LLM parameters
@@ -1470,8 +1473,8 @@ Operations:
 | `/acore/blocs/upsert_text` | POST | optional `base_url`, `path`, `content`, optional bloc metadata | Persist extracted text into the local bloc store or upstream bloc store. |
 | `/acore/blocs/record` | GET | optional `base_url`, `sha256` or `bloc_id` | Inspect a local or upstream bloc record. |
 | `/acore/blocs/kv/manifest` | GET | `runtime_id` or `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path` | Inspect the local or upstream KV manifest for the selected model. |
-| `/acore/blocs/kv/ensure` | POST | `runtime_id` or `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path`, `force_rebuild` | Compile or validate the durable MLX bloc KV artifact locally or upstream. |
-| `/acore/blocs/kv/load` | POST | `runtime_id` or `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path`, `stable_cache_key`, `key`, `make_default`, `force_rebuild` | Load or fork the local or upstream artifact into a prompt-cache key. |
+| `/acore/blocs/kv/ensure` | POST | `runtime_id` or `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path`, `force_rebuild`, `debug` | Compile or validate the durable provider/model bloc KV artifact locally or upstream. |
+| `/acore/blocs/kv/load` | POST | `runtime_id` or `provider` + `model` or `base_url`, `sha256` or `bloc_id`, optional `artifact_path`, `stable_cache_key`, `key`, `make_default`, `force_rebuild`, `debug` | Load or fork the local or upstream artifact into a prompt-cache key and return `prompt_cache_binding`. |
 
 Typical direct gateway flow:
 
@@ -1479,14 +1482,14 @@ Typical direct gateway flow:
 2. `POST /acore/blocs/upsert_text`
 3. `POST /acore/blocs/kv/ensure`
 4. `POST /acore/blocs/kv/load`
-5. call `/v1/chat/completions` with the returned `artifact.key` as `prompt_cache_key`
+5. call `/v1/chat/completions` with returned `artifact.prompt_cache_binding` when exact binding is required
 
 Typical remote flow:
 
 1. `POST /acore/blocs/upsert_text`
 2. `POST /acore/blocs/kv/ensure`
 3. `POST /acore/blocs/kv/load`
-4. call `/v1/chat/completions` with the returned `artifact.key` as `prompt_cache_key`
+4. call `/v1/chat/completions` with returned `artifact.prompt_cache_binding` when exact binding is required
 
 Example:
 
@@ -1499,9 +1502,21 @@ curl -X POST http://localhost:8000/acore/blocs/kv/load \
     "sha256": "abababababababababababababababababababababababababababababababab",
     "stable_cache_key": "stable:orbit",
     "key": "work:orbit",
-    "make_default": false
+    "make_default": false,
+    "debug": true
   }'
 ```
+
+The load response includes:
+
+- `artifact.key`: the worker-local runtime cache key
+- `artifact.binding_id`: the opaque exact-artifact identity
+- `artifact.prompt_cache_binding`: object to pass to chat as `prompt_cache_binding`
+- `artifact.debug`: verbose proof fields when `debug=true`
+
+Supported local artifact backends share this route shape: MLX, HuggingFace transformers, and
+HuggingFace GGUF exact-renderer paths. Remote providers and unsupported GGUF chat formats remain
+best-effort `prompt_cache_key` paths.
 
 ---
 

@@ -29,6 +29,15 @@ from .output_specs import (
 )
 from .enums import ModelParameter, ModelCapability, MessageRole
 from .interface import AbstractCoreInterface
+from .bloc_kv import (
+    BlocKVArtifactManifest,
+    BlocKVCompileResult,
+    BlocKVLoadResult,
+    compile_bloc_kv_artifact,
+    ensure_bloc_kv_artifact,
+    load_bloc_kv_artifact,
+    read_bloc_kv_manifest,
+)
 
 __all__ = [
     'create_llm',
@@ -50,5 +59,12 @@ __all__ = [
     'ModelParameter',
     'ModelCapability',
     'MessageRole',
-    'AbstractCoreInterface'
+    'AbstractCoreInterface',
+    'BlocKVArtifactManifest',
+    'BlocKVCompileResult',
+    'BlocKVLoadResult',
+    'compile_bloc_kv_artifact',
+    'ensure_bloc_kv_artifact',
+    'load_bloc_kv_artifact',
+    'read_bloc_kv_manifest',
 ]

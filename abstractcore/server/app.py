@@ -1633,6 +1633,11 @@ class OpenAIResponsesRequest(BaseModel):
         description="Provider-specific prompt cache key for prefix caching (best-effort).",
         example="tenantA:session123"
     )
+    prompt_cache_binding: Optional[Union[Dict[str, Any], str]] = Field(
+        default=None,
+        description="Optional exact durable bloc binding returned by /acore/blocs/kv/load.",
+        example={"key": "tenantA:doc-review", "binding_id": "sha256..."},
+    )
     prompt_cache_retention: Optional[str] = Field(
         default=None,
         description="Prompt cache retention policy (provider-specific; OpenAI: 'in_memory' or '24h').",
@@ -1843,6 +1848,11 @@ class ChatCompletionRequest(BaseModel):
         default=None,
         description="Provider-specific prompt cache key for prefix caching (best-effort).",
         example="tenantA:session123"
+    )
+    prompt_cache_binding: Optional[Union[Dict[str, Any], str]] = Field(
+        default=None,
+        description="Optional exact durable bloc binding returned by /acore/blocs/kv/load.",
+        example={"key": "tenantA:doc-review", "binding_id": "sha256..."},
     )
     prompt_cache_retention: Optional[str] = Field(
         default=None,
@@ -2280,6 +2290,7 @@ def convert_openai_responses_to_chat_completion(openai_request: OpenAIResponsesR
         presence_penalty=openai_request.presence_penalty,
         thinking=openai_request.thinking,
         prompt_cache_key=openai_request.prompt_cache_key,
+        prompt_cache_binding=openai_request.prompt_cache_binding,
         prompt_cache_retention=openai_request.prompt_cache_retention,
         agent_format=openai_request.agent_format,
         api_key=openai_request.api_key,
@@ -3168,6 +3179,81 @@ def _gateway_prompt_cache_error_payload(llm: Any, error: Exception, *, operation
         "capabilities": caps,
     }
 
+
+def _prompt_cache_binding_status(error: Exception) -> int:
+    if not isinstance(error, PromptCacheError):
+        return 400
+    if error.code in {"prompt_cache_binding_missing", "prompt_cache_binding_mismatch"}:
+        return 409
+    return 400
+
+
+def _apply_request_prompt_cache_binding(
+    *,
+    llm: Any,
+    gen_kwargs: Dict[str, Any],
+    binding: Optional[Union[Dict[str, Any], str]],
+    loaded_runtime: Optional[_GatewayLoadedRuntime] = None,
+) -> None:
+    if binding is None:
+        return
+    if isinstance(binding, str):
+        binding_obj: Dict[str, Any] = {"binding_id": binding.strip()}
+    elif isinstance(binding, dict):
+        binding_obj = dict(binding)
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "message": "prompt_cache_binding must be an object or binding_id string.",
+                    "type": "invalid_request_error",
+                    "code": "prompt_cache_binding_invalid",
+                }
+            },
+        )
+
+    binding_key = binding_obj.get("key")
+    current_key = gen_kwargs.get("prompt_cache_key")
+    if isinstance(binding_key, str) and binding_key.strip():
+        binding_key_s = binding_key.strip()
+        if isinstance(current_key, str) and current_key.strip() and current_key.strip() != binding_key_s:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": {
+                        "message": "prompt_cache_key and prompt_cache_binding.key must match.",
+                        "type": "invalid_request_error",
+                        "code": "prompt_cache_binding_key_mismatch",
+                    }
+                },
+            )
+        gen_kwargs["prompt_cache_key"] = binding_key_s
+        current_key = binding_key_s
+
+    try:
+        if loaded_runtime is not None:
+            _run_loaded_gateway_runtime(
+                loaded_runtime,
+                lambda: llm.prompt_cache_validate_binding(current_key, binding_obj),
+            )
+        else:
+            llm.prompt_cache_validate_binding(current_key, binding_obj)
+    except Exception as e:
+        payload = _gateway_prompt_cache_error_payload(llm, e, operation="binding")
+        raise HTTPException(
+            status_code=_prompt_cache_binding_status(e),
+            detail={
+                "error": {
+                    "message": payload.get("error") or str(e),
+                    "type": "invalid_request_error",
+                    "code": payload.get("code") or "prompt_cache_binding_invalid",
+                    "details": payload,
+                }
+            },
+        ) from e
+
+
 def detect_target_format(
     model: str,
     request: ChatCompletionRequest,
@@ -3854,6 +3940,7 @@ class BlocKVEnsureProxyRequest(BlocProxyBase):
     bloc_id: Optional[int] = Field(default=None, description="Stable integer bloc selector.")
     artifact_path: Optional[str] = Field(default=None, description="Optional explicit artifact path override.")
     force_rebuild: bool = Field(default=False, description="Force artifact rebuild even if a valid one already exists.")
+    debug: bool = Field(default=False, description="Return verbose bloc KV verification metadata.")
 
     class Config:
         json_schema_extra = {
@@ -3879,6 +3966,7 @@ class BlocKVLoadProxyRequest(BlocProxyBase):
     key: Optional[str] = Field(default=None, description="Target upstream cache key to load or fork into.")
     make_default: bool = Field(default=False, description="Whether the loaded or forked key should become the upstream default.")
     force_rebuild: bool = Field(default=False, description="Force artifact rebuild before loading.")
+    debug: bool = Field(default=False, description="Return verbose bloc KV verification metadata.")
 
     class Config:
         json_schema_extra = {
@@ -4595,7 +4683,7 @@ def acore_bloc_kv_manifest(
     "/acore/blocs/kv/ensure",
     tags=["memory-blocs"],
     summary="Ensure Bloc KV Artifact",
-    description="Compile or validate an MLX bloc KV artifact on a loaded gateway runtime (`provider` + `model`) or proxy the same operation to an upstream AbstractEndpoint (`base_url`).",
+    description="Compile or validate a provider-backed bloc KV artifact on a loaded gateway runtime (`provider` + `model`) or proxy the same operation to an upstream AbstractEndpoint (`base_url`).",
 )
 def acore_bloc_kv_ensure(req: BlocKVEnsureProxyRequest, http_request: Request):
     _reject_body_api_key(req.api_key)
@@ -4617,19 +4705,25 @@ def acore_bloc_kv_ensure(req: BlocKVEnsureProxyRequest, http_request: Request):
                     record=rec,
                     artifact_path=req.artifact_path,
                     force_rebuild=bool(req.force_rebuild),
+                    debug=bool(req.debug),
                 ),
             )
+            artifact = {
+                "artifact_path": str(result.artifact_path),
+                "manifest_path": str(result.manifest_path),
+                "compiled": bool(result.compiled),
+                "rebuilt": bool(result.rebuilt),
+                "source_cache_key": result.source_cache_key,
+                "binding_id": result.binding_id,
+                "prompt_cache_binding": result.prompt_cache_binding,
+                "manifest": result.manifest.to_dict(),
+            }
+            if result.debug is not None:
+                artifact["debug"] = result.debug
             return {
                 "ok": True,
                 "operation": "kv_ensure",
-                "artifact": {
-                    "artifact_path": str(result.artifact_path),
-                    "manifest_path": str(result.manifest_path),
-                    "compiled": bool(result.compiled),
-                    "rebuilt": bool(result.rebuilt),
-                    "source_cache_key": result.source_cache_key,
-                    "manifest": result.manifest.to_dict(),
-                },
+                "artifact": artifact,
             }
         except Exception as e:
             return _local_bloc_error("kv_ensure", e, status_code=500)
@@ -4653,7 +4747,7 @@ def acore_bloc_kv_ensure(req: BlocKVEnsureProxyRequest, http_request: Request):
     "/acore/blocs/kv/load",
     tags=["memory-blocs"],
     summary="Load Bloc KV Artifact",
-    description="Load or fork an MLX bloc KV artifact into a prompt-cache key on a loaded gateway runtime (`provider` + `model`) or an upstream AbstractEndpoint (`base_url`).",
+    description="Load or fork a provider-backed bloc KV artifact into a prompt-cache key on a loaded gateway runtime (`provider` + `model`) or an upstream AbstractEndpoint (`base_url`).",
 )
 def acore_bloc_kv_load(req: BlocKVLoadProxyRequest, http_request: Request):
     _reject_body_api_key(req.api_key)
@@ -4678,22 +4772,28 @@ def acore_bloc_kv_load(req: BlocKVLoadProxyRequest, http_request: Request):
                     key=req.key,
                     make_default=bool(req.make_default),
                     force_rebuild=bool(req.force_rebuild),
+                    debug=bool(req.debug),
                 ),
             )
+            artifact = {
+                "artifact_path": str(result.artifact_path),
+                "manifest_path": str(result.manifest_path),
+                "compiled": bool(result.compiled),
+                "loaded": bool(result.loaded),
+                "reloaded_stable_key": bool(result.reloaded_stable_key),
+                "key": result.key,
+                "stable_cache_key": result.stable_cache_key,
+                "forked_from": result.forked_from,
+                "binding_id": result.binding_id,
+                "prompt_cache_binding": result.prompt_cache_binding,
+                "manifest": result.manifest.to_dict(),
+            }
+            if result.debug is not None:
+                artifact["debug"] = result.debug
             return {
                 "ok": True,
                 "operation": "kv_load",
-                "artifact": {
-                    "artifact_path": str(result.artifact_path),
-                    "manifest_path": str(result.manifest_path),
-                    "compiled": bool(result.compiled),
-                    "loaded": bool(result.loaded),
-                    "reloaded_stable_key": bool(result.reloaded_stable_key),
-                    "key": result.key,
-                    "stable_cache_key": result.stable_cache_key,
-                    "forked_from": result.forked_from,
-                    "manifest": result.manifest.to_dict(),
-                },
+                "artifact": artifact,
             }
         except Exception as e:
             return _local_bloc_error("kv_load", e, status_code=500)
@@ -6301,6 +6401,12 @@ async def process_chat_completion(
             gen_kwargs["prompt_cache_key"] = request.prompt_cache_key.strip()
         if isinstance(request.prompt_cache_retention, str) and request.prompt_cache_retention.strip():
             gen_kwargs["prompt_cache_retention"] = request.prompt_cache_retention.strip()
+        _apply_request_prompt_cache_binding(
+            llm=llm,
+            gen_kwargs=gen_kwargs,
+            binding=request.prompt_cache_binding,
+            loaded_runtime=loaded_runtime,
+        )
 
         # Generate response
         # Only cleanup files created by this request (with our specific prefixes)

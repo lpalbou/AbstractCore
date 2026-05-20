@@ -329,6 +329,17 @@ class PromptCacheModule:
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
+@dataclass(frozen=True)
+class PromptCacheRenderedFragment:
+    """Provider-rendered prompt fragment used for durable exact-prefix artifacts."""
+
+    serialized_prompt: str
+    serializer_version: str
+    cache_backend: str = "provider"
+    artifact_format: str = "prompt-cache"
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+
 _PROMPT_CACHE_OPERATION_ALIASES: Dict[str, str] = {
     "set": "set",
     "clear": "clear",
@@ -2209,6 +2220,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Prompt caching: apply a default `prompt_cache_key` if configured.
         self._apply_default_prompt_cache_key(kwargs)
+        self._apply_prompt_cache_binding_request(kwargs)
         messages, system_prompt = self._normalize_developer_messages(messages, system_prompt)
 
         # Apply unified thinking controls (provider-agnostic + provider-specific mappings).
@@ -3740,6 +3752,194 @@ class BaseProvider(AbstractCoreInterface, ABC):
     def prompt_cache_supports_operation(self, operation: str) -> bool:
         return self.get_prompt_cache_capabilities().supports_operation(operation)
 
+    def prompt_cache_artifact_extension(self) -> str:
+        """Return the default on-disk extension for durable prompt-cache artifacts."""
+        return ".safetensors"
+
+    def prompt_cache_cache_backend(self) -> str:
+        """Return a stable backend id for in-process prompt-cache artifacts."""
+        provider = str(getattr(self, "provider", "") or "").strip().lower()
+        return provider or self.__class__.__name__.lower()
+
+    def prompt_cache_artifact_format(self) -> str:
+        """Return a stable provider artifact format id for durable prompt-cache artifacts."""
+        return f"abstractcore-{self.prompt_cache_cache_backend()}-prompt-cache/v1"
+
+    def prompt_cache_render_fragment(
+        self,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        add_generation_prompt: bool = False,
+        prefilled_modules: Optional[Sequence[str]] = None,
+    ) -> Optional[PromptCacheRenderedFragment]:
+        """Render prompt input exactly as this provider would append it to a prompt cache.
+
+        Providers with durable bloc-artifact support override this. Returning None means the
+        provider cannot safely expose an exact rendered-prefix artifact for this request.
+        """
+        _ = (prompt, messages, system_prompt, tools, add_generation_prompt, prefilled_modules)
+        return None
+
+    def prompt_cache_key_meta(self, key: Any) -> Dict[str, Any]:
+        """Return JSON-safe metadata for an in-process prompt-cache key."""
+        normalized = self._normalize_prompt_cache_key(key)
+        if normalized is None:
+            return {}
+        try:
+            meta = self._prompt_cache_store.meta(normalized)
+            return dict(meta or {}) if isinstance(meta, dict) else {}
+        except Exception:
+            return {}
+
+    def prompt_cache_update_key_meta(self, key: Any, **updates: Any) -> bool:
+        """Best-effort: merge metadata into an existing prompt-cache key."""
+        normalized = self._normalize_prompt_cache_key(key)
+        if normalized is None:
+            return False
+        store = getattr(self, "_prompt_cache_store", None)
+        lock = getattr(store, "_lock", None)
+        entries = getattr(store, "_entries", None)
+        if lock is None or entries is None:
+            return False
+        try:
+            with lock:
+                entry = entries.get(normalized)
+                if entry is None:
+                    return False
+                meta = dict(getattr(entry, "meta", {}) or {})
+                for field_name, field_value in updates.items():
+                    if field_value is not None:
+                        meta[str(field_name)] = field_value
+                entry.meta = meta
+            return True
+        except Exception:
+            return False
+
+    def prompt_cache_validate_binding(self, key: Any, binding: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate an optional exact-artifact binding against a live prompt-cache key.
+
+        `prompt_cache_key` remains best-effort. This method is only used when a caller supplies an
+        explicit binding returned by a durable bloc artifact load operation.
+        """
+        normalized = self._normalize_prompt_cache_key(key)
+        if normalized is None:
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                "Prompt cache binding validation requires a non-empty prompt cache key.",
+                operation="binding",
+                provider=provider,
+                model=model,
+                code="prompt_cache_binding_invalid_key",
+                capabilities=self.get_prompt_cache_capabilities(),
+            )
+        if not isinstance(binding, dict) or not binding:
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                "Prompt cache binding validation requires a non-empty binding object.",
+                operation="binding",
+                provider=provider,
+                model=model,
+                code="prompt_cache_binding_invalid",
+                capabilities=self.get_prompt_cache_capabilities(),
+            )
+
+        meta = self.prompt_cache_key_meta(normalized)
+        if not meta:
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                f"Prompt cache key '{normalized}' is not loaded or has no binding metadata.",
+                operation="binding",
+                provider=provider,
+                model=model,
+                code="prompt_cache_binding_missing",
+                capabilities=self.get_prompt_cache_capabilities(),
+            )
+
+        expected_fields = (
+            "binding_id",
+            "artifact_sha256",
+            "bloc_sha256",
+            "content_sha256",
+            "rendered_recipe_sha256",
+            "manifest_version",
+            "provider",
+            "model",
+        )
+        mismatches: Dict[str, Dict[str, str]] = {}
+        for field_name in expected_fields:
+            expected = binding.get(field_name)
+            if expected is None:
+                continue
+            actual = meta.get(field_name)
+            if str(actual).strip() != str(expected).strip():
+                mismatches[field_name] = {
+                    "expected": str(expected).strip(),
+                    "actual": str(actual).strip() if actual is not None else "",
+                }
+        if mismatches:
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                f"Prompt cache key '{normalized}' does not match the expected durable bloc binding.",
+                operation="binding",
+                provider=provider,
+                model=model,
+                code="prompt_cache_binding_mismatch",
+                capabilities=self.get_prompt_cache_capabilities(),
+            )
+
+        return {"key": normalized, "meta": meta}
+
+    def _apply_prompt_cache_binding_request(self, kwargs: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        binding = kwargs.pop("expected_prompt_cache_binding", None)
+        second = kwargs.pop("prompt_cache_binding", None)
+        if binding is None:
+            binding = second
+        elif second is not None and second != binding:
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                "expected_prompt_cache_binding and prompt_cache_binding must match when both are supplied.",
+                operation="binding",
+                provider=provider,
+                model=model,
+                code="prompt_cache_binding_conflict",
+                capabilities=self.get_prompt_cache_capabilities(),
+            )
+        if binding is None:
+            return None
+        if isinstance(binding, str):
+            binding = {"binding_id": binding.strip()}
+        if not isinstance(binding, dict):
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                "prompt_cache_binding must be an object.",
+                operation="binding",
+                provider=provider,
+                model=model,
+                code="prompt_cache_binding_invalid",
+                capabilities=self.get_prompt_cache_capabilities(),
+            )
+        binding_key = binding.get("key")
+        current_key = kwargs.get("prompt_cache_key")
+        if isinstance(binding_key, str) and binding_key.strip():
+            binding_key_s = binding_key.strip()
+            if isinstance(current_key, str) and current_key.strip() and current_key.strip() != binding_key_s:
+                provider, model = self._prompt_cache_error_context()
+                raise PromptCacheOperationError(
+                    "prompt_cache_key and prompt_cache_binding.key must match.",
+                    operation="binding",
+                    provider=provider,
+                    model=model,
+                    code="prompt_cache_binding_key_mismatch",
+                    capabilities=self.get_prompt_cache_capabilities(),
+                )
+            kwargs["prompt_cache_key"] = binding_key_s
+            current_key = binding_key_s
+        self.prompt_cache_validate_binding(current_key, binding)
+        return dict(binding)
+
     def _prompt_cache_error_context(self) -> Tuple[Optional[str], Optional[str]]:
         provider = str(getattr(self, "provider", "") or "").strip() or self.__class__.__name__
         model = str(getattr(self, "model", "") or "").strip() or None
@@ -5155,6 +5355,7 @@ Please provide a structured response."""
             )
 
         self._apply_default_prompt_cache_key(kwargs)
+        self._apply_prompt_cache_binding_request(kwargs)
         messages, system_prompt = self._normalize_developer_messages(messages, system_prompt)
         response = await self._agenerate_internal(
             prompt, messages, system_prompt, tools, media, stream, **kwargs

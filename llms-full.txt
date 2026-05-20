@@ -2,7 +2,7 @@
 
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
-Last updated: 2026-05-19
+Last updated: 2026-05-20
 Package version: 2.13.17
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
@@ -2105,6 +2105,28 @@ print(session.generate("Summarize the attached file.").content)
 ```
 
 See **[Prompt Caching](prompt-caching.md)**.
+
+### Durable memory bloc artifacts
+
+For exact local-memory reuse, persist text/file content as a bloc, compile one provider/model
+artifact, then load it into a runtime prompt-cache key:
+
+```python
+from abstractcore import create_llm, ensure_bloc_kv_artifact, load_bloc_kv_artifact
+from abstractcore.core.file_blocs import FileBlocStore
+
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+store = FileBlocStore()
+record = store.upsert(file_meta={...}, content="stable memory text")
+
+ensure = ensure_bloc_kv_artifact(provider=llm, store=store, record=record, debug=True)
+loaded = load_bloc_kv_artifact(provider=llm, store=store, record=record, key="work:memory")
+resp = llm.generate("Use the loaded memory.", prompt_cache_binding=loaded.prompt_cache_binding)
+```
+
+The public helpers are exported from both `abstractcore` and `abstractcore.core`. The shared
+contract currently covers MLX, HuggingFace transformers, and supported HuggingFace GGUF
+exact-renderer paths.
 
 ### `tool` (decorator)
 
@@ -7533,6 +7555,7 @@ Server auth:
 - `base_url` (optional, AbstractCore extension): Override the provider endpoint (include `/v1` for OpenAI-compatible servers like LM Studio / vLLM / OpenRouter)
 - `unload_after` (optional, AbstractCore extension): If `true`, calls `llm.unload_model(model)` after the request completes. Disabled for `ollama/*` unless `ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER=1`.
 - `prompt_cache_key` (optional, AbstractCore extension): Best-effort prompt caching key (semantics depend on provider/backend). See `docs/prompt-caching.md`.
+- `prompt_cache_binding` (optional, AbstractCore extension): Exact durable bloc binding returned by `/acore/blocs/kv/load`. When supplied, the server verifies the cache key before generation or streaming; stale/missing bindings return `409`.
 - `prompt_cache_retention` (optional, AbstractCore extension): Prompt cache retention policy (OpenAI: `"in_memory"` or `"24h"`; ignored by other providers). See `docs/prompt-caching.md`.
 - `thinking` (optional, AbstractCore extension): Unified thinking/reasoning control (`null|"auto"|"on"|"off"|"none"` or `"low"|"medium"|"high"|"xhigh"` when supported). Note: `"none"` is treated as an alias for `"off"`.
 - `temperature`, `max_tokens`, `top_p`: Standard LLM parameters
@@ -8559,6 +8582,24 @@ The `capabilities` object is always included on prompt-cache control-plane respo
 
 For caching concepts, see [Session Management](session.md) and [Architecture](architecture.md).
 For a dedicated overview, see [Prompt Caching](prompt-caching.md).
+
+## Memory blocs and durable provider-backed cache artifacts
+
+`AbstractEndpoint` also exposes `/acore/blocs/*` for the one-text/file -> one bloc -> one
+provider/model cache artifact flow:
+
+- `POST /acore/blocs/upsert_text`
+- `GET /acore/blocs/record`
+- `GET /acore/blocs/kv/manifest`
+- `POST /acore/blocs/kv/ensure`
+- `POST /acore/blocs/kv/load`
+
+`/acore/blocs/kv/load` returns `artifact.key`, `artifact.binding_id`, and
+`artifact.prompt_cache_binding`. Pass `prompt_cache_binding` to `/v1/chat/completions` when exact
+request-time binding is required. `debug=true` on ensure/load returns verbose proof fields.
+
+The shared route shape covers MLX, HuggingFace transformers, and supported HuggingFace GGUF
+exact-renderer paths. Cache keys are worker-local to the endpoint process.
 
 ---
 

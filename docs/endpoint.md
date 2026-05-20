@@ -58,6 +58,8 @@ print(resp.choices[0].message.content)
 ```
 
 The endpoint accepts the same unified `thinking` control as the gateway on `/v1/chat/completions`, so a dedicated local worker can expose provider-native reasoning toggles without any extra adapter layer.
+It also accepts `prompt_cache_binding`, the optional exact durable bloc binding returned by
+`/acore/blocs/kv/load`.
 
 ## Prompt cache control plane (optional)
 
@@ -86,10 +88,10 @@ The `capabilities` object is always included on prompt-cache control-plane respo
 For caching concepts, see [Session Management](session.md) and [Architecture](architecture.md).
 For a dedicated overview, see [Prompt Caching](prompt-caching.md).
 
-## Memory blocs and durable MLX bloc KV artifacts
+## Memory blocs and durable provider-backed bloc KV artifacts
 
 `AbstractEndpoint` can also expose a small memory-bloc control plane for single-model local
-providers, currently aimed at MLX bloc KV reuse:
+providers:
 
 - `POST /acore/blocs/upsert_text`
 - `GET /acore/blocs/record`
@@ -102,12 +104,17 @@ Typical flow:
 1. persist extracted text into the endpoint-local bloc store with `POST /acore/blocs/upsert_text`
 2. compile or validate the durable artifact with `POST /acore/blocs/kv/ensure`
 3. load or fork it into an in-process cache key with `POST /acore/blocs/kv/load`
-4. call `/v1/chat/completions` with the returned `artifact.key` as `prompt_cache_key`
+4. call `/v1/chat/completions` with the returned `artifact.prompt_cache_binding` when exact
+   request-time binding is required
 
 Important boundary:
 
 - the durable artifact is **bloc-only**; it is not a full `system + tools + transcript` bootstrap
 - the loaded cache key is **worker-local** to this `AbstractEndpoint` process
 - stable reuse only works when subsequent requests hit the same long-lived endpoint worker/provider
+- the shared route shape covers MLX, HuggingFace transformers, and supported HuggingFace GGUF
+  exact-renderer paths
+- `debug=true` on ensure/load returns verbose artifact proof fields, and stale
+  `prompt_cache_binding` use fails before generation
 
 For the storage contract and Python helpers, see [Memory Blocs](memory-blocs.md).

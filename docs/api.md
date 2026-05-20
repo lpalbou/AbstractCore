@@ -68,6 +68,30 @@ print(session.generate("Summarize the attached file.").content)
 
 See **[Prompt Caching](prompt-caching.md)**.
 
+### Durable memory bloc artifacts
+
+For exact local-memory reuse, persist text/file content as a bloc, compile one provider/model
+artifact, then load it into a runtime prompt-cache key:
+
+```python
+from abstractcore import create_llm, ensure_bloc_kv_artifact, load_bloc_kv_artifact
+from abstractcore.core.file_blocs import FileBlocStore
+
+llm = create_llm("huggingface", model="/path/to/local/text-model")
+store = FileBlocStore()
+
+record = store.upsert(file_meta={...}, content="stable memory text")
+ensure = ensure_bloc_kv_artifact(provider=llm, store=store, record=record)
+loaded = load_bloc_kv_artifact(provider=llm, store=store, record=record, key="work:memory")
+
+resp = llm.generate("Use the loaded memory.", prompt_cache_binding=loaded.prompt_cache_binding)
+```
+
+The public helpers are exported from both `abstractcore` and `abstractcore.core`:
+`ensure_bloc_kv_artifact`, `load_bloc_kv_artifact`, `compile_bloc_kv_artifact`, and
+`read_bloc_kv_manifest`. The shared contract currently covers MLX, HuggingFace transformers, and
+supported HuggingFace GGUF exact-renderer paths. See **[Memory Blocs](memory-blocs.md)**.
+
 ### `tool` (decorator)
 
 Define tools in Python with a decorator, then pass them to `generate()` / `agenerate()`:

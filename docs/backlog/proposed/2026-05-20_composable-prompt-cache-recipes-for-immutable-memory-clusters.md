@@ -35,7 +35,7 @@ Core.
 
 ## Current code reality
 
-- [`abstractcore/core/bloc_kv.py`](/Users/albou/tmp/abstractframework/abstractcore/abstractcore/core/bloc_kv.py:80) currently enforces an MLX-only durable artifact path, validates one exact rendered recipe, and binds artifacts to provider/model/rendered hash metadata.
+- [`abstractcore/core/bloc_kv.py`](/Users/albou/tmp/abstractframework/abstractcore/abstractcore/core/bloc_kv.py:718) now exposes a provider-backed durable artifact path for MLX, HuggingFace transformers, and supported HuggingFace GGUF exact-renderer backends. It still validates one exact rendered recipe and binds artifacts to provider/model/rendered hash metadata.
 - [`abstractcore/core/bloc_kv.py`](/Users/albou/tmp/abstractframework/abstractcore/abstractcore/core/bloc_kv.py:237) compiles only one canonical bloc recipe today: one rendered attached-file-box prompt into one artifact.
 - [`abstractcore/core/bloc_kv.py`](/Users/albou/tmp/abstractframework/abstractcore/abstractcore/core/bloc_kv.py:681) proves load/reload/fork semantics for exact artifacts, but only as load-one-artifact then use-one-key behavior.
 - [`abstractcore/core/cached_session.py`](/Users/albou/tmp/abstractframework/abstractcore/abstractcore/core/cached_session.py:138) prepares ordered prefix caches for `system` and `tools`, then forks them into a session key.
@@ -44,7 +44,7 @@ Core.
 - There is no first-class superbloc model or superbloc KV compiler/loader in the inspected Core
   code. Any future superbloc work would first need to materialize one immutable superbloc text
   boundary above this layer.
-- [`abstractcore/providers/huggingface_provider.py`](/Users/albou/tmp/abstractframework/abstractcore/abstractcore/providers/huggingface_provider.py:340) shows provider capability asymmetry:
+- [`abstractcore/providers/huggingface_provider.py`](/Users/albou/tmp/abstractframework/abstractcore/abstractcore/providers/huggingface_provider.py:340) still shows provider capability asymmetry:
   - transformers: local control plane with save/load
   - GGUF: local control plane only when an exact cached prompt renderer exists
   - other GGUF chat formats: keyed only
@@ -159,9 +159,9 @@ backend is strong enough to deserve equal priority.
 
 - `docs/backlog/completed/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md`
 - `docs/backlog/planned/2026-05-18_mlx-provider-continuous-batching.md`
-- `docs/backlog/planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
-- `docs/backlog/planned/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md`
-- `docs/backlog/planned/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md`
+- `docs/backlog/completed/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
+- `docs/backlog/completed/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md`
+- `docs/backlog/completed/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md`
 - `docs/prompt-caching.md`
 - `docs/memory-blocs.md`
 

@@ -15,6 +15,7 @@ that future work must respect.
 | [0004](0004-operator-control-and-server-trust-boundary.md) | Accepted | Operator control and server trust boundary | Protects server-held credentials, routing overrides, and local/remote access controls. |
 | [0005](0005-source-first-quality-fixes.md) | Accepted | Source-first quality fixes | Requires fixes at the producer or contract boundary before downstream cleanup. |
 | [0006](0006-text-generation-adapter-lifecycle.md) | Accepted | Text-generation adapter lifecycle | Defines how LoRA-style text adapters should become first-class Core behavior. |
+| [0007](0007-durable-memory-bloc-cache-binding.md) | Accepted | Durable memory bloc cache binding | Defines exact local bloc artifact binding across Python, endpoint, gateway, and provider hooks. |
 
 ## How To Use This Set
 

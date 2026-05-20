@@ -96,26 +96,75 @@ print(caps.to_dict())
 }
 ```
 
-## Provider status (Mar 2026)
+## Provider status (May 2026)
 
 - **OpenAI** (`OpenAIProvider`): forwards `prompt_cache_key` (server-managed) and `prompt_cache_retention` (best-effort; some models support `"24h"`).
 - **Anthropic** (`AnthropicProvider`): enables Claude prompt caching via `cache_control` when `prompt_cache_key` is provided (server-managed; default ~5-minute TTL).
 - **OpenAI-compatible** (`OpenAICompatibleProvider`, `LMStudioProvider`, `VLLMProvider`, …): forwards `prompt_cache_key` when provided (server-managed if the backend implements it).
 - **MLX** (`MLXProvider`): supports in-process KV caches via `prompt_cache_key` and AbstractCore’s cache control plane.
   - CLI persistence: `abstractcore-chat` supports `/cache save|load` (writes/reads a `.safetensors` cache; model-locked).
+  - Durable memory blocs: supports exact bloc artifacts through `ensure_bloc_kv_artifact(...)` /
+    `load_bloc_kv_artifact(...)`.
 - **HuggingFace (transformers)** (`HuggingFaceProvider` with `model_type="transformers"`): supports in-process KV reuse keyed by `prompt_cache_key` via `past_key_values` (`DynamicCache`).
   - Supports AbstractCore’s local prompt-cache control plane (`prompt_cache_update`, `prompt_cache_prepare_modules`, `prompt_cache_fork`, …).
   - Supports cache persistence via `prompt_cache_save()` / `prompt_cache_load()` (writes/reads `.safetensors`; model-locked).
+  - Durable memory blocs: supports exact bloc artifacts through the same public bloc API as MLX.
   - Limitations: enabled only for standard text-generation models (decoder-only); vision/custom transformer backends do not currently expose prompt caching.
 - **HuggingFace GGUF** (`HuggingFaceProvider` with llama.cpp): always supports keyed in-process RAM caches (`LlamaRAMCache`), and reports `mode=local_control_plane` when AbstractCore can render the model's llama.cpp chat format exactly for cache reuse.
   - Current exact renderers: `chatml-function-calling`, `llama-3`
   - Other GGUF chat formats remain `mode=keyed` until an exact cached prompt renderer is implemented.
   - Local control plane optimization: append-only updates tokenize/render only the delta segment; tools are kept in a stable prefix position so system/tools caches remain effective as the discussion grows.
   - Local control plane generation: when `prompt_cache_key` is set and the chat format is supported, AbstractCore can prefill from cached state snapshots and generate via `llm.generate(reset=False)` (instead of `create_chat_completion()`), which avoids llama-cpp-python chat handlers that reset/re-evaluate long prompts.
+  - Durable memory blocs: supports exact bloc artifacts only for exact-renderer chat formats.
+    Unsupported chat formats remain keyed-only.
     - Disable via `ABSTRACTCORE_GGUF_CONTROL_PLANE=0` (falls back to llama-cpp-python’s chat completion API).
   - macOS Metal note: llama.cpp Metal offload can SIGABRT when `llama_cpp` is imported *after* PyTorch/transformers in the same process. AbstractCore pre-imports `llama_cpp` (best-effort) when creating providers on Apple Silicon to keep GGUF Metal usable even if you later use MLX / HuggingFace transformers.
     - If PyTorch/transformers is imported *before* AbstractCore can pre-import `llama_cpp` (for example your app imports `torch` first), AbstractCore disables GGUF Metal offload for safety. Override with `ABSTRACTCORE_GGUF_METAL_UNSAFE=1` (unsafe).
 - **Ollama** (`OllamaProvider`): no prompt-cache integration currently (Ollama manages context internally per request).
+
+## Durable memory bloc artifacts
+
+For local providers with a full control plane, AbstractCore can derive one durable prompt-cache
+artifact from one bloc:
+
+```text
+1 text/file -> 1 bloc -> 1 provider/model cache artifact
+```
+
+Use the public helpers from either `abstractcore` or `abstractcore.core`:
+
+```python
+from abstractcore import ensure_bloc_kv_artifact, load_bloc_kv_artifact
+
+ensure = ensure_bloc_kv_artifact(provider=llm, store=store, record=record, debug=True)
+loaded = load_bloc_kv_artifact(provider=llm, store=store, record=record, key="work:doc")
+
+response = llm.generate(
+    "Use the loaded bloc.",
+    prompt_cache_binding=loaded.prompt_cache_binding,
+)
+```
+
+The shared shape works for:
+
+- MLX (`.safetensors`)
+- HuggingFace transformers (`.safetensors`)
+- HuggingFace GGUF exact-renderer paths (`.npz`)
+
+`prompt_cache_key` remains a volatile runtime handle. `prompt_cache_binding` is optional; when
+supplied, generation verifies that the key is still loaded with the exact artifact returned by
+`load_bloc_kv_artifact(...)`. Missing or stale bindings fail with structured prompt-cache errors
+before generation or streaming starts. Without a binding, existing best-effort key behavior is
+unchanged.
+
+For server and endpoint use, `/acore/blocs/kv/load` returns
+`artifact.prompt_cache_binding`; pass that object to `/v1/chat/completions` as
+`prompt_cache_binding`.
+
+Set `debug=true` on the bloc ensure/load routes, pass `debug=True` to the Python helpers, or set
+`ABSTRACTCORE_BLOC_KV_DEBUG=1` to return verbose proof fields such as provider backend, artifact
+format, manifest path, artifact hash, binding id, rendered recipe hash, and token count when
+available.
 
 ## OpenAI notes
 
@@ -265,6 +314,9 @@ Gateway/operator note:
 
 - KV caches consume memory; large caches can be expensive.
 - Reusing a cache key across unrelated prompts can contaminate context.
+- Durable bloc artifacts are exact-prefix artifacts, not composable KV blocks. Do not merge
+  independent cache artifacts or treat them as the durable source of truth; the bloc text remains
+  primary.
 - Many remote OpenAI-compatible backends ignore unknown fields or differ in cache semantics; treat `prompt_cache_key` as best-effort.
 - GGUF / llama.cpp: if you see crashes with Metal/MPS acceleration, force CPU for stability:
   - per-call/provider init: `create_llm("huggingface", ..., device="cpu", n_gpu_layers=0, ...)`
@@ -272,6 +324,5 @@ Gateway/operator note:
 
 ## Next steps (unification ideas)
 
-- Standardize save/load semantics beyond MLX/GGUF once more backends expose a serializable local KV state.
 - Add retry-based fallbacks for OpenAI-compatible servers that reject cache-related fields.
 - Extend exact cached-prompt renderers to additional GGUF chat formats without weakening the control-plane contract.

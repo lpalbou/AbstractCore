@@ -9,23 +9,22 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 15
+- Planned: 12
 - Proposed: 6
-- Completed: 8
+- Completed: 11
 - Deprecated: 1
 - Recurrent: 0
 
 ## Next recommended work
 
-1. `planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
-   Cache capabilities are release surface for both Python and server callers. Stabilize the shared
-   bloc artifact API and optional strict binding before adding more provider backends.
-2. `planned/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md`
-   HuggingFace transformers already has local prompt-cache save/load primitives, so this is the
-   lowest-friction non-MLX exact bloc artifact backend.
-3. `planned/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md`
-   Add durable bloc artifacts for GGUF only where exact cached prompt renderers exist; unsupported
-   chat formats must remain explicit keyed-only paths.
+1. `planned/2026-05-18_mlx-provider-continuous-batching.md`
+   The durable bloc cache contract is now provider-wide for supported local backends. The next
+   high-impact local-runtime work is batching/scheduler safety for MLX.
+2. `planned/2026-03-30_llama-cpp-python_expose_chat_template_kwargs.md`
+   GGUF durable bloc artifacts remain exact-renderer gated. Upstream template-kwargs support is
+   still useful for clean reasoning/template control.
+3. `planned/2026-03-30_qwen3-5_lfm2_nemotron_capabilities_and_thinking_controls.md`
+   Keep newer model-family reasoning controls aligned with cache preparation and generation.
 
 ## Planned ledger
 
@@ -39,9 +38,6 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/2026-05-06_robust-fallback-generate.md` | Stronger fallback behavior for generation paths. |
 | `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md` | Multimodal generation plus deterministic cache behavior. |
 | `planned/2026-05-18_mlx-provider-continuous-batching.md` | Shared MLX runtime and batching scheduler. |
-| `planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md` | Public Python/server bloc artifact API plus optional strict request-time cache binding. |
-| `planned/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md` | Durable exact bloc artifacts for HuggingFace transformers through the unified API. |
-| `planned/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md` | Durable exact bloc artifacts for supported HuggingFace GGUF exact-renderer paths. |
 | `planned/788-response.md` | Responses-related planned work (legacy naming retained). |
 | `planned/789_server-auth-rate-limits.md` | Server auth and rate-limit controls. |
 | `planned/790_server-response-cache.md` | Server response-cache work. |
@@ -70,12 +66,15 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md` | `completed/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md` | 2026-05-19 | Done | MLX exact bloc artifact compiler/loader is the completed baseline for provider parity work. | `tests/test_bloc_kv.py`, endpoint tests, and loaded-runtime bloc/cache tests. |
 | `planned/2026-05-19_generalize_acore_models_residency.md` | `completed/2026-05-19_generalize_acore_models_residency.md` | 2026-05-19 | Done | Task-aware `/acore/models/*` residency control plane landed. | Item records targeted residency test suites and docs updates. |
 | `planned/2026-05-20_public_local_vision_cache_catalog_helper.md` | `completed/2026-05-20_public_local_vision_cache_catalog_helper.md` | 2026-05-20 | Done | Public non-server local vision cache catalog helper landed. | Item records focused Core/Runtime pytest and compile validation. |
+| `planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md` | `completed/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md` | 2026-05-20 | Done | Unified public durable bloc artifact API, strict optional binding, debug proof payloads, and ADR 0007 landed. | `pytest -q`; focused bloc/cache/server tests; real MLX, HF transformers, and HF GGUF smoke proofs. |
+| `planned/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md` | `completed/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md` | 2026-05-20 | Done | HuggingFace transformers exact bloc artifacts now use the unified API and `.safetensors` provider artifact format. | `pytest -q`; transformers prompt-cache unit tests; real `sshleifer/tiny-gpt2` smoke proof. |
+| `planned/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md` | `completed/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md` | 2026-05-20 | Done | HuggingFace GGUF exact-renderer paths now use the unified API and `.npz` artifact format. | `pytest -q`; GGUF prompt-cache unit tests; real Qwen3 0.6B GGUF smoke proof. |
 
 ## Deprecated ledger
 
 | Item | Reason |
 | --- | --- |
-| `deprecated/2026-05-20_transformers-and-gguf-prompt-cache-parity-for-exact-blocs-and-superblocs.md` | Superseded by the unified API item plus provider-specific transformers and GGUF planned items. |
+| `deprecated/2026-05-20_transformers-and-gguf-prompt-cache-parity-for-exact-blocs-and-superblocs.md` | Superseded by completed unified API, transformers, and GGUF provider-specific items. |
 
 ## Adding or updating work
 

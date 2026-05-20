@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from abstractcore.core.file_blocs import FileBlocStore
 from abstractcore.core.types import GenerateResponse
 from abstractcore.endpoint.app import create_app
-from abstractcore.providers.base import BaseProvider
+from abstractcore.providers.base import BaseProvider, PromptCacheRenderedFragment
 
 
 @dataclass
@@ -29,6 +29,40 @@ class _StubEndpointMLXProvider(BaseProvider):
 
     def prompt_cache_supports_kv_source_of_truth(self) -> bool:
         return True
+
+    def prompt_cache_cache_backend(self) -> str:
+        return "mlx"
+
+    def prompt_cache_artifact_format(self) -> str:
+        return "abstractcore-mlx-prompt-cache/v1"
+
+    def prompt_cache_render_fragment(
+        self,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        add_generation_prompt: bool = False,
+        prefilled_modules: Optional[List[str]] = None,
+    ) -> Optional[PromptCacheRenderedFragment]:
+        serialized = self._build_prompt_fragment(
+            prompt=prompt,
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            add_generation_prompt=add_generation_prompt,
+            prefilled_modules=prefilled_modules,
+        )
+        if not serialized:
+            return None
+        return PromptCacheRenderedFragment(
+            serialized_prompt=serialized,
+            serializer_version="mlx-prompt-fragment/v1:qwen-chatml",
+            cache_backend="mlx",
+            artifact_format=self.prompt_cache_artifact_format(),
+            meta={"prompt_format": "qwen-chatml"},
+        )
 
     def _prompt_cache_backend_create(self) -> Optional[Any]:
         return _FakePersistentCache()
@@ -161,11 +195,13 @@ def test_endpoint_bloc_kv_routes_work_end_to_end(tmp_path: Path) -> None:
     assert record.status_code == 200
     assert record.json()["record"]["sha256"] == sha256
 
-    ensured = client.post("/acore/blocs/kv/ensure", json={"sha256": sha256})
+    ensured = client.post("/acore/blocs/kv/ensure", json={"sha256": sha256, "debug": True})
     assert ensured.status_code == 200
     ensured_body = ensured.json()
     assert ensured_body["ok"] is True
     assert Path(ensured_body["artifact"]["artifact_path"]).exists()
+    assert ensured_body["artifact"]["binding_id"]
+    assert ensured_body["artifact"]["debug"]["operation"] == "ensure"
 
     manifest = client.get(f"/acore/blocs/kv/manifest?bloc_id={bloc_id}")
     assert manifest.status_code == 200
@@ -180,6 +216,7 @@ def test_endpoint_bloc_kv_routes_work_end_to_end(tmp_path: Path) -> None:
             "stable_cache_key": "stable:orbit",
             "key": "work:orbit",
             "make_default": False,
+            "debug": True,
         },
     )
     assert loaded.status_code == 200
@@ -187,3 +224,30 @@ def test_endpoint_bloc_kv_routes_work_end_to_end(tmp_path: Path) -> None:
     assert loaded_body["ok"] is True
     assert loaded_body["artifact"]["key"] == "work:orbit"
     assert loaded_body["artifact"]["stable_cache_key"] == "stable:orbit"
+    assert loaded_body["artifact"]["binding_id"] == ensured_body["artifact"]["binding_id"]
+    assert loaded_body["artifact"]["prompt_cache_binding"]["key"] == "work:orbit"
+    assert loaded_body["artifact"]["debug"]["operation"] == "load"
+
+    chat = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "qwen3-test",
+            "messages": [{"role": "user", "content": "Use the loaded bloc."}],
+            "prompt_cache_binding": loaded_body["artifact"]["prompt_cache_binding"],
+        },
+    )
+    assert chat.status_code == 200
+
+    cleared = client.post("/acore/prompt_cache/clear", json={"key": "work:orbit"})
+    assert cleared.status_code == 200
+
+    stale_chat = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "qwen3-test",
+            "messages": [{"role": "user", "content": "Use the loaded bloc."}],
+            "prompt_cache_key": "work:orbit",
+            "prompt_cache_binding": loaded_body["artifact"]["prompt_cache_binding"],
+        },
+    )
+    assert stale_chat.status_code == 409

@@ -2,12 +2,12 @@
 
 ## Metadata
 - Created: 2026-05-20
-- Status: Planned
-- Completed: N/A
+- Status: Completed
+- Completed: 2026-05-20
 
 ## ADR status
-- Governing ADRs: None
-- ADR impact: Covered by the unified bloc artifact API ADR if that ADR is created
+- Governing ADRs: `docs/adr/0007-durable-memory-bloc-cache-binding.md`
+- ADR impact: Covered by ADR 0007.
 
 ## Context
 
@@ -109,7 +109,7 @@ Extend `abstractcore.core.bloc_kv` with a backend adapter for supported GGUF pat
 
 ## Dependencies and related tasks
 
-- `docs/backlog/planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
+- `docs/backlog/completed/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
 - `docs/backlog/completed/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md`
 - `docs/prompt-caching.md`
 - `docs/memory-blocs.md`
@@ -134,16 +134,43 @@ Extend `abstractcore.core.bloc_kv` with a backend adapter for supported GGUF pat
 
 ## Progress checklist
 
-- [ ] Add GGUF backend selection to the unified bloc artifact helper.
-- [ ] Define GGUF-specific manifest metadata.
-- [ ] Gate compile/load on exact cached prompt renderer support.
-- [ ] Implement compile/save/load/fork using provider control-plane operations.
-- [ ] Add binding metadata propagation.
-- [ ] Add Python and server tests.
-- [ ] Update docs and examples.
+- [x] Add GGUF backend selection to the unified bloc artifact helper.
+- [x] Define GGUF-specific manifest metadata.
+- [x] Gate compile/load on exact cached prompt renderer support.
+- [x] Implement compile/save/load/fork using provider control-plane operations.
+- [x] Add binding metadata propagation.
+- [x] Add Python and server tests.
+- [x] Update docs and examples.
 
 ## Guidance for the implementing agent
 
 Treat GGUF as capability-gated, not generally equivalent to MLX or transformers. The correct user
 experience for unsupported chat formats is a clear unsupported response, not a quiet best-effort
 artifact.
+
+## Completion report
+
+Completed: 2026-05-20.
+
+Summary:
+- Implemented HuggingFace GGUF durable bloc artifacts through the unified
+  `ensure_bloc_kv_artifact(...)` / `load_bloc_kv_artifact(...)` flow.
+- Added provider render metadata for `hf-gguf`, provider artifact format
+  `abstractcore-gguf-prompt-cache/v1`, and `.npz` artifact selection.
+- Preserved exact-renderer gating: only `chatml-function-calling` and `llama-3` local-control-plane
+  paths expose durable exact artifacts; other GGUF chat formats remain keyed-only.
+- Added shared contract tests that cover GGUF backend manifests, debug payloads, binding
+  validation, load/reload/fork behavior, and request-time binding.
+
+Validation:
+- `pytest -q` -> `1409 passed, 243 skipped`.
+- Focused: `pytest -q tests/test_bloc_kv.py tests/huggingface/test_gguf_prompt_cache_control_plane.py`.
+- Real-provider smoke proof with local Qwen3 0.6B GGUF Q4_K_M on CPU: local-control-plane
+  capability, exact renderer `chatml-function-calling`, `.npz` artifact, backend `hf-gguf`,
+  9,163,070-byte artifact, binding validation, and generation with `prompt_cache_binding` all
+  succeeded.
+
+Residual risks:
+- Support remains chat-format gated. Adding more GGUF formats requires exact renderer work, not a
+  generic fallback.
+- Real GGUF proof depends on a locally cached model and is intentionally not default CI.

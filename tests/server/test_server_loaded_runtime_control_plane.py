@@ -11,7 +11,7 @@ from typing import Any, Dict, Iterator, List, Optional
 from fastapi.testclient import TestClient
 
 from abstractcore.core.types import GenerateResponse
-from abstractcore.providers.base import BaseProvider
+from abstractcore.providers.base import BaseProvider, PromptCacheRenderedFragment
 
 
 @dataclass
@@ -37,6 +37,40 @@ class _StubGatewayMLXProvider(BaseProvider):
 
     def prompt_cache_supports_kv_source_of_truth(self) -> bool:
         return True
+
+    def prompt_cache_cache_backend(self) -> str:
+        return "mlx"
+
+    def prompt_cache_artifact_format(self) -> str:
+        return "abstractcore-mlx-prompt-cache/v1"
+
+    def prompt_cache_render_fragment(
+        self,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        add_generation_prompt: bool = False,
+        prefilled_modules: Optional[List[str]] = None,
+    ) -> Optional[PromptCacheRenderedFragment]:
+        serialized = self._build_prompt_fragment(
+            prompt=prompt,
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            add_generation_prompt=add_generation_prompt,
+            prefilled_modules=prefilled_modules,
+        )
+        if not serialized:
+            return None
+        return PromptCacheRenderedFragment(
+            serialized_prompt=serialized,
+            serializer_version="mlx-prompt-fragment/v1:qwen-chatml",
+            cache_backend="mlx",
+            artifact_format=self.prompt_cache_artifact_format(),
+            meta={"prompt_format": "qwen-chatml"},
+        )
 
     def _prompt_cache_backend_create(self) -> Optional[Any]:
         return _FakePersistentCache()
@@ -268,10 +302,14 @@ def test_server_loaded_runtime_supports_local_bloc_kv_and_chat_reuse(monkeypatch
             "provider": "mlx",
             "model": "mlx-community/Qwen3.6-27B-4bit",
             "sha256": sha256,
+            "debug": True,
         },
     )
     assert ensured.status_code == 200
-    assert Path(ensured.json()["artifact"]["artifact_path"]).exists()
+    ensured_artifact = ensured.json()["artifact"]
+    assert Path(ensured_artifact["artifact_path"]).exists()
+    assert ensured_artifact["binding_id"]
+    assert ensured_artifact["debug"]["operation"] == "ensure"
 
     loaded_bloc = client.post(
         "/acore/blocs/kv/load",
@@ -281,12 +319,16 @@ def test_server_loaded_runtime_supports_local_bloc_kv_and_chat_reuse(monkeypatch
             "sha256": sha256,
             "stable_cache_key": "stable:orbit",
             "key": "work:orbit",
+            "debug": True,
         },
     )
     assert loaded_bloc.status_code == 200
     loaded_bloc_body = loaded_bloc.json()
     assert loaded_bloc_body["artifact"]["key"] == "work:orbit"
     assert loaded_bloc_body["artifact"]["stable_cache_key"] == "stable:orbit"
+    assert loaded_bloc_body["artifact"]["binding_id"] == ensured_artifact["binding_id"]
+    assert loaded_bloc_body["artifact"]["prompt_cache_binding"]["key"] == "work:orbit"
+    assert loaded_bloc_body["artifact"]["debug"]["operation"] == "load"
 
     stats = client.get(
         "/acore/prompt_cache/stats",
@@ -301,12 +343,28 @@ def test_server_loaded_runtime_supports_local_bloc_kv_and_chat_reuse(monkeypatch
             "model": "mlx/mlx-community/Qwen3.6-27B-4bit",
             "messages": [{"role": "user", "content": "Summarize the loaded notes."}],
             "thinking": "off",
-            "prompt_cache_key": "work:orbit",
+            "prompt_cache_binding": loaded_bloc_body["artifact"]["prompt_cache_binding"],
         },
     )
     assert chat.status_code == 200
     assert len(created) == 1
     assert created[0].last_kwargs.get("prompt_cache_key") == "work:orbit"
+
+    clear = client.post(
+        "/acore/prompt_cache/clear",
+        json={"provider": "mlx", "model": "mlx-community/Qwen3.6-27B-4bit", "key": "work:orbit"},
+    )
+    assert clear.status_code == 200
+    stale_chat = client.post(
+        "/v1/chat/completions",
+        json={
+            "model": "mlx/mlx-community/Qwen3.6-27B-4bit",
+            "messages": [{"role": "user", "content": "Summarize the loaded notes."}],
+            "prompt_cache_key": "work:orbit",
+            "prompt_cache_binding": loaded_bloc_body["artifact"]["prompt_cache_binding"],
+        },
+    )
+    assert stale_chat.status_code == 409
 
     unload = client.post("/acore/models/unload", json={"runtime_id": runtime_id})
     assert unload.status_code == 200

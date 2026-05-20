@@ -2,13 +2,13 @@
 
 ## Metadata
 - Created: 2026-05-20
-- Status: Planned
-- Completed: N/A
+- Status: Completed
+- Completed: 2026-05-20
 
 ## ADR status
-- Governing ADRs: None
-- ADR impact: Needs a new ADR before closure if this becomes the durable public contract for
-  exact local cache binding across providers
+- Governing ADRs: `docs/adr/0007-durable-memory-bloc-cache-binding.md`
+- ADR impact: Accepted ADR 0007 as the durable public contract for exact local cache binding
+  across providers.
 
 ## Context
 
@@ -133,8 +133,8 @@ Expose the same contract through:
 ## Dependencies and related tasks
 
 - `docs/backlog/completed/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md`
-- `docs/backlog/planned/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md`
-- `docs/backlog/planned/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md`
+- `docs/backlog/completed/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md`
+- `docs/backlog/completed/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md`
 - `docs/backlog/proposed/2026-05-20_composable-prompt-cache-recipes-for-immutable-memory-clusters.md`
 - `docs/backlog/deprecated/2026-05-20_transformers-and-gguf-prompt-cache-parity-for-exact-blocs-and-superblocs.md`
 - `docs/prompt-caching.md`
@@ -161,14 +161,14 @@ Expose the same contract through:
 
 ## Progress checklist
 
-- [ ] Define the public Python/server API names and request fields.
-- [ ] Add provider-level metadata/binding validation hooks.
-- [ ] Extend MLX bloc-KV results/routes with opaque binding ids.
-- [ ] Export the public helpers intentionally.
-- [ ] Add optional strict binding to generation paths.
-- [ ] Implement the HuggingFace transformers backend item.
-- [ ] Implement the supported HuggingFace GGUF backend item.
-- [ ] Update docs and examples.
+- [x] Define the public Python/server API names and request fields.
+- [x] Add provider-level metadata/binding validation hooks.
+- [x] Extend MLX bloc-KV results/routes with opaque binding ids.
+- [x] Export the public helpers intentionally.
+- [x] Add optional strict binding to generation paths.
+- [x] Implement the HuggingFace transformers backend item.
+- [x] Implement the supported HuggingFace GGUF backend item.
+- [x] Update docs and examples.
 
 ## Guidance for the implementing agent
 
@@ -179,3 +179,62 @@ Keep this small. The important distinction is:
 - the bloc record remains the durable memory source of truth.
 
 Do not design a general cache proof system, superbloc compiler, or remote cache contract here.
+
+## Completion report
+
+Completed: 2026-05-20.
+
+Summary:
+- Added provider-level durable prompt-cache artifact hooks:
+  `prompt_cache_render_fragment`, `prompt_cache_artifact_extension`,
+  `prompt_cache_cache_backend`, `prompt_cache_artifact_format`, key metadata, metadata update, and
+  binding validation.
+- Generalized `abstractcore.core.bloc_kv` from MLX-only to a provider-backed exact-prefix artifact
+  contract for MLX, HuggingFace transformers, and supported HuggingFace GGUF.
+- Added opaque `binding_id`, compact `prompt_cache_binding`, manifest backend metadata, and verbose
+  debug payloads on Python results and HTTP responses.
+- Added optional strict generation-time binding through Python `prompt_cache_binding` /
+  `expected_prompt_cache_binding`, gateway `/v1/chat/completions`, `/v1/responses`, and
+  `AbstractEndpoint`.
+- Exported bloc artifact helpers from `abstractcore` and `abstractcore.core`.
+- Added ADR 0007 to preserve the public exact-binding boundary.
+
+Files and symbols touched:
+- `abstractcore/core/bloc_kv.py`
+- `abstractcore/providers/base.py`
+- `abstractcore/providers/mlx_provider.py`
+- `abstractcore/providers/huggingface_provider.py`
+- `abstractcore/endpoint/app.py`
+- `abstractcore/server/app.py`
+- `abstractcore/__init__.py`
+- `abstractcore/core/__init__.py`
+- `docs/adr/0007-durable-memory-bloc-cache-binding.md`
+- `docs/memory-blocs.md`
+- `docs/prompt-caching.md`
+- `docs/api.md`
+- `docs/server.md`
+- `docs/endpoint.md`
+
+Validation:
+- `pytest -q` -> `1409 passed, 243 skipped`.
+- Focused contract tests: `tests/test_bloc_kv.py`, `tests/test_bloc_kv_endpoint.py`, and
+  `tests/server/test_server_loaded_runtime_control_plane.py`.
+- Prompt-cache regression suites: `tests/test_prompt_cache_control_plane.py`,
+  `tests/test_cached_session_kv_mode.py`, `tests/test_file_boxes_cached_session.py`,
+  `tests/huggingface/test_transformers_prompt_cache_control_plane_unit.py`,
+  `tests/huggingface/test_gguf_prompt_cache_control_plane.py`, and related server proxy tests.
+- Real-provider smoke proofs ran one model at a time:
+  - MLX `mlx-community/Qwen3-4B-Instruct-2507-4bit`: `.safetensors`, backend `mlx`, artifact
+    12,099,046 bytes, binding validated, generation with binding succeeded.
+  - HuggingFace transformers `sshleifer/tiny-gpt2`: `.safetensors`, backend `hf-transformers`,
+    artifact 4,668 bytes, binding validated, generation with binding succeeded.
+  - HuggingFace GGUF `mlabonne_Qwen3-0.6B-abliterated-Q4_K_M.gguf`: `.npz`, backend `hf-gguf`,
+    artifact 9,163,070 bytes, binding validated, generation with binding succeeded.
+
+Residual risks and follow-ups:
+- GGUF exact artifacts remain renderer-gated; unsupported chat formats must stay keyed-only until
+  exact renderers are added.
+- Real-provider smoke tests are not default CI because they load local models and depend on local
+  cache state.
+- Superbloc/grouped-memory exact-prefix recipes remain proposed research, not part of this
+  completed contract.

@@ -18,7 +18,7 @@ from abstractcore.core.bloc_kv import (
 from abstractcore.core.bloc_metadata import generate_bloc_metadata_jsonld
 from abstractcore.core.file_blocs import FileBlocStore
 from abstractcore.core.types import GenerateResponse
-from abstractcore.providers.base import BaseProvider
+from abstractcore.providers.base import BaseProvider, PromptCacheOperationError, PromptCacheRenderedFragment
 
 
 @dataclass
@@ -27,9 +27,22 @@ class _FakePersistentCache:
 
 
 class _StubPersistentMLXProvider(BaseProvider):
-    def __init__(self, model: str = "qwen3-test", *, resolved_model_id: Optional[str] = None, **kwargs: Any) -> None:
+    def __init__(
+        self,
+        model: str = "qwen3-test",
+        *,
+        resolved_model_id: Optional[str] = None,
+        provider_name: str = "mlx",
+        cache_backend: Optional[str] = None,
+        artifact_extension: str = ".safetensors",
+        artifact_format: Optional[str] = None,
+        **kwargs: Any,
+    ) -> None:
         super().__init__(model, **kwargs)
-        self.provider = "mlx"
+        self.provider = provider_name
+        self._cache_backend = cache_backend or provider_name
+        self._artifact_extension = artifact_extension
+        self._artifact_format = artifact_format or f"abstractcore-{self._cache_backend}-prompt-cache/v1"
         self._resolved_model_id = resolved_model_id or f"/resolved/{model}"
         self.load_calls = 0
         self.save_calls = 0
@@ -45,6 +58,44 @@ class _StubPersistentMLXProvider(BaseProvider):
 
     def prompt_cache_supports_kv_source_of_truth(self) -> bool:
         return True
+
+    def prompt_cache_artifact_extension(self) -> str:
+        return self._artifact_extension
+
+    def prompt_cache_cache_backend(self) -> str:
+        return self._cache_backend
+
+    def prompt_cache_artifact_format(self) -> str:
+        return self._artifact_format
+
+    def prompt_cache_render_fragment(
+        self,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        add_generation_prompt: bool = False,
+        prefilled_modules: Optional[List[str]] = None,
+    ) -> Optional[PromptCacheRenderedFragment]:
+        serialized = self._build_prompt_fragment(
+            prompt=prompt,
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            add_generation_prompt=add_generation_prompt,
+            prefilled_modules=prefilled_modules,
+        )
+        if not serialized:
+            return None
+        fmt = "qwen-chatml" if "qwen" in self.model.lower() else "plain-chat"
+        return PromptCacheRenderedFragment(
+            serialized_prompt=serialized,
+            serializer_version=f"{self._cache_backend}-prompt-fragment/v1:{fmt}",
+            cache_backend=self._cache_backend,
+            artifact_format=self._artifact_format,
+            meta={"prompt_format": fmt},
+        )
 
     def _prompt_cache_backend_create(self) -> Optional[Any]:
         return _FakePersistentCache()
@@ -280,6 +331,62 @@ def test_bloc_kv_serializer_hash_differs_between_qwen_and_non_qwen(tmp_path: Pat
 
     assert qwen_result.manifest.serializer_version != mistral_result.manifest.serializer_version
     assert qwen_result.manifest.rendered_recipe_sha256 != mistral_result.manifest.rendered_recipe_sha256
+
+
+@pytest.mark.parametrize(
+    ("provider_name", "cache_backend", "artifact_extension", "artifact_format"),
+    [
+        ("mlx", "mlx", ".safetensors", "abstractcore-mlx-prompt-cache/v1"),
+        ("huggingface", "hf-transformers", ".safetensors", "abstractcore-transformers-prompt-cache/v1"),
+        ("huggingface", "hf-gguf", ".npz", "abstractcore-gguf-prompt-cache/v1"),
+    ],
+)
+def test_bloc_kv_contract_spans_supported_local_provider_backends(
+    tmp_path: Path,
+    provider_name: str,
+    cache_backend: str,
+    artifact_extension: str,
+    artifact_format: str,
+) -> None:
+    store = FileBlocStore(root_dir=tmp_path)
+    record = _upsert_record(store, tmp_path, sha=cache_backend[0] * 64, path_name="doc.txt", content="hello world\n")
+    provider = _StubPersistentMLXProvider(
+        model=f"{cache_backend}-test",
+        provider_name=provider_name,
+        cache_backend=cache_backend,
+        artifact_extension=artifact_extension,
+        artifact_format=artifact_format,
+    )
+
+    ensured = ensure_bloc_kv_artifact(provider=provider, store=store, record=record, debug=True)
+    loaded = load_bloc_kv_artifact(provider=provider, store=store, record=record, key="work", debug=True)
+
+    assert ensured.artifact_path.suffix == artifact_extension
+    assert ensured.manifest.provider == provider_name
+    assert ensured.manifest.cache_backend == cache_backend
+    assert ensured.manifest.artifact_format == artifact_format
+    assert ensured.binding_id
+    assert ensured.prompt_cache_binding["binding_id"] == ensured.binding_id
+    assert ensured.debug and ensured.debug["cache_backend"] == cache_backend
+    assert loaded.key == "work"
+    assert loaded.prompt_cache_binding["key"] == "work"
+    assert loaded.prompt_cache_binding["binding_id"] == ensured.binding_id
+    assert loaded.debug and loaded.debug["binding_id"] == ensured.binding_id
+    assert provider.prompt_cache_validate_binding("work", loaded.prompt_cache_binding)["key"] == "work"
+
+
+def test_bloc_kv_prompt_cache_binding_guards_generation(tmp_path: Path) -> None:
+    store = FileBlocStore(root_dir=tmp_path)
+    record = _upsert_record(store, tmp_path, sha="5" * 64, path_name="doc.txt", content="hello world\n")
+    provider = _StubPersistentMLXProvider(model="qwen3-test")
+
+    loaded = load_bloc_kv_artifact(provider=provider, store=store, record=record, key="work")
+    provider.generate(prompt="question", prompt_cache_binding=loaded.prompt_cache_binding)
+    assert provider.last_kwargs["prompt_cache_key"] == "work"
+
+    provider.prompt_cache_clear("work")
+    with pytest.raises(PromptCacheOperationError, match="not loaded|no binding metadata"):
+        provider.generate(prompt="question", prompt_cache_key="work", prompt_cache_binding=loaded.prompt_cache_binding)
 
 
 def test_bloc_kv_incomplete_commit_is_rebuilt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -559,3 +666,15 @@ def test_tmp_path_preserves_original_suffix() -> None:
     tmp = _tmp_path(artifact)
     assert tmp.suffix == ".safetensors"
     assert ".tmp." in tmp.name
+
+
+def test_bloc_kv_helpers_are_public_package_exports() -> None:
+    import abstractcore
+    import abstractcore.core as core
+
+    assert abstractcore.ensure_bloc_kv_artifact is ensure_bloc_kv_artifact
+    assert abstractcore.load_bloc_kv_artifact is load_bloc_kv_artifact
+    assert abstractcore.read_bloc_kv_manifest is read_bloc_kv_manifest
+    assert core.ensure_bloc_kv_artifact is ensure_bloc_kv_artifact
+    assert core.load_bloc_kv_artifact is load_bloc_kv_artifact
+    assert core.read_bloc_kv_manifest is read_bloc_kv_manifest

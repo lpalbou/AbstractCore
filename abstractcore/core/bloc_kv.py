@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
 import json
+import os
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 import uuid
 
 from .file_blocs import FileBlocRecord, FileBlocStore
@@ -47,7 +48,16 @@ def _artifact_path_for(
 ) -> Path:
     if artifact_path is not None:
         return Path(artifact_path).expanduser()
-    return store.kv_cache_path(record.sha256, provider=_provider_name(provider), model=model)
+    ext = ".safetensors"
+    getter = getattr(provider, "prompt_cache_artifact_extension", None)
+    if callable(getter):
+        try:
+            got = str(getter() or "").strip()
+            if got:
+                ext = got if got.startswith(".") else f".{got}"
+        except Exception:
+            ext = ".safetensors"
+    return store.kv_cache_path(record.sha256, provider=_provider_name(provider), model=model, ext=ext)
 
 
 def _manifest_path_for(
@@ -77,24 +87,11 @@ def _provider_supports(provider: Any, operation: str) -> bool:
     return callable(supports) and bool(supports(operation))
 
 
-def _require_mlx_provider(provider: Any) -> None:
-    if _provider_name(provider) != "mlx":
-        raise ValueError("Bloc KV artifacts are currently implemented only for provider='mlx'.")
-    if not hasattr(provider, "_build_prompt_fragment"):
-        raise ValueError("MLX bloc KV compilation requires provider._build_prompt_fragment(...).")
-
-
 def _resolved_model_id(provider: Any) -> str:
     resolved = getattr(provider, "_resolved_model_id", None)
     if isinstance(resolved, str) and resolved.strip():
         return resolved.strip()
     return str(getattr(provider, "model", "") or "").strip()
-
-
-def _serializer_version(provider: Any) -> str:
-    model = str(getattr(provider, "model", "") or "").strip().lower()
-    fmt = "qwen-chatml" if "qwen" in model else "plain-chat"
-    return f"mlx-prompt-fragment/v1:{fmt}"
 
 
 def _restore_default_key(provider: Any, previous_key: Optional[str]) -> None:
@@ -136,6 +133,13 @@ def _clear_cache_key(provider: Any, key: Optional[str]) -> None:
 
 
 def _prompt_cache_key_meta(provider: Any, key: Optional[str]) -> Dict[str, Any]:
+    getter = getattr(provider, "prompt_cache_key_meta", None)
+    if callable(getter):
+        try:
+            meta = getter(key)
+            return dict(meta or {}) if isinstance(meta, dict) else {}
+        except Exception:
+            return {}
     if not isinstance(key, str) or not key.strip():
         return {}
     store = getattr(provider, "_prompt_cache_store", None)
@@ -148,10 +152,17 @@ def _prompt_cache_key_meta(provider: Any, key: Optional[str]) -> Dict[str, Any]:
         return {}
 
 
-def _augment_prompt_cache_key_meta(provider: Any, key: Optional[str], **updates: Any) -> None:
+def _augment_prompt_cache_key_meta(provider_obj: Any, key: Optional[str], **updates: Any) -> None:
+    updater = getattr(provider_obj, "prompt_cache_update_key_meta", None)
+    if callable(updater):
+        try:
+            if updater(key, **updates):
+                return
+        except Exception:
+            pass
     if not isinstance(key, str) or not key.strip():
         return
-    store = getattr(provider, "_prompt_cache_store", None)
+    store = getattr(provider_obj, "_prompt_cache_store", None)
     if store is None:
         return
     lock = getattr(store, "_lock", None)
@@ -232,32 +243,48 @@ class _RenderedRecipe:
     file_box_prompt: str
     serialized_prompt: str
     rendered_recipe_sha256: str
+    cache_backend: str
+    artifact_format: str
+    provider_meta: Dict[str, Any]
 
 
 def _render_attached_file_box_recipe(*, provider: Any, record: FileBlocRecord, content: str) -> _RenderedRecipe:
     file_box = _reconstruct_file_box(record, content=content)
     file_box_prompt = render_file_box_message(file_box)
-    builder = getattr(provider, "_build_prompt_fragment", None)
-    if not callable(builder):
-        raise ValueError("MLX bloc KV compilation requires provider._build_prompt_fragment(...).")
-    serialized_prompt = str(
-        builder(
-            messages=[{"role": "user", "content": file_box_prompt}],
-            prefilled_modules=None,
-        )
-        or ""
+    renderer = getattr(provider, "prompt_cache_render_fragment", None)
+    if not callable(renderer):
+        raise ValueError("Bloc KV compilation requires provider.prompt_cache_render_fragment(...).")
+    rendered = renderer(
+        messages=[{"role": "user", "content": file_box_prompt}],
+        prefilled_modules=None,
     )
+    serialized_prompt = str(getattr(rendered, "serialized_prompt", "") or "")
     if not serialized_prompt:
-        raise ValueError("Failed to serialize the bloc prompt for MLX prompt-cache compilation.")
+        raise ValueError("Provider cannot render an exact prompt-cache fragment for bloc KV compilation.")
+    serializer_version = str(getattr(rendered, "serializer_version", "") or "").strip()
+    if not serializer_version:
+        raise ValueError("Provider did not report a serializer version for bloc KV compilation.")
+    cache_backend = str(getattr(rendered, "cache_backend", "") or "").strip()
+    if not cache_backend:
+        getter = getattr(provider, "prompt_cache_cache_backend", None)
+        cache_backend = str(getter() if callable(getter) else _provider_name(provider)).strip()
+    artifact_format = str(getattr(rendered, "artifact_format", "") or "").strip()
+    if not artifact_format:
+        getter = getattr(provider, "prompt_cache_artifact_format", None)
+        artifact_format = str(getter() if callable(getter) else "abstractcore-prompt-cache/v1").strip()
+    provider_meta = getattr(rendered, "meta", None)
     return _RenderedRecipe(
         recipe_id=_RECIPE_ID,
         recipe_version=_RECIPE_VERSION,
         renderer_version=_RENDERER_VERSION,
-        serializer_version=_serializer_version(provider),
+        serializer_version=serializer_version,
         path_in_prompt=str(file_box.path or ""),
         file_box_prompt=file_box_prompt,
         serialized_prompt=serialized_prompt,
         rendered_recipe_sha256=_sha256_bytes(serialized_prompt.encode("utf-8")),
+        cache_backend=cache_backend,
+        artifact_format=artifact_format,
+        provider_meta=dict(provider_meta or {}) if isinstance(provider_meta, dict) else {},
     )
 
 
@@ -267,6 +294,8 @@ class BlocKVArtifactManifest:
     provider: str
     model: str
     model_resolved_id: str
+    cache_backend: str
+    artifact_format: str
     bloc_sha256: str
     bloc_id: Optional[int]
     content_sha256: str
@@ -281,6 +310,8 @@ class BlocKVArtifactManifest:
     quantization: Optional[str]
     created_at: str
     token_count: Optional[int]
+    binding_id: str = ""
+    provider_meta: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -288,6 +319,8 @@ class BlocKVArtifactManifest:
             "provider": self.provider,
             "model": self.model,
             "model_resolved_id": self.model_resolved_id,
+            "cache_backend": self.cache_backend,
+            "artifact_format": self.artifact_format,
             "bloc_sha256": self.bloc_sha256,
             "bloc_id": int(self.bloc_id) if isinstance(self.bloc_id, int) and self.bloc_id > 0 else None,
             "content_sha256": self.content_sha256,
@@ -302,6 +335,8 @@ class BlocKVArtifactManifest:
             "quantization": self.quantization,
             "created_at": self.created_at,
             "token_count": int(self.token_count) if isinstance(self.token_count, int) and self.token_count >= 0 else None,
+            "binding_id": self.binding_id,
+            "provider_meta": dict(self.provider_meta or {}),
         }
 
     @classmethod
@@ -313,11 +348,14 @@ class BlocKVArtifactManifest:
             bloc_id_i = None
         if not (isinstance(data, dict) and isinstance(data.get("provider"), str) and isinstance(data.get("model"), str)):
             raise ValueError("Invalid bloc KV manifest payload.")
-        return cls(
+        provider_meta = data.get("provider_meta")
+        manifest = cls(
             version=int(data.get("version") or 0),
             provider=str(data.get("provider") or ""),
             model=str(data.get("model") or ""),
             model_resolved_id=str(data.get("model_resolved_id") or ""),
+            cache_backend=str(data.get("cache_backend") or data.get("provider") or ""),
+            artifact_format=str(data.get("artifact_format") or "abstractcore-prompt-cache/v1"),
             bloc_sha256=str(data.get("bloc_sha256") or ""),
             bloc_id=bloc_id_i if isinstance(bloc_id_i, int) and bloc_id_i > 0 else None,
             content_sha256=str(data.get("content_sha256") or ""),
@@ -332,7 +370,126 @@ class BlocKVArtifactManifest:
             quantization=str(data.get("quantization")) if isinstance(data.get("quantization"), str) and data.get("quantization") else None,
             created_at=str(data.get("created_at") or ""),
             token_count=int(data.get("token_count")) if isinstance(data.get("token_count"), int) else None,
+            binding_id=str(data.get("binding_id") or ""),
+            provider_meta=dict(provider_meta or {}) if isinstance(provider_meta, dict) else {},
         )
+        if not manifest.binding_id:
+            return cls(
+                **{
+                    **manifest.__dict__,
+                    "binding_id": _compute_binding_id(manifest.to_dict(), include_binding=False),
+                }
+            )
+        return manifest
+
+
+def _compute_binding_id(payload: Dict[str, Any], *, include_binding: bool = False) -> str:
+    fields = {
+        "version": payload.get("version"),
+        "provider": payload.get("provider"),
+        "model": payload.get("model"),
+        "model_resolved_id": payload.get("model_resolved_id"),
+        "cache_backend": payload.get("cache_backend"),
+        "artifact_format": payload.get("artifact_format"),
+        "bloc_sha256": payload.get("bloc_sha256"),
+        "bloc_id": payload.get("bloc_id"),
+        "content_sha256": payload.get("content_sha256"),
+        "path_in_prompt": payload.get("path_in_prompt"),
+        "recipe_id": payload.get("recipe_id"),
+        "recipe_version": payload.get("recipe_version"),
+        "rendered_recipe_sha256": payload.get("rendered_recipe_sha256"),
+        "renderer_version": payload.get("renderer_version"),
+        "serializer_version": payload.get("serializer_version"),
+        "artifact_filename": payload.get("artifact_filename"),
+        "artifact_sha256": payload.get("artifact_sha256"),
+        "quantization": payload.get("quantization"),
+    }
+    if include_binding:
+        fields["binding_id"] = payload.get("binding_id")
+    raw = json.dumps(fields, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _debug_enabled(enabled: bool = False) -> bool:
+    if enabled:
+        return True
+    raw = str(os.getenv("ABSTRACTCORE_BLOC_KV_DEBUG", "") or "").strip().lower()
+    return raw in {"1", "true", "yes", "on", "debug"}
+
+
+def _debug_payload(
+    *,
+    operation: str,
+    manifest: BlocKVArtifactManifest,
+    artifact_path: Path,
+    manifest_path: Path,
+    rendered: Optional[_RenderedRecipe] = None,
+    extra: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "operation": operation,
+        "provider": manifest.provider,
+        "model": manifest.model,
+        "cache_backend": manifest.cache_backend,
+        "artifact_format": manifest.artifact_format,
+        "artifact_path": str(artifact_path),
+        "manifest_path": str(manifest_path),
+        "artifact_sha256": manifest.artifact_sha256,
+        "binding_id": manifest.binding_id,
+        "bloc_sha256": manifest.bloc_sha256,
+        "content_sha256": manifest.content_sha256,
+        "rendered_recipe_sha256": manifest.rendered_recipe_sha256,
+        "token_count": manifest.token_count,
+    }
+    if rendered is not None:
+        payload["rendered"] = {
+            "serializer_version": rendered.serializer_version,
+            "serialized_chars": len(rendered.serialized_prompt),
+            "file_box_chars": len(rendered.file_box_prompt),
+            "provider_meta": dict(rendered.provider_meta or {}),
+        }
+    if extra:
+        payload.update(dict(extra))
+    return payload
+
+
+def bloc_kv_binding_payload(*, manifest: BlocKVArtifactManifest, key: Optional[str] = None) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
+        "binding_id": manifest.binding_id,
+        "provider": manifest.provider,
+        "model": manifest.model,
+        "manifest_version": str(manifest.version),
+        "artifact_sha256": manifest.artifact_sha256,
+        "bloc_sha256": manifest.bloc_sha256,
+        "content_sha256": manifest.content_sha256,
+        "rendered_recipe_sha256": manifest.rendered_recipe_sha256,
+    }
+    if isinstance(key, str) and key.strip():
+        payload["key"] = key.strip()
+    return payload
+
+
+def _manifest_key_meta(*, manifest: BlocKVArtifactManifest, artifact_path: Path) -> Dict[str, Any]:
+    return {
+        "loaded_from": str(artifact_path),
+        "provider": manifest.provider,
+        "model": manifest.model,
+        "model_resolved_id": manifest.model_resolved_id,
+        "cache_backend": manifest.cache_backend,
+        "artifact_format": manifest.artifact_format,
+        "bloc_sha256": manifest.bloc_sha256,
+        "content_sha256": manifest.content_sha256,
+        "path_in_prompt": manifest.path_in_prompt,
+        "recipe_id": manifest.recipe_id,
+        "recipe_version": str(manifest.recipe_version),
+        "rendered_recipe_sha256": manifest.rendered_recipe_sha256,
+        "renderer_version": str(manifest.renderer_version),
+        "serializer_version": manifest.serializer_version,
+        "manifest_version": str(manifest.version),
+        "artifact_sha256": manifest.artifact_sha256,
+        "binding_id": manifest.binding_id,
+        "quantization": str(manifest.quantization or "fp"),
+    }
 
 
 @dataclass(frozen=True)
@@ -343,6 +500,9 @@ class BlocKVCompileResult:
     compiled: bool
     rebuilt: bool
     source_cache_key: Optional[str] = None
+    binding_id: str = ""
+    prompt_cache_binding: Dict[str, Any] = field(default_factory=dict)
+    debug: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -356,6 +516,9 @@ class BlocKVLoadResult:
     loaded: bool
     reloaded_stable_key: bool
     forked_from: Optional[str] = None
+    binding_id: str = ""
+    prompt_cache_binding: Dict[str, Any] = field(default_factory=dict)
+    debug: Optional[Dict[str, Any]] = None
 
 
 def read_bloc_kv_manifest(
@@ -416,6 +579,10 @@ def _validate_existing_manifest(
         return None
     if manifest.model_resolved_id != _resolved_model_id(provider):
         return None
+    if manifest.cache_backend != rendered.cache_backend:
+        return None
+    if manifest.artifact_format != rendered.artifact_format:
+        return None
     if manifest.bloc_sha256 != record.sha256:
         return None
     if (manifest.bloc_id or None) != (record.bloc_id or None):
@@ -439,6 +606,8 @@ def _validate_existing_manifest(
     except Exception:
         return None
     if manifest.artifact_sha256 != artifact_sha256:
+        return None
+    if manifest.binding_id != _compute_binding_id(manifest.to_dict(), include_binding=False):
         return None
     if manifest.quantization not in {None, "", "fp"}:
         return None
@@ -515,6 +684,8 @@ def _loaded_cache_matches_manifest(
         "provider": manifest.provider,
         "model": manifest.model,
         "model_resolved_id": manifest.model_resolved_id,
+        "cache_backend": manifest.cache_backend,
+        "artifact_format": manifest.artifact_format,
         "bloc_sha256": manifest.bloc_sha256,
         "content_sha256": manifest.content_sha256,
         "path_in_prompt": manifest.path_in_prompt,
@@ -525,12 +696,23 @@ def _loaded_cache_matches_manifest(
         "serializer_version": manifest.serializer_version,
         "manifest_version": str(manifest.version),
         "artifact_sha256": manifest.artifact_sha256,
+        "binding_id": manifest.binding_id,
         "quantization": str(manifest.quantization or "fp"),
     }
     for field_name, expected_value in expected.items():
         if _meta_str(field_name) != str(expected_value).strip():
             return False
     return True
+
+
+def _require_operations(provider: Any, operations: List[str], *, context: str) -> None:
+    missing = [op for op in operations if not _provider_supports(provider, op)]
+    if not missing:
+        return
+    raise ValueError(
+        f"Bloc KV {context} requires prompt-cache operation(s): {', '.join(missing)} "
+        f"(provider={_provider_name(provider) or type(provider).__name__})."
+    )
 
 
 def ensure_bloc_kv_artifact(
@@ -543,8 +725,9 @@ def ensure_bloc_kv_artifact(
     bloc_id: Optional[int] = None,
     artifact_path: Optional[Union[str, Path]] = None,
     force_rebuild: bool = False,
+    debug: bool = False,
 ) -> BlocKVCompileResult:
-    _require_mlx_provider(provider)
+    _require_operations(provider, ["set", "update", "save"], context="compilation")
     model_id = str(model or getattr(provider, "model", "") or "").strip()
     if not model_id:
         raise ValueError("Bloc KV compilation requires a non-empty model id.")
@@ -582,10 +765,18 @@ def ensure_bloc_kv_artifact(
                 compiled=False,
                 rebuilt=False,
                 source_cache_key=None,
+                binding_id=existing.binding_id,
+                prompt_cache_binding=bloc_kv_binding_payload(manifest=existing),
+                debug=_debug_payload(
+                    operation="ensure",
+                    manifest=existing,
+                    artifact_path=final_artifact_path,
+                    manifest_path=final_manifest_path,
+                    extra={"compiled": False, "reused_existing": True},
+                )
+                if _debug_enabled(debug)
+                else None,
             )
-
-    if not _provider_supports(provider, "save") or not _provider_supports(provider, "update"):
-        raise ValueError("MLX bloc KV compilation requires prompt-cache save and update operations.")
 
     content = _read_bloc_content(store, record)
     content_sha256 = _content_sha256(content)
@@ -603,10 +794,13 @@ def ensure_bloc_kv_artifact(
             )
             artifact_tmp.parent.mkdir(parents=True, exist_ok=True)
             out_meta = {
-                "format": "abstractcore-bloc-kv/v1",
+                "format": rendered.artifact_format,
+                "bloc_kv_format": "abstractcore-bloc-kv/v1",
                 "provider": _provider_name(provider),
                 "model": model_id,
                 "model_resolved_id": _resolved_model_id(provider),
+                "cache_backend": rendered.cache_backend,
+                "artifact_format": rendered.artifact_format,
                 "bloc_sha256": record.sha256,
                 "bloc_id": record.bloc_id,
                 "content_sha256": content_sha256,
@@ -617,6 +811,7 @@ def ensure_bloc_kv_artifact(
                 "renderer_version": rendered.renderer_version,
                 "serializer_version": rendered.serializer_version,
                 "quantization": "fp",
+                "provider_meta": dict(rendered.provider_meta or {}),
             }
             provider.prompt_cache_save(tmp_cache_key, str(artifact_tmp), meta=out_meta)
             artifact_sha256 = _sha256_file(artifact_tmp)
@@ -633,6 +828,8 @@ def ensure_bloc_kv_artifact(
                 provider=_provider_name(provider),
                 model=model_id,
                 model_resolved_id=_resolved_model_id(provider),
+                cache_backend=rendered.cache_backend,
+                artifact_format=rendered.artifact_format,
                 bloc_sha256=record.sha256,
                 bloc_id=record.bloc_id,
                 content_sha256=content_sha256,
@@ -647,6 +844,13 @@ def ensure_bloc_kv_artifact(
                 quantization="fp",
                 created_at=datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat(),
                 token_count=token_count,
+                provider_meta=dict(rendered.provider_meta or {}),
+            )
+            manifest = BlocKVArtifactManifest(
+                **{
+                    **manifest.__dict__,
+                    "binding_id": _compute_binding_id(manifest.to_dict(), include_binding=False),
+                }
             )
             _save_temp_manifest(manifest_tmp, manifest)
             _commit_manifest_last(
@@ -662,6 +866,18 @@ def ensure_bloc_kv_artifact(
                 compiled=True,
                 rebuilt=bool(had_existing_artifact),
                 source_cache_key=tmp_cache_key,
+                binding_id=manifest.binding_id,
+                prompt_cache_binding=bloc_kv_binding_payload(manifest=manifest),
+                debug=_debug_payload(
+                    operation="ensure",
+                    manifest=manifest,
+                    artifact_path=final_artifact_path,
+                    manifest_path=final_manifest_path,
+                    rendered=rendered,
+                    extra={"compiled": True, "rebuilt": bool(had_existing_artifact)},
+                )
+                if _debug_enabled(debug)
+                else None,
             )
         finally:
             _clear_cache_key(provider, tmp_cache_key)
@@ -691,8 +907,9 @@ def load_bloc_kv_artifact(
     key: Optional[str] = None,
     make_default: bool = False,
     force_rebuild: bool = False,
+    debug: bool = False,
 ) -> BlocKVLoadResult:
-    _require_mlx_provider(provider)
+    _require_operations(provider, ["load"], context="loading")
     record = _resolve_record(store=store, record=record, sha256=sha256, bloc_id=bloc_id)
     model_id = str(model or getattr(provider, "model", "") or "").strip()
     ensured = ensure_bloc_kv_artifact(
@@ -702,6 +919,7 @@ def load_bloc_kv_artifact(
         record=record,
         artifact_path=artifact_path,
         force_rebuild=force_rebuild,
+        debug=debug,
     )
 
     target_key = str(key or stable_cache_key or f"cache:bloc:{uuid.uuid4().hex[:12]}").strip()
@@ -709,9 +927,6 @@ def load_bloc_kv_artifact(
     loaded = False
     reloaded_stable_key = False
     forked_from: Optional[str] = None
-
-    if not _provider_supports(provider, "load"):
-        raise ValueError("MLX bloc KV loading requires prompt-cache load support.")
 
     with _preserve_default_key(provider, enabled=not make_default):
         try:
@@ -730,8 +945,7 @@ def load_bloc_kv_artifact(
                     _augment_prompt_cache_key_meta(
                         provider,
                         stable_key,
-                        manifest_version=str(ensured.manifest.version),
-                        artifact_sha256=ensured.manifest.artifact_sha256,
+                        **_manifest_key_meta(manifest=ensured.manifest, artifact_path=ensured.artifact_path),
                     )
                     loaded = True
                     reloaded_stable_key = True
@@ -746,9 +960,26 @@ def load_bloc_kv_artifact(
                         loaded=loaded,
                         reloaded_stable_key=reloaded_stable_key,
                         forked_from=None,
+                        binding_id=ensured.manifest.binding_id,
+                        prompt_cache_binding=bloc_kv_binding_payload(manifest=ensured.manifest, key=stable_key),
+                        debug=_debug_payload(
+                            operation="load",
+                            manifest=ensured.manifest,
+                            artifact_path=ensured.artifact_path,
+                            manifest_path=ensured.manifest_path,
+                            extra={
+                                "key": stable_key,
+                                "stable_cache_key": stable_key,
+                                "loaded": loaded,
+                                "reloaded_stable_key": reloaded_stable_key,
+                                "forked_from": None,
+                            },
+                        )
+                        if _debug_enabled(debug)
+                        else None,
                     )
                 if not _provider_supports(provider, "fork"):
-                    raise ValueError("MLX bloc KV forking requires prompt-cache fork support.")
+                    raise ValueError("Bloc KV forking requires prompt-cache fork support.")
                 provider.prompt_cache_fork(
                     stable_key,
                     target_key,
@@ -765,6 +996,23 @@ def load_bloc_kv_artifact(
                     loaded=loaded,
                     reloaded_stable_key=reloaded_stable_key,
                     forked_from=forked_from,
+                    binding_id=ensured.manifest.binding_id,
+                    prompt_cache_binding=bloc_kv_binding_payload(manifest=ensured.manifest, key=target_key),
+                    debug=_debug_payload(
+                        operation="load",
+                        manifest=ensured.manifest,
+                        artifact_path=ensured.artifact_path,
+                        manifest_path=ensured.manifest_path,
+                        extra={
+                            "key": target_key,
+                            "stable_cache_key": stable_key,
+                            "loaded": loaded,
+                            "reloaded_stable_key": reloaded_stable_key,
+                            "forked_from": forked_from,
+                        },
+                    )
+                    if _debug_enabled(debug)
+                    else None,
                 )
 
             provider.prompt_cache_load(
@@ -775,8 +1023,7 @@ def load_bloc_kv_artifact(
             _augment_prompt_cache_key_meta(
                 provider,
                 target_key,
-                manifest_version=str(ensured.manifest.version),
-                artifact_sha256=ensured.manifest.artifact_sha256,
+                **_manifest_key_meta(manifest=ensured.manifest, artifact_path=ensured.artifact_path),
             )
             loaded = True
             return BlocKVLoadResult(
@@ -789,6 +1036,23 @@ def load_bloc_kv_artifact(
                 loaded=loaded,
                 reloaded_stable_key=False,
                 forked_from=None,
+                binding_id=ensured.manifest.binding_id,
+                prompt_cache_binding=bloc_kv_binding_payload(manifest=ensured.manifest, key=target_key),
+                debug=_debug_payload(
+                    operation="load",
+                    manifest=ensured.manifest,
+                    artifact_path=ensured.artifact_path,
+                    manifest_path=ensured.manifest_path,
+                    extra={
+                        "key": target_key,
+                        "stable_cache_key": None,
+                        "loaded": loaded,
+                        "reloaded_stable_key": False,
+                        "forked_from": None,
+                    },
+                )
+                if _debug_enabled(debug)
+                else None,
             )
         except Exception:
             if target_key != stable_key:

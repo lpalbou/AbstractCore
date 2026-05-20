@@ -23,7 +23,7 @@ try:
 except ImportError:
     OUTLINES_AVAILABLE = False
 
-from .base import BaseProvider, ThinkingControlHandling
+from .base import BaseProvider, PromptCacheRenderedFragment, ThinkingControlHandling
 from ..core.types import GenerateResponse
 from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
@@ -65,6 +65,42 @@ class MLXProvider(BaseProvider):
     def prompt_cache_supports_kv_source_of_truth(self) -> bool:
         """MLX KV caches are mutable and can serve as the context source-of-truth."""
         return True
+
+    def prompt_cache_cache_backend(self) -> str:
+        return "mlx"
+
+    def prompt_cache_artifact_format(self) -> str:
+        return "abstractcore-mlx-prompt-cache/v1"
+
+    def prompt_cache_render_fragment(
+        self,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        add_generation_prompt: bool = False,
+        prefilled_modules: Optional[List[str]] = None,
+    ) -> Optional[PromptCacheRenderedFragment]:
+        serialized = self._build_prompt_fragment(
+            prompt=prompt,
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            add_generation_prompt=add_generation_prompt,
+            prefilled_modules=prefilled_modules,
+        )
+        if not serialized:
+            return None
+        model = str(getattr(self, "model", "") or "").strip().lower()
+        fmt = "qwen-chatml" if "qwen" in model else "plain-chat"
+        return PromptCacheRenderedFragment(
+            serialized_prompt=str(serialized),
+            serializer_version=f"mlx-prompt-fragment/v1:{fmt}",
+            cache_backend="mlx",
+            artifact_format=self.prompt_cache_artifact_format(),
+            meta={"prompt_format": fmt},
+        )
 
     def _apply_provider_thinking_kwargs(self, *, enabled, level=None, kwargs: Dict[str, Any]):
         """Map unified thinking control into MLX prompt serialization state.

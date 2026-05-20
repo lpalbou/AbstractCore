@@ -9,7 +9,7 @@
 ## ADR status
 - Governing ADRs: None
 - ADR impact: Superseded by planned provider-specific work; any durable public contract is tracked
-  by `planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
+  by `completed/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
 
 ## Context
 
@@ -41,9 +41,9 @@ The code reality is no longer one vague "parity" gap:
 
 The proposal has been split into concrete planned work:
 
-- `docs/backlog/planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
-- `docs/backlog/planned/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md`
-- `docs/backlog/planned/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md`
+- `docs/backlog/completed/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
+- `docs/backlog/completed/2026-05-20_hf-transformers-bloc-kv-artifact-compiler-loader.md`
+- `docs/backlog/completed/2026-05-20_hf-gguf-bloc-kv-artifact-compiler-loader.md`
 
 Keeping this generic item open would make future agents re-litigate the same broad parity question
 instead of implementing the backend-specific contracts.

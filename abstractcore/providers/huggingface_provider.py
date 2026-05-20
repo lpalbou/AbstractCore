@@ -8,6 +8,7 @@ from __future__ import annotations
 import importlib.util
 import os
 import copy
+import hashlib
 import json
 import platform
 import sys
@@ -46,7 +47,7 @@ try:
 except ImportError:
     PYDANTIC_AVAILABLE = False
     BaseModel = None
-from .base import BaseProvider, PromptCacheCapabilities, ThinkingControlHandling
+from .base import BaseProvider, PromptCacheCapabilities, PromptCacheRenderedFragment, ThinkingControlHandling
 from ..core.types import GenerateResponse
 from ..exceptions import ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
@@ -336,6 +337,106 @@ class HuggingFaceProvider(BaseProvider):
     def prompt_cache_supports_kv_source_of_truth(self) -> bool:
         """Return True when this provider can treat the prompt cache as the context source-of-truth."""
         return self._transformers_prompt_cache_supported()
+
+    def prompt_cache_artifact_extension(self) -> str:
+        if getattr(self, "model_type", None) == "gguf":
+            return ".npz"
+        return ".safetensors"
+
+    def prompt_cache_cache_backend(self) -> str:
+        if getattr(self, "model_type", None) == "transformers":
+            return "hf-transformers"
+        if getattr(self, "model_type", None) == "gguf":
+            return "hf-gguf"
+        return "huggingface"
+
+    def prompt_cache_artifact_format(self) -> str:
+        if getattr(self, "model_type", None) == "transformers":
+            return "abstractcore-transformers-prompt-cache/v1"
+        if getattr(self, "model_type", None) == "gguf":
+            return "abstractcore-gguf-prompt-cache/v1"
+        return f"abstractcore-{self.prompt_cache_cache_backend()}-prompt-cache/v1"
+
+    def prompt_cache_render_fragment(
+        self,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        add_generation_prompt: bool = False,
+        prefilled_modules: Optional[List[str]] = None,
+    ) -> Optional[PromptCacheRenderedFragment]:
+        model_type = str(getattr(self, "model_type", "") or "").strip().lower()
+        if model_type == "transformers":
+            serialized = self._transformers_build_prompt_fragment(
+                prompt=prompt,
+                messages=messages,
+                system_prompt=system_prompt,
+                tools=tools,
+                add_generation_prompt=add_generation_prompt,
+                prefilled_modules=prefilled_modules,
+            )
+            if not serialized:
+                return None
+            architecture = str(getattr(self, "architecture", "") or "generic").strip().lower()
+            template = str(getattr(getattr(self, "tokenizer", None), "chat_template", "") or "")
+            if not template:
+                try:
+                    template = json.dumps(getattr(self, "architecture_config", {}) or {}, sort_keys=True)
+                except Exception:
+                    template = ""
+            template_hash = hashlib.sha256(template.encode("utf-8")).hexdigest()[:12] if template else "default"
+            return PromptCacheRenderedFragment(
+                serialized_prompt=str(serialized),
+                serializer_version=f"hf-transformers-prompt-fragment/v1:{architecture}:{template_hash}",
+                cache_backend="hf-transformers",
+                artifact_format=self.prompt_cache_artifact_format(),
+                meta={
+                    "architecture": architecture,
+                    "template_hash": template_hash,
+                    "cache_implementation": "dynamic",
+                },
+            )
+
+        if model_type == "gguf":
+            if not self._gguf_prompt_cache_supports_local_control_plane():
+                return None
+            chat_format = self._gguf_prompt_cache_control_plane_chat_format()
+            chat_messages = self._gguf_build_chat_messages(
+                system_prompt=system_prompt,
+                messages=messages,
+                tools=tools,
+                user_message_content=prompt if isinstance(prompt, str) and prompt else None,
+            )
+            prompt_text, prompt_tokens = self._gguf_render_prompt_tokens(
+                messages=chat_messages,
+                add_generation_prompt=bool(add_generation_prompt),
+            )
+            serialized = json.dumps(
+                {
+                    "chat_format": chat_format,
+                    "prompt_text": prompt_text,
+                    "prompt_tokens": [int(tok) for tok in prompt_tokens],
+                },
+                sort_keys=True,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            token_bytes = json.dumps([int(tok) for tok in prompt_tokens], separators=(",", ":")).encode("utf-8")
+            return PromptCacheRenderedFragment(
+                serialized_prompt=serialized,
+                serializer_version=f"hf-gguf-prompt-fragment/v1:{chat_format}",
+                cache_backend="hf-gguf",
+                artifact_format=self.prompt_cache_artifact_format(),
+                meta={
+                    "chat_format": chat_format,
+                    "exact_prompt_renderer": chat_format,
+                    "prompt_tokens_sha256": hashlib.sha256(token_bytes).hexdigest(),
+                },
+            )
+
+        return None
 
     def get_prompt_cache_capabilities(self) -> PromptCacheCapabilities:
         if not self.supports_prompt_cache():
@@ -1497,7 +1598,20 @@ class HuggingFaceProvider(BaseProvider):
         state snapshot for the key. It is sufficient to warm-start large chats without rebuilding
         the prefix, but it does not attempt to persist every intermediate prefix in the RAM cache.
         """
-        _ = kwargs
+        incoming_meta = kwargs.get("meta") if isinstance(kwargs.get("meta"), dict) else {}
+
+        def _meta_value(value: Any) -> str:
+            if value is None:
+                return ""
+            if isinstance(value, str):
+                return value
+            try:
+                if isinstance(value, (dict, list, tuple)):
+                    return json.dumps(value, ensure_ascii=False)
+            except Exception:
+                pass
+            return str(value)
+
         if not self.supports_prompt_cache():
             raise ValueError("Prompt caching is not supported for this provider/model.")
 
@@ -1545,6 +1659,9 @@ class HuggingFaceProvider(BaseProvider):
                 "token_count": str(len(prompt_tokens)),
                 "cache_implementation": "dynamic",
             }
+            for mk, mv in dict(incoming_meta or {}).items():
+                if isinstance(mk, str) and mk:
+                    meta[mk] = _meta_value(mv)
 
             save_file(tensors, str(filename), metadata=meta)
 
@@ -1605,18 +1722,20 @@ class HuggingFaceProvider(BaseProvider):
             "saved_at": datetime.now().isoformat(),
             "cache_state": exported_state,
         }
+        meta.update(dict(incoming_meta or {}))
 
-        np.savez_compressed(
-            str(filename),
-            meta_json=np.array(json.dumps(meta, ensure_ascii=False), dtype=np.str_),
-            prompt_tokens=np.asarray(prompt_tokens, dtype=np.intc),
-            input_ids=np.asarray(getattr(llama_state, "input_ids"), dtype=np.intc),
-            scores=np.asarray(getattr(llama_state, "scores"), dtype=np.single),
-            n_tokens=np.asarray(int(getattr(llama_state, "n_tokens", 0) or 0), dtype=np.int64),
-            llama_state=np.frombuffer(bytes(getattr(llama_state, "llama_state", b"")), dtype=np.uint8),
-            llama_state_size=np.asarray(int(getattr(llama_state, "llama_state_size", 0) or 0), dtype=np.int64),
-            seed=np.asarray(int(getattr(llama_state, "seed", 0) or 0), dtype=np.int64),
-        )
+        with open(str(filename), "wb") as f:
+            np.savez_compressed(
+                f,
+                meta_json=np.array(json.dumps(meta, ensure_ascii=False), dtype=np.str_),
+                prompt_tokens=np.asarray(prompt_tokens, dtype=np.intc),
+                input_ids=np.asarray(getattr(llama_state, "input_ids"), dtype=np.intc),
+                scores=np.asarray(getattr(llama_state, "scores"), dtype=np.single),
+                n_tokens=np.asarray(int(getattr(llama_state, "n_tokens", 0) or 0), dtype=np.int64),
+                llama_state=np.frombuffer(bytes(getattr(llama_state, "llama_state", b"")), dtype=np.uint8),
+                llama_state_size=np.asarray(int(getattr(llama_state, "llama_state_size", 0) or 0), dtype=np.int64),
+                seed=np.asarray(int(getattr(llama_state, "seed", 0) or 0), dtype=np.int64),
+            )
 
         return {
             "supported": True,
@@ -1662,7 +1781,11 @@ class HuggingFaceProvider(BaseProvider):
                 meta = {}
 
             fmt = meta.get("format")
-            if fmt and str(fmt) != "abstractcore-transformers-prompt-cache/v1":
+            accepted_formats = {
+                "abstractcore-transformers-prompt-cache/v1",
+                "abstractcore-hf-transformers-prompt-cache/v1",
+            }
+            if fmt and str(fmt) not in accepted_formats:
                 raise ValueError(f"Unsupported transformers prompt cache format: {fmt}")
 
             required_model = meta.get("model")
@@ -1746,7 +1869,11 @@ class HuggingFaceProvider(BaseProvider):
                 meta = {}
 
             fmt = meta.get("format")
-            if fmt and str(fmt) != "abstractcore-gguf-prompt-cache/v1":
+            accepted_formats = {
+                "abstractcore-gguf-prompt-cache/v1",
+                "abstractcore-hf-gguf-prompt-cache/v1",
+            }
+            if fmt and str(fmt) not in accepted_formats:
                 raise ValueError(f"Unsupported GGUF prompt cache format: {fmt}")
 
             required_model = meta.get("model") if isinstance(meta, dict) else None

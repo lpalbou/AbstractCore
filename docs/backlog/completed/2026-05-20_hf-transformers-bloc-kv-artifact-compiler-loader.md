@@ -2,12 +2,12 @@
 
 ## Metadata
 - Created: 2026-05-20
-- Status: Planned
-- Completed: N/A
+- Status: Completed
+- Completed: 2026-05-20
 
 ## ADR status
-- Governing ADRs: None
-- ADR impact: Covered by the unified bloc artifact API ADR if that ADR is created
+- Governing ADRs: `docs/adr/0007-durable-memory-bloc-cache-binding.md`
+- ADR impact: Covered by ADR 0007.
 
 ## Context
 
@@ -37,7 +37,7 @@ contract currently implemented for MLX.
   a bloc artifact.
 - The existing MLX manifest and reload/fork semantics are the behavioral baseline.
 - The unified API and request-time binding work is tracked in
-  `docs/backlog/planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`.
+  `docs/backlog/completed/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`.
 
 ## Problem
 
@@ -110,7 +110,7 @@ Extend `abstractcore.core.bloc_kv` with a backend adapter for HuggingFace transf
 
 ## Dependencies and related tasks
 
-- `docs/backlog/planned/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
+- `docs/backlog/completed/2026-05-20_unified-bloc-kv-artifact-api-and-request-binding.md`
 - `docs/backlog/completed/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md`
 - `docs/prompt-caching.md`
 - `docs/memory-blocs.md`
@@ -135,14 +135,40 @@ Extend `abstractcore.core.bloc_kv` with a backend adapter for HuggingFace transf
 
 ## Progress checklist
 
-- [ ] Add transformers backend selection to the unified bloc artifact helper.
-- [ ] Define transformers-specific manifest metadata.
-- [ ] Implement compile/save/load/fork using provider control-plane operations.
-- [ ] Add binding metadata propagation.
-- [ ] Add Python and server tests.
-- [ ] Update docs and examples.
+- [x] Add transformers backend selection to the unified bloc artifact helper.
+- [x] Define transformers-specific manifest metadata.
+- [x] Implement compile/save/load/fork using provider control-plane operations.
+- [x] Add binding metadata propagation.
+- [x] Add Python and server tests.
+- [x] Update docs and examples.
 
 ## Guidance for the implementing agent
 
 Do not special-case a second public API for transformers. If the implementation cannot use the
 same helper/route names as MLX, fix the shared abstraction first.
+
+## Completion report
+
+Completed: 2026-05-20.
+
+Summary:
+- Implemented HuggingFace transformers durable bloc artifacts through the unified
+  `ensure_bloc_kv_artifact(...)` / `load_bloc_kv_artifact(...)` flow.
+- Added provider render metadata for `hf-transformers`, provider artifact format
+  `abstractcore-transformers-prompt-cache/v1`, and `.safetensors` artifact selection.
+- Preserved provider-owned transformers cache save/load behavior and carried bloc metadata through
+  safetensors metadata without exposing private provider internals.
+- Added shared contract tests that cover transformers backend manifests, debug payloads, binding
+  validation, load/reload/fork behavior, and request-time binding.
+
+Validation:
+- `pytest -q` -> `1409 passed, 243 skipped`.
+- Focused: `pytest -q tests/test_bloc_kv.py tests/huggingface/test_transformers_prompt_cache_control_plane_unit.py`.
+- Real-provider smoke proof with `sshleifer/tiny-gpt2` on CPU: local-control-plane capability,
+  `.safetensors` artifact, backend `hf-transformers`, 4,668-byte artifact, binding validation, and
+  generation with `prompt_cache_binding` all succeeded.
+
+Residual risks:
+- Only standard text-generation transformer models with provider-advertised prompt-cache
+  save/load are supported. Vision/custom transformer paths remain out of scope.
+- Real model proof depends on a locally cached model and is intentionally not default CI.
