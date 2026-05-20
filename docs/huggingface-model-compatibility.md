@@ -51,6 +51,18 @@ The official Qwen namespace does not currently provide a `Qwen/Qwen3.5-4B-GPTQ-I
 families such as 27B and 397B-A17B. Q4 4B artifacts are available through other ecosystems, for
 example MLX or GGUF conversions, but those are different provider/runtime paths.
 
+For Qwen3.6, the official Qwen namespace currently provides:
+
+- `Qwen/Qwen3.6-27B`
+- `Qwen/Qwen3.6-27B-FP8`
+- `Qwen/Qwen3.6-35B-A3B`
+- `Qwen/Qwen3.6-35B-A3B-FP8`
+
+The official Qwen namespace does not currently provide GPTQ-Int4 or AWQ repositories for Qwen3.6
+27B or 35B-A3B. Qwen3.6 Q4/AWQ/GPTQ artifacts exist through community or runtime-specific
+ecosystems, including GGUF, MLX, compressed-tensors, and AWQ conversions. Treat those as
+provider/runtime-specific targets rather than official Qwen Transformers proof targets.
+
 Use provider-native paths for those artifacts:
 
 - MLX quantized models: `create_llm("mlx", model="mlx-community/...")`
@@ -80,3 +92,11 @@ References:
   <https://huggingface.co/docs/transformers/quantization/compressed_tensors>
 - Qwen3.5 collection:
   <https://huggingface.co/collections/Qwen/qwen35>
+- Qwen3.6 27B:
+  <https://huggingface.co/Qwen/Qwen3.6-27B>
+- Qwen3.6 27B FP8:
+  <https://huggingface.co/Qwen/Qwen3.6-27B-FP8>
+- Qwen3.6 35B-A3B:
+  <https://huggingface.co/Qwen/Qwen3.6-35B-A3B>
+- Qwen3.6 35B-A3B FP8:
+  <https://huggingface.co/Qwen/Qwen3.6-35B-A3B-FP8>
