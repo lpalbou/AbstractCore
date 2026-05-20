@@ -5,6 +5,7 @@ Supports both transformers models and GGUF models via llama-cpp-python.
 
 from __future__ import annotations
 
+import importlib
 import importlib.util
 import os
 import copy
@@ -108,6 +109,23 @@ class _TransformersPromptCacheValue:
     messages: List[Dict[str, Any]] = field(default_factory=list)
     tools: Optional[List[Dict[str, Any]]] = None
     add_generation_prompt: bool = False
+
+
+_TRANSFORMERS_TENSOR_LIST_CACHE_ATTRS = (
+    "key_cache",
+    "value_cache",
+    "conv_states",
+    "recurrent_states",
+    "ssm_states",
+    "conv_states_q",
+    "conv_states_k",
+    "conv_states_v",
+)
+_TRANSFORMERS_JSON_CACHE_ATTRS = (
+    "layer_types",
+    "transformer_layers",
+    "last_linear_layer",
+)
 
 
 class HuggingFaceProvider(BaseProvider):
@@ -229,18 +247,29 @@ class HuggingFaceProvider(BaseProvider):
         level: Optional[str],
         kwargs: Dict[str, Any],
     ) -> tuple[Dict[str, Any], ThinkingControlHandling]:
+        new_kwargs = dict(kwargs or {})
+        model_type = str(getattr(self, "model_type", "") or "").strip().lower()
+        if model_type == "transformers" and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
+            if enabled is False:
+                new_kwargs["_acore_hf_transformers_enable_thinking"] = False
+                return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
+            if enabled is True or level is not None:
+                new_kwargs["_acore_hf_transformers_enable_thinking"] = True
+                return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
+
         # llama-cpp-python (GGUF) does not currently expose chat-template kwargs such as
-        # `enable_thinking` / `thinking_budget`. For Qwen3/Qwen3.5/Qwen3.6 GGUF models, we treat
-        # thinking levels as a best-effort "enable thinking" request and rely on BaseProvider's
-        # Qwen hard-switch marker for disabling thinking.
+        # `enable_thinking` / `thinking_budget`. For exact local control-plane renders we can still
+        # place Qwen's no-thinking marker at the assistant generation boundary ourselves.
         #
         # TODO(upstream): Add an explicit `chat_template_kwargs` (or at least `enable_thinking`)
         # parameter to llama-cpp-python's `Llama.create_chat_completion()` and forward it into the
         # chat handler / Jinja template renderer. Once available, map our unified `thinking=...`
         # directly to `enable_thinking` instead of relying on the `<think>\n\n</think>\n\n` marker.
         # See: `docs/backlog/planned/2026-03-30_llama-cpp-python_expose_chat_template_kwargs.md`.
-        model_type = str(getattr(self, "model_type", "") or "").strip().lower()
         if model_type == "gguf" and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
+            if enabled is False:
+                new_kwargs["_acore_gguf_enable_thinking"] = False
+                return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
             if enabled is True or level is not None:
                 return kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
         return kwargs, ThinkingControlHandling()
@@ -796,6 +825,7 @@ class HuggingFaceProvider(BaseProvider):
         *,
         messages: List[Dict[str, Any]],
         add_generation_prompt: bool,
+        enable_thinking: Optional[bool] = None,
     ) -> str:
         parts: List[str] = []
         for message in messages:
@@ -824,6 +854,8 @@ class HuggingFaceProvider(BaseProvider):
                 parts.append("<|im_end|>\n")
         if add_generation_prompt:
             parts.append("<|im_start|>assistant\n")
+            if enable_thinking is False and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
+                parts.append("<think>\n\n</think>\n\n")
         return "".join(parts)
 
     def _gguf_render_llama3_prompt(
@@ -831,7 +863,9 @@ class HuggingFaceProvider(BaseProvider):
         *,
         messages: List[Dict[str, Any]],
         add_generation_prompt: bool,
+        enable_thinking: Optional[bool] = None,
     ) -> str:
+        _ = enable_thinking
         role_map = {
             "system": "<|start_header_id|>system<|end_header_id|>\n\n",
             "user": "<|start_header_id|>user<|end_header_id|>\n\n",
@@ -886,17 +920,20 @@ class HuggingFaceProvider(BaseProvider):
         *,
         messages: List[Dict[str, Any]],
         add_generation_prompt: bool,
+        enable_thinking: Optional[bool] = None,
     ) -> tuple[str, tuple[int, ...]]:
         chat_format = self._gguf_prompt_cache_control_plane_chat_format() or self._gguf_prompt_cache_chat_format()
         if chat_format == "llama-3":
             prompt_text = self._gguf_render_llama3_prompt(
                 messages=messages,
                 add_generation_prompt=bool(add_generation_prompt),
+                enable_thinking=enable_thinking,
             )
         else:
             prompt_text = self._gguf_render_chatml_prompt(
                 messages=messages,
                 add_generation_prompt=bool(add_generation_prompt),
+                enable_thinking=enable_thinking,
             )
         if chat_format == "chatml":
             prompt_tokens = tuple(
@@ -910,6 +947,70 @@ class HuggingFaceProvider(BaseProvider):
         else:
             prompt_tokens = tuple(int(tok) for tok in self._gguf_tokenize_completion_prompt(prompt_text))
         return prompt_text, prompt_tokens
+
+    def _gguf_tokenize_prompt_suffix(self, prompt_text: str) -> tuple[int, ...]:
+        if getattr(self, "llm", None) is None or not prompt_text:
+            return ()
+        try:
+            return tuple(
+                int(tok)
+                for tok in self.llm.tokenize(
+                    str(prompt_text).encode("utf-8"),
+                    add_bos=False,
+                    special=True,
+                )
+            )
+        except Exception:
+            return ()
+
+    def _gguf_compose_cached_prompt_tokens(
+        self,
+        *,
+        cache_state: Optional[_GGUFPromptCacheValue],
+        live_prompt_text: str,
+        live_prompt_tokens: tuple[int, ...],
+    ) -> tuple[str, tuple[int, ...], Dict[str, Any]]:
+        """Return the prompt tokens to evaluate for a cache-bound GGUF request.
+
+        Durable memory-bloc requests pass only the live suffix at request time. The loaded
+        prompt cache must therefore be treated as the prefix source-of-truth rather than as a
+        best-effort cache object attached to a suffix-only prompt.
+        """
+        meta: Dict[str, Any] = {
+            "prompt_cache_prefix_source": "live_prompt",
+            "prompt_cache_composed": False,
+            "prompt_cache_prefix_token_count": 0,
+            "prompt_cache_live_token_count": int(len(live_prompt_tokens)),
+            "prompt_cache_prompt_token_count": int(len(live_prompt_tokens)),
+        }
+        if cache_state is None:
+            return live_prompt_text, live_prompt_tokens, meta
+
+        prefix_tokens = tuple(int(tok) for tok in (cache_state.prompt_tokens or ()))
+        if not prefix_tokens:
+            return live_prompt_text, live_prompt_tokens, meta
+
+        meta["prompt_cache_prefix_token_count"] = int(len(prefix_tokens))
+        if live_prompt_tokens[: len(prefix_tokens)] == prefix_tokens:
+            meta["prompt_cache_prefix_source"] = "live_prompt"
+            return live_prompt_text, live_prompt_tokens, meta
+
+        suffix_tokens = self._gguf_tokenize_prompt_suffix(live_prompt_text)
+        if not suffix_tokens and live_prompt_text:
+            meta["prompt_cache_error"] = "failed_to_tokenize_live_suffix"
+            return live_prompt_text, live_prompt_tokens, meta
+
+        composed_prompt_text = f"{str(cache_state.prompt_text or '')}{str(live_prompt_text or '')}"
+        composed_tokens = tuple(int(tok) for tok in (prefix_tokens + suffix_tokens))
+        meta.update(
+            {
+                "prompt_cache_prefix_source": "loaded_cache",
+                "prompt_cache_composed": True,
+                "prompt_cache_suffix_token_count": int(len(suffix_tokens)),
+                "prompt_cache_prompt_token_count": int(len(composed_tokens)),
+            }
+        )
+        return composed_prompt_text, composed_tokens, meta
 
     def _gguf_prompt_cache_prefix_state(self, cache_obj: Any, prompt_tokens: tuple[int, ...]) -> tuple[int, Optional[Any]]:
         state_map = getattr(cache_obj, "cache_state", None)
@@ -1023,6 +1124,131 @@ class HuggingFaceProvider(BaseProvider):
             return "mps"
         return "cpu"
 
+    def _transformers_empty_native_cache(self) -> Any:
+        """Return an empty cache object matching the loaded transformers model, when known."""
+        model = getattr(self, "model_instance", None)
+        config = getattr(model, "config", None)
+
+        # Some modern architectures ship custom cache classes that must be constructed from
+        # their text config. Let the model create the cache on first prefill when we cannot
+        # confidently instantiate the right class.
+        model_type = str(getattr(config, "model_type", "") or "").strip().lower()
+        cache_model_type = model_type[:-5] if model_type.endswith("_text") else model_type
+        custom_cache_classes = {
+            "qwen3_5": "Qwen3_5DynamicCache",
+            "qwen3_5_moe": "Qwen3_5MoeDynamicCache",
+            "qwen3_6": "Qwen3_6DynamicCache",
+            "qwen3_next": "Qwen3NextDynamicCache",
+            "jamba": "HybridMambaAttentionDynamicCache",
+            "zamba": "ZambaHybridDynamicCache",
+            "zamba2": "Zamba2HybridDynamicCache",
+            "mamba": "MambaCache",
+            "mamba2": "Mamba2Cache",
+            "falcon_mamba": "FalconMambaCache",
+        }
+        if cache_model_type in custom_cache_classes:
+            try:
+                module = importlib.import_module(f"transformers.models.{cache_model_type}.modeling_{cache_model_type}")
+                cache_cls = getattr(module, custom_cache_classes[cache_model_type], None)
+                text_config = config.get_text_config(decoder=True) if hasattr(config, "get_text_config") else config
+                if cache_cls is not None:
+                    return self._transformers_construct_cache(cache_cls, text_config)
+            except Exception:
+                return None
+
+        try:
+            from transformers.cache_utils import DynamicCache  # type: ignore
+        except Exception:
+            return None
+        try:
+            return DynamicCache(config=config)
+        except Exception:
+            return DynamicCache()
+
+    def _transformers_construct_cache(self, cache_cls: Any, config: Any) -> Any:
+        try:
+            import torch  # type: ignore
+        except Exception:
+            torch = None  # type: ignore[assignment]
+
+        device = self._transformers_cache_device()
+        dtype = None
+        model = getattr(self, "model_instance", None)
+        if model is not None:
+            try:
+                param = next(model.parameters(), None)
+                dtype = getattr(param, "dtype", None)
+            except Exception:
+                dtype = None
+        if dtype is None and torch is not None:
+            dtype = getattr(torch, "float16", None)
+
+        trials = [
+            ((), {"config": config}),
+            ((config,), {}),
+            ((), {"config": config, "batch_size": 1, "dtype": dtype, "device": device}),
+            ((config,), {"batch_size": 1, "dtype": dtype, "device": device}),
+            ((), {"config": config, "max_batch_size": 1, "dtype": dtype, "device": device}),
+            ((config,), {"max_batch_size": 1, "dtype": dtype, "device": device}),
+            ((config, 1), {"dtype": dtype, "device": device}),
+        ]
+        for args, kwargs in trials:
+            cleaned = {k: v for k, v in kwargs.items() if v is not None}
+            try:
+                return cache_cls(*args, **cleaned)
+            except TypeError:
+                continue
+        return cache_cls()
+
+    def _transformers_cache_class_meta(self, cache: Any) -> Dict[str, str]:
+        if cache is None:
+            return {"cache_class": "", "cache_module": ""}
+        cls = cache.__class__
+        return {
+            "cache_class": str(getattr(cls, "__name__", "") or ""),
+            "cache_module": str(getattr(cls, "__module__", "") or ""),
+        }
+
+    def _transformers_instantiate_cache_from_meta(self, meta: Dict[str, Any]) -> Any:
+        module_name = str(meta.get("cache_module") or "").strip()
+        class_name = str(meta.get("cache_class") or "").strip()
+        if module_name and class_name and module_name.startswith("transformers."):
+            try:
+                module = importlib.import_module(module_name)
+                cache_cls = getattr(module, class_name, None)
+                if cache_cls is not None:
+                    model = getattr(self, "model_instance", None)
+                    config = getattr(model, "config", None)
+                    text_config = config.get_text_config(decoder=True) if hasattr(config, "get_text_config") else config
+                    try:
+                        return self._transformers_construct_cache(cache_cls, text_config)
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        return self._transformers_empty_native_cache()
+
+    def _transformers_cache_has_serializable_tensor_state(self, cache: Any) -> bool:
+        try:
+            import torch  # type: ignore
+        except Exception:
+            torch = None  # type: ignore[assignment]
+        for attr in _TRANSFORMERS_TENSOR_LIST_CACHE_ATTRS:
+            value = getattr(cache, attr, None)
+            if isinstance(value, list):
+                return True
+            if torch is not None and isinstance(value, torch.Tensor):
+                return True
+        return False
+
+    def _transformers_clone_cache(self, cache: Any) -> Any:
+        if cache is None:
+            return None
+        try:
+            return copy.deepcopy(cache)
+        except Exception:
+            return None
+
     def _transformers_arch_prefix_suffix(self, role: str) -> tuple[str, str]:
         cfg = getattr(self, "architecture_config", None)
         if not isinstance(cfg, dict):
@@ -1057,6 +1283,7 @@ class HuggingFaceProvider(BaseProvider):
         tools: Optional[List[Any]] = None,
         add_generation_prompt: bool = False,
         prefilled_modules: Optional[Union[List[str], tuple[str, ...]]] = None,
+        enable_thinking: Optional[bool] = None,
     ) -> str:
         """Build a prompt fragment that can be appended to an existing KV cache."""
 
@@ -1114,6 +1341,8 @@ class HuggingFaceProvider(BaseProvider):
 
         if add_generation_prompt:
             parts.append(self._transformers_render_message("assistant", "", close=False))
+            if enable_thinking is False and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
+                parts.append("<think>\n\n</think>\n\n")
 
         return "".join(parts)
 
@@ -1165,8 +1394,9 @@ class HuggingFaceProvider(BaseProvider):
             "input_ids": input_ids,
             "attention_mask": attention_mask,
             "use_cache": True,
-            "past_key_values": state.cache,
         }
+        if state.cache is not None:
+            kwargs["past_key_values"] = state.cache
 
         try:
             with torch.inference_mode():
@@ -1191,11 +1421,9 @@ class HuggingFaceProvider(BaseProvider):
 
         model_type = getattr(self, "model_type", None)
         if model_type == "transformers":
-            try:
-                from transformers.cache_utils import DynamicCache  # type: ignore
-            except Exception:
-                return None
-            return _TransformersPromptCacheValue(cache=DynamicCache())
+            # Start with the provider-native cache type. For hybrid architectures such as Qwen3.5,
+            # the first prefill call may be the only reliable way to obtain the right cache object.
+            return _TransformersPromptCacheValue(cache=self._transformers_empty_native_cache())
 
         try:
             from llama_cpp.llama_cache import LlamaRAMCache
@@ -1248,26 +1476,9 @@ class HuggingFaceProvider(BaseProvider):
     def _prompt_cache_backend_clone(self, cache_value: Any) -> Optional[Any]:
         transformers_state = self._transformers_prompt_cache_state(cache_value)
         if transformers_state is not None:
-            try:
-                from transformers.cache_utils import DynamicCache  # type: ignore
-            except Exception:
+            cloned_cache = self._transformers_clone_cache(transformers_state.cache)
+            if transformers_state.cache is not None and cloned_cache is None:
                 return None
-            src_cache = transformers_state.cache
-            if not isinstance(src_cache, DynamicCache):
-                return None
-
-            cloned_cache = DynamicCache()
-            for idx, layer in enumerate(getattr(src_cache, "layers", []) or []):
-                try:
-                    if not bool(getattr(layer, "is_initialized", False)):
-                        continue
-                    keys = getattr(layer, "keys", None)
-                    values = getattr(layer, "values", None)
-                    if keys is None or values is None:
-                        continue
-                    cloned_cache.update(keys, values, layer_idx=int(idx))
-                except Exception:
-                    return None
 
             return _TransformersPromptCacheValue(
                 cache=cloned_cache,
@@ -1306,7 +1517,12 @@ class HuggingFaceProvider(BaseProvider):
         add_generation_prompt: bool = False,
         **kwargs,
     ) -> bool:
-        _ = kwargs
+        hf_transformers_enable_thinking = kwargs.get("_acore_hf_transformers_enable_thinking")
+        hf_transformers_enable_thinking = (
+            hf_transformers_enable_thinking if isinstance(hf_transformers_enable_thinking, bool) else None
+        )
+        gguf_enable_thinking = kwargs.get("_acore_gguf_enable_thinking")
+        gguf_enable_thinking = gguf_enable_thinking if isinstance(gguf_enable_thinking, bool) else None
 
         transformers_state = self._transformers_prompt_cache_state(cache_value)
         if transformers_state is not None:
@@ -1354,14 +1570,11 @@ class HuggingFaceProvider(BaseProvider):
                     system_prompt=system_text or None,
                     tools=transformers_state.tools,
                     add_generation_prompt=transformers_state.add_generation_prompt,
+                    enable_thinking=hf_transformers_enable_thinking,
                 )
 
                 token_ids = self._transformers_tokenize_fragment(full_text, add_bos_if_empty=True)
-                try:
-                    from transformers.cache_utils import DynamicCache  # type: ignore
-                except Exception:
-                    return False
-                transformers_state.cache = DynamicCache()
+                transformers_state.cache = self._transformers_empty_native_cache()
                 transformers_state.prompt_tokens = ()
                 return self._transformers_prefill_cache(transformers_state, token_ids)
 
@@ -1373,6 +1586,7 @@ class HuggingFaceProvider(BaseProvider):
                 system_prompt=None,
                 tools=None,
                 add_generation_prompt=delta_add_gen,
+                enable_thinking=hf_transformers_enable_thinking,
             )
             token_ids = self._transformers_tokenize_fragment(delta_text, add_bos_if_empty=False)
             return self._transformers_prefill_cache(transformers_state, token_ids)
@@ -1426,9 +1640,17 @@ class HuggingFaceProvider(BaseProvider):
             if not has_system_delta:
                 chat_format = self._gguf_prompt_cache_control_plane_chat_format() or self._gguf_prompt_cache_chat_format()
                 if chat_format == "llama-3":
-                    delta_text = self._gguf_render_llama3_prompt(messages=delta_messages, add_generation_prompt=False)
+                    delta_text = self._gguf_render_llama3_prompt(
+                        messages=delta_messages,
+                        add_generation_prompt=False,
+                        enable_thinking=gguf_enable_thinking,
+                    )
                 else:
-                    delta_text = self._gguf_render_chatml_prompt(messages=delta_messages, add_generation_prompt=False)
+                    delta_text = self._gguf_render_chatml_prompt(
+                        messages=delta_messages,
+                        add_generation_prompt=False,
+                        enable_thinking=gguf_enable_thinking,
+                    )
 
                 try:
                     delta_tokens = (
@@ -1466,6 +1688,7 @@ class HuggingFaceProvider(BaseProvider):
         prompt_text, prompt_tokens = self._gguf_render_prompt_tokens(
             messages=chat_messages,
             add_generation_prompt=state.add_generation_prompt,
+            enable_thinking=gguf_enable_thinking,
         )
 
         with getattr(self, "_gguf_prompt_cache_lock", _MPS_GENERATION_LOCK):
@@ -1633,23 +1856,59 @@ class HuggingFaceProvider(BaseProvider):
             state = self._transformers_prompt_cache_state(cache_value)
             if state is None:
                 raise ValueError(f"prompt cache key '{normalized}' does not exist")
-            if not isinstance(state.cache, DynamicCache):
-                raise ValueError("prompt cache key does not reference a supported transformers cache object")
-
             tensors: Dict[str, torch.Tensor] = {}
             prompt_tokens = tuple(int(tok) for tok in (state.prompt_tokens or ()))
             tensors["prompt_tokens"] = torch.tensor(prompt_tokens, dtype=torch.int32, device="cpu")
 
-            layers = getattr(state.cache, "layers", []) or []
-            for idx, layer in enumerate(layers):
-                if not bool(getattr(layer, "is_initialized", False)):
-                    continue
-                keys = getattr(layer, "keys", None)
-                values = getattr(layer, "values", None)
-                if keys is None or values is None:
-                    continue
-                tensors[f"layer_{idx}_keys"] = keys.detach().to("cpu")
-                tensors[f"layer_{idx}_values"] = values.detach().to("cpu")
+            cache = state.cache
+            if cache is None:
+                raise ValueError("prompt cache key does not reference a concrete transformers cache object")
+            cache_meta = self._transformers_cache_class_meta(cache)
+            cache_schema = ""
+            list_lengths: Dict[str, int] = {}
+            json_attrs: Dict[str, Any] = {}
+
+            if isinstance(cache, DynamicCache) and getattr(cache, "layers", None) is not None:
+                cache_schema = "dynamic-cache-layers/v1"
+                layers = getattr(cache, "layers", []) or []
+                json_attrs["cache_layer_classes"] = [
+                    f"{layer.__class__.__module__}.{layer.__class__.__name__}"
+                    for layer in layers
+                ]
+                for idx, layer in enumerate(layers):
+                    if not bool(getattr(layer, "is_initialized", False)):
+                        continue
+                    keys = getattr(layer, "keys", None)
+                    values = getattr(layer, "values", None)
+                    if keys is None or values is None:
+                        continue
+                    tensors[f"layer_{idx}_keys"] = keys.detach().to("cpu").contiguous()
+                    tensors[f"layer_{idx}_values"] = values.detach().to("cpu").contiguous()
+            elif self._transformers_cache_has_serializable_tensor_state(cache):
+                cache_schema = "tensor-list-cache/v1"
+                for attr in _TRANSFORMERS_TENSOR_LIST_CACHE_ATTRS:
+                    values = getattr(cache, attr, None)
+                    if not isinstance(values, list):
+                        if isinstance(values, torch.Tensor):
+                            tensors[f"cache__{attr}"] = values.detach().to("cpu").contiguous()
+                            list_lengths[attr] = -1
+                        continue
+                    list_lengths[attr] = len(values)
+                    for idx, value in enumerate(values):
+                        if value is None or not isinstance(value, torch.Tensor):
+                            continue
+                        tensors[f"cache__{attr}__{idx}"] = value.detach().to("cpu").contiguous()
+                for attr in _TRANSFORMERS_JSON_CACHE_ATTRS:
+                    value = getattr(cache, attr, None)
+                    if isinstance(value, (str, int, float, bool)) or value is None:
+                        json_attrs[attr] = value
+                    elif isinstance(value, (list, tuple)):
+                        json_attrs[attr] = list(value)
+            else:
+                raise ValueError(
+                    f"prompt cache object type {cache.__class__.__module__}.{cache.__class__.__name__} "
+                    "is not serializable by the transformers prompt cache artifact writer"
+                )
 
             meta: Dict[str, str] = {
                 "format": "abstractcore-transformers-prompt-cache/v1",
@@ -1658,7 +1917,14 @@ class HuggingFaceProvider(BaseProvider):
                 "saved_at": datetime.now().isoformat(),
                 "token_count": str(len(prompt_tokens)),
                 "cache_implementation": "dynamic",
+                "cache_schema": cache_schema,
+                "cache_class": cache_meta.get("cache_class", ""),
+                "cache_module": cache_meta.get("cache_module", ""),
             }
+            if list_lengths:
+                meta["cache_list_lengths"] = json.dumps(list_lengths, ensure_ascii=False, separators=(",", ":"))
+            if json_attrs:
+                meta["cache_json_attrs"] = json.dumps(json_attrs, ensure_ascii=False, separators=(",", ":"))
             for mk, mv in dict(incoming_meta or {}).items():
                 if isinstance(mk, str) and mk:
                     meta[mk] = _meta_value(mv)
@@ -1801,27 +2067,84 @@ class HuggingFaceProvider(BaseProvider):
                 raise ValueError("Invalid transformers prompt cache file (missing prompt_tokens)")
             prompt_tokens = tuple(int(tok) for tok in prompt_tok_tensor.to("cpu").tolist())
 
-            layer_indices: List[int] = []
-            for name in tensors.keys():
-                if name.startswith("layer_") and name.endswith("_keys"):
-                    try:
-                        layer_indices.append(int(name.split("_", 2)[1]))
-                    except Exception:
-                        continue
-            max_idx = max(layer_indices) if layer_indices else -1
+            cache_schema = str(meta.get("cache_schema") or "").strip()
+            if cache_schema == "tensor-list-cache/v1":
+                cache = self._transformers_instantiate_cache_from_meta(meta)
+                if cache is None:
+                    raise ValueError("Could not instantiate transformers cache object from artifact metadata.")
 
-            cache = DynamicCache()
-            if max_idx >= 0:
-                cache.layers = [DynamicLayer() for _ in range(max_idx + 1)]
-                for idx in range(max_idx + 1):
-                    keys = tensors.get(f"layer_{idx}_keys")
-                    values = tensors.get(f"layer_{idx}_values")
-                    if keys is None or values is None:
+                try:
+                    list_lengths_raw = json.loads(str(meta.get("cache_list_lengths") or "{}"))
+                    list_lengths = list_lengths_raw if isinstance(list_lengths_raw, dict) else {}
+                except Exception:
+                    list_lengths = {}
+                for attr in _TRANSFORMERS_TENSOR_LIST_CACHE_ATTRS:
+                    raw_len = list_lengths.get(attr)
+                    try:
+                        length = int(raw_len)
+                    except Exception:
+                        current = getattr(cache, attr, None)
+                        length = len(current) if isinstance(current, list) else 0
+                    if length == -1:
+                        tensor = tensors.get(f"cache__{attr}")
+                        if tensor is not None:
+                            setattr(cache, attr, tensor)
                         continue
-                    layer = cache.layers[idx]
-                    layer.keys = keys
-                    layer.values = values
-                    layer.is_initialized = True
+                    values: List[Any] = [None for _ in range(max(0, length))]
+                    for idx in range(len(values)):
+                        tensor = tensors.get(f"cache__{attr}__{idx}")
+                        if tensor is not None:
+                            values[idx] = tensor
+                    if values or hasattr(cache, attr):
+                        setattr(cache, attr, values)
+
+                try:
+                    json_attrs_raw = json.loads(str(meta.get("cache_json_attrs") or "{}"))
+                    json_attrs = json_attrs_raw if isinstance(json_attrs_raw, dict) else {}
+                except Exception:
+                    json_attrs = {}
+                for attr in _TRANSFORMERS_JSON_CACHE_ATTRS:
+                    if attr in json_attrs and hasattr(cache, attr):
+                        try:
+                            setattr(cache, attr, json_attrs[attr])
+                        except Exception:
+                            pass
+            elif cache_schema in {"", "dynamic-cache-layers/v1"}:
+                layer_indices: List[int] = []
+                for name in tensors.keys():
+                    if name.startswith("layer_") and name.endswith("_keys"):
+                        try:
+                            layer_indices.append(int(name.split("_", 2)[1]))
+                        except Exception:
+                            continue
+                max_idx = max(layer_indices) if layer_indices else -1
+
+                cache = self._transformers_instantiate_cache_from_meta(meta)
+                if cache is None or not isinstance(cache, DynamicCache):
+                    model = getattr(self, "model_instance", None)
+                    config = getattr(model, "config", None)
+                    try:
+                        cache = DynamicCache(config=config)
+                    except Exception:
+                        cache = DynamicCache()
+                if max_idx >= 0:
+                    layers = getattr(cache, "layers", None)
+                    if not isinstance(layers, list):
+                        cache.layers = []
+                        layers = cache.layers
+                    while len(layers) <= max_idx:
+                        layers.append(DynamicLayer())
+                    for idx in range(max_idx + 1):
+                        keys = tensors.get(f"layer_{idx}_keys")
+                        values = tensors.get(f"layer_{idx}_values")
+                        if keys is None or values is None:
+                            continue
+                        layer = layers[idx]
+                        layer.keys = keys
+                        layer.values = values
+                        layer.is_initialized = True
+            else:
+                raise ValueError(f"Unsupported transformers prompt cache schema: {cache_schema}")
 
             imported_state = _TransformersPromptCacheValue(cache=cache, prompt_tokens=prompt_tokens)
 
@@ -3013,6 +3336,7 @@ class HuggingFaceProvider(BaseProvider):
         temperature = generation_kwargs.get("temperature", self.temperature)
         top_p = kwargs.get("top_p", 0.9)
         seed_value = generation_kwargs.get("seed")
+        hf_transformers_enable_thinking = kwargs.get("_acore_hf_transformers_enable_thinking")
 
         prompt_cache_key = kwargs.get("prompt_cache_key")
         prefilled_modules = kwargs.get("prompt_cache_prefilled_modules")
@@ -3033,6 +3357,7 @@ class HuggingFaceProvider(BaseProvider):
                     temperature=float(temperature) if temperature is not None else None,
                     top_p=float(top_p) if top_p is not None else 0.9,
                     seed=seed_value,
+                    enable_thinking=hf_transformers_enable_thinking if isinstance(hf_transformers_enable_thinking, bool) else None,
                 )
             except Exception as e:
                 return GenerateResponse(
@@ -3099,7 +3424,13 @@ class HuggingFaceProvider(BaseProvider):
 
             return response
 
-        input_text = self._build_input_text_transformers(prompt, messages, system_prompt, tools)
+        input_text = self._build_input_text_transformers(
+            prompt,
+            messages,
+            system_prompt,
+            tools,
+            enable_thinking=hf_transformers_enable_thinking if isinstance(hf_transformers_enable_thinking, bool) else None,
+        )
 
         try:
             if stream:
@@ -3827,9 +4158,12 @@ class HuggingFaceProvider(BaseProvider):
             tools=tools,
             user_message_content=user_message_content,
         )
+        gguf_enable_thinking = kwargs.get("_acore_gguf_enable_thinking")
+        gguf_enable_thinking = gguf_enable_thinking if isinstance(gguf_enable_thinking, bool) else None
 
         # Prompt caching (GGUF/llama.cpp): best-effort per-key cache selection.
         cache_obj = None
+        cache_state = None
         prompt_cache_key = kwargs.get("prompt_cache_key")
         if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
             key = prompt_cache_key.strip()
@@ -3837,6 +4171,7 @@ class HuggingFaceProvider(BaseProvider):
             if cache_value is None:
                 self.prompt_cache_set(key, make_default=False)
                 cache_value = self._prompt_cache_store.get(key)
+            cache_state = self._gguf_prompt_cache_state(cache_value)
             cache_obj = self._gguf_prompt_cache_unwrap(cache_value)
             try:
                 if cache_obj is not None and hasattr(self.llm, "set_cache"):
@@ -3931,7 +4266,21 @@ class HuggingFaceProvider(BaseProvider):
                     mirostat_eta=float(kwargs.get("mirostat_eta", 0.1) or 0.1),
                     seed=seed_value,
                     stream=bool(stream),
+                    enable_thinking=gguf_enable_thinking,
+                    cache_state=cache_state,
                 )
+
+            if gguf_enable_thinking is False and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
+                marker = "<think>\n\n</think>\n\n"
+                fallback_messages = copy.deepcopy(chat_messages)
+                if not (
+                    fallback_messages
+                    and isinstance(fallback_messages[-1], dict)
+                    and str(fallback_messages[-1].get("role") or "").strip().lower() == "assistant"
+                    and str(fallback_messages[-1].get("content") or "") == marker
+                ):
+                    fallback_messages.append({"role": "assistant", "content": marker})
+                generation_kwargs["messages"] = fallback_messages
 
             if stream:
                 return self._stream_generate_gguf_with_tools(generation_kwargs, tools, has_native_tools, kwargs.get('tool_call_tags'))
@@ -4056,6 +4405,8 @@ class HuggingFaceProvider(BaseProvider):
         mirostat_tau: float,
         mirostat_eta: float,
         seed: Optional[int],
+        enable_thinking: Optional[bool] = None,
+        cache_state: Optional[_GGUFPromptCacheValue] = None,
     ) -> Iterator[GenerateResponse]:
         """Generate GGUF text by prefilling cached KV state and sampling from it.
 
@@ -4077,6 +4428,12 @@ class HuggingFaceProvider(BaseProvider):
         prompt_text, prompt_tokens = self._gguf_render_prompt_tokens(
             messages=chat_messages,
             add_generation_prompt=True,
+            enable_thinking=enable_thinking,
+        )
+        prompt_text, prompt_tokens, prompt_cache_meta = self._gguf_compose_cached_prompt_tokens(
+            cache_state=cache_state,
+            live_prompt_text=prompt_text,
+            live_prompt_tokens=prompt_tokens,
         )
 
         # Prefill prompt KV from cache (do not persist the generation-prompt state; key mode
@@ -4200,6 +4557,7 @@ class HuggingFaceProvider(BaseProvider):
             usage=usage,
             metadata={
                 "_acore_backend": "gguf_control_plane",
+                **prompt_cache_meta,
             },
         )
 
@@ -4223,6 +4581,8 @@ class HuggingFaceProvider(BaseProvider):
         mirostat_eta: float,
         seed: Optional[int],
         stream: bool,
+        enable_thinking: Optional[bool] = None,
+        cache_state: Optional[_GGUFPromptCacheValue] = None,
     ) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         if stream:
             return self._gguf_control_plane_stream_generate(
@@ -4242,6 +4602,8 @@ class HuggingFaceProvider(BaseProvider):
                 mirostat_tau=mirostat_tau,
                 mirostat_eta=mirostat_eta,
                 seed=seed,
+                enable_thinking=enable_thinking,
+                cache_state=cache_state,
             )
 
         collected = ""
@@ -4263,6 +4625,8 @@ class HuggingFaceProvider(BaseProvider):
             mirostat_tau=mirostat_tau,
             mirostat_eta=mirostat_eta,
             seed=seed,
+            enable_thinking=enable_thinking,
+            cache_state=cache_state,
         ):
             last = chunk
             if isinstance(chunk.content, str) and chunk.content:
@@ -4377,6 +4741,7 @@ class HuggingFaceProvider(BaseProvider):
         temperature: Optional[float],
         top_p: float,
         seed: Optional[int] = None,
+        enable_thinking: Optional[bool] = None,
     ) -> GenerateResponse:
         """Generate a single response using a transformers KV cache keyed by `prompt_cache_key`."""
 
@@ -4438,6 +4803,7 @@ class HuggingFaceProvider(BaseProvider):
             tools=None,
             add_generation_prompt=True,
             prefilled_modules=prefilled_modules,
+            enable_thinking=enable_thinking,
         )
         delta_ids = self._transformers_tokenize_fragment(delta_text, add_bos_if_empty=not bool(state.prompt_tokens))
         if not delta_ids:
@@ -4486,12 +4852,13 @@ class HuggingFaceProvider(BaseProvider):
             "use_cache": True,
             "return_dict_in_generate": True,
             "pad_token_id": pad_i,
-            "cache_implementation": "dynamic",
         }
         if eos_i is not None:
             generate_kwargs["eos_token_id"] = eos_i
 
-        # Prefer updating the existing cache object in-place for speed.
+        if state.cache is None:
+            raise RuntimeError("prompt cache key has no concrete transformers cache state")
+        # Prefer updating the existing provider-native cache object in-place for speed.
         generate_kwargs["past_key_values"] = state.cache
 
         output = None
@@ -4503,14 +4870,8 @@ class HuggingFaceProvider(BaseProvider):
                         output = self.model_instance.generate(**generate_kwargs)
                 else:
                     output = self.model_instance.generate(**generate_kwargs)
-        except Exception:
-            # Fallback: some models may reject an empty cache object on the first call.
-            try:
-                generate_kwargs["past_key_values"] = None
-                with torch.inference_mode():
-                    output = self.model_instance.generate(**generate_kwargs)
-            except Exception as e:
-                raise RuntimeError(f"Transformers cached generation failed: {e}") from e
+        except Exception as e:
+            raise RuntimeError(f"Transformers cached generation failed: {e}") from e
 
         sequences = getattr(output, "sequences", None)
         if sequences is None:
@@ -4687,8 +5048,15 @@ class HuggingFaceProvider(BaseProvider):
                 finish_reason="error"
             )
 
-    def _build_input_text_transformers(self, prompt: str, messages: Optional[List[Dict[str, str]]],
-                                      system_prompt: Optional[str], tools: Optional[List[Dict[str, Any]]] = None) -> str:
+    def _build_input_text_transformers(
+        self,
+        prompt: str,
+        messages: Optional[List[Dict[str, str]]],
+        system_prompt: Optional[str],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        *,
+        enable_thinking: Optional[bool] = None,
+    ) -> str:
         """Build input text for transformers model with tool support"""
 
         # Add tools to system prompt if provided
@@ -4717,10 +5085,14 @@ class HuggingFaceProvider(BaseProvider):
             chat_messages.append({"role": "user", "content": prompt})
 
             try:
+                template_kwargs: Dict[str, Any] = {}
+                if isinstance(enable_thinking, bool):
+                    template_kwargs["enable_thinking"] = bool(enable_thinking)
                 return self.tokenizer.apply_chat_template(
                     chat_messages,
                     tokenize=False,
-                    add_generation_prompt=True
+                    add_generation_prompt=True,
+                    **template_kwargs,
                 )
             except:
                 # Fallback if chat template fails
@@ -4740,6 +5112,8 @@ class HuggingFaceProvider(BaseProvider):
 
         text_parts.append(f"User: {prompt}\n")
         text_parts.append("Assistant:")
+        if enable_thinking is False and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
+            text_parts.append("<think>\n\n</think>\n\n")
 
         return "".join(text_parts)
 

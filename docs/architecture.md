@@ -169,6 +169,20 @@ This ensures:
 
 Configuration comes from `abstractcore/assets/architecture_formats.json` and `abstractcore/assets/model_capabilities.json`; implementation lives in `abstractcore/architectures/response_postprocessing.py`.
 
+#### Unified Thinking Control
+
+`thinking=...` is a single public generation parameter, not a per-provider option. `BaseProvider`
+normalizes the request, applies model-family rules, and then calls each provider's optional
+`_apply_provider_thinking_kwargs(...)` hook. The hook returns rewritten kwargs plus a
+`ThinkingControlHandling` record so AbstractCore can tell whether enable/disable and effort-level
+control were actually handled.
+
+Provider implementations should prefer native controls such as tokenizer `enable_thinking`,
+server `chat_template_kwargs`, or provider-native request fields. Prompt-marker fallbacks are only
+used when no cleaner control exists, and local cache renderers must apply the same thinking control
+during `prompt_cache_update(...)` and `generate(...)` so durable cache prefixes remain token
+compatible with live requests.
+
 #### Model Metadata Registry (Source of Truth)
 AbstractCore's model capability routing and architecture formatting are driven by two canonical JSON registries:
 - `abstractcore/assets/model_capabilities.json` — model limits, tool/structured output flags, multimodal support, aliases

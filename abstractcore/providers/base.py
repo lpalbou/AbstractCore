@@ -1261,6 +1261,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             enabled is False
             and (provider_id == "lmstudio" or is_hf_gguf)
             and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}
+            and not provider_handling.handled_enable_disable
         ):
             marker = "<think>\n\n</think>\n\n"
             new_messages: List[Dict[str, str]] = []

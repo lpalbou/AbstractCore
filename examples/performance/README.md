@@ -28,6 +28,14 @@ How to reason about latency/throughput tradeoffs in LLM apps:
   - Demonstrates: how MLX throughput changes with concurrent jobs / pooling.
   - Takeaway: concurrency can help or hurt depending on decode length and memory pressure.
 
+- `durable_bloc_cache_benchmark.py`
+  - Demonstrates: durable memory-bloc cache proof for one local provider/model at a time.
+  - Measures: warm model load, full prompt processing, artifact ensure/load, cached suffix
+    processing, generation latency, binding validation, and answer correctness.
+  - Caveats: local models are required; run one case per process; GGUF proof requires an exact
+    cached prompt renderer; HF transformers proof requires a serializable provider-native cache.
+    Speedups are workload- and hardware-dependent.
+
 - `matrix_operations_demo.py` (embeddings-scale, dev-oriented)
   - Demonstrates: similarity matrices, query-doc matching, clustering, and performance tricks (normalization/chunking).
   - Takeaway: once you cross into N×N territory, batching + chunking become essential.

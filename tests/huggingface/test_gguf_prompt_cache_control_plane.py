@@ -259,3 +259,107 @@ def test_generate_gguf_attaches_underlying_cache_object() -> None:
     assert isinstance(response, GenerateResponse)
     assert provider.llm.set_cache_calls
     assert provider.llm.set_cache_calls[-1] is cache_value.cache
+
+
+def test_gguf_qwen_thinking_off_control_plane_marker_is_generation_prompt() -> None:
+    provider = _new_provider(chat_format="chatml-function-calling")
+
+    prompt, messages, system_prompt, kwargs, thinking_meta = provider._apply_thinking_request(
+        thinking="off",
+        prompt="What is the answer?",
+        messages=[{"role": "user", "content": "Cached memory bloc."}],
+        system_prompt=None,
+        kwargs={},
+    )
+
+    assert prompt == "What is the answer?"
+    assert system_prompt is None
+    assert kwargs["_acore_gguf_enable_thinking"] is False
+    assert thinking_meta["thinking_effective"] == "off"
+    assert messages == [{"role": "user", "content": "Cached memory bloc."}]
+
+    chat_messages = provider._gguf_build_chat_messages(messages=messages, user_message_content=prompt)
+    prompt_text, _ = provider._gguf_render_prompt_tokens(
+        messages=chat_messages,
+        add_generation_prompt=True,
+        enable_thinking=kwargs["_acore_gguf_enable_thinking"],
+    )
+
+    assert prompt_text.endswith("<|im_start|>assistant\n<think>\n\n</think>\n\n")
+    assert "<think>\n\n</think>\n\n<|im_end|>\n<|im_start|>assistant" not in prompt_text
+
+
+def test_gguf_cached_generation_prompt_extends_loaded_bloc_prefix() -> None:
+    provider = _new_provider(chat_format="chatml-function-calling")
+    assert provider.prompt_cache_set("sess", make_default=False) is True
+    assert provider.prompt_cache_update("sess", messages=[{"role": "user", "content": "FILEBOX"}]) is True
+    cache_state = provider._prompt_cache_store.get("sess")
+    assert isinstance(cache_state, _GGUFPromptCacheValue)
+
+    live_messages = provider._gguf_build_chat_messages(user_message_content="QUESTION")
+    live_text, live_tokens = provider._gguf_render_prompt_tokens(
+        messages=live_messages,
+        add_generation_prompt=True,
+        enable_thinking=False,
+    )
+    composed_text, composed_tokens, meta = provider._gguf_compose_cached_prompt_tokens(
+        cache_state=cache_state,
+        live_prompt_text=live_text,
+        live_prompt_tokens=live_tokens,
+    )
+
+    assert meta["prompt_cache_prefix_source"] == "loaded_cache"
+    assert meta["prompt_cache_composed"] is True
+    assert composed_tokens[: len(cache_state.prompt_tokens)] == cache_state.prompt_tokens
+    assert len(composed_tokens) > len(cache_state.prompt_tokens)
+    assert composed_text.startswith(cache_state.prompt_text)
+    assert "FILEBOX" in composed_text
+    assert "QUESTION" in composed_text
+
+
+def test_generate_gguf_control_plane_receives_thinking_flag() -> None:
+    provider = _new_provider(chat_format="chatml-function-calling")
+    assert provider.prompt_cache_set("sess", make_default=False) is True
+
+    captured: Dict[str, Any] = {}
+
+    def _fake_control_plane_generate(**kwargs: Any) -> GenerateResponse:
+        captured.update(kwargs)
+        return GenerateResponse(content="ok", model=provider.model, finish_reason="stop")
+
+    provider._gguf_control_plane_generate = _fake_control_plane_generate  # type: ignore[method-assign]
+
+    response = provider._generate_gguf(
+        prompt="What is the answer?",
+        messages=[{"role": "user", "content": "Cached memory bloc."}],
+        system_prompt=None,
+        tools=None,
+        media=None,
+        stream=False,
+        prompt_cache_key="sess",
+        _acore_gguf_enable_thinking=False,
+    )
+
+    assert isinstance(response, GenerateResponse)
+    assert captured["enable_thinking"] is False
+
+
+def test_gguf_prompt_cache_update_uses_unified_thinking_control() -> None:
+    provider = _new_provider(chat_format="chatml-function-calling")
+    captured: List[Any] = []
+    original = provider._gguf_render_prompt_tokens
+
+    def _capture_tokens(**kwargs: Any):
+        captured.append(kwargs.get("enable_thinking"))
+        return original(**kwargs)
+
+    provider._gguf_render_prompt_tokens = _capture_tokens  # type: ignore[method-assign]
+    assert provider.prompt_cache_set("thinking", make_default=False) is True
+    assert provider.prompt_cache_update(
+        "thinking",
+        prompt="hi",
+        add_generation_prompt=True,
+        thinking="off",
+    ) is True
+
+    assert False in captured

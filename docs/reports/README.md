@@ -12,3 +12,7 @@ the canonical, up-to-date documentation.
   considered **illustrative**, not guarantees.
 - When a report references code paths or APIs, verify against the current implementation before relying on it.
 
+## Recent reports
+
+- `2026-05-20-durable-memory-bloc-cache-validation.md` — MLX, HuggingFace transformers, and
+  HuggingFace GGUF durable memory-bloc cache proof with processing-phase timing split.

@@ -86,12 +86,18 @@ The public API shape is shared. Provider internals and artifact formats remain b
 
 - **MLX**: `.safetensors`, exact prompt fragment rendered by `MLXProvider`.
 - **HuggingFace transformers**: `.safetensors`, gated on local prompt-cache save/load support for
-  standard text-generation models.
+  standard text-generation models and provider-native cache state AbstractCore can serialize and
+  reconstruct. Current coverage includes standard `DynamicCache` layer state, Qwen3.5/Qwen3Next
+  tensor-list hybrid state, and Mamba-style tensor state when the Transformers cache class can be
+  constructed from model config.
 - **HuggingFace GGUF**: `.npz`, gated on exact cached prompt renderers. Current exact renderer
   paths are `chatml-function-calling` and `llama-3`; other GGUF chat formats remain keyed-only.
 
 Remote providers and generic OpenAI-compatible servers keep best-effort `prompt_cache_key`
 semantics. They do not expose local durable bloc artifacts.
+
+Artifact payloads are provider-native and model-bound. The portable contract is the manifest,
+binding object, Python helper, and server route shape, not a universal KV tensor layout.
 
 ## Binding and debug proof
 

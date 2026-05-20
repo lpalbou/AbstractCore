@@ -2126,7 +2126,8 @@ resp = llm.generate("Use the loaded memory.", prompt_cache_binding=loaded.prompt
 
 The public helpers are exported from both `abstractcore` and `abstractcore.core`. The shared
 contract currently covers MLX, HuggingFace transformers, and supported HuggingFace GGUF
-exact-renderer paths.
+exact-renderer paths. Artifact payloads are provider/model-native; the portable contract is the
+manifest, binding object, Python helpers, and server route shape.
 
 ### `tool` (decorator)
 
@@ -8599,7 +8600,8 @@ provider/model cache artifact flow:
 request-time binding is required. `debug=true` on ensure/load returns verbose proof fields.
 
 The shared route shape covers MLX, HuggingFace transformers, and supported HuggingFace GGUF
-exact-renderer paths. Cache keys are worker-local to the endpoint process.
+exact-renderer paths. Artifact payloads are provider/model-native, not a universal KV tensor
+format. Cache keys are worker-local to the endpoint process.
 
 ---
 

@@ -159,18 +159,33 @@ Summary:
   `abstractcore-gguf-prompt-cache/v1`, and `.npz` artifact selection.
 - Preserved exact-renderer gating: only `chatml-function-calling` and `llama-3` local-control-plane
   paths expose durable exact artifacts; other GGUF chat formats remain keyed-only.
+- Fixed cached generation to treat the loaded GGUF bloc cache as the prefix source-of-truth, then
+  append the live suffix. This prevents false-positive speedups where the cache object is attached
+  but the request is actually question-only.
+- Applied Qwen `thinking=off` through the exact control-plane renderer rather than by mutating the
+  canonical chat history into a fake assistant turn.
 - Added shared contract tests that cover GGUF backend manifests, debug payloads, binding
   validation, load/reload/fork behavior, and request-time binding.
 
 Validation:
 - `pytest -q` -> `1409 passed, 243 skipped`.
 - Focused: `pytest -q tests/test_bloc_kv.py tests/huggingface/test_gguf_prompt_cache_control_plane.py`.
-- Real-provider smoke proof with local Qwen3 0.6B GGUF Q4_K_M on CPU: local-control-plane
+- Earlier lightweight smoke proof with local Qwen3 0.6B GGUF Q4_K_M on CPU: local-control-plane
   capability, exact renderer `chatml-function-calling`, `.npz` artifact, backend `hf-gguf`,
   9,163,070-byte artifact, binding validation, and generation with `prompt_cache_binding` all
   succeeded.
+- Updated focused validation: `pytest -q tests/huggingface/test_gguf_prompt_cache_control_plane.py`
+  -> 11 passed.
+- Real-provider 4B proof with local `unsloth/Qwen3-4B-Instruct-2507-GGUF` Q4_K_M:
+  `.npz` artifact, backend `hf-gguf`, 490,639,611-byte artifact, 3,642 cached bloc tokens,
+  binding validation, correct uncached and cached answers, full prompt processing 1.3672s,
+  cached suffix processing 0.1686s, processing-phase speedup 8.1091x.
+- Cached-generation metadata confirmed actual durable-prefix use:
+  `prompt_cache_prefix_source=loaded_cache`, `prompt_cache_prefix_token_count=3642`,
+  `prompt_cache_suffix_token_count=44`.
+- Detailed local proof: `docs/reports/2026-05-20-durable-memory-bloc-cache-validation.md`.
 
 Residual risks:
 - Support remains chat-format gated. Adding more GGUF formats requires exact renderer work, not a
   generic fallback.
-- Real GGUF proof depends on a locally cached model and is intentionally not default CI.
+- Real GGUF proof depends on a locally cached 2B+ model and is intentionally not default CI.

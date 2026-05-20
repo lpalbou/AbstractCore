@@ -158,17 +158,32 @@ Summary:
   `abstractcore-transformers-prompt-cache/v1`, and `.safetensors` artifact selection.
 - Preserved provider-owned transformers cache save/load behavior and carried bloc metadata through
   safetensors metadata without exposing private provider internals.
+- Extended provider-native cache preservation beyond plain `DynamicCache`: configured
+  DynamicCache layer types are restored, Qwen3.5/Qwen3Next-style tensor-list cache state is
+  preserved, and Mamba-style tensor state is serialized when the cache class is constructible from
+  model config.
+- Applied unified `thinking=...` controls through prompt-cache update and cached generation so
+  cache preparation and live inference serialize compatible prefixes.
 - Added shared contract tests that cover transformers backend manifests, debug payloads, binding
   validation, load/reload/fork behavior, and request-time binding.
 
 Validation:
 - `pytest -q` -> `1409 passed, 243 skipped`.
 - Focused: `pytest -q tests/test_bloc_kv.py tests/huggingface/test_transformers_prompt_cache_control_plane_unit.py`.
-- Real-provider smoke proof with `sshleifer/tiny-gpt2` on CPU: local-control-plane capability,
+- Earlier lightweight smoke proof with `sshleifer/tiny-gpt2` on CPU: local-control-plane capability,
   `.safetensors` artifact, backend `hf-transformers`, 4,668-byte artifact, binding validation, and
   generation with `prompt_cache_binding` all succeeded.
+- Updated focused validation: `pytest -q tests/huggingface/test_transformers_prompt_cache_control_plane_unit.py`
+  -> 6 passed.
+- Real-provider 4B proof with `Qwen/Qwen3.5-4B`: `.safetensors` artifact, backend
+  `hf-transformers`, 173,923,172-byte artifact, 3,723 cached bloc tokens, binding validation,
+  correct uncached and cached answers, full prompt processing 2.5437s, cached suffix processing
+  0.8196s, processing-phase speedup 3.1036x.
+- Detailed local proof: `docs/reports/2026-05-20-durable-memory-bloc-cache-validation.md`.
 
 Residual risks:
 - Only standard text-generation transformer models with provider-advertised prompt-cache
   save/load are supported. Vision/custom transformer paths remain out of scope.
+- There is no universal HuggingFace KV tensor format. New model-specific cache families may need a
+  small provider-native adapter before durable artifacts can be promised.
 - Real model proof depends on a locally cached model and is intentionally not default CI.

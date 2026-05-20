@@ -181,3 +181,146 @@ def test_transformers_prompt_cache_prepare_modules_fork_update_and_save_load(tmp
     assert isinstance(loaded_state, _TransformersPromptCacheValue)
     assert loaded_state.prompt_tokens
 
+
+def test_transformers_dynamic_cache_load_preserves_configured_layer_types(tmp_path) -> None:
+    config_mod = pytest.importorskip("transformers.models.mistral.configuration_mistral")
+
+    provider = _new_provider()
+    config = config_mod.MistralConfig(num_hidden_layers=2, sliding_window=8)
+    provider.model = "mistral-test"
+    provider.model_instance.config = config
+
+    cache = DynamicCache(config=config)
+    for idx in range(2):
+        keys = torch.full((1, 1, 4, 1), float(idx), dtype=torch.float32)
+        values = torch.full((1, 1, 4, 1), float(idx + 1), dtype=torch.float32)
+        cache.update(keys, values, layer_idx=idx)
+
+    provider._prompt_cache_store.set(
+        "sliding",
+        _TransformersPromptCacheValue(cache=cache, prompt_tokens=(1, 2, 3, 4)),
+        meta={"backend": "transformers"},
+    )
+
+    filename = tmp_path / "sliding.safetensors"
+    saved = provider.prompt_cache_save("sliding", str(filename))
+    assert saved["meta"]["cache_schema"] == "dynamic-cache-layers/v1"
+
+    provider.prompt_cache_clear()
+    loaded = provider.prompt_cache_load(str(filename), key="loaded-sliding", make_default=False)
+    loaded_state = provider._prompt_cache_store.get(loaded["key"])
+
+    assert isinstance(loaded_state, _TransformersPromptCacheValue)
+    assert [layer.__class__.__name__ for layer in loaded_state.cache.layers] == [
+        "DynamicSlidingWindowLayer",
+        "DynamicSlidingWindowLayer",
+    ]
+    assert torch.equal(loaded_state.cache.layers[1].keys, torch.full((1, 1, 4, 1), 1.0))
+    assert torch.equal(loaded_state.cache.layers[1].values, torch.full((1, 1, 4, 1), 2.0))
+
+
+def test_transformers_prompt_cache_update_uses_unified_thinking_control() -> None:
+    provider = _new_provider()
+    provider.model = "Qwen/Qwen3.5-4B"
+    provider.architecture = "qwen3_5"
+    captured: List[Any] = []
+    original = provider._transformers_build_prompt_fragment
+
+    def _capture_fragment(**kwargs: Any) -> str:
+        captured.append(kwargs.get("enable_thinking"))
+        return original(**kwargs)
+
+    provider._transformers_build_prompt_fragment = _capture_fragment  # type: ignore[method-assign]
+    assert provider.prompt_cache_set("thinking", make_default=False) is True
+    assert provider.prompt_cache_update(
+        "thinking",
+        prompt="hi",
+        add_generation_prompt=True,
+        thinking="off",
+    ) is True
+
+    assert False in captured
+
+
+def test_transformers_prompt_cache_save_load_preserves_qwen35_hybrid_cache(tmp_path) -> None:
+    modeling = pytest.importorskip("transformers.models.qwen3_5.modeling_qwen3_5")
+    config_mod = pytest.importorskip("transformers.models.qwen3_5.configuration_qwen3_5")
+
+    config = config_mod.Qwen3_5TextConfig()
+    cache = modeling.Qwen3_5DynamicCache(config)
+    for idx, layer_type in enumerate(cache.layer_types):
+        if layer_type == "full_attention":
+            cache.key_cache[idx] = torch.full((1, 1, 3, 1), float(idx), dtype=torch.float32)
+            cache.value_cache[idx] = torch.full((1, 1, 3, 1), float(idx + 1), dtype=torch.float32)
+        else:
+            cache.conv_states[idx] = torch.full((1, 2, 4), float(idx + 2), dtype=torch.float32)
+            cache.recurrent_states[idx] = torch.full((1, 2, 3), float(idx + 3), dtype=torch.float32)
+
+    provider = _new_provider()
+    provider.model = "Qwen/Qwen3.5-4B"
+    provider.model_instance.config = config
+    provider._prompt_cache_store.set(
+        "qwen",
+        _TransformersPromptCacheValue(cache=cache, prompt_tokens=(11, 12, 13)),
+        meta={"backend": "transformers"},
+    )
+
+    filename = tmp_path / "qwen35.safetensors"
+    saved = provider.prompt_cache_save("qwen", str(filename))
+    assert saved["meta"]["cache_schema"] == "tensor-list-cache/v1"
+    assert saved["meta"]["cache_class"] == "Qwen3_5DynamicCache"
+
+    provider.prompt_cache_clear()
+    loaded = provider.prompt_cache_load(str(filename), key="loaded", make_default=False)
+    loaded_state = provider._prompt_cache_store.get(loaded["key"])
+
+    assert isinstance(loaded_state, _TransformersPromptCacheValue)
+    loaded_cache = loaded_state.cache
+    assert loaded_cache.__class__.__name__ == "Qwen3_5DynamicCache"
+    assert loaded_state.prompt_tokens == (11, 12, 13)
+    assert loaded_cache.get_seq_length() == 3
+    assert loaded_cache.has_previous_state is True
+    assert torch.equal(loaded_cache.key_cache[3], torch.full((1, 1, 3, 1), 3.0))
+    assert torch.equal(loaded_cache.value_cache[3], torch.full((1, 1, 3, 1), 4.0))
+    assert torch.equal(loaded_cache.conv_states[0], torch.full((1, 2, 4), 2.0))
+    assert torch.equal(loaded_cache.recurrent_states[0], torch.full((1, 2, 3), 3.0))
+
+
+def test_transformers_prompt_cache_save_load_preserves_mamba_tensor_state(tmp_path) -> None:
+    modeling = pytest.importorskip("transformers.models.mamba.modeling_mamba")
+    config_mod = pytest.importorskip("transformers.models.mamba.configuration_mamba")
+
+    config = config_mod.MambaConfig(num_hidden_layers=2, hidden_size=8, state_size=3, expand=1, conv_kernel=2)
+    cache = modeling.MambaCache(
+        config,
+        max_batch_size=1,
+        dtype=torch.float32,
+        device="cpu",
+    )
+    cache.conv_states[0].fill_(5.0)
+    cache.ssm_states[1].fill_(7.0)
+
+    provider = _new_provider()
+    provider.model = "state-spaces/mamba-test"
+    provider.model_instance.config = config
+    provider._prompt_cache_store.set(
+        "mamba",
+        _TransformersPromptCacheValue(cache=cache, prompt_tokens=(21, 22)),
+        meta={"backend": "transformers"},
+    )
+
+    filename = tmp_path / "mamba.safetensors"
+    saved = provider.prompt_cache_save("mamba", str(filename))
+    assert saved["meta"]["cache_schema"] == "tensor-list-cache/v1"
+    assert saved["meta"]["cache_class"] == "MambaCache"
+
+    provider.prompt_cache_clear()
+    loaded = provider.prompt_cache_load(str(filename), key="loaded-mamba", make_default=False)
+    loaded_state = provider._prompt_cache_store.get(loaded["key"])
+
+    assert isinstance(loaded_state, _TransformersPromptCacheValue)
+    loaded_cache = loaded_state.cache
+    assert loaded_cache.__class__.__name__ == "MambaCache"
+    assert loaded_state.prompt_tokens == (21, 22)
+    assert torch.equal(loaded_cache.conv_states[0], torch.full_like(loaded_cache.conv_states[0], 5.0))
+    assert torch.equal(loaded_cache.ssm_states[1], torch.full_like(loaded_cache.ssm_states[1], 7.0))

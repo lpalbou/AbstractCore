@@ -225,16 +225,23 @@ Validation:
   `tests/huggingface/test_gguf_prompt_cache_control_plane.py`, and related server proxy tests.
 - Real-provider smoke proofs ran one model at a time:
   - MLX `mlx-community/Qwen3-4B-Instruct-2507-4bit`: `.safetensors`, backend `mlx`, artifact
-    12,099,046 bytes, binding validated, generation with binding succeeded.
-  - HuggingFace transformers `sshleifer/tiny-gpt2`: `.safetensors`, backend `hf-transformers`,
-    artifact 4,668 bytes, binding validated, generation with binding succeeded.
-  - HuggingFace GGUF `mlabonne_Qwen3-0.6B-abliterated-Q4_K_M.gguf`: `.npz`, backend `hf-gguf`,
-    artifact 9,163,070 bytes, binding validated, generation with binding succeeded.
+    536,600,383 bytes, binding validated, correct cached answer, full prompt processing 0.9061s,
+    cached suffix processing 0.1422s.
+  - HuggingFace transformers `Qwen/Qwen3.5-4B`: `.safetensors`, backend `hf-transformers`,
+    artifact 173,923,172 bytes, binding validated, correct cached answer, full prompt processing
+    2.5437s, cached suffix processing 0.8196s.
+  - HuggingFace GGUF `unsloth/Qwen3-4B-Instruct-2507-GGUF` Q4_K_M: `.npz`, backend `hf-gguf`,
+    artifact 490,639,611 bytes, binding validated, correct cached answer, full prompt processing
+    1.3672s, cached suffix processing 0.1686s.
+- Detailed local proof: `docs/reports/2026-05-20-durable-memory-bloc-cache-validation.md`.
 
 Residual risks and follow-ups:
 - GGUF exact artifacts remain renderer-gated; unsupported chat formats must stay keyed-only until
   exact renderers are added.
-- Real-provider smoke tests are not default CI because they load local models and depend on local
-  cache state.
+- HuggingFace transformers durable artifacts depend on provider-native cache classes that can be
+  serialized and reconstructed. Unsupported custom cache classes should fail explicitly until an
+  adapter lands.
+- Real-provider smoke tests are not default CI because they load local 2B+ models and depend on
+  local cache state.
 - Superbloc/grouped-memory exact-prefix recipes remain proposed research, not part of this
   completed contract.

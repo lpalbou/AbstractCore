@@ -74,9 +74,11 @@ caller requested exact binding.
   backends through the same bloc helper API.
 - Endpoint and gateway tests cover `binding_id`, `prompt_cache_binding`, verbose debug payloads,
   and `409` stale-binding failures.
-- Real-provider smoke proofs were run on 2026-05-20 for one local model at a time: MLX
-  Qwen3-4B-4bit, HuggingFace transformers `sshleifer/tiny-gpt2`, and HuggingFace GGUF
-  Qwen3-0.6B Q4_K_M.
+- Real-provider proof runs on 2026-05-20 used one local 2B+ model at a time for release-quality
+  semantic validation: MLX Qwen3-4B-4bit, HuggingFace transformers `Qwen/Qwen3.5-4B`, and
+  HuggingFace GGUF Qwen3-4B-Instruct Q4_K_M. The proof records full prompt processing versus
+  cached suffix processing, binding validation, and correct uncached/cached answers in
+  `docs/reports/2026-05-20-durable-memory-bloc-cache-validation.md`.
 
 ## Backlog links
 

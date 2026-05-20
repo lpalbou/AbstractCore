@@ -44,7 +44,7 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/acore/models/loaded` | GET | List currently loaded task-aware runtimes | optional `task`, `provider`, `model` |
 | `/acore/models/unload` | POST | Unload a task-specific runtime | `runtime_id` or `provider` + `model`, optional `task`, `base_url`, `options` |
 | `/acore/prompt_cache/*` | GET/POST | Prompt-cache control plane on a loaded gateway runtime or proxied AbstractEndpoint | `provider` + `model` or `base_url`, cache operation fields |
-| `/acore/blocs/*` | GET/POST | Memory-bloc / MLX bloc-KV control plane on a loaded gateway runtime or proxied AbstractEndpoint | local store by default, or `runtime_id` / `provider` + `model` / `base_url` as required |
+| `/acore/blocs/*` | GET/POST | Provider-backed memory-bloc KV artifact control plane for MLX, HuggingFace transformers, and supported HuggingFace GGUF exact-renderer paths | local store by default, or `runtime_id` / `provider` + `model` / `base_url` as required |
 
 Runtime note: omitted `task` on `/acore/models/load` keeps the existing text-generation runtime behavior. Non-text tasks route to capability-owned residency where supported: `image_generation` uses the same server image backend cache as `/v1/images/*`, while `tts` and `stt` use the shared AbstractVoice capability core. `loaded_new` reports whether the load call created or warmed a new resident runtime; it is not a synonym for `resident`.
 

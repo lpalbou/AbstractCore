@@ -105,11 +105,15 @@ print(caps.to_dict())
   - CLI persistence: `abstractcore-chat` supports `/cache save|load` (writes/reads a `.safetensors` cache; model-locked).
   - Durable memory blocs: supports exact bloc artifacts through `ensure_bloc_kv_artifact(...)` /
     `load_bloc_kv_artifact(...)`.
-- **HuggingFace (transformers)** (`HuggingFaceProvider` with `model_type="transformers"`): supports in-process KV reuse keyed by `prompt_cache_key` via `past_key_values` (`DynamicCache`).
+- **HuggingFace (transformers)** (`HuggingFaceProvider` with `model_type="transformers"`): supports in-process KV reuse keyed by `prompt_cache_key` via provider-native `past_key_values` / `Cache` objects.
   - Supports AbstractCore’s local prompt-cache control plane (`prompt_cache_update`, `prompt_cache_prepare_modules`, `prompt_cache_fork`, …).
   - Supports cache persistence via `prompt_cache_save()` / `prompt_cache_load()` (writes/reads `.safetensors`; model-locked).
   - Durable memory blocs: supports exact bloc artifacts through the same public bloc API as MLX.
-  - Limitations: enabled only for standard text-generation models (decoder-only); vision/custom transformer backends do not currently expose prompt caching.
+  - Current durable formats cover standard `DynamicCache` layer state, Qwen3.5/Qwen3Next-style
+    tensor-list hybrid state, and Mamba-style tensor state when the Transformers cache class is
+    constructible from model config. Other custom cache classes fail explicitly until an adapter is
+    added.
+  - Limitations: enabled only for standard text-generation models (decoder-only); vision/custom transformer backends do not currently expose prompt caching. There is no universal HuggingFace KV tensor format.
 - **HuggingFace GGUF** (`HuggingFaceProvider` with llama.cpp): always supports keyed in-process RAM caches (`LlamaRAMCache`), and reports `mode=local_control_plane` when AbstractCore can render the model's llama.cpp chat format exactly for cache reuse.
   - Current exact renderers: `chatml-function-calling`, `llama-3`
   - Other GGUF chat formats remain `mode=keyed` until an exact cached prompt renderer is implemented.
@@ -150,6 +154,11 @@ The shared shape works for:
 - MLX (`.safetensors`)
 - HuggingFace transformers (`.safetensors`)
 - HuggingFace GGUF exact-renderer paths (`.npz`)
+
+The artifact payload is provider-native. The shared abstraction is the manifest, binding, Python
+helper, and server route shape; saved tensors/state are not portable between provider/model pairs.
+The manifest records provider, model, rendered recipe hash, cache backend, artifact format, and
+binding metadata so incompatible artifacts are rejected instead of guessed.
 
 `prompt_cache_key` remains a volatile runtime handle. `prompt_cache_binding` is optional; when
 supplied, generation verifies that the key is still loaded with the exact artifact returned by
