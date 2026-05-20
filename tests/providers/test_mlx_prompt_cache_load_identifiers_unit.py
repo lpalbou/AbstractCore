@@ -8,6 +8,69 @@ from abstractcore.providers.base import PromptCacheStore
 from abstractcore.providers.mlx_provider import MLXProvider
 
 
+class _FakeCacheLayer:
+    def __init__(self, *, size: int, offset: int = 0) -> None:
+        self._size = int(size)
+        self.offset = int(offset)
+
+    def size(self) -> int:
+        return self._size
+
+
+class _FakeTokenizer:
+    bos_token = "<bos>"
+
+
+class _FakeToolHandler:
+    supports_prompted = False
+
+
+def test_mlx_prompt_cache_token_count_uses_max_hybrid_layer_offset() -> None:
+    provider = MLXProvider.__new__(MLXProvider)
+    cache = [
+        _FakeCacheLayer(size=1024, offset=3837),
+        _FakeCacheLayer(size=3837, offset=3837),
+        _FakeCacheLayer(size=1024, offset=3837),
+    ]
+
+    assert provider._prompt_cache_backend_token_count(cache) == 3837
+
+
+def test_mlx_gemma4_prompt_fragment_uses_turn_template_and_optional_bos() -> None:
+    provider = MLXProvider.__new__(MLXProvider)
+    provider.model = "mlx-community/gemma-4-26b-a4b-4bit"
+    provider.architecture_config = {"message_format": "gemma_turn"}
+    provider.tokenizer = _FakeTokenizer()
+    provider.tool_handler = _FakeToolHandler()
+
+    initial = provider._build_prompt_fragment(
+        messages=[{"role": "user", "content": "FILEBOX"}],
+        add_generation_prompt=True,
+    )
+    suffix = provider._build_prompt_fragment(
+        prompt="QUESTION",
+        add_generation_prompt=True,
+        include_bos=False,
+    )
+
+    assert initial == "<bos><|turn>user\nFILEBOX<turn|>\n<|turn>model\n"
+    assert suffix == "<|turn>user\nQUESTION<turn|>\n<|turn>model\n"
+
+
+def test_mlx_gemma4_postprocess_truncates_turn_delimiter() -> None:
+    provider = MLXProvider.__new__(MLXProvider)
+    provider.architecture_config = {
+        "message_format": "gemma_turn",
+        "assistant_suffix": "<turn|>\n",
+    }
+    provider.model_capabilities = {}
+
+    cleaned, reasoning = provider._postprocess_generated_text("answer<turn|>\n<|turn>user\nnext")
+
+    assert cleaned == "answer"
+    assert reasoning is None
+
+
 def test_mlx_prompt_cache_load_accepts_equivalent_resolved_model_id(monkeypatch, tmp_path: Path) -> None:
     module = types.ModuleType("mlx_lm.models.cache")
 

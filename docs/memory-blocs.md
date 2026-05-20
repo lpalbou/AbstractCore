@@ -91,7 +91,8 @@ The public API shape is shared. Provider internals and artifact formats remain b
   tensor-list hybrid state, and Mamba-style tensor state when the Transformers cache class can be
   constructed from model config.
 - **HuggingFace GGUF**: `.npz`, gated on exact cached prompt renderers. Current exact renderer
-  paths are `chatml-function-calling` and `llama-3`; other GGUF chat formats remain keyed-only.
+  paths are `chatml-function-calling`, `llama-3`, and Gemma4 `gemma_turn` via llama.cpp chat
+  templates; other GGUF chat formats remain keyed-only.
 
 Remote providers and generic OpenAI-compatible servers keep best-effort `prompt_cache_key`
 semantics. They do not expose local durable bloc artifacts.

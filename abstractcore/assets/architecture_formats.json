@@ -416,13 +416,13 @@
 	      },
 	      "gemma4": {
 	        "description": "Google's Gemma 4 multimodal architecture (March 2026)",
-	        "message_format": "basic",
-	        "system_prefix": "",
-	        "system_suffix": "\n\n",
-	        "user_prefix": "Human: ",
-	        "user_suffix": "\n",
-	        "assistant_prefix": "Assistant: ",
-	        "assistant_suffix": "\n",
+	        "message_format": "gemma_turn",
+	        "system_prefix": "<|turn>system\n",
+	        "system_suffix": "<turn|>\n",
+	        "user_prefix": "<|turn>user\n",
+	        "user_suffix": "<turn|>\n",
+	        "assistant_prefix": "<|turn>model\n",
+	        "assistant_suffix": "<turn|>\n",
 	        "tool_format": "special_token",
 	        "tool_prefix": "<|tool_call>",
 		        "thinking_tags": ["<|channel>thought", "<channel|>"],
@@ -712,6 +712,7 @@
     "openai_chat": "OpenAI chat completion format",
     "llama3_header": "LLaMA 3+ format with <|start_header_id|> and <|eot_id|>",
     "glm_special_tokens": "GLM format with <|system|>, <|user|>, <|assistant|> tokens",
+    "gemma_turn": "Gemma 4 turn format with <|turn>role and <turn|> delimiters",
     "harmony": "OpenAI harmony response format for GPT-OSS models"
   },
   "tool_formats": {

@@ -115,7 +115,7 @@ print(caps.to_dict())
     added.
   - Limitations: enabled only for standard text-generation models (decoder-only); vision/custom transformer backends do not currently expose prompt caching. There is no universal HuggingFace KV tensor format.
 - **HuggingFace GGUF** (`HuggingFaceProvider` with llama.cpp): always supports keyed in-process RAM caches (`LlamaRAMCache`), and reports `mode=local_control_plane` when AbstractCore can render the model's llama.cpp chat format exactly for cache reuse.
-  - Current exact renderers: `chatml-function-calling`, `llama-3`
+  - Current exact renderers: `chatml-function-calling`, `llama-3`, and Gemma4 `gemma_turn` through llama.cpp's model chat template.
   - Other GGUF chat formats remain `mode=keyed` until an exact cached prompt renderer is implemented.
   - Local control plane optimization: append-only updates tokenize/render only the delta segment; tools are kept in a stable prefix position so system/tools caches remain effective as the discussion grows.
   - Local control plane generation: when `prompt_cache_key` is set and the chat format is supported, AbstractCore can prefill from cached state snapshots and generate via `llm.generate(reset=False)` (instead of `create_chat_completion()`), which avoids llama-cpp-python chat handlers that reset/re-evaluate long prompts.

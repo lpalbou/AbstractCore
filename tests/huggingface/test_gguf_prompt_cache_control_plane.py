@@ -57,6 +57,13 @@ class _FakeLlamaModelMeta:
     def token_sep(self) -> int:
         return -1
 
+    def token_get_text(self, token_id: int) -> str:
+        if int(token_id) == 1:
+            return "<bos>"
+        if int(token_id) == 2:
+            return "<turn|>"
+        return ""
+
 
 class _FakeLlama:
     def __init__(self, *, chat_format: str = "chatml-function-calling") -> None:
@@ -112,6 +119,12 @@ class _FakeLlama:
         self.set_cache_calls.append(cache)
 
 
+_GEMMA_TURN_TEMPLATE = """{{ bos_token }}{% for message in messages %}<|turn>{{ 'model' if message['role'] == 'assistant' else message['role'] }}
+{{ message['content'] }}<turn|>
+{% endfor %}{% if add_generation_prompt %}<|turn>model
+{% endif %}"""
+
+
 def _new_provider(*, chat_format: str = "chatml-function-calling") -> HuggingFaceProvider:
     provider = HuggingFaceProvider.__new__(HuggingFaceProvider)
     BaseProvider.__init__(provider, "unsloth/Qwen3.5-2B-GGUF")
@@ -164,6 +177,30 @@ def test_gguf_prompt_cache_capabilities_downshift_for_unsupported_chat_format() 
             namespace="tenant:model",
             modules=[{"module_id": "system", "system_prompt": "SYSTEM"}],
         )
+
+
+def test_gguf_prompt_cache_capabilities_are_local_control_plane_for_gemma4_template() -> None:
+    provider = _new_provider(chat_format="chat_template.default")
+    provider.architecture = "gemma4"
+    provider.architecture_config = {
+        "message_format": "gemma_turn",
+        "assistant_suffix": "<turn|>\n",
+    }
+    provider.llm.metadata["tokenizer.chat_template"] = _GEMMA_TURN_TEMPLATE
+
+    caps = provider.get_prompt_cache_capabilities()
+
+    assert caps.supported is True
+    assert caps.mode == "local_control_plane"
+    assert provider._gguf_prompt_cache_control_plane_chat_format() == "llama-cpp-chat-template"
+
+    prompt_text, prompt_tokens = provider._gguf_render_prompt_tokens(
+        messages=[{"role": "user", "content": "FILEBOX"}],
+        add_generation_prompt=True,
+    )
+    assert prompt_text.startswith("<bos><|turn>user\nFILEBOX<turn|>")
+    assert prompt_text.endswith("<|turn>model\n")
+    assert prompt_tokens
 
 
 @pytest.mark.parametrize("chat_format", ["chatml-function-calling", "llama-3"])
@@ -312,6 +349,41 @@ def test_gguf_cached_generation_prompt_extends_loaded_bloc_prefix() -> None:
     assert meta["prompt_cache_composed"] is True
     assert composed_tokens[: len(cache_state.prompt_tokens)] == cache_state.prompt_tokens
     assert len(composed_tokens) > len(cache_state.prompt_tokens)
+    assert composed_text.startswith(cache_state.prompt_text)
+    assert "FILEBOX" in composed_text
+    assert "QUESTION" in composed_text
+
+
+def test_gguf_gemma4_cached_generation_prompt_strips_duplicate_template_bos() -> None:
+    provider = _new_provider(chat_format="chat_template.default")
+    provider.architecture = "gemma4"
+    provider.architecture_config = {
+        "message_format": "gemma_turn",
+        "assistant_suffix": "<turn|>\n",
+    }
+    provider.llm.metadata["tokenizer.chat_template"] = _GEMMA_TURN_TEMPLATE
+
+    assert provider.prompt_cache_set("sess", make_default=False) is True
+    assert provider.prompt_cache_update("sess", messages=[{"role": "user", "content": "FILEBOX"}]) is True
+    cache_state = provider._prompt_cache_store.get("sess")
+    assert isinstance(cache_state, _GGUFPromptCacheValue)
+
+    live_messages = provider._gguf_build_chat_messages(user_message_content="QUESTION")
+    live_text, live_tokens = provider._gguf_render_prompt_tokens(
+        messages=live_messages,
+        add_generation_prompt=True,
+        enable_thinking=False,
+    )
+    composed_text, composed_tokens, meta = provider._gguf_compose_cached_prompt_tokens(
+        cache_state=cache_state,
+        live_prompt_text=live_text,
+        live_prompt_tokens=live_tokens,
+    )
+
+    assert meta["prompt_cache_prefix_source"] == "loaded_cache"
+    assert meta["prompt_cache_composed"] is True
+    assert composed_tokens[: len(cache_state.prompt_tokens)] == cache_state.prompt_tokens
+    assert composed_text.count("<bos>") == 1
     assert composed_text.startswith(cache_state.prompt_text)
     assert "FILEBOX" in composed_text
     assert "QUESTION" in composed_text

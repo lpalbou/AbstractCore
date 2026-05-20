@@ -327,6 +327,12 @@ class HuggingFaceProvider(BaseProvider):
             return "llama-3"
         return ""
 
+    def _gguf_architecture_message_format(self) -> str:
+        cfg = getattr(self, "architecture_config", None)
+        if not isinstance(cfg, dict):
+            return ""
+        return str(cfg.get("message_format") or "").strip().lower()
+
     def _gguf_prompt_cache_control_plane_chat_format(self) -> str:
         chat_format = self._gguf_prompt_cache_chat_format()
         aliases = {
@@ -334,7 +340,14 @@ class HuggingFaceProvider(BaseProvider):
             "llama-3": "llama-3",
             "llama3": "llama-3",
         }
-        return aliases.get(chat_format, "")
+        if chat_format in aliases:
+            return aliases[chat_format]
+        if chat_format.startswith("chat_template") and self._gguf_architecture_message_format() == "gemma_turn":
+            metadata = getattr(getattr(self, "llm", None), "metadata", {})
+            template = str(metadata.get("tokenizer.chat_template") or "") if isinstance(metadata, dict) else ""
+            if template:
+                return "llama-cpp-chat-template"
+        return ""
 
     def _gguf_prompt_cache_supports_local_control_plane(self) -> bool:
         if getattr(self, "model_type", None) != "gguf":
@@ -453,9 +466,15 @@ class HuggingFaceProvider(BaseProvider):
                 separators=(",", ":"),
             )
             token_bytes = json.dumps([int(tok) for tok in prompt_tokens], separators=(",", ":")).encode("utf-8")
+            metadata = getattr(getattr(self, "llm", None), "metadata", {})
+            template = str(metadata.get("tokenizer.chat_template") or "") if isinstance(metadata, dict) else ""
+            serializer_version = f"hf-gguf-prompt-fragment/v1:{chat_format}"
+            if chat_format == "llama-cpp-chat-template":
+                template_hash = hashlib.sha256(template.encode("utf-8")).hexdigest()[:12] if template else "missing"
+                serializer_version = f"hf-gguf-prompt-fragment/v1:{chat_format}:{template_hash}"
             return PromptCacheRenderedFragment(
                 serialized_prompt=serialized,
-                serializer_version=f"hf-gguf-prompt-fragment/v1:{chat_format}",
+                serializer_version=serializer_version,
                 cache_backend="hf-gguf",
                 artifact_format=self.prompt_cache_artifact_format(),
                 meta={
@@ -527,7 +546,8 @@ class HuggingFaceProvider(BaseProvider):
             notes=(
                 "GGUF prompt caching supports keyed cache selection for this model.",
                 "Local control-plane parity currently requires an exact cached prompt renderer.",
-                f"supported_renderers=chatml-function-calling,llama-3 current_chat_format={chat_format}",
+                f"supported_renderers=chatml-function-calling,llama-3,gemma_turn/chat_template "
+                f"current_chat_format={chat_format}",
             ),
         )
 
@@ -891,6 +911,66 @@ class HuggingFaceProvider(BaseProvider):
             parts.append(role_map["assistant"])
         return "".join(parts)
 
+    def _gguf_model_token_text(self, token_id: int) -> str:
+        try:
+            token_text = self.llm._model.token_get_text(int(token_id))
+        except Exception:
+            return ""
+        if isinstance(token_text, bytes):
+            return token_text.decode("utf-8", "ignore")
+        return str(token_text or "")
+
+    def _gguf_template_bos_text(self) -> str:
+        try:
+            return self._gguf_model_token_text(int(self.llm.token_bos()))
+        except Exception:
+            return ""
+
+    def _gguf_strip_leading_template_bos(self, prompt_text: str) -> str:
+        text = str(prompt_text or "")
+        bos = self._gguf_template_bos_text()
+        if bos and text.startswith(bos):
+            return text[len(bos) :]
+        return text
+
+    def _gguf_render_llama_cpp_chat_template_prompt(
+        self,
+        *,
+        messages: List[Dict[str, Any]],
+        add_generation_prompt: bool,
+        enable_thinking: Optional[bool] = None,
+    ) -> str:
+        metadata = getattr(getattr(self, "llm", None), "metadata", {})
+        template = str(metadata.get("tokenizer.chat_template") or "") if isinstance(metadata, dict) else ""
+        if not template:
+            raise ValueError("GGUF chat-template renderer requires tokenizer.chat_template metadata.")
+        try:
+            from llama_cpp.llama_chat_format import Jinja2ChatFormatter
+        except Exception as e:
+            raise ValueError("GGUF chat-template renderer requires llama-cpp-python Jinja2ChatFormatter.") from e
+
+        bos = self._gguf_template_bos_text()
+        try:
+            eos = self._gguf_model_token_text(int(self.llm.token_eos()))
+        except Exception:
+            eos = ""
+        formatter = Jinja2ChatFormatter(
+            template,
+            eos_token=eos or "<turn|>",
+            bos_token=bos or "",
+            add_generation_prompt=bool(add_generation_prompt),
+        )
+        render_kwargs: Dict[str, Any] = {}
+        if isinstance(enable_thinking, bool):
+            render_kwargs["enable_thinking"] = enable_thinking
+        response = formatter(
+            messages=[copy.deepcopy(m) for m in messages if isinstance(m, dict)],
+            tools=None,
+            tool_choice=None,
+            **render_kwargs,
+        )
+        return str(getattr(response, "prompt", "") or "")
+
     def _gguf_tokenize_completion_prompt(self, prompt_text: str) -> List[int]:
         if getattr(self, "llm", None) is None:
             return []
@@ -929,33 +1009,49 @@ class HuggingFaceProvider(BaseProvider):
                 add_generation_prompt=bool(add_generation_prompt),
                 enable_thinking=enable_thinking,
             )
+            prompt_tokens = tuple(int(tok) for tok in self._gguf_tokenize_completion_prompt(prompt_text))
+        elif chat_format == "llama-cpp-chat-template":
+            prompt_text = self._gguf_render_llama_cpp_chat_template_prompt(
+                messages=messages,
+                add_generation_prompt=bool(add_generation_prompt),
+                enable_thinking=enable_thinking,
+            )
+            prompt_tokens = tuple(
+                int(tok)
+                for tok in self.llm.tokenize(
+                    prompt_text.encode("utf-8"),
+                    add_bos=False,
+                    special=True,
+                )
+            )
         else:
             prompt_text = self._gguf_render_chatml_prompt(
                 messages=messages,
                 add_generation_prompt=bool(add_generation_prompt),
                 enable_thinking=enable_thinking,
             )
-        if chat_format == "chatml":
-            prompt_tokens = tuple(
-                int(tok)
-                for tok in self.llm.tokenize(
-                    prompt_text.encode("utf-8"),
-                    add_bos=True,
-                    special=True,
+            if chat_format == "chatml":
+                prompt_tokens = tuple(
+                    int(tok)
+                    for tok in self.llm.tokenize(
+                        prompt_text.encode("utf-8"),
+                        add_bos=True,
+                        special=True,
+                    )
                 )
-            )
-        else:
-            prompt_tokens = tuple(int(tok) for tok in self._gguf_tokenize_completion_prompt(prompt_text))
+            else:
+                prompt_tokens = tuple(int(tok) for tok in self._gguf_tokenize_completion_prompt(prompt_text))
         return prompt_text, prompt_tokens
 
     def _gguf_tokenize_prompt_suffix(self, prompt_text: str) -> tuple[int, ...]:
         if getattr(self, "llm", None) is None or not prompt_text:
             return ()
+        suffix_text = self._gguf_strip_leading_template_bos(str(prompt_text or ""))
         try:
             return tuple(
                 int(tok)
                 for tok in self.llm.tokenize(
-                    str(prompt_text).encode("utf-8"),
+                    suffix_text.encode("utf-8"),
                     add_bos=False,
                     special=True,
                 )
@@ -995,12 +1091,13 @@ class HuggingFaceProvider(BaseProvider):
             meta["prompt_cache_prefix_source"] = "live_prompt"
             return live_prompt_text, live_prompt_tokens, meta
 
-        suffix_tokens = self._gguf_tokenize_prompt_suffix(live_prompt_text)
-        if not suffix_tokens and live_prompt_text:
+        live_suffix_text = self._gguf_strip_leading_template_bos(live_prompt_text)
+        suffix_tokens = self._gguf_tokenize_prompt_suffix(live_suffix_text)
+        if not suffix_tokens and live_suffix_text:
             meta["prompt_cache_error"] = "failed_to_tokenize_live_suffix"
             return live_prompt_text, live_prompt_tokens, meta
 
-        composed_prompt_text = f"{str(cache_state.prompt_text or '')}{str(live_prompt_text or '')}"
+        composed_prompt_text = f"{str(cache_state.prompt_text or '')}{str(live_suffix_text or '')}"
         composed_tokens = tuple(int(tok) for tok in (prefix_tokens + suffix_tokens))
         meta.update(
             {
@@ -1639,7 +1736,9 @@ class HuggingFaceProvider(BaseProvider):
             )
             if not has_system_delta:
                 chat_format = self._gguf_prompt_cache_control_plane_chat_format() or self._gguf_prompt_cache_chat_format()
-                if chat_format == "llama-3":
+                if chat_format not in {"chatml", "chatml-function-calling", "llama-3"}:
+                    delta_text = ""
+                elif chat_format == "llama-3":
                     delta_text = self._gguf_render_llama3_prompt(
                         messages=delta_messages,
                         add_generation_prompt=False,
@@ -4365,6 +4464,20 @@ class HuggingFaceProvider(BaseProvider):
         fmt = str(chat_format or "").strip().lower()
         if fmt == "llama-3":
             return ["<|eot_id|>"]
+        if fmt == "llama-cpp-chat-template":
+            stops: List[str] = []
+            try:
+                eos = self._gguf_model_token_text(int(self.llm.token_eos()))
+                if eos:
+                    stops.append(eos)
+            except Exception:
+                pass
+            cfg = getattr(self, "architecture_config", None)
+            if isinstance(cfg, dict):
+                suffix = str(cfg.get("assistant_suffix") or "").strip()
+                if suffix and suffix not in stops:
+                    stops.append(suffix)
+            return stops or ["<turn|>"]
         # ChatML and chatml-function-calling.
         return ["<|im_end|>"]
 

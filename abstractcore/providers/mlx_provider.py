@@ -24,6 +24,7 @@ except ImportError:
     OUTLINES_AVAILABLE = False
 
 from .base import BaseProvider, PromptCacheRenderedFragment, ThinkingControlHandling
+from ..architectures.response_postprocessing import normalize_assistant_text
 from ..core.types import GenerateResponse
 from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
@@ -92,8 +93,12 @@ class MLXProvider(BaseProvider):
         )
         if not serialized:
             return None
+        msg_fmt = str((getattr(self, "architecture_config", {}) or {}).get("message_format") or "").strip().lower()
         model = str(getattr(self, "model", "") or "").strip().lower()
-        fmt = "qwen-chatml" if "qwen" in model else "plain-chat"
+        if msg_fmt == "gemma_turn":
+            fmt = "gemma-turn"
+        else:
+            fmt = "qwen-chatml" if "qwen" in model else "plain-chat"
         return PromptCacheRenderedFragment(
             serialized_prompt=str(serialized),
             serializer_version=f"mlx-prompt-fragment/v1:{fmt}",
@@ -218,6 +223,7 @@ class MLXProvider(BaseProvider):
             return 0
         try:
             if isinstance(cache_value, (list, tuple)):
+                counts: List[int] = []
                 for layer in cache_value:
                     if hasattr(layer, "size"):
                         try:
@@ -225,15 +231,15 @@ class MLXProvider(BaseProvider):
                         except Exception:
                             s = None
                         if isinstance(s, int) and s > 0:
-                            return s
+                            counts.append(s)
                     if hasattr(layer, "offset"):
                         try:
                             off = int(getattr(layer, "offset", 0))
                         except Exception:
                             off = 0
                         if off > 0:
-                            return off
-                return 0
+                            counts.append(off)
+                return max(counts) if counts else 0
         except Exception:
             pass
         return None
@@ -248,6 +254,7 @@ class MLXProvider(BaseProvider):
         add_generation_prompt: bool = False,
         prefilled_modules: Optional[List[str]] = None,
         enable_thinking: Optional[bool] = None,
+        include_bos: bool = True,
     ) -> str:
         """Build a prompt fragment intended to be appended to an existing prompt_cache."""
 
@@ -281,18 +288,30 @@ class MLXProvider(BaseProvider):
             except Exception:
                 return str(val)
 
+        arch_cfg = getattr(self, "architecture_config", None) if isinstance(getattr(self, "architecture_config", None), dict) else {}
+        msg_fmt = str((arch_cfg or {}).get("message_format") or "").strip().lower()
         is_qwen = "qwen" in self.model.lower()
+        is_gemma_turn = msg_fmt == "gemma_turn"
         parts: List[str] = []
+
+        if is_gemma_turn and include_bos:
+            bos = str(getattr(getattr(self, "tokenizer", None), "bos_token", "") or "<bos>")
+            if bos:
+                parts.append(bos)
 
         if base_system_prompt and "system" not in prefilled:
             if is_qwen:
                 parts.append(f"<|im_start|>system\n{base_system_prompt}<|im_end|>\n")
+            elif is_gemma_turn:
+                parts.append(f"<|turn>system\n{base_system_prompt.strip()}<turn|>\n")
             else:
                 parts.append(f"{base_system_prompt.strip()}\n\n")
 
         if tool_system_prompt:
             if is_qwen:
                 parts.append(f"<|im_start|>system\n{tool_system_prompt}<|im_end|>\n")
+            elif is_gemma_turn:
+                parts.append(f"<|turn>system\n{tool_system_prompt.strip()}<turn|>\n")
             else:
                 parts.append(f"{tool_system_prompt.strip()}\n\n")
 
@@ -304,12 +323,18 @@ class MLXProvider(BaseProvider):
                 content = _as_text(msg.get("content"))
                 if is_qwen:
                     parts.append(f"<|im_start|>{role}\n{content}<|im_end|>\n")
+                elif is_gemma_turn:
+                    role_name = "model" if role.strip().lower() == "assistant" else role.strip().lower()
+                    if role_name in {"system", "user", "model"}:
+                        parts.append(f"<|turn>{role_name}\n{content.strip()}<turn|>\n")
                 else:
                     parts.append(f"{role}: {content}\n")
 
         if isinstance(prompt, str) and prompt:
             if is_qwen:
                 parts.append(f"<|im_start|>user\n{prompt}<|im_end|>\n")
+            elif is_gemma_turn:
+                parts.append(f"<|turn>user\n{prompt.strip()}<turn|>\n")
             else:
                 parts.append(f"user: {prompt}\n")
 
@@ -318,10 +343,34 @@ class MLXProvider(BaseProvider):
                 parts.append("<|im_start|>assistant\n")
                 if enable_thinking is False:
                     parts.append("<think>\n\n</think>\n\n")
+            elif is_gemma_turn:
+                parts.append("<|turn>model\n")
             else:
                 parts.append("assistant:")
 
         return "".join(parts)
+
+    def _postprocess_generated_text(self, text: str) -> tuple[str, Optional[str]]:
+        cleaned, reasoning = normalize_assistant_text(
+            str(text or ""),
+            architecture_format=getattr(self, "architecture_config", None),
+            model_capabilities=getattr(self, "model_capabilities", None),
+        )
+        msg_fmt = str((getattr(self, "architecture_config", {}) or {}).get("message_format") or "").strip().lower()
+        if msg_fmt == "gemma_turn":
+            stop_candidates = []
+            cfg = getattr(self, "architecture_config", None)
+            if isinstance(cfg, dict):
+                suffix = str(cfg.get("assistant_suffix") or "").strip()
+                if suffix:
+                    stop_candidates.append(suffix)
+            stop_candidates.append("<turn|>")
+            for stop in stop_candidates:
+                idx = cleaned.find(stop)
+                if idx >= 0:
+                    cleaned = cleaned[:idx].rstrip()
+                    break
+        return cleaned, reasoning
 
     def _prompt_cache_backend_append(
         self,
@@ -338,6 +387,7 @@ class MLXProvider(BaseProvider):
         if cache_value is None:
             return False
 
+        existing_tokens = self._prompt_cache_backend_token_count(cache_value)
         fragment = self._build_prompt_fragment(
             prompt=str(prompt or ""),
             messages=messages,
@@ -345,6 +395,7 @@ class MLXProvider(BaseProvider):
             tools=tools,
             add_generation_prompt=bool(add_generation_prompt),
             enable_thinking=kwargs.get("_acore_mlx_enable_thinking"),
+            include_bos=not (isinstance(existing_tokens, int) and int(existing_tokens) > 0),
         )
         if not fragment:
             return True
@@ -1132,15 +1183,16 @@ class MLXProvider(BaseProvider):
 
         gen_time = round((time.time() - start_time) * 1000, 1)
 
-        # Use the full response as-is - preserve all content including thinking
-        generated = response_text.strip()
+        generated, reasoning = self._postprocess_generated_text(response_text.strip())
+        metadata = {"reasoning": reasoning} if reasoning else None
 
         return GenerateResponse(
             content=generated,
             model=self.model,
             finish_reason="stop",
             usage=self._calculate_usage(prompt, generated),
-            gen_time=gen_time
+            gen_time=gen_time,
+            metadata=metadata,
         )
 
     def _calculate_usage(self, prompt: str, response: str) -> Dict[str, int]:

@@ -37,6 +37,8 @@ Each case ran in its own process. The script warms the loaded model, then record
 - `artifact_load_s`: loading the durable provider-native artifact
 - `cached_generation_s`: live cached request latency including suffix processing and decode
 - semantic correctness for both uncached and cached answers
+- strict correctness, where noted, means both uncached and cached answers exactly matched:
+  `launch_window=Tuesday at 09:30 UTC; inspector=Mira Chen; checksum=ACORE-7421`
 
 The benchmark question requires the answer to contain:
 
@@ -44,13 +46,37 @@ The benchmark question requires the answer to contain:
 - `Mira Chen`
 - `ACORE-7421`
 
-## Results
+## Baseline Three-Run Averages
 
-| Case | Model | Artifact | Tokens | Full Processing | Cached Suffix Processing | Processing Speedup | Artifact Load | Cached Generation | Correct |
-| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| MLX | `mlx-community/Qwen3-4B-Instruct-2507-4bit` | `.safetensors`, 536,600,383 bytes | 3,639 | 0.9061s | 0.1422s | 6.372x | 0.2131s | 0.3317s | yes |
-| HF transformers | `Qwen/Qwen3.5-4B` | `.safetensors`, 173,923,172 bytes | 3,723 | 2.5437s | 0.8196s | 3.1036x | 0.0935s | 1.9163s | yes |
-| HF GGUF | `unsloth/Qwen3-4B-Instruct-2507-GGUF` Q4_K_M | `.npz`, 490,639,611 bytes | 3,642 | 1.3672s | 0.1686s | 8.1091x | 1.2354s | 0.3647s | yes |
+These are averages over three isolated subprocess runs per case. Each run loaded exactly one model
+and produced strict-correct uncached and cached answers.
+
+| Case | Model | Artifact | Tokens | Full Processing | Cached Suffix Processing | Processing Speedup | Artifact Load | Uncached Generation | Cached Generation | Correct |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| MLX | `mlx-community/Qwen3-4B-Instruct-2507-4bit` | `abstractcore-mlx-prompt-cache/v1`, 536,600,383 bytes | 3,639 | 0.6796s | 0.1144s | 5.96x | 0.1878s | 0.8516s | 0.2955s | 3/3 strict |
+| HF transformers | `Qwen/Qwen3.5-4B` | `abstractcore-transformers-prompt-cache/v1`, 173,923,172 bytes | 3,723 | 1.5133s | 0.1840s | 8.26x | 0.0968s | 3.5251s | 1.7375s | 3/3 strict |
+| HF GGUF | `Qwen3-4B-Instruct-2507-Q4_K_M.gguf` | `abstractcore-gguf-prompt-cache/v1`, 490,639,617 bytes | 3,642 | 1.5457s | 0.1645s | 9.39x | 1.2424s | 1.8837s | 0.3555s | 3/3 strict |
+
+## Additional Model Checks
+
+| Model Check | Model | Artifact | Tokens | Full Processing | Cached Suffix Processing | Processing Speedup | Artifact Load | Uncached Generation | Cached Generation | Correct |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| Qwen3.6 27B GGUF Q4_K_M | `/Users/albou/.lmstudio/models/lmstudio-community/Qwen3.6-27B-GGUF/Qwen3.6-27B-Q4_K_M.gguf` | `abstractcore-gguf-prompt-cache/v1`, 373,319,512 bytes | 3,724 | 13.6949s | 0.3105s | 44.11x | 1.0095s | 10.9037s | 1.2401s | strict |
+| Qwen3.5 27B MLX 4-bit | `/Users/albou/.lmstudio/models/mlx-community/Qwen3.5-27B-4bit` | `abstractcore-mlx-prompt-cache/v1`, 397,882,425 bytes | 3,722 | 4.3130s | 0.2893s | 14.91x | 0.1345s | 5.8180s | 1.3950s | strict |
+| Gemma4 E4B GGUF Q4_K_M | `/Users/albou/.lmstudio/models/unsloth/gemma-4-E4B-it-GGUF/gemma-4-E4B-it-Q4_K_M.gguf` | `abstractcore-gguf-prompt-cache/v1`, 197,017,402 bytes | 3,813 | 1.1362s | 0.2109s | 5.39x | 0.6186s | 0.3507s | 0.4594s | strict |
+| Gemma4 26B-A4B GGUF Q4_K_M | `/Users/albou/.lmstudio/models/lmstudio-community/gemma-4-26B-A4B-it-GGUF/gemma-4-26B-A4B-it-Q4_K_M.gguf` | `abstractcore-gguf-prompt-cache/v1`, 1,306,902,170 bytes | 3,813 | 1.7065s | 0.2884s | 5.92x | 3.0086s | 0.3726s | 0.4737s | strict |
+| Gemma4 31B GGUF Q4_K_M | `/Users/albou/.lmstudio/models/unsloth/gemma-4-31B-it-GGUF/gemma-4-31B-it-Q4_K_M.gguf` | `abstractcore-gguf-prompt-cache/v1`, 3,668,408,838 bytes | 3,813 | 18.6921s | 1.2588s | 14.85x | 9.6812s | 5.5739s | 1.8475s | strict |
+| Gemma4 26B-A4B MLX 4-bit | `/Users/albou/.lmstudio/models/mlx-community/gemma-4-26b-a4b-4bit` | `abstractcore-mlx-prompt-cache/v1`, 287,772,618 bytes | 3,811 | 4.1853s | 0.2944s | 14.22x | 0.1138s | 5.5687s | 1.8616s | strict |
+| Gemma4 31B MLX MXFP4 | `/Users/albou/.lmstudio/models/mlx-community/gemma-4-31b-mxfp4` | `abstractcore-mlx-prompt-cache/v1`, 1,151,073,453 bytes | 3,811 | 20.0017s | 0.5807s | 34.44x | 0.6033s | 29.1899s | 4.3598s | strict |
+
+Gemma4 GGUF initially failed with local `llama_cpp==0.3.19`. After upgrading the environment to the
+package-declared requirement (`llama-cpp-python>=0.3.23,<1.0.0`) and adding Gemma4
+`gemma_turn`/chat-template exact rendering, the Gemma4 GGUF checks passed.
+
+The earlier Gemma4 MLX token count of 1,024 was bad observability, not the full cache length.
+Gemma4 MLX uses hybrid rotating and full KV cache layers; the first rotating layer reports the local
+window size, while later/full layers expose the effective offset. AbstractCore now reports the
+maximum layer offset/size for MLX cache token counts.
 
 For GGUF, cached generation metadata confirmed actual durable-prefix use:
 
@@ -74,6 +100,19 @@ memory bloc, but AbstractCore should not claim decode itself became faster. The 
 that the full prompt processing phase drops to the suffix-only processing phase while the answer
 stays correct.
 
+The 4B baseline models are not quantization-equivalent:
+
+- MLX used `mlx-community/Qwen3-4B-Instruct-2507-4bit`, a 4-bit MLX model with a 2.11 GiB local
+  weight payload.
+- HF GGUF used `Qwen3-4B-Instruct-2507-Q4_K_M.gguf`, a 2.33 GiB Q4_K_M llama.cpp artifact.
+- HF transformers used `Qwen/Qwen3.5-4B`, whose local safetensors payload is 8.68 GiB and is not the
+  same 4-bit model family/runtime as the MLX and GGUF checks.
+
+The three-run average no longer shows the earlier single-run HF-transformers processing result as a
+stable problem. HF transformers processed the full bloc in 1.51s and the cached suffix in 0.18s,
+for an 8.26x processing-only speedup. Its slower total generation numbers are decode/runtime
+throughput, not failed durable-prefix reuse.
+
 ## Compatibility Notes
 
 - MLX uses MLX-LM prompt-cache payloads.
@@ -81,5 +120,9 @@ stays correct.
   coverage includes standard `DynamicCache` layer state, Qwen3.5/Qwen3Next-style tensor-list hybrid
   state, and Mamba-style tensor state when the cache class can be constructed from model config.
 - HF GGUF uses llama.cpp state snapshots in `.npz` and is exact-renderer gated. Current exact
-  renderers are `chatml-function-calling` and `llama-3`.
+  renderers are `chatml-function-calling`, `llama-3`, and Gemma4 `gemma_turn` through llama.cpp's
+  model chat template.
+- Gemma4 GGUF requires a recent llama.cpp runtime. The repository dependency is
+  `llama-cpp-python>=0.3.23,<1.0.0`; older local environments may load Qwen/Llama GGUFs while
+  failing Gemma4 GGUFs.
 - Sub-2B local models are not accepted as semantic proof targets for this cache-validation path.
