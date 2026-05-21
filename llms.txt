@@ -61,7 +61,7 @@ Quick start:
 - [Provider registry](abstractcore/providers/registry.py): provider IDs, defaults, install extras
 - [Provider setup guide](docs/prerequisites.md): env vars + examples for OpenAI/Anthropic/Ollama/LMStudio/MLX/HuggingFace/vLLM/OpenRouter/Portkey/OpenAI-compatible
 - Install profile vocabulary: `abstractcore[apple]` is the hardware alias for the MLX local LLM stack, `abstractcore[gpu]` is the hardware alias for the vLLM local LLM stack, and `abstractcore[all-apple]` / `abstractcore[all-gpu]` are larger aggregate profiles.
-- Optional media plugin floors in this source: `abstractvoice>=0.10.11`, `abstractvision>=0.3.8`, and `abstractmusic>=0.1.4`.
+- Optional media plugin floors in this source: `abstractvoice>=0.10.14`, `abstractvision>=0.3.9`, and `abstractmusic>=0.1.8`.
 
 ## Server (OpenAI-compatible `/v1`)
 

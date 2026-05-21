@@ -2,8 +2,8 @@
 
 ## Metadata
 - Created: 2026-05-20
-- Status: Planned
-- Completed: N/A
+- Status: Completed
+- Completed: 2026-05-21
 
 ## ADR status
 - Governing ADRs: ADR-0002, ADR-0003, ADR-0005
@@ -349,16 +349,16 @@ Safety rule:
   generate a short WAV through `/v1/audio/music` using one local model at a time.
 
 ## Progress checklist
-- [ ] Audit current plugin surfaces and write the exact shared contract.
-- [ ] Decide whether ADR-0003 needs a revision or whether the backlog item plus docs are sufficient.
+- [x] Audit current plugin surfaces and write the exact shared contract.
+- [x] Decide whether ADR-0003 needs a revision or whether the backlog item plus docs are sufficient.
 - [x] Add shared capability interface types and normalization helpers.
 - [x] Extend `CapabilityRegistry` and facades with generic provider/model/catalog methods.
 - [x] Add plugin-safe host text-generation and structured-text service wrappers.
-- [ ] Adapt AbstractMusic as the first proof package.
-- [ ] Wire AbstractMusic text planning to the host text service through explicit injection.
-- [ ] Backfill AbstractVoice and AbstractVision compatibility adapters.
+- [x] Adapt AbstractMusic as the first proof package.
+- [x] Wire AbstractMusic text planning to the host text service through explicit injection.
+- [x] Backfill AbstractVoice and AbstractVision compatibility adapters.
 - [x] Add server discovery routes or shared server helpers.
-- [ ] Update docs and plugin-author guidance.
+- [x] Update docs and plugin-author guidance.
 - [x] Add validation tests for the Core-side foundation.
 
 ## Guidance for the implementing agent
@@ -368,3 +368,39 @@ methods should remain typed and modality-owned so voice, image, music, and video
 parameters that matter without turning AbstractCore into a generic kwargs tunnel. If a plugin needs
 LLM help, pass a narrow text service from the host; do not make plugins instantiate AbstractCore or
 reach through the raw provider object.
+
+## Completion report
+
+### Summary (2026-05-21)
+
+This item is complete from AbstractCore’s perspective: Core now exposes a small shared capability
+plugin contract for discovery + optional residency + optional host text planning, without
+introducing dependency cycles or requiring plugins to import AbstractCore in their base packages.
+
+What Core expects from capability backends (v1, structural typing):
+
+- Discovery (import-light): `available_providers(task=None)` and `list_models(task=None, provider=None|provider_id=None)` (or equivalent aliases such as `list_provider_models`).
+- Optional operation metadata: `list_operations(task=None)` (or `get_capabilities()`).
+- Optional residency control: `load_resident_model`, `list_loaded_models`/`list_resident_models`, `unload_resident_model`.
+- Typed modality methods remain plugin-owned (`tts`, `transcribe`, `t2i`, `t2m`, etc.).
+
+What Core exposes to plugins (host text only, no recursion):
+
+- `owner.capability_host_context.text.generate_text(...)`
+- `owner.capability_host_context.text.generate_structured(..., response_model=...)`
+
+This wrapper forces `output=None`, disallows media, uses `stream=False`, and guards against
+capability re-entry.
+
+Plugin status checked (latest available at time of completion):
+
+- `abstractmusic==0.1.8`: implements the shared discovery surface (`available_providers`, `list_models`, `list_operations`) and can optionally consume the host text service when co-installed with Core.
+- `abstractvision==0.3.8`: implements `available_providers` and `list_provider_models` and works with Core’s shared discovery normalizers.
+- `abstractvoice==0.10.12`: voice backend implements discovery; its audio/STT backend does not expose discovery methods yet, so `llm.capabilities.available_providers("audio")` and `llm.capabilities.list_models("audio")` are not currently supported through the generic surface (but `llm.audio.transcribe(...)` still works through the typed facade).
+
+Follow-up (plugin-owned, not required for Core correctness): AbstractVoice can add generic discovery
+methods to its audio/STT backend if/when consistency across all capabilities becomes important.
+
+### Validation
+
+- `pytest -q tests/test_capabilities_registry.py tests/server/test_server_capability_routes.py tests/server/test_server_openapi_docs.py`

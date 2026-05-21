@@ -62,7 +62,7 @@ Runtime note: omitted `task` on `/acore/models/load` keeps the existing text-gen
 | **Audio Translations** | `/v1/audio/translations` | `file` | Translate audio (not yet supported) |
 | **Text-to-Speech** | `/v1/audio/speech`, `/{provider}/v1/audio/speech` | `input`, optional `model`/`provider`/`base_url` | Generate audio (optional) |
 | **Voice Clone** | `/v1/voice/clone`, `/{provider}/v1/voice/clone` | `file`, optional `model`/`provider`/`base_url` | Create a compatible custom voice (optional) |
-| **Text-to-Music** | `/v1/audio/music` | `prompt` | Generate music/audio through optional AbstractMusic backends; `abstractmusic>=0.1.4` supports remote ACE Music with `ACEMUSIC_API_KEY` |
+| **Text-to-Music** | `/v1/audio/music` | `prompt` | Generate music/audio through optional AbstractMusic backends; `abstractmusic>=0.1.8` supports remote ACE Music with `ACEMUSIC_API_KEY` |
 | **Documents** | `/v1/chat/completions` | `content: [text, file_url]` | PDF/CSV processing |
 | **Tools** | `/v1/chat/completions` | `tools`, `tool_choice` | Function calling |
 | **Embeddings** | `/v1/embeddings` | `model`, `input` | Text embeddings |

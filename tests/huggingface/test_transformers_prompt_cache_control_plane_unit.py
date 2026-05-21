@@ -328,7 +328,10 @@ def test_transformers_prompt_cache_save_load_preserves_qwen35_hybrid_cache(tmp_p
     config_mod = pytest.importorskip("transformers.models.qwen3_5.configuration_qwen3_5")
 
     config = config_mod.Qwen3_5TextConfig()
-    cache = modeling.Qwen3_5DynamicCache(config)
+    cache_cls = getattr(modeling, "Qwen3_5DynamicCache", None)
+    if cache_cls is None:
+        pytest.skip("Transformers does not expose Qwen3_5DynamicCache in this version.")
+    cache = cache_cls(config)
     for idx, layer_type in enumerate(cache.layer_types):
         if layer_type == "full_attention":
             cache.key_cache[idx] = torch.full((1, 1, 3, 1), float(idx), dtype=torch.float32)
@@ -372,7 +375,10 @@ def test_transformers_prompt_cache_save_load_preserves_mamba_tensor_state(tmp_pa
     config_mod = pytest.importorskip("transformers.models.mamba.configuration_mamba")
 
     config = config_mod.MambaConfig(num_hidden_layers=2, hidden_size=8, state_size=3, expand=1, conv_kernel=2)
-    cache = modeling.MambaCache(
+    cache_cls = getattr(modeling, "MambaCache", None)
+    if cache_cls is None:
+        pytest.skip("Transformers does not expose MambaCache in this version.")
+    cache = cache_cls(
         config,
         max_batch_size=1,
         dtype=torch.float32,

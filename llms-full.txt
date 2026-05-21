@@ -651,7 +651,7 @@ AbstractCore supports optional capability plugins discovered via Python entry po
 - install `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
 - install `abstractvision` -> enables `llm.vision` (generative vision; often via an OpenAI-compatible images endpoint)
 - install `abstractcore[music]` -> enables `llm.music` and music output routing for text-to-music through `abstractmusic`
-- current plugin floors in this source: `abstractvoice>=0.10.11`, `abstractvision>=0.3.8`, `abstractmusic>=0.1.4`
+- current plugin floors in this source: `abstractvoice>=0.10.14`, `abstractvision>=0.3.9`, `abstractmusic>=0.1.8`
 
 Server note:
 - the server can optionally expose `/v1/images/*` (requires `abstractvision`)
@@ -10202,7 +10202,7 @@ python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jp
 To keep the default `abstractcore` install dependency-light while still enabling deterministic modality APIs, AbstractCore supports optional **capability plugins**:
 - `abstractvoice` provides `core.voice` + `core.audio` (TTS/STT).
 - `abstractvision` provides `core.vision` (T2I/I2I/T2V/I2V; backend-pluggable).
-- `abstractmusic` can provide `core.music` (text-to-music) when installed; `abstractmusic>=0.1.4` includes the remote ACE Music backend through `ACEMUSIC_API_KEY`.
+- `abstractmusic` can provide `core.music` (text-to-music) when installed; `abstractmusic>=0.1.8` includes the remote ACE Music backend through `ACEMUSIC_API_KEY`.
 
 Discovery:
 - `llm.capabilities.status()` returns a JSON-safe snapshot (which backends are available/selected, plus install hints).

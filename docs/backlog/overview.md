@@ -9,25 +9,21 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 11
+- Planned: 10
 - Proposed: 9
-- Completed: 15
+- Completed: 16
 - Deprecated: 3
 - Recurrent: 0
 
 ## Next recommended work
 
-1. `planned/0794_generic_capability_plugin_contract.md`
-   Establish the shared extension contract for AbstractVoice, AbstractVision, AbstractMusic, and
-   future video plugins before each capability grows another bespoke Core/server adapter, including
-   a narrow host text-service path for plugins that need LLM planning without dependency cycles.
-2. `planned/789_server-auth-rate-limits.md`
+1. `planned/789_server-auth-rate-limits.md`
    The server now sits on real credentials (remote providers, media endpoints). Tightening inbound
    auth and limiting is the next practical safety boundary for shared or public deployments.
-3. `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md`
+2. `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md`
    Optional, opt-in response caching is now the highest-leverage server performance/cost feature,
    but it must be done with strict keying and tenant/auth namespace rules.
-4. `planned/2026-05-18_mlx-provider-continuous-batching.md`
+3. `planned/2026-05-18_mlx-provider-continuous-batching.md`
    Improve local text throughput and latency via continuous batching/scheduler safety for MLX.
 
 ## Planned ledger
@@ -42,7 +38,6 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/2026-05-06_robust-fallback-generate.md` | Stronger fallback behavior for generation paths. |
 | `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md` | Multimodal generation plus deterministic cache behavior. |
 | `planned/2026-05-18_mlx-provider-continuous-batching.md` | Shared MLX runtime and batching scheduler. |
-| `planned/0794_generic_capability_plugin_contract.md` | Shared capability plugin contract for provider/model discovery, operation metadata, artifacts, optional residency, typed modality reuse, and safe host text-service injection across AbstractVoice, AbstractVision, AbstractMusic, and future video plugins. |
 | `planned/789_server-auth-rate-limits.md` | Server auth and rate-limit controls. |
 | `planned/791_server-metrics-otel.md` | Server metrics and OpenTelemetry work. |
 
@@ -78,6 +73,7 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/0795_memory_bloc_delete_prune_control_plane.md` | `completed/0795_memory_bloc_delete_prune_control_plane.md` | 2026-05-20 | Done | Public local helpers and matching gateway/endpoint routes now list, delete, and prune memory blocs and bloc KV artifacts with live-binding safety. | `tests/test_bloc_kv.py`, `tests/test_bloc_kv_endpoint.py`, and OpenAPI route coverage. |
 | `planned/0799_request_scoped_music_backend_selection_and_truthful_reporting.md` | `completed/2026-05-21_request_scoped_music_backend_selection_and_truthful_reporting.md` | 2026-05-21 | Done | Request-scoped music backend selection and truthful reporting now match the invoked backend (local and server). | New regression tests + real AbstractMusic 0.1.8 smoke (ACE Music, ACE-Step, Stable Audio 3) with correct duration forwarding. |
 | `proposed/0798_provider_owned_text_residency_truth_contract.md` | `completed/0798_provider_owned_text_residency_truth_contract.md` | 2026-05-21 | Done | Provider-owned text residency truth contract (providers + `/acore/models/*`) is implemented and validated. | Provider/server unit coverage + hermetic suite run recorded in completion report. |
+| `planned/0794_generic_capability_plugin_contract.md` | `completed/0794_generic_capability_plugin_contract.md` | 2026-05-21 | Done | Generic capability plugin contract (discovery + optional residency + host text service) is implemented and validated. | `tests/test_capabilities_registry.py` + server capability route + OpenAPI tests. |
 | `planned/788-response.md` | `completed/788-response.md` | 2026-05-21 | Done | Vision image routing mismatch is resolved (provider/model normalization and provider-scoped routes). | Completion report cites current server routing helpers; hermetic suite coverage. |
 
 ## Deprecated ledger

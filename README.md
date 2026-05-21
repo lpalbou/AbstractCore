@@ -357,7 +357,7 @@ Text-only `generate(...)` is unchanged. For advanced/provider-specific work,
 the direct `llm.vision.*`, `llm.voice.*`, `llm.audio.*`, and `llm.music.*` facades remain
 available. Configure `abstractvision` and `abstractvoice` backends first for
 real generation; configure `abstractmusic` for music generation. With
-`abstractmusic>=0.1.4`, the default music backend is the lightweight remote
+`abstractmusic>=0.1.8`, the default music backend is the lightweight remote
 ACE Music path; set `ACEMUSIC_API_KEY` before use. Local music engines remain
 optional plugin extras.
 

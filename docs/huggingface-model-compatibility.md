@@ -21,7 +21,7 @@ install every optional Transformers quantization runtime, because those runtimes
 platform-specific and can carry dependency pins that conflict with the rest of the local stack.
 Fresh installs resolve the newest compatible Transformers release allowed by AbstractCore's
 dependency range. Very new architectures such as Gemma4 require a recent Transformers build.
-Audio/voice extras use `abstractvoice>=0.10.11` and `omnivoice>=0.1.5`.
+Audio/voice extras use `abstractvoice>=0.10.14` and `omnivoice>=0.1.5`.
 
 ## Quantized Transformers Checkpoints
 

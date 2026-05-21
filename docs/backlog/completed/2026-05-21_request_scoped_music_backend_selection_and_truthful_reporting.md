@@ -126,7 +126,7 @@ Audio but actually came from ACE Music is worse than an explicit failure.
   land the music fix cleanly.
 
 ## Dependencies and related tasks
-- `docs/backlog/planned/0794_generic_capability_plugin_contract.md`
+- `docs/backlog/completed/0794_generic_capability_plugin_contract.md`
 - `../abstractmusic/docs/backlog/planned/0085_truthful_stable_audio_capability_registration_and_music_routing.md`
 - `../abstractgateway/src/abstractgateway/routes/gateway.py`
 - `../abstractruntime/src/abstractruntime/integrations/abstractcore/run_facade.py`

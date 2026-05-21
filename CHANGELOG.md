@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.25] - 2026-05-22
+
+### Changed
+- **Capability plugin floors**: updated optional capability plugin install floors to `abstractvoice>=0.10.14`, `abstractvision>=0.3.9`, and `abstractmusic>=0.1.8` (plus matching turnkey profiles).
+- **Docs**: refreshed plugin-floor references across README, Server, Capabilities, and `llms*.txt`.
+
+### Verified
+- **Capability residency integration**: `/acore/models/load`, `/acore/models/loaded`, and `/acore/models/unload` were validated against the released plugin builds for STT/TTS, voice-clone engine preloads, and local MFLUX image residency.
+
 ## [2.13.24] - 2026-05-21
 
 ### Changed

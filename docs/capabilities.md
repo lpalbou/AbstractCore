@@ -26,7 +26,7 @@ pip install "abstractcore[vision]"
 pip install "abstractcore[music]"
 ```
 
-`abstractvoice` 0.10.11+ can install its base AbstractCore plugin path on
+`abstractvoice` 0.10.14+ can install its base AbstractCore plugin path on
 Python 3.9, but Python 3.10+ is recommended. Optional/heavier engines such as
 OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths, and AEC requires
 Python 3.11+.
@@ -123,7 +123,7 @@ The server exposes the same deep catalogs through:
 - `GET /v1/audio/music/providers`
 - `GET /v1/audio/music/models`
 
-For `abstractmusic>=0.1.4`, the default lightweight music backend is the
+For `abstractmusic>=0.1.8`, the default lightweight music backend is the
 remote ACE Music API path (`backend="acemusic"` or `/remote/v1/audio/music`).
 Set `ACEMUSIC_API_KEY` in the server or Python environment. The server music
 route accepts `wav`, `mp3`, and `flac`; individual backends may support fewer

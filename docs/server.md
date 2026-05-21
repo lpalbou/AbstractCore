@@ -744,7 +744,7 @@ The returned `voice_id` / `id` can be used as the `voice` value in
 | `response_format` or `format` | no | Server contract supports `wav`, `mp3`, and `flac`; backend support can be narrower. |
 | extra top-level fields | no | Best-effort passthrough to the installed music capability plugin. |
 
-With `abstractmusic>=0.1.4`, the base install includes the remote ACE Music
+With `abstractmusic>=0.1.8`, the base install includes the remote ACE Music
 backend. Configure `ACEMUSIC_API_KEY` in the server environment, optionally set
 `ACEMUSIC_BASE_URL`, and use `backend="acemusic"` or the `/remote/v1/audio/music`
 path. Local ACE-Step/Diffusers routes remain opt-in AbstractMusic extras.
