@@ -1,5 +1,10 @@
 # 788 — Response: vision image generation endpoint mismatch & routing (v0)
 
+## Metadata
+- Created: 2026-05-18
+- Status: Completed
+- Completed: 2026-05-21
+
 ## Context (how AbstractCore handles “generative vision”)
 
 - **Generative vision (text-to-image / image-to-image)** is dependency-light by default: remote OpenAI-compatible image proxying is handled by AbstractCore Server, while local Diffusers/sdcpp runtimes come from the optional `abstractvision` package.
@@ -117,3 +122,16 @@ Notes:
 - If `abstractvision` is not installed in the server environment, `/v1/images/*` can still proxy to a configured OpenAI-compatible upstream. Local Diffusers/sdcpp generation returns `501` with install hints.
 - If the server has **no vision backend configured** (no request model that can be routed, and no relevant `ABSTRACTCORE_VISION_*` env vars), it returns `501` with an actionable configuration message.
 - The default model choice (e.g. `Qwen/Qwen-Image-2512`) is a **deployment default**: configure it once on the server, and apps can stay simple.
+
+## Completion report (2026-05-21)
+
+This item was already true in the codebase; it is marked completed as backlog hygiene.
+
+Evidence in current code:
+- `/v1/images/generations` and `/v1/images/edits` route through provider/model scoped parsing
+  (see `abstractcore/server/vision_endpoints.py`, `_scoped_request_model_for_request(...)`).
+- Provider-scoped image routes exist (`/{provider}/v1/images/generations`) and accept unprefixed
+  model ids while keeping OpenAI-compatible request shape.
+
+Validation:
+- Existing server vision route tests continue to pass under the full hermetic suite.

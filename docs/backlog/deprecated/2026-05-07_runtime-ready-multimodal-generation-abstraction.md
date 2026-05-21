@@ -2,8 +2,9 @@
 
 ## Metadata
 - Created: 2026-05-07
-- Status: Proposed
+- Status: Deprecated
 - Completed: N/A
+- Deprecated: 2026-05-21
 
 ## Context
 
@@ -418,6 +419,18 @@ It also keeps the initial implementation small. The first useful release can sup
 - text only with existing behavior;
 - image only through AbstractVision;
 - voice/TTS only through AbstractVoice;
+
+## Deprecation report (2026-05-21)
+
+This proposal is deprecated in the AbstractCore backlog because the Core-side work it describes is
+already implemented and tracked in completed items (notably
+`completed/2026-05-06_unified-multimodal-generate-api.md`, plus later capability catalog and music
+selection fixes).
+
+The remaining “durable AbstractRuntime effect/artifact-store integration” work belongs in
+`../abstractruntime/` (not in this repository). Keeping this item in AbstractCore `proposed/`
+creates duplicate planning memory and makes it look like Core still needs a unified multimodal
+contract, which is no longer true.
 - text plus image;
 - text plus voice;
 - artifact-backed runtime outputs.

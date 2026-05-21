@@ -53,7 +53,7 @@ from fastapi.openapi.utils import get_openapi
 from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, AliasChoices, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..core.bloc_kv import (
@@ -1565,8 +1565,8 @@ def get_models_from_provider(
 
 class OpenAIInputContent(BaseModel):
     """OpenAI Responses API content item"""
-    type: Literal["input_text", "input_file"] = Field(
-        description="Content type - 'input_text' for text or 'input_file' for files"
+    type: Literal["input_text", "input_file", "input_image"] = Field(
+        description="Content type - 'input_text' for text, 'input_file' for files, or 'input_image' for images"
     )
     text: Optional[str] = Field(
         default=None,
@@ -1576,15 +1576,68 @@ class OpenAIInputContent(BaseModel):
         default=None,
         description="Direct file URL (required when type='input_file')"
     )
+    image_url: Optional[Union[str, Dict[str, Any]]] = Field(
+        default=None,
+        description="Image URL (required when type='input_image'). Can be a string URL/data URL, or an OpenAI-style object.",
+    )
 
 class OpenAIResponsesInput(BaseModel):
-    """OpenAI Responses API input message"""
-    role: Literal["user"] = Field(
-        description="Message role (OpenAI responses only supports 'user')"
+    """OpenAI Responses API message-style input item.
+
+    OpenAI clients commonly send either:
+    - "easy" message items (`role` + `content`, with optional `type`)
+    - explicit `{"type":"message", ...}` items
+    """
+    type: Literal["message"] = Field(
+        default="message",
+        description="Input item type (default: 'message').",
+        example="message",
     )
-    content: List[OpenAIInputContent] = Field(
-        description="Array of input content items"
+    role: Literal["system", "developer", "user", "assistant", "tool"] = Field(description="Message role")
+    content: Union[str, List[OpenAIInputContent]] = Field(
+        description="Message content as a string, or an array of input content items."
     )
+    tool_call_id: Optional[str] = Field(
+        default=None,
+        description="Tool call id this tool message is responding to (legacy/tool-loop compatibility).",
+        example="call_abc123",
+    )
+    tool_calls: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description="Assistant tool calls (legacy/tool-loop compatibility).",
+        example=None,
+    )
+    name: Optional[str] = Field(
+        default=None,
+        description="Optional participant name.",
+        example="User1",
+    )
+
+
+class OpenAIResponsesFunctionCallOutput(BaseModel):
+    """OpenAI Responses API tool result input item."""
+    type: Literal["function_call_output"] = Field(
+        description="Input item type for tool results.",
+        example="function_call_output",
+    )
+    call_id: str = Field(description="Tool call id this output is responding to.", example="call_abc123")
+    output: str = Field(description="Tool output as a string.", example="{\"results\":[]}")
+    id: Optional[str] = Field(default=None, description="Optional item id.", example="fco_123")
+    status: Optional[Literal["in_progress", "completed", "incomplete"]] = Field(
+        default=None,
+        description="Optional item status.",
+        example="completed",
+    )
+
+
+class OpenAIResponsesFunctionCall(BaseModel):
+    """OpenAI Responses API function/tool call input item (conversation replay compatibility)."""
+    type: Literal["function_call"] = Field(description="Input item type for function calls.", example="function_call")
+    call_id: str = Field(description="Function call id.", example="call_abc123")
+    name: str = Field(description="Tool/function name.", example="web_search")
+    arguments: str = Field(description="JSON-encoded arguments.", example="{\"query\":\"example\"}")
+    id: Optional[str] = Field(default=None, description="Optional item id.", example="fc_123")
+    status: Optional[Literal["in_progress", "completed", "incomplete"]] = Field(default=None)
 
 class OpenAIResponsesRequest(BaseModel):
     """OpenAI Responses API request format (100% compatible)"""
@@ -1592,12 +1645,23 @@ class OpenAIResponsesRequest(BaseModel):
         description="Model identifier",
         example="gpt-4o"
     )
-    input: List[OpenAIResponsesInput] = Field(
-        description="Array of input messages"
-    )
+    input: Union[
+        str,
+        List[
+            Annotated[
+                Union[
+                    OpenAIResponsesInput,
+                    OpenAIResponsesFunctionCallOutput,
+                    OpenAIResponsesFunctionCall,
+                ],
+                Field(discriminator="type"),
+            ]
+        ],
+    ] = Field(description="Text input (string) or array of Responses input items.")
     max_tokens: Optional[int] = Field(
         default=None,
-        description="Maximum tokens to generate"
+        validation_alias=AliasChoices("max_tokens", "max_output_tokens"),
+        description="Maximum tokens to generate (OpenAI: max_output_tokens)"
     )
     temperature: Optional[float] = Field(
         default=None,
@@ -1606,6 +1670,23 @@ class OpenAIResponsesRequest(BaseModel):
     top_p: Optional[float] = Field(
         default=None,
         description="Top-p sampling"
+    )
+    tools: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description=(
+            "Tools available to the model. Supports OpenAI Responses-style tools (built-ins like "
+            "'web_search' plus function tools) and will be normalized for provider prompting."
+        ),
+    )
+    tool_choice: Optional[Union[str, Dict[str, Any]]] = Field(
+        default="auto",
+        description="Controls which (if any) tool is called by the model.",
+        example="auto",
+    )
+    instructions: Optional[str] = Field(
+        default=None,
+        description="Optional system-level instructions (OpenAI Responses API compatible).",
+        example="You are a helpful assistant.",
     )
     stream: Optional[bool] = Field(
         default=False,
@@ -1700,6 +1781,29 @@ class OpenAIResponsesRequest(BaseModel):
                     "clients and is disabled by default unless explicitly enabled by the server operator.",
         example=False,
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_input_items(cls, data: Any) -> Any:
+        """Best-effort: coerce easy message items into explicit type='message' items for union discrimination."""
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("input")
+        if not isinstance(raw, list):
+            return data
+        normalized: List[Any] = []
+        for item in raw:
+            if isinstance(item, dict) and "type" not in item:
+                # Heuristic: treat dicts with (role, content) as message input items.
+                if "role" in item and "content" in item:
+                    coerced = dict(item)
+                    coerced["type"] = "message"
+                    normalized.append(coerced)
+                    continue
+            normalized.append(item)
+        out = dict(data)
+        out["input"] = normalized
+        return out
 
 # ============================================================================
 # Models
@@ -2254,6 +2358,635 @@ class ResponsesAPIRequest(BaseModel):
 # OpenAI Responses API Compatibility
 # ============================================================================
 
+_RESPONSES_WEB_SEARCH_TOOL_TYPES = {
+    "web_search",
+    "web_search_preview",
+    "web_search_2025_08_26",
+    "web_search_preview_2025_03_11",
+}
+
+
+def _normalize_openai_responses_tools(tools: Optional[List[Dict[str, Any]]]) -> Optional[List[Dict[str, Any]]]:
+    """Normalize OpenAI Responses-style tools into ChatCompletions-style tools.
+
+    AbstractCore does not execute tools server-side. Normalization exists only to
+    keep tool declarations visible to chat-style providers and local models.
+    """
+    if tools is None:
+        return None
+    if not isinstance(tools, list):
+        raise ValueError("tools must be an array")
+
+    normalized: List[Dict[str, Any]] = []
+    for idx, tool in enumerate(tools):
+        if not isinstance(tool, dict):
+            raise ValueError(f"tools[{idx}] must be an object")
+
+        tool_type = tool.get("type")
+        if not isinstance(tool_type, str) or not tool_type.strip():
+            raise ValueError(f"tools[{idx}].type must be a non-empty string")
+        tool_type = tool_type.strip()
+
+        if tool_type == "function":
+            # Accept both Responses-style (flattened) and ChatCompletions-style (nested) shapes.
+            function_obj = tool.get("function")
+            if isinstance(function_obj, dict):
+                name = function_obj.get("name")
+                if not isinstance(name, str) or not name.strip():
+                    raise ValueError(f"tools[{idx}].function.name must be a non-empty string")
+                normalized.append({"type": "function", "function": dict(function_obj)})
+                continue
+
+            name = tool.get("name")
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(f"tools[{idx}].name must be a non-empty string for type=function")
+            function_def: Dict[str, Any] = {
+                "name": name.strip(),
+            }
+            if isinstance(tool.get("description"), str) and tool["description"].strip():
+                function_def["description"] = tool["description"]
+            if isinstance(tool.get("parameters"), dict):
+                function_def["parameters"] = tool["parameters"]
+            if "strict" in tool:
+                function_def["strict"] = tool.get("strict")
+            normalized.append({"type": "function", "function": function_def})
+            continue
+
+        if tool_type in _RESPONSES_WEB_SEARCH_TOOL_TYPES:
+            function_def = {
+                "name": tool_type,
+                "description": "Search the web for current information.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string"},
+                        "recency": {"type": "integer"},
+                    },
+                    "required": ["query"],
+                },
+            }
+            normalized.append({"type": "function", "function": function_def})
+            continue
+
+        raise ValueError(f"Unsupported Responses tool type: {tool_type}")
+
+    return normalized
+
+
+def _normalize_openai_responses_tool_choice(
+    tool_choice: Optional[Union[str, Dict[str, Any]]]
+) -> Optional[Union[str, Dict[str, Any]]]:
+    """Normalize OpenAI Responses-style tool_choice into ChatCompletions-style tool_choice."""
+    if tool_choice is None:
+        return None
+    if isinstance(tool_choice, str):
+        return tool_choice
+    if not isinstance(tool_choice, dict):
+        raise ValueError("tool_choice must be a string or object")
+
+    choice_type = tool_choice.get("type")
+    if isinstance(choice_type, str):
+        choice_type = choice_type.strip()
+
+    if choice_type == "function":
+        if isinstance(tool_choice.get("function"), dict):
+            return dict(tool_choice)
+        name = tool_choice.get("name")
+        if isinstance(name, str) and name.strip():
+            return {"type": "function", "function": {"name": name.strip()}}
+        raise ValueError("tool_choice.name must be provided when tool_choice.type=function")
+
+    if isinstance(choice_type, str) and choice_type in _RESPONSES_WEB_SEARCH_TOOL_TYPES:
+        return {"type": "function", "function": {"name": choice_type}}
+
+    # Unknown object shape: pass through unchanged (best-effort).
+    return dict(tool_choice)
+
+
+def _normalize_openai_responses_tools_for_response(
+    tools: Optional[List[Dict[str, Any]]],
+) -> List[Dict[str, Any]]:
+    """Normalize `tools` into OpenAI Responses API tool objects for Response payloads.
+
+    This differs from `_normalize_openai_responses_tools`, which normalizes tools into
+    Chat Completions tool objects for provider prompting.
+    """
+    if not tools:
+        return []
+    if not isinstance(tools, list):
+        raise ValueError("tools must be an array")
+
+    normalized: List[Dict[str, Any]] = []
+    for idx, tool in enumerate(tools):
+        if not isinstance(tool, dict):
+            raise ValueError(f"tools[{idx}] must be an object")
+
+        tool_type = tool.get("type")
+        if not isinstance(tool_type, str) or not tool_type.strip():
+            raise ValueError(f"tools[{idx}].type must be a non-empty string")
+        tool_type = tool_type.strip()
+
+        if tool_type == "function":
+            function_obj = tool.get("function")
+            if isinstance(function_obj, dict):
+                name = function_obj.get("name")
+                if not isinstance(name, str) or not name.strip():
+                    raise ValueError(f"tools[{idx}].function.name must be a non-empty string")
+                flat: Dict[str, Any] = {"type": "function", "name": name.strip()}
+                if isinstance(function_obj.get("description"), str):
+                    flat["description"] = function_obj.get("description")
+                if isinstance(function_obj.get("parameters"), dict):
+                    flat["parameters"] = function_obj.get("parameters")
+                if "strict" in function_obj:
+                    flat["strict"] = function_obj.get("strict")
+                normalized.append(flat)
+                continue
+
+            name = tool.get("name")
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError(f"tools[{idx}].name must be a non-empty string for type=function")
+            flat = {"type": "function", "name": name.strip()}
+            if isinstance(tool.get("description"), str):
+                flat["description"] = tool.get("description")
+            if isinstance(tool.get("parameters"), dict):
+                flat["parameters"] = tool.get("parameters")
+            if "strict" in tool:
+                flat["strict"] = tool.get("strict")
+            normalized.append(flat)
+            continue
+
+        if tool_type in _RESPONSES_WEB_SEARCH_TOOL_TYPES:
+            normalized.append(dict(tool))
+            continue
+
+        raise ValueError(f"Unsupported Responses tool type: {tool_type}")
+
+    return normalized
+
+
+def _normalize_openai_responses_tool_choice_for_response(
+    tool_choice: Optional[Union[str, Dict[str, Any]]],
+) -> Union[str, Dict[str, Any]]:
+    """Normalize `tool_choice` into OpenAI Responses API tool_choice objects for Response payloads."""
+    if tool_choice is None:
+        return "auto"
+    if isinstance(tool_choice, str):
+        if tool_choice in {"none", "auto", "required"}:
+            return tool_choice
+        return "auto"
+    if not isinstance(tool_choice, dict):
+        raise ValueError("tool_choice must be a string or object")
+
+    choice_type = tool_choice.get("type")
+    if isinstance(choice_type, str):
+        choice_type = choice_type.strip()
+
+    if choice_type == "function":
+        function_obj = tool_choice.get("function")
+        if isinstance(function_obj, dict):
+            name = function_obj.get("name")
+        else:
+            name = tool_choice.get("name")
+        if isinstance(name, str) and name.strip():
+            return {"type": "function", "name": name.strip()}
+        raise ValueError("tool_choice.name must be provided when tool_choice.type=function")
+
+    # Only return builtin tool_choice objects that are known to be accepted by the OpenAI SDK types.
+    if choice_type in {
+        "file_search",
+        "web_search_preview",
+        "web_search_preview_2025_03_11",
+        "computer_use_preview",
+        "image_generation",
+        "code_interpreter",
+    }:
+        return {"type": choice_type}
+
+    # Some clients send {"type":"web_search"} but OpenAI SDKs may not accept it everywhere yet;
+    # keep the response valid by falling back to "auto".
+    return "auto"
+
+
+def convert_to_openai_responses_response(
+    response,
+    provider: str,
+    model: str,
+    syntax_rewriter: ToolCallSyntaxRewriter,
+    request_id: str,
+    openai_request: "OpenAIResponsesRequest",
+) -> Dict[str, Any]:
+    """Convert an AbstractCore response into an OpenAI Responses API `object: response` payload."""
+    if response is None:
+        logger.warning("Received None response", request_id=request_id)
+        content = "Error: No response generated"
+        tool_calls = None
+        usage_in = None
+    else:
+        content = response.content if hasattr(response, "content") else str(response)
+        tool_calls = getattr(response, "tool_calls", None) if hasattr(response, "tool_calls") else None
+        usage_in = getattr(response, "usage", None) if hasattr(response, "usage") else None
+
+    if syntax_rewriter.target_format in [SyntaxFormat.OPENAI, SyntaxFormat.CODEX]:
+        if isinstance(content, str) and any(
+            pattern in content for pattern in ["<function_call>", "<tool_call>", "<|tool_call|>", "```tool_code"]
+        ):
+            content = syntax_rewriter.remove_tool_call_patterns(content)
+    elif syntax_rewriter.target_format != SyntaxFormat.PASSTHROUGH:
+        if tool_calls:
+            content = syntax_rewriter.rewrite_content(content, detected_tool_calls=tool_calls)
+        else:
+            content = syntax_rewriter.rewrite_content(content)
+
+    output: List[Dict[str, Any]] = []
+
+    if isinstance(content, str) and content:
+        output.append(
+            {
+                "id": f"msg_{uuid.uuid4().hex}",
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": content,
+                        "annotations": [],
+                        "logprobs": [],
+                    }
+                ],
+            }
+        )
+
+    if tool_calls:
+        openai_tool_calls = syntax_rewriter.convert_to_openai_format(tool_calls)
+        for tool_call in openai_tool_calls:
+            call_id = tool_call.get("id")
+            function_obj = tool_call.get("function") if isinstance(tool_call, dict) else None
+            if not isinstance(call_id, str) or not call_id.strip() or not isinstance(function_obj, dict):
+                continue
+            name = function_obj.get("name")
+            arguments = function_obj.get("arguments")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            if not isinstance(arguments, str):
+                arguments = json.dumps(arguments, ensure_ascii=False)
+            output.append(
+                {
+                    "id": f"fc_{uuid.uuid4().hex}",
+                    "type": "function_call",
+                    "status": "completed",
+                    "call_id": call_id,
+                    "name": name,
+                    "arguments": arguments,
+                    }
+            )
+
+    usage_out: Optional[Dict[str, Any]] = None
+    if isinstance(usage_in, dict):
+        prompt_tokens = int(usage_in.get("prompt_tokens", 0) or 0)
+        completion_tokens = int(usage_in.get("completion_tokens", 0) or 0)
+        total_tokens = int(usage_in.get("total_tokens", prompt_tokens + completion_tokens) or 0)
+        usage_out = {
+            "input_tokens": prompt_tokens,
+            "input_tokens_details": {"cached_tokens": 0},
+            "output_tokens": completion_tokens,
+            "output_tokens_details": {"reasoning_tokens": 0},
+            "total_tokens": total_tokens,
+        }
+
+    tools_out = _normalize_openai_responses_tools_for_response(openai_request.tools)
+    tool_choice_out = _normalize_openai_responses_tool_choice_for_response(openai_request.tool_choice)
+
+    payload: Dict[str, Any] = {
+        "id": f"resp_{uuid.uuid4().hex}",
+        "object": "response",
+        "created_at": float(int(time.time())),
+        "model": openai_request.model,
+        "output": output,
+        "parallel_tool_calls": True,
+        "tool_choice": tool_choice_out,
+        "tools": tools_out,
+        "status": "completed",
+        "error": None,
+        "incomplete_details": None,
+        "usage": usage_out,
+        "prompt_cache_key": openai_request.prompt_cache_key,
+        "instructions": openai_request.instructions,
+        "metadata": {},
+    }
+
+    # Omit null optional fields for closer parity with OpenAI payloads.
+    for k in ("instructions", "prompt_cache_key", "usage"):
+        if payload.get(k) is None:
+            payload.pop(k, None)
+
+    return payload
+
+
+def generate_streaming_responses_response(
+    llm,
+    gen_kwargs: Dict[str, Any],
+    provider: str,
+    model: str,
+    syntax_rewriter: ToolCallSyntaxRewriter,
+    request_id: str,
+    openai_request: "OpenAIResponsesRequest",
+    temp_files_to_cleanup: List[str] = None,
+    *,
+    unload_after: bool = False,
+    ollama_key: Optional[Tuple[str, str, str]] = None,
+    allow_unsafe_unload_after: bool = False,
+    loaded_runtime: Optional["_GatewayLoadedRuntime"] = None,
+) -> Iterator[str]:
+    """Generate OpenAI Responses API streaming events (SSE)."""
+    provider_normalized = provider.strip().lower()
+    sequence_number = 0
+    resp_id = f"resp_{uuid.uuid4().hex}"
+    created_at = float(int(time.time()))
+
+    tools_out = _normalize_openai_responses_tools_for_response(openai_request.tools)
+    tool_choice_out = _normalize_openai_responses_tool_choice_for_response(openai_request.tool_choice)
+
+    base_response: Dict[str, Any] = {
+        "id": resp_id,
+        "object": "response",
+        "created_at": created_at,
+        "model": openai_request.model,
+        "output": [],
+        "parallel_tool_calls": True,
+        "tool_choice": tool_choice_out,
+        "tools": tools_out,
+        "status": "in_progress",
+        "error": None,
+        "incomplete_details": None,
+        "usage": None,
+        "prompt_cache_key": openai_request.prompt_cache_key,
+        "instructions": openai_request.instructions,
+        "metadata": {},
+    }
+    for k in ("instructions", "prompt_cache_key"):
+        if base_response.get(k) is None:
+            base_response.pop(k, None)
+
+    try:
+        def _emit(event: Dict[str, Any]) -> Iterator[str]:
+            nonlocal sequence_number
+            event = dict(event)
+            event["sequence_number"] = sequence_number
+            sequence_number += 1
+            yield f"data: {json.dumps(event)}\n\n"
+
+        # response.created
+        yield from _emit({"type": "response.created", "response": base_response})
+
+        output_items: List[Dict[str, Any]] = []
+
+        msg_id = f"msg_{uuid.uuid4().hex}"
+        output_index = 0
+        current_text = ""
+        started_message = False
+        tool_items_emitted: Dict[str, int] = {}
+
+        def _iter_chunks() -> Iterator[Any]:
+            if loaded_runtime is not None:
+                for item in _stream_loaded_gateway_runtime(
+                    loaded_runtime,
+                    lambda: llm.generate(**gen_kwargs),
+                ):
+                    yield item
+                return
+            for item in llm.generate(**gen_kwargs):
+                yield item
+
+        for chunk in _iter_chunks():
+            if hasattr(chunk, "content") and chunk.content:
+                chunk_text = chunk.content
+                if syntax_rewriter.target_format in [SyntaxFormat.OPENAI, SyntaxFormat.CODEX]:
+                    if any(
+                        pattern in chunk_text
+                        for pattern in ["<function_call>", "<tool_call>", "<|tool_call|>", "```tool_code"]
+                    ):
+                        chunk_text = syntax_rewriter.remove_tool_call_patterns(chunk_text)
+                elif syntax_rewriter.target_format != SyntaxFormat.PASSTHROUGH:
+                    chunk_text = syntax_rewriter.rewrite_content(chunk_text)
+
+                if chunk_text:
+                    if not started_message:
+                        started_message = True
+                        # output_item.added (message)
+                        yield from _emit(
+                            {
+                                "type": "response.output_item.added",
+                                "output_index": output_index,
+                                "item": {
+                                    "id": msg_id,
+                                    "status": "in_progress",
+                                    "type": "message",
+                                    "role": "assistant",
+                                    "content": [],
+                                },
+                            }
+                        )
+                        # content_part.added (output_text)
+                        yield from _emit(
+                            {
+                                "type": "response.content_part.added",
+                                "item_id": msg_id,
+                                "output_index": output_index,
+                                "content_index": 0,
+                                "part": {"type": "output_text", "text": "", "annotations": []},
+                            }
+                        )
+
+                    current_text += chunk_text
+                    # output_text.delta
+                    yield from _emit(
+                        {
+                            "type": "response.output_text.delta",
+                            "item_id": msg_id,
+                            "output_index": output_index,
+                            "content_index": 0,
+                            "delta": chunk_text,
+                            "logprobs": [],
+                        }
+                    )
+
+            if hasattr(chunk, "tool_calls") and chunk.tool_calls:
+                openai_tool_calls = syntax_rewriter.convert_to_openai_format(chunk.tool_calls)
+                for tool_call in openai_tool_calls:
+                    call_id = tool_call.get("id")
+                    function_obj = tool_call.get("function") if isinstance(tool_call, dict) else None
+                    if not isinstance(call_id, str) or not call_id.strip() or not isinstance(function_obj, dict):
+                        continue
+                    name = function_obj.get("name")
+                    arguments = function_obj.get("arguments")
+                    if not isinstance(name, str) or not name.strip():
+                        continue
+                    if not isinstance(arguments, str):
+                        arguments = json.dumps(arguments, ensure_ascii=False)
+
+                    if call_id in tool_items_emitted:
+                        continue
+
+                    tool_output_index = output_index if not started_message else (output_index + len(tool_items_emitted) + 1)
+                    tool_items_emitted[call_id] = tool_output_index
+
+                    fc_id = f"fc_{uuid.uuid4().hex}"
+                    item_obj = {
+                        "id": fc_id,
+                        "type": "function_call",
+                        "status": "completed",
+                        "call_id": call_id,
+                        "name": name,
+                        "arguments": arguments,
+                    }
+
+                    yield from _emit(
+                        {
+                            "type": "response.output_item.added",
+                            "output_index": tool_output_index,
+                            "item": {
+                                **item_obj,
+                                "status": "in_progress",
+                            },
+                        }
+                    )
+                    yield from _emit(
+                        {
+                            "type": "response.function_call_arguments.done",
+                            "item_id": fc_id,
+                            "output_index": tool_output_index,
+                            "arguments": arguments,
+                        }
+                    )
+                    yield from _emit(
+                        {
+                            "type": "response.output_item.done",
+                            "output_index": tool_output_index,
+                            "item": item_obj,
+                        }
+                    )
+                    output_items.append(item_obj)
+
+        if started_message:
+            message_item = {
+                "id": msg_id,
+                "type": "message",
+                "status": "completed",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "output_text",
+                        "text": current_text,
+                        "annotations": [],
+                        "logprobs": [],
+                    }
+                ],
+            }
+
+            # output_text.done
+            yield from _emit(
+                {
+                    "type": "response.output_text.done",
+                    "item_id": msg_id,
+                    "output_index": output_index,
+                    "content_index": 0,
+                    "text": current_text,
+                    "logprobs": [],
+                }
+            )
+            # content_part.done
+            yield from _emit(
+                {
+                    "type": "response.content_part.done",
+                    "item_id": msg_id,
+                    "output_index": output_index,
+                    "content_index": 0,
+                    "part": {"type": "output_text", "text": current_text, "annotations": []},
+                }
+            )
+            # output_item.done (message)
+            yield from _emit(
+                {
+                    "type": "response.output_item.done",
+                    "output_index": output_index,
+                    "item": message_item,
+                }
+            )
+            output_items.insert(0, message_item)
+
+        final_response = dict(base_response)
+        final_response["status"] = "completed"
+        final_response["output"] = output_items
+
+        # response.completed
+        yield from _emit({"type": "response.completed", "response": final_response})
+        yield "data: [DONE]\n\n"
+
+        logger.info(
+            "✅ Responses streaming completed",
+            request_id=request_id,
+            output_items=len(output_items),
+        )
+
+        if temp_files_to_cleanup:
+            import threading
+
+            def delayed_streaming_cleanup():
+                time.sleep(2)
+                for temp_file in temp_files_to_cleanup:
+                    try:
+                        if os.path.exists(temp_file) and (
+                            "abstractcore_img_" in temp_file
+                            or "abstractcore_file_" in temp_file
+                            or "abstractcore_b64_" in temp_file
+                        ):
+                            os.unlink(temp_file)
+                    except Exception as cleanup_error:
+                        logger.warning(f"Failed to cleanup temporary file {temp_file}: {cleanup_error}")
+
+            cleanup_thread = threading.Thread(target=delayed_streaming_cleanup, daemon=True)
+            cleanup_thread.start()
+
+    except Exception as e:
+        logger.error(
+            "❌ Responses streaming failed",
+            request_id=request_id,
+            error=str(e),
+        )
+        error_chunk = {"error": {"message": str(e), "type": "server_error"}}
+        yield f"data: {json.dumps(error_chunk)}\n\n"
+        yield "data: [DONE]\n\n"
+    finally:
+        if loaded_runtime is not None and unload_after:
+            _best_effort_unload_loaded_gateway_runtime(loaded_runtime, request_id=request_id)
+        elif provider_normalized == "ollama" and ollama_key is not None:
+            try:
+                should_unload = _ollama_inflight_exit(ollama_key, unload_after_requested=unload_after)
+            except Exception as e:
+                logger.warning(
+                    "⚠️ Failed to update in-flight unload state",
+                    request_id=request_id,
+                    provider=provider,
+                    model=model,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
+                should_unload = False
+
+            if should_unload and allow_unsafe_unload_after:
+                _best_effort_unload(llm, request_id=request_id, provider=provider, model=model)
+            elif should_unload:
+                logger.warning(
+                    "⚠️ Unload requested but disabled by server policy",
+                    request_id=request_id,
+                    provider=provider,
+                    model=model,
+                )
+        elif unload_after:
+            _best_effort_unload(llm, request_id=request_id, provider=provider, model=model)
+
+
 def convert_openai_responses_to_chat_completion(openai_request: OpenAIResponsesRequest) -> ChatCompletionRequest:
     """
     Convert OpenAI Responses API format to internal ChatCompletionRequest format.
@@ -2269,31 +3002,88 @@ def convert_openai_responses_to_chat_completion(openai_request: OpenAIResponsesR
     Returns:
         ChatCompletionRequest compatible with our internal processing
     """
-    # Convert input messages to chat messages
-    messages = []
+    messages: List[ChatMessage] = []
 
-    for input_msg in openai_request.input:
-        # Build content array as list of dicts (not ContentItem objects)
-        content_items = []
+    if isinstance(openai_request.instructions, str) and openai_request.instructions.strip():
+        messages.append(ChatMessage(role="system", content=openai_request.instructions.strip()))
 
-        for content in input_msg.content:
-            if content.type == "input_text":
-                content_items.append({
-                    "type": "text",
-                    "text": content.text
-                })
-            elif content.type == "input_file":
-                content_items.append({
-                    "type": "file",
-                    "file_url": {"url": content.file_url}  # Convert to our format
-                })
+    if isinstance(openai_request.input, str):
+        raw = openai_request.input
+        if raw.strip():
+            messages.append(ChatMessage(role="user", content=raw))
+    else:
+        for input_item in openai_request.input:
+            if isinstance(input_item, OpenAIResponsesFunctionCallOutput):
+                messages.append(
+                    ChatMessage(
+                        role="tool",
+                        tool_call_id=input_item.call_id,
+                        content=input_item.output,
+                    )
+                )
+                continue
 
-        # Create chat message with list content (not ContentItem objects)
-        message_dict = {
-            "role": input_msg.role,
-            "content": content_items
-        }
-        messages.append(ChatMessage(**message_dict))
+            if isinstance(input_item, OpenAIResponsesFunctionCall):
+                messages.append(
+                    ChatMessage(
+                        role="assistant",
+                        content=None,
+                        tool_calls=[
+                            {
+                                "id": input_item.call_id,
+                                "type": "function",
+                                "function": {
+                                    "name": input_item.name,
+                                    "arguments": input_item.arguments,
+                                },
+                            }
+                        ],
+                    )
+                )
+                continue
+
+            # Message item
+            role = input_item.role
+            tool_call_id = input_item.tool_call_id
+            tool_calls = input_item.tool_calls
+            name = input_item.name
+
+            if isinstance(input_item.content, str):
+                messages.append(
+                    ChatMessage(
+                        role=role,
+                        content=input_item.content,
+                        tool_call_id=tool_call_id,
+                        tool_calls=tool_calls,
+                        name=name,
+                    )
+                )
+                continue
+
+            # Build content array as list of dicts (not ContentItem objects)
+            content_items: List[Dict[str, Any]] = []
+            for content in input_item.content:
+                if content.type == "input_text":
+                    content_items.append({"type": "text", "text": content.text})
+                elif content.type == "input_file":
+                    content_items.append({"type": "file", "file_url": {"url": content.file_url}})
+                elif content.type == "input_image":
+                    url_value = content.image_url
+                    if isinstance(url_value, dict):
+                        image_url_obj = dict(url_value)
+                    else:
+                        image_url_obj = {"url": url_value}
+                    content_items.append({"type": "image_url", "image_url": image_url_obj})
+
+            messages.append(
+                ChatMessage(
+                    role=role,
+                    content=content_items,
+                    tool_call_id=tool_call_id,
+                    tool_calls=tool_calls,
+                    name=name,
+                )
+            )
 
     # Build ChatCompletionRequest
     return ChatCompletionRequest(
@@ -2308,6 +3098,8 @@ def convert_openai_responses_to_chat_completion(openai_request: OpenAIResponsesR
         frequency_penalty=openai_request.frequency_penalty,
         presence_penalty=openai_request.presence_penalty,
         thinking=openai_request.thinking,
+        tools=_normalize_openai_responses_tools(openai_request.tools),
+        tool_choice=_normalize_openai_responses_tool_choice(openai_request.tool_choice),
         prompt_cache_key=openai_request.prompt_cache_key,
         prompt_cache_binding=openai_request.prompt_cache_binding,
         prompt_cache_retention=openai_request.prompt_cache_retention,
@@ -2925,7 +3717,7 @@ class _GatewayLoadedRuntime:
         # Streaming responses may be iterated and finalized by different ASGI
         # worker threads when the client disconnects or cancels a request.
         # `threading.RLock` is owner-bound, so finalization from another thread
-        # can leave the resident runtime permanently wedged. Use a plain Lock:
+        # can leave the loaded runtime permanently wedged. Use a plain Lock:
         # runtime generation still stays serialized, but release is not tied to
         # the thread that first acquired it.
         self.lock = threading.Lock()
@@ -2992,6 +3784,137 @@ def _gateway_runtime_to_dict(runtime: _GatewayLoadedRuntime) -> Dict[str, Any]:
     }
 
 
+def _gateway_residency_bool(value: Any) -> Optional[bool]:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        raw = value.strip().lower()
+        if raw in {"1", "true", "yes", "on"}:
+            return True
+        if raw in {"0", "false", "no", "off"}:
+            return False
+    return None
+
+
+def _unknown_gateway_provider_residency(*, warning: str) -> Dict[str, Any]:
+    return {
+        "provider_residency_verified": False,
+        "provider_resident": None,
+        "provider_residency_source": "abstractcore.provider",
+        "provider_state": "provider_residency_unknown",
+        "warnings": [warning],
+    }
+
+
+def _gateway_provider_residency_claim(runtime: _GatewayLoadedRuntime) -> Dict[str, Any]:
+    method = getattr(runtime.llm, "get_model_residency", None)
+    if not callable(method):
+        return _unknown_gateway_provider_residency(
+            warning="AbstractCore provider does not expose verified model residency."
+        )
+
+    try:
+        raw_claim = _run_loaded_gateway_runtime(
+            runtime,
+            lambda: method(task="text_generation", model=runtime.model),
+            touch=False,
+        )
+    except Exception as exc:
+        return _unknown_gateway_provider_residency(
+            warning=f"AbstractCore provider residency query failed: {exc}"
+        )
+    if not isinstance(raw_claim, dict):
+        return _unknown_gateway_provider_residency(
+            warning="AbstractCore provider residency query returned a non-mapping response."
+        )
+
+    verified = _gateway_residency_bool(raw_claim.get("provider_residency_verified")) is True
+    provider_resident = _gateway_residency_bool(raw_claim.get("provider_resident"))
+    if provider_resident is None and verified:
+        provider_resident = _gateway_residency_bool(raw_claim.get("loaded"))
+
+    source = raw_claim.get("provider_residency_source") or raw_claim.get("source") or "abstractcore.provider"
+    claim: Dict[str, Any] = {
+        "provider_residency_verified": verified,
+        "provider_resident": provider_resident,
+        "provider_residency_source": str(source),
+    }
+    provider_state = raw_claim.get("provider_state") or raw_claim.get("state")
+    if isinstance(provider_state, str) and provider_state.strip():
+        claim["provider_state"] = provider_state.strip()
+
+    blocked = {
+        "task",
+        "provider",
+        "model",
+        "runtime_id",
+        "resident",
+        "loaded",
+        "state",
+        "source",
+        "isolation",
+        "default",
+        "pinned",
+        "cache_state",
+        "runtime_cached",
+        "provider_residency_verified",
+        "provider_resident",
+        "provider_residency_source",
+        "provider_state",
+    }
+    for key, value in raw_claim.items():
+        if key in blocked or value is None:
+            continue
+        claim[str(key)] = value
+    return claim
+
+
+def _gateway_text_residency_record(runtime: _GatewayLoadedRuntime) -> Dict[str, Any]:
+    provider_claim = _gateway_provider_residency_claim(runtime)
+    verified = bool(provider_claim.get("provider_residency_verified"))
+    provider_resident_raw = provider_claim.get("provider_resident")
+    provider_resident = provider_resident_raw if isinstance(provider_resident_raw, bool) else None
+    if verified:
+        loaded = bool(provider_resident)
+        state = "provider_loaded" if loaded else "provider_not_loaded"
+    else:
+        loaded = False
+        state = "provider_residency_unknown"
+    return {
+        **_gateway_runtime_to_dict(runtime),
+        "task": "text_generation",
+        "state": state,
+        "loaded": loaded,
+        "runtime_cached": True,
+        "cache_state": "gateway_runtime_cached",
+        "pinned": True,
+        "isolation": "in_process",
+        "health": "ok",
+        "error": None,
+        **provider_claim,
+    }
+
+
+def _drop_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime) -> None:
+    runtime.provider_executor.shutdown(wait=False, cancel_futures=True)
+    with _GATEWAY_RUNTIME_LOCK:
+        registry_key = _GATEWAY_RUNTIME_IDS.pop(runtime.runtime_id, None)
+        if registry_key:
+            _GATEWAY_LOADED_RUNTIMES.pop(registry_key, None)
+
+
+def _gateway_load_provider_residency(runtime: _GatewayLoadedRuntime, options: Optional[Dict[str, Any]] = None) -> Any:
+    method = getattr(runtime.llm, "load_model", None)
+    if not callable(method):
+        return None
+
+    load_options = dict(options or {}) if isinstance(options, dict) else {}
+    return _run_loaded_gateway_runtime(
+        runtime,
+        lambda: method(runtime.model, **load_options),
+    )
+
+
 def _get_loaded_gateway_runtime(
     *,
     provider: Optional[str] = None,
@@ -3022,16 +3945,17 @@ def _touch_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime) -> None:
     runtime.request_count += 1
 
 
-def _run_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime, operation):
+def _run_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime, operation, *, touch: bool = True):
     """Run provider work on the runtime's stable worker thread.
 
     MLX prompt caches and generation state are thread-affine. A loaded gateway
     runtime must keep cache operations, bloc KV loading, and generation on the
     same provider thread or a later request can inherit incompatible local
-    state and wedge the resident runtime.
+    state and wedge the loaded runtime.
     """
     with runtime.lock:
-        _touch_loaded_gateway_runtime(runtime)
+        if touch:
+            _touch_loaded_gateway_runtime(runtime)
         return runtime.provider_executor.submit(operation).result()
 
 
@@ -3102,11 +4026,7 @@ def _unload_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime) -> None:
     if not hasattr(runtime.llm, "unload_model"):
         raise AttributeError("Provider does not implement unload_model(model_name)")
     _run_loaded_gateway_runtime(runtime, lambda: runtime.llm.unload_model(runtime.model))
-    runtime.provider_executor.shutdown(wait=False, cancel_futures=True)
-    with _GATEWAY_RUNTIME_LOCK:
-        registry_key = _GATEWAY_RUNTIME_IDS.pop(runtime.runtime_id, None)
-        if registry_key:
-            _GATEWAY_LOADED_RUNTIMES.pop(registry_key, None)
+    _drop_loaded_gateway_runtime(runtime)
 
 
 def _best_effort_unload_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime, *, request_id: str) -> None:
@@ -3436,12 +4356,28 @@ def _model_residency_loaded_new(runtime: Dict[str, Any]) -> bool:
             if key in details:
                 return bool(_model_residency_bool(details.get(key)))
 
-        resident = _model_residency_bool(runtime.get("resident"))
+        loaded = _model_residency_bool(runtime.get("loaded"))
         engine_cached = _model_residency_bool(details.get("engine_cached"))
-        if resident is True and engine_cached is not None:
+        if loaded is True and engine_cached is not None:
             return not engine_cached
 
     return False
+
+
+def _normalize_model_residency_loaded_fields(runtime: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize runtime records so `loaded` is the only loaded-state boolean."""
+    out = dict(runtime or {}) if isinstance(runtime, dict) else {}
+    loaded = _model_residency_bool(out.get("loaded"))
+    resident = _model_residency_bool(out.get("resident"))
+    if loaded is None and resident is not None:
+        loaded = resident
+    if loaded is not None:
+        out["loaded"] = bool(loaded)
+    out.pop("resident", None)
+    state = out.get("state")
+    if isinstance(state, str) and state.strip().lower() == "resident":
+        out["state"] = "loaded"
+    return out
 
 
 def _capability_residency_load(task: str, payload: Dict[str, Any], http_request: Request) -> Dict[str, Any]:
@@ -3450,10 +4386,11 @@ def _capability_residency_load(task: str, payload: Dict[str, Any], http_request:
 
         provider_key = _provider_api_key_from_request(http_request)
         try:
-            runtime = _vision_endpoints.load_server_vision_resident_model(payload, api_key=provider_key)
+            runtime = _vision_endpoints.load_server_vision_loaded_model(payload, api_key=provider_key)
         except Exception as e:
             raise _capability_residency_error(e, task=task) from e
-        return {"ok": True, "loaded_new": _model_residency_loaded_new(runtime), "runtime": runtime}
+        runtime_out = _normalize_model_residency_loaded_fields(dict(runtime))
+        return {"ok": True, "loaded_new": _model_residency_loaded_new(runtime_out), "runtime": runtime_out}
 
     if task in {"tts", "stt"}:
         core = _capability_residency_core_for_request(task, http_request)
@@ -3468,7 +4405,7 @@ def _capability_residency_load(task: str, payload: Dict[str, Any], http_request:
             runtime = method(payload)
         except Exception as e:
             raise _capability_residency_error(e, task=task) from e
-        runtime_out = dict(runtime)
+        runtime_out = _normalize_model_residency_loaded_fields(dict(runtime))
         return {"ok": True, "loaded_new": _model_residency_loaded_new(runtime_out), "runtime": runtime_out}
 
     raise HTTPException(
@@ -3484,7 +4421,7 @@ def _capability_residency_loaded(task: Optional[str], filters: Dict[str, Any], h
         if item_task == "image_generation":
             from . import vision_endpoints as _vision_endpoints
 
-            records.extend(_vision_endpoints.list_server_vision_resident_models(filters))
+            records.extend(_vision_endpoints.list_server_vision_loaded_models(filters))
             continue
         if item_task in {"tts", "stt"}:
             try:
@@ -3494,7 +4431,13 @@ def _capability_residency_loaded(task: Optional[str], filters: Dict[str, Any], h
                 if not callable(method):
                     method = getattr(target, "list_resident_models", None)
                 if callable(method):
-                    records.extend([dict(entry) for entry in list(method(filters) or []) if isinstance(entry, dict)])
+                    records.extend(
+                        [
+                            _normalize_model_residency_loaded_fields(dict(entry))
+                            for entry in list(method(filters) or [])
+                            if isinstance(entry, dict)
+                        ]
+                    )
             except Exception:
                 continue
     return records
@@ -3505,10 +4448,11 @@ def _capability_residency_unload(task: str, payload: Dict[str, Any], http_reques
         from . import vision_endpoints as _vision_endpoints
 
         try:
-            runtime = _vision_endpoints.unload_server_vision_resident_model(payload)
+            runtime = _vision_endpoints.unload_server_vision_loaded_model(payload)
         except Exception as e:
             raise _capability_residency_error(e, task=task) from e
-        return {"ok": True, "runtime": runtime, "unloaded": bool(runtime.get("unloaded", True))}
+        runtime_out = _normalize_model_residency_loaded_fields(dict(runtime))
+        return {"ok": True, "runtime": runtime_out, "unloaded": bool(runtime_out.get("unloaded", True))}
 
     if task in {"tts", "stt"}:
         core = _capability_residency_core_for_request(task, http_request)
@@ -3523,7 +4467,8 @@ def _capability_residency_unload(task: str, payload: Dict[str, Any], http_reques
             runtime = method(payload)
         except Exception as e:
             raise _capability_residency_error(e, task=task) from e
-        return {"ok": True, "runtime": dict(runtime), "unloaded": bool(runtime.get("unloaded", True))}
+        runtime_out = _normalize_model_residency_loaded_fields(dict(runtime))
+        return {"ok": True, "runtime": runtime_out, "unloaded": bool(runtime_out.get("unloaded", True))}
 
     raise HTTPException(
         status_code=501,
@@ -3550,7 +4495,7 @@ class LoadedModelRequest(BaseModel):
         example=7200.0,
     )
     options: Dict[str, Any] = Field(default_factory=dict, description="Task/backend-specific residency options.")
-    pin: Optional[bool] = Field(default=True, description="Whether the model should be explicitly kept resident when supported.")
+    pin: Optional[bool] = Field(default=True, description="Whether the model should be explicitly kept loaded when supported.")
     ttl_s: Optional[float] = Field(default=None, description="Optional future TTL hint in seconds. Currently advisory.")
 
     class Config:
@@ -3647,17 +4592,7 @@ def acore_models_loaded(
     if task_filter in {None, "text_generation"}:
         with _GATEWAY_RUNTIME_LOCK:
             runtimes.extend(
-                {
-                    **_gateway_runtime_to_dict(runtime),
-                    "task": "text_generation",
-                    "state": "resident",
-                    "resident": True,
-                    "loaded": True,
-                    "pinned": True,
-                    "isolation": "in_process",
-                    "health": "ok",
-                    "error": None,
-                }
+                _gateway_text_residency_record(runtime)
                 for runtime in _GATEWAY_LOADED_RUNTIMES.values()
                 if (not provider_filter or runtime.provider == provider_filter)
                 and (not model_filter or runtime.model == model_filter)
@@ -3744,26 +4679,44 @@ def acore_models_load(req: LoadedModelRequest, http_request: Request):
     if req.timeout_s is not None:
         provider_kwargs["timeout"] = req.timeout_s
 
-    runtime, loaded_new = _ensure_loaded_gateway_runtime(
+    runtime, runtime_cache_loaded_new = _ensure_loaded_gateway_runtime(
         provider=provider,
         model=model,
         provider_kwargs=provider_kwargs,
         explicit_provider_key_hash=_provider_key_fingerprint(provider_api_key),
     )
+    before_record = _gateway_text_residency_record(runtime)
+    load_options = dict(req.options or {})
+    load_options.setdefault("pin", req.pin)
+    if req.ttl_s is not None:
+        load_options.setdefault("ttl_s", req.ttl_s)
+    provider_load_result: Any = None
+    if before_record.get("loaded") is not True:
+        try:
+            provider_load_result = _gateway_load_provider_residency(runtime, load_options)
+        except Exception as exc:
+            if runtime_cache_loaded_new:
+                _drop_loaded_gateway_runtime(runtime)
+            raise HTTPException(
+                status_code=502,
+                detail={
+                    "error": {
+                        "message": f"Provider model load failed: {exc}",
+                        "type": "provider_load_failed",
+                    }
+                },
+            ) from exc
+    runtime_record = _gateway_text_residency_record(runtime)
+    provider_loaded_new = bool(before_record.get("loaded") is not True and runtime_record.get("loaded") is True)
+    loaded_new = bool((runtime_cache_loaded_new or provider_loaded_new) and runtime_record.get("loaded") is True)
+    if provider_load_result is not None:
+        runtime_record["provider_load_result"] = provider_load_result
     return {
         "ok": True,
-        "loaded_new": bool(loaded_new),
-        "runtime": {
-            **_gateway_runtime_to_dict(runtime),
-            "task": "text_generation",
-            "state": "resident",
-            "resident": True,
-            "loaded": True,
-            "pinned": True,
-            "isolation": "in_process",
-            "health": "ok",
-            "error": None,
-        },
+        "loaded_new": loaded_new,
+        "provider_loaded_new": provider_loaded_new,
+        "runtime_cache_loaded_new": bool(runtime_cache_loaded_new),
+        "runtime": runtime_record,
         "prompt_cache_capabilities": _gateway_prompt_cache_capabilities_dict(runtime.llm),
     }
 
@@ -3812,7 +4765,6 @@ def acore_models_unload(req: UnloadModelRequest, http_request: Request):
                 **_gateway_runtime_to_dict(runtime),
                 "task": "text_generation",
                 "state": "unloaded",
-                "resident": False,
                 "loaded": False,
                 "pinned": False,
                 "isolation": "in_process",
@@ -5785,7 +6737,7 @@ async def create_response(
     ]
 ):
     """
-    OpenAI Responses API (100% Compatible) + Backward Compatibility
+    OpenAI Responses API + Backward Compatibility
 
     Supports both OpenAI's responses format and our legacy format for seamless migration.
     Streaming can be enabled by setting "stream": true for real-time interaction.
@@ -5823,7 +6775,9 @@ async def create_response(
     - **Optional Streaming**: Set "stream": true for real-time responses
     - **Backward Compatible**: Existing clients continue to work
 
-    **Returns:** Chat completion object, or server-sent events stream if streaming is enabled.
+    **Returns:**
+    - OpenAI format (`input`): OpenAI Responses `object: "response"` payload, or Responses SSE events when streaming.
+    - Legacy format (`messages`): Chat Completions payload, or chat-completions SSE chunks when streaming.
     """
     try:
         # Use the parsed request body directly
@@ -5840,6 +6794,7 @@ async def create_response(
 
             # Convert to internal format
             chat_request = convert_openai_responses_to_chat_completion(openai_request)
+            openai_output_format: Literal["chat_completions", "responses"] = "responses"
 
         elif "messages" in request_data:
             # Legacy format (backward compatibility)
@@ -5847,6 +6802,8 @@ async def create_response(
 
             # Parse as ChatCompletionRequest
             chat_request = ChatCompletionRequest(**request_data)
+            openai_request = None
+            openai_output_format = "chat_completions"
 
         else:
             raise HTTPException(
@@ -5867,7 +6824,14 @@ async def create_response(
             messages=len(chat_request.messages)
         )
 
-        return await process_chat_completion(provider, model, chat_request, http_request)
+        return await process_chat_completion(
+            provider,
+            model,
+            chat_request,
+            http_request,
+            openai_output_format=openai_output_format,
+            openai_responses_request=openai_request,
+        )
 
     except HTTPException:
         raise
@@ -6787,7 +7751,10 @@ async def process_chat_completion(
     provider: str,
     model: str,
     request: ChatCompletionRequest,
-    http_request: Request
+    http_request: Request,
+    *,
+    openai_output_format: Literal["chat_completions", "responses"] = "chat_completions",
+    openai_responses_request: Optional["OpenAIResponsesRequest"] = None,
 ):
     """
     Core chat completion processing with syntax rewriting support.
@@ -6795,6 +7762,12 @@ async def process_chat_completion(
     request_id = uuid.uuid4().hex[:8]
 
     try:
+        if openai_output_format == "responses" and openai_responses_request is None:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": {"message": "Internal error: missing OpenAIResponsesRequest for responses output.", "type": "server_error"}},
+            )
+
         logger.info(
             "📥 Chat Completion Request",
             request_id=request_id,
@@ -6802,7 +7775,8 @@ async def process_chat_completion(
             model=model,
             messages=len(request.messages),
             has_tools=bool(request.tools),
-            stream=request.stream
+            stream=request.stream,
+            openai_output_format=openai_output_format,
         )
 
         _reject_body_api_key(request.api_key)
@@ -7009,18 +7983,35 @@ async def process_chat_completion(
         try:
             if request.stream:
                 return StreamingResponse(
-                    generate_streaming_response(
-                        llm,
-                        gen_kwargs,
-                        provider,
-                        model,
-                        syntax_rewriter,
-                        request_id,
-                        temp_files_to_cleanup,
-                        unload_after=unload_after_requested,
-                        ollama_key=ollama_key,
-                        allow_unsafe_unload_after=allow_unsafe_unload_after,
-                        loaded_runtime=loaded_runtime,
+                    (
+                        generate_streaming_responses_response(
+                            llm,
+                            gen_kwargs,
+                            provider,
+                            model,
+                            syntax_rewriter,
+                            request_id,
+                            openai_responses_request,  # type: ignore[arg-type]
+                            temp_files_to_cleanup,
+                            unload_after=unload_after_requested,
+                            ollama_key=ollama_key,
+                            allow_unsafe_unload_after=allow_unsafe_unload_after,
+                            loaded_runtime=loaded_runtime,
+                        )
+                        if openai_output_format == "responses"
+                        else generate_streaming_response(
+                            llm,
+                            gen_kwargs,
+                            provider,
+                            model,
+                            syntax_rewriter,
+                            request_id,
+                            temp_files_to_cleanup,
+                            unload_after=unload_after_requested,
+                            ollama_key=ollama_key,
+                            allow_unsafe_unload_after=allow_unsafe_unload_after,
+                            loaded_runtime=loaded_runtime,
+                        )
                     ),
                     media_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
@@ -7033,9 +8024,19 @@ async def process_chat_completion(
                     )
                 else:
                     response = llm.generate(**gen_kwargs)
-                openai_response = convert_to_openai_response(
-                    response, provider, model, syntax_rewriter, request_id
-                )
+                if openai_output_format == "responses":
+                    openai_response = convert_to_openai_responses_response(
+                        response,
+                        provider,
+                        model,
+                        syntax_rewriter,
+                        request_id,
+                        openai_responses_request,  # type: ignore[arg-type]
+                    )
+                else:
+                    openai_response = convert_to_openai_response(
+                        response, provider, model, syntax_rewriter, request_id
+                    )
                 trace_id = None
                 if hasattr(response, "metadata") and isinstance(getattr(response, "metadata"), dict):
                     trace_id = response.metadata.get("trace_id")

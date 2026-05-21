@@ -7971,11 +7971,11 @@ AbstractCore implements an OpenAI-compatible Responses-style API, including `inp
 
 #### Why Use /v1/responses?
 
-- **OpenAI Compatible**: Drop-in replacement for OpenAI's Responses API
+- **OpenAI Compatible**: Accepts OpenAI Responses API requests and returns an OpenAI Responses `object: "response"` payload
 - **Native File Support**: `input_file` type designed specifically for document attachments
 - **Cleaner API**: Explicit separation between text (`input_text`) and files (`input_file`)
 - **Backward Compatible**: Existing `messages` format still works alongside new `input` format
-- **Optional Streaming**: Streaming opt-in with `"stream": true` (defaults to `false`)
+- **Optional Streaming**: `"stream": true` streams OpenAI Responses events (OpenAI format) or chat-completions chunks (legacy format)
 
 #### Request Format
 
@@ -7992,8 +7992,12 @@ AbstractCore implements an OpenAI-compatible Responses-style API, including `inp
       ]
     }
   ],
+  "tools": [
+    {"type": "web_search", "external_web_access": true}
+  ],
+  "tool_choice": "auto",
   "stream": false,
-  "max_tokens": 2000,
+  "max_output_tokens": 2000,
   "temperature": 0.7,
   "thinking": "off",
   "prompt_cache_key": "tenantA:doc-review"
@@ -10072,7 +10076,12 @@ The `unload_model(model_name)` method is a **best-effort resource cleanup hook**
 - **Local / self-hosted providers**: behavior is provider-specific:
   - some can actively release memory (or request server-side eviction),
   - others can only close client connections and rely on server-side TTL/auto-eviction.
-  - Example: **LMStudio** does not expose an explicit “unload model” API; `unload_model()` closes HTTP clients and relies on LMStudio TTL/auto-evict.
+  - Examples: **Ollama** uses native `keep_alive` load/unload semantics, and
+    **LM Studio** uses its native loaded-instance REST API when available.
+
+Provider/server availability and model catalog membership are not loaded-model proof.
+When Core can verify residency, providers expose `get_model_residency(...)`; otherwise
+loaded state is reported as unknown/fail-closed.
 
 In the OpenAI-compatible AbstractCore server (`abstractcore.server.app`), requests can set `unload_after` (default `false`)
 to call `llm.unload_model(model)` after the request completes. For providers that can unload shared server state (e.g. Ollama),
@@ -13036,11 +13045,15 @@ def unload_model(self, model_name: str) -> None
 For local providers (Ollama, MLX, HuggingFace, LMStudio), this explicitly frees model memory or releases client resources. For API providers (OpenAI, Anthropic), this is typically a no-op but safe to call.
 
 **Provider-specific behavior:**
-- **Ollama**: Sends `keep_alive=0` to immediately unload from server
+- **Ollama**: Uses native `keep_alive` load/unload semantics and `/api/ps` for residency truth
 - **MLX**: Clears model/tokenizer references and forces garbage collection
 - **HuggingFace**: Closes llama.cpp resources (GGUF) or clears model references
-- **LMStudio**: Closes HTTP connection (server auto-manages via TTL)
+- **LMStudio**: Uses native loaded-instance REST load/unload when available
 - **OpenAI/Anthropic**: No-op (safe to call)
+
+`get_model_residency(...)` reports verified loaded state only when the provider can
+check the backing runtime. Client construction, configured defaults, and model catalogs
+are not treated as loaded-model proof.
 
 **Example:**
 ```python

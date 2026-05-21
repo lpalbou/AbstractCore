@@ -193,7 +193,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Discovery | GET | `/v1/voice/clone/providers` | AbstractVoice voice clone provider catalog | optional `base_url` |
 | Chat | POST | `/v1/chat/completions` | OpenAI-compatible chat, streaming, tools, media | `model`, `messages`, `stream`, `tools`, `tool_choice`, `temperature`, `max_tokens`, `base_url`, `agent_format`, `thinking` |
 | Chat | POST | `/{provider}/v1/chat/completions` | Provider-scoped chat route where body model is unprefixed | path `provider`, body `model`, `messages`, chat parameters |
-| Responses | POST | `/v1/responses` | Responses-style input API plus legacy chat body fallback | `model`, `input` or `messages`, `stream`, generation parameters, `base_url`, `agent_format`, `thinking`, `prompt_cache_key`, `prompt_cache_binding` |
+| Responses | POST | `/v1/responses` | OpenAI Responses API (`object:"response"`) + legacy chat fallback | `model`, `input` or `messages`, `stream`, generation parameters, `base_url`, `agent_format`, `thinking`, `prompt_cache_key`, `prompt_cache_binding` |
 | Embeddings | POST | `/v1/embeddings` | OpenAI-compatible embedding vectors | `model`, `input`, `dimensions`, `encoding_format`, `user`, `base_url` |
 | Images | POST | `/v1/images/generations` | Text-to-image generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `size`, `n`, `steps`, `guidance_scale`, `seed`, `quality`, `extra` |
 | Images | POST | `/{provider}/v1/images/generations` | Provider-scoped text-to-image route where body model is unprefixed | path `provider`, body `model`, optional `base_url`, image generation parameters |
@@ -1087,11 +1087,11 @@ AbstractCore implements an OpenAI-compatible Responses-style API, including `inp
 
 #### Why Use /v1/responses?
 
-- **OpenAI Compatible**: Drop-in replacement for OpenAI's Responses API
+- **OpenAI Compatible**: Accepts OpenAI Responses API requests and returns an OpenAI Responses `object: "response"` payload
 - **Native File Support**: `input_file` type designed specifically for document attachments
 - **Cleaner API**: Explicit separation between text (`input_text`) and files (`input_file`)
 - **Backward Compatible**: Existing `messages` format still works alongside new `input` format
-- **Optional Streaming**: Streaming opt-in with `"stream": true` (defaults to `false`)
+- **Optional Streaming**: `"stream": true` streams OpenAI Responses events (OpenAI format) or chat-completions chunks (legacy format)
 
 #### Request Format
 
@@ -1108,8 +1108,12 @@ AbstractCore implements an OpenAI-compatible Responses-style API, including `inp
       ]
     }
   ],
+  "tools": [
+    {"type": "web_search", "external_web_access": true}
+  ],
+  "tool_choice": "auto",
   "stream": false,
-  "max_tokens": 2000,
+  "max_output_tokens": 2000,
   "temperature": 0.7
 }
 ```
@@ -1119,10 +1123,13 @@ Key parameters:
 | Field | Required | Notes |
 |---|---:|---|
 | `model` | yes | Provider/model id. Bare model ids may be auto-detected, but provider/model is preferred. |
-| `input` | yes, unless `messages` is used | Responses-style array of input messages. Content items use `input_text` and `input_file`. |
+| `input` | yes, unless `messages` is used | OpenAI Responses input. Supports a string, or an array of input items such as `{"type":"message","role":"user","content":"..."}` and `{"type":"function_call_output","call_id":"...","output":"..."}`. Message content can be a string or an array of `input_text` / `input_file` / `input_image` items. |
 | `messages` | yes, unless `input` is used | Backward-compatible chat-completions request shape. |
+| `instructions` | no | System-level instructions prepended ahead of `input` (best-effort). |
 | `stream` | no | When `true`, returns server-sent events. |
-| `max_tokens`, `temperature`, `top_p`, `stop`, `seed`, `frequency_penalty`, `presence_penalty` | no | Standard generation controls, forwarded where supported. |
+| `tools` | no | Responses-style tools. AbstractCore does not execute tools server-side; tools are only transported to the model prompt. `web_search*` tools are normalized into function tools for local-model prompting and host-side execution. Unsupported built-in tool types return a 400 error. |
+| `tool_choice` | no | Tool selection control; normalized where needed (best-effort). |
+| `max_output_tokens` / `max_tokens`, `temperature`, `top_p`, `stop`, `seed`, `frequency_penalty`, `presence_penalty` | no | Standard generation controls, forwarded where supported. |
 | `base_url`, `agent_format`, `thinking`, `prompt_cache_key`, `prompt_cache_retention`, `timeout_s`, `unload_after` | no | AbstractCore text-inference extensions with the same behavior as `/v1/chat/completions` for shared fields. |
 
 **Legacy Format (Still Supported):**
@@ -1417,17 +1424,26 @@ keeps the existing text behavior, keyed by `provider`, `model`, optional
 reuse that warm runtime instead of creating a fresh provider instance per
 request.
 
-For non-text tasks, the same route delegates to capability-owned residency:
+For text-generation runtimes, Core reports provider-owned loaded-model truth
+separately from gateway client cache state. A configured default model, model
+catalog row, reachable server, or cached Core client is not proof that the
+provider has a model loaded. Providers that can verify residency expose it
+through `get_model_residency(...)`; providers that cannot verify it report
+`provider_residency_verified=false`, `provider_resident=null`, and `loaded=false`.
+When a provider exposes a native load/warm hook, `/acore/models/load` calls it
+and then verifies the result through the same residency contract.
+
+For non-text tasks, the same route delegates to capability-owned load/list/unload:
 `image_generation` reuses the server's `/v1/images/*` AbstractVision backend
 cache, while `tts` and `stt` delegate through the shared AbstractVoice
 capability core when the selected plugin exposes residency hooks. Remote
 OpenAI-compatible image/audio providers are reported as configured rather than
-locally resident unless the upstream exposes a real loaded-state signal.
+locally loaded unless the upstream exposes a real loaded-state signal.
 
-`loaded_new` is an event signal for the load call, not a synonym for
-`resident`. For capability-backed tasks it is true only when the backend reports
-or clearly implies that this request created or warmed a new resident model.
-Already-resident models should return `loaded_new=false`.
+`loaded_new` is an event signal for the load call, not a synonym for `loaded`.
+For capability-backed tasks it is true only when the backend reports or clearly
+implies that this request transitioned the model from not loaded to loaded.
+Already-loaded models should return `loaded_new=false`.
 
 ### Prompt Cache Control Plane
 

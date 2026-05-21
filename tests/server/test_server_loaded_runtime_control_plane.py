@@ -200,6 +200,19 @@ class _StubGatewayMLXProvider(BaseProvider):
     def get_capabilities(self) -> List[str]:
         return ["chat"]
 
+    def get_model_residency(self, *, task: str = "text_generation", model: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+        _ = kwargs
+        return {
+            "task": task,
+            "provider": "mlx",
+            "model": str(model or self.model),
+            "provider_residency_verified": True,
+            "provider_resident": True,
+            "loaded": True,
+            "state": "loaded",
+            "source": "abstractcore.provider.test",
+        }
+
     def unload_model(self, model_name: str) -> None:
         self.unload_model_calls.append(str(model_name))
 
@@ -373,6 +386,99 @@ def test_server_loaded_runtime_supports_local_bloc_kv_and_chat_reuse(monkeypatch
     loaded_after = client.get("/acore/models/loaded?task=text_generation&provider=mlx")
     assert loaded_after.status_code == 200
     assert loaded_after.json()["data"] == []
+
+
+def test_server_text_residency_fails_closed_without_provider_truth(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    server_app._GATEWAY_LOADED_RUNTIMES.clear()
+    server_app._GATEWAY_RUNTIME_IDS.clear()
+
+    class _NoResidencyProvider(_StubGatewayMLXProvider):
+        get_model_residency = None  # type: ignore[assignment]
+
+    monkeypatch.setattr(
+        server_app,
+        "create_llm",
+        lambda provider, model, **kwargs: _NoResidencyProvider(model=model),
+    )
+
+    client = TestClient(server_app.app)
+    load = client.post("/acore/models/load", json={"provider": "mlx", "model": "model"})
+
+    assert load.status_code == 200
+    load_body = load.json()
+    assert load_body["loaded_new"] is False
+    assert load_body["runtime_cache_loaded_new"] is True
+    assert load_body["runtime"]["loaded"] is False
+    assert load_body["runtime"]["state"] == "provider_residency_unknown"
+    assert load_body["runtime"]["provider_residency_verified"] is False
+
+    listed = client.get("/acore/models/loaded", params={"task": "text_generation", "provider": "mlx"})
+    assert listed.status_code == 200
+    assert listed.json()["data"][0]["loaded"] is False
+
+
+def test_server_text_load_invokes_provider_load_when_runtime_is_not_provider_resident(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    server_app._GATEWAY_LOADED_RUNTIMES.clear()
+    server_app._GATEWAY_RUNTIME_IDS.clear()
+
+    class _ServerLoadableProvider(_StubGatewayMLXProvider):
+        def __init__(self, model: str = "model", **kwargs: Any) -> None:
+            super().__init__(model=model, **kwargs)
+            self.provider = "lmstudio"
+            self.provider_loaded = False
+            self.load_model_calls: List[str] = []
+            self.load_model_kwargs: List[Dict[str, Any]] = []
+
+        def get_model_residency(self, *, task: str = "text_generation", model: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+            _ = kwargs
+            return {
+                "task": task,
+                "provider": "lmstudio",
+                "model": str(model or self.model),
+                "provider_residency_verified": True,
+                "provider_resident": bool(self.provider_loaded),
+                "loaded": bool(self.provider_loaded),
+                "state": "loaded" if self.provider_loaded else "not_loaded",
+                "source": "abstractcore.provider.test",
+            }
+
+        def load_model(self, model_name: str, **kwargs: Any) -> Dict[str, Any]:
+            self.provider_loaded = True
+            self.load_model_calls.append(str(model_name))
+            self.load_model_kwargs.append(dict(kwargs))
+            return {"supported": True, "operation": "load", "model": str(model_name)}
+
+    created: List[_ServerLoadableProvider] = []
+
+    def _fake_create(provider: str, model: str, **kwargs: Any) -> _ServerLoadableProvider:
+        _ = (provider, kwargs)
+        llm = _ServerLoadableProvider(model=model)
+        created.append(llm)
+        return llm
+
+    monkeypatch.setattr(server_app, "create_llm", _fake_create)
+
+    client = TestClient(server_app.app)
+    load = client.post(
+        "/acore/models/load",
+        json={"provider": "lmstudio", "model": "model", "pin": True, "ttl_s": 60.0},
+    )
+
+    assert load.status_code == 200
+    body = load.json()
+    assert body["loaded_new"] is True
+    assert body["provider_loaded_new"] is True
+    assert body["runtime_cache_loaded_new"] is True
+    assert body["runtime"]["loaded"] is True
+    assert body["runtime"]["provider_resident"] is True
+    assert created[0].load_model_calls == ["model"]
+    assert created[0].load_model_kwargs == [{"pin": True, "ttl_s": 60.0}]
+
+    listed = client.get("/acore/models/loaded", params={"task": "text_generation", "provider": "lmstudio"})
+    assert listed.status_code == 200
+    assert listed.json()["data"][0]["state"] == "provider_loaded"
 
 
 def test_server_local_control_plane_can_target_runtime_loaded_with_base_url(monkeypatch, tmp_path: Path) -> None:

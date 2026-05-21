@@ -1308,6 +1308,23 @@ class MLXProvider(BaseProvider):
         """Get MLX capabilities"""
         return ["streaming", "chat"]
 
+    def get_model_residency(self, *, task: str = "text_generation", model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        """Return Core-owned in-process residency truth for the loaded MLX provider."""
+        _ = kwargs
+        task_s = str(task or "text_generation").strip() or "text_generation"
+        model_s = str(model or self.model or "").strip()
+        loaded = self.llm is not None and self.tokenizer is not None
+        return {
+            "task": task_s,
+            "provider": "mlx",
+            "model": model_s,
+            "provider_residency_verified": True,
+            "provider_resident": loaded,
+            "loaded": loaded,
+            "state": "loaded" if loaded else "not_loaded",
+            "source": "abstractcore.provider.mlx",
+        }
+
     def validate_config(self) -> bool:
         """Validate MLX model is loaded"""
         return self.llm is not None and self.tokenizer is not None

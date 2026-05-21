@@ -198,7 +198,12 @@ The `unload_model(model_name)` method is a **best-effort resource cleanup hook**
 - **Local / self-hosted providers**: behavior is provider-specific:
   - some can actively release memory (or request server-side eviction),
   - others can only close client connections and rely on server-side TTL/auto-eviction.
-  - Example: **LMStudio** does not expose an explicit “unload model” API; `unload_model()` closes HTTP clients and relies on LMStudio TTL/auto-evict.
+  - Examples: **Ollama** uses native `keep_alive` load/unload semantics, and
+    **LM Studio** uses its native loaded-instance REST API when available.
+
+Provider/server availability and model catalog membership are not loaded-model proof.
+When Core can verify residency, providers expose `get_model_residency(...)`; otherwise
+loaded state is reported as unknown/fail-closed.
 
 In the OpenAI-compatible AbstractCore server (`abstractcore.server.app`), requests can set `unload_after` (default `false`)
 to call `llm.unload_model(model)` after the request completes. For providers that can unload shared server state (e.g. Ollama),

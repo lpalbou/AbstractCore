@@ -20,8 +20,7 @@ def test_acore_models_routes_image_residency_through_server_vision_cache(monkeyp
         "provider": "huggingface",
         "backend_kind": "diffusers",
         "model": "runwayml/stable-diffusion-v1-5",
-        "state": "resident",
-        "resident": True,
+        "state": "loaded",
         "loaded": True,
     }
 
@@ -35,11 +34,11 @@ def test_acore_models_routes_image_residency_through_server_vision_cache(monkeyp
 
     def fake_unload(payload: Dict[str, Any]) -> Dict[str, Any]:
         calls.append(("unload", dict(payload)))
-        return dict(runtime, state="unloaded", resident=False, loaded=False, unloaded=True)
+        return dict(runtime, state="unloaded", loaded=False, unloaded=True)
 
-    monkeypatch.setattr(vision_endpoints, "load_server_vision_resident_model", fake_load)
-    monkeypatch.setattr(vision_endpoints, "list_server_vision_resident_models", fake_list)
-    monkeypatch.setattr(vision_endpoints, "unload_server_vision_resident_model", fake_unload)
+    monkeypatch.setattr(vision_endpoints, "load_server_vision_loaded_model", fake_load)
+    monkeypatch.setattr(vision_endpoints, "list_server_vision_loaded_models", fake_list)
+    monkeypatch.setattr(vision_endpoints, "unload_server_vision_loaded_model", fake_unload)
 
     client = TestClient(server_app.app)
     load = client.post(
@@ -76,13 +75,13 @@ class _FakeVoiceResidency:
             "task": "tts",
             "provider": payload.get("provider"),
             "model": payload.get("model"),
-            "state": "resident",
-            "resident": True,
+            "state": "loaded",
+            "loaded": True,
         }
 
     def list_loaded_models(self, filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
         self.calls.append(("list", dict(filters or {})))
-        return [{"task": "tts", "provider": "cloned", "model": "omnivoice", "state": "resident", "resident": True}]
+        return [{"task": "tts", "provider": "cloned", "model": "omnivoice", "state": "loaded", "loaded": True}]
 
     def unload_resident_model(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         self.calls.append(("unload", dict(payload)))
@@ -91,7 +90,7 @@ class _FakeVoiceResidency:
             "provider": payload.get("provider"),
             "model": payload.get("model"),
             "state": "unloaded",
-            "resident": False,
+            "loaded": False,
             "unloaded": True,
         }
 
@@ -118,7 +117,7 @@ def test_acore_models_routes_tts_residency_through_shared_audio_core(monkeypatch
         json={"task": "tts", "provider": "cloned", "model": "omnivoice", "options": {"voice": "clone-1"}},
     )
     assert load.status_code == 200
-    assert load.json()["runtime"]["state"] == "resident"
+    assert load.json()["runtime"]["state"] == "loaded"
     assert load.json()["loaded_new"] is False
     assert voice.calls[0][1]["options"] == {"voice": "clone-1"}
 
@@ -151,8 +150,8 @@ def test_acore_models_tts_loaded_new_uses_event_signal_not_resident_state(monkey
             "task": "tts",
             "provider": "cloned",
             "model": "omnivoice",
-            "state": "resident",
-            "resident": True,
+            "state": "loaded",
+            "loaded": True,
             "details": {"engine_cached": False},
         }
     )
@@ -168,8 +167,8 @@ def test_acore_models_tts_loaded_new_uses_event_signal_not_resident_state(monkey
         "task": "tts",
         "provider": "cloned",
         "model": "omnivoice",
-        "state": "resident",
-        "resident": True,
+        "state": "loaded",
+        "loaded": True,
         "loaded_new": False,
     }
     already_loaded = client.post("/acore/models/load", json={"task": "tts", "provider": "cloned", "model": "omnivoice"})
@@ -203,25 +202,25 @@ def test_server_vision_residency_helpers_share_backend_cache(monkeypatch) -> Non
 
     monkeypatch.setattr(vision_endpoints, "_resolve_backend", fake_resolve)
 
-    loaded = vision_endpoints.load_server_vision_resident_model(
+    loaded = vision_endpoints.load_server_vision_loaded_model(
         {
             "task": "image_generation",
             "provider": "diffusers",
             "model": "runwayml/stable-diffusion-v1-5",
         }
     )
-    assert loaded["state"] == "resident"
+    assert loaded["state"] == "loaded"
     assert loaded["runtime_id"] == "diffusers/runwayml/stable-diffusion-v1-5"
     assert backend.preloaded == 1
 
-    listed = vision_endpoints.list_server_vision_resident_models({"provider": "diffusers"})
+    listed = vision_endpoints.list_server_vision_loaded_models({"provider": "diffusers"})
     assert len(listed) == 1
-    assert listed[0]["resident"] is True
+    assert listed[0]["loaded"] is True
 
-    unloaded = vision_endpoints.unload_server_vision_resident_model({"runtime_id": loaded["runtime_id"]})
+    unloaded = vision_endpoints.unload_server_vision_loaded_model({"runtime_id": loaded["runtime_id"]})
     assert unloaded["state"] == "unloaded"
     assert backend.unloaded == 1
-    assert vision_endpoints.list_server_vision_resident_models({}) == []
+    assert vision_endpoints.list_server_vision_loaded_models({}) == []
 
 
 def test_server_vision_residency_eviction_clears_records_and_unloads(monkeypatch) -> None:
@@ -254,14 +253,17 @@ def test_server_vision_residency_eviction_clears_records_and_unloads(monkeypatch
 
     monkeypatch.setattr(vision_endpoints, "_resolve_backend", fake_resolve)
 
-    first = vision_endpoints.load_server_vision_resident_model(
+    first = vision_endpoints.load_server_vision_loaded_model(
         {"task": "image_generation", "provider": "diffusers", "model": "model-one"}
     )
-    second = vision_endpoints.load_server_vision_resident_model(
+    second = vision_endpoints.load_server_vision_loaded_model(
         {"task": "image_generation", "provider": "diffusers", "model": "model-two"}
     )
 
-    listed_ids = {str(item.get("load_id") or item.get("runtime_id") or "") for item in vision_endpoints.list_server_vision_resident_models({})}
+    listed_ids = {
+        str(item.get("load_id") or item.get("runtime_id") or "")
+        for item in vision_endpoints.list_server_vision_loaded_models({})
+    }
     assert str(first["load_id"]) not in listed_ids
     assert str(second["load_id"]) in listed_ids
     assert created[0].unloaded == 1

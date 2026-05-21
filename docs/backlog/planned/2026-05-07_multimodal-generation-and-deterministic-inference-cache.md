@@ -85,7 +85,7 @@ Design and implement an explicit, opt-in cache layer for deterministic generatio
 
 ## Dependencies And Related Tasks
 - Existing `/acore/prompt_cache/*` docs and implementation.
-- `docs/backlog/planned/790_server-response-cache.md`, which should be reviewed and either merged with this item or narrowed to HTTP response-cache mechanics.
+- `docs/backlog/deprecated/790_server-response-cache.md` (deprecated; superseded by this item).
 - Provider metadata for deterministic support may need extension.
 
 ## Expected Outcomes
@@ -103,7 +103,7 @@ Design and implement an explicit, opt-in cache layer for deterministic generatio
 - Manual server smoke test with repeated image/TTS requests and cache-hit headers.
 
 ## Progress Checklist
-- [ ] Reconcile with `790_server-response-cache.md`.
+- [ ] Confirm `790_server-response-cache.md` deprecation does not remove any unique requirements.
 - [ ] Design cache key schema.
 - [ ] Implement cache abstraction.
 - [ ] Wire image/audio/voice/text routes.

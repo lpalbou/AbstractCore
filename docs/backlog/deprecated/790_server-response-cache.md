@@ -1,5 +1,10 @@
 # 790 — Response caching for repeated requests
 
+## Metadata
+- Created: 2026-02-21
+- Status: Deprecated
+- Deprecated: 2026-05-21
+
 ## Summary
 Add an optional response cache at the server/gateway layer to reuse identical responses and reduce latency/cost for repeated prompts.
 
@@ -36,3 +41,12 @@ Many production workloads repeat identical or near-identical prompts (health che
 
 ## ADR note
 If approved, add an ADR describing cache eligibility rules and risk boundaries.
+
+## Deprecation report (2026-05-21)
+
+This item is superseded by `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md`,
+which already scopes the same server-side caching work (and more importantly, includes the security,
+tenant/auth namespace, and binary-output considerations that make caching safe).
+
+Keep the work tracked in the broader planned item so there is one source of truth for cache keying,
+eligibility rules, and endpoint wiring.

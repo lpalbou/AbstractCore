@@ -2183,8 +2183,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
         )
         data, artifact_ref, metadata = self._artifact_or_data(raw)
         content_type = str(metadata.get("content_type") or metadata.get("mime_type") or f"audio/{fmt}")
-        music_provider = str(spec.get("provider") or getattr(self.music, "backend_id", None) or self.__class__.__name__)
-        music_model = spec.get("model") or metadata.get("model") or metadata.get("model_id")
+        backend_id = metadata.get("backend_id") or metadata.get("backend") or getattr(self.music, "backend_id", None)
+        backend_id = str(backend_id).strip() if isinstance(backend_id, str) and str(backend_id).strip() else None
+
+        # Provider/model should reflect the invoked backend/result when possible
+        # (not a blind echo of request selectors).
+        music_provider = metadata.get("provider") or metadata.get("provider_id") or backend_id or getattr(self.music, "backend_id", None) or self.__class__.__name__
+        music_provider = str(music_provider)
+        music_model = metadata.get("model") or metadata.get("model_id") or metadata.get("modelId") or spec.get("model")
         if artifact_ref is None:
             data, stored_ref = self._store_generated_data(
                 data,
@@ -2202,7 +2208,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 artifact_ref=artifact_ref,
                 content_type=content_type,
                 format=fmt,
-                backend_id=getattr(self.music, "backend_id", None),
+                backend_id=backend_id,
                 provider=music_provider,
                 model=str(music_model) if music_model is not None else None,
                 metadata=metadata,

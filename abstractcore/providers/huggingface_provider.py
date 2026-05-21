@@ -296,9 +296,11 @@ class HuggingFaceProvider(BaseProvider):
             if hasattr(self, 'processor') and self.processor is not None:
                 self.processor = None
 
-            if hasattr(self, 'model') and hasattr(self, 'model') and self.model is not None:
-                # For transformers models, clear the model
-                self.model = None
+            if hasattr(self, 'model_instance') and self.model_instance is not None:
+                self.model_instance = None
+
+            if hasattr(self, 'pipeline') and self.pipeline is not None:
+                self.pipeline = None
 
             # Force garbage collection to free memory immediately
             gc.collect()
@@ -5565,6 +5567,30 @@ class HuggingFaceProvider(BaseProvider):
                 capabilities.append("code")
 
         return capabilities
+
+    def get_model_residency(self, *, task: str = "text_generation", model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        """Return Core-owned in-process residency truth for the loaded HuggingFace provider."""
+        _ = kwargs
+        task_s = str(task or "text_generation").strip() or "text_generation"
+        model_s = str(model or self.model or "").strip()
+        loaded = any(
+            value is not None
+            for value in (
+                getattr(self, "llm", None),
+                getattr(self, "model_instance", None),
+                getattr(self, "pipeline", None),
+            )
+        )
+        return {
+            "task": task_s,
+            "provider": "huggingface",
+            "model": model_s,
+            "provider_residency_verified": True,
+            "provider_resident": loaded,
+            "loaded": loaded,
+            "state": "loaded" if loaded else "not_loaded",
+            "source": "abstractcore.provider.huggingface",
+        }
 
     def validate_config(self) -> bool:
         """Validate provider configuration"""

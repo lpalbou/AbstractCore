@@ -180,6 +180,49 @@ class LMStudioProvider(OpenAICompatibleProvider):
 
         super().unload_model(model_name)
 
+    def load_model(self, model_name: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+        """Load/warm a model through LM Studio native REST (`POST /api/v1/models/load`)."""
+        _ = kwargs
+        target = str(model_name or getattr(self, "model", "") or "").strip()
+        if not target:
+            raise ValueError("model_name is required")
+
+        load_url = f"{self._native_rest_base_url()}/api/v1/models/load"
+        resp = httpx.post(
+            load_url,
+            json={"model": target},
+            headers=self._get_headers(),
+            timeout=self._timeout,
+        )
+        try:
+            data = resp.json()
+        except Exception:
+            data = None
+
+        if isinstance(data, dict) and data.get("error"):
+            raise ProviderAPIError(str(data.get("error")))
+
+        try:
+            resp.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            body = ""
+            try:
+                body = resp.text or ""
+            except Exception:
+                body = ""
+            raise ProviderAPIError(
+                f"LM Studio native REST load failed ({resp.status_code}) for {target!r}: {body[:800]}"
+            ) from e
+
+        return {
+            "supported": True,
+            "operation": "load",
+            "provider": "lmstudio",
+            "model": target,
+            "source": "abstractcore.provider.lmstudio.native_rest",
+            "raw": data if isinstance(data, dict) else {},
+        }
+
     def _native_rest_unload_model(self, target: str) -> None:
         """Unload a model by instance id, resolving model keys to loaded instances when needed."""
         unload_url = f"{self._native_rest_base_url()}/api/v1/models/unload"
@@ -289,6 +332,39 @@ class LMStudioProvider(OpenAICompatibleProvider):
                     out.append(instance_id)
                     seen.add(instance_id)
         return out
+
+    def get_model_residency(self, *, task: str = "text_generation", model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        """Return LM Studio loaded-instance truth through the Core provider boundary."""
+        _ = kwargs
+        task_s = str(task or "text_generation").strip() or "text_generation"
+        model_s = str(model or self.model or "").strip()
+        try:
+            instance_ids = self._native_rest_loaded_instance_ids_for_model(model_s)
+        except Exception as e:  # noqa: BLE001
+            return {
+                "task": task_s,
+                "provider": "lmstudio",
+                "model": model_s,
+                "provider_residency_verified": False,
+                "provider_resident": None,
+                "loaded": False,
+                "state": "provider_residency_unknown",
+                "source": "abstractcore.provider.lmstudio.native_rest",
+                "warnings": [f"LM Studio loaded-instance query failed: {e}"],
+            }
+
+        loaded = bool(instance_ids)
+        return {
+            "task": task_s,
+            "provider": "lmstudio",
+            "model": model_s,
+            "provider_residency_verified": True,
+            "provider_resident": loaded,
+            "provider_instance_ids": instance_ids,
+            "loaded": loaded,
+            "state": "loaded" if loaded else "not_loaded",
+            "source": "abstractcore.provider.lmstudio.native_rest",
+        }
 
     def _generate_internal(
         self,

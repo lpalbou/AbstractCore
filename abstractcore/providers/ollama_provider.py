@@ -55,6 +55,80 @@ class OllamaProvider(BaseProvider):
             )
         return self._async_client
 
+    def _running_model_entries(self) -> List[Dict[str, Any]]:
+        response = self.client.get(f"{self.base_url}/api/ps")
+        response.raise_for_status()
+        data = response.json()
+        models = data.get("models") if isinstance(data, dict) else None
+        return [m for m in models if isinstance(m, dict)] if isinstance(models, list) else []
+
+    def _matches_running_model(self, entry: Dict[str, Any], target: str) -> bool:
+        target_s = str(target or "").strip()
+        if not target_s:
+            return False
+        target_aliases = {target_s}
+        if ":" not in target_s:
+            target_aliases.add(f"{target_s}:latest")
+        for key in ("name", "model"):
+            value = entry.get(key)
+            if isinstance(value, str) and value.strip() in target_aliases:
+                return True
+        return False
+
+    def load_model(self, model_name: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+        """Load/warm an Ollama model using the native generate keep-alive contract."""
+        target = str(model_name or self.model or "").strip()
+        if not target:
+            raise ValueError("model_name is required")
+
+        keep_alive = kwargs.get("keep_alive")
+        if keep_alive is None:
+            ttl_s = kwargs.get("ttl_s")
+            if ttl_s is not None:
+                try:
+                    keep_alive = f"{max(0, int(float(ttl_s)))}s"
+                except Exception:
+                    keep_alive = ttl_s
+            elif kwargs.get("pin") is True:
+                keep_alive = -1
+
+        payload: Dict[str, Any] = {
+            "model": target,
+            "prompt": "",
+            "stream": False,
+        }
+        if keep_alive is not None:
+            payload["keep_alive"] = keep_alive
+
+        response = self.client.post(f"{self.base_url}/api/generate", json=payload)
+        try:
+            data = response.json()
+        except Exception:
+            data = None
+        if isinstance(data, dict) and data.get("error"):
+            raise ProviderAPIError(str(data.get("error")))
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            body = ""
+            try:
+                body = response.text or ""
+            except Exception:
+                body = ""
+            raise ProviderAPIError(
+                f"Ollama model load failed ({response.status_code}) for {target!r}: {body[:800]}"
+            ) from e
+
+        return {
+            "supported": True,
+            "operation": "load",
+            "provider": "ollama",
+            "model": target,
+            "keep_alive": keep_alive,
+            "source": "abstractcore.provider.ollama.native_rest",
+            "raw": data if isinstance(data, dict) else {},
+        }
+
     def unload_model(self, model_name: str) -> None:
         """
         Unload the model from Ollama server memory.
@@ -79,6 +153,15 @@ class OllamaProvider(BaseProvider):
             )
             response.raise_for_status()
 
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                try:
+                    if not any(self._matches_running_model(entry, target_model) for entry in self._running_model_entries()):
+                        break
+                except Exception:
+                    break
+                time.sleep(0.1)
+
             # Close the HTTP client connection
             if hasattr(self, 'client') and self.client is not None:
                 self.client.close()
@@ -98,6 +181,50 @@ class OllamaProvider(BaseProvider):
             # Log but don't raise - unload should be best-effort
             if hasattr(self, 'logger'):
                 self.logger.warning(f"Error during unload: {e}")
+
+    def get_model_residency(self, *, task: str = "text_generation", model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        """Return Ollama loaded-model truth from `/api/ps`."""
+        _ = kwargs
+        task_s = str(task or "text_generation").strip() or "text_generation"
+        model_s = str(model or self.model or "").strip()
+        try:
+            entries = self._running_model_entries()
+        except Exception as e:  # noqa: BLE001
+            return {
+                "task": task_s,
+                "provider": "ollama",
+                "model": model_s,
+                "provider_residency_verified": False,
+                "provider_resident": None,
+                "loaded": False,
+                "state": "provider_residency_unknown",
+                "source": "abstractcore.provider.ollama.native_rest",
+                "warnings": [f"Ollama running-model query failed: {e}"],
+            }
+
+        matches = [entry for entry in entries if self._matches_running_model(entry, model_s)]
+        loaded = bool(matches)
+        first = matches[0] if matches else {}
+        out: Dict[str, Any] = {
+            "task": task_s,
+            "provider": "ollama",
+            "model": model_s,
+            "provider_residency_verified": True,
+            "provider_resident": loaded,
+            "provider_instance_ids": [
+                str(entry.get("name") or entry.get("model") or "").strip()
+                for entry in matches
+                if str(entry.get("name") or entry.get("model") or "").strip()
+            ],
+            "loaded": loaded,
+            "state": "loaded" if loaded else "not_loaded",
+            "source": "abstractcore.provider.ollama.native_rest",
+        }
+        for key in ("expires_at", "size", "size_vram", "context_length", "digest"):
+            value = first.get(key)
+            if value is not None:
+                out[key] = value
+        return out
 
     def generate(self, *args, **kwargs):
         """Public generate method that includes telemetry"""

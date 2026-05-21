@@ -129,19 +129,11 @@ class AbstractCoreInterface(ABC):
             except Exception:
                 mb = None
             if isinstance(mb, str) and mb.strip():
-                mbs = mb.strip()
-                mbs_l = mbs.lower()
-                if mbs_l in {"acemusic", "ace-music", "remote", "api", "acemusic-api", "ace-music-api", "aceapi"}:
-                    merged_prefs["music"] = "abstractmusic:acemusic"
-                elif mbs_l in {"diffusers"}:
-                    merged_prefs["music"] = "abstractmusic:diffusers"
-                elif mbs_l in {"acestep", "ace", "ace-step"}:
-                    merged_prefs["music"] = "abstractmusic:acestep-diffusers"
-                elif mbs_l in {"acestep_v15", "acestep-v15"}:
-                    merged_prefs["music"] = "abstractmusic:acestep-v15"
-                else:
-                    # If caller already provided a concrete backend_id, accept as-is.
-                    merged_prefs["music"] = mbs
+                from ..capabilities.music_selectors import resolve_music_backend_id
+
+                resolved = resolve_music_backend_id(mb, allow_unknown=True)
+                if resolved:
+                    merged_prefs["music"] = resolved
 
             # Per-instance explicit preferences — highest precedence.
             if isinstance(explicit_prefs, dict):
@@ -328,6 +320,28 @@ class AbstractCoreInterface(ABC):
     def unload_model(self, model_name: str) -> None:
         """Unload/cleanup resources for a specific model (best-effort)."""
         pass
+
+    def get_model_residency(self, *, task: str = "text_generation", model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+        """Return provider-owned residency truth when this provider can verify it.
+
+        The default is intentionally unknown. Callers must not infer loaded state from provider
+        construction, model configuration, available-model catalogs, or endpoint shape.
+        """
+        _ = kwargs
+        model_s = str(model or self.model or "").strip() or None
+        provider_s = getattr(self, "provider", None)
+        provider_s = str(provider_s).strip().lower() if isinstance(provider_s, str) and provider_s.strip() else None
+        return {
+            "task": str(task or "text_generation").strip() or "text_generation",
+            "provider": provider_s,
+            "model": model_s,
+            "provider_residency_verified": False,
+            "provider_resident": None,
+            "loaded": False,
+            "state": "provider_residency_unknown",
+            "source": "abstractcore.provider",
+            "warnings": ["Provider does not expose verified model residency."],
+        }
 
     def validate_config(self) -> bool:
         """Validate provider configuration"""

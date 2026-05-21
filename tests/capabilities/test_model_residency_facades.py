@@ -13,7 +13,13 @@ class _FakeResidencyBackend:
 
     def load_resident_model(self, request: Dict[str, Any]) -> Dict[str, Any]:
         self.calls.append(("load", dict(request)))
-        return {"task": request.get("task"), "provider": request.get("provider"), "model": request.get("model"), "state": "resident"}
+        return {
+            "task": request.get("task"),
+            "provider": request.get("provider"),
+            "model": request.get("model"),
+            "state": "loaded",
+            "loaded": True,
+        }
 
     def list_loaded_models(self, filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
         self.calls.append(("list_loaded", dict(filters or {})))
@@ -68,9 +74,9 @@ def test_residency_methods_are_exposed_on_python_capability_facades() -> None:
     registry.register_audio_backend(backend_id="fake-audio", factory=lambda _owner: audio)
     registry.register_vision_backend(backend_id="fake-vision", factory=lambda _owner: vision)
 
-    assert registry.voice.load_resident_model({"task": "tts", "provider": "cloned", "model": "omnivoice"})["state"] == "resident"
-    assert registry.audio.load_resident_model({"task": "stt", "provider": "faster-whisper", "model": "base"})["state"] == "resident"
-    assert registry.vision.load_resident_model({"task": "image_generation", "provider": "diffusers", "model": "sd15"})["state"] == "resident"
+    assert registry.voice.load_resident_model({"task": "tts", "provider": "cloned", "model": "omnivoice"})["state"] == "loaded"
+    assert registry.audio.load_resident_model({"task": "stt", "provider": "faster-whisper", "model": "base"})["state"] == "loaded"
+    assert registry.vision.load_resident_model({"task": "image_generation", "provider": "diffusers", "model": "sd15"})["state"] == "loaded"
 
     assert registry.voice.list_loaded_models({"task": "tts"})[0]["model"] == "loaded"
     assert registry.audio.list_resident_models({"task": "stt"})[0]["model"] == "resident"

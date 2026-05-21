@@ -296,11 +296,39 @@ class CapabilityRegistry:
     def _get_instance(self, capability: str) -> Any:
         self._ensure_plugins_loaded()
         bid = self._select_backend_id(capability)
+        return self._get_instance_for_backend_id(capability, bid)
+
+    def _get_instance_for_backend_id(self, capability: str, backend_id: str) -> Any:
+        """Return (and cache) a backend instance for a specific backend_id.
+
+        This is used for request-scoped selection (especially music) without
+        mutating the registry's process-wide preferred backend.
+        """
+        self._ensure_plugins_loaded()
+        cap = str(capability or "").strip()
+        bid = str(backend_id or "").strip()
+        if not cap or not bid:
+            raise CapabilityUnavailableError(
+                capability=cap or "unknown",
+                reason="Capability backend_id is required.",
+                install_hint=self._default_install_hint(cap or "unknown"),
+                details={"backend_id": bid},
+            )
+
+        regs = self._registrations.get(cap) or {}
+        if bid not in regs:
+            raise CapabilityUnavailableError(
+                capability=cap,
+                reason=f"Requested backend '{bid}' is not registered.",
+                install_hint=self._default_install_hint(cap),
+                details={"backend_id": bid},
+            )
+
         key = (capability, bid)
         if key in self._instances:
             return self._instances[key]
 
-        reg = (self._registrations.get(capability) or {}).get(bid)
+        reg = regs.get(bid)
         if reg is None:
             raise CapabilityUnavailableError(
                 capability=capability,
@@ -324,6 +352,14 @@ class CapabilityRegistry:
 
         self._instances[key] = inst
         return inst
+
+    def _is_backend_registered(self, capability: str, backend_id: str) -> bool:
+        self._ensure_plugins_loaded()
+        cap = str(capability or "").strip()
+        bid = str(backend_id or "").strip()
+        if not cap or not bid:
+            return False
+        return bid in (self._registrations.get(cap) or {})
 
     def get_voice(self) -> VoiceCapability:
         out = self._get_instance("voice")
@@ -1192,8 +1228,109 @@ class _MusicFacade:
                 details={"backend_id": self.backend_id, "task": normalized_task},
             )
 
-        backend = self._registry.get_music()
+        # Request-scoped backend selection (do not silently fall back).
+        #
+        # Prefer explicit `backend` / `music_backend`. If absent, also accept
+        # `provider` when it matches a known backend alias (Gateway historically
+        # used provider-like names such as "ace-step").
+        from .music_selectors import resolve_music_backend_id, resolve_music_provider_hint
+
+        backend_selector = kwargs.get("backend")
+        if backend_selector is None:
+            backend_selector = kwargs.get("music_backend")
+
+        provider_selector = kwargs.get("provider")
+        provider_hint = resolve_music_provider_hint(provider_selector)
+
+        requested_backend_id: Optional[str] = None
+        consumed_provider_alias = False
+
+        if backend_selector is not None:
+            raw = str(backend_selector).strip()
+            if raw:
+                resolved = resolve_music_backend_id(raw)
+                candidate = resolved or raw
+                alt = raw.lower().replace("_", "-")
+                if (
+                    not self._registry._is_backend_registered("music", candidate)
+                    and self._registry._is_backend_registered("music", alt)
+                ):
+                    candidate = alt
+                if not self._registry._is_backend_registered("music", candidate):
+                    raise CapabilityUnavailableError(
+                        capability="music",
+                        reason=f"Unknown music backend selector: {raw!r}.",
+                        install_hint=self._registry._default_install_hint("music"),
+                        details={"backend": raw},
+                    )
+                requested_backend_id = candidate
+
+        if requested_backend_id is None:
+            raw_provider = str(provider_selector).strip() if isinstance(provider_selector, str) else ""
+            resolved = resolve_music_backend_id(raw_provider)
+            if resolved and self._registry._is_backend_registered("music", resolved):
+                requested_backend_id = resolved
+                consumed_provider_alias = True
+
+        if requested_backend_id is not None:
+            backend = self._registry._get_instance_for_backend_id("music", requested_backend_id)
+        else:
+            backend = self._registry.get_music()
+
+        # Do not forward routing-only selectors into the backend call.
+        call_kwargs = dict(kwargs)
+        call_kwargs.pop("backend", None)
+        call_kwargs.pop("music_backend", None)
+        if consumed_provider_alias:
+            call_kwargs.pop("provider", None)
+
+        # Fail early on known backend/model mismatches to avoid confusing
+        # backend-specific runtime errors.
+        model_id = call_kwargs.get("model") or call_kwargs.get("model_id") or call_kwargs.get("music_model_id")
+        target_backend_id = requested_backend_id
+        if target_backend_id is None:
+            try:
+                bid = getattr(backend, "backend_id", None)
+            except Exception:
+                bid = None
+            if isinstance(bid, str) and bid.strip():
+                target_backend_id = bid.strip()
+
+        if isinstance(model_id, str) and model_id.strip() and isinstance(target_backend_id, str) and target_backend_id:
+            model_s = model_id.strip().lower()
+            if target_backend_id == "abstractmusic:stable-audio" and "stable-audio-3" in model_s:
+                raise CapabilityUnavailableError(
+                    capability="music",
+                    reason=(
+                        "Requested backend 'stable-audio' cannot run Stable Audio 3 models. "
+                        "Use backend='stable-audio-3' for stabilityai/stable-audio-3-*."
+                    ),
+                    install_hint=self._registry._default_install_hint("music"),
+                    details={"backend_id": target_backend_id, "model": model_id},
+                )
+            if target_backend_id == "abstractmusic:stable-audio-3" and "stable-audio-open" in model_s:
+                raise CapabilityUnavailableError(
+                    capability="music",
+                    reason=(
+                        "Requested backend 'stable-audio-3' cannot run Stable Audio Open models. "
+                        "Use backend='stable-audio' for stabilityai/stable-audio-open-*."
+                    ),
+                    install_hint=self._registry._default_install_hint("music"),
+                    details={"backend_id": target_backend_id, "model": model_id},
+                )
+
         method = getattr(backend, "generate", None)
         if callable(method):
-            return method(prompt, task=normalized_task, **kwargs)
-        return backend.t2m(prompt, **kwargs)
+            out = method(prompt, task=normalized_task, **call_kwargs)
+        else:
+            out = backend.t2m(prompt, **call_kwargs)
+
+        # Ensure truthful backend reporting without requiring every plugin to
+        # remember to include it.
+        if requested_backend_id is not None:
+            if isinstance(out, dict):
+                out = dict(out)
+                out.setdefault("backend_id", requested_backend_id)
+            else:
+                out = {"data": out, "backend_id": requested_backend_id}
+        return out

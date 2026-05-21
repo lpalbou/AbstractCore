@@ -46,7 +46,7 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/acore/prompt_cache/*` | GET/POST | Prompt-cache control plane on a loaded gateway runtime or proxied AbstractEndpoint | `provider` + `model` or `base_url`, cache operation fields |
 | `/acore/blocs/*` | GET/POST | Provider-backed memory-bloc KV artifact control plane for MLX, HuggingFace transformers, and supported HuggingFace GGUF exact-renderer paths | local store by default, or `runtime_id` / `provider` + `model` / `base_url` as required |
 
-Runtime note: omitted `task` on `/acore/models/load` keeps the existing text-generation runtime behavior. Non-text tasks route to capability-owned residency where supported: `image_generation` uses the same server image backend cache as `/v1/images/*`, while `tts` and `stt` use the shared AbstractVoice capability core. `loaded_new` reports whether the load call created or warmed a new resident runtime; it is not a synonym for `resident`.
+Runtime note: omitted `task` on `/acore/models/load` keeps the existing text-generation runtime behavior. Non-text tasks route to capability-owned load/list/unload where supported: `image_generation` uses the same server image backend cache as `/v1/images/*`, while `tts` and `stt` use the shared AbstractVoice capability core. `loaded_new` is optional event metadata for the *load call* (did this call likely transition `loaded` from false to true?); it is not the loaded state itself.
 
 ### Common Request Patterns
 
@@ -910,7 +910,7 @@ print(f"Embedding dimension: {len(embedding)}")
 
 **Endpoint**: `POST /v1/responses`
 
-**Purpose**: OpenAI Responses API compatible endpoint with file URL support.
+**Purpose**: OpenAI Responses API compatible endpoint with file URL support (`input` requests return `object: "response"`; legacy `messages` requests return Chat Completions payloads).
 
 **Request**:
 ```json
@@ -925,11 +925,15 @@ print(f"Embedding dimension: {len(embedding)}")
       ]
     }
   ],
+  "instructions": "You are a helpful assistant.",
+  "tools": [{"type": "web_search", "external_web_access": true}],
+  "tool_choice": "auto",
+  "max_output_tokens": 512,
   "stream": false
 }
 ```
 
-**Note**: This endpoint accepts both OpenAI Responses format (with `input` field) and legacy format (with `messages` field). Format is auto-detected.
+**Note**: This endpoint accepts both OpenAI Responses format (with `input`) and legacy format (with `messages`). Format is auto-detected. AbstractCore does not execute tools server-side; tools are only transported to the model and emitted back as tool calls for the host to run.
 
 ---
 

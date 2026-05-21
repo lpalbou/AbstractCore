@@ -165,6 +165,43 @@ def _make_plugin_ep():
     return _FakeEntryPoint(register)
 
 
+def _make_multi_music_plugin_ep():
+    def register(registry):
+        class _Music:
+            def __init__(self, owner, backend_id: str):
+                self.owner = owner
+                self.backend_id = backend_id
+
+            def t2m(self, prompt: str, *, lyrics=None, format="wav", **kwargs):
+                self.owner.plugin_calls.append(("t2m", self.backend_id, prompt, lyrics, format, dict(kwargs)))
+                # Return dict so BaseProvider can surface truthful metadata.
+                return {
+                    "data": f"{self.backend_id}".encode(),
+                    "mime_type": f"audio/{str(format or 'wav').lower()}",
+                    "model_id": kwargs.get("model"),
+                }
+
+        # Make the remote backend the default (highest priority) to reproduce
+        # the original drift bug when request-scoped selection is ignored.
+        registry.register_music_backend(
+            backend_id="abstractmusic:acemusic",
+            factory=lambda owner: _Music(owner, "abstractmusic:acemusic"),
+            priority=50,
+        )
+        registry.register_music_backend(
+            backend_id="abstractmusic:acestep-diffusers",
+            factory=lambda owner: _Music(owner, "abstractmusic:acestep-diffusers"),
+            priority=10,
+        )
+        registry.register_music_backend(
+            backend_id="abstractmusic:stable-audio",
+            factory=lambda owner: _Music(owner, "abstractmusic:stable-audio"),
+            priority=0,
+        )
+
+    return _FakeEntryPoint(register)
+
+
 @pytest.fixture()
 def fake_plugins(monkeypatch):
     monkeypatch.setattr(
@@ -345,6 +382,84 @@ def test_output_music_with_text_calls_music_generate(fake_plugins):
     assert llm.plugin_calls[0][4]["duration_s"] == 8
     assert llm.plugin_calls[0][4]["provider"] == "ace-step"
     assert llm.plugin_calls[0][4]["model"] == "ACE-Step/acestep-v15-xl-turbo-diffusers"
+
+
+@pytest.mark.basic
+def test_output_music_request_scoped_backend_selection_is_real_and_reporting_is_truthful(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_music_plugin_ep()]))
+
+    llm = _FakeProvider()
+    resp = llm.generate(
+        text="driving techno groove with punchy kick",
+        output={
+            "modality": "music",
+            "backend": "stable-audio",
+            "model": "stabilityai/stable-audio-open-small",
+            "duration_s": 10,
+            "format": "wav",
+        },
+    )
+
+    item = resp.outputs["music"][0]
+    assert item.backend_id == "abstractmusic:stable-audio"
+    assert item.provider == "abstractmusic:stable-audio"
+    assert item.model == "stabilityai/stable-audio-open-small"
+
+    # The invoked backend should match the reported backend.
+    assert llm.plugin_calls[0][0] == "t2m"
+    assert llm.plugin_calls[0][1] == "abstractmusic:stable-audio"
+    assert llm.plugin_calls[0][5]["duration_s"] == 10
+
+
+@pytest.mark.basic
+def test_output_music_provider_alias_can_select_backend_when_backend_field_is_omitted(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_music_plugin_ep()]))
+
+    llm = _FakeProvider()
+    resp = llm.generate(
+        text="cinematic orchestral build",
+        output={
+            "modality": "music",
+            "provider": "ace-step",
+            "model": "ACE-Step/acestep-v15-xl-turbo-diffusers",
+            "duration_s": 8,
+            "format": "wav",
+        },
+    )
+
+    item = resp.outputs["music"][0]
+    assert item.backend_id == "abstractmusic:acestep-diffusers"
+    assert item.provider == "abstractmusic:acestep-diffusers"
+    assert llm.plugin_calls[0][1] == "abstractmusic:acestep-diffusers"
+
+
+@pytest.mark.basic
+def test_output_music_unknown_backend_does_not_silently_fall_back(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_music_plugin_ep()]))
+
+    llm = _FakeProvider()
+    with pytest.raises(Exception, match="Unknown music backend selector|Requested music provider/backend"):
+        llm.generate(
+            text="ambient pads",
+            output={"modality": "music", "backend": "definitely-not-a-backend", "format": "wav"},
+        )
+
+
+@pytest.mark.basic
+def test_output_music_backend_model_mismatch_fails_with_clear_error(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_music_plugin_ep()]))
+
+    llm = _FakeProvider()
+    with pytest.raises(Exception, match="cannot run Stable Audio 3 models"):
+        llm.generate(
+            text="ambient pads",
+            output={
+                "modality": "music",
+                "backend": "stable-audio",
+                "model": "stabilityai/stable-audio-3-small-music",
+                "format": "wav",
+            },
+        )
 
 
 @pytest.mark.basic

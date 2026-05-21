@@ -627,54 +627,8 @@ def _optional_int(value: Any, *, field: str) -> Optional[int]:
         raise HTTPException(status_code=422, detail=f"Invalid {field}: expected an integer.") from e
 
 
-_MUSIC_BACKEND_ALIAS_MAP = {
-    "abstractmusic:acemusic": "abstractmusic:acemusic",
-    "acemusic": "abstractmusic:acemusic",
-    "ace-music": "abstractmusic:acemusic",
-    "acemusic-api": "abstractmusic:acemusic",
-    "ace-music-api": "abstractmusic:acemusic",
-    "aceapi": "abstractmusic:acemusic",
-    "remote": "abstractmusic:acemusic",
-    "api": "abstractmusic:acemusic",
-    "abstractmusic:acestep-diffusers": "abstractmusic:acestep-diffusers",
-    "acestep": "abstractmusic:acestep-diffusers",
-    "ace-step": "abstractmusic:acestep-diffusers",
-    "ace": "abstractmusic:acestep-diffusers",
-    "acestep-diffusers": "abstractmusic:acestep-diffusers",
-    "ace-step-diffusers": "abstractmusic:acestep-diffusers",
-    "abstractmusic:acestep-v15": "abstractmusic:acestep-v15",
-    "acestep-v15": "abstractmusic:acestep-v15",
-    "ace-step-v15": "abstractmusic:acestep-v15",
-    "abstractmusic:diffusers": "abstractmusic:diffusers",
-    "diffusers": "abstractmusic:diffusers",
-}
-_MUSIC_BACKEND_ALIASES = set(_MUSIC_BACKEND_ALIAS_MAP)
-
-
-def _music_selector_value(value: Any) -> Optional[str]:
-    if isinstance(value, str) and value.strip():
-        return value.strip().lower().replace("_", "-")
-    return None
-
-
-def _music_backend_selector(*values: Any, allow_unknown: bool = False) -> Optional[str]:
-    for value in values:
-        text = _music_selector_value(value)
-        if not text:
-            continue
-        if text in _MUSIC_BACKEND_ALIAS_MAP:
-            return _MUSIC_BACKEND_ALIAS_MAP[text]
-        if allow_unknown:
-            return text
-    return None
-
-
-def _music_provider_selector(*values: Any) -> Optional[str]:
-    for value in values:
-        text = _music_selector_value(value)
-        if text and text not in _MUSIC_BACKEND_ALIASES:
-            return text
-    return None
+from ..capabilities.music_selectors import resolve_music_backend_id as _music_backend_selector
+from ..capabilities.music_selectors import resolve_music_provider_hint as _music_provider_selector
 
 
 def _music_capability_core_for_request(data: Dict[str, Any], *, path_provider: Optional[str] = None) -> Any:

@@ -294,11 +294,15 @@ def unload_model(self, model_name: str) -> None
 For local providers (Ollama, MLX, HuggingFace, LMStudio), this explicitly frees model memory or releases client resources. For API providers (OpenAI, Anthropic), this is typically a no-op but safe to call.
 
 **Provider-specific behavior:**
-- **Ollama**: Sends `keep_alive=0` to immediately unload from server
+- **Ollama**: Uses native `keep_alive` load/unload semantics and `/api/ps` for residency truth
 - **MLX**: Clears model/tokenizer references and forces garbage collection
 - **HuggingFace**: Closes llama.cpp resources (GGUF) or clears model references
-- **LMStudio**: Closes HTTP connection (server auto-manages via TTL)
+- **LMStudio**: Uses native loaded-instance REST load/unload when available
 - **OpenAI/Anthropic**: No-op (safe to call)
+
+`get_model_residency(...)` reports verified loaded state only when the provider can
+check the backing runtime. Client construction, configured defaults, and model catalogs
+are not treated as loaded-model proof.
 
 **Example:**
 ```python

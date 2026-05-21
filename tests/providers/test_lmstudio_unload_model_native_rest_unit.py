@@ -27,6 +27,35 @@ def test_lmstudio_unload_model_posts_instance_id(monkeypatch) -> None:
     assert called["json"] == {"instance_id": "my-instance"}
 
 
+def test_lmstudio_load_model_posts_model_key(monkeypatch) -> None:
+    monkeypatch.setattr(LMStudioProvider, "_validate_model", lambda self: None)
+    provider = LMStudioProvider(model="qwen/qwen3-4b-2507", base_url="http://localhost:1234/v1")
+
+    called = {}
+
+    def _fake_post(url: str, *, json=None, headers=None, timeout=None):  # noqa: ANN001
+        called["url"] = url
+        called["json"] = json
+        called["headers"] = headers
+        called["timeout"] = timeout
+        req = httpx.Request("POST", url)
+        return httpx.Response(
+            200,
+            json={"type": "llm", "instance_id": json.get("model"), "status": "loaded"},
+            request=req,
+        )
+
+    monkeypatch.setattr(httpx, "post", _fake_post)
+
+    out = provider.load_model("qwen/qwen3-4b-2507")
+
+    assert called["url"] == "http://localhost:1234/api/v1/models/load"
+    assert called["json"] == {"model": "qwen/qwen3-4b-2507"}
+    assert out["supported"] is True
+    assert out["operation"] == "load"
+    assert out["raw"]["status"] == "loaded"
+
+
 def test_lmstudio_unload_model_resolves_loaded_instance_id_when_model_key_is_not_instance_id(monkeypatch) -> None:
     monkeypatch.setattr(LMStudioProvider, "_validate_model", lambda self: None)
 
@@ -108,3 +137,48 @@ def test_lmstudio_unload_model_falls_back_when_success_status_contains_error(mon
         {"instance_id": "qwen3.5-4b"},
         {"instance_id": "resolved-instance"},
     ]
+
+
+def test_lmstudio_get_model_residency_reports_loaded_instances(monkeypatch) -> None:
+    monkeypatch.setattr(LMStudioProvider, "_validate_model", lambda self: None)
+    provider = LMStudioProvider(model="qwen3.5-4b", base_url="http://localhost:1234/v1")
+
+    def _fake_get(url: str, *, headers=None, timeout=None):  # noqa: ANN001
+        req = httpx.Request("GET", url)
+        return httpx.Response(
+            200,
+            json={"models": [{"key": "qwen3.5-4b", "loaded_instances": [{"id": "loaded-instance"}]}]},
+            request=req,
+        )
+
+    monkeypatch.setattr(httpx, "get", _fake_get)
+
+    residency = provider.get_model_residency(model="qwen3.5-4b")
+
+    assert residency["provider_residency_verified"] is True
+    assert residency["provider_resident"] is True
+    assert residency["loaded"] is True
+    assert residency["provider_instance_ids"] == ["loaded-instance"]
+    assert residency["source"] == "abstractcore.provider.lmstudio.native_rest"
+
+
+def test_lmstudio_get_model_residency_reports_not_loaded(monkeypatch) -> None:
+    monkeypatch.setattr(LMStudioProvider, "_validate_model", lambda self: None)
+    provider = LMStudioProvider(model="qwen3.5-4b", base_url="http://localhost:1234/v1")
+
+    def _fake_get(url: str, *, headers=None, timeout=None):  # noqa: ANN001
+        req = httpx.Request("GET", url)
+        return httpx.Response(
+            200,
+            json={"models": [{"key": "qwen3.5-4b", "loaded_instances": []}]},
+            request=req,
+        )
+
+    monkeypatch.setattr(httpx, "get", _fake_get)
+
+    residency = provider.get_model_residency(model="qwen3.5-4b")
+
+    assert residency["provider_residency_verified"] is True
+    assert residency["provider_resident"] is False
+    assert residency["loaded"] is False
+    assert residency["state"] == "not_loaded"

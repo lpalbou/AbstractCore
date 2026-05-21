@@ -547,8 +547,8 @@ def _vision_record_for_key(
     kind = str(key[0] if key else "").strip()
     loaded_at = meta.get("loaded_at_s") or cache_ts or time.time()
     last_used_at = cache_ts or meta.get("last_used_at_s") or loaded_at
-    resident = bool(meta.get("resident"))
-    source = str(meta.get("source") or ("explicit_preload" if resident else "request"))
+    pinned = bool(meta.get("pinned"))
+    source = str(meta.get("source") or ("explicit_preload" if pinned else "request"))
     options: Dict[str, Any] = {}
     provider = kind
     model = "default"
@@ -565,7 +565,7 @@ def _vision_record_for_key(
             "timeout_s": key[4] if len(key) > 4 else None,
         }
         isolation = "remote"
-        if not resident:
+        if not pinned:
             source = "configured"
     elif kind == "diffusers":
         provider = "huggingface"
@@ -606,6 +606,9 @@ def _vision_record_for_key(
 
     options = {str(k): v for k, v in options.items() if v is not None}
     load_id = _vision_load_id_for_key(key)
+    # `loaded` means the backend/runtime is currently held in-process and reusable.
+    loaded = isolation == "in_process" and cache_ts is not None
+    state = "loaded" if loaded else "configured" if isolation == "remote" else "not_loaded"
     return {
         "runtime_id": load_id,
         "load_id": load_id,
@@ -614,13 +617,12 @@ def _vision_record_for_key(
         "provider": provider,
         "model": model,
         "backend_kind": backend_kind,
-        "state": "resident" if resident else "configured" if isolation == "remote" else "active",
-        "resident": bool(resident),
-        "loaded": isolation == "in_process",
+        "state": state,
+        "loaded": loaded,
         "loaded_at": int(float(loaded_at)),
         "last_used_at": int(float(last_used_at)),
         "request_count": int(meta.get("request_count") or 0),
-        "pinned": bool(meta.get("pinned", resident)),
+        "pinned": pinned,
         "source": source,
         "scope": scope,
         "isolation": isolation,
@@ -693,12 +695,12 @@ def _vision_loaded_records(filters: Optional[Dict[str, Any]] = None) -> list[Dic
     return sorted(out, key=lambda item: str(item.get("load_id") or item.get("runtime_id") or ""))
 
 
-def list_server_vision_resident_models(filters: Optional[Dict[str, Any]] = None) -> list[Dict[str, Any]]:
+def list_server_vision_loaded_models(filters: Optional[Dict[str, Any]] = None) -> list[Dict[str, Any]]:
     """List server-local image backends visible to `/v1/images/*`."""
     return _vision_loaded_records(filters)
 
 
-def load_server_vision_resident_model(
+def load_server_vision_loaded_model(
     request: Dict[str, Any],
     *,
     api_key: Optional[str] = None,
@@ -727,7 +729,6 @@ def load_server_vision_resident_model(
         with _BACKEND_CACHE_LOCK:
             loaded_new = configured_key not in _RESIDENCY_RECORDS
             _RESIDENCY_RECORDS[configured_key] = {
-                "resident": False,
                 "source": "configured",
                 "loaded_at_s": now,
                 "last_used_at_s": now,
@@ -753,7 +754,6 @@ def load_server_vision_resident_model(
     with _BACKEND_CACHE_LOCK:
         loaded_new = key not in _RESIDENCY_RECORDS
         _RESIDENCY_RECORDS[key] = {
-            "resident": True,
             "source": "explicit_preload",
             "loaded_at_s": now,
             "last_used_at_s": now,
@@ -764,7 +764,7 @@ def load_server_vision_resident_model(
     return record
 
 
-def unload_server_vision_resident_model(request: Dict[str, Any]) -> Dict[str, Any]:
+def unload_server_vision_loaded_model(request: Dict[str, Any]) -> Dict[str, Any]:
     filters = dict(request or {})
     matches = _vision_loaded_records(filters)
     if len(matches) > 1:
@@ -813,7 +813,7 @@ def unload_server_vision_resident_model(request: Dict[str, Any]) -> Dict[str, An
             _unload_backend_best_effort(removed_backend)
 
     out = dict(target)
-    out.update({"state": "unloaded", "resident": False, "loaded": False, "unloaded": True})
+    out.update({"state": "unloaded", "loaded": False, "unloaded": True})
     return out
 
 

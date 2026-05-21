@@ -505,8 +505,8 @@ Artifact behavior:
 - `docs/capabilities.md`
 - `docs/vision-capabilities.md`
 - `docs/server.md`
-- `docs/backlog/proposed/2026-05-07_runtime-ready-multimodal-generation-abstraction.md`
-- `docs/backlog/planned/788-response.md`
+- `docs/backlog/deprecated/2026-05-07_runtime-ready-multimodal-generation-abstraction.md`
+- `docs/backlog/completed/788-response.md`
 - `docs/backlog/planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md`
 - `docs/backlog/planned/2026-05-06_robust-fallback-generate.md`
 - `docs/backlog/planned/2026-05-06_consensus-generate.md`

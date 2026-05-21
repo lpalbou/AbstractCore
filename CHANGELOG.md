@@ -62,7 +62,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Planning and docs ownership**: the package backlog now points to `docs/backlog/overview.md` as the canonical planning entry point, the old ad hoc `docs/KnowledgeBase.md` was retired in favor of ADR-backed durable policy, and the adapter example docs now describe the current vLLM lifecycle reality without claiming portable `model=` hot-switching.
 
 ### Fixed
-- **Loaded-runtime thread affinity**: resident local runtimes no longer risk wedging when streaming cleanup happens on a different ASGI worker thread, and thread-affine local prompt-cache/bloc reuse paths now stay on the same provider thread across save/load/update/generate operations.
+- **Loaded-runtime thread affinity**: loaded local runtimes no longer risk wedging when streaming cleanup happens on a different ASGI worker thread, and thread-affine local prompt-cache/bloc reuse paths now stay on the same provider thread across save/load/update/generate operations.
 
 ## [2.13.20] - 2026-05-20
 
@@ -89,9 +89,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Developer message compatibility**: server chat requests now accept OpenAI-style `developer` messages, preserving them for OpenAI and normalizing them for providers that only support system/user/assistant/tool roles.
 
 ### Changed
-- **Server image residency reuse**: image residency now uses the same server backend cache as `/v1/images/*`, calls backend preload/unload hooks when available, clears residency records on cache eviction, and reports remote OpenAI-compatible image providers as `configured` rather than locally resident.
+- **Server image residency reuse**: image loading now uses the same server backend cache as `/v1/images/*`, calls backend preload/unload hooks when available, clears load records on cache eviction, and reports remote OpenAI-compatible image providers as `configured` rather than locally loaded.
 - **Voice/audio residency routing**: `task=tts` and `task=stt` now route through the shared AbstractVoice-backed capability core used by speech and transcription endpoints, so Core owns the stable control-plane contract while AbstractVoice owns model-specific warmup semantics.
-- **Model residency contract**: `loaded_new` is now treated as a load-call event signal, not a `resident` alias. Capability-backed loads return `loaded_new=true` only when the backend explicitly reports or clearly implies that the call created or warmed a new resident model.
+- **Model residency contract**: `loaded_new` is now treated as a load-call event signal, not a `loaded` alias. Capability-backed loads return `loaded_new=true` only when the backend explicitly reports or clearly implies that the call transitioned the model from not loaded to loaded.
 - **Runtime documentation and backlog status**: documented task-aware residency in the server docs, server module README, memory-bloc docs, and moved the residency proposal to completed with an implementation report.
 
 ### Fixed
