@@ -9,7 +9,7 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 10
+- Planned: 11
 - Proposed: 9
 - Completed: 16
 - Deprecated: 3
@@ -40,6 +40,7 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/2026-05-18_mlx-provider-continuous-batching.md` | Shared MLX runtime and batching scheduler. |
 | `planned/789_server-auth-rate-limits.md` | Server auth and rate-limit controls. |
 | `planned/791_server-metrics-otel.md` | Server metrics and OpenTelemetry work. |
+| `planned/0801_rerank_manager.md` | First-class reranking manager (cross-encoder / hosted rerank APIs). |
 
 ## Proposed ledger
 
