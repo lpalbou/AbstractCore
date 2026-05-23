@@ -123,7 +123,7 @@ The server exposes the same deep catalogs through:
 - `GET /v1/audio/music/providers`
 - `GET /v1/audio/music/models`
 
-For `abstractmusic>=0.1.8`, the default lightweight music backend is the
+For `abstractmusic>=0.1.12`, the default lightweight music backend is the
 remote ACE Music API path (`provider="acemusic"` or `/acemusic/v1/audio/music`).
 Set `ACEMUSIC_API_KEY` in the server or Python environment. The server music
 route accepts `wav`, `mp3`, and `flac`; individual backends may support fewer

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.27] - 2026-05-23
+
+### Changed
+- **Capability plugin floors**: updated optional capability plugin install floors to `abstractvoice>=0.10.15`, `abstractvision>=0.3.13`, and `abstractmusic>=0.1.12` (plus matching turnkey profiles and docs references).
+
+### Verified
+- **Hermetic test suite**: `pytest` passes with local/provider/live tests disabled (CI-style defaults).
+
 ## [2.13.26] - 2026-05-23
 
 ### Changed
