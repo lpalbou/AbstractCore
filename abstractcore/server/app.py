@@ -91,7 +91,7 @@ from ..tools.syntax_rewriter import (
 # ============================================================================
 
 def _maybe_prefer_sibling_dev_packages() -> None:
-    """Prefer sibling checkouts (../abstractvision, ../abstractvoice) when present.
+    """Prefer sibling checkouts (../abstractvision, ../abstractmusic, ../abstractvoice) when present.
 
     AbstractCore is often developed alongside sibling repos inside a monorepo-like
     folder. The server loads capability plugins via installed entry points, but
@@ -108,6 +108,7 @@ def _maybe_prefer_sibling_dev_packages() -> None:
         mono_root = repo_root.parent  # .../abstractframework
         candidates = [
             mono_root / "abstractvision" / "src",
+            mono_root / "abstractmusic" / "src",
             mono_root / "abstractvoice",
         ]
         for path in reversed([p for p in candidates if p.exists()]):

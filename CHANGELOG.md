@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.26] - 2026-05-23
+
+### Changed
+- **Server music routing contract**: `/v1/audio/music` now documents `provider` as the music backend selector (aligned with the server’s 422 rejection of legacy `backend` / `music_backend` fields).
+
+### Fixed
+- **Dev server plugin resolution**: the server now prefers a sibling `../abstractmusic/src` checkout (alongside `abstractvision` and `abstractvoice`) when `ABSTRACTCORE_DEV_PREFER_SIBLINGS=1`, avoiding stale site-packages imports during local plugin development.
+- **README install matrix**: added the missing `abstractcore[music]` extra so users can install the AbstractMusic capability plugin directly from the main install section.
+
+### Verified
+- **Hermetic test suite**: `pytest` passes with local/provider/live tests disabled (CI-style defaults).
+
 ## [2.13.25] - 2026-05-22
 
 ### Changed

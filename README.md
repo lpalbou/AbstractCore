@@ -134,6 +134,7 @@ pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_w
 pip install "abstractcore[media]"       # images, PDFs, Office docs
 pip install "abstractcore[voice]"       # abstractvoice plugin (TTS/STT capability)
 pip install "abstractcore[vision]"      # abstractvision plugin (generative vision capability)
+pip install "abstractcore[music]"       # abstractmusic plugin (text-to-music capability)
 pip install "abstractcore[compression]" # glyph visual-text compression (Pillow-only)
 pip install "abstractcore[embeddings]"  # EmbeddingManager + local embedding models
 pip install "abstractcore[tokens]"      # precise token counting (tiktoken)
