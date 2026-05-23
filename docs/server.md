@@ -730,8 +730,7 @@ The returned `voice_id` / `id` can be used as the `voice` value in
 | Field | Required | Notes |
 |---|---:|---|
 | `prompt` or `input` or `text` | yes | Music generation prompt. |
-| `backend` | no | Music backend selector, for example `acemusic`, `remote`, `acestep`, `acestep-v15`, or `diffusers`. The provider-scoped path can also select a backend, e.g. `/remote/v1/audio/music` or `/diffusers/v1/audio/music`. |
-| `provider` | no | Music provider/catalog hint forwarded to the selected backend, for example `ACE Music` or `ace-step`. |
+| `provider` | no | Music backend selector, for example `acemusic`, `acestep`, `stable-audio`, `stable-audio-3`, or `diffusers`. The provider-scoped path can also select a backend, e.g. `/acemusic/v1/audio/music` or `/diffusers/v1/audio/music`. |
 | `model` | no | Music model id for the selected backend, for example `acemusic/ace-step-api` for remote ACE Music or a Hugging Face repo id for local AbstractMusic backends. |
 | `lyrics` | no | Optional lyrics for vocal music backends. |
 | `duration_s` | no | Requested output duration in seconds. |
@@ -746,7 +745,7 @@ The returned `voice_id` / `id` can be used as the `voice` value in
 
 With `abstractmusic>=0.1.8`, the base install includes the remote ACE Music
 backend. Configure `ACEMUSIC_API_KEY` in the server environment, optionally set
-`ACEMUSIC_BASE_URL`, and use `backend="acemusic"` or the `/remote/v1/audio/music`
+`ACEMUSIC_BASE_URL`, and use `provider="acemusic"` or the `/acemusic/v1/audio/music`
 path. Local ACE-Step/Diffusers routes remain opt-in AbstractMusic extras.
 
 Examples:
@@ -795,7 +794,7 @@ curl -sS -X POST "$BASE/v1/audio/speech" \
 curl -sS -X POST "$BASE/v1/audio/music" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"prompt":"A short calm piano loop.","backend":"acemusic","duration_s":8,"format":"mp3"}' \
+  -d '{"prompt":"A short calm piano loop.","provider":"acemusic","duration_s":8,"format":"mp3"}' \
   --output music.mp3
 
 # Remote/local OpenAI-compatible voice clone endpoint

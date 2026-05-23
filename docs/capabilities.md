@@ -58,7 +58,7 @@ music_models = llm.capabilities.list_models("music", task="text_to_music")
 # Music via AbstractMusic when installed.
 wav_music = llm.music.generate(
     "A short calm piano loop.",
-    backend="acemusic",
+    provider="acemusic",
     duration_s=8,
     format="wav",
 )
@@ -88,7 +88,7 @@ speech = llm.generate(text="Hello from AbstractCore.", output="voice")
 # Music. Text plus output="music" returns generated music/audio.
 music = llm.generate(
     text="A short calm piano loop.",
-    output={"modality": "music", "backend": "acemusic", "duration_s": 8, "format": "wav"},
+    output={"modality": "music", "provider": "acemusic", "duration_s": 8, "format": "wav"},
 )
 
 # Voice clone/register. Audio media plus output="voice" returns a reusable voice id
@@ -124,7 +124,7 @@ The server exposes the same deep catalogs through:
 - `GET /v1/audio/music/models`
 
 For `abstractmusic>=0.1.8`, the default lightweight music backend is the
-remote ACE Music API path (`backend="acemusic"` or `/remote/v1/audio/music`).
+remote ACE Music API path (`provider="acemusic"` or `/acemusic/v1/audio/music`).
 Set `ACEMUSIC_API_KEY` in the server or Python environment. The server music
 route accepts `wav`, `mp3`, and `flac`; individual backends may support fewer
 formats.

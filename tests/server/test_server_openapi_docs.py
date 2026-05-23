@@ -167,7 +167,7 @@ def test_media_swagger_examples_are_complete_and_executable_defaults():
     assert speech_example["format"] is None
 
     music_example = schema["components"]["schemas"]["AudioMusicRequest"]["examples"][0]
-    assert music_example["backend"] == "acemusic"
+    assert music_example["provider"] == "acemusic"
     assert music_example["model"] == "acemusic/ace-step-api"
     assert music_example["response_format"] == "wav"
 

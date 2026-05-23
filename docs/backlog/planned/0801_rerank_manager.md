@@ -23,7 +23,7 @@ In modern RAG / agentic retrieval pipelines, a reranker is a distinct component:
 As of May 2026, production reranking commonly uses either:
 - locally-run cross-encoders / decoder-only rerankers (in-process, or served locally behind an HTTP
   rerank endpoint), or
-- hosted rerank APIs (often exposed as OpenAI-compatible `POST /v1/rerank`, including OpenRouter and
+- hosted rerank APIs (often exposed as a Jina-style `POST /v1/rerank` endpoint, including OpenRouter and
   Portkey gateways that route to Cohere/Voyage/Jina-style rerankers).
 
 AbstractCore currently has no first-class reranking abstraction. Users must assemble their own
@@ -35,6 +35,10 @@ reranking layer, which breaks the “one abstraction layer per task” goal.
 - Embeddings are implemented as a separate contract via `abstractcore/embeddings/manager.py`.
 - Model filtering only supports output types `text` and `embeddings` via
   `abstractcore/providers/model_capabilities.py` and `/v1/models` in `abstractcore/server/app.py`.
+- The public output-selector contract (`abstractcore/core/output_specs.py`) covers text, image,
+  voice, music, and transcription; it does **not** include `embeddings` or `rerank` as selectors.
+- `MultimodalGenerateResponse` (`abstractcore/core/multimodal_generation.py`) is oriented around
+  returning generated media bytes (`GeneratedItem.data: bytes`).
 - Architecture/model typing only includes `ModelType.EMBEDDING` for non-generation models; there is
   no reranker model type (`abstractcore/architectures/enums.py`).
 - The only explicit reranking mention today is an educational bullet:
@@ -103,12 +107,16 @@ the core abstraction boundary.
 - Default guidance should prefer reranking a bounded candidate set (typically tens to low hundreds,
   not thousands).
 - Enforce provider hard limits defensively:
-  - Many providers hard-cap documents (often 1,000; Cohere supports larger but errors when
-    `num_docs * max_chunks_per_doc > 10,000`). When callers exceed hard limits, either:
+  - Many providers hard-cap documents (often **1,000** per request; some allow more). Gateways
+    (OpenRouter/Portkey) may route to multiple upstreams, so the true limit can be **model- and
+    upstream-dependent**, not just “the gateway limit”.
+  - Cohere’s rerank endpoint throws an error when the request would exceed their effective
+    document/chunk budget (`num_docs * max_chunks_per_doc > 10,000`). When callers exceed hard
+    limits, either:
     - `strict=True`: raise with an actionable error; or
     - `strict=False`: trim with explicit metadata (never silent).
   - When chunking is enabled, ensure `num_documents * max_chunks_per_doc` cannot explode; fail fast
-    or trim with an explicit error/metadata record (avoid “surprise 10,000+ chunks” requests).
+  or trim with an explicit error/metadata record (avoid “surprise 10,000+ chunks” requests).
 
 ### Evidence-based pitfalls (May 2026 snapshot)
 The goal of this subsection is to encode “don’t accidentally build the wrong thing” guidance that
@@ -152,7 +160,7 @@ arXiv v2 June 2025)**:
 AbstractCore should support **three** concrete reranking backend types that cover the real
 deployment surface:
 
-1. **HTTP Rerank (OpenAI-compatible)** — `POST /v1/rerank`
+1. **HTTP Rerank (Jina-style)** — `POST /v1/rerank`
    - This is the preferred “remote or locally-served” path because it standardizes the wire shape.
    - Must support these provider IDs (aligned with existing provider registry/config):
      - `openrouter` (OpenRouter implements `POST /api/v1/rerank` and returns `results[]` with
@@ -203,9 +211,14 @@ These models expose:
 - Implement explicit, user-visible truncation and chunking rules:
   - Never silently truncate without recording it in returned metadata.
   - Allow callers to opt into `truncation=True` (provider-style) or provide their own chunked
-    documents.
+    documents (recommended when callers need deterministic boundaries).
   - Provide a doc-level aggregation strategy when chunking is enabled (default `max` across
-    chunks; configurable).
+    chunks; configurable). This mirrors common hosted-rerank behavior (score each chunk, then take
+    the max per document).
+  - Add explicit knobs to prevent compute blow-ups:
+    - `max_chunks_per_doc` (hard cap; default small, e.g. 1–4 depending on backend);
+    - `max_total_chunks` (cap across the whole request);
+    - `max_tokens_per_doc`/`max_chars_per_doc` (best-effort, backend-dependent).
 
 ### Instruction-following reranking (May 2026 baseline)
 - Expose an optional `instruction` parameter in the public API, but implement it in a provider-safe
@@ -213,6 +226,8 @@ These models expose:
   - some providers may support a native instruction field;
   - others (e.g., Voyage’s instruction-following rerankers) can be used by prepending instructions
     to the query string. This must be explicit in metadata so callers understand what was sent.
+  - local Qwen3 rerankers support instruction prompting via `sentence-transformers` CrossEncoder
+    prompts; treat this as the canonical local “instruction” mechanism.
 
 ### Safety / privacy
 - Treat rerank inputs as sensitive user data:
@@ -230,25 +245,50 @@ These models expose:
 - Add docs page(s) showing “retrieve then rerank” usage and the “rerank depth is a tuning knob”
   pitfalls from the evidence above.
 
+### API surface: unified `generate(..., output=...)` vs task-specific managers
+AbstractCore already has a *unified* `generate(..., output=...)` surface for **multimodal generation**
+(text + image/voice/music, plus transcription). This is great UX because it feels like “one call”.
+
+Embeddings + rerank *can* plausibly fit a unified “one call” UX, and the current output-selector
+infrastructure is already a good foundation. The main tension is not that it is impossible, but
+that it must be done **without making the contract confusing** or weakening type clarity:
+- **Stateless vs stateful**: it should remain true that *sessions* are for chat/history, while
+  embeddings/rerank are stateless utilities. A unified entrypoint should therefore be **one-shot**
+  only (not `session.generate(...)`).
+- **Batch-shaped inputs**: rerank/embeddings naturally accept lists. This is solvable by evolving
+  the unified API to accept a richer request object (or `prompt` as a union type), but that is a
+  deliberate interface change and should not be smuggled into a rerank integration.
+- **Return typing**: `MultimodalGenerateResponse` today is optimized around media bytes
+  (`GeneratedItem.data: bytes`). We can extend this (e.g., allow `GeneratedItem.data: Any` or add
+  a parallel `computations: Dict[str, Any]`) but we should do it intentionally so consumers do not
+  need type guesses.
+
+**Recommendation (v0 for this item)**:
+- Keep **task-specific managers** as the canonical, typed APIs:
+  - `EmbeddingManager.embed(...)` / `embed_batch(...)`
+  - `RerankManager.rerank(...)`
+- Design `RerankManager`’s request/response types to be JSON-serializable and stable, so a future
+  unified entrypoint can wrap/return them without inventing a second contract.
+
+**Follow-up (nice UX, explicitly out-of-scope here unless already planned elsewhere)**:
+- Evaluate one unified entrypoint for *stateless compute* tasks:
+  - either extend output specs (`abstractcore/core/output_specs.py`) to include `embeddings` and
+    `rerank` modalities and route them through managers, **or**
+  - introduce `abstractcore.compute(task=..., ...)` as a sibling to `generate(...)`.
+  The decision should be user-experience driven and include a typing story (Python + server JSON).
+
 ### Model registry & asset placement (answering “where do we reference rerank models?”)
 **Recommendation (v0)**:
-- Keep **reranker model metadata out of** `abstractcore/assets/model_capabilities.json`.
-  - That file is already the single source of truth for *generation* feature flags/limits and is consumed by
-    `providers/` for request shaping (token params, tool support, etc.). Adding non-generation rerank models there
-    risks:
-    - confusing `/v1/models?output_type=text` results (rerank models are *not* text-generation models);
-    - accidental use via `create_llm(...)` (which will call `/chat/completions` and fail);
-    - bloating a generation-focused schema with retrieval-only fields.
-- Put curated local reranker “favorites” in `abstractcore/rerank/models.py` (parallel to `abstractcore/embeddings/models.py`),
-  and treat remote/hosted rerank model names as opaque strings (do not hardcode them).
-- Add **lightweight pattern-based discovery** for server/model listing:
+- Put curated local reranker “favorites” in `abstractcore/rerank/models.py` (parallel to `abstractcore/embeddings/models.py`).
+- Treat remote/hosted rerank model names as **opaque strings** (do not hardcode vendor catalogs).
+- For `/v1/models?output_type=rerank` discovery, use **best-effort classification**:
   - extend `ModelOutputCapability` with `RERANK`;
-  - classify models as `RERANK` when the model id contains `rerank`/`reranker` (case-insensitive).
-  - this is best-effort and should be documented as such (it does not guarantee endpoint support).
+  - classify models as `RERANK` when the model id contains `rerank`/`reranker` (case-insensitive);
+  - optionally (later) add explicit `model_type: "rerank"` entries in `abstractcore/assets/model_capabilities.json` for
+    a *small* curated set to improve precision.
 
-`abstractcore/assets/architecture_formats.json` is **not** directly useful for rerankers:
-- it exists to format chat prompts/tool calls for local LLM architectures;
-- it may be used indirectly by the optional **LLM-based rerank backend** (because that backend uses `create_llm(...)`).
+`abstractcore/assets/architecture_formats.json` is not directly useful for dedicated rerankers; it only matters for the
+optional **LLM-based rerank backend** because that backend uses `create_llm(...)`.
 
 ## Suggested implementation
 1. Create a new package `abstractcore/rerank/`:
@@ -256,28 +296,32 @@ These models expose:
    - `manager.py`: `RerankManager` with provider routing, batching, and optional caching.
    - `models.py`: curated local reranker registry (Qwen3 rerankers required; others optional).
    - `http_client.py` (or `providers/`): HTTP rerank transport (`POST /v1/rerank`) + response normalization.
-2. Keep provider selection aligned with `EmbeddingManager`:
+2. Extend config-manager defaults (mirror embeddings):
+   - add `RerankConfig` to `abstractcore/config/manager.py` with `provider` + `model` defaults;
+   - add an env override for strict-mode (e.g. `ABSTRACTCORE_RERANK_STRICT=1`);
+   - document config keys in `abstractcore/config/README.md`.
+3. Keep provider selection aligned with `EmbeddingManager`:
    - `provider` + `model` defaults from config-manager if present.
    - `provider_kwargs` passthrough for keys/base URLs.
-3. Implement HTTP Rerank transport:
+4. Implement HTTP Rerank transport:
    - Primary: OpenRouter + Portkey (both expose `POST /v1/rerank`-style endpoints).
    - Generic: `openai-compatible` base_url for local serving (vLLM/SGLang/llama.cpp).
    - Implement endpoint probing (`/v1/rerank`, `/rerank`, `/v2/rerank`) with caching; record which
      route was used in response metadata.
-4. Implement in-process CrossEncoder backend:
+5. Implement in-process CrossEncoder backend:
    - Use `sentence-transformers` `CrossEncoder` and expose `backend="torch|onnx|openvino"` as an
      option (when supported by the model).
    - Default local model should be one of the required Qwen3 rerankers, with a clear size-based
      recommendation.
-5. Implement LLM-based rerank backend (optional) using `create_llm(...)`:
+6. Implement LLM-based rerank backend (optional) using `create_llm(...)`:
    - Use structured outputs to return results, with strict truncation/caps and provenance metadata.
-6. Add strict-mode semantics consistent with `EmbeddingManager`:
+7. Add strict-mode semantics consistent with `EmbeddingManager`:
    - `strict=True`: raise on provider/model failures.
    - `strict=False` (default): return empty results plus error metadata.
-7. Add tests:
+8. Add tests:
    - unit tests with stub provider responses (no network);
    - local backend tests gated behind optional extras (or mocked model) to avoid heavy CI loads.
-8. Update docs and examples:
+9. Update docs and examples:
    - new “Reranking” section mirroring the embeddings docs structure.
    - add a small example that: retrieves via embeddings -> reranks -> builds prompt context.
 
@@ -288,7 +332,8 @@ These models expose:
 - Add (or plan) a consistent capability taxonomy hook for rerankers.
 
 ## Non-goals
-- Do not make reranking part of `AbstractCoreInterface.generate(...)`.
+- Do not refactor `AbstractCoreInterface.generate(...)` to fully support rerank/embeddings as
+  first-class `output=...` selectors in this item (keep it a focused rerank integration).
 - Do not implement a full vector DB / BM25 layer inside AbstractCore.
 - Do not claim one “best” reranker model without workload-specific evaluation.
 - Do not treat relevance scores as calibrated probabilities.
@@ -335,9 +380,14 @@ design that makes evaluation easy: explicit truncation behavior, stable result s
 benchmarks/tests that can run without external services.
 
 ### External references (for implementation notes; verify again before shipping)
-- OpenAI-compatible rerank APIs (wire shape to match/normalize):
+- Jina-style rerank APIs (wire shape to match/normalize):
   - https://openrouter.ai/docs/api/api-reference/rerank/create-rerank/
+  - https://openrouter.ai/docs/changelog/2026/4/4
   - https://portkey.ai/docs/api-reference/inference-api/rerank
+- Local OpenAI-style rerank endpoints (useful for local serving / integration testing):
+  - https://docs.vllm.ai/en/v0.7.0/getting_started/examples/jinaai_rerank_client.html
+  - https://docs.vllm.ai/en/v0.10.1/api/vllm/entrypoints/openai/api_server.html
+  - https://github.com/ggml-org/llama.cpp/blob/master/tools/server/README.md
 - Cohere Rerank API reference and best practices:
   - https://docs.cohere.com/v2/reference/rerank
   - https://docs.cohere.com/docs/reranking-best-practices
@@ -345,7 +395,7 @@ benchmarks/tests that can run without external services.
   - https://docs.voyageai.com/docs/reranker
   - https://docs.voyageai.com/reference/reranker-api
 - Jina reranker API schema:
-  - https://api.jina.ai/scalar
+  - https://jina.ai/en-US/reranker/
 - Open-weight reranker examples:
   - https://huggingface.co/BAAI/bge-reranker-v2-m3
   - https://huggingface.co/Qwen/Qwen3-Reranker-0.6B/blob/main/README.md

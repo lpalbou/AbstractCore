@@ -10,7 +10,7 @@ Use this file as the entry point for planning status, recommended next work, and
 ## Counts
 
 - Planned: 11
-- Proposed: 9
+- Proposed: 10
 - Completed: 16
 - Deprecated: 3
 - Recurrent: 0
@@ -55,6 +55,7 @@ Use this file as the entry point for planning status, recommended next work, and
 | `proposed/0792_hf_transformers_metal_quantization_on_apple.md` | Promote after `Qwen/Qwen3.5-4B` proves MPS `MetalConfig(bits=4)` load/generation/cache correctness with optional `kernels`, clear failure modes, and measured memory/performance deltas. |
 | `proposed/0793_public_prompt_cache_persistence_control_plane.md` | Keep proposed as an operator-only decision item. App-facing durable reuse should first ship through Runtime/Gateway exposure of `/acore/blocs/kv/*` and `prompt_cache_binding`; only promote this if hot local snapshot restore is still needed after that. |
 | `proposed/0800_openai_compatible_web_search_tool_transport.md` | Promote only if Codex or another client needs AbstractCore `/v1/responses` to preserve native Responses `tools`; the current Codex Chat-route fix belongs in Codex. |
+| `proposed/0802_generate_concurrency_and_async_streaming.md` | Promote once a minimal repro/test shows fallback async streaming blocks the event loop (or other concurrency bugs), or when new stateless compute surfaces would depend on the same concurrency guarantees. |
 
 ## Completed ledger
 

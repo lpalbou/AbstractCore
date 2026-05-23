@@ -1228,49 +1228,37 @@ class _MusicFacade:
                 details={"backend_id": self.backend_id, "task": normalized_task},
             )
 
-        # Request-scoped backend selection (do not silently fall back).
-        #
-        # Prefer explicit `backend` / `music_backend`. If absent, also accept
-        # `provider` when it matches a known backend alias (Gateway historically
-        # used provider-like names such as "ace-step").
-        from .music_selectors import resolve_music_backend_id, resolve_music_provider_hint
-
-        backend_selector = kwargs.get("backend")
-        if backend_selector is None:
-            backend_selector = kwargs.get("music_backend")
+        # Request-scoped backend selection. Music exposes one selector space:
+        # `provider` is the backend name (or full plugin backend id).
+        from .music_selectors import resolve_music_backend_id
 
         provider_selector = kwargs.get("provider")
-        provider_hint = resolve_music_provider_hint(provider_selector)
 
         requested_backend_id: Optional[str] = None
-        consumed_provider_alias = False
+        consumed_provider_selector = False
 
-        if backend_selector is not None:
-            raw = str(backend_selector).strip()
-            if raw:
-                resolved = resolve_music_backend_id(raw)
-                candidate = resolved or raw
-                alt = raw.lower().replace("_", "-")
-                if (
-                    not self._registry._is_backend_registered("music", candidate)
-                    and self._registry._is_backend_registered("music", alt)
-                ):
-                    candidate = alt
-                if not self._registry._is_backend_registered("music", candidate):
-                    raise CapabilityUnavailableError(
-                        capability="music",
-                        reason=f"Unknown music backend selector: {raw!r}.",
-                        install_hint=self._registry._default_install_hint("music"),
-                        details={"backend": raw},
-                    )
-                requested_backend_id = candidate
+        raw_backend = kwargs.get("backend")
+        raw_music_backend = kwargs.get("music_backend")
+        if raw_backend not in (None, "") or raw_music_backend not in (None, ""):
+            raise CapabilityUnavailableError(
+                capability="music",
+                reason="Music request routing uses `provider` as the backend selector; `backend` and `music_backend` are not supported.",
+                install_hint=self._registry._default_install_hint("music"),
+                details={"provider": provider_selector, "backend": raw_backend, "music_backend": raw_music_backend},
+            )
 
-        if requested_backend_id is None:
-            raw_provider = str(provider_selector).strip() if isinstance(provider_selector, str) else ""
+        raw_provider = str(provider_selector).strip() if isinstance(provider_selector, str) else ""
+        if raw_provider:
             resolved = resolve_music_backend_id(raw_provider)
-            if resolved and self._registry._is_backend_registered("music", resolved):
-                requested_backend_id = resolved
-                consumed_provider_alias = True
+            if not resolved or not self._registry._is_backend_registered("music", resolved):
+                raise CapabilityUnavailableError(
+                    capability="music",
+                    reason=f"Unknown music backend selector: {raw_provider!r}.",
+                    install_hint=self._registry._default_install_hint("music"),
+                    details={"provider": raw_provider},
+                )
+            requested_backend_id = resolved
+            consumed_provider_selector = True
 
         if requested_backend_id is not None:
             backend = self._registry._get_instance_for_backend_id("music", requested_backend_id)
@@ -1281,7 +1269,7 @@ class _MusicFacade:
         call_kwargs = dict(kwargs)
         call_kwargs.pop("backend", None)
         call_kwargs.pop("music_backend", None)
-        if consumed_provider_alias:
+        if consumed_provider_selector:
             call_kwargs.pop("provider", None)
 
         # Fail early on known backend/model mismatches to avoid confusing

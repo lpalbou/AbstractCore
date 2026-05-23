@@ -34,7 +34,7 @@ def test_server_capability_routes_use_music_env_backend(monkeypatch):
                 return b"wav"
 
         registry.register_music_backend(
-            backend_id="abstractmusic:acestep-diffusers",
+            backend_id="abstractmusic:acestep",
             factory=lambda _owner: _Music(),
             priority=30,
         )

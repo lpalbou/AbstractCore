@@ -189,8 +189,8 @@ def _make_multi_music_plugin_ep():
             priority=50,
         )
         registry.register_music_backend(
-            backend_id="abstractmusic:acestep-diffusers",
-            factory=lambda owner: _Music(owner, "abstractmusic:acestep-diffusers"),
+            backend_id="abstractmusic:acestep",
+            factory=lambda owner: _Music(owner, "abstractmusic:acestep"),
             priority=10,
         )
         registry.register_music_backend(
@@ -364,7 +364,6 @@ def test_output_music_with_text_calls_music_generate(fake_plugins):
             "lyrics": "[Instrumental]",
             "format": "wav",
             "duration_s": 8,
-            "provider": "ace-step",
             "model": "ACE-Step/acestep-v15-xl-turbo-diffusers",
         },
     )
@@ -380,7 +379,6 @@ def test_output_music_with_text_calls_music_generate(fake_plugins):
         "wav",
     )
     assert llm.plugin_calls[0][4]["duration_s"] == 8
-    assert llm.plugin_calls[0][4]["provider"] == "ace-step"
     assert llm.plugin_calls[0][4]["model"] == "ACE-Step/acestep-v15-xl-turbo-diffusers"
 
 
@@ -393,7 +391,7 @@ def test_output_music_request_scoped_backend_selection_is_real_and_reporting_is_
         text="driving techno groove with punchy kick",
         output={
             "modality": "music",
-            "backend": "stable-audio",
+            "provider": "stable-audio",
             "model": "stabilityai/stable-audio-open-small",
             "duration_s": 10,
             "format": "wav",
@@ -412,7 +410,7 @@ def test_output_music_request_scoped_backend_selection_is_real_and_reporting_is_
 
 
 @pytest.mark.basic
-def test_output_music_provider_alias_can_select_backend_when_backend_field_is_omitted(monkeypatch):
+def test_output_music_provider_field_selects_backend(monkeypatch):
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_music_plugin_ep()]))
 
     llm = _FakeProvider()
@@ -420,7 +418,7 @@ def test_output_music_provider_alias_can_select_backend_when_backend_field_is_om
         text="cinematic orchestral build",
         output={
             "modality": "music",
-            "provider": "ace-step",
+            "provider": "acestep",
             "model": "ACE-Step/acestep-v15-xl-turbo-diffusers",
             "duration_s": 8,
             "format": "wav",
@@ -428,9 +426,9 @@ def test_output_music_provider_alias_can_select_backend_when_backend_field_is_om
     )
 
     item = resp.outputs["music"][0]
-    assert item.backend_id == "abstractmusic:acestep-diffusers"
-    assert item.provider == "abstractmusic:acestep-diffusers"
-    assert llm.plugin_calls[0][1] == "abstractmusic:acestep-diffusers"
+    assert item.backend_id == "abstractmusic:acestep"
+    assert item.provider == "abstractmusic:acestep"
+    assert llm.plugin_calls[0][1] == "abstractmusic:acestep"
 
 
 @pytest.mark.basic
@@ -441,7 +439,7 @@ def test_output_music_unknown_backend_does_not_silently_fall_back(monkeypatch):
     with pytest.raises(Exception, match="Unknown music backend selector|Requested music provider/backend"):
         llm.generate(
             text="ambient pads",
-            output={"modality": "music", "backend": "definitely-not-a-backend", "format": "wav"},
+            output={"modality": "music", "provider": "definitely-not-a-backend", "format": "wav"},
         )
 
 
@@ -455,10 +453,21 @@ def test_output_music_backend_model_mismatch_fails_with_clear_error(monkeypatch)
             text="ambient pads",
             output={
                 "modality": "music",
-                "backend": "stable-audio",
+                "provider": "stable-audio",
                 "model": "stabilityai/stable-audio-3-small-music",
                 "format": "wav",
             },
+        )
+
+
+@pytest.mark.basic
+def test_output_music_rejects_legacy_backend_fields(fake_plugins):
+    llm = _FakeProvider()
+
+    with pytest.raises(ValueError, match="provider.*backend selector"):
+        llm.generate(
+            text="ambient pads",
+            output={"modality": "music", "backend": "stable-audio", "format": "wav"},
         )
 
 

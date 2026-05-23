@@ -343,7 +343,7 @@ wav_bytes = speech.outputs["voice"][0].data
 # Music via abstractmusic.
 music = llm.generate(
     text="A short calm piano loop.",
-    output={"modality": "music", "backend": "acemusic", "duration_s": 8, "format": "wav"},
+    output={"modality": "music", "provider": "acemusic", "duration_s": 8, "format": "wav"},
 )
 music_wav = music.outputs["music"][0].data
 

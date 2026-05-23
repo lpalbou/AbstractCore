@@ -175,8 +175,7 @@ class AudioMusicRequest(BaseModel):
             "examples": [
                 {
                     "model": "acemusic/ace-step-api",
-                    "backend": "acemusic",
-                    "provider": "ACE Music",
+                    "provider": "acemusic",
                     "prompt": "A short calm piano loop.",
                     "input": None,
                     "text": None,
@@ -204,21 +203,13 @@ class AudioMusicRequest(BaseModel):
         ),
         examples=["acemusic/ace-step-api", "ACE-Step/acestep-v15-xl-turbo-diffusers"],
     )
-    provider: Optional[Union[str, Dict[str, Any]]] = Field(
+    provider: Optional[str] = Field(
         default=None,
         description=(
-            "Optional music provider/catalog filter forwarded to the selected music backend, "
-            "for example `ACE Music` or `ace-step`."
+            "Optional music backend selector, for example `acemusic`, `acestep`, "
+            "`stable-audio`, `stable-audio-3`, or `diffusers`."
         ),
-        examples=["ACE Music", "ace-step"],
-    )
-    backend: Optional[str] = Field(
-        default=None,
-        description=(
-            "Optional music backend selector, e.g. `acemusic`, `remote`, `acestep`, "
-            "`acestep-v15`, or `diffusers`."
-        ),
-        examples=["acemusic"],
+        examples=["acemusic", "acestep"],
     )
     task: Optional[str] = Field(
         default=None,
@@ -628,12 +619,11 @@ def _optional_int(value: Any, *, field: str) -> Optional[int]:
 
 
 from ..capabilities.music_selectors import resolve_music_backend_id as _music_backend_selector
-from ..capabilities.music_selectors import resolve_music_provider_hint as _music_provider_selector
 
 
 def _music_capability_core_for_request(data: Dict[str, Any], *, path_provider: Optional[str] = None) -> Any:
     """Return a capability host honoring request-level music backend/model overrides."""
-    backend = _music_backend_selector(data.get("backend"), data.get("music_backend"), allow_unknown=True)
+    backend = _music_backend_selector(data.get("provider"), allow_unknown=True)
     if backend is None:
         backend = _music_backend_selector(path_provider)
     model = _optional_text(data.get("model") or data.get("music_model_id"))
@@ -2069,6 +2059,11 @@ async def _audio_music_impl(payload: AudioMusicRequest, *, path_provider: Option
     """
 
     data = _model_payload(payload)
+    if data.get("backend") not in (None, "") or data.get("music_backend") not in (None, ""):
+        raise HTTPException(
+            status_code=422,
+            detail="Music request routing uses `provider` as the backend selector; `backend` and `music_backend` are not supported.",
+        )
 
     prompt = data.get("prompt")
     if prompt is None:
@@ -2088,7 +2083,6 @@ async def _audio_music_impl(payload: AudioMusicRequest, *, path_provider: Option
     if fmt not in {"wav", "mp3", "flac"}:
         raise HTTPException(status_code=422, detail="format must be one of: wav, mp3, flac.")
 
-    provider_hint = _music_provider_selector(path_provider, data.get("provider"))
     output_spec = {
         k: v
         for k, v in data.items()
@@ -2112,8 +2106,8 @@ async def _audio_music_impl(payload: AudioMusicRequest, *, path_provider: Option
             "format": fmt,
         }
     )
-    if provider_hint:
-        output_spec["provider"] = provider_hint
+    if data.get("provider") is not None:
+        output_spec["provider"] = data.get("provider")
     if data.get("duration_s") is not None:
         output_spec["duration_s"] = _optional_float(data.get("duration_s"), field="duration_s")
     if data.get("guidance_scale") is not None:
@@ -2159,7 +2153,7 @@ async def provider_audio_music(
     payload: AudioMusicRequest = Body(...),
     provider: str = FastAPIPath(
         ...,
-        description="Music backend/provider route prefix, e.g. `acestep`, `diffusers`, or a provider catalog id.",
+        description="Music backend route prefix, e.g. `acemusic`, `acestep`, `stable-audio`, or `diffusers`.",
     ),
 ):
     return await _audio_music_impl(payload, path_provider=provider)

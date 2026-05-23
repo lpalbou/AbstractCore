@@ -239,7 +239,7 @@ speech = llm.generate(text="Hello from AbstractCore.", output="voice")
 # Music generation.
 music = llm.generate(
     text="A short calm piano loop.",
-    output={"modality": "music", "backend": "acemusic", "duration_s": 8, "format": "wav"},
+    output={"modality": "music", "provider": "acemusic", "duration_s": 8, "format": "wav"},
 )
 
 # Voice clone/register. Audio media plus output="voice" returns a voice

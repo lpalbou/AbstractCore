@@ -202,7 +202,7 @@ tool = [
 ]
 
 media = [
-    "Pillow>=10.0.0,<12.0.0",
+    "Pillow>=10.0.0,<13.0.0",
     "pymupdf4llm>=0.0.20,<1.0.0",
     # Enables `pymupdf.layout` (improves reading order / tables) and prevents PyMuPDF's startup recommendation print.
     "pymupdf-layout>=1.26.6,<2.0.0",
@@ -225,7 +225,7 @@ audio = [
 
 compression = [
     # Glyph visual-text compression renders text into images (PIL renderer).
-    "Pillow>=10.0.0,<12.0.0",
+    "Pillow>=10.0.0,<13.0.0",
 ]
 
 # Turnkey installs.
@@ -261,7 +261,7 @@ all = [
     "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
     "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
     "psutil>=5.9.0,<6.0.0",
-    "Pillow>=10.0.0,<12.0.0",
+    "Pillow>=10.0.0,<13.0.0",
     "pymupdf4llm>=0.0.20,<1.0.0",
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
@@ -343,7 +343,7 @@ all-gpu = [
     "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
     "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
     "psutil>=5.9.0,<6.0.0",
-    "Pillow>=10.0.0,<12.0.0",
+    "Pillow>=10.0.0,<13.0.0",
     "pymupdf4llm>=0.0.20,<1.0.0",
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
@@ -383,7 +383,7 @@ all-non-mlx = [
     "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
     "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
     "psutil>=5.9.0,<6.0.0",
-    "Pillow>=10.0.0,<12.0.0",
+    "Pillow>=10.0.0,<13.0.0",
     "pymupdf4llm>=0.0.20,<1.0.0",
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
@@ -458,7 +458,7 @@ test = [
     "anthropic>=0.25.0,<1.0.0",
     "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
     "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
-    "Pillow>=10.0.0,<12.0.0",
+    "Pillow>=10.0.0,<13.0.0",
     "fastapi>=0.100.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "uvicorn>=0.23.0,<1.0.0",
@@ -501,7 +501,7 @@ full-dev = [
     "ddgs>=9.10.0,<10.0.0; python_version >= '3.10'",
     "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
     "psutil>=5.9.0,<6.0.0",
-    "Pillow>=10.0.0,<12.0.0",
+    "Pillow>=10.0.0,<13.0.0",
     "pymupdf4llm>=0.0.20,<1.0.0",
     "pymupdf-layout>=1.26.6,<2.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",

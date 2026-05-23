@@ -123,7 +123,7 @@ class AbstractCoreInterface(ABC):
                 merged_prefs["audio"] = stt_backend_id.strip()
 
             # Convenience per-instance config (e.g. create_llm(..., music_backend="diffusers")).
-            # This maps human-friendly aliases to concrete backend_ids registered by plugins.
+            # Music config accepts exact backend names or full plugin backend ids.
             try:
                 mb = self.config.get("music_backend")
             except Exception:

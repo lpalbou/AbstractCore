@@ -129,7 +129,6 @@ def test_audio_music_happy_path_with_stubbed_plugin(client, monkeypatch):
             "prompt": "hello",
             "format": "wav",
             "duration_s": 1,
-            "provider": "ace-step",
             "model": "ACE-Step/acestep-v15-xl-turbo-diffusers",
             "seed": 7,
         },
@@ -139,7 +138,6 @@ def test_audio_music_happy_path_with_stubbed_plugin(client, monkeypatch):
     assert resp.content == b"wav-bytes"
     assert calls[0]["prompt"] == "hello"
     assert calls[0]["duration_s"] == 1.0
-    assert calls[0]["provider"] == "ace-step"
     assert calls[0]["model"] == "ACE-Step/acestep-v15-xl-turbo-diffusers"
     assert calls[0]["seed"] == 7
 
@@ -164,11 +162,11 @@ def test_provider_scoped_audio_music_selects_backend_and_forwards_music_params(c
 @pytest.mark.parametrize(
     ("url", "body"),
     [
-        ("/v1/audio/music", {"prompt": "remote pulse", "backend": "acemusic", "format": "mp3"}),
-        ("/remote/v1/audio/music", {"prompt": "remote pulse", "format": "mp3"}),
+        ("/v1/audio/music", {"prompt": "remote pulse", "provider": "acemusic", "format": "mp3"}),
+        ("/acemusic/v1/audio/music", {"prompt": "remote pulse", "format": "mp3"}),
     ],
 )
-def test_audio_music_remote_ace_aliases_select_acemusic_and_allow_mp3(client, monkeypatch, url, body):
+def test_audio_music_provider_selects_acemusic_and_allow_mp3(client, monkeypatch, url, body):
     calls = []
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_fake_multi_music_plugin_ep(calls)]))
     _reset_audio_core(monkeypatch)
@@ -182,11 +180,23 @@ def test_audio_music_remote_ace_aliases_select_acemusic_and_allow_mp3(client, mo
     assert calls[0]["format"] == "mp3"
 
 
+def test_audio_music_rejects_legacy_backend_fields(client, monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_fake_music_plugin_ep()]))
+    _reset_audio_core(monkeypatch)
+
+    resp = client.post("/v1/audio/music", json={"prompt": "hello", "backend": "acemusic", "format": "wav"})
+
+    assert resp.status_code == 422
+    body = resp.json()
+    message = body.get("detail") or (body.get("error") or {}).get("message") or ""
+    assert "provider" in message
+
+
 def test_audio_music_missing_ace_key_is_service_configuration_error(client, monkeypatch):
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_fake_unconfigured_ace_music_plugin_ep()]))
     _reset_audio_core(monkeypatch)
 
-    resp = client.post("/v1/audio/music", json={"prompt": "remote pulse", "backend": "acemusic", "format": "wav"})
+    resp = client.post("/v1/audio/music", json={"prompt": "remote pulse", "provider": "acemusic", "format": "wav"})
 
     assert resp.status_code == 503
     assert "ACEMUSIC_API_KEY" in resp.json()["error"]["message"]
@@ -196,7 +206,7 @@ def test_audio_music_upstream_timeout_preserves_gateway_status(client, monkeypat
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_fake_timeout_ace_music_plugin_ep()]))
     _reset_audio_core(monkeypatch)
 
-    resp = client.post("/v1/audio/music", json={"prompt": "remote pulse", "backend": "acemusic", "format": "wav"})
+    resp = client.post("/v1/audio/music", json={"prompt": "remote pulse", "provider": "acemusic", "format": "wav"})
 
     assert resp.status_code == 504
     assert "HTTP 504" in resp.json()["error"]["message"]

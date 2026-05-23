@@ -1026,8 +1026,7 @@ def _custom_openapi() -> Dict[str, Any]:
         "AudioMusicRequest",
         {
             "model": "acemusic/ace-step-api",
-            "backend": "acemusic",
-            "provider": "ACE Music",
+            "provider": "acemusic",
             "prompt": "A short calm piano loop.",
             "input": None,
             "text": None,
@@ -1130,8 +1129,7 @@ def _custom_openapi() -> Dict[str, Any]:
         "Remote ACE Music",
         {
             "model": "acemusic/ace-step-api",
-            "backend": "acemusic",
-            "provider": "ACE Music",
+            "provider": "acemusic",
             "prompt": "A short calm piano loop.",
             "input": None,
             "text": None,

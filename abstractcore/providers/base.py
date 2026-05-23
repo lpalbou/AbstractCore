@@ -2160,6 +2160,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if audio_items:
             raise ValueError("Music generation does not accept audio media in v1; pass lyrics/text fields instead.")
 
+        if spec.get("backend") is not None or spec.get("music_backend") is not None:
+            raise ValueError("Music output routing uses `provider` as the backend selector; `backend` and `music_backend` are not supported.")
+
         fmt = str(spec.get("format") or spec.get("response_format") or "wav").strip().lower() or "wav"
         kwargs = self._output_plugin_kwargs(
             spec,
@@ -2167,10 +2170,6 @@ class BaseProvider(AbstractCoreInterface, ABC):
         )
         if spec.get("provider") is not None:
             kwargs["provider"] = spec.get("provider")
-        if spec.get("backend") is not None:
-            kwargs["backend"] = spec.get("backend")
-        if spec.get("music_backend") is not None:
-            kwargs["music_backend"] = spec.get("music_backend")
         if artifact_store is not None:
             kwargs["artifact_store"] = artifact_store
 

@@ -65,19 +65,12 @@ def _make_multi_audio_backend_plugin_ep():
 
 def _make_multi_music_backend_plugin_ep():
     def register(registry):
-        class _MusicDiffusers:
-            backend_id = "abstractmusic:acestep-diffusers"
+        class _MusicAceStep:
+            backend_id = "abstractmusic:acestep"
 
             def t2m(self, prompt, **kwargs):
                 _ = prompt, kwargs
-                return b"diffusers"
-
-        class _MusicLegacy:
-            backend_id = "abstractmusic:acestep-v15"
-
-            def t2m(self, prompt, **kwargs):
-                _ = prompt, kwargs
-                return b"legacy"
+                return b"acestep"
 
         class _MusicRemote:
             backend_id = "abstractmusic:acemusic"
@@ -87,14 +80,9 @@ def _make_multi_music_backend_plugin_ep():
                 return b"remote"
 
         registry.register_music_backend(
-            backend_id="abstractmusic:acestep-diffusers",
-            factory=lambda _owner: _MusicDiffusers(),
+            backend_id="abstractmusic:acestep",
+            factory=lambda _owner: _MusicAceStep(),
             priority=20,
-        )
-        registry.register_music_backend(
-            backend_id="abstractmusic:acestep-v15",
-            factory=lambda _owner: _MusicLegacy(),
-            priority=10,
         )
         registry.register_music_backend(
             backend_id="abstractmusic:acemusic",
@@ -140,7 +128,7 @@ def test_explicit_preferred_backend_overrides_config_default(monkeypatch):
 
 
 @pytest.mark.basic
-def test_music_backend_acestep_alias_selects_internal_backend(monkeypatch):
+def test_music_backend_acestep_name_selects_internal_backend(monkeypatch):
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_music_backend_plugin_ep()]))
 
     import abstractcore.config.manager as config_manager_module
@@ -152,12 +140,13 @@ def test_music_backend_acestep_alias_selects_internal_backend(monkeypatch):
     )
 
     llm = _DummyProvider(model="dummy", music_backend="acestep")
-    assert llm.capabilities.status()["capabilities"]["music"]["selected_backend"] == "abstractmusic:acestep-diffusers"
-    assert llm.music.t2m("bright melodic synth loop") == b"diffusers"
+    assert llm.capabilities.status()["capabilities"]["music"]["selected_backend"] == "abstractmusic:acestep"
+    assert llm.music.t2m("bright melodic synth loop") == b"acestep"
 
 
 @pytest.mark.basic
-def test_music_backend_acestep_v15_alias_keeps_legacy_backend(monkeypatch):
+@pytest.mark.parametrize("selector", ["acemusic", "abstractmusic:acemusic"])
+def test_music_backend_acemusic_exact_selector_selects_remote_backend(monkeypatch, selector):
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_music_backend_plugin_ep()]))
 
     import abstractcore.config.manager as config_manager_module
@@ -168,24 +157,6 @@ def test_music_backend_acestep_v15_alias_keeps_legacy_backend(monkeypatch):
         lambda: SimpleNamespace(config=SimpleNamespace(audio=SimpleNamespace(stt_backend_id=None))),
     )
 
-    llm = _DummyProvider(model="dummy", music_backend="acestep-v15")
-    assert llm.capabilities.status()["capabilities"]["music"]["selected_backend"] == "abstractmusic:acestep-v15"
-    assert llm.music.t2m("bright melodic synth loop") == b"legacy"
-
-
-@pytest.mark.basic
-@pytest.mark.parametrize("alias", ["acemusic", "ace-music", "remote", "api", "acemusic-api"])
-def test_music_backend_acemusic_alias_selects_remote_backend(monkeypatch, alias):
-    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_music_backend_plugin_ep()]))
-
-    import abstractcore.config.manager as config_manager_module
-
-    monkeypatch.setattr(
-        config_manager_module,
-        "get_config_manager",
-        lambda: SimpleNamespace(config=SimpleNamespace(audio=SimpleNamespace(stt_backend_id=None))),
-    )
-
-    llm = _DummyProvider(model="dummy", music_backend=alias)
+    llm = _DummyProvider(model="dummy", music_backend=selector)
     assert llm.capabilities.status()["capabilities"]["music"]["selected_backend"] == "abstractmusic:acemusic"
     assert llm.music.t2m("bright melodic synth loop") == b"remote"
