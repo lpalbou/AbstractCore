@@ -17,7 +17,7 @@ AbstractCore is **production-ready LLM infrastructure**. It provides a unified, 
 AbstractCore stays dependency-light by default. Deterministic modality APIs (STT/TTS, generative vision) live in **optional packages** and are exposed through the capability plugin layer:
 
 - Install `abstractcore[voice]` → `llm.voice` / `llm.audio` via `abstractvoice` (TTS/STT)
-- Install `abstractcore[vision]` → `llm.vision` via `abstractvision` (text→image, image→image, …)
+- Install `abstractcore[vision]` → `llm.vision` via `abstractvision` (text→image, image→image, text→video, image→video)
 - Install `abstractcore[music]` → `llm.music` for text→music through `abstractmusic`
 
 ```bash
@@ -50,6 +50,14 @@ tts_models = llm.voice.list_tts_models()
 # Configure AbstractVision's backend/default first, or pass backend-specific kwargs.
 png_bytes = llm.vision.t2i("a red square", width=512, height=512, steps=20)
 image_models = llm.vision.list_provider_models(task="text_to_image")
+mp4_bytes = llm.vision.t2v(
+    "A slow camera move through a luminous data center.",
+    provider="mlx-gen",
+    model="Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+    num_frames=121,
+    fps=24,
+    extra={"max_sequence_length": 256},
+)
 
 # Generic discovery for plugins that expose the shared contract.
 music_providers = llm.capabilities.available_providers("music", task="text_to_music")
@@ -82,6 +90,31 @@ image = llm.generate("A red square on a white background.", output="image")
 # Image edit. One image media item plus output="image" infers image-to-image.
 edited = llm.generate("Make it blue.", media="red-square.png", output="image")
 
+# Text-to-video. Top-level progress callbacks are forwarded to AbstractVision.
+video = llm.generate(
+    "A slow camera move through a luminous data center.",
+    on_progress=lambda event: print(event),
+    output={
+        "task": "text_to_video",
+        "provider": "mlx-gen",
+        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "num_frames": 121,
+        "fps": 24,
+        "extra": {"max_sequence_length": 256},
+    },
+)
+
+# Image-to-video. Mark the image as the source frame.
+i2v = llm.generate(
+    "Slow camera push-in.",
+    media={"type": "image", "path": "first-frame.png", "role": "source"},
+    output={
+        "task": "image_to_video",
+        "provider": "mlx-gen",
+        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+    },
+)
+
 # TTS. Text plus output="voice" returns generated audio.
 speech = llm.generate(text="Hello from AbstractCore.", output="voice")
 
@@ -105,9 +138,12 @@ clone/register sample.
 Direct `llm.vision` calls are provided by `abstractvision`. For local Diffusers,
 choose an explicit model/default in AbstractVision, pre-download model weights,
 or explicitly opt in to runtime downloads with
-`ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD=1`. For server/OpenAI-compatible use,
-point `OPENAI_BASE_URL` at an image endpoint such as AbstractCore
-Server's `/v1`.
+`ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD=1`. For local MLX-Gen, select exact
+model repo ids such as `AbstractFramework/qwen-image-2512-4bit`,
+`briaai/FIBO`, or `Wan-AI/Wan2.2-TI2V-5B-Diffusers`; quantized models are
+selected by repo id, not by a Core-side quant parameter. For
+server/OpenAI-compatible use, point `OPENAI_BASE_URL` at a media endpoint such
+as AbstractCore Server's `/v1`.
 
 The server exposes the same deep catalogs through:
 
@@ -122,6 +158,10 @@ The server exposes the same deep catalogs through:
 - `POST /{provider}/v1/audio/music`
 - `GET /v1/audio/music/providers`
 - `GET /v1/audio/music/models`
+- `POST /v1/videos/generations`
+- `POST /v1/videos/edits`
+- `POST /v1/vision/jobs/videos/generations`
+- `POST /v1/vision/jobs/videos/edits`
 
 For `abstractmusic>=0.1.12`, the default lightweight music backend is the
 remote ACE Music API path (`provider="acemusic"` or `/acemusic/v1/audio/music`).

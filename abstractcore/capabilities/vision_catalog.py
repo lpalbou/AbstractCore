@@ -247,12 +247,8 @@ def _cached_hf_snapshot(repo_id: str, cache_dirs: list[Path]) -> Optional[Path]:
 
 
 def _mlx_gen_selector_for_download(download: Any) -> str:
-    key = str(getattr(download, "key", "") or "").strip()
     repo_id = str(getattr(download, "repo_id", "") or "").strip()
-    bits = getattr(download, "bits", None)
-    if bits == 4 and key:
-        return key
-    return repo_id or key
+    return repo_id
 
 
 def _discover_cached_hf_diffusers_models(cache_dirs: list[Path]) -> list[str]:
@@ -438,7 +434,7 @@ def get_local_vision_cache_catalog() -> Dict[str, Any]:
     for model_id in model_ids:
         spec = registry.get(model_id)
         supported_tasks = sorted(spec.tasks.keys())
-        if "text_to_image" not in spec.tasks and "image_to_image" not in spec.tasks:
+        if not {"text_to_image", "image_to_image", "text_to_video", "image_to_video"}.intersection(spec.tasks):
             continue
 
         for download in list(getattr(spec, "downloads", []) or []):

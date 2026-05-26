@@ -274,7 +274,7 @@ all = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.14",
+    "abstractvision>=0.3.16",
 ]
 
 all-apple = [
@@ -317,7 +317,7 @@ all-apple = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision[all-apple]>=0.3.14",
+    "abstractvision[all-apple]>=0.3.16",
 ]
 
 all-gpu = [
@@ -356,7 +356,7 @@ all-gpu = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision[all-gpu]>=0.3.14",
+    "abstractvision[all-gpu]>=0.3.16",
 ]
 
 # Legacy broad bundle kept for existing users. New installs should usually
@@ -396,7 +396,7 @@ all-non-mlx = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.14",
+    "abstractvision>=0.3.16",
 ]
 
 # Development dependencies
@@ -425,19 +425,19 @@ server = [
 # Vision (optional) - delegates to AbstractVision.
 # Kept as a separate extra for installs that want vision without the HTTP server.
 vision = [
-    "abstractvision>=0.3.14",
+    "abstractvision>=0.3.16",
 ]
 
 vision-diffusers = [
-    "abstractvision[huggingface]>=0.3.14",
+    "abstractvision[huggingface]>=0.3.16",
 ]
 
 vision-sdcpp = [
-    "abstractvision[sdcpp]>=0.3.14",
+    "abstractvision[sdcpp]>=0.3.16",
 ]
 
 vision-local = [
-    "abstractvision[local]>=0.3.14",
+    "abstractvision[local]>=0.3.16",
 ]
 
 music = [
@@ -513,7 +513,7 @@ full-dev = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.14",
+    "abstractvision>=0.3.16",
     # Tooling
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",

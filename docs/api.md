@@ -216,7 +216,7 @@ See **[Media Handling](media-handling-system.md)**, **[Vision Capabilities](visi
 Install the relevant optional plugin first:
 
 ```bash
-pip install "abstractcore[vision]"  # image generation/edit
+pip install "abstractcore[vision]"  # image/video generation/edit
 pip install "abstractcore[voice]"   # TTS/STT/voice clone when backend supports it
 pip install "abstractcore[music]"   # text-to-music via abstractmusic
 ```
@@ -232,6 +232,31 @@ image = llm.generate("A red ceramic mug on a white table.", output="image")
 
 # Image edit. One image media item plus output="image" infers image edit.
 edited = llm.generate("Make the mug blue.", media="mug.png", output="image")
+
+# Text-to-video. Progress callbacks are forwarded to AbstractVision.
+video = llm.generate(
+    "A slow camera move through a luminous data center.",
+    on_progress=lambda event: print(event),
+    output={
+        "task": "text_to_video",
+        "provider": "mlx-gen",
+        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "num_frames": 121,
+        "fps": 24,
+        "extra": {"max_sequence_length": 256},
+    },
+)
+
+# Image-to-video. Mark the image as the source frame.
+i2v = llm.generate(
+    "Slow camera push-in.",
+    media={"type": "image", "path": "first-frame.png", "role": "source"},
+    output={
+        "task": "image_to_video",
+        "provider": "mlx-gen",
+        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+    },
+)
 
 # TTS.
 speech = llm.generate(text="Hello from AbstractCore.", output="voice")

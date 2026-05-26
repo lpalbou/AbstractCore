@@ -49,9 +49,12 @@ First-class support for:
 (**) Optional visual-text compression: render long text/PDFs into images and process them with a vision model to reduce token usage. See [Glyph Visual-Text Compression](docs/glyphs.md) (install `pip install "abstractcore[compression]"`; for PDFs also install `pip install "abstractcore[media]"`).
 
 Generative vision uses `abstractvision` when installed. In server mode, omit
-`model` only when the server has a configured image default, or use explicit
+`model` only when the server has a configured default, or use explicit
 provider/model ids such as `diffusers/default`, `diffusers/<huggingface-repo>`,
-`sdcpp/default`, or `openai-compatible/<model>`.
+`mlx-gen/AbstractFramework/qwen-image-2512-4bit`,
+`mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers`, `sdcpp/default`, or
+`openai-compatible/<model>`. Quantized MLX-Gen models are selected by their
+published repo id; Core does not add a separate quant override.
 
 Docs: [Getting Started](docs/getting-started.md) · [FAQ](docs/faq.md) · [Docs Index](docs/README.md) · https://lpalbou.github.io/AbstractCore
 
@@ -337,6 +340,37 @@ png_bytes = image.outputs["image"][0].data
 # Image edit: image media + image output infers image-to-image.
 edited = llm.generate("Make the mug blue.", media="mug.png", output="image")
 
+def progress(event):
+    print("video progress", event)
+
+# Text-to-video via abstractvision. The callback is forwarded to the plugin.
+video = llm.generate(
+    "A red fox walking through a snowy forest, cinematic.",
+    on_progress=progress,
+    output={
+        "modality": "video",
+        "task": "text_to_video",
+        "provider": "mlx-gen",
+        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "num_frames": 121,
+        "fps": 24,
+    },
+)
+mp4_bytes = video.outputs["video"][0].data
+
+# Image-to-video uses image media plus task="image_to_video".
+i2v = llm.generate(
+    "Slow camera push-in.",
+    media={"type": "image", "path": "first-frame.png", "role": "source"},
+    output={
+        "task": "image_to_video",
+        "provider": "mlx-gen",
+        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "num_frames": 121,
+        "fps": 24,
+    },
+)
+
 # TTS via abstractvoice.
 speech = llm.generate(text="Hello from AbstractCore.", output="voice")
 wav_bytes = speech.outputs["voice"][0].data
@@ -377,6 +411,11 @@ The HTTP server exposes equivalent discovery at
 `/v1/audio/speech/models`, `/v1/audio/transcriptions/models`, and
 `/v1/voice/clone/providers`, plus `/v1/audio/music/providers` and
 `/v1/audio/music/models`.
+Generated media HTTP routes include `/v1/images/generations`,
+`/v1/images/edits`, `/v1/videos/generations`, `/v1/videos/edits`, and
+async polling routes under `/v1/vision/jobs/images/*` and
+`/v1/vision/jobs/videos/*`; video jobs include the latest backend progress event
+when the selected backend reports it.
 `/v1/models` remains focused on LLM and embedding provider models.
 
 ## HTTP server (OpenAI-compatible gateway)

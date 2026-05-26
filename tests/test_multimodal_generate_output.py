@@ -134,9 +134,11 @@ def _make_plugin_ep():
                 return b"edited-png-bytes"
 
             def t2v(self, prompt: str, **kwargs):
+                self.owner.plugin_calls.append(("t2v", prompt, kwargs))
                 return b"mp4"
 
             def i2v(self, image, **kwargs):
+                self.owner.plugin_calls.append(("i2v", image, kwargs))
                 return b"mp4"
 
         class _Music:
@@ -309,6 +311,108 @@ def test_output_image_with_ambiguous_images_raises(fake_plugins):
 
     with pytest.raises(ValueError, match="Multiple image media items require explicit roles"):
         llm.generate("edit these", media=["a.png", "b.png"], output="image")
+
+
+@pytest.mark.basic
+def test_output_video_without_media_calls_t2v(fake_plugins):
+    llm = _FakeProvider()
+
+    response = llm.generate(
+        "slow dolly shot over a misty valley",
+        output={
+            "modality": "video",
+            "provider": "mlx-gen",
+            "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+            "num_frames": 17,
+            "format": "mp4",
+        },
+    )
+
+    assert response.outputs["video"][0].task == "text_to_video"
+    assert response.outputs["video"][0].data == b"mp4"
+    assert response.outputs["video"][0].content_type == "video/mp4"
+    assert llm.provider_calls == []
+    assert llm.plugin_calls[0][0:2] == ("t2v", "slow dolly shot over a misty valley")
+    assert llm.plugin_calls[0][2]["provider"] == "mlx-gen"
+    assert llm.plugin_calls[0][2]["model"] == "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
+    assert llm.plugin_calls[0][2]["num_frames"] == 17
+
+
+@pytest.mark.basic
+def test_output_video_top_level_progress_callback_reaches_t2v_plugin(fake_plugins):
+    llm = _FakeProvider()
+
+    def on_progress(event):
+        return None
+
+    llm.generate(
+        "slow dolly shot",
+        output={"task": "t2v", "provider": "mlx-gen"},
+        on_progress=on_progress,
+    )
+
+    assert llm.provider_calls == []
+    assert llm.plugin_calls[0][0] == "t2v"
+    assert llm.plugin_calls[0][2]["on_progress"] is on_progress
+
+
+@pytest.mark.basic
+def test_output_video_explicit_spec_progress_callback_wins(fake_plugins):
+    llm = _FakeProvider()
+
+    def top_progress(event):
+        return None
+
+    def spec_progress(event):
+        return None
+
+    llm.generate(
+        "slow dolly shot",
+        output={"task": "t2v", "on_progress": spec_progress},
+        on_progress=top_progress,
+    )
+
+    assert llm.plugin_calls[0][0] == "t2v"
+    assert llm.plugin_calls[0][2]["on_progress"] is spec_progress
+
+
+@pytest.mark.basic
+@pytest.mark.asyncio
+async def test_async_output_video_top_level_progress_callback_reaches_plugin(fake_plugins):
+    llm = _NativeAsyncFakeProvider()
+
+    def on_progress(event):
+        return None
+
+    await llm.agenerate(
+        "slow dolly shot",
+        output={"task": "t2v", "provider": "mlx-gen"},
+        on_progress=on_progress,
+    )
+
+    assert llm.provider_calls == []
+    assert llm.plugin_calls[0][0] == "t2v"
+    assert llm.plugin_calls[0][2]["on_progress"] is on_progress
+
+
+@pytest.mark.basic
+def test_output_video_with_one_image_media_infers_i2v(fake_plugins):
+    llm = _FakeProvider()
+
+    response = llm.generate(
+        "slow camera push-in",
+        media={"type": "image", "path": "first-frame.png", "role": "source"},
+        output={"task": "i2v", "provider": "mlx-gen"},
+    )
+
+    assert response.outputs["video"][0].task == "image_to_video"
+    assert response.outputs["video"][0].data == b"mp4"
+    assert llm.provider_calls == []
+    assert llm.plugin_calls[0] == (
+        "i2v",
+        "first-frame.png",
+        {"prompt": "slow camera push-in", "provider": "mlx-gen"},
+    )
 
 
 @pytest.mark.basic
@@ -522,6 +626,7 @@ def test_task_only_output_specs_infer_modality(fake_plugins):
 
     speech = llm.generate(text="Hello.", output={"task": "tts"})
     image = llm.generate("red square", output={"task": "t2i"})
+    video = llm.generate("red square moving", output={"task": "t2v"})
     clone = llm.generate(
         media={"type": "audio", "path": "reference.wav"}, output={"task": "voice_clone"}
     )
@@ -531,6 +636,7 @@ def test_task_only_output_specs_infer_modality(fake_plugins):
 
     assert speech.outputs["voice"][0].task == "tts"
     assert image.outputs["image"][0].task == "image_generation"
+    assert video.outputs["video"][0].task == "text_to_video"
     assert clone.resources["voice"][0].resource_id == "voice-123"
     assert transcript.text.content == "transcribed audio"
 

@@ -71,13 +71,53 @@ abstractcore --add-vision-fallback huggingface Salesforce/blip-image-captioning-
 
 Creating/editing images and videos is a **deterministic capability** that can be integrated in two ways:
 
-1) **Capability plugin (library mode)**: install `abstractvision` and use `llm.vision.*` (e.g. `t2i`, `i2i`). Configure the AbstractVision backend/default for your environment; local Diffusers remains cache-only unless downloads are explicitly enabled.
+1) **Capability plugin (library mode)**: install `abstractvision` and use `llm.vision.*` (e.g. `t2i`, `i2i`, `t2v`, `i2v`) or the unified `llm.generate(..., output=...)` surface. Configure the AbstractVision backend/default for your environment; local Diffusers remains cache-only unless downloads are explicitly enabled, and MLX-Gen local models are selected by exact repo id.
    See: `abstractvision/docs/reference/abstractcore-integration.md`
 
-2) **AbstractCore Server (HTTP interop)**: run the optional server and use `/v1/images/*` as an OpenAI-compatible image proxy. Local Diffusers/sdcpp backends remain available when `abstractvision` is installed via `abstractcore[server,vision]`; omit `model` only when the server has a configured image default, or use provider/model ids such as `model="diffusers/default"`, `model="diffusers/<huggingface-repo>"`, `model="sdcpp/default"`, or `model="openai-compatible/gpt-image-2"` with a configured upstream image endpoint.
+2) **AbstractCore Server (HTTP interop)**: run the optional server and use `/v1/images/*` and `/v1/videos/*` as OpenAI-compatible media routes. Local Diffusers/sdcpp/MLX-Gen backends remain available when `abstractvision` is installed via `abstractcore[server,vision]`; omit `model` only when the server has a configured default, or use provider/model ids such as `model="diffusers/default"`, `model="diffusers/<huggingface-repo>"`, `model="mlx-gen/AbstractFramework/qwen-image-2512-4bit"`, `model="mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers"`, `model="sdcpp/default"`, or `model="openai-compatible/gpt-image-2"` with a configured upstream media endpoint.
    See: `docs/server.md`
 
-This separation keeps the default `abstractcore` install dependency-light: remote image proxying lives in the server, while local generative vision runtimes remain opt-in through `abstractvision`.
+Python progress callbacks can be supplied on the unified call for generated image/video outputs:
+
+```python
+def on_progress(event):
+    print(event)
+
+resp = llm.generate(
+    "A slow camera move through a luminous data center.",
+    on_progress=on_progress,
+    output={
+        "task": "text_to_video",
+        "provider": "mlx-gen",
+        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "num_frames": 121,
+        "fps": 24,
+        "extra": {"max_sequence_length": 256},
+    },
+)
+mp4 = resp.outputs["video"][0].data
+```
+
+For image-to-video, pass one source image and set `task="image_to_video"`:
+
+```python
+resp = llm.generate(
+    "Slow camera push-in.",
+    media={"type": "image", "path": "first-frame.png", "role": "source"},
+    output={
+        "task": "image_to_video",
+        "provider": "mlx-gen",
+        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "num_frames": 121,
+        "fps": 24,
+    },
+)
+```
+
+Async HTTP routes under `/v1/vision/jobs/videos/*` expose `progress.last_event`
+when the selected backend reports richer progress events.
+
+This separation keeps the default `abstractcore` install dependency-light: remote media proxying lives in the server, while local generative vision runtimes remain opt-in through `abstractvision`. Quantized MLX-Gen models are selected by their published repo id; Core does not expose a separate quantization override.
 
 ## Troubleshooting (common)
 

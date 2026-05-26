@@ -85,12 +85,16 @@ class ServerVisionFacade:
         call_lock: Optional[threading.Lock],
         image_generation_request_cls: Any,
         image_edit_request_cls: Any,
+        video_generation_request_cls: Optional[Any] = None,
+        image_to_video_request_cls: Optional[Any] = None,
         backend_id: str,
     ) -> None:
         self._backend = backend
         self._call_lock = call_lock or threading.Lock()
         self._image_generation_request_cls = image_generation_request_cls
         self._image_edit_request_cls = image_edit_request_cls
+        self._video_generation_request_cls = video_generation_request_cls
+        self._image_to_video_request_cls = image_to_video_request_cls
         self.backend_id = backend_id
 
     def t2i(self, prompt: str, **kwargs: Any) -> Any:
@@ -121,6 +125,78 @@ class ServerVisionFacade:
         )
         with self._call_lock:
             asset = self._backend.edit_image(req)
+        return bytes(getattr(asset, "data", b""))
+
+    @staticmethod
+    def _extra_with_video_params(kwargs: dict[str, Any]) -> dict[str, Any]:
+        extra = kwargs.get("extra")
+        merged = dict(extra) if isinstance(extra, dict) else {}
+        request_keys = {
+            "prompt",
+            "image",
+            "negative_prompt",
+            "width",
+            "height",
+            "fps",
+            "num_frames",
+            "seed",
+            "steps",
+            "guidance_scale",
+            "extra",
+            "provider",
+            "model",
+            "artifact_store",
+            "run_id",
+            "tags",
+        }
+        for key in ("on_progress", "progress_event_callback", "progress_callback"):
+            callback = kwargs.get(key)
+            if callback is not None:
+                merged[key] = callback
+        for key, value in kwargs.items():
+            if key in request_keys or key in {"on_progress", "progress_event_callback", "progress_callback"}:
+                continue
+            if value is not None:
+                merged[str(key)] = value
+        return merged
+
+    def t2v(self, prompt: str, **kwargs: Any) -> Any:
+        if self._video_generation_request_cls is None:
+            raise AttributeError("The selected AbstractVision backend does not expose VideoGenerationRequest.")
+        req = self._video_generation_request_cls(
+            prompt=str(prompt or ""),
+            negative_prompt=kwargs.get("negative_prompt"),
+            width=kwargs.get("width"),
+            height=kwargs.get("height"),
+            fps=kwargs.get("fps"),
+            num_frames=kwargs.get("num_frames"),
+            seed=kwargs.get("seed"),
+            steps=kwargs.get("steps"),
+            guidance_scale=kwargs.get("guidance_scale"),
+            extra=self._extra_with_video_params(kwargs),
+        )
+        with self._call_lock:
+            asset = self._backend.generate_video(req)
+        return bytes(getattr(asset, "data", b""))
+
+    def i2v(self, image: Any, **kwargs: Any) -> Any:
+        if self._image_to_video_request_cls is None:
+            raise AttributeError("The selected AbstractVision backend does not expose ImageToVideoRequest.")
+        req = self._image_to_video_request_cls(
+            image=image,
+            prompt=kwargs.get("prompt"),
+            negative_prompt=kwargs.get("negative_prompt"),
+            width=kwargs.get("width"),
+            height=kwargs.get("height"),
+            fps=kwargs.get("fps"),
+            num_frames=kwargs.get("num_frames"),
+            seed=kwargs.get("seed"),
+            steps=kwargs.get("steps"),
+            guidance_scale=kwargs.get("guidance_scale"),
+            extra=self._extra_with_video_params(kwargs),
+        )
+        with self._call_lock:
+            asset = self._backend.image_to_video(req)
         return bytes(getattr(asset, "data", b""))
 
 

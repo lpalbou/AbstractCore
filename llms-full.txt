@@ -3,7 +3,7 @@
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
 Last updated: 2026-05-26
-Package version: 2.13.28
+Package version: 2.13.29
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -650,12 +650,12 @@ abstractcore --set-stt-language en
 
 AbstractCore supports optional capability plugins discovered via Python entry points:
 - install `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
-- install `abstractvision` -> enables `llm.vision` (generative vision; often via an OpenAI-compatible images endpoint)
+- install `abstractvision` -> enables `llm.vision` (generative images/video through OpenAI-compatible endpoints or local backends such as MLX-Gen)
 - install `abstractcore[music]` -> enables `llm.music` and music output routing for text-to-music through `abstractmusic`
-- current plugin floors in this source: `abstractvoice>=0.10.16`, `abstractvision>=0.3.14`, `abstractmusic>=0.1.12`
+- current plugin floors in this source: `abstractvoice>=0.10.16`, `abstractvision>=0.3.16`, `abstractmusic>=0.1.12`; `llm.vision` exposes `t2i`, `i2i`, `t2v`, and `i2v`, and `generate(..., output=...)` forwards progress callbacks for generated image/video outputs
 
 Server note:
-- the server can optionally expose `/v1/images/*` (requires `abstractvision`)
+- the server can optionally expose `/v1/images/*`, `/v1/videos/*`, and `/v1/vision/*` model/control surfaces (requires `abstractvision` for local backends; remote OpenAI-compatible proxy paths can run through the server)
 - the server can optionally expose `/v1/audio/*` (requires an audio/voice/music plugin; commonly `abstractvoice` or `abstractmusic`)
 
 ### Glyph visual-text compression (optional, experimental)
@@ -834,7 +834,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \\
 
 ### Optional images/audio endpoints
 
-- Images: `POST /v1/images/generations`, `POST /v1/images/edits` (requires `abstractvision`; global routes accept `model`, optional `provider`, and optional `base_url`)
+- Images/video: `POST /v1/images/generations`, `POST /v1/images/edits`, `POST /v1/videos/generations`, `POST /v1/videos/edits`, and async `/v1/vision/jobs/videos/*` (requires `abstractvision` for local backends; global routes accept `model`, optional `provider`, and optional `base_url`; exact MLX-Gen ids such as `mlx-gen/AbstractFramework/qwen-image-2512-4bit` and `mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers` are valid when cached)
 - Audio: `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`, `POST /v1/voice/clone` (requires an audio/voice plugin; commonly `abstractvoice`; global routes accept `model`, optional `provider`, and optional `base_url`)
 
 If a required plugin/backend is missing, the server returns `501` with actionable messaging.
@@ -7712,17 +7712,29 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 
 ### Media generation endpoints (optional)
 
-AbstractCore Server can optionally expose OpenAI-compatible **image generation** and **audio** endpoints.
+AbstractCore Server can optionally expose OpenAI-compatible **image/video generation** and **audio** endpoints.
 
 Important notes:
 - These are **interoperability-first** endpoints (return `b64_json` or raw bytes), not an artifact-first durability contract.
 - If the required plugin/backend is not available, the server returns `501` with actionable messaging.
 
-#### Images (generate/edit) — requires `abstractvision`
+#### Images/video (generate/edit) — requires `abstractvision`
 
 Endpoints:
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
+- `POST /v1/videos/generations`
+- `POST /v1/videos/edits`
+- `POST /v1/vision/jobs/videos/generations`
+- `POST /v1/vision/jobs/videos/edits`
+- `/v1/vision/*` catalog and model residency surfaces, including video-capable local models such as `mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers`
+
+Python `generate(..., output={"task":"text_to_video"})` and
+`generate(..., output={"task":"image_to_video"})` use the same Core output
+dispatcher. A top-level `on_progress`, `progress_event_callback`, or
+`progress_callback` kwarg is attached to generated image/video output specs and
+reaches AbstractVision; async video job polling exposes `progress.last_event`
+when the backend reports rich events.
 
 Install:
 ```bash
@@ -9839,7 +9851,7 @@ If you run the optional HTTP server, you can also use OpenAI-compatible endpoint
 
 See: [Server](server.md) and [Capabilities](capabilities.md).
 
-## How do I generate or edit images?
+## How do I generate/edit images or generate video?
 
 Generative vision is intentionally not part of AbstractCore’s default install. Use `abstractvision`:
 
@@ -9847,9 +9859,11 @@ Generative vision is intentionally not part of AbstractCore’s default install.
 pip install abstractvision
 ```
 
-You can use it through AbstractCore’s `llm.vision.*` capability plugin surface (typically configured via an OpenAI-compatible images endpoint), or through AbstractCore Server’s optional endpoints:
+You can use it through AbstractCore’s `llm.vision.*` capability plugin surface (`t2i`, `i2i`, `t2v`, `i2v`) or through AbstractCore Server’s optional endpoints:
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
+
+Local MLX-Gen models are selected by exact repo id, for example `AbstractFramework/qwen-image-2512-4bit`, `briaai/FIBO`, or `Wan-AI/Wan2.2-TI2V-5B-Diffusers`.
 
 See: [Server](server.md), [Capabilities](capabilities.md), and `abstractvision/docs/reference/abstractcore-integration.md` (in the AbstractVision repo).
 
@@ -10687,7 +10701,7 @@ The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top o
 - **Streaming Support**: Server-sent events for real-time responses
 - **Model Discovery**: Dynamic model listing across all providers
 - **Embedding Support**: Multi-provider embedding generation (HuggingFace, Ollama, LMStudio)
-- **Optional Vision Endpoints**: OpenAI-compatible `/v1/images/generations` and `/v1/images/edits` (plus `/v1/vision/*` control plane) delegated to `abstractvision` (safe-by-default; requires explicit config).
+- **Optional Vision Endpoints**: OpenAI-compatible `/v1/images/generations` and `/v1/images/edits` (plus `/v1/vision/*` catalog/residency control plane for image/video-capable backends) delegated to `abstractvision` (safe-by-default; requires explicit config).
 - **Optional Audio Endpoints**: OpenAI-compatible `/v1/audio/transcriptions` and `/v1/audio/speech` delegated to capability plugins (typically `abstractvoice`).
 - **Prompt Cache Control Plane**: `/acore/prompt_cache/*` proxy endpoints for cache stats/set/update/fork/clear (best-effort; typically targets an `abstractcore.endpoint` upstream).
 

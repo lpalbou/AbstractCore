@@ -1183,6 +1183,23 @@ def _custom_openapi() -> Dict[str, Any]:
     _request_example("/v1/images/generations", "post", "application/json", "remote_openai_compatible", "Remote OpenAI-compatible image generation", image_generation_example)
     _request_example("/{provider}/v1/images/generations", "post", "application/json", "provider_scoped_image_generation", "Provider-scoped image generation", {**image_generation_example, "model": "gpt-image-1", "provider": None})
     _request_example("/v1/vision/jobs/images/generations", "post", "application/json", "async_image_generation", "Async image generation job", image_generation_example)
+    video_generation_example = {
+        "prompt": "A slow camera move through a luminous data center.",
+        "provider": "mlx-gen",
+        "model": "mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "base_url": None,
+        "width": 1280,
+        "height": 704,
+        "fps": 24,
+        "num_frames": 121,
+        "steps": 50,
+        "guidance_scale": 5.0,
+        "response_format": "b64_json",
+        "extra": {"max_sequence_length": 256},
+    }
+    _request_example("/v1/videos/generations", "post", "application/json", "text_to_video", "Text-to-video generation", video_generation_example)
+    _request_example("/{provider}/v1/videos/generations", "post", "application/json", "provider_scoped_video_generation", "Provider-scoped text-to-video generation", {**video_generation_example, "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers", "provider": None})
+    _request_example("/v1/vision/jobs/videos/generations", "post", "application/json", "async_video_generation", "Async text-to-video generation job", video_generation_example)
     _request_example(
         "/v1/audio/translations",
         "post",
@@ -1209,6 +1226,24 @@ def _custom_openapi() -> Dict[str, Any]:
     _request_example("/v1/images/edits", "post", "multipart/form-data", "remote_openai_compatible", "Remote OpenAI-compatible image edit", image_edit_example)
     _request_example("/{provider}/v1/images/edits", "post", "multipart/form-data", "provider_scoped_image_edit", "Provider-scoped image edit", {**image_edit_example, "model": "gpt-image-1"})
     _request_example("/v1/vision/jobs/images/edits", "post", "multipart/form-data", "async_image_edit", "Async image edit job", image_edit_example)
+    video_edit_example = {
+        "prompt": "Slow camera push-in.",
+        "image": "<upload first-frame.png>",
+        "provider": "mlx-gen",
+        "model": "mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "base_url": None,
+        "width": 1280,
+        "height": 704,
+        "fps": 24,
+        "num_frames": 121,
+        "steps": 50,
+        "guidance_scale": 5.0,
+        "response_format": "b64_json",
+        "extra_json": '{"max_sequence_length":256}',
+    }
+    _request_example("/v1/videos/edits", "post", "multipart/form-data", "image_to_video", "Image-to-video generation", video_edit_example)
+    _request_example("/{provider}/v1/videos/edits", "post", "multipart/form-data", "provider_scoped_image_to_video", "Provider-scoped image-to-video generation", {**video_edit_example, "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers"})
+    _request_example("/v1/vision/jobs/videos/edits", "post", "multipart/form-data", "async_image_to_video", "Async image-to-video generation job", video_edit_example)
     _request_example(
         "/v1/voice/clone",
         "post",
@@ -4273,6 +4308,12 @@ def _normalize_model_residency_task(task: Optional[str]) -> str:
         "t2i": "image_generation",
         "image_to_image": "image_generation",
         "i2i": "image_generation",
+        "video": "video_generation",
+        "video_generation": "video_generation",
+        "text_to_video": "text_to_video",
+        "t2v": "text_to_video",
+        "image_to_video": "image_to_video",
+        "i2v": "image_to_video",
         "speech": "tts",
         "voice": "tts",
         "audio_speech": "tts",
@@ -4295,6 +4336,9 @@ def _normalize_model_residency_task(task: Optional[str]) -> str:
             detail={"error": {"message": f"Unknown model residency task: {task}", "type": "invalid_request"}},
         )
     return aliases[raw]
+
+
+_VISION_RESIDENCY_TASKS = {"image_generation", "video_generation", "text_to_video", "image_to_video"}
 
 
 def _model_residency_payload(req: BaseModel) -> Dict[str, Any]:
@@ -4384,7 +4428,7 @@ def _normalize_model_residency_loaded_fields(runtime: Dict[str, Any]) -> Dict[st
 
 
 def _capability_residency_load(task: str, payload: Dict[str, Any], http_request: Request) -> Dict[str, Any]:
-    if task == "image_generation":
+    if task in _VISION_RESIDENCY_TASKS:
         from . import vision_endpoints as _vision_endpoints
 
         provider_key = _provider_api_key_from_request(http_request)
@@ -4433,7 +4477,7 @@ def _capability_residency_loaded(task: Optional[str], filters: Dict[str, Any], h
     tasks = [task] if task else ["image_generation", "tts", "stt"]
     records: list[Dict[str, Any]] = []
     for item_task in tasks:
-        if item_task == "image_generation":
+        if item_task in _VISION_RESIDENCY_TASKS:
             from . import vision_endpoints as _vision_endpoints
 
             records.extend(_vision_endpoints.list_server_vision_loaded_models(filters))
@@ -4459,7 +4503,7 @@ def _capability_residency_loaded(task: Optional[str], filters: Dict[str, Any], h
 
 
 def _capability_residency_unload(task: str, payload: Dict[str, Any], http_request: Request) -> Dict[str, Any]:
-    if task == "image_generation":
+    if task in _VISION_RESIDENCY_TASKS:
         from . import vision_endpoints as _vision_endpoints
 
         try:
@@ -4825,7 +4869,7 @@ def acore_models_unload(req: UnloadModelRequest, http_request: Request):
             ],
         }
     if task is None:
-        for candidate_task in ("image_generation", "tts", "stt"):
+        for candidate_task in ("image_generation", "video_generation", "tts", "stt"):
             try:
                 payload["task"] = candidate_task
                 return _capability_residency_unload(candidate_task, payload, http_request)
@@ -6302,9 +6346,9 @@ class CapabilityDefaultRouteRequest(BaseModel):
             "examples": [
                 {
                     "provider": "mlx-gen",
-                    "model": "flux2-klein-9b",
+                    "model": "AbstractFramework/flux.2-klein-9b-4bit",
                     "base_url": None,
-                    "options": {"bits": 4},
+                    "options": {},
                 }
             ]
         }

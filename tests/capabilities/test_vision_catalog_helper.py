@@ -169,11 +169,67 @@ def test_local_vision_cache_catalog_surfaces_cached_mlx_gen_download_variants(mo
 
     assert payload["cached_total"] == 2
     assert models["AbstractFramework/flux.2-klein-4b-4bit"]["provider"] == "mlx-gen"
-    assert models["AbstractFramework/flux.2-klein-4b-4bit"]["id"] == "flux2-klein-4b"
+    assert models["AbstractFramework/flux.2-klein-4b-4bit"]["id"] == "AbstractFramework/flux.2-klein-4b-4bit"
     assert models["AbstractFramework/flux.2-klein-4b-4bit"]["bits"] == 4
     assert models["AbstractFramework/flux.2-klein-4b-8bit"]["provider"] == "mlx-gen"
     assert models["AbstractFramework/flux.2-klein-4b-8bit"]["id"] == "AbstractFramework/flux.2-klein-4b-8bit"
     assert models["AbstractFramework/flux.2-klein-4b-8bit"]["bits"] == 8
+
+
+def test_local_vision_cache_catalog_surfaces_cached_mlx_gen_video_only_model(monkeypatch, tmp_path: Path) -> None:
+    hf_dir = tmp_path / "hf"
+    local_dir = tmp_path / "local"
+    lmstudio_dir = tmp_path / "lmstudio"
+    wan_snapshot = hf_dir / "models--Wan-AI--Wan2.2-TI2V-5B-Diffusers" / "snapshots" / "wan"
+    (wan_snapshot / "transformer").mkdir(parents=True)
+    (wan_snapshot / "transformer" / "model.safetensors").write_bytes(b"x")
+    (wan_snapshot.parents[1] / "refs").mkdir()
+    (wan_snapshot.parents[1] / "refs" / "main").write_text("wan", encoding="utf-8")
+    local_dir.mkdir()
+    lmstudio_dir.mkdir()
+
+    specs = {
+        "Wan-AI/Wan2.2-TI2V-5B-Diffusers": _FakeVisionSpec(
+            provider="huggingface",
+            license="apache-2.0",
+            tasks={"text_to_video": {}, "image_to_video": {}},
+            notes="wan",
+            downloads=[
+                _FakeDownload(
+                    key="wan2.2-ti2v-5b",
+                    engine="mlx-gen",
+                    target="mlx",
+                    bits=16,
+                    repo_id="Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+                    source="official",
+                ),
+            ],
+        ),
+    }
+
+    class _Registry:
+        def list_models(self):
+            return list(specs)
+
+        def get(self, model_id):
+            return specs[model_id]
+
+    monkeypatch.setattr(vision_catalog, "_load_vision_model_capabilities_registry", lambda: _Registry)
+    monkeypatch.setattr(vision_catalog, "_default_hf_hub_cache_dirs", lambda: [hf_dir])
+    monkeypatch.setattr(vision_catalog, "_default_local_diffusers_model_dirs", lambda: [local_dir])
+    monkeypatch.setattr(vision_catalog, "_default_lmstudio_model_dirs", lambda: [lmstudio_dir])
+    monkeypatch.setattr(vision_catalog, "_is_hf_model_cached", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(vision_catalog, "_is_lmstudio_model_cached", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(vision_catalog, "_discover_cached_hf_diffusers_models", lambda _dirs: [])
+    monkeypatch.setattr(vision_catalog, "_discover_local_diffusers_models", lambda _dirs: [])
+
+    payload = vision_catalog.get_local_vision_cache_catalog()
+
+    assert payload["cached_total"] == 1
+    assert payload["models"][0]["provider"] == "mlx-gen"
+    assert payload["models"][0]["id"] == "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
+    assert payload["models"][0]["bits"] == 16
+    assert payload["models"][0]["tasks"] == ["image_to_video", "text_to_video"]
 
 
 def test_local_vision_cache_catalog_returns_bounded_error_without_registry(monkeypatch, tmp_path: Path) -> None:

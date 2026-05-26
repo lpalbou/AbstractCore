@@ -29,8 +29,12 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/{provider}/v1/images/generations` | POST | Provider-scoped image generation | `model` (no prefix), `prompt`, `base_url` |
 | `/v1/images/edits` | POST | Image editing (optional) | `prompt`, `image`, `model`, `provider`, `base_url`, `mask`, `size` |
 | `/{provider}/v1/images/edits` | POST | Provider-scoped image editing | `model` (no prefix), `prompt`, `image`, `base_url` |
+| `/v1/videos/generations` | POST | Text-to-video generation (optional) | `prompt`, `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames` |
+| `/{provider}/v1/videos/generations` | POST | Provider-scoped text-to-video | `model` (no prefix), `prompt`, `base_url` |
+| `/v1/videos/edits` | POST | Image-to-video generation (optional) | `prompt`, `image`, `model`, `provider`, `base_url`, `fps`, `num_frames` |
+| `/{provider}/v1/videos/edits` | POST | Provider-scoped image-to-video | `model` (no prefix), `prompt`, `image`, `base_url` |
 | `/v1/vision/models` | GET | Available vision model catalog | `task`, `provider`, `base_url`, `api_key` |
-| `/v1/vision/jobs/*` | GET/POST | Async image jobs | `job_id`, `consume`, image parameters |
+| `/v1/vision/jobs/*` | GET/POST | Async image/video jobs | `job_id`, `consume`, media parameters, `progress.last_event` |
 | `/v1/audio/transcriptions` | POST | Speech-to-text (optional) | `file`, `provider`, `model`, `base_url` |
 | `/{provider}/v1/audio/transcriptions` | POST | Provider-scoped speech-to-text | `model` (no prefix), `file`, `base_url` |
 | `/v1/audio/translations` | POST | Audio translations (not yet supported) | - |
@@ -40,13 +44,13 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/{provider}/v1/voice/clone` | POST | Provider-scoped voice clone/custom voice extension | `model` (no prefix), `file`, `base_url`, `name` |
 | `/v1/audio/music` | POST | Text-to-music (optional) | `prompt`, optional `backend`, `model`, `lyrics`, `duration_s`, `format` (`wav`, `mp3`, `flac`) |
 | `/{provider}/v1/chat/completions` | POST | Provider-specific endpoint | `model` (no prefix) |
-| `/acore/models/load` | POST | Load a task-specific provider/model runtime | optional `task` (`text_generation` default, `image_generation`, `tts`, `stt`), `provider`, `model`, `options`, `pin`, `base_url`, `timeout_s` |
+| `/acore/models/load` | POST | Load a task-specific provider/model runtime | optional `task` (`text_generation` default, `image_generation`, `video_generation`, `text_to_video`, `image_to_video`, `tts`, `stt`), `provider`, `model`, `options`, `pin`, `base_url`, `timeout_s` |
 | `/acore/models/loaded` | GET | List currently loaded task-aware runtimes | optional `task`, `provider`, `model` |
 | `/acore/models/unload` | POST | Unload a task-specific runtime | `runtime_id` or `provider` + `model`, optional `task`, `base_url`, `options` |
 | `/acore/prompt_cache/*` | GET/POST | Prompt-cache control plane on a loaded gateway runtime or proxied AbstractEndpoint | `provider` + `model` or `base_url`, cache operation fields |
 | `/acore/blocs/*` | GET/POST | Provider-backed memory-bloc KV artifact control plane for MLX, HuggingFace transformers, and supported HuggingFace GGUF exact-renderer paths | local store by default, or `runtime_id` / `provider` + `model` / `base_url` as required |
 
-Runtime note: omitted `task` on `/acore/models/load` keeps the existing text-generation runtime behavior. Non-text tasks route to capability-owned load/list/unload where supported: `image_generation` uses the same server image backend cache as `/v1/images/*`, while `tts` and `stt` use the shared AbstractVoice capability core. `loaded_new` is optional event metadata for the *load call* (did this call likely transition `loaded` from false to true?); it is not the loaded state itself.
+Runtime note: omitted `task` on `/acore/models/load` keeps the existing text-generation runtime behavior. Non-text tasks route to capability-owned load/list/unload where supported: `image_generation`, `video_generation`, `text_to_video`, and `image_to_video` use the same AbstractVision backend cache, while `tts` and `stt` use the shared AbstractVoice capability core. `loaded_new` is optional event metadata for the *load call* (did this call likely transition `loaded` from false to true?); it is not the loaded state itself.
 
 ### Common Request Patterns
 
@@ -58,6 +62,7 @@ Runtime note: omitted `task` on `/acore/models/load` keeps the existing text-gen
 | **Media Catalogs** | `/v1/vision/providers/`, `/v1/audio/voices` | `task`, `provider`, `base_url`, `api_key` | Populate image model and voice dropdowns |
 | **Image Generation** | `/v1/images/generations`, `/{provider}/v1/images/generations` | `prompt`, optional `model`/`provider`/`base_url` | Create images (optional) |
 | **Image Editing** | `/v1/images/edits`, `/{provider}/v1/images/edits` | `prompt`, `image`, optional `model`/`provider`/`base_url` | Edit images (optional) |
+| **Video Generation** | `/v1/videos/generations`, `/v1/videos/edits` | `prompt`, optional source `image`, optional `model`/`provider`/`base_url` | Create videos (optional) |
 | **Speech-to-Text** | `/v1/audio/transcriptions`, `/{provider}/v1/audio/transcriptions` | `file`, optional `model`/`provider`/`base_url` | Transcribe audio (optional) |
 | **Audio Translations** | `/v1/audio/translations` | `file` | Translate audio (not yet supported) |
 | **Text-to-Speech** | `/v1/audio/speech`, `/{provider}/v1/audio/speech` | `input`, optional `model`/`provider`/`base_url` | Generate audio (optional) |
@@ -659,20 +664,26 @@ print(response.json()["choices"][0]["message"]["content"])
 
 ---
 
-### Image Generation (optional)
+### Image/Video Generation (optional)
 
-AbstractCore Server can optionally expose OpenAI-compatible image endpoints:
+AbstractCore Server can optionally expose OpenAI-compatible image and video endpoints:
 - `POST /v1/images/generations`
 - `POST /{provider}/v1/images/generations`
 - `POST /v1/images/edits`
 - `POST /{provider}/v1/images/edits`
+- `POST /v1/videos/generations`
+- `POST /{provider}/v1/videos/generations`
+- `POST /v1/videos/edits`
+- `POST /{provider}/v1/videos/edits`
+- `POST /v1/vision/jobs/videos/generations`
+- `POST /v1/vision/jobs/videos/edits`
 
 If `model` is omitted, the server uses its configured AbstractVision/OpenAI-compatible
-image default. AbstractCore does not hardcode a local image model default.
+media default. AbstractCore does not hardcode a local image or video model default.
 Provider-scoped routes accept an unprefixed body `model`, matching the chat
 route pattern used by `/{provider}/v1/chat/completions`.
 Global routes also accept optional `provider` and `base_url` overrides so image
-generation and image edits follow the same routing contract as the audio
+generation, image edits, text-to-video, and image-to-video follow the same routing contract as the audio
 endpoints and the Python `generate(..., output="image")` path.
 
 **Backends (env vars)**:
@@ -689,6 +700,8 @@ endpoints and the Python `generate(..., output="image")` path.
   - `OPENAI_BASE_URL` (required) — base URL (include `/v1`)
   - `OPENAI_API_KEY` (optional)
   - `ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID` / `ABSTRACTVISION_MODEL_ID` (optional)
+  - `ABSTRACTCORE_VISION_UPSTREAM_VIDEOS_GENERATIONS_PATH` / `ABSTRACTCORE_VISION_TEXT_TO_VIDEO_PATH` (optional, default `/videos/generations`)
+  - `ABSTRACTCORE_VISION_UPSTREAM_VIDEOS_EDITS_PATH` / `ABSTRACTCORE_VISION_IMAGE_TO_VIDEO_PATH` (optional, default `/videos/edits`)
   - Install: `pip install "abstractcore[server]"`
 
 - **Local Diffusers**: set `ABSTRACTCORE_VISION_BACKEND=diffusers`
@@ -731,15 +744,41 @@ curl http://localhost:8000/v1/images/edits \\
   -F "image=@./input.png"
 ```
 
+**Text-to-video (JSON, async job with progress polling)**:
+```bash
+curl http://localhost:8000/v1/vision/jobs/videos/generations \\
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \\
+  -H "Content-Type: application/json" \\
+  -d '{"provider":"mlx-gen","model":"Wan-AI/Wan2.2-TI2V-5B-Diffusers","prompt":"A slow camera move through a luminous data center.","width":1280,"height":704,"fps":24,"num_frames":121,"steps":50,"guidance_scale":5.0,"extra":{"max_sequence_length":256}}'
+```
+
+Poll `GET /v1/vision/jobs/{job_id}`. For video jobs, `progress.last_event`
+contains the latest normalized backend progress event when the selected backend
+reports one.
+
+**Image-to-video (multipart/form-data)**:
+```bash
+curl http://localhost:8000/v1/videos/edits \\
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \\
+  -F "provider=mlx-gen" \\
+  -F "model=Wan-AI/Wan2.2-TI2V-5B-Diffusers" \\
+  -F "prompt=Slow camera push-in." \\
+  -F "image=@./first-frame.png" \\
+  -F "num_frames=121" \\
+  -F "fps=24" \\
+  -F 'extra_json={"max_sequence_length":256}'
+```
+
 Notes:
-- The server returns `b64_json` outputs, matching the OpenAI image API shape.
+- The server returns `b64_json` outputs, matching the OpenAI media API shape.
 - OpenAI-compatible image proxying is built into `abstractcore[server]`.
 - Strict OpenAI-compatible upstreams receive only OpenAI-compatible top-level
   fields by default. Put backend-specific knobs such as `seed`, `steps`,
   `guidance_scale`, or `negative_prompt` in `extra` / `extra_json` only when
   your custom upstream supports them.
-- Local Diffusers/sdcpp generation delegates to AbstractVision; install it in the same env as the server with `pip install "abstractcore[server,vision]"` and prefer `python -m uvicorn ...`.
+- Local Diffusers/sdcpp/MLX-Gen generation delegates to AbstractVision; install it in the same env as the server with `pip install "abstractcore[server,vision]"` and prefer `python -m uvicorn ...`.
 - Local Diffusers is cache-only by default, matching AbstractVision. Pre-download model weights or opt in with `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD=1`.
+- MLX-Gen quantized models are selected by their exact published repo id (for example `AbstractFramework/qwen-image-2512-4bit` or `Wan-AI/Wan2.2-TI2V-5B-Diffusers`); Core does not expose a separate quantization override.
 
 ---
 

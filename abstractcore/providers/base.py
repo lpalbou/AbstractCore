@@ -1640,6 +1640,43 @@ class BaseProvider(AbstractCoreInterface, ABC):
     def _normalize_output_spec(output: Any) -> Dict[str, Any]:
         return normalize_output_spec(output)
 
+    @classmethod
+    def _output_request_with_progress_callbacks(
+        cls,
+        output: Any,
+        callbacks: Dict[str, Any],
+    ) -> Tuple[Any, bool]:
+        """Attach top-level generated-media progress callbacks to output specs."""
+        effective_callbacks = {
+            str(key): value
+            for key, value in callbacks.items()
+            if value is not None
+        }
+        if not effective_callbacks or not cls._is_acore_output_request(output):
+            return output, False
+
+        specs = cls._normalize_output_specs(output)
+        changed = False
+        patched_specs: List[Dict[str, Any]] = []
+        for spec in specs:
+            patched = dict(spec)
+            modality = str(patched.get("modality") or "").strip().lower()
+            if modality in {"image", "video"}:
+                nested_extra = patched.get("extra")
+                nested_keys = set(nested_extra) if isinstance(nested_extra, dict) else set()
+                for key, value in effective_callbacks.items():
+                    if key in patched or key in nested_keys:
+                        continue
+                    patched[key] = value
+                    changed = True
+            patched_specs.append(patched)
+
+        if not changed:
+            return output, False
+        if isinstance(output, (list, tuple)):
+            return patched_specs, True
+        return patched_specs[0], True
+
     @staticmethod
     def _coerce_media_items(media: Any) -> List[Any]:
         if media is None:
@@ -1948,6 +1985,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if modality == "image":
             self._run_image_output(result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store)
             return
+        if modality == "video":
+            self._run_video_output(result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store)
+            return
         if modality == "voice":
             self._run_voice_output(result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store)
             return
@@ -2045,6 +2085,86 @@ class BaseProvider(AbstractCoreInterface, ABC):
             metadata=metadata,
         )
         result.add_output("image", item)
+
+    def _run_video_output(
+        self,
+        *,
+        result: MultimodalGenerateResponse,
+        spec: Dict[str, Any],
+        prompt: str,
+        media: Any,
+        artifact_store: Optional[Any],
+    ) -> None:
+        items = self._coerce_media_items(media)
+        images = [item for item in items if self._media_type(item, fallback="image" if isinstance(item, (bytes, bytearray)) else None) == "image"]
+        roles = [(item, self._media_role(item)) for item in images]
+        source_items = [item for item, role in roles if role == "source"]
+        mask_items = [item for item, role in roles if role == "mask"]
+        reference_like = [item for item, role in roles if role in {"reference", "style", "context"}]
+        unroled = [item for item, role in roles if role is None]
+        task = str(spec.get("task") or "").lower()
+
+        if mask_items:
+            raise ValueError("Video generation does not support mask media in v1.")
+        if len(source_items) > 1:
+            raise ValueError("Image-to-video supports at most one source image in v1.")
+
+        should_i2v = task == "image_to_video"
+        if task == "text_to_video":
+            should_i2v = False
+        elif not should_i2v:
+            if source_items:
+                should_i2v = True
+            elif len(unroled) == 1 and not reference_like:
+                should_i2v = True
+            elif len(unroled) > 1:
+                raise ValueError("Multiple image media items require explicit roles for image-to-video.")
+
+        kwargs = self._output_plugin_kwargs(
+            spec,
+            exclude={"format", "content_type", "mime_type", "provider", "response_format"},
+        )
+        if spec.get("provider") is not None:
+            kwargs["provider"] = spec.get("provider")
+        if artifact_store is not None:
+            kwargs["artifact_store"] = artifact_store
+
+        if should_i2v:
+            source = source_items[0] if source_items else (unroled[0] if unroled else None)
+            if source is None:
+                raise ValueError("Image-to-video requires one source image.")
+            raw = self.vision.i2v(self._media_payload(source), prompt=prompt, **kwargs)
+            task_name = "image_to_video"
+        else:
+            raw = self.vision.t2v(prompt, **kwargs)
+            task_name = "text_to_video"
+
+        data, artifact_ref, metadata = self._artifact_or_data(raw)
+        fmt = str(spec.get("format") or "mp4").strip().lower() or "mp4"
+        content_type = str(metadata.get("content_type") or metadata.get("mime_type") or f"video/{fmt}")
+        if artifact_ref is None:
+            data, stored_ref = self._store_generated_data(
+                data,
+                artifact_store=artifact_store,
+                content_type=content_type,
+                spec=spec,
+            )
+            artifact_ref = stored_ref
+        result.add_output(
+            "video",
+            GeneratedItem(
+                modality="video",
+                task=task_name,
+                data=data,
+                artifact_ref=artifact_ref,
+                content_type=content_type,
+                format=fmt,
+                backend_id=getattr(self.vision, "backend_id", None),
+                provider=str(spec.get("provider") or getattr(self.vision, "backend_id", None) or self.__class__.__name__),
+                model=str(spec.get("model") or self.model),
+                metadata=metadata,
+            ),
+        )
 
     def _run_voice_output(
         self,
@@ -2298,6 +2418,18 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         if is_acore_output:
             output_request = kwargs.pop("output")
+            output_request, progress_injected = self._output_request_with_progress_callbacks(
+                output_request,
+                {
+                    "on_progress": kwargs.get("on_progress"),
+                    "progress_event_callback": kwargs.get("progress_event_callback"),
+                    "progress_callback": kwargs.get("progress_callback"),
+                },
+            )
+            if progress_injected:
+                kwargs.pop("on_progress", None)
+                kwargs.pop("progress_event_callback", None)
+                kwargs.pop("progress_callback", None)
             artifact_store = kwargs.pop("artifact_store", None)
             partial = bool(kwargs.pop("partial", False))
             return self._generate_multimodal_response(
@@ -5471,6 +5603,18 @@ Please provide a structured response."""
 
         if is_acore_output:
             output_request = kwargs.pop("output")
+            output_request, progress_injected = self._output_request_with_progress_callbacks(
+                output_request,
+                {
+                    "on_progress": kwargs.get("on_progress"),
+                    "progress_event_callback": kwargs.get("progress_event_callback"),
+                    "progress_callback": kwargs.get("progress_callback"),
+                },
+            )
+            if progress_injected:
+                kwargs.pop("on_progress", None)
+                kwargs.pop("progress_event_callback", None)
+                kwargs.pop("progress_callback", None)
             response_model = kwargs.pop("response_model", None)
             artifact_store = kwargs.pop("artifact_store", None)
             partial = bool(kwargs.pop("partial", False))

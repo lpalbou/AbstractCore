@@ -65,6 +65,56 @@ def test_acore_models_routes_image_residency_through_server_vision_cache(monkeyp
     assert calls[-1][0] == "unload"
 
 
+def test_acore_models_routes_video_residency_through_server_vision_cache(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    vision_endpoints = importlib.import_module("abstractcore.server.vision_endpoints")
+    server_app._GATEWAY_LOADED_RUNTIMES.clear()
+    server_app._GATEWAY_RUNTIME_IDS.clear()
+
+    calls: List[tuple[str, Dict[str, Any]]] = []
+    runtime = {
+        "runtime_id": "mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "load_id": "mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "task": "video_generation",
+        "tasks": ["video_generation", "text_to_video", "image_to_video"],
+        "provider": "mlx-gen",
+        "backend_kind": "mlx-gen",
+        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "state": "loaded",
+        "loaded": True,
+    }
+
+    def fake_load(payload: Dict[str, Any], *, api_key: str | None = None) -> Dict[str, Any]:
+        calls.append(("load", dict(payload) | {"api_key": api_key}))
+        return dict(runtime, loaded_new=True)
+
+    def fake_list(filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+        calls.append(("list", dict(filters or {})))
+        return [dict(runtime)]
+
+    monkeypatch.setattr(vision_endpoints, "load_server_vision_loaded_model", fake_load)
+    monkeypatch.setattr(vision_endpoints, "list_server_vision_loaded_models", fake_list)
+
+    client = TestClient(server_app.app)
+    load = client.post(
+        "/acore/models/load",
+        json={
+            "task": "t2v",
+            "provider": "mlx-gen",
+            "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        },
+    )
+    assert load.status_code == 200
+    assert load.json()["runtime"]["task"] == "video_generation"
+    assert calls[0][0] == "load"
+    assert calls[0][1]["task"] == "text_to_video"
+
+    loaded = client.get("/acore/models/loaded", params={"task": "i2v", "provider": "mlx-gen"})
+    assert loaded.status_code == 200
+    assert loaded.json()["data"][0]["tasks"] == ["video_generation", "text_to_video", "image_to_video"]
+    assert calls[1] == ("list", {"provider": "mlx-gen", "model": "", "task": "image_to_video"})
+
+
 class _FakeVoiceResidency:
     def __init__(self) -> None:
         self.calls: List[tuple[str, Dict[str, Any]]] = []
@@ -221,6 +271,43 @@ def test_server_vision_residency_helpers_share_backend_cache(monkeypatch) -> Non
     assert unloaded["state"] == "unloaded"
     assert backend.unloaded == 1
     assert vision_endpoints.list_server_vision_loaded_models({}) == []
+
+
+def test_server_vision_residency_accepts_video_task_filters(monkeypatch) -> None:
+    vision_endpoints = importlib.import_module("abstractcore.server.vision_endpoints")
+    vision_endpoints._BACKEND_CACHE.clear()
+    vision_endpoints._RESIDENCY_RECORDS.clear()
+
+    class _FakeVisionBackend:
+        def preload(self) -> None:
+            return None
+
+    backend = _FakeVisionBackend()
+    key = ("mlx-gen", "Wan-AI/Wan2.2-TI2V-5B-Diffusers", None, None, False)
+
+    def fake_resolve(request_model: str | None, *, base_url: str | None = None, api_key: str | None = None):
+        _ = request_model, base_url, api_key
+        cached, call_lock = vision_endpoints._get_or_create_cached_backend(key, lambda: backend)
+        return cached, call_lock, RuntimeError, object, object
+
+    monkeypatch.setattr(vision_endpoints, "_resolve_backend", fake_resolve)
+
+    loaded = vision_endpoints.load_server_vision_loaded_model(
+        {
+            "task": "text_to_video",
+            "provider": "mlx-gen",
+            "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        }
+    )
+    listed_t2v = vision_endpoints.list_server_vision_loaded_models({"task": "t2v"})
+    listed_i2v = vision_endpoints.list_server_vision_loaded_models({"task": "image_to_video"})
+    listed_t2i = vision_endpoints.list_server_vision_loaded_models({"task": "text_to_image"})
+
+    assert loaded["task"] == "video_generation"
+    assert loaded["tasks"] == ["video_generation", "text_to_video", "image_to_video"]
+    assert len(listed_t2v) == 1
+    assert len(listed_i2v) == 1
+    assert listed_t2i == []
 
 
 def test_server_vision_residency_eviction_clears_records_and_unloads(monkeypatch) -> None:

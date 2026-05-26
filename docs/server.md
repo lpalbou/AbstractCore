@@ -202,8 +202,14 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Images | POST | `/{provider}/v1/images/generations` | Provider-scoped text-to-image route where body model is unprefixed | path `provider`, body `model`, optional `base_url`, image generation parameters |
 | Images | POST | `/v1/images/edits` | Image edit/inpaint via multipart form | `prompt`, `image`, optional `mask`, `model`, `provider`, `base_url`, `size`, `steps`, `guidance_scale`, `seed`, `extra_json` |
 | Images | POST | `/{provider}/v1/images/edits` | Provider-scoped image edit route where body model is unprefixed | path `provider`, optional `base_url`, image edit form fields |
+| Videos | POST | `/v1/videos/generations` | Text-to-video generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `steps`, `guidance_scale`, `extra` |
+| Videos | POST | `/{provider}/v1/videos/generations` | Provider-scoped text-to-video route where body model is unprefixed | path `provider`, body `model`, optional `base_url`, video generation parameters |
+| Videos | POST | `/v1/videos/edits` | Image-to-video via multipart form | `prompt`, `image`, optional `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `extra_json` |
+| Videos | POST | `/{provider}/v1/videos/edits` | Provider-scoped image-to-video route where body model is unprefixed | path `provider`, optional `base_url`, image-to-video form fields |
 | Vision Jobs | POST | `/v1/vision/jobs/images/generations` | Async image generation with polling | same body as `/v1/images/generations` |
 | Vision Jobs | POST | `/v1/vision/jobs/images/edits` | Async image edit with polling | same form fields as `/v1/images/edits` |
+| Vision Jobs | POST | `/v1/vision/jobs/videos/generations` | Async text-to-video with polling and progress events | same body as `/v1/videos/generations` |
+| Vision Jobs | POST | `/v1/vision/jobs/videos/edits` | Async image-to-video with polling and progress events | same form fields as `/v1/videos/edits` |
 | Vision Jobs | GET | `/v1/vision/jobs/{job_id}` | Poll/consume async job state | path `job_id`, query `consume` |
 | Vision Models | GET | `/v1/vision/models` | Available AbstractVision model catalog | optional `task`, `provider`, `base_url`, `api_key` |
 | Audio | POST | `/v1/audio/transcriptions` | Speech-to-text multipart endpoint | `file`, optional `provider`, `model`, `language`, `prompt`, `response_format`, `temperature`, `format`, `base_url` |
@@ -215,7 +221,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Audio | POST | `/v1/audio/translations` | Reserved OpenAI-compatible translation route | `file`, `model`; returns `501` in this version |
 | Audio | POST | `/v1/audio/music` | Extension endpoint for text-to-music plugins | `prompt`/`input`/`text`, optional `provider`, `model`, `lyrics`, `duration_s`, `seed`, `num_inference_steps`, `guidance_scale`, `format`; requires a music capability plugin |
 | Audio | POST | `/{provider}/v1/audio/music` | Backend-scoped text-to-music route | path `provider`, music body fields |
-| Runtime | POST | `/acore/models/load` | Load and keep warm a task-specific model runtime | optional `task` (`text_generation` default, `image_generation`, `tts`, `stt`), `provider`, `model`, `options`, `pin`, `base_url`, `timeout_s` |
+| Runtime | POST | `/acore/models/load` | Load and keep warm a task-specific model runtime | optional `task` (`text_generation` default, `image_generation`, `video_generation`, `text_to_video`, `image_to_video`, `tts`, `stt`), `provider`, `model`, `options`, `pin`, `base_url`, `timeout_s` |
 | Runtime | GET | `/acore/models/loaded` | List task-aware loaded runtimes | optional `task`, `provider`, `model` |
 | Runtime | POST | `/acore/models/unload` | Unload a task-specific runtime | `runtime_id` or `provider` + `model`, optional `task`, `base_url`, `options` |
 | Prompt Cache | GET | `/acore/prompt_cache/stats` | Cache stats on a loaded gateway runtime or upstream AbstractEndpoint | `provider` + `model` or `base_url`; provider key header if required |
@@ -448,7 +454,7 @@ curl -X POST http://localhost:8000/openai/v1/chat/completions \
 
 ### Media generation endpoints (optional)
 
-AbstractCore Server can optionally expose OpenAI-compatible **image generation** and **audio** endpoints.
+AbstractCore Server can optionally expose OpenAI-compatible **image/video generation** and **audio** endpoints.
 
 Important notes:
 - These are **interoperability-first** endpoints (return `b64_json` or raw bytes), not an artifact-first durability contract.
@@ -514,9 +520,13 @@ Use provider/model-style image ids:
 - `mlx-gen/default` selects the configured local MLX-Gen model; use
   AbstractVision's q4 AbstractFramework presets by default and q8 variants when
   quality is paramount.
-- `mlx-gen/<preset>` selects an explicit cached MLX-Gen preset such as
-  `mlx-gen/flux2-klein-4b` or `mlx-gen/qwen-image-edit-2511`. Legacy `mflux`
-  prefixes remain accepted as compatibility aliases.
+- `mlx-gen/<exact-huggingface-repo>` selects an explicit cached MLX-Gen model
+  such as `mlx-gen/AbstractFramework/flux.2-klein-4b-4bit` or
+  `mlx-gen/AbstractFramework/qwen-image-edit-2511-4bit`. Official MLX-Gen
+  runtime snapshots such as `mlx-gen/briaai/FIBO` and
+  `mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers` are selected the same way. Legacy
+  `mflux` prefixes remain accepted as compatibility aliases, but the model id
+  itself must be the exact published repo id.
 - `sdcpp/default` selects the configured stable-diffusion.cpp model.
 - `openai-compatible/<model>` routes to the configured OpenAI-compatible image
   endpoint.
@@ -534,7 +544,7 @@ intentional.
 | Field | Required | Notes |
 |---|---:|---|
 | `prompt` | yes | Text prompt to render. |
-| `model` | no | Omit for the server's configured AbstractVision default. If present, use provider/model routing: `diffusers/default`, `diffusers/<huggingface-repo>`, `mlx-gen/default`, `mlx-gen/<preset>`, `sdcpp/default`, `openai-compatible/<model>`, or `openai/gpt-image-1`. Provider-scoped routes accept the same model without the prefix. |
+| `model` | no | Omit for the server's configured AbstractVision default. If present, use provider/model routing: `diffusers/default`, `diffusers/<huggingface-repo>`, `mlx-gen/default`, `mlx-gen/<exact-huggingface-repo>`, `sdcpp/default`, `openai-compatible/<model>`, or `openai/gpt-image-1`. Provider-scoped routes accept the same model without the prefix. |
 | `provider` | no | Optional routing hint when you want the configured default model/backend for a specific provider, or when pairing a request with `base_url`. |
 | `width`, `height` | no | Requested output dimensions in pixels. These are the natural fields for local engines and remain accepted for remote routes. |
 | `size` | no | OpenAI-style size such as `1024x1024`. The server normalizes `size` with `width`/`height` so OpenAI-style and local-engine clients can use the same route. |
@@ -572,6 +582,50 @@ is preferable:
 - `GET /v1/vision/jobs/{job_id}` returns `queued`, `running`, `succeeded`, or
   `failed`. Add `?consume=true` to remove a completed job from the in-memory job
   store after reading it.
+
+#### Videos (text-to-video/image-to-video)
+
+Endpoints:
+- `POST /v1/videos/generations`
+- `POST /{provider}/v1/videos/generations`
+- `POST /v1/videos/edits`
+- `POST /{provider}/v1/videos/edits`
+- `POST /v1/vision/jobs/videos/generations`
+- `POST /v1/vision/jobs/videos/edits`
+
+The synchronous video routes use the same internal
+`generate(..., output={"modality": "video"})` dispatcher as the Python API and
+return `{"data":[{"b64_json":"..."}]}` with MP4 bytes encoded in base64.
+Async video jobs are the preferred path for longer local runs; polling
+`GET /v1/vision/jobs/{job_id}` includes `progress.last_event` when the selected
+backend reports richer progress events.
+
+Use exact provider/model ids. For MLX-Gen, select the published model repo id,
+for example:
+
+- `mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers` for text-to-video or image-to-video.
+- `mlx-gen/AbstractFramework/qwen-image-2512-4bit` for text-to-image.
+
+Core does not expose a quantization override. Q4/Q8 choices are part of the
+model id that AbstractVision/MLX-Gen loads.
+
+`POST /v1/videos/generations` JSON parameters:
+
+| Field | Required | Notes |
+|---|---:|---|
+| `prompt` | yes | Text prompt to render as video. |
+| `model` | no | Provider/model id such as `mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers` or `openai-compatible/<model>`. Provider-scoped routes accept the same model without the prefix. |
+| `provider` | no | Optional routing hint, e.g. `mlx-gen` or `openai-compatible`. |
+| `width`, `height`, `size` | no | Requested output dimensions. `size` accepts `WIDTHxHEIGHT`. |
+| `fps`, `num_frames` / `frames` | no | Video frame rate and frame count. |
+| `response_format` | no | `b64_json` is the supported response shape. |
+| `negative_prompt`, `seed`, `steps`, `guidance_scale` | no | Backend-specific generation controls. |
+| `extra.max_sequence_length` | no | Useful for MLX-Gen Wan-style video runs. |
+
+`POST /v1/videos/edits` multipart parameters mirror generation and add
+required `image=@first-frame.png`. This route is the image-to-video path; the
+alias `/v1/videos/from-image` is accepted for clients that prefer a literal
+name.
 
 Examples:
 
@@ -620,6 +674,26 @@ curl -sS -X POST "$BASE/v1/images/generations" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"prompt":"a red fox in snow","width":512,"height":512,"response_format":"b64_json"}'
+
+# Text-to-video, asynchronous job with progress polling.
+curl -sS -X POST "$BASE/v1/vision/jobs/videos/generations" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"provider":"mlx-gen","model":"Wan-AI/Wan2.2-TI2V-5B-Diffusers","prompt":"A slow camera move through a luminous data center.","width":1280,"height":704,"fps":24,"num_frames":121,"steps":50,"guidance_scale":5.0,"extra":{"max_sequence_length":256}}'
+
+# Image-to-video, synchronous multipart route.
+curl -sS -X POST "$BASE/v1/videos/edits" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "provider=mlx-gen" \
+  -F "model=Wan-AI/Wan2.2-TI2V-5B-Diffusers" \
+  -F "prompt=Slow camera push-in." \
+  -F "image=@./first-frame.png;type=image/png" \
+  -F "width=1280" \
+  -F "height=704" \
+  -F "fps=24" \
+  -F "num_frames=121" \
+  -F "steps=50" \
+  -F 'extra_json={"max_sequence_length":256}'
 ```
 
 Local vision model helper endpoint:
@@ -1453,11 +1527,12 @@ When a provider exposes a native load/warm hook, `/acore/models/load` calls it
 and then verifies the result through the same residency contract.
 
 For non-text tasks, the same route delegates to capability-owned load/list/unload:
-`image_generation` reuses the server's `/v1/images/*` AbstractVision backend
-cache, while `tts` and `stt` delegate through the shared AbstractVoice
-capability core when the selected plugin exposes residency hooks. Remote
-OpenAI-compatible image/audio providers are reported as configured rather than
-locally loaded unless the upstream exposes a real loaded-state signal.
+`image_generation`, `video_generation`, `text_to_video`, and `image_to_video`
+reuse the server's AbstractVision backend cache, while `tts` and `stt` delegate
+through the shared AbstractVoice capability core when the selected plugin
+exposes residency hooks. Remote OpenAI-compatible image/video/audio providers
+are reported as configured rather than locally loaded unless the upstream
+exposes a real loaded-state signal.
 
 `loaded_new` is an event signal for the load call, not a synonym for `loaded`.
 For capability-backed tasks it is true only when the backend reports or clearly

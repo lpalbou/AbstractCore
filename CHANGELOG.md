@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.29] - 2026-05-26
+
+### Added
+- **Video generation through Core**: added Python `generate(..., output={"task":"text_to_video"|"image_to_video"})` callback forwarding for AbstractVision progress events, plus OpenAI-compatible `/v1/videos/generations`, `/v1/videos/edits`, and async `/v1/vision/jobs/videos/*` routes.
+- **Video job progress**: async video jobs now capture normalized backend progress events in `progress.last_event` while preserving step/frame counters for polling clients.
+
+### Changed
+- **Vision plugin floor**: raised AbstractVision integration requirements to `abstractvision>=0.3.16` so Core installs pick up MLX-Gen 0.18.6, exact model id routing, and text/image-to-video support.
+
+### Fixed
+- **Generated media callback boundary**: top-level progress callbacks supplied to multimodal `generate(...)` calls are attached to generated image/video output specs instead of leaking into the text-provider kwargs path.
+
+### Verified
+- `pytest tests/test_packaging_extras.py tests/test_output_specs.py tests/test_multimodal_generate_output.py tests/server/test_server_vision_image_endpoints.py tests/capabilities/test_vision_catalog_helper.py tests/server/test_server_model_residency_control_plane.py -q`
+
 ## [2.13.28] - 2026-05-26
 
 ### Changed

@@ -1,5 +1,6 @@
 import os
 import base64
+import time
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -9,6 +10,7 @@ from fastapi.testclient import TestClient
 from abstractcore.server.app import app
 
 _PNG_BYTES = b"\x89PNG\r\n\x1a\nabstractcore-test-png"
+_MP4_BYTES = b"\x00\x00\x00\x18ftypmp42abstractcore-test-mp4"
 
 
 @pytest.fixture(autouse=True)
@@ -157,11 +159,18 @@ def test_openai_compatible_generation_uses_size_not_width_height(monkeypatch):
 
 
 class _FakeProxyResponse:
-    def __init__(self, payload: dict[str, Any], *, status_code: int = 200, content: Optional[bytes] = None):
+    def __init__(
+        self,
+        payload: dict[str, Any],
+        *,
+        status_code: int = 200,
+        content: Optional[bytes] = None,
+        content_type: str = "image/png",
+    ):
         self._payload = payload
         self.status_code = status_code
         self.content = content if content is not None else b""
-        self.headers = {"content-type": "image/png"}
+        self.headers = {"content-type": content_type}
         self.text = str(payload)
 
     def json(self):
@@ -183,7 +192,11 @@ class _FakeProxyClient:
 
     def post(self, url, *, headers=None, json=None, data=None, files=None):
         self.calls.append({"url": url, "headers": headers or {}, "json": json, "data": data, "files": files})
-        return _FakeProxyResponse({"data": [{"b64_json": base64.b64encode(_PNG_BYTES).decode("ascii")}]})
+        content = _MP4_BYTES if "/videos/" in str(url) else _PNG_BYTES
+        return _FakeProxyResponse(
+            {"data": [{"b64_json": base64.b64encode(content).decode("ascii")}]},
+            content_type="video/mp4" if content == _MP4_BYTES else "image/png",
+        )
 
     def get(self, url):
         self.calls.append({"url": url, "method": "GET"})
@@ -333,6 +346,84 @@ def test_openai_compatible_generation_proxy_allows_backend_specific_extra(client
     assert call["json"]["guidance_scale"] == 7.5
 
 
+def test_openai_compatible_video_generation_proxy_success(client, monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    _FakeProxyClient.calls = []
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://images.example/v1")
+    monkeypatch.setenv("OPENAI_API_KEY", "provider-key")
+    monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
+
+    resp = client.post(
+        "/v1/videos/generations",
+        json={
+            "prompt": "a red square slowly rotating",
+            "model": "openai-compatible/custom-video-model",
+            "width": 1280,
+            "height": 704,
+            "fps": 24,
+            "num_frames": 41,
+            "steps": 10,
+            "guidance_scale": 5.0,
+            "response_format": "b64_json",
+            "extra": {"max_sequence_length": 256},
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert base64.b64decode(data["data"][0]["b64_json"]) == _MP4_BYTES
+    call = _FakeProxyClient.calls[0]
+    assert call["url"] == "https://images.example/v1/videos/generations"
+    assert call["headers"]["Authorization"] == "Bearer provider-key"
+    assert call["json"]["model"] == "custom-video-model"
+    assert call["json"]["prompt"] == "a red square slowly rotating"
+    assert call["json"]["width"] == 1280
+    assert call["json"]["height"] == 704
+    assert call["json"]["fps"] == 24
+    assert call["json"]["num_frames"] == 41
+    assert call["json"]["max_sequence_length"] == 256
+
+
+def test_openai_compatible_image_to_video_proxy_success(client, monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    _FakeProxyClient.calls = []
+    monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
+
+    files = {"image": ("image.png", _PNG_BYTES, "image/png")}
+    resp = client.post(
+        "/v1/videos/edits",
+        headers={"X-AbstractCore-Provider-API-Key": "request-video-key"},
+        data={
+            "prompt": "slow camera push-in",
+            "provider": "openai-compatible",
+            "base_url": "http://127.0.0.1:5000/v1",
+            "width": "1280",
+            "height": "704",
+            "fps": "24",
+            "num_frames": "41",
+            "max_sequence_length": "256",
+        },
+        files=files,
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert base64.b64decode(data["data"][0]["b64_json"]) == _MP4_BYTES
+    call = _FakeProxyClient.calls[0]
+    assert call["url"] == "http://127.0.0.1:5000/v1/videos/edits"
+    assert call["headers"]["Authorization"] == "Bearer request-video-key"
+    assert call["data"]["model"] == "default"
+    assert call["data"]["prompt"] == "slow camera push-in"
+    assert call["data"]["width"] == "1280"
+    assert call["data"]["height"] == "704"
+    assert call["data"]["fps"] == "24"
+    assert call["data"]["num_frames"] == "41"
+    assert call["data"]["max_sequence_length"] == "256"
+    assert "image" in call["files"]
+
+
 def test_images_generation_schema_uses_width_height_not_size(client):
     schema = client.get("/openapi.json").json()
     body_schema = schema["components"]["schemas"]["ImageGenerationBody"]
@@ -440,6 +531,16 @@ class _FakeImageEditRequest:
         self.__dict__.update(kwargs)
 
 
+class _FakeVideoGenerationRequest:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
+class _FakeImageToVideoRequest:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
 class _FakeDiffusersConfig:
     instances: list["_FakeDiffusersConfig"] = []
 
@@ -461,6 +562,34 @@ class _FakeDiffusersBackend:
     def edit_image(self, request):
         self.requests.append(request)
         return _FakeGeneratedAsset()
+
+    def generate_video(self, request):
+        self.requests.append(request)
+        return _FakeGeneratedAsset(data=_MP4_BYTES, mime_type="video/mp4")
+
+    def generate_video_with_progress(self, request, progress_callback=None):
+        self.requests.append(request)
+        if callable(request.extra.get("on_progress")):
+            class _Event:
+                phase = "generate"
+                frame = 3
+                total_frames = 5
+                progress = 0.6
+
+            request.extra["on_progress"](_Event())
+        if progress_callback is not None:
+            progress_callback(3, 5)
+        return _FakeGeneratedAsset(data=_MP4_BYTES, mime_type="video/mp4")
+
+    def image_to_video(self, request):
+        self.requests.append(request)
+        return _FakeGeneratedAsset(data=_MP4_BYTES, mime_type="video/mp4")
+
+    def image_to_video_with_progress(self, request, progress_callback=None):
+        self.requests.append(request)
+        if progress_callback is not None:
+            progress_callback(2, 4)
+        return _FakeGeneratedAsset(data=_MP4_BYTES, mime_type="video/mp4")
 
 
 def test_diffusers_default_provider_model_uses_configured_diffusers_model(client, monkeypatch):
@@ -529,14 +658,123 @@ def test_mflux_provider_model_uses_mflux_backend_without_diffusers_prefix(client
 
     resp = client.post(
         "/v1/images/generations",
-        json={"prompt": "a small red square", "provider": "mflux", "model": "flux2-klein-9b", "width": 64, "height": 64, "steps": 2},
+        json={
+            "prompt": "a small red square",
+            "provider": "mflux",
+            "model": "AbstractFramework/flux.2-klein-9b-4bit",
+            "width": 64,
+            "height": 64,
+            "steps": 2,
+        },
     )
 
     assert resp.status_code == 200
     cfg = _FakeDiffusersConfig.instances[0]
-    assert cfg.model == "flux2-klein-9b"
+    assert cfg.model == "AbstractFramework/flux.2-klein-9b-4bit"
     assert not str(cfg.model).startswith("diffusers/")
     assert _FakeDiffusersBackend.requests[0].prompt == "a small red square"
+
+
+def test_mflux_provider_video_generation_uses_exact_model_and_video_request(client, monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    _FakeDiffusersConfig.instances = []
+    _FakeDiffusersBackend.requests = []
+
+    def fake_import_abstractvision():
+        return (
+            object,
+            object,
+            object,
+            object,
+            _FakeDiffusersConfig,
+            _FakeDiffusersBackend,
+            object,
+            object,
+            RuntimeError,
+            (_FakeImageGenerationRequest, _FakeImageEditRequest, _FakeVideoGenerationRequest, _FakeImageToVideoRequest),
+        )
+
+    monkeypatch.setattr(vision_endpoints, "_import_abstractvision", fake_import_abstractvision)
+
+    resp = client.post(
+        "/v1/videos/generations",
+        json={
+            "prompt": "a small red square moving",
+            "provider": "mlx-gen",
+            "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+            "width": 1280,
+            "height": 704,
+            "fps": 24,
+            "num_frames": 41,
+            "steps": 10,
+            "extra": {"max_sequence_length": 256},
+        },
+    )
+
+    assert resp.status_code == 200
+    assert base64.b64decode(resp.json()["data"][0]["b64_json"]) == _MP4_BYTES
+    cfg = _FakeDiffusersConfig.instances[0]
+    assert cfg.model == "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
+    req = _FakeDiffusersBackend.requests[0]
+    assert req.prompt == "a small red square moving"
+    assert req.width == 1280
+    assert req.height == 704
+    assert req.fps == 24
+    assert req.num_frames == 41
+    assert req.extra["max_sequence_length"] == 256
+
+
+def test_video_generation_job_records_progress_event(client, monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    _FakeDiffusersConfig.instances = []
+    _FakeDiffusersBackend.requests = []
+
+    def fake_import_abstractvision():
+        return (
+            object,
+            object,
+            object,
+            object,
+            _FakeDiffusersConfig,
+            _FakeDiffusersBackend,
+            object,
+            object,
+            RuntimeError,
+            (_FakeImageGenerationRequest, _FakeImageEditRequest, _FakeVideoGenerationRequest, _FakeImageToVideoRequest),
+        )
+
+    monkeypatch.setattr(vision_endpoints, "_import_abstractvision", fake_import_abstractvision)
+
+    resp = client.post(
+        "/v1/vision/jobs/videos/generations",
+        json={
+            "prompt": "a small red square moving",
+            "provider": "mlx-gen",
+            "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+            "num_frames": 5,
+            "steps": 4,
+        },
+    )
+
+    assert resp.status_code == 200
+    job_id = resp.json()["job_id"]
+    data = {}
+    for _ in range(50):
+        poll = client.get(f"/v1/vision/jobs/{job_id}")
+        assert poll.status_code == 200
+        data = poll.json()
+        if data["state"] == "succeeded":
+            break
+        time.sleep(0.02)
+
+    assert data["state"] == "succeeded"
+    assert base64.b64decode(data["result"]["data"][0]["b64_json"]) == _MP4_BYTES
+    progress = data["progress"]
+    assert progress["last_event"]["frame"] == 3
+    assert progress["last_event"]["total_frames"] == 5
+    assert progress["last_event"]["progress"] == 0.6
 
 
 def test_diffusers_default_provider_model_requires_configured_model(client):
