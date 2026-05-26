@@ -1,5 +1,7 @@
 """Tests for shared capability routing defaults."""
 
+from __future__ import annotations
+
 from abstractcore.config.manager import ConfigurationManager
 
 
