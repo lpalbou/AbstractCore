@@ -6,7 +6,7 @@ SOTA open-source embedding models with optimized configurations.
 """
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from enum import Enum
 
 
@@ -15,6 +15,43 @@ class EmbeddingBackend(Enum):
     PYTORCH = "pytorch"
     ONNX = "onnx"
     OPENVINO = "openvino"
+
+
+@dataclass(frozen=True)
+class EmbeddingProviderConfig:
+    """Configuration for a supported text embedding provider."""
+
+    provider: str
+    label: str
+    transport: str
+    base_url_configurable: bool = False
+    base_url_env_vars: Tuple[str, ...] = ()
+    default_base_url: Optional[str] = None
+    auth: str = "none"
+    requires_local_model_files: bool = False
+    server_invocation_strategy: str = "embedding_manager"
+
+    def to_dict(self) -> Dict[str, object]:
+        """Return a JSON-safe provider metadata payload for discovery APIs."""
+        # Locality is deliberately absent here: endpoint location is derived from
+        # the configured route base_url, not from provider identity.
+        data: Dict[str, object] = {
+            "id": self.provider,
+            "provider": self.provider,
+            "label": self.label,
+            "transport": self.transport,
+        }
+        if self.base_url_configurable:
+            data["base_url_configurable"] = True
+        if self.base_url_env_vars:
+            data["base_url_env_vars"] = list(self.base_url_env_vars)
+        if self.default_base_url:
+            data["default_base_url"] = self.default_base_url
+        if self.auth != "none":
+            data["auth"] = self.auth
+        if self.requires_local_model_files:
+            data["requires_local_model_files"] = True
+        return data
 
 
 @dataclass
@@ -29,6 +66,83 @@ class EmbeddingModelConfig:
     description: str
     multilingual: bool = False
     size_mb: Optional[float] = None
+
+
+EMBEDDING_PROVIDERS: Dict[str, EmbeddingProviderConfig] = {
+    "huggingface": EmbeddingProviderConfig(
+        provider="huggingface",
+        label="HuggingFace",
+        transport="python_inprocess",
+        requires_local_model_files=True,
+    ),
+    "lmstudio": EmbeddingProviderConfig(
+        provider="lmstudio",
+        label="LMStudio",
+        transport="openai_compatible_http",
+        base_url_configurable=True,
+        base_url_env_vars=("LMSTUDIO_BASE_URL",),
+        default_base_url="http://localhost:1234/v1",
+        server_invocation_strategy="provider_direct",
+    ),
+    "ollama": EmbeddingProviderConfig(
+        provider="ollama",
+        label="Ollama",
+        transport="ollama_native_http",
+        base_url_configurable=True,
+        base_url_env_vars=("OLLAMA_BASE_URL", "OLLAMA_HOST"),
+        default_base_url="http://localhost:11434",
+    ),
+    "vllm": EmbeddingProviderConfig(
+        provider="vllm",
+        label="vLLM",
+        transport="openai_compatible_http",
+        base_url_configurable=True,
+        base_url_env_vars=("VLLM_BASE_URL",),
+        default_base_url="http://localhost:8000/v1",
+        auth="optional",
+        server_invocation_strategy="provider_direct",
+    ),
+    "openai": EmbeddingProviderConfig(
+        provider="openai",
+        label="OpenAI",
+        transport="openai_http",
+        base_url_configurable=True,
+        base_url_env_vars=("OPENAI_BASE_URL",),
+        default_base_url="https://api.openai.com/v1",
+        auth="required",
+        server_invocation_strategy="provider_direct",
+    ),
+    "openai-compatible": EmbeddingProviderConfig(
+        provider="openai-compatible",
+        label="OpenAI-compatible",
+        transport="openai_compatible_http",
+        base_url_configurable=True,
+        base_url_env_vars=("OPENAI_BASE_URL",),
+        default_base_url="http://localhost:1234/v1",
+        auth="optional",
+        server_invocation_strategy="provider_direct",
+    ),
+    "openrouter": EmbeddingProviderConfig(
+        provider="openrouter",
+        label="OpenRouter",
+        transport="openai_compatible_http",
+        base_url_configurable=True,
+        base_url_env_vars=("OPENROUTER_BASE_URL",),
+        default_base_url="https://openrouter.ai/api/v1",
+        auth="required",
+        server_invocation_strategy="provider_direct",
+    ),
+    "portkey": EmbeddingProviderConfig(
+        provider="portkey",
+        label="Portkey",
+        transport="openai_compatible_http",
+        base_url_configurable=True,
+        base_url_env_vars=("PORTKEY_BASE_URL",),
+        default_base_url="https://api.portkey.ai/v1",
+        auth="required",
+        server_invocation_strategy="provider_direct",
+    ),
+}
 
 
 # Favored HuggingFace Embedding Models
@@ -122,6 +236,67 @@ EMBEDDING_MODELS: Dict[str, EmbeddingModelConfig] = {
         size_mb=800
     )
 }
+
+
+def _normalize_provider(provider: Optional[str]) -> str:
+    return str(provider or "").strip().lower()
+
+
+def get_provider_config(provider: str) -> EmbeddingProviderConfig:
+    """Get configuration for a supported embedding provider."""
+    provider_name = _normalize_provider(provider)
+    if provider_name not in EMBEDDING_PROVIDERS:
+        available = ", ".join(EMBEDDING_PROVIDERS.keys())
+        raise ValueError(f"Provider '{provider}' not supported for embeddings. Available: {available}")
+    return EMBEDDING_PROVIDERS[provider_name]
+
+
+def is_provider_supported(provider: str) -> bool:
+    """Return whether a provider is supported for text embeddings."""
+    return _normalize_provider(provider) in EMBEDDING_PROVIDERS
+
+
+def list_available_providers() -> List[str]:
+    """List all supported text embedding provider IDs."""
+    return list(EMBEDDING_PROVIDERS.keys())
+
+
+def list_provider_details(provider: Optional[str] = None) -> List[Dict[str, object]]:
+    """List supported text embedding provider metadata."""
+    wanted = _normalize_provider(provider)
+    out: List[Dict[str, object]] = []
+    for config in EMBEDDING_PROVIDERS.values():
+        if wanted and config.provider.lower() != wanted:
+            continue
+        out.append(config.to_dict())
+    return out
+
+
+def list_providers_requiring_local_model_files() -> List[str]:
+    """List embedding providers whose default path loads local model files."""
+    return [
+        config.provider
+        for config in EMBEDDING_PROVIDERS.values()
+        if config.requires_local_model_files
+    ]
+
+
+def list_endpoint_backed_providers() -> List[str]:
+    """List embedding providers whose transport is an HTTP endpoint."""
+    return [
+        config.provider
+        for config in EMBEDDING_PROVIDERS.values()
+        if config.transport != "python_inprocess"
+    ]
+
+
+def list_direct_embedding_providers() -> List[str]:
+    """List providers whose embedding API can be called directly by the server."""
+    return [
+        config.provider
+        for config in EMBEDDING_PROVIDERS.values()
+        if config.server_invocation_strategy == "provider_direct"
+    ]
 
 
 def get_model_config(model_name: str) -> EmbeddingModelConfig:

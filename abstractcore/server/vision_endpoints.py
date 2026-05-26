@@ -527,8 +527,8 @@ def _vision_load_id_for_key(key: Tuple[Any, ...]) -> str:
         return f"openai-compatible/{model}"
     if kind == "diffusers":
         return f"diffusers/{key[1]}"
-    if kind == "mflux":
-        return f"mflux/{key[1] or key[2] or 'default'}"
+    if kind in {"mflux", "mlx-gen"}:
+        return f"mlx-gen/{key[1] or key[2] or 'default'}"
     if kind == "sdcpp":
         model = key[2] if len(key) > 2 and key[2] else key[3] if len(key) > 3 and key[3] else "default"
         return f"sdcpp/{model}"
@@ -577,9 +577,9 @@ def _vision_record_for_key(
             "allow_download": key[4] if len(key) > 4 else None,
             "auto_retry_fp32": key[5] if len(key) > 5 else None,
         }
-    elif kind == "mflux":
-        provider = "mflux"
-        backend_kind = "mflux"
+    elif kind in {"mflux", "mlx-gen"}:
+        provider = "mlx-gen"
+        backend_kind = "mlx-gen"
         model = str(key[1] if len(key) > 1 and key[1] else key[2] if len(key) > 2 and key[2] else "default")
         options = {
             "base_model": key[2] if len(key) > 2 else None,
@@ -1145,8 +1145,8 @@ def _vision_backend_kind() -> str:
         return "openai_compatible_proxy"
     if v in {"diffusers", "hf-diffusers", "huggingface-diffusers"}:
         return "diffusers"
-    if v in {"mflux", "m-flux"}:
-        return "mflux"
+    if v in {"mflux", "m-flux", "mlx-gen", "mlxgen"}:
+        return "mlx-gen"
     if v in {"sdcpp", "sd-cpp", "stable-diffusion.cpp", "stable-diffusion-cpp", "stable_diffusion_cpp"}:
         return "sdcpp"
     return v
@@ -1167,6 +1167,8 @@ _KNOWN_MODEL_PREFIXES: set[str] = {
     "hf",
     "mlx",
     # Vision backend families (AbstractVision).
+    "mlx-gen",
+    "mlxgen",
     "mflux",
     "m-flux",
     "diffusers",
@@ -1187,7 +1189,10 @@ def _normalize_vision_provider_filter(provider: Any) -> str:
         "openai-compatible": "openai-compatible",
         "hf": "huggingface",
         "mlx": "huggingface",
-        "m-flux": "mflux",
+        "mflux": "mlx-gen",
+        "m-flux": "mlx-gen",
+        "mlxgen": "mlx-gen",
+        "mlx-gen": "mlx-gen",
         "sd-cpp": "sdcpp",
         "stable-diffusion.cpp": "sdcpp",
         "stable-diffusion-cpp": "sdcpp",
@@ -1313,7 +1318,7 @@ def _normalize_request_model_for_backend(request_model: Any) -> Optional[str]:
         )
 
     # Local generation backends: strip prefix and pass through.
-    if prefix in {"huggingface", "hf", "mlx", "diffusers", "mflux", "m-flux"}:
+    if prefix in {"huggingface", "hf", "mlx", "diffusers", "mlx-gen", "mlxgen", "mflux", "m-flux"}:
         if _is_default_model_alias(rest):
             return None
         return rest or None
@@ -1378,8 +1383,8 @@ def _looks_like_hf_repo_id(model: str) -> bool:
 def _infer_backend_kind(request_model: Any) -> str:
     raw_model = str(request_model or "").strip()
     prefix, _rest = _split_known_prefix(raw_model)
-    if prefix in {"mflux", "m-flux"}:
-        return "mflux"
+    if prefix in {"mlx-gen", "mlxgen", "mflux", "m-flux"}:
+        return "mlx-gen"
     if prefix == "sdcpp":
         return "sdcpp"
     if prefix in {"huggingface", "hf", "mlx", "diffusers"}:
@@ -1407,7 +1412,7 @@ def _infer_backend_kind(request_model: Any) -> str:
     if _upstream_base_url_env():
         return "openai_compatible_proxy"
     if _mflux_model_env():
-        return "mflux"
+        return "mlx-gen"
     if _diffusers_model_env():
         return "diffusers"
     return "auto_unconfigured"
@@ -1416,8 +1421,8 @@ def _infer_backend_kind(request_model: Any) -> str:
 def _effective_backend_kind(request_model: Any) -> str:
     raw_model = str(request_model or "").strip()
     prefix, _ = _split_known_prefix(raw_model)
-    if prefix in {"mflux", "m-flux"}:
-        return "mflux"
+    if prefix in {"mlx-gen", "mlxgen", "mflux", "m-flux"}:
+        return "mlx-gen"
     if prefix == "sdcpp":
         return "sdcpp"
     if prefix in {"huggingface", "hf", "mlx", "diffusers"}:
@@ -1659,7 +1664,7 @@ def _scoped_request_model_for_request(model: Any, provider: Any = None, *, base_
     if not base_url_s:
         return request_model
 
-    if provider_s in {"huggingface", "hf", "diffusers", "mflux", "m-flux", "sdcpp", "sd-cpp"}:
+    if provider_s in {"huggingface", "hf", "diffusers", "mlx-gen", "mlxgen", "mflux", "m-flux", "sdcpp", "sd-cpp"}:
         return request_model
 
     remote_provider = "openai" if _looks_like_openai_api(base_url_s) else "openai-compatible"
@@ -1782,7 +1787,7 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
                 ),
             }
         )
-    elif backend_kind == "mflux":
+    elif backend_kind == "mlx-gen":
         model_id = str(_normalize_request_model_for_backend(request_model) or _mflux_model_env() or "").strip() or None
         quantize_raw = _env_first("ABSTRACTCORE_VISION_MFLUX_QUANTIZE", "ABSTRACTVISION_MFLUX_QUANTIZE")
         try:
@@ -1862,7 +1867,7 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
         backend, call_lock = _get_or_create_cached_backend(key, lambda: HuggingFaceDiffusersVisionBackend(config=cfg))
         return backend, call_lock, OptionalDependencyMissingError, ImageGenerationRequest, ImageEditRequest
 
-    if backend_kind == "mflux":
+    if backend_kind == "mlx-gen":
         cfg = MFluxBackendConfig(
             model=prevalidated["model_id"],
             base_model=prevalidated["base_model"],
@@ -1871,7 +1876,7 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
             allow_download=prevalidated["allow_download"],
         )
         key = (
-            "mflux",
+            "mlx-gen",
             prevalidated["model_id"],
             prevalidated["base_model"],
             prevalidated["model_dir"],

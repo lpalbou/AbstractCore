@@ -35,6 +35,15 @@ reranking layer, which breaks the “one abstraction layer per task” goal.
 - Embeddings are implemented as a separate contract via `abstractcore/embeddings/manager.py`.
 - Model filtering only supports output types `text` and `embeddings` via
   `abstractcore/providers/model_capabilities.py` and `/v1/models` in `abstractcore/server/app.py`.
+- `abstractcore/config/capability_defaults.py` already reserves a `rerank.text` route spec with
+  package hint `"future reranker manager"`, so config vocabulary is ahead of execution support.
+- Text embedding provider discovery now exposes transport/base-URL metadata instead of static
+  `local`/`remote` provider identity. The rerank provider catalog should follow the same rule:
+  provider/model/base_url define a configured route, and endpoint locality is derived from
+  `base_url`, not from provider id.
+- `planned/0803_image_embedding_manager_and_multimodal_embeddings.md` and
+  `proposed/0804_huggingface_embedding_provider_boundary.md` are adjacent boundary items. Re-check
+  them before implementing rerank provider/catalog metadata.
 - The public output-selector contract (`abstractcore/core/output_specs.py`) covers text, image,
   voice, music, and transcription; it does **not** include `embeddings` or `rerank` as selectors.
 - `MultimodalGenerateResponse` (`abstractcore/core/multimodal_generation.py`) is oriented around
@@ -48,7 +57,8 @@ reranking layer, which breaks the “one abstraction layer per task” goal.
 AbstractCore’s “provider/model abstraction layer” stops at embeddings + generation. Reranking is a
 separate, high-leverage primitive for retrieval quality, but today it is:
 - not discoverable (no `/v1/models?output_type=...` support);
-- not configurable via config-manager defaults;
+- route-configurable only as a generic `rerank.text` capability default; there is no
+  `RerankManager` execution path that consumes it yet;
 - not testable/benchmarkable through AbstractCore’s existing patterns;
 - not available as a single stable API for local + hosted rerankers.
 
@@ -180,6 +190,11 @@ deployment surface:
        and decoder-only rerankers (e.g. Qwen3 reranker) via model-specific templates;
      - it supports ONNX/OpenVINO backends for CPU optimization where supported.
    - Must support batching + device selection and must avoid repeated model loads (single instance).
+   - Do not assume this backend is the same thing as
+     `abstractcore.providers.huggingface_provider.HuggingFaceProvider`. Current text embeddings
+     have the same ambiguity: `EmbeddingManager` runs SentenceTransformers directly while the
+     provider registry also advertises `huggingface` embedding support. See
+     `proposed/0804_huggingface_embedding_provider_boundary.md`.
 
 3. **LLM-based reranking (fallback)** — any `create_llm(...)` provider
    - Needed to satisfy “OpenAI must have *some* reranking option” even without a native rerank API.
@@ -281,6 +296,12 @@ that it must be done **without making the contract confusing** or weakening type
 **Recommendation (v0)**:
 - Put curated local reranker “favorites” in `abstractcore/rerank/models.py` (parallel to `abstractcore/embeddings/models.py`).
 - Treat remote/hosted rerank model names as **opaque strings** (do not hardcode vendor catalogs).
+- Add provider/catalog metadata that describes transport and execution ownership, not topology:
+  - examples: `cross_encoder_inprocess`, `rerank_http`, `llm_rerank`;
+  - include `base_url_configurable`, `base_url_env_vars`, and auth hints for HTTP routes;
+  - avoid `local`/`remote` booleans. A self-hosted Jina/vLLM rerank endpoint and a hosted gateway
+    may use the same HTTP wire contract, and only the configured `base_url` tells the endpoint
+    location.
 - For `/v1/models?output_type=rerank` discovery, use **best-effort classification**:
   - extend `ModelOutputCapability` with `RERANK`;
   - classify models as `RERANK` when the model id contains `rerank`/`reranker` (case-insensitive);
@@ -297,12 +318,17 @@ optional **LLM-based rerank backend** because that backend uses `create_llm(...)
    - `models.py`: curated local reranker registry (Qwen3 rerankers required; others optional).
    - `http_client.py` (or `providers/`): HTTP rerank transport (`POST /v1/rerank`) + response normalization.
 2. Extend config-manager defaults (mirror embeddings):
-   - add `RerankConfig` to `abstractcore/config/manager.py` with `provider` + `model` defaults;
+   - consume the existing generic `rerank.text` capability default first;
+   - add a dedicated `RerankConfig` only if compatibility or CLI ergonomics require a legacy-style
+     mirror of embeddings;
    - add an env override for strict-mode (e.g. `ABSTRACTCORE_RERANK_STRICT=1`);
    - document config keys in `abstractcore/config/README.md`.
 3. Keep provider selection aligned with `EmbeddingManager`:
    - `provider` + `model` defaults from config-manager if present.
    - `provider_kwargs` passthrough for keys/base URLs.
+   - Treat local CrossEncoder execution as a dedicated rerank backend unless/until
+     `HuggingFaceProvider` grows a provider-owned rerank/embed contract. Do not overload the
+     `huggingface` provider id without resolving `proposed/0804_huggingface_embedding_provider_boundary.md`.
 4. Implement HTTP Rerank transport:
    - Primary: OpenRouter + Portkey (both expose `POST /v1/rerank`-style endpoints).
    - Generic: `openai-compatible` base_url for local serving (vLLM/SGLang/llama.cpp).
@@ -342,8 +368,15 @@ optional **LLM-based rerank backend** because that backend uses `create_llm(...)
 - `abstractcore/embeddings/manager.py` (pattern and config defaults)
 - `abstractcore/providers/model_capabilities.py` and `abstractcore/server/app.py` (capability
   filtering and discovery)
+- `abstractcore/config/capability_defaults.py` (`rerank.text` already exists as a route vocabulary
+  placeholder)
+- `planned/0803_image_embedding_manager_and_multimodal_embeddings.md` (retrieval lanes and future
+  multimodal reranking interaction)
+- `proposed/0804_huggingface_embedding_provider_boundary.md` (avoid repeating provider/backend
+  identity ambiguity for local CrossEncoder rerankers)
 - ADR 0002: validation and evidence requirements
 - ADR 0003: provider/capability/output boundaries
+- ADR 0008: provider-owned model residency truth
 - Related: `docs/backlog/planned/2026-05-06_consensus-generate.md` (similar “new core primitive”
   design/trace patterns)
 
@@ -403,11 +436,6 @@ benchmarks/tests that can run without external services.
   - https://huggingface.co/Qwen/Qwen3-Reranker-8B
   - https://sbert.net/docs/package_reference/cross_encoder/cross_encoder.html
 
-"""
-215 +- Reranker pitfalls worth keeping in mind (do not assume “more candidates” is always better):
-216 +  - https://arxiv.org/abs/2411.11767
-217 +  - https://arxiv.org/abs/2502.17036
-"""
 - Reranker pitfalls worth keeping in mind (do not assume “more candidates” is always better):
   - https://arxiv.org/abs/2411.11767
   - https://arxiv.org/abs/2502.17036

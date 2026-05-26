@@ -43,6 +43,7 @@ Usage:
 import os
 import sys
 import argparse
+import json
 import logging
 import shutil
 import subprocess
@@ -212,13 +213,45 @@ def add_arguments(parser: argparse.ArgumentParser):
     # Model configuration group
     model_group = parser.add_argument_group('Model Configuration')
     model_group.add_argument("--set-global-default", metavar="PROVIDER/MODEL",
-                            help="Set fallback model for all apps (e.g., ollama/llama3:8b)")
+                            help="Set fallback model for all apps (e.g., ollama/llama3:8b or lmstudio:qwen/qwen3.6-35b-a3b)")
     model_group.add_argument("--set-app-default", nargs=3, metavar=("APP", "PROVIDER", "MODEL"),
                             help="Set app-specific model (apps: cli, summarizer, extractor, judge)")
     model_group.add_argument("--set-chat-model", metavar="PROVIDER/MODEL",
                             help="Set specialized chat model (optional)")
     model_group.add_argument("--set-code-model", metavar="PROVIDER/MODEL",
                             help="Set specialized coding model (optional)")
+    model_group.add_argument(
+        "--set-capability-default",
+        metavar="KIND.MODALITY",
+        help="Set a capability route default, e.g. output.text, input.image, embedding.text",
+    )
+    model_group.add_argument(
+        "--capability-provider",
+        metavar="PROVIDER",
+        help="Provider/backend for --set-capability-default",
+    )
+    model_group.add_argument(
+        "--capability-model",
+        metavar="MODEL",
+        help="Model id for --set-capability-default",
+    )
+    model_group.add_argument(
+        "--capability-base-url",
+        metavar="URL",
+        help="Optional provider base URL for --set-capability-default",
+    )
+    model_group.add_argument(
+        "--capability-option",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help="Optional plugin/provider parameter for --set-capability-default; repeatable (JSON values allowed)",
+    )
+    model_group.add_argument(
+        "--clear-capability-default",
+        metavar="KIND.MODALITY",
+        help="Clear a persisted capability route default",
+    )
 
     # Authentication group
     auth_group = parser.add_argument_group('Authentication')
@@ -323,9 +356,11 @@ def add_arguments(parser: argparse.ArgumentParser):
     # Embeddings group
     embed_group = parser.add_argument_group('Embeddings Configuration')
     embed_group.add_argument("--set-embeddings-model", metavar="MODEL",
-                            help="Set model for semantic search (format: provider/model)")
+                            help="Set model for semantic search (format: provider/model or provider:model)")
     embed_group.add_argument("--set-embeddings-provider", nargs="?", const=True, metavar="PROVIDER",
                             help="Set embeddings provider (huggingface, openai, etc.)")
+    embed_group.add_argument("--set-embeddings-base-url", metavar="URL",
+                            help="Set optional embeddings provider base URL")
 
     # Legacy compatibility (hidden in advanced section)
     legacy_group = parser.add_argument_group('Legacy Options')
@@ -434,6 +469,24 @@ def print_status():
             print(f"│     │  💬 Chat          {chat_model}")
         if code_model:
             print(f"│     │  💻 Code          {code_model}")
+
+    capability_defaults = status.get("capability_defaults") or []
+    configured_capability_defaults = [
+        row for row in capability_defaults
+        if isinstance(row, dict) and bool(row.get("configured"))
+    ]
+    if configured_capability_defaults:
+        print("│")
+        print("│  🧭 Capability Defaults")
+        for row in configured_capability_defaults:
+            key = str(row.get("key") or f"{row.get('kind')}.{row.get('modality')}")
+            provider = str(row.get("provider") or "-")
+            model = str(row.get("model") or "-")
+            options = row.get("options")
+            option_text = ""
+            if isinstance(options, dict) and options:
+                option_text = " " + ", ".join(f"{k}={v}" for k, v in sorted(options.items()))
+            print(f"│     ✅ {key:<16} {provider}/{model}{option_text}")
 
     # API Keys status (simplified)
     print("│")
@@ -562,6 +615,10 @@ def print_status():
     embeddings = status["embeddings"]
     emb_status = "✅ Ready" if "✅" in embeddings['status'] else "⚠️ Not configured"
     print(f"│     {emb_status:<12} {embeddings['provider']}/{embeddings['model']}")
+    if embeddings.get("base_url"):
+        print(f"│     🌐 base_url      {embeddings['base_url']}")
+    if embeddings.get("source"):
+        print(f"│     route          {embeddings.get('route') or 'embedding.text'} ({embeddings['source']})")
 
     # Streaming configuration
     print("│")
@@ -1050,37 +1107,53 @@ def install_check(auto_accept: bool = False) -> None:
     emb_model = emb_cfg.get("model", "all-minilm-l6-v2")
     emb_provider = (emb_cfg.get("provider") or "huggingface").lower()
 
-    # Supported embeddings providers (source of truth: EmbeddingManager.__init__ in
-    # abstractcore/embeddings/manager.py).
-    # Server-based providers: the model is served remotely — no local download needed.
-    _SERVER_EMB_PROVIDERS = {"lmstudio", "ollama", "openai", "openrouter", "portkey", "openai-compatible"}
+    from ..embeddings.models import (
+        get_provider_config,
+        list_available_providers as list_embedding_providers,
+        list_providers_requiring_local_model_files,
+    )
 
-    _SUPPORTED_EMB_PROVIDERS = {"huggingface", "ollama", "lmstudio", "openai",
-                                "openrouter", "portkey", "openai-compatible"}
+    # Only in-process providers require local model-file checks. Endpoint-backed
+    # providers may target loopback, LAN, or hosted URLs depending on base_url.
+    _LOCAL_MODEL_FILE_EMB_PROVIDERS = set(list_providers_requiring_local_model_files())
+    _SUPPORTED_EMB_PROVIDERS = set(list_embedding_providers())
 
     if emb_provider not in _SUPPORTED_EMB_PROVIDERS:
         _fail("Embeddings provider", f"'{emb_provider}' is not supported for embeddings")
         print(f"     💡 Supported providers: {', '.join(sorted(_SUPPORTED_EMB_PROVIDERS))}")
         print(f"     💡 Fix: abstractcore --set-embeddings-model <provider>/<model>")
         print(f"     💡 Examples: huggingface/all-minilm-l6-v2, ollama/nomic-embed-text, openai/text-embedding-3-small")
-    elif emb_provider in _SERVER_EMB_PROVIDERS:
-        _pass("Embeddings provider", f"{emb_provider}/{emb_model} (served by {emb_provider})")
-        # Quick reachability probe for local servers
-        _EMB_SERVER_URLS = {
-            "ollama": os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
-            "lmstudio": os.environ.get("LMSTUDIO_BASE_URL", "http://localhost:1234/v1"),
-        }
-        if emb_provider in _EMB_SERVER_URLS:
-            base = _EMB_SERVER_URLS[emb_provider]
+    elif emb_provider not in _LOCAL_MODEL_FILE_EMB_PROVIDERS:
+        _pass("Embeddings provider", f"{emb_provider}/{emb_model} (endpoint-backed)")
+        provider_config = get_provider_config(emb_provider)
+        configured_base_url = str(emb_cfg.get("base_url") or "").strip()
+        env_base_url = ""
+        for env_var in provider_config.base_url_env_vars:
+            env_base_url = str(os.environ.get(env_var) or "").strip()
+            if env_base_url:
+                break
+        base = configured_base_url or env_base_url or provider_config.default_base_url or ""
+        probe_path = ""
+        if emb_provider == "ollama":
+            probe_path = "/api/tags"
+        elif (
+            provider_config.transport == "openai_compatible_http"
+            and emb_provider not in {"openrouter", "portkey"}
+        ):
+            probe_path = "/models"
+        if base and probe_path:
             try:
                 import httpx
-                resp = httpx.get(f"{base.rstrip('/')}/models", timeout=3.0)
+                resp = httpx.get(f"{base.rstrip('/')}{probe_path}", timeout=3.0)
                 if resp.status_code < 500:
                     _pass(f"Embeddings server ({emb_provider})", f"reachable at {base}")
                 else:
                     _warn(f"Embeddings server ({emb_provider})", f"responded {resp.status_code} at {base}")
             except Exception:
-                _warn(f"Embeddings server ({emb_provider})", f"unreachable at {base} — ensure it is running")
+                _warn(
+                    f"Embeddings server ({emb_provider})",
+                    f"unreachable at {base} — ensure it is running",
+                )
         elif emb_provider in ("openai", "openrouter", "portkey"):
             # Cloud provider — check API key
             api_keys = status.get("api_keys", {})
@@ -1338,6 +1411,28 @@ def install_check(auto_accept: bool = False) -> None:
     print()
 
 
+def _parse_capability_options(items: List[str]) -> dict:
+    """Parse repeated KEY=VALUE CLI options, accepting JSON scalar/object values."""
+    out = {}
+    for item in items or []:
+        raw = str(item or "").strip()
+        if not raw:
+            continue
+        if "=" not in raw:
+            raise ValueError(f"Invalid capability option {raw!r}; expected KEY=VALUE")
+        key, value_raw = raw.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise ValueError(f"Invalid capability option {raw!r}; key is empty")
+        value_text = value_raw.strip()
+        try:
+            value = json.loads(value_text)
+        except Exception:
+            value = value_text
+        out[key] = value
+    return out
+
+
 def handle_commands(args) -> bool:
     """Handle AbstractCore configuration commands."""
     if not CONFIG_AVAILABLE or get_config_manager is None:
@@ -1401,6 +1496,33 @@ def handle_commands(args) -> bool:
     if args.set_code_model:
         config_manager.set_code_model(args.set_code_model)
         print(f"✅ Set code model to: {args.set_code_model}")
+        handled = True
+
+    if getattr(args, "set_capability_default", None):
+        try:
+            options = _parse_capability_options(getattr(args, "capability_option", []) or [])
+        except ValueError as e:
+            print(f"❌ Error: {e}")
+            return True
+        ok = config_manager.set_capability_default(
+            args.set_capability_default,
+            provider=getattr(args, "capability_provider", None),
+            model=getattr(args, "capability_model", None),
+            base_url=getattr(args, "capability_base_url", None),
+            options=options,
+        )
+        if ok:
+            print(f"✅ Set capability default for {args.set_capability_default}")
+        else:
+            print(f"❌ Error: Failed to set capability default for {args.set_capability_default}")
+        handled = True
+
+    if getattr(args, "clear_capability_default", None):
+        ok = config_manager.clear_capability_default(args.clear_capability_default)
+        if ok:
+            print(f"✅ Cleared capability default for {args.clear_capability_default}")
+        else:
+            print(f"❌ Error: Failed to clear capability default for {args.clear_capability_default}")
         handled = True
 
     # Vision configuration
@@ -1540,6 +1662,14 @@ def handle_commands(args) -> bool:
         if isinstance(args.set_embeddings_provider, str):
             config_manager.set_embeddings_provider(args.set_embeddings_provider)
             print(f"✅ Set embeddings provider to: {args.set_embeddings_provider}")
+        handled = True
+
+    if getattr(args, "set_embeddings_base_url", None) is not None:
+        config_manager.set_embeddings_base_url(args.set_embeddings_base_url)
+        if args.set_embeddings_base_url:
+            print(f"✅ Set embeddings base URL to: {args.set_embeddings_base_url}")
+        else:
+            print("✅ Cleared embeddings base URL")
         handled = True
 
     # API keys

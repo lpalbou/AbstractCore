@@ -14,6 +14,31 @@ Features:
 """
 
 from .manager import EmbeddingManager
-from .models import EmbeddingModelConfig, get_model_config, list_available_models
+from .models import (
+    EmbeddingModelConfig,
+    EmbeddingProviderConfig,
+    get_model_config,
+    get_provider_config,
+    is_provider_supported,
+    list_available_models,
+    list_available_providers,
+    list_direct_embedding_providers,
+    list_endpoint_backed_providers,
+    list_provider_details,
+    list_providers_requiring_local_model_files,
+)
 
-__all__ = ["EmbeddingManager", "EmbeddingModelConfig", "get_model_config", "list_available_models"]
+__all__ = [
+    "EmbeddingManager",
+    "EmbeddingModelConfig",
+    "EmbeddingProviderConfig",
+    "get_model_config",
+    "get_provider_config",
+    "is_provider_supported",
+    "list_available_models",
+    "list_available_providers",
+    "list_direct_embedding_providers",
+    "list_endpoint_backed_providers",
+    "list_provider_details",
+    "list_providers_requiring_local_model_files",
+]

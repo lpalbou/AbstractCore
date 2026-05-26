@@ -6,6 +6,14 @@ Provides configuration management and command-line interface for AbstractCore.
 
 from .vision_config import handle_vision_commands, add_vision_arguments
 from .manager import get_config_manager
+from .capability_defaults import (
+    CAPABILITY_KINDS,
+    capability_default_specs_dict,
+    capability_defaults_from_dict,
+    capability_route_key,
+    iter_capability_default_specs,
+    normalize_kind,
+)
 
 
 def configure_provider(provider: str, **kwargs) -> None:
@@ -27,6 +35,12 @@ __all__ = [
     'handle_vision_commands',
     'add_vision_arguments',
     'get_config_manager',
+    'CAPABILITY_KINDS',
+    'capability_default_specs_dict',
+    'capability_defaults_from_dict',
+    'capability_route_key',
+    'iter_capability_default_specs',
+    'normalize_kind',
     'configure_provider',
     'get_provider_config',
     'clear_provider_config'

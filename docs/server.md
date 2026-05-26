@@ -182,6 +182,9 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Group | Method | Endpoint | Purpose | Main parameters |
 |---|---:|---|---|---|
 | Health | GET | `/health` | Liveness/version probe; never requires auth | none |
+| Configuration | GET | `/v1/config/capability-defaults` | List explicit input/output/embedding/rerank route defaults | none |
+| Configuration | PUT | `/v1/config/capability-defaults/{kind}/{modality}` | Set one capability route default | path `kind`, `modality`; body `provider`, `model`, `base_url`, `options` |
+| Configuration | DELETE | `/v1/config/capability-defaults/{kind}/{modality}` | Clear one capability route default | path `kind`, `modality` |
 | Discovery | GET | `/v1/models` | List models and filter by provider/capabilities | `provider`, `input_type`, `output_type`, `base_url`, `api_key` |
 | Discovery | GET | `/providers` | Provider status/capabilities | `include_models` |
 | Discovery | GET | `/v1/vision/providers/` | AbstractVision provider catalog for image/video generation models | optional `task`, `provider`, `include_models`, `base_url`, `api_key` |
@@ -237,6 +240,17 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Capabilities | GET | `/v1/capabilities/{capability}/models` | List normalized models for one capability plugin | path `capability`, optional `task`, `provider` |
 | Audio | GET | `/v1/audio/music/providers` | List music capability providers | optional `task` |
 | Audio | GET | `/v1/audio/music/models` | List music capability models | optional `task`, `provider` |
+
+### Capability Routing Defaults
+
+`/v1/config/capability-defaults` exposes the execution host's explicit route
+defaults for `input`, `output`, `embedding`, and `rerank` capabilities. Gateway
+uses this route as its control-plane source when `ABSTRACTCORE_SERVER_BASE_URL`
+points at a remote Core server.
+
+These defaults are configuration only; they do not load a model. Use the
+runtime residency routes under `/acore/models/*` to inspect or change
+provider-loaded state.
 
 ### Shared Request Conventions
 
@@ -480,8 +494,8 @@ Install for remote image proxying:
 pip install "abstractcore[server]"
 ```
 
-Install local image backends only when you want the server to load Diffusers or
-stable-diffusion.cpp models itself:
+Install local image backends only when you want the server to load Diffusers,
+MLX-Gen, or stable-diffusion.cpp models itself:
 ```bash
 pip install "abstractcore[server,vision]"
 ```
@@ -497,6 +511,12 @@ Use provider/model-style image ids:
   `ABSTRACTCORE_VISION_MODEL_ID` / `ABSTRACTVISION_DIFFUSERS_MODEL_ID` /
   `ABSTRACTVISION_MODEL_ID`.
 - `diffusers/<huggingface-repo>` selects an explicit local Diffusers model.
+- `mlx-gen/default` selects the configured local MLX-Gen model; use
+  AbstractVision's q4 AbstractFramework presets by default and q8 variants when
+  quality is paramount.
+- `mlx-gen/<preset>` selects an explicit cached MLX-Gen preset such as
+  `mlx-gen/flux2-klein-4b` or `mlx-gen/qwen-image-edit-2511`. Legacy `mflux`
+  prefixes remain accepted as compatibility aliases.
 - `sdcpp/default` selects the configured stable-diffusion.cpp model.
 - `openai-compatible/<model>` routes to the configured OpenAI-compatible image
   endpoint.
@@ -514,7 +534,7 @@ intentional.
 | Field | Required | Notes |
 |---|---:|---|
 | `prompt` | yes | Text prompt to render. |
-| `model` | no | Omit for the server's configured AbstractVision default. If present, use provider/model routing: `diffusers/default`, `diffusers/<huggingface-repo>`, `sdcpp/default`, `openai-compatible/<model>`, or `openai/gpt-image-1`. Provider-scoped routes accept the same model without the prefix. |
+| `model` | no | Omit for the server's configured AbstractVision default. If present, use provider/model routing: `diffusers/default`, `diffusers/<huggingface-repo>`, `mlx-gen/default`, `mlx-gen/<preset>`, `sdcpp/default`, `openai-compatible/<model>`, or `openai/gpt-image-1`. Provider-scoped routes accept the same model without the prefix. |
 | `provider` | no | Optional routing hint when you want the configured default model/backend for a specific provider, or when pairing a request with `base_url`. |
 | `width`, `height` | no | Requested output dimensions in pixels. These are the natural fields for local engines and remain accepted for remote routes. |
 | `size` | no | OpenAI-style size such as `1024x1024`. The server normalizes `size` with `width`/`height` so OpenAI-style and local-engine clients can use the same route. |

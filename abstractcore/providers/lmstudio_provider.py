@@ -25,6 +25,7 @@ class LMStudioProvider(OpenAICompatibleProvider):
 
     PROVIDER_ID = "lmstudio"
     PROVIDER_DISPLAY_NAME = "LMStudio"
+    TEXT_MODEL_RESIDENCY_CONTROL_PLANE = "server"
     BASE_URL_ENV_VAR = "LMSTUDIO_BASE_URL"
     API_KEY_ENV_VAR = None
     DEFAULT_BASE_URL = "http://localhost:1234/v1"

@@ -17,6 +17,8 @@ def _clear_server_auth_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     monkeypatch.delenv("PORTKEY_API_KEY", raising=False)
+    monkeypatch.delenv("VLLM_API_KEY", raising=False)
+    monkeypatch.delenv("VLLM_BASE_URL", raising=False)
 
 
 @pytest.fixture()
@@ -26,6 +28,29 @@ def client() -> TestClient:
 
 def _provider_auth_headers() -> Dict[str, str]:
     return {"X-AbstractCore-Provider-API-Key": "sk-request-provider-key"}
+
+
+def test_embedding_provider_catalog_comes_from_core_embeddings(client: TestClient) -> None:
+    resp = client.get("/v1/embeddings/providers?provider=vllm", headers=_provider_auth_headers())
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["kind"] == "embedding_providers"
+    assert body["scope"] == "embedding.text"
+    assert body["providers"] == ["vllm"]
+    assert body["embedding_providers"] == ["vllm"]
+    assert body["provider_details"] == [
+        {
+            "id": "vllm",
+            "provider": "vllm",
+            "label": "vLLM",
+            "transport": "openai_compatible_http",
+            "base_url_configurable": True,
+            "base_url_env_vars": ["VLLM_BASE_URL"],
+            "default_base_url": "http://localhost:8000/v1",
+            "auth": "optional",
+        }
+    ]
 
 
 def test_openai_embeddings_route_forwards_remote_parameters(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -110,6 +135,47 @@ def test_openai_compatible_embeddings_accept_loopback_base_url(client: TestClien
         "base_url": "http://127.0.0.1:1234/v1",
     }
     assert captured["embed"]["input_text"] == ["alpha", "beta"]
+
+
+def test_vllm_embeddings_route_uses_vllm_provider(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from abstractcore.providers.vllm_provider import VLLMProvider
+
+    captured: Dict[str, Any] = {}
+
+    def fake_init(self, model: str, **kwargs: Any) -> None:
+        self.model = model
+        captured["init"] = {"model": model, **kwargs}
+
+    def fake_embed(self, input_text, **kwargs: Any):
+        captured["embed"] = {"input_text": input_text, **kwargs}
+        return {
+            "object": "list",
+            "data": [{"object": "embedding", "embedding": [0.7], "index": 0}],
+            "model": self.model,
+            "usage": {"prompt_tokens": 1, "total_tokens": 1},
+        }
+
+    monkeypatch.setattr(VLLMProvider, "__init__", fake_init)
+    monkeypatch.setattr(VLLMProvider, "embed", fake_embed)
+
+    resp = client.post(
+        "/v1/embeddings",
+        headers=_provider_auth_headers(),
+        json={
+            "model": "vllm/local-embedding-model",
+            "input": "alpha",
+            "base_url": "http://127.0.0.1:8000/v1",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert captured["init"] == {
+        "model": "local-embedding-model",
+        "api_key": "sk-request-provider-key",
+        "base_url": "http://127.0.0.1:8000/v1",
+    }
+    assert captured["embed"]["input_text"] == "alpha"
+    assert resp.json()["model"] == "vllm/local-embedding-model"
 
 
 def test_anthropic_embeddings_are_rejected_with_clear_error(client: TestClient) -> None:

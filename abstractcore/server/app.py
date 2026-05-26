@@ -71,6 +71,10 @@ from ..capabilities.registry import CapabilityRegistry
 from ..capabilities.errors import CapabilityUnavailableError
 from ..core.factory import create_llm
 from ..core.file_blocs import FileBlocStore
+from ..embeddings.models import (
+    list_available_providers as _list_embedding_providers,
+    list_direct_embedding_providers as _list_direct_embedding_providers,
+)
 from ..exceptions import AuthenticationError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
 from ..providers.base import PromptCacheError
 from ..utils.structured_logging import get_logger, configure_logging
@@ -4389,7 +4393,13 @@ def _capability_residency_load(task: str, payload: Dict[str, Any], http_request:
         except Exception as e:
             raise _capability_residency_error(e, task=task) from e
         runtime_out = _normalize_model_residency_loaded_fields(dict(runtime))
-        return {"ok": True, "loaded_new": _model_residency_loaded_new(runtime_out), "runtime": runtime_out}
+        return {
+            "ok": True,
+            "success": True,
+            "loaded_new": _model_residency_loaded_new(runtime_out),
+            "runtime": runtime_out,
+            "affected_models": [runtime_out],
+        }
 
     if task in {"tts", "stt"}:
         core = _capability_residency_core_for_request(task, http_request)
@@ -4405,7 +4415,13 @@ def _capability_residency_load(task: str, payload: Dict[str, Any], http_request:
         except Exception as e:
             raise _capability_residency_error(e, task=task) from e
         runtime_out = _normalize_model_residency_loaded_fields(dict(runtime))
-        return {"ok": True, "loaded_new": _model_residency_loaded_new(runtime_out), "runtime": runtime_out}
+        return {
+            "ok": True,
+            "success": True,
+            "loaded_new": _model_residency_loaded_new(runtime_out),
+            "runtime": runtime_out,
+            "affected_models": [runtime_out],
+        }
 
     raise HTTPException(
         status_code=501,
@@ -4451,7 +4467,13 @@ def _capability_residency_unload(task: str, payload: Dict[str, Any], http_reques
         except Exception as e:
             raise _capability_residency_error(e, task=task) from e
         runtime_out = _normalize_model_residency_loaded_fields(dict(runtime))
-        return {"ok": True, "runtime": runtime_out, "unloaded": bool(runtime_out.get("unloaded", True))}
+        return {
+            "ok": True,
+            "success": True,
+            "runtime": runtime_out,
+            "unloaded": bool(runtime_out.get("unloaded", True)),
+            "affected_models": [runtime_out],
+        }
 
     if task in {"tts", "stt"}:
         core = _capability_residency_core_for_request(task, http_request)
@@ -4467,7 +4489,13 @@ def _capability_residency_unload(task: str, payload: Dict[str, Any], http_reques
         except Exception as e:
             raise _capability_residency_error(e, task=task) from e
         runtime_out = _normalize_model_residency_loaded_fields(dict(runtime))
-        return {"ok": True, "runtime": runtime_out, "unloaded": bool(runtime_out.get("unloaded", True))}
+        return {
+            "ok": True,
+            "success": True,
+            "runtime": runtime_out,
+            "unloaded": bool(runtime_out.get("unloaded", True)),
+            "affected_models": [runtime_out],
+        }
 
     raise HTTPException(
         status_code=501,
@@ -4601,7 +4629,16 @@ def acore_models_loaded(
         if task_filter:
             filters["task"] = task_filter
         runtimes.extend(_capability_residency_loaded(task_filter, filters, http_request))
-    return {"object": "list", "data": sorted(runtimes, key=lambda item: str(item.get("runtime_id") or item.get("load_id") or ""))}
+    models = sorted(runtimes, key=lambda item: str(item.get("runtime_id") or item.get("load_id") or ""))
+    return {
+        "ok": True,
+        "success": True,
+        "operation": "list_loaded",
+        "object": "list",
+        "data": models,
+        "models": models,
+        "affected_models": models,
+    }
 
 
 @app.post(
@@ -4712,10 +4749,12 @@ def acore_models_load(req: LoadedModelRequest, http_request: Request):
         runtime_record["provider_load_result"] = provider_load_result
     return {
         "ok": True,
+        "success": True,
         "loaded_new": loaded_new,
         "provider_loaded_new": provider_loaded_new,
         "runtime_cache_loaded_new": bool(runtime_cache_loaded_new),
         "runtime": runtime_record,
+        "affected_models": [runtime_record],
         "prompt_cache_capabilities": _gateway_prompt_cache_capabilities_dict(runtime.llm),
     }
 
@@ -4760,6 +4799,7 @@ def acore_models_unload(req: UnloadModelRequest, http_request: Request):
         _unload_loaded_gateway_runtime(runtime)
         return {
             "ok": True,
+            "success": True,
             "runtime": {
                 **_gateway_runtime_to_dict(runtime),
                 "task": "text_generation",
@@ -4771,6 +4811,18 @@ def acore_models_unload(req: UnloadModelRequest, http_request: Request):
                 "error": None,
             },
             "unloaded": True,
+            "affected_models": [
+                {
+                    **_gateway_runtime_to_dict(runtime),
+                    "task": "text_generation",
+                    "state": "unloaded",
+                    "loaded": False,
+                    "pinned": False,
+                    "isolation": "in_process",
+                    "health": "ok",
+                    "error": None,
+                }
+            ],
         }
     if task is None:
         for candidate_task in ("image_generation", "tts", "stt"):
@@ -6239,6 +6291,97 @@ def _capability_error_response(error: Exception, *, operation: str) -> JSONRespo
     return JSONResponse(status_code=500, content={"ok": False, "operation": operation, "error": str(error)})
 
 
+class CapabilityDefaultRouteRequest(BaseModel):
+    provider: Optional[str] = Field(default=None, description="Default provider/backend id for this capability route.")
+    model: Optional[str] = Field(default=None, description="Default model id for this capability route.")
+    base_url: Optional[str] = Field(default=None, description="Optional upstream provider base URL for this capability route.")
+    options: Optional[Dict[str, Any]] = Field(default=None, description="Optional plugin/provider parameters, such as voice/profile/language.")
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "provider": "mlx-gen",
+                    "model": "flux2-klein-9b",
+                    "base_url": None,
+                    "options": {"bits": 4},
+                }
+            ]
+        }
+
+
+def _capability_defaults_payload() -> Dict[str, Any]:
+    from ..config.manager import ConfigurationManager
+
+    manager = ConfigurationManager()
+    return {
+        "ok": True,
+        "version": 1,
+        "authority": "abstractcore.server",
+        "writable": True,
+        "source": "abstractcore.server",
+        "config_file": str(manager.config_file),
+        "routes": manager.list_capability_defaults(),
+        "errors": [],
+    }
+
+
+@app.get(
+    "/v1/config/capability-defaults",
+    tags=["configuration"],
+    summary="List Capability Routing Defaults",
+    description="List explicit capability routing defaults from this AbstractCore execution host.",
+)
+def list_capability_defaults():
+    return _capability_defaults_payload()
+
+
+@app.put(
+    "/v1/config/capability-defaults/{kind}/{modality}",
+    tags=["configuration"],
+    summary="Set Capability Routing Default",
+    description="Persist one capability routing default on this AbstractCore execution host.",
+)
+def set_capability_default(
+    req: CapabilityDefaultRouteRequest,
+    kind: str = FastAPIPath(..., description="Capability route kind: input, output, embedding, or rerank."),
+    modality: str = FastAPIPath(..., description="Capability modality: text, image, video, voice, sound, or scene3d."),
+):
+    from ..config.manager import ConfigurationManager
+
+    manager = ConfigurationManager()
+    ok = manager.set_capability_default(
+        kind,
+        modality,
+        provider=req.provider,
+        model=req.model,
+        base_url=req.base_url,
+        options=dict(req.options or {}) if isinstance(req.options, dict) else {},
+    )
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"Failed to set capability default {kind}.{modality}")
+    return _capability_defaults_payload()
+
+
+@app.delete(
+    "/v1/config/capability-defaults/{kind}/{modality}",
+    tags=["configuration"],
+    summary="Clear Capability Routing Default",
+    description="Clear one persisted capability routing default on this AbstractCore execution host.",
+)
+def clear_capability_default(
+    kind: str = FastAPIPath(..., description="Capability route kind: input, output, embedding, or rerank."),
+    modality: str = FastAPIPath(..., description="Capability modality: text, image, video, voice, sound, or scene3d."),
+):
+    from ..config.manager import ConfigurationManager
+
+    manager = ConfigurationManager()
+    ok = manager.clear_capability_default(kind, modality)
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"Failed to clear capability default {kind}.{modality}")
+    return _capability_defaults_payload()
+
+
 @app.get(
     "/v1/capabilities",
     tags=["capabilities"],
@@ -6841,9 +6984,43 @@ async def create_response(
             detail={"error": {"message": _redact_text(str(e)), "type": "processing_error"}}
         )
 
-_LOCAL_EMBEDDING_PROVIDERS = {"huggingface", "ollama"}
-_DIRECT_EMBEDDING_PROVIDERS = {"lmstudio", "openai", "openrouter", "portkey", "openai-compatible"}
-_SUPPORTED_EMBEDDING_PROVIDERS = _LOCAL_EMBEDDING_PROVIDERS | _DIRECT_EMBEDDING_PROVIDERS
+_DIRECT_EMBEDDING_PROVIDERS = set(_list_direct_embedding_providers())
+_SUPPORTED_EMBEDDING_PROVIDERS = set(_list_embedding_providers())
+
+
+@app.get("/v1/embeddings/providers", tags=["embeddings"])
+async def list_embedding_providers(
+    provider: Optional[str] = Query(
+        None,
+        description="Optional embedding provider filter, e.g. huggingface, lmstudio, openai, or vllm.",
+    ),
+):
+    """List supported text embedding providers from the AbstractCore embeddings catalog."""
+    from ..embeddings.models import list_provider_details
+
+    provider_text = str(provider or "").strip().lower()
+    provider_details = list_provider_details(provider_text or None)
+    providers = [
+        str(item.get("provider") or item.get("id") or "").strip()
+        for item in provider_details
+        if isinstance(item, dict) and str(item.get("provider") or item.get("id") or "").strip()
+    ]
+    return {
+        "kind": "embedding_providers",
+        "scope": "embedding.text",
+        "provider": provider_text or None,
+        "providers": providers,
+        "available_providers": providers,
+        "embedding_providers": providers,
+        "provider_details": provider_details,
+        "models": [],
+        "embedding_models": [],
+        "models_by_provider": {},
+        "embedding_models_by_provider": {},
+        "provider_models": [],
+        "available": bool(providers),
+        "error": None if providers or not provider_text else f"Unsupported embedding provider: {provider_text}",
+    }
 
 
 def _normalize_embedding_inputs(value: Union[str, List[str]]) -> List[str]:
@@ -6969,6 +7146,10 @@ def _create_direct_embedding_provider(provider: str, model: str, provider_kwargs
         from ..providers.openai_compatible_provider import OpenAICompatibleProvider
 
         return OpenAICompatibleProvider(model=model, **provider_kwargs)
+    if provider == "vllm":
+        from ..providers.vllm_provider import VLLMProvider
+
+        return VLLMProvider(model=model, **provider_kwargs)
     if provider == "lmstudio":
         from ..providers.lmstudio_provider import LMStudioProvider
 
@@ -7006,8 +7187,8 @@ async def create_embeddings(request: EmbeddingRequest, http_request: Request):
 
     **Supported Providers:**
     - **HuggingFace**: Local sentence-transformers models with ONNX acceleration
-    - **Ollama**: Local embedding models via Ollama API
-    - **LMStudio**: Local embedding models via LMStudio API
+    - **Ollama**: Embedding models via Ollama API
+    - **LMStudio**: Embedding models via LMStudio API
 
     **Model Format:** Use `provider/model` format:
     - `huggingface/sentence-transformers/all-MiniLM-L6-v2`

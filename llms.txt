@@ -2,7 +2,7 @@
 
 > Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media handling (images/audio/video + documents), embeddings, and an optional OpenAI-compatible HTTP server. Default install stays lightweight; features are enabled via extras.
 
-Last reviewed against source: 2026-05-23. Package version in source: 2.13.27. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
+Last reviewed against source: 2026-05-26. Package version in source: 2.13.28. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 This is the curated, high-signal index for agents. For a self-contained handbook with the important details inlined, read `llms-full.txt`.
 
@@ -54,14 +54,14 @@ Quick start:
 - [Tool syntax rewriting](docs/tool-syntax-rewriting.md): preserve tool-call markup (`tool_call_tags`, server `agent_format`)
 - [Structured output](docs/structured-output.md): `response_model=...`, native vs prompted, validation/retry behavior
 - [Media handling](docs/media-handling-system.md): `media=[...]`, audio/video policies, vision fallback and plugins
-- [Centralized config](docs/centralized-config.md): `abstractcore --config`, defaults, provider keys, HTTP server auth/hardening, logging, vision/audio/video strategies
+- [Centralized config](docs/centralized-config.md): `abstractcore --config`, capability route defaults (`input.*`, `output.*`, `embedding.*`, `rerank.*`), provider keys, HTTP server auth/hardening, logging, vision/audio/video strategies
 
 ## Providers (IDs + setup)
 
 - [Provider registry](abstractcore/providers/registry.py): provider IDs, defaults, install extras
 - [Provider setup guide](docs/prerequisites.md): env vars + examples for OpenAI/Anthropic/Ollama/LMStudio/MLX/HuggingFace/vLLM/OpenRouter/Portkey/OpenAI-compatible
 - Install profile vocabulary: `abstractcore[apple]` is the hardware alias for the MLX local LLM stack, `abstractcore[gpu]` is the hardware alias for the vLLM local LLM stack, and `abstractcore[all-apple]` / `abstractcore[all-gpu]` are larger aggregate profiles.
-- Optional media plugin floors in this source: `abstractvoice>=0.10.15`, `abstractvision>=0.3.13`, and `abstractmusic>=0.1.12`.
+- Optional media plugin floors in this source: `abstractvoice>=0.10.16`, `abstractvision>=0.3.14`, and `abstractmusic>=0.1.12`.
 
 ## Server (OpenAI-compatible `/v1`)
 

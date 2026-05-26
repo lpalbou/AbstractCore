@@ -950,17 +950,36 @@ class _VoiceFacade:
             details={"backend_id": getattr(backend, "backend_id", None), "provider": provider},
         )
 
-    def voice_catalog(self) -> Dict[str, Any]:
+    def voice_catalog(
+        self,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        providers_only: bool = False,
+    ) -> Dict[str, Any]:
         backend = self._registry.get_voice()
         method = getattr(backend, "voice_catalog", None)
         if not callable(method):
             raise CapabilityUnavailableError(
                 capability="voice",
-                reason="The selected voice capability backend does not expose voice_catalog().",
+                reason="The selected voice capability backend does not expose voice_catalog(...).",
                 install_hint=self._registry._default_install_hint("voice"),
                 details={"backend_id": getattr(backend, "backend_id", None)},
             )
-        out = method()
+        params: Dict[str, inspect.Parameter] = {}
+        accepts_kwargs = False
+        try:
+            params = dict(inspect.signature(method).parameters)
+            accepts_kwargs = any(param.kind == inspect.Parameter.VAR_KEYWORD for param in params.values())
+        except (TypeError, ValueError):
+            accepts_kwargs = True
+        kwargs: Dict[str, Any] = {}
+        if provider is not None and (accepts_kwargs or "provider" in params):
+            kwargs["provider"] = provider
+        if model is not None and (accepts_kwargs or "model" in params):
+            kwargs["model"] = model
+        if providers_only and (accepts_kwargs or "providers_only" in params):
+            kwargs["providers_only"] = True
+        out = method(**kwargs) if kwargs else method()
         if not isinstance(out, dict):
             raise CapabilityUnavailableError(
                 capability="voice",

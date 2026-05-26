@@ -8,7 +8,16 @@ import shutil
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
-from abstractcore.embeddings.models import get_model_config, get_default_model, list_available_models
+from abstractcore.embeddings.models import (
+    get_model_config,
+    get_default_model,
+    list_available_models,
+    list_available_providers,
+    list_direct_embedding_providers,
+    list_endpoint_backed_providers,
+    list_provider_details,
+    list_providers_requiring_local_model_files,
+)
 from abstractcore.embeddings.manager import EmbeddingManager
 
 
@@ -41,6 +50,32 @@ class TestEmbeddingModels:
         assert "all-minilm-l6-v2" in models
         assert "granite-30m" in models
         assert len(models) >= 6  # We now have 8 models
+
+    def test_list_available_providers(self):
+        """Test listing supported embedding providers."""
+        providers = list_available_providers()
+        assert "huggingface" in providers
+        assert "openai-compatible" in providers
+        assert "vllm" in providers
+        assert "anthropic" not in providers
+
+    def test_list_provider_details(self):
+        """Test provider discovery metadata."""
+        details = list_provider_details("lmstudio")
+        assert details == [
+            {
+                "id": "lmstudio",
+                "provider": "lmstudio",
+                "label": "LMStudio",
+                "transport": "openai_compatible_http",
+                "base_url_configurable": True,
+                "base_url_env_vars": ["LMSTUDIO_BASE_URL"],
+                "default_base_url": "http://localhost:1234/v1",
+            }
+        ]
+        assert "huggingface" in list_providers_requiring_local_model_files()
+        assert "lmstudio" in list_endpoint_backed_providers()
+        assert "vllm" in list_direct_embedding_providers()
 
 
 class TestEmbeddingManagerBasic:
@@ -122,6 +157,29 @@ class TestEmbeddingManagerBasic:
         assert captured["model"] == "openai/text-embedding-3-small"
         assert captured["kwargs"]["api_key"] == "sk-test"
         assert captured["kwargs"]["validate_model"] is False
+
+    def test_vllm_embedding_manager_uses_vllm_provider(self):
+        """vLLM is a first-class embedding provider, not a runtime-only catalog row."""
+        from abstractcore.providers.vllm_provider import VLLMProvider
+
+        captured = {}
+
+        def fake_init(self, model, **kwargs):
+            self.model = model
+            captured["model"] = model
+            captured["kwargs"] = kwargs
+
+        with patch.object(VLLMProvider, "__init__", fake_init):
+            manager = EmbeddingManager(
+                model="embedding-model",
+                provider="vllm",
+                cache_dir=self.cache_dir,
+                provider_kwargs={"base_url": "http://127.0.0.1:8000/v1"},
+            )
+
+        assert manager.model_id == "embedding-model"
+        assert captured["model"] == "embedding-model"
+        assert captured["kwargs"]["base_url"] == "http://127.0.0.1:8000/v1"
 
     def test_cache_operations(self):
         """Test cache operations."""

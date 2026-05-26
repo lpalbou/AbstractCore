@@ -12,7 +12,8 @@ from abstractcore.server.app import app
 class _FakeVoice:
     backend_id = "fake-voice"
 
-    def voice_catalog(self):
+    def voice_catalog(self, provider=None, model=None, providers_only=False):
+        _ = provider, model, providers_only
         return {
             "kind": "tts",
             "engine_id": "fake",
@@ -123,7 +124,8 @@ def test_audio_voice_catalog_route_filters_provider_and_model(monkeypatch):
     class _CatalogVoice:
         backend_id = "catalog-voice"
 
-        def voice_catalog(self):
+        def voice_catalog(self, provider=None, model=None, providers_only=False):
+            _ = provider, model, providers_only
             return {
                 "profiles": [
                     {"profile_id": "coral", "provider": "fake-tts", "params": {"model": "tts-test", "voice": "coral"}},
@@ -176,7 +178,8 @@ def test_audio_voice_catalog_route_supports_providers_only(monkeypatch):
     class _CatalogVoice:
         backend_id = "catalog-voice"
 
-        def voice_catalog(self):
+        def voice_catalog(self, provider=None, model=None, providers_only=False):
+            _ = provider, model, providers_only
             return {
                 "profiles": [
                     {"profile_id": "coral", "provider": "fake-tts"},

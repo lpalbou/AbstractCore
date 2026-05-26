@@ -157,6 +157,8 @@ _DIFFUSERS_IMAGE_PIPELINE_TOKENS = (
     "cogview",
     "zimage",
     "z-image",
+    "ernieimage",
+    "ernie-image",
 )
 
 
@@ -206,6 +208,51 @@ def _is_hf_model_cached(model_id: str, cache_dirs: list[Path]) -> bool:
             if _diffusers_model_index_supports_image(model_index, model_id=model_s):
                 return True
     return False
+
+
+def _hf_snapshot_has_weight_files(snapshot_dir: Path) -> bool:
+    try:
+        if not snapshot_dir.is_dir():
+            return False
+        if any(path.name.endswith(".incomplete") for path in snapshot_dir.rglob("*")):
+            return False
+        return any(path.name.endswith((".safetensors", ".gguf", ".bin")) for path in snapshot_dir.rglob("*"))
+    except Exception:
+        return False
+
+
+def _cached_hf_snapshot(repo_id: str, cache_dirs: list[Path]) -> Optional[Path]:
+    repo_s = str(repo_id or "").strip()
+    if "/" not in repo_s:
+        return None
+    folder_name = "models--" + repo_s.replace("/", "--")
+    for base in cache_dirs:
+        folder = base / folder_name
+        snapshots = folder / "snapshots"
+        try:
+            if not snapshots.is_dir():
+                continue
+            refs_main = folder / "refs" / "main"
+            if refs_main.is_file():
+                ref = refs_main.read_text(encoding="utf-8").strip()
+                snap = snapshots / ref
+                if _hf_snapshot_has_weight_files(snap):
+                    return snap
+            for snap in sorted((path for path in snapshots.iterdir() if path.is_dir()), reverse=True):
+                if _hf_snapshot_has_weight_files(snap):
+                    return snap
+        except Exception:
+            continue
+    return None
+
+
+def _mlx_gen_selector_for_download(download: Any) -> str:
+    key = str(getattr(download, "key", "") or "").strip()
+    repo_id = str(getattr(download, "repo_id", "") or "").strip()
+    bits = getattr(download, "bits", None)
+    if bits == 4 and key:
+        return key
+    return repo_id or key
 
 
 def _discover_cached_hf_diffusers_models(cache_dirs: list[Path]) -> list[str]:
@@ -386,12 +433,51 @@ def get_local_vision_cache_catalog() -> Dict[str, Any]:
     model_ids = list(registry.list_models())
     models: list[Dict[str, Any]] = []
     seen_model_ids: set[str] = set()
+    seen_provider_model_ids: set[tuple[str, str]] = set()
 
     for model_id in model_ids:
         spec = registry.get(model_id)
         supported_tasks = sorted(spec.tasks.keys())
         if "text_to_image" not in spec.tasks and "image_to_image" not in spec.tasks:
             continue
+
+        for download in list(getattr(spec, "downloads", []) or []):
+            engine = str(getattr(download, "engine", "") or "").strip().lower().replace("_", "-")
+            target = str(getattr(download, "target", "") or "").strip().lower()
+            if target != "mlx" or engine not in {"mlx-gen", "mflux", "m-flux", "mlxgen"}:
+                continue
+            repo_id = str(getattr(download, "repo_id", "") or "").strip()
+            snap = _cached_hf_snapshot(repo_id, hf_dirs)
+            if snap is None:
+                continue
+            selector = _mlx_gen_selector_for_download(download)
+            if not selector:
+                continue
+            provider_model_key = ("mlx-gen", selector)
+            if provider_model_key in seen_provider_model_ids:
+                continue
+            seen_provider_model_ids.add(provider_model_key)
+            models.append(
+                {
+                    "id": selector,
+                    "model": selector,
+                    "model_id": model_id,
+                    "provider": "mlx-gen",
+                    "backend": "mlx-gen",
+                    "engine": "mlx-gen",
+                    "target": target,
+                    "key": str(getattr(download, "key", "") or "").strip(),
+                    "bits": getattr(download, "bits", None),
+                    "repo_id": repo_id,
+                    "download_repo_id": repo_id,
+                    "source": str(getattr(download, "source", "") or "").strip(),
+                    "license": spec.license,
+                    "tasks": supported_tasks,
+                    "notes": str(getattr(download, "notes", "") or "").strip() or spec.notes,
+                    "cached_in": ["huggingface"],
+                    "snapshot_dir": str(snap),
+                }
+            )
 
         cached_in: list[str] = []
         if _is_hf_model_cached(model_id, hf_dirs):

@@ -47,6 +47,23 @@ similarity = embedder.compute_similarity(
 print(f"Similarity: {similarity:.3f}")  # 0.847
 ```
 
+### Default Embedding Route
+
+For framework-wide semantic retrieval, configure the `embedding.text`
+capability route. `EmbeddingManager()` uses that route when provider/model are
+not passed explicitly, and server-backed providers receive the configured
+`base_url`.
+
+```bash
+abstractcore --set-capability-default embedding.text \
+  --capability-provider lmstudio \
+  --capability-model text-embedding-nomic-embed-text-v1.5 \
+  --capability-base-url http://127.0.0.1:1234/v1
+```
+
+Gateway uses the same execution-host `embedding.text` route for
+`/api/gateway/embeddings` and KG semantic retrieval.
+
 ## Available Providers & Models
 
 AbstractCore supports multiple embedding providers:

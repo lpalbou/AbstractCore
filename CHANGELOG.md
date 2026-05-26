@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.28] - 2026-05-26
+
+### Changed
+- **Capability plugin floors**: updated optional capability plugin install floors to `abstractvoice>=0.10.16` and `abstractvision>=0.3.14` so Core installs consume the latest OmniVoice catalog and MLX-Gen vision surfaces.
+- **Capability defaults**: added shared capability default configuration support for server and downstream hosts.
+- **Embedding configuration**: expanded remote embedding provider configuration and server routing coverage.
+
+### Fixed
+- **Vision catalog propagation**: preserved AbstractVision's canonical `mlx-gen` q4/q8 model catalog through Core discovery without hardcoded provider fallbacks.
+
 ## [2.13.27] - 2026-05-23
 
 ### Changed

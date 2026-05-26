@@ -32,7 +32,7 @@ except ImportError:
     EventType = None
     emit_global = None
 
-from .models import EmbeddingBackend, get_model_config, list_available_models, get_default_model
+from .models import EmbeddingBackend, get_model_config, get_default_model, list_available_models, list_available_providers
 from ..utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
@@ -161,16 +161,15 @@ class EmbeddingManager:
         # Store provider (after config loading)
         self.provider = self._resolved_provider.lower()
         self.provider_kwargs = dict(provider_kwargs or {})
+        if self._resolved_base_url and "base_url" not in self.provider_kwargs:
+            self.provider_kwargs["base_url"] = self._resolved_base_url
 
         # Validate provider
-        _SUPPORTED_EMB_PROVIDERS = [
-            "huggingface", "ollama", "lmstudio", "openai",
-            "openrouter", "portkey", "openai-compatible",
-        ]
-        if self.provider not in _SUPPORTED_EMB_PROVIDERS:
+        supported_providers = list_available_providers()
+        if self.provider not in supported_providers:
             raise ValueError(
                 f"Unsupported provider: {provider}. "
-                f"Supported: {', '.join(_SUPPORTED_EMB_PROVIDERS)}"
+                f"Supported: {', '.join(supported_providers)}"
             )
 
         # Initialize provider-specific attributes
@@ -238,6 +237,10 @@ class EmbeddingManager:
                 from ..providers.openai_compatible_provider import OpenAICompatibleProvider
                 self._provider_instance = OpenAICompatibleProvider(model=self._resolved_model, **self.provider_kwargs)
                 logger.info(f"Initialized OpenAI-compatible embedding provider with model: {self._resolved_model}")
+            elif self.provider == "vllm":
+                from ..providers.vllm_provider import VLLMProvider
+                self._provider_instance = VLLMProvider(model=self._resolved_model, **self.provider_kwargs)
+                logger.info(f"Initialized vLLM embedding provider with model: {self._resolved_model}")
 
         # Common setup for all providers
         self.cache_dir = Path(cache_dir) if cache_dir else Path.home() / ".abstractcore" / "embeddings"
@@ -292,10 +295,14 @@ class EmbeddingManager:
             from ..config import get_config_manager
             config_manager = get_config_manager()
             embeddings_config = config_manager.config.embeddings
+            embedding_route = config_manager.get_capability_default("embedding", "text")
+            route_provider = embedding_route.get("provider") if isinstance(embedding_route, dict) else None
+            route_model = embedding_route.get("model") if isinstance(embedding_route, dict) else None
+            route_base_url = embedding_route.get("base_url") if isinstance(embedding_route, dict) else None
 
             # Apply defaults ONLY if not explicitly provided
             if provider is None:
-                self._resolved_provider = embeddings_config.provider or "huggingface"
+                self._resolved_provider = route_provider or embeddings_config.provider or "huggingface"
                 logger.debug(f"Using configured default provider: {self._resolved_provider}")
             else:
                 self._resolved_provider = provider
@@ -303,17 +310,36 @@ class EmbeddingManager:
 
             if model is None:
                 # Use config default, or fallback to EmbeddingManager's original default
-                self._resolved_model = embeddings_config.model or "all-minilm-l6-v2"
+                self._resolved_model = route_model or embeddings_config.model or "all-minilm-l6-v2"
                 logger.debug(f"Using configured default model: {self._resolved_model}")
             else:
                 self._resolved_model = model
                 logger.debug(f"Using explicit model parameter: {self._resolved_model}")
 
+            resolved_provider_key = str(self._resolved_provider or "").strip().lower()
+            resolved_model_key = str(self._resolved_model or "").strip()
+            route_matches = (
+                bool(route_base_url)
+                and str(route_provider or "").strip().lower() == resolved_provider_key
+                and str(route_model or "").strip() == resolved_model_key
+            )
+            embeddings_config_matches = (
+                bool(embeddings_config.base_url)
+                and str(embeddings_config.provider or "").strip().lower() == resolved_provider_key
+                and str(embeddings_config.model or "").strip() == resolved_model_key
+            )
+            if route_matches:
+                self._resolved_base_url = route_base_url
+            elif embeddings_config_matches:
+                self._resolved_base_url = embeddings_config.base_url
+            else:
+                self._resolved_base_url = None
         except Exception as e:
             # Fallback to hardcoded defaults if config system fails
             logger.debug(f"Config system unavailable, using fallback defaults: {e}")
             self._resolved_provider = provider or "huggingface"
             self._resolved_model = model or "all-minilm-l6-v2"
+            self._resolved_base_url = None
 
     def _load_model(self):
         """Load the HuggingFace embedding model with optimal backend and reduced warnings."""

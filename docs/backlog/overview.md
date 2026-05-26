@@ -9,8 +9,8 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 11
-- Proposed: 10
+- Planned: 12
+- Proposed: 11
 - Completed: 16
 - Deprecated: 3
 - Recurrent: 0
@@ -40,7 +40,8 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/2026-05-18_mlx-provider-continuous-batching.md` | Shared MLX runtime and batching scheduler. |
 | `planned/789_server-auth-rate-limits.md` | Server auth and rate-limit controls. |
 | `planned/791_server-metrics-otel.md` | Server metrics and OpenTelemetry work. |
-| `planned/0801_rerank_manager.md` | First-class reranking manager (cross-encoder / hosted rerank APIs). |
+| `planned/0801_rerank_manager.md` | First-class reranking manager (cross-encoder / hosted rerank APIs); linked to 0803/0804 for embedding/provider boundary decisions. |
+| `planned/0803_image_embedding_manager_and_multimodal_embeddings.md` | First-class image/multimodal embedding manager and server endpoint extension. |
 
 ## Proposed ledger
 
@@ -56,6 +57,7 @@ Use this file as the entry point for planning status, recommended next work, and
 | `proposed/0793_public_prompt_cache_persistence_control_plane.md` | Keep proposed as an operator-only decision item. App-facing durable reuse should first ship through Runtime/Gateway exposure of `/acore/blocs/kv/*` and `prompt_cache_binding`; only promote this if hot local snapshot restore is still needed after that. |
 | `proposed/0800_openai_compatible_web_search_tool_transport.md` | Promote only if Codex or another client needs AbstractCore `/v1/responses` to preserve native Responses `tools`; the current Codex Chat-route fix belongs in Codex. |
 | `proposed/0802_generate_concurrency_and_async_streaming.md` | Promote once a minimal repro/test shows fallback async streaming blocks the event loop (or other concurrency bugs), or when new stateless compute surfaces would depend on the same concurrency guarantees. |
+| `proposed/0804_huggingface_embedding_provider_boundary.md` | Promote when HuggingFace embedding routing, rerank CrossEncoder backend identity, residency, catalog truth, or image/multimodal embedding work needs a settled boundary between `EmbeddingManager`'s SentenceTransformers path and `HuggingFaceProvider`. |
 
 ## Completed ledger
 

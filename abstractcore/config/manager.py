@@ -11,7 +11,50 @@ from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass, asdict, fields
 
+from .capability_defaults import (
+    CapabilityDefaultsConfig,
+    CapabilityRouteDefault,
+    capability_defaults_from_dict,
+    capability_route_key,
+    iter_capability_default_specs,
+    split_capability_route,
+)
+
 _SERVER_AUTH_TOKEN_ENV_VAR = "ABSTRACTCORE_AUTH_TOKEN"
+_PROVIDER_MODEL_PREFIXES = {
+    "anthropic",
+    "google",
+    "huggingface",
+    "lmstudio",
+    "ollama",
+    "openai",
+    "openai-compatible",
+    "openai_compatible",
+    "openrouter",
+    "portkey",
+    "vllm",
+}
+
+
+def _split_provider_model(value: str, *, default_provider: str) -> Tuple[str, str]:
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("Model cannot be empty")
+    if ":" in raw:
+        provider, model = raw.split(":", 1)
+        provider_clean = provider.strip().lower()
+        if provider_clean in _PROVIDER_MODEL_PREFIXES:
+            model_clean = model.strip()
+            if not model_clean:
+                raise ValueError("Model cannot be empty")
+            return provider.strip(), model_clean
+    if "/" in raw:
+        provider, model = raw.split("/", 1)
+        model_clean = model.strip()
+        if not model_clean:
+            raise ValueError("Model cannot be empty")
+        return provider.strip() or default_provider, model_clean
+    return default_provider, raw
 
 
 @dataclass
@@ -76,6 +119,7 @@ class EmbeddingsConfig:
     """Embeddings configuration settings."""
     provider: Optional[str] = "huggingface"
     model: Optional[str] = "all-minilm-l6-v2"
+    base_url: Optional[str] = None
 
 
 @dataclass
@@ -230,6 +274,7 @@ class AbstractCoreConfig:
     embeddings: EmbeddingsConfig
     app_defaults: AppDefaults
     default_models: DefaultModels
+    capability_defaults: CapabilityDefaultsConfig
     api_keys: ApiKeysConfig
     server: ServerConfig
     cache: CacheConfig
@@ -250,6 +295,7 @@ class AbstractCoreConfig:
             embeddings=EmbeddingsConfig(),
             app_defaults=AppDefaults(),
             default_models=DefaultModels(),
+            capability_defaults=CapabilityDefaultsConfig(),
             api_keys=ApiKeysConfig(),
             server=ServerConfig(),
             cache=CacheConfig(),
@@ -407,6 +453,7 @@ class ConfigurationManager:
         embeddings = EmbeddingsConfig(**self._filter_dataclass_kwargs(EmbeddingsConfig, data.get('embeddings', {})))
         app_defaults = AppDefaults(**self._filter_dataclass_kwargs(AppDefaults, data.get('app_defaults', {})))
         default_models = DefaultModels(**self._filter_dataclass_kwargs(DefaultModels, data.get('default_models', {})))
+        capability_defaults = capability_defaults_from_dict(data.get('capability_defaults', {}))
         api_keys = ApiKeysConfig(**self._filter_dataclass_kwargs(ApiKeysConfig, data.get('api_keys', {})))
         server = ServerConfig(**self._filter_dataclass_kwargs(ServerConfig, data.get('server', {})))
         cache = CacheConfig(**self._filter_dataclass_kwargs(CacheConfig, data.get('cache', {})))
@@ -424,6 +471,7 @@ class ConfigurationManager:
             embeddings=embeddings,
             app_defaults=app_defaults,
             default_models=default_models,
+            capability_defaults=capability_defaults,
             api_keys=api_keys,
             server=server,
             cache=cache,
@@ -449,6 +497,7 @@ class ConfigurationManager:
             'embeddings': asdict(self.config.embeddings),
             'app_defaults': asdict(self.config.app_defaults),
             'default_models': asdict(self.config.default_models),
+            'capability_defaults': self.config.capability_defaults.to_dict(),
             'api_keys': asdict(self.config.api_keys),
             'server': asdict(self.config.server),
             'cache': asdict(self.config.cache),
@@ -643,6 +692,25 @@ class ConfigurationManager:
 
     def get_status(self) -> Dict[str, Any]:
         """Get configuration status."""
+        embedding_route = self.get_capability_default("embedding", "text")
+        embedding_route_configured = bool(
+            embedding_route.get("provider")
+            or embedding_route.get("model")
+            or embedding_route.get("base_url")
+            or embedding_route.get("options")
+        )
+        if embedding_route_configured:
+            embedding_provider = embedding_route.get("provider")
+            embedding_model = embedding_route.get("model")
+            embedding_base_url = embedding_route.get("base_url")
+            embedding_status = "✅ Ready" if embedding_provider and embedding_model else "⚠️ Partially configured"
+            embedding_source = embedding_route.get("source") or "abstractcore.capability_defaults"
+        else:
+            embedding_provider = self.config.embeddings.provider
+            embedding_model = self.config.embeddings.model
+            embedding_base_url = self.config.embeddings.base_url
+            embedding_status = "✅ Ready" if embedding_provider and embedding_model else "❌ Not configured"
+            embedding_source = "abstractcore.embeddings_legacy"
         return {
             "config_file": str(self.config_file),
             "vision": {
@@ -693,10 +761,19 @@ class ConfigurationManager:
                 "chat_model": self.config.default_models.chat_model,
                 "code_model": self.config.default_models.code_model
             },
+            "capability_defaults": self.list_capability_defaults(),
             "embeddings": {
-                "status": "✅ Ready",
-                "provider": self.config.embeddings.provider,
-                "model": self.config.embeddings.model
+                "status": embedding_status,
+                "provider": embedding_provider,
+                "model": embedding_model,
+                "base_url": embedding_base_url,
+                "route": "embedding.text",
+                "source": embedding_source,
+                "legacy": {
+                    "provider": self.config.embeddings.provider,
+                    "model": self.config.embeddings.model,
+                    "base_url": self.config.embeddings.base_url,
+                },
             },
             "streaming": {
                 "cli_stream_default": self.config.streaming.cli_stream_default
@@ -760,18 +837,90 @@ class ConfigurationManager:
         except Exception:
             return False
 
+    def get_capability_default(
+        self,
+        kind: str,
+        modality: str,
+    ) -> Dict[str, Any]:
+        """Return the effective default route for a capability."""
+        try:
+            key = capability_route_key(kind, modality)
+        except Exception:
+            return {}
+
+        route = self.config.capability_defaults.routes.get(key)
+        if route and route.configured():
+            out = route.to_dict()
+            out.update({"key": key, "source": "abstractcore.capability_defaults"})
+            return out
+
+        return {"key": key, "source": "not_configured"}
+
+    def list_capability_defaults(self) -> list[Dict[str, Any]]:
+        """Return all known capability routes with explicit persisted defaults."""
+        rows: list[Dict[str, Any]] = []
+        for spec in iter_capability_default_specs():
+            route = self.get_capability_default(spec.kind, spec.modality)
+            rows.append({**spec.to_dict(), **route, "configured": bool(route.get("provider") or route.get("model") or route.get("base_url") or route.get("options"))})
+        return rows
+
+    def set_capability_default(
+        self,
+        kind: str,
+        modality: Optional[str] = None,
+        *,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        base_url: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None,
+    ) -> bool:
+        """Persist a capability default route."""
+        try:
+            if modality is None:
+                kind, modality = split_capability_route(kind)
+            key = capability_route_key(kind, modality)
+            route = CapabilityRouteDefault(
+                provider=str(provider).strip() if isinstance(provider, str) and provider.strip() else None,
+                model=str(model).strip() if isinstance(model, str) and model.strip() else None,
+                base_url=str(base_url).strip() if isinstance(base_url, str) and base_url.strip() else None,
+                options=dict(options or {}) if isinstance(options, dict) else {},
+            )
+            if route.configured():
+                self.config.capability_defaults.routes[key] = route
+            else:
+                self.config.capability_defaults.routes.pop(key, None)
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def clear_capability_default(self, kind: str, modality: Optional[str] = None) -> bool:
+        """Clear one persisted capability default route."""
+        try:
+            if modality is None:
+                kind, modality = split_capability_route(kind)
+            key = capability_route_key(kind, modality)
+            self.config.capability_defaults.routes.pop(key, None)
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
     def set_global_default_model(self, provider_model: str) -> bool:
         """Set global default model in provider/model format."""
         try:
-            if '/' in provider_model:
-                provider, model = provider_model.split('/', 1)
-            else:
-                # Assume it's just a model name, use default provider
-                provider = "ollama"
-                model = provider_model
+            provider, model = _split_provider_model(provider_model, default_provider="ollama")
 
             self.config.default_models.global_provider = provider
             self.config.default_models.global_model = model
+            self.config.capability_defaults.routes[capability_route_key("input", "text")] = CapabilityRouteDefault(
+                provider=provider,
+                model=model,
+            )
+            self.config.capability_defaults.routes[capability_route_key("output", "text")] = CapabilityRouteDefault(
+                provider=provider,
+                model=model,
+            )
             self._save_config()
             return True
         except Exception:
@@ -824,13 +973,11 @@ class ConfigurationManager:
             if not value:
                 raise ValueError("Embeddings model cannot be empty")
 
-            if "/" in value:
-                provider, model = value.split("/", 1)
-                self.config.embeddings.provider = provider.strip() or self.config.embeddings.provider
-                self.config.embeddings.model = model.strip()
-            else:
-                self.config.embeddings.model = value
+            provider, model = _split_provider_model(value, default_provider=str(self.config.embeddings.provider or "huggingface"))
+            self.config.embeddings.provider = provider.strip() or self.config.embeddings.provider
+            self.config.embeddings.model = model.strip()
 
+            self._sync_embedding_capability_default()
             self._save_config()
             return True
         except Exception:
@@ -843,10 +990,34 @@ class ConfigurationManager:
             if not value:
                 raise ValueError("Embeddings provider cannot be empty")
             self.config.embeddings.provider = value
+            self._sync_embedding_capability_default()
             self._save_config()
             return True
         except Exception:
             return False
+
+    def set_embeddings_base_url(self, base_url: Optional[str]) -> bool:
+        """Set optional embeddings provider base URL."""
+        try:
+            value = str(base_url or "").strip().rstrip("/")
+            self.config.embeddings.base_url = value or None
+            self._sync_embedding_capability_default()
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def _sync_embedding_capability_default(self) -> None:
+        route = CapabilityRouteDefault(
+            provider=self.config.embeddings.provider,
+            model=self.config.embeddings.model,
+            base_url=self.config.embeddings.base_url,
+        )
+        key = capability_route_key("embedding", "text")
+        if route.configured():
+            self.config.capability_defaults.routes[key] = route
+        else:
+            self.config.capability_defaults.routes.pop(key, None)
 
     def set_default_cache_dir(self, path: str) -> bool:
         """Set default cache directory for AbstractCore."""

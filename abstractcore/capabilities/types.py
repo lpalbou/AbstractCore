@@ -259,7 +259,12 @@ class VoiceCapability(Protocol):
 
     def list_cloning_models(self, provider: Optional[str] = None) -> List[str]: ...
 
-    def voice_catalog(self) -> Dict[str, Any]: ...
+    def voice_catalog(
+        self,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        providers_only: bool = False,
+    ) -> Dict[str, Any]: ...
 
     def tts(
         self,

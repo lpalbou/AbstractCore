@@ -34,7 +34,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 - **[HuggingFace Model Compatibility](huggingface-model-compatibility.md)** — Transformers/GGUF loading rules, quantized checkpoint caveats, and trusted proof targets
 - **[Memory Blocs](memory-blocs.md)** — persistent extracted text snapshots + per-model KV artifacts
 - **Model/architecture registries (source of truth)** — `abstractcore/assets/model_capabilities.json` + `abstractcore/assets/architecture_formats.json` (see `abstractcore/assets/README.md`)
-- **[Centralized Config](centralized-config.md)** — config file + config CLI (`abstractcore --config`)
+- **[Centralized Config](centralized-config.md)** — config file, config CLI (`abstractcore --config`), and capability route defaults (`input.*`, `output.*`, `embedding.*`, `rerank.*`)
 - **[Events](events.md)** and **[Structured Logging](structured-logging.md)** — observability hooks
 - **[Interaction Tracing](interaction-tracing.md)** — record prompts/responses/usage for debugging
 - **[Capabilities](capabilities.md)** — what AbstractCore can and cannot do

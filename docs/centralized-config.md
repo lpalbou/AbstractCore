@@ -49,12 +49,47 @@ Set fallback defaults when app-specific configurations are not available:
 
 ```bash
 # Set global fallback model
-abstractcore --set-global-default ollama/llama3:8b
+abstractcore --set-global-default lmstudio:qwen/qwen3.6-35b-a3b
 
 # Set specialized defaults
 abstractcore --set-chat-model openai/gpt-4o-mini
 abstractcore --set-code-model anthropic/claude-haiku-4-5
 ```
+
+`--set-global-default` also writes explicit `input.text` and `output.text`
+capability route defaults. These route defaults are the framework-level source
+of truth for text understanding/generation defaults.
+
+### Capability Routing Defaults
+
+Capability route defaults use `kind.modality` keys and store a small provider
+target: `provider`, `model`, optional `base_url`, and provider/plugin `options`.
+
+Route kinds:
+
+- `input`: understanding/enrichment of request content
+- `output`: generated content
+- `embedding`: vectors for retrieval/indexes
+- `rerank`: reserved for the future reranker manager
+
+Examples:
+
+```bash
+abstractcore --set-capability-default output.text \
+  --capability-provider lmstudio \
+  --capability-model qwen/qwen3.6-35b-a3b \
+  --capability-base-url http://127.0.0.1:1234/v1
+
+abstractcore --set-capability-default output.voice \
+  --capability-provider supertonic \
+  --capability-model supertonic-3 \
+  --capability-option voice=M1
+
+abstractcore --clear-capability-default output.voice
+```
+
+Route defaults are configuration only; they do not load a model into a provider.
+Provider residency is reported separately.
 
 ### Cache Directories
 

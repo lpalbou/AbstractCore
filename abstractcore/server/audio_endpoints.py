@@ -1315,10 +1315,16 @@ def _audio_provider_catalog_payload(*, core: Any, catalog: Dict[str, Any], kind:
     }
 
 
-def _audio_voice_catalog_or_available(core: Any) -> Dict[str, Any]:
+def _audio_voice_catalog_or_available(
+    core: Any,
+    *,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
+    providers_only: bool = False,
+) -> Dict[str, Any]:
     try:
         if hasattr(core.voice, "voice_catalog"):
-            catalog = core.voice.voice_catalog()
+            catalog = core.voice.voice_catalog(provider=provider, model=model, providers_only=providers_only)
             if isinstance(catalog, dict):
                 return dict(catalog)
     except Exception as catalog_error:
@@ -1379,7 +1385,7 @@ async def audio_voices(
     """Discover configured TTS voices/profiles through the AbstractVoice plugin boundary."""
     try:
         core = _audio_catalog_core(request, base_url=base_url, api_key=api_key)
-        catalog = _audio_voice_catalog_or_available(core)
+        catalog = _audio_voice_catalog_or_available(core, provider=provider, model=model, providers_only=providers_only)
         out = dict(catalog)
         out.setdefault("kind", "tts")
         out.setdefault(
@@ -1475,9 +1481,9 @@ async def audio_speech_models(
     """Discover configured TTS model ids through the AbstractVoice plugin boundary."""
     try:
         core = _audio_catalog_core(request, base_url=base_url, api_key=api_key)
-        catalog = _audio_voice_catalog_or_available(core)
+        catalog = _audio_voice_catalog_or_available(core, provider=provider)
         try:
-            models = _audio_list_strings(list(core.voice.list_tts_models() or []))
+            models = _audio_list_strings(list(core.voice.list_tts_models(provider=provider) or []))
         except Exception:
             models = _audio_list_strings(catalog.get("tts_models") or catalog.get("models"))
         if not models:

@@ -2,8 +2,8 @@
 
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
-Last updated: 2026-05-23
-Package version: 2.13.27
+Last updated: 2026-05-26
+Package version: 2.13.28
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -14,6 +14,7 @@ Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 - Default tool execution is **pass-through**: AbstractCore returns tool calls; the host/runtime executes them.
 - In the AbstractFramework ecosystem, **AbstractRuntime** is the recommended runtime for executing tool calls durably (policy, retries, persistence): https://github.com/lpalbou/abstractruntime
 - Media handling is **policy-driven** by design (no silent semantic changes). If audio/video/images "don't work", check policy + configured fallbacks.
+- Framework defaults use capability routes such as `input.text`, `output.text`, `embedding.text`, and future `rerank.text`; Core owns persistence and Gateway can act as a control plane.
 - `llms.txt` is the short index; this file is intentionally large. Prefer pulling only the sections you need.
 
 ## Table of contents
@@ -651,7 +652,7 @@ AbstractCore supports optional capability plugins discovered via Python entry po
 - install `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
 - install `abstractvision` -> enables `llm.vision` (generative vision; often via an OpenAI-compatible images endpoint)
 - install `abstractcore[music]` -> enables `llm.music` and music output routing for text-to-music through `abstractmusic`
-- current plugin floors in this source: `abstractvoice>=0.10.15`, `abstractvision>=0.3.13`, `abstractmusic>=0.1.12`
+- current plugin floors in this source: `abstractvoice>=0.10.16`, `abstractvision>=0.3.14`, `abstractmusic>=0.1.12`
 
 Server note:
 - the server can optionally expose `/v1/images/*` (requires `abstractvision`)
@@ -6728,12 +6729,45 @@ Set fallback defaults when app-specific configurations are not available:
 
 ```bash
 # Set global fallback model
-abstractcore --set-global-default ollama/llama3:8b
+abstractcore --set-global-default lmstudio:qwen/qwen3.6-35b-a3b
 
 # Set specialized defaults
 abstractcore --set-chat-model openai/gpt-4o-mini
 abstractcore --set-code-model anthropic/claude-haiku-4-5
 ```
+
+`--set-global-default` also writes explicit `input.text` and `output.text`
+capability route defaults. These route defaults are the framework-level source
+of truth for text understanding/generation defaults.
+
+### Capability Routing Defaults
+
+Capability route defaults use `kind.modality` keys and store a small provider
+target: `provider`, `model`, optional `base_url`, and provider/plugin `options`.
+
+Route kinds:
+
+- `input`: understanding/enrichment of request content
+- `output`: generated content
+- `embedding`: vectors for retrieval/indexes
+- `rerank`: reserved for the future reranker manager
+
+Examples:
+
+```bash
+abstractcore --set-capability-default output.text \
+  --capability-provider lmstudio \
+  --capability-model qwen/qwen3.6-35b-a3b \
+  --capability-base-url http://127.0.0.1:1234/v1
+
+abstractcore --set-capability-default embedding.text \
+  --capability-provider lmstudio \
+  --capability-model text-embedding-nomic-embed-text-v1.5 \
+  --capability-base-url http://127.0.0.1:1234/v1
+```
+
+Route defaults are configuration only; they do not load a model into a provider.
+Provider residency is reported separately.
 
 ### Cache Directories
 

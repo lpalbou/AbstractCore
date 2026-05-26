@@ -28,6 +28,9 @@ if TYPE_CHECKING:
 class OllamaProvider(BaseProvider):
     """Ollama provider for local models with full integration"""
 
+    PROVIDER_ID = "ollama"
+    TEXT_MODEL_RESIDENCY_CONTROL_PLANE = "server"
+
     def __init__(self, model: str = "qwen3:4b-instruct-2507-q4_K_M", base_url: Optional[str] = None, **kwargs):
         super().__init__(model, **kwargs)
         self.provider = "ollama"
