@@ -3,7 +3,7 @@
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
 Last updated: 2026-05-26
-Package version: 2.13.29
+Package version: 2.13.30
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -652,7 +652,7 @@ AbstractCore supports optional capability plugins discovered via Python entry po
 - install `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
 - install `abstractvision` -> enables `llm.vision` (generative images/video through OpenAI-compatible endpoints or local backends such as MLX-Gen)
 - install `abstractcore[music]` -> enables `llm.music` and music output routing for text-to-music through `abstractmusic`
-- current plugin floors in this source: `abstractvoice>=0.10.16`, `abstractvision>=0.3.16`, `abstractmusic>=0.1.12`; `llm.vision` exposes `t2i`, `i2i`, `t2v`, and `i2v`, and `generate(..., output=...)` forwards progress callbacks for generated image/video outputs
+- current plugin floors in this source: `abstractvoice>=0.10.17`, `abstractvision>=0.3.17`, `abstractmusic>=0.1.12`; `llm.vision` exposes `t2i`, `i2i`, `t2v`, and `i2v`, and `generate(..., output=...)` forwards progress callbacks for generated image/video outputs
 
 Server note:
 - the server can optionally expose `/v1/images/*`, `/v1/videos/*`, and `/v1/vision/*` model/control surfaces (requires `abstractvision` for local backends; remote OpenAI-compatible proxy paths can run through the server)

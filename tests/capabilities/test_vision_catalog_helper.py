@@ -112,14 +112,24 @@ def test_local_vision_cache_catalog_surfaces_cached_mlx_gen_download_variants(mo
     lmstudio_dir = tmp_path / "lmstudio"
     q4_snapshot = hf_dir / "models--AbstractFramework--flux.2-klein-4b-4bit" / "snapshots" / "q4"
     q8_snapshot = hf_dir / "models--AbstractFramework--flux.2-klein-4b-8bit" / "snapshots" / "q8"
+    bonsai_snapshot = (
+        hf_dir
+        / "models--prism-ml--bonsai-image-ternary-4B-mlx-2bit"
+        / "snapshots"
+        / "ternary"
+    )
     (q4_snapshot / "transformer").mkdir(parents=True)
     (q8_snapshot / "transformer").mkdir(parents=True)
+    (bonsai_snapshot / "transformer-packed-mflux").mkdir(parents=True)
     (q4_snapshot / "transformer" / "model.safetensors").write_bytes(b"x")
     (q8_snapshot / "transformer" / "model.safetensors").write_bytes(b"x")
+    (bonsai_snapshot / "transformer-packed-mflux" / "model.safetensors").write_bytes(b"x")
     (q4_snapshot.parents[1] / "refs").mkdir()
     (q8_snapshot.parents[1] / "refs").mkdir()
+    (bonsai_snapshot.parents[1] / "refs").mkdir()
     (q4_snapshot.parents[1] / "refs" / "main").write_text("q4", encoding="utf-8")
     (q8_snapshot.parents[1] / "refs" / "main").write_text("q8", encoding="utf-8")
+    (bonsai_snapshot.parents[1] / "refs" / "main").write_text("ternary", encoding="utf-8")
     local_dir.mkdir()
     lmstudio_dir.mkdir()
 
@@ -146,6 +156,22 @@ def test_local_vision_cache_catalog_surfaces_cached_mlx_gen_download_variants(mo
                 ),
             ],
         ),
+        "prism-ml/bonsai-image-ternary-4B-mlx-2bit": _FakeVisionSpec(
+            provider="huggingface",
+            license="apache-2.0",
+            tasks={"text_to_image": {}},
+            notes="official low-bit packed",
+            downloads=[
+                _FakeDownload(
+                    key="bonsai-image-ternary",
+                    engine="mlx-gen",
+                    target="mlx",
+                    bits=2,
+                    repo_id="prism-ml/bonsai-image-ternary-4B-mlx-2bit",
+                    source="official",
+                ),
+            ],
+        ),
     }
 
     class _Registry:
@@ -167,13 +193,18 @@ def test_local_vision_cache_catalog_surfaces_cached_mlx_gen_download_variants(mo
     payload = vision_catalog.get_local_vision_cache_catalog()
     models = {item["download_repo_id"]: item for item in payload["models"]}
 
-    assert payload["cached_total"] == 2
+    assert payload["cached_total"] == 3
     assert models["AbstractFramework/flux.2-klein-4b-4bit"]["provider"] == "mlx-gen"
     assert models["AbstractFramework/flux.2-klein-4b-4bit"]["id"] == "AbstractFramework/flux.2-klein-4b-4bit"
     assert models["AbstractFramework/flux.2-klein-4b-4bit"]["bits"] == 4
     assert models["AbstractFramework/flux.2-klein-4b-8bit"]["provider"] == "mlx-gen"
     assert models["AbstractFramework/flux.2-klein-4b-8bit"]["id"] == "AbstractFramework/flux.2-klein-4b-8bit"
     assert models["AbstractFramework/flux.2-klein-4b-8bit"]["bits"] == 8
+    bonsai = models["prism-ml/bonsai-image-ternary-4B-mlx-2bit"]
+    assert bonsai["provider"] == "mlx-gen"
+    assert bonsai["id"] == "prism-ml/bonsai-image-ternary-4B-mlx-2bit"
+    assert bonsai["bits"] == 2
+    assert bonsai["tasks"] == ["text_to_image"]
 
 
 def test_local_vision_cache_catalog_surfaces_cached_mlx_gen_video_only_model(monkeypatch, tmp_path: Path) -> None:

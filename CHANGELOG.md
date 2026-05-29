@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.30] - 2026-05-29
+
+### Changed
+- **Vision plugin floor**: raised AbstractVision integration requirements to `abstractvision>=0.3.17` so Core installs pick up the MLX-Gen `0.18.7` runtime floor and latest Wan video/model fixes.
+- **Voice plugin floor**: raised AbstractVoice integration requirements to `abstractvoice>=0.10.17` so Core optional installs pick up the one-shot TTS CLI release and current voice package metadata.
+
 ## [2.13.29] - 2026-05-26
 
 ### Added

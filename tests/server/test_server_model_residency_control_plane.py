@@ -65,6 +65,41 @@ def test_acore_models_routes_image_residency_through_server_vision_cache(monkeyp
     assert calls[-1][0] == "unload"
 
 
+def test_acore_models_loaded_lists_shared_vision_cache_once_when_task_omitted(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    vision_endpoints = importlib.import_module("abstractcore.server.vision_endpoints")
+    server_app._GATEWAY_LOADED_RUNTIMES.clear()
+    server_app._GATEWAY_RUNTIME_IDS.clear()
+
+    calls: List[Dict[str, Any]] = []
+    runtime = {
+        "runtime_id": "mlx-gen/AbstractFramework/qwen-image-edit-2511-4bit",
+        "task": "image_generation",
+        "tasks": ["image_generation", "text_to_image", "image_to_image"],
+        "provider": "mlx-gen",
+        "model": "AbstractFramework/qwen-image-edit-2511-4bit",
+        "loaded": True,
+        "state": "loaded",
+    }
+
+    def fake_list(filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+        calls.append(dict(filters or {}))
+        return [dict(runtime)]
+
+    def fail_audio_residency(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("skip audio")
+
+    monkeypatch.setattr(vision_endpoints, "list_server_vision_loaded_models", fake_list)
+    monkeypatch.setattr(server_app, "_capability_residency_core_for_request", fail_audio_residency)
+
+    client = TestClient(server_app.app)
+    loaded = client.get("/acore/models/loaded")
+
+    assert loaded.status_code == 200
+    assert [item["runtime_id"] for item in loaded.json()["models"]] == [runtime["runtime_id"]]
+    assert calls == [{"provider": "", "model": ""}]
+
+
 def test_acore_models_routes_video_residency_through_server_vision_cache(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
     vision_endpoints = importlib.import_module("abstractcore.server.vision_endpoints")

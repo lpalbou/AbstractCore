@@ -4306,8 +4306,10 @@ def _normalize_model_residency_task(task: Optional[str]) -> str:
         "image_generation": "image_generation",
         "text_to_image": "image_generation",
         "t2i": "image_generation",
-        "image_to_image": "image_generation",
-        "i2i": "image_generation",
+        "image_to_image": "image_to_image",
+        "i2i": "image_to_image",
+        "image_edit": "image_to_image",
+        "edit_image": "image_to_image",
         "video": "video_generation",
         "video_generation": "video_generation",
         "text_to_video": "text_to_video",
@@ -4338,7 +4340,13 @@ def _normalize_model_residency_task(task: Optional[str]) -> str:
     return aliases[raw]
 
 
-_VISION_RESIDENCY_TASKS = {"image_generation", "video_generation", "text_to_video", "image_to_video"}
+_VISION_RESIDENCY_TASKS = {
+    "image_generation",
+    "image_to_image",
+    "video_generation",
+    "text_to_video",
+    "image_to_video",
+}
 
 
 def _model_residency_payload(req: BaseModel) -> Dict[str, Any]:
@@ -4474,8 +4482,14 @@ def _capability_residency_load(task: str, payload: Dict[str, Any], http_request:
 
 
 def _capability_residency_loaded(task: Optional[str], filters: Dict[str, Any], http_request: Request) -> list[Dict[str, Any]]:
-    tasks = [task] if task else ["image_generation", "tts", "stt"]
     records: list[Dict[str, Any]] = []
+    if task is None:
+        from . import vision_endpoints as _vision_endpoints
+
+        records.extend(_vision_endpoints.list_server_vision_loaded_models(filters))
+        tasks = ["tts", "stt"]
+    else:
+        tasks = [task]
     for item_task in tasks:
         if item_task in _VISION_RESIDENCY_TASKS:
             from . import vision_endpoints as _vision_endpoints

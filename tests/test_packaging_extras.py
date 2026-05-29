@@ -49,29 +49,29 @@ def test_server_extra_stays_vision_runtime_light() -> None:
 
     assert "abstractvision" not in server_block
     assert "abstractvoice" not in server_block
-    assert "abstractvoice>=0.10.16" in voice_block
+    assert "abstractvoice>=0.10.17" in voice_block
     assert "omnivoice>=0.1.5" in voice_block
     assert "abstractmusic" not in voice_block
-    assert "abstractvoice>=0.10.16" in audio_block
+    assert "abstractvoice>=0.10.17" in audio_block
     assert "omnivoice>=0.1.5" in audio_block
-    assert "abstractvision>=0.3.16" in vision_block
-    assert "abstractvision[huggingface]>=0.3.16" in vision_diffusers_block
-    assert "abstractvision[sdcpp]>=0.3.16" in vision_sdcpp_block
-    assert "abstractvision[local]>=0.3.16" in vision_local_block
+    assert "abstractvision>=0.3.17" in vision_block
+    assert "abstractvision[huggingface]>=0.3.17" in vision_diffusers_block
+    assert "abstractvision[sdcpp]>=0.3.17" in vision_sdcpp_block
+    assert "abstractvision[local]>=0.3.17" in vision_local_block
     assert "abstractmusic>=0.1.12" in music_block
-    assert "abstractvoice[all-apple]>=0.10.16" in all_apple_block
+    assert "abstractvoice[all-apple]>=0.10.17" in all_apple_block
     assert "omnivoice>=0.1.5" in all_apple_block
-    assert "abstractvision[all-apple]>=0.3.16" in all_apple_block
+    assert "abstractvision[all-apple]>=0.3.17" in all_apple_block
     assert "abstractmusic[all-apple]>=0.1.12" in all_apple_block
     assert "vllm" not in all_apple_block
-    assert "abstractvoice[all-gpu]>=0.10.16" in all_gpu_block
+    assert "abstractvoice[all-gpu]>=0.10.17" in all_gpu_block
     assert "omnivoice>=0.1.5" in all_gpu_block
-    assert "abstractvision[all-gpu]>=0.3.16" in all_gpu_block
+    assert "abstractvision[all-gpu]>=0.3.17" in all_gpu_block
     assert "abstractmusic[all-gpu]>=0.1.12" in all_gpu_block
     assert "mlx-lm" not in all_gpu_block
-    assert "abstractvoice>=0.10.16" in full_dev_block
+    assert "abstractvoice>=0.10.17" in full_dev_block
     assert "omnivoice>=0.1.5" in full_dev_block
-    assert "abstractvision>=0.3.16" in full_dev_block
+    assert "abstractvision>=0.3.17" in full_dev_block
     assert "abstractmusic>=0.1.12" in full_dev_block
 
     assert "transformers>=5.3.0,<6.0.0" in all_apple_block
