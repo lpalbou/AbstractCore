@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.31] - 2026-05-31
+
+### Changed
+- **Vision plugin floor**: raised AbstractVision integration requirements to `abstractvision>=0.3.18` so Core installs pick up the MLX-Gen `0.18.8` runtime floor and Wan 2.2 A14B text-to-video/image-to-video catalog support.
+
+### Fixed
+- **Embedding endpoint validation**: LM Studio, vLLM, and generic OpenAI-compatible embedding clients now skip eager chat-model catalogue validation for embedding-only setup. Embedding requests still surface provider errors at call time, but incomplete `/models` catalogues no longer disable remote embeddings before the first request.
+- **Remote-light voice/audio extras**: `abstractcore[voice]` and `abstractcore[audio]` now install the AbstractVoice capability plugin without `omnivoice`, `torch`, or `torchaudio`. Local OmniVoice engines remain in the explicit local aggregate profiles such as `abstractcore[all-apple]` and `abstractcore[all-gpu]`.
+
 ## [2.13.30] - 2026-05-29
 
 ### Changed

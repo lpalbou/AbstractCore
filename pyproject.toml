@@ -215,12 +215,10 @@ media = [
 
 voice = [
     "abstractvoice>=0.10.17",
-    "omnivoice>=0.1.5",
 ]
 
 audio = [
     "abstractvoice>=0.10.17",
-    "omnivoice>=0.1.5",
 ]
 
 compression = [
@@ -274,7 +272,7 @@ all = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.17",
+    "abstractvision>=0.3.18",
 ]
 
 all-apple = [
@@ -317,7 +315,7 @@ all-apple = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision[all-apple]>=0.3.17",
+    "abstractvision[all-apple]>=0.3.18",
 ]
 
 all-gpu = [
@@ -356,7 +354,7 @@ all-gpu = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision[all-gpu]>=0.3.17",
+    "abstractvision[all-gpu]>=0.3.18",
 ]
 
 # Legacy broad bundle kept for existing users. New installs should usually
@@ -396,7 +394,7 @@ all-non-mlx = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.17",
+    "abstractvision>=0.3.18",
 ]
 
 # Development dependencies
@@ -425,19 +423,19 @@ server = [
 # Vision (optional) - delegates to AbstractVision.
 # Kept as a separate extra for installs that want vision without the HTTP server.
 vision = [
-    "abstractvision>=0.3.17",
+    "abstractvision>=0.3.18",
 ]
 
 vision-diffusers = [
-    "abstractvision[huggingface]>=0.3.17",
+    "abstractvision[huggingface]>=0.3.18",
 ]
 
 vision-sdcpp = [
-    "abstractvision[sdcpp]>=0.3.17",
+    "abstractvision[sdcpp]>=0.3.18",
 ]
 
 vision-local = [
-    "abstractvision[local]>=0.3.17",
+    "abstractvision[local]>=0.3.18",
 ]
 
 music = [
@@ -513,7 +511,7 @@ full-dev = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.17",
+    "abstractvision>=0.3.18",
     # Tooling
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",

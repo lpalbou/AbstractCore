@@ -2,7 +2,7 @@
 
 > Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media handling (images/audio/video + documents), embeddings, and an optional OpenAI-compatible HTTP server. Default install stays lightweight; features are enabled via extras.
 
-Last reviewed against source: 2026-05-29. Package version in source: 2.13.30. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
+Last reviewed against source: 2026-05-31. Package version in source: 2.13.31. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 This is the curated, high-signal index for agents. For a self-contained handbook with the important details inlined, read `llms-full.txt`.
 
@@ -60,8 +60,8 @@ Quick start:
 
 - [Provider registry](abstractcore/providers/registry.py): provider IDs, defaults, install extras
 - [Provider setup guide](docs/prerequisites.md): env vars + examples for OpenAI/Anthropic/Ollama/LMStudio/MLX/HuggingFace/vLLM/OpenRouter/Portkey/OpenAI-compatible
-- Install profile vocabulary: `abstractcore[apple]` is the hardware alias for the MLX local LLM stack, `abstractcore[gpu]` is the hardware alias for the vLLM local LLM stack, and `abstractcore[all-apple]` / `abstractcore[all-gpu]` are larger aggregate profiles.
-- Optional media plugin floors in this source: `abstractvoice>=0.10.17`, `abstractvision>=0.3.17`, and `abstractmusic>=0.1.12`. The AbstractVision plugin supports direct `llm.vision.t2i/i2i/t2v/i2v` calls, exact MLX-Gen model ids, and image/video output routing through `generate(..., output=...)`; top-level progress callbacks are forwarded to generated image/video output specs.
+- Install profile vocabulary: `abstractcore[apple]` is the hardware alias for the MLX local LLM stack, `abstractcore[gpu]` is the hardware alias for the vLLM local LLM stack, capability extras such as `voice`/`audio`/`vision`/`music` stay remote-light, and `abstractcore[all-apple]` / `abstractcore[all-gpu]` are larger aggregate profiles with local plugin engines where supported.
+- Optional media plugin floors in this source: `abstractvoice>=0.10.17`, `abstractvision>=0.3.18`, and `abstractmusic>=0.1.12`. The AbstractVision plugin supports direct `llm.vision.t2i/i2i/t2v/i2v` calls, exact MLX-Gen model ids, and image/video output routing through `generate(..., output=...)`; top-level progress callbacks are forwarded to generated image/video output specs.
 
 ## Server (OpenAI-compatible `/v1`)
 
@@ -81,7 +81,7 @@ Quick start:
 - [Architecture](docs/architecture.md): core/provider/session/tool/media/capabilities design
 - [Practical recipes](docs/examples.md): copy/paste code snippets (provider-agnostic)
 - [Troubleshooting](docs/troubleshooting.md): common errors and fixes
-- [Embeddings](docs/embeddings.md): EmbeddingManager (optional)
+- [Embeddings](docs/embeddings.md): EmbeddingManager for local and remote text embeddings; endpoint-backed providers can use embedding-only `/v1/embeddings` routes
 - [Capabilities](docs/capabilities.md): `llm.voice` / `llm.audio` / `llm.vision` / `llm.music` plugin model and shared discovery contract
 - [MCP](docs/mcp.md): MCP tool servers (HTTP/stdio)
 - [llms-full](llms-full.txt): self-contained agent handbook (this repo)

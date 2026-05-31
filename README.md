@@ -135,7 +135,7 @@ pip install "abstractcore[vllm]"         # Explicit vLLM provider extra
 # Optional application features
 pip install "abstractcore[tools]"       # built-in web tools (web_search, skim_websearch, skim_url, fetch_url)
 pip install "abstractcore[media]"       # images, PDFs, Office docs
-pip install "abstractcore[voice]"       # abstractvoice plugin (TTS/STT capability)
+pip install "abstractcore[voice]"       # abstractvoice plugin (remote-light TTS/STT capability)
 pip install "abstractcore[vision]"      # abstractvision plugin (generative vision capability)
 pip install "abstractcore[music]"       # abstractmusic plugin (text-to-music capability)
 pip install "abstractcore[compression]" # glyph visual-text compression (Pillow-only)
@@ -152,8 +152,10 @@ pip install "abstractcore[all-gpu]"      # GPU host: remote SDKs + HF/GGUF + vLL
 ```
 
 `apple`/`gpu` are hardware-profile aliases for the local LLM engine stack.
-`all-apple`/`all-gpu` are larger aggregate profiles for a full local-development
-environment.
+`voice`, `audio`, `vision`, and `music` install the lightweight capability
+plugin paths used for remote-capable routing. `all-apple`/`all-gpu` are larger
+aggregate profiles for a full local-development environment, including local
+plugin engines such as OmniVoice where supported.
 
 ## Quickstart
 
@@ -314,7 +316,7 @@ Notes:
 - **Images**: use a vision-capable model, or configure **vision fallback** for text-only models (`abstractcore --config`; `abstractcore --set-vision-provider PROVIDER MODEL`).
 - **Video**: `video_policy="auto"` (default) uses native video when supported, otherwise samples frames (requires `ffmpeg`/`ffprobe`) and routes them through image/vision handling (so you still need a vision-capable model or vision fallback configured).
 - **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` and install `abstractcore[voice]` for speech-to-text.
-  `abstractvoice` 0.10.11+ can install its base plugin path on Python 3.9, but Python 3.10+ is recommended for optional/heavier voice engines and cloning backends.
+  `abstractvoice` 0.10.17+ can install its base plugin path on Python 3.9 without OmniVoice, torch, or torchaudio. Local voice engines and clone backends are part of explicit local aggregate profiles.
 
 Configure defaults (optional):
 

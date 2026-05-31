@@ -2,8 +2,8 @@
 
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
-Last updated: 2026-05-26
-Package version: 2.13.30
+Last updated: 2026-05-31
+Package version: 2.13.31
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -157,6 +157,9 @@ pip install "abstractcore[media]"        # images + PDF/Office extraction
 pip install "abstractcore[compression]"  # glyph visual-text compression
 pip install "abstractcore[embeddings]"   # EmbeddingManager + local embedding models
 pip install "abstractcore[tokens]"       # precise token counting (tiktoken)
+pip install "abstractcore[voice]"        # remote-light abstractvoice TTS/STT capability
+pip install "abstractcore[vision]"       # remote-light abstractvision capability
+pip install "abstractcore[music]"        # remote-light abstractmusic capability
 pip install "abstractcore[server]"       # OpenAI-compatible /v1 HTTP gateway (FastAPI)
 ```
 
@@ -172,8 +175,10 @@ pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + v
 
 Install-profile note:
 `apple`/`gpu` are hardware-profile aliases for the local LLM engine stack.
-`all-apple`/`all-gpu` are larger aggregate profiles for a full local-development
-environment.
+Capability extras such as `voice`, `audio`, `vision`, and `music` install the
+lightweight plugin paths used for remote-capable routing. `all-apple`/`all-gpu`
+are larger aggregate profiles for a full local-development environment,
+including local plugin engines where supported.
 
 Shell tip:
 - In zsh, always quote extras: `pip install "abstractcore[media]"`.
@@ -652,7 +657,7 @@ AbstractCore supports optional capability plugins discovered via Python entry po
 - install `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
 - install `abstractvision` -> enables `llm.vision` (generative images/video through OpenAI-compatible endpoints or local backends such as MLX-Gen)
 - install `abstractcore[music]` -> enables `llm.music` and music output routing for text-to-music through `abstractmusic`
-- current plugin floors in this source: `abstractvoice>=0.10.17`, `abstractvision>=0.3.17`, `abstractmusic>=0.1.12`; `llm.vision` exposes `t2i`, `i2i`, `t2v`, and `i2v`, and `generate(..., output=...)` forwards progress callbacks for generated image/video outputs
+- current plugin floors in this source: `abstractvoice>=0.10.17`, `abstractvision>=0.3.18`, `abstractmusic>=0.1.12`; `llm.vision` exposes `t2i`, `i2i`, `t2v`, and `i2v`, and `generate(..., output=...)` forwards progress callbacks for generated image/video outputs
 
 Server note:
 - the server can optionally expose `/v1/images/*`, `/v1/videos/*`, and `/v1/vision/*` model/control surfaces (requires `abstractvision` for local backends; remote OpenAI-compatible proxy paths can run through the server)
@@ -670,11 +675,17 @@ pip install "abstractcore[compression]"
 
 ## 9) Embeddings
 
-Install:
+Install local HuggingFace/sentence-transformer embeddings explicitly:
 
 ```bash
 pip install "abstractcore[embeddings]"
 ```
+
+Remote/provider-backed embeddings are also supported. LM Studio, vLLM, and
+generic OpenAI-compatible embedding endpoints use the core HTTP client and can
+serve embedding-only `/v1/embeddings` routes without requiring the embedding
+model to appear in a chat model catalogue. OpenAI embeddings require the
+OpenAI SDK extra or another install profile that includes it.
 
 Use:
 
@@ -1012,8 +1023,10 @@ pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + v
 ```
 
 `apple`/`gpu` are hardware-profile aliases for the local LLM engine stack.
-`all-apple`/`all-gpu` are larger aggregate profiles for a full local-development
-environment.
+Capability extras such as `voice`, `audio`, `vision`, and `music` install the
+lightweight plugin paths used for remote-capable routing. `all-apple`/`all-gpu`
+are larger aggregate profiles for a full local-development environment,
+including local plugin engines where supported.
 
 Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, LocalAI, etc.) work with the core install; you just point AbstractCore at the server base URL. See [Prerequisites](prerequisites.md) for provider setup.
 
@@ -1311,9 +1324,14 @@ pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + v
 - `[mlx]` - Provider-specific MLX extra, kept for explicit installs
 - `[vllm]` - Provider-specific vLLM extra, kept for explicit installs
 - `[remote]` - Lightweight hosted SDK bundle for OpenAI + Anthropic; OpenRouter, Portkey, Ollama, LM Studio, and generic `/v1` endpoints need no extra dependency.
-- `[all-apple]` - Best for Apple Silicon local development (includes MLX, excludes vLLM)
-- `[all-gpu]` - Best for NVIDIA GPU local development (includes vLLM, excludes MLX)
+- `[all-apple]` - Best for Apple Silicon local development (includes MLX and local plugin engines where supported, excludes vLLM)
+- `[all-gpu]` - Best for NVIDIA GPU local development (includes vLLM and local plugin engines where supported, excludes MLX)
 - For CPU-only or Intel machines, compose only what you need, for example `abstractcore[remote,huggingface,tools]`.
+
+Capability extras such as `[voice]`, `[audio]`, `[vision]`, and `[music]`
+install lightweight plugin routing surfaces for remote-capable backends. Local
+inference engines remain behind explicit local profiles such as `[all-apple]`,
+`[all-gpu]`, or plugin-specific local extras.
 
 ## Cloud Provider Setup
 
@@ -6126,6 +6144,11 @@ embedder = EmbeddingManager(
 )
 ```
 
+For embedding-only use, AbstractCore does not require the configured embedding
+model to appear in the server's chat model catalogue. This keeps LM Studio,
+vLLM, and generic OpenAI-compatible embeddings endpoints usable when `/models`
+reports only loaded chat models or omits embedding models.
+
 ### OpenAI Provider
 
 Cloud embedding models via the OpenAI API. Requires `OPENAI_API_KEY`.
@@ -6167,6 +6190,11 @@ embedder = EmbeddingManager(
     model="my-embedding-model"
 )
 ```
+
+Endpoint-backed embedding providers (`lmstudio`, `vllm`, and
+`openai-compatible`) send requests directly to `/v1/embeddings` and skip eager
+chat-model validation during embedding client setup. Request-time provider
+errors still surface from the embedding call itself.
 
 ### Provider Comparison
 
@@ -8220,6 +8248,14 @@ Generate embedding vectors for semantic search, RAG, and similarity analysis.
 - **HuggingFace**: Local models with ONNX acceleration
 - **Ollama**: `ollama/granite-embedding:278m`, etc.
 - **LMStudio**: Any loaded embedding model
+- **OpenAI**: `openai/text-embedding-3-small`, `openai/text-embedding-3-large`
+- **OpenRouter**: `openrouter/openai/text-embedding-3-small`, etc.
+- **Portkey**: `portkey/...` with your Portkey routing configuration
+- **OpenAI-compatible**: `openai-compatible/...` against configured/local `/v1/embeddings` endpoints
+
+For endpoint-backed providers such as LM Studio, vLLM, and generic
+OpenAI-compatible servers, the embedding route does not require the embedding
+model to appear in a chat model catalogue before the request is sent.
 
 **Batch Embedding:**
 ```bash
@@ -9648,7 +9684,7 @@ These providers work with the core install (no provider extra): `ollama`, `lmstu
 pip install "abstractcore[remote,media,tools]"
 ```
 
-For “turnkey” local-runtime installs, see `README.md` (`all-apple` for Apple Silicon, `all-gpu` for NVIDIA GPU). The `apple` and `gpu` extras install only the hardware-specific local LLM engine stack; the `all-*` extras are larger aggregate profiles.
+For “turnkey” local-runtime installs, see `README.md` (`all-apple` for Apple Silicon, `all-gpu` for NVIDIA GPU). The `apple` and `gpu` extras install only the hardware-specific local LLM engine stack; the `all-*` extras are larger aggregate profiles that also include local capability plugin engines where supported.
 
 ## Why did my install pull `torch` / take a long time?
 
@@ -9830,8 +9866,12 @@ See:
 Install the optional capability plugin package:
 
 ```bash
-pip install abstractvoice
+pip install "abstractcore[voice]"
 ```
+
+This installs the remote-light AbstractVoice capability path. Local voice
+engines require an explicit local profile such as `abstractcore[all-apple]` or
+`abstractcore[all-gpu]`.
 
 Then use the deterministic capability surfaces:
 

@@ -130,10 +130,17 @@ class OpenAICompatibleProvider(BaseProvider):
     API_KEY_ENV_VAR = "OPENAI_API_KEY"
     DEFAULT_BASE_URL = "http://localhost:1234/v1"
 
-    def __init__(self, model: str = "default", base_url: Optional[str] = None,
-                 api_key: Optional[str] = None, **kwargs):
+    def __init__(
+        self,
+        model: str = "default",
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        validate_model: bool = True,
+        **kwargs,
+    ):
         super().__init__(model, **kwargs)
         self.provider = self.PROVIDER_ID
+        self._validate_model_on_init = bool(validate_model)
 
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
@@ -169,8 +176,10 @@ class OpenAICompatibleProvider(BaseProvider):
 
         self._async_client = None  # Lazy-loaded async client
 
-        # Validate model exists on server
-        self._validate_model()
+        # Validate model exists on server unless the caller is using an endpoint-only path
+        # such as embeddings, where chat model catalogues can be incomplete.
+        if self._validate_model_on_init:
+            self._validate_model()
 
     @property
     def async_client(self):

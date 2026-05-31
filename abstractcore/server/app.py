@@ -7203,15 +7203,15 @@ def _create_direct_embedding_provider(provider: str, model: str, provider_kwargs
     if provider == "openai-compatible":
         from ..providers.openai_compatible_provider import OpenAICompatibleProvider
 
-        return OpenAICompatibleProvider(model=model, **provider_kwargs)
+        return OpenAICompatibleProvider(model=model, validate_model=False, **provider_kwargs)
     if provider == "vllm":
         from ..providers.vllm_provider import VLLMProvider
 
-        return VLLMProvider(model=model, **provider_kwargs)
+        return VLLMProvider(model=model, validate_model=False, **provider_kwargs)
     if provider == "lmstudio":
         from ..providers.lmstudio_provider import LMStudioProvider
 
-        return LMStudioProvider(model=model, **provider_kwargs)
+        return LMStudioProvider(model=model, validate_model=False, **provider_kwargs)
     raise ValueError(f"Unsupported direct embedding provider: {provider}")
 
 

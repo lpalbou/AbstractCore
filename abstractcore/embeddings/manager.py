@@ -217,7 +217,9 @@ class EmbeddingManager:
                 logger.info(f"Initialized Ollama embedding provider with model: {self._resolved_model}")
             elif self.provider == "lmstudio":
                 from ..providers.lmstudio_provider import LMStudioProvider
-                self._provider_instance = LMStudioProvider(model=self._resolved_model, **self.provider_kwargs)
+                lmstudio_kwargs = dict(self.provider_kwargs)
+                lmstudio_kwargs.setdefault("validate_model", False)
+                self._provider_instance = LMStudioProvider(model=self._resolved_model, **lmstudio_kwargs)
                 logger.info(f"Initialized LMStudio embedding provider with model: {self._resolved_model}")
             elif self.provider == "openai":
                 from ..providers.openai_provider import OpenAIProvider
@@ -235,11 +237,15 @@ class EmbeddingManager:
                 logger.info(f"Initialized Portkey embedding provider with model: {self._resolved_model}")
             elif self.provider == "openai-compatible":
                 from ..providers.openai_compatible_provider import OpenAICompatibleProvider
-                self._provider_instance = OpenAICompatibleProvider(model=self._resolved_model, **self.provider_kwargs)
+                compatible_kwargs = dict(self.provider_kwargs)
+                compatible_kwargs.setdefault("validate_model", False)
+                self._provider_instance = OpenAICompatibleProvider(model=self._resolved_model, **compatible_kwargs)
                 logger.info(f"Initialized OpenAI-compatible embedding provider with model: {self._resolved_model}")
             elif self.provider == "vllm":
                 from ..providers.vllm_provider import VLLMProvider
-                self._provider_instance = VLLMProvider(model=self._resolved_model, **self.provider_kwargs)
+                vllm_kwargs = dict(self.provider_kwargs)
+                vllm_kwargs.setdefault("validate_model", False)
+                self._provider_instance = VLLMProvider(model=self._resolved_model, **vllm_kwargs)
                 logger.info(f"Initialized vLLM embedding provider with model: {self._resolved_model}")
 
         # Common setup for all providers

@@ -33,7 +33,7 @@ class OpenRouterProvider(OpenAICompatibleProvider):
         **kwargs,
     ):
         self._validate_model_on_init = bool(validate_model)
-        super().__init__(model=model, base_url=base_url, api_key=api_key, **kwargs)
+        super().__init__(model=model, base_url=base_url, api_key=api_key, validate_model=validate_model, **kwargs)
 
         if not self._has_api_key():
             raise ValueError(

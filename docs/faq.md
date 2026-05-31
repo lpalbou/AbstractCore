@@ -4,7 +4,7 @@
 
 The default install is intentionally lightweight. It includes the core API (`create_llm`, `BasicSession`, tool definitions, structured output plumbing) and uses only small dependencies (`pydantic`, `httpx`).
 
-Anything heavy (provider SDKs, torch/transformers, PDF parsing, embeddings models, web scraping deps, the HTTP server) is behind install extras. See [Getting Started](getting-started.md) and [Prerequisites](prerequisites.md).
+Anything heavy (provider SDKs, torch/transformers, PDF parsing, embeddings models, local voice/image/music engines, web scraping deps, the HTTP server) is behind install extras. See [Getting Started](getting-started.md) and [Prerequisites](prerequisites.md).
 
 ## Which extra do I need for my provider?
 
@@ -26,7 +26,7 @@ These providers work with the core install (no provider extra): `ollama`, `lmstu
 pip install "abstractcore[remote,media,tools]"
 ```
 
-For “turnkey” local-runtime installs, see `README.md` (`all-apple` for Apple Silicon, `all-gpu` for NVIDIA GPU). The `apple` and `gpu` extras install only the hardware-specific local LLM engine stack; the `all-*` extras are larger aggregate profiles.
+For “turnkey” local-runtime installs, see `README.md` (`all-apple` for Apple Silicon, `all-gpu` for NVIDIA GPU). The `apple` and `gpu` extras install only the hardware-specific local LLM engine stack; the `all-*` extras are larger aggregate profiles that also include local capability plugin engines where supported.
 
 ## Why did my install pull `torch` / take a long time?
 
@@ -211,6 +211,10 @@ Install the optional capability plugin package:
 ```bash
 pip install "abstractcore[voice]"
 ```
+
+This installs the remote-light AbstractVoice capability path. Local voice
+engines require an explicit local profile such as `abstractcore[all-apple]` or
+`abstractcore[all-gpu]`.
 
 Then use the deterministic capability surfaces:
 

@@ -46,21 +46,25 @@ pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + v
 ```
 
 `apple`/`gpu` are hardware-profile aliases for the local LLM engine stack.
-`all-apple`/`all-gpu` are larger aggregate profiles for a full local-development
-environment.
+Capability extras such as `voice`, `audio`, `vision`, and `music` install the
+lightweight plugin paths used for remote-capable routing. `all-apple`/`all-gpu`
+are larger aggregate profiles for a full local-development environment,
+including local plugin engines where supported.
 
 Local OpenAI-compatible servers (Ollama, LMStudio, vLLM, llama.cpp, LocalAI, etc.) work with the core install; you just point AbstractCore at the server base URL. See [Prerequisites](prerequisites.md) for provider setup.
 
 Optional capability plugins (deterministic multimodal outputs):
 
 ```bash
-pip install "abstractcore[voice]"   # enables llm.voice / llm.audio via abstractvoice (TTS/STT)
+pip install "abstractcore[voice]"   # enables llm.voice / llm.audio via remote-light abstractvoice
 pip install "abstractcore[vision]"  # enables llm.vision via abstractvision (generative vision)
 ```
 
-For `abstractvoice` 0.10.11+, the base AbstractCore plugin path can install on
-Python 3.9, but Python 3.10+ is recommended. Some optional/heavier voice
-engines and voice-clone backends are Python 3.10+ only.
+For `abstractvoice` 0.10.17+, the base AbstractCore plugin path can install on
+Python 3.9 and does not install OmniVoice, torch, or torchaudio. Python 3.10+ is
+recommended. Local voice engines and voice-clone backends are part of explicit
+local aggregate profiles such as `abstractcore[all-apple]` and
+`abstractcore[all-gpu]`.
 
 See: [Capabilities](capabilities.md) and [Server](server.md).
 

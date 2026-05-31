@@ -133,6 +133,7 @@ def test_openai_compatible_embeddings_accept_loopback_base_url(client: TestClien
         "model": "local-embedding-model",
         "api_key": "sk-request-provider-key",
         "base_url": "http://127.0.0.1:1234/v1",
+        "validate_model": False,
     }
     assert captured["embed"]["input_text"] == ["alpha", "beta"]
 
@@ -173,9 +174,52 @@ def test_vllm_embeddings_route_uses_vllm_provider(client: TestClient, monkeypatc
         "model": "local-embedding-model",
         "api_key": "sk-request-provider-key",
         "base_url": "http://127.0.0.1:8000/v1",
+        "validate_model": False,
     }
     assert captured["embed"]["input_text"] == "alpha"
     assert resp.json()["model"] == "vllm/local-embedding-model"
+
+
+def test_lmstudio_embeddings_route_skips_chat_model_validation(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    from abstractcore.providers.lmstudio_provider import LMStudioProvider
+
+    captured: Dict[str, Any] = {}
+
+    def fake_init(self, model: str, **kwargs: Any) -> None:
+        self.model = model
+        captured["init"] = {"model": model, **kwargs}
+
+    def fake_embed(self, input_text, **kwargs: Any):
+        captured["embed"] = {"input_text": input_text, **kwargs}
+        return {
+            "object": "list",
+            "data": [{"object": "embedding", "embedding": [0.8], "index": 0}],
+            "model": self.model,
+            "usage": {"prompt_tokens": 1, "total_tokens": 1},
+        }
+
+    monkeypatch.setattr(LMStudioProvider, "__init__", fake_init)
+    monkeypatch.setattr(LMStudioProvider, "embed", fake_embed)
+
+    resp = client.post(
+        "/v1/embeddings",
+        headers=_provider_auth_headers(),
+        json={
+            "model": "lmstudio/text-embedding-model",
+            "input": "alpha",
+            "base_url": "http://127.0.0.1:1234/v1",
+        },
+    )
+
+    assert resp.status_code == 200
+    assert captured["init"] == {
+        "model": "text-embedding-model",
+        "api_key": "sk-request-provider-key",
+        "base_url": "http://127.0.0.1:1234/v1",
+        "validate_model": False,
+    }
+    assert captured["embed"]["input_text"] == "alpha"
+    assert resp.json()["model"] == "lmstudio/text-embedding-model"
 
 
 def test_anthropic_embeddings_are_rejected_with_clear_error(client: TestClient) -> None:

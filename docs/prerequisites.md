@@ -59,9 +59,14 @@ pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + v
 - `[mlx]` - Provider-specific MLX extra, kept for explicit installs
 - `[vllm]` - Provider-specific vLLM extra, kept for explicit installs
 - `[remote]` - Lightweight hosted SDK bundle for OpenAI + Anthropic; OpenRouter, Portkey, Ollama, LM Studio, and generic `/v1` endpoints need no extra dependency.
-- `[all-apple]` - Best for Apple Silicon local development (includes MLX, excludes vLLM)
-- `[all-gpu]` - Best for NVIDIA GPU local development (includes vLLM, excludes MLX)
+- `[all-apple]` - Best for Apple Silicon local development (includes MLX and local plugin engines where supported, excludes vLLM)
+- `[all-gpu]` - Best for NVIDIA GPU local development (includes vLLM and local plugin engines where supported, excludes MLX)
 - For CPU-only or Intel machines, compose only what you need, for example `abstractcore[remote,huggingface,tools]`.
+
+Capability extras such as `[voice]`, `[audio]`, `[vision]`, and `[music]`
+install lightweight plugin routing surfaces for remote-capable backends. Local
+inference engines remain behind explicit local profiles such as `[all-apple]`,
+`[all-gpu]`, or plugin-specific local extras.
 
 ## Cloud Provider Setup
 

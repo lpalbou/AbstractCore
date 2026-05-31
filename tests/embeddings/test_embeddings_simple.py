@@ -158,6 +158,54 @@ class TestEmbeddingManagerBasic:
         assert captured["kwargs"]["api_key"] == "sk-test"
         assert captured["kwargs"]["validate_model"] is False
 
+    def test_openai_compatible_embedding_manager_skips_chat_model_validation(self):
+        """Embedding-only OpenAI-compatible endpoints may not expose a useful chat model catalogue."""
+        from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
+
+        captured = {}
+
+        def fake_init(self, model, **kwargs):
+            self.model = model
+            captured["model"] = model
+            captured["kwargs"] = kwargs
+
+        with patch.object(OpenAICompatibleProvider, "__init__", fake_init):
+            manager = EmbeddingManager(
+                model="text-embedding-model",
+                provider="openai-compatible",
+                cache_dir=self.cache_dir,
+                provider_kwargs={"base_url": "http://127.0.0.1:1234/v1"},
+            )
+
+        assert manager.model_id == "text-embedding-model"
+        assert captured["model"] == "text-embedding-model"
+        assert captured["kwargs"]["base_url"] == "http://127.0.0.1:1234/v1"
+        assert captured["kwargs"]["validate_model"] is False
+
+    def test_lmstudio_embedding_manager_skips_chat_model_validation(self):
+        """LM Studio embedding models can differ from the loaded chat model catalogue."""
+        from abstractcore.providers.lmstudio_provider import LMStudioProvider
+
+        captured = {}
+
+        def fake_init(self, model, **kwargs):
+            self.model = model
+            captured["model"] = model
+            captured["kwargs"] = kwargs
+
+        with patch.object(LMStudioProvider, "__init__", fake_init):
+            manager = EmbeddingManager(
+                model="text-embedding-nomic-embed-text-v1.5",
+                provider="lmstudio",
+                cache_dir=self.cache_dir,
+                provider_kwargs={"base_url": "http://127.0.0.1:1234/v1"},
+            )
+
+        assert manager.model_id == "text-embedding-nomic-embed-text-v1.5"
+        assert captured["model"] == "text-embedding-nomic-embed-text-v1.5"
+        assert captured["kwargs"]["base_url"] == "http://127.0.0.1:1234/v1"
+        assert captured["kwargs"]["validate_model"] is False
+
     def test_vllm_embedding_manager_uses_vllm_provider(self):
         """vLLM is a first-class embedding provider, not a runtime-only catalog row."""
         from abstractcore.providers.vllm_provider import VLLMProvider
@@ -180,6 +228,7 @@ class TestEmbeddingManagerBasic:
         assert manager.model_id == "embedding-model"
         assert captured["model"] == "embedding-model"
         assert captured["kwargs"]["base_url"] == "http://127.0.0.1:8000/v1"
+        assert captured["kwargs"]["validate_model"] is False
 
     def test_cache_operations(self):
         """Test cache operations."""

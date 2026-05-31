@@ -126,6 +126,11 @@ embedder = EmbeddingManager(
 )
 ```
 
+For embedding-only use, AbstractCore does not require the configured embedding
+model to appear in the server's chat model catalogue. This keeps LM Studio,
+vLLM, and generic OpenAI-compatible embeddings endpoints usable when `/models`
+reports only loaded chat models or omits embedding models.
+
 ### OpenAI Provider
 
 Cloud embedding models via the OpenAI API. Requires `OPENAI_API_KEY`.
@@ -167,6 +172,11 @@ embedder = EmbeddingManager(
     model="my-embedding-model"
 )
 ```
+
+Endpoint-backed embedding providers (`lmstudio`, `vllm`, and
+`openai-compatible`) send requests directly to `/v1/embeddings` and skip eager
+chat-model validation during embedding client setup. Request-time provider
+errors still surface from the embedding call itself.
 
 ### Provider Comparison
 

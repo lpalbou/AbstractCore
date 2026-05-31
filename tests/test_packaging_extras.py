@@ -50,28 +50,26 @@ def test_server_extra_stays_vision_runtime_light() -> None:
     assert "abstractvision" not in server_block
     assert "abstractvoice" not in server_block
     assert "abstractvoice>=0.10.17" in voice_block
-    assert "omnivoice>=0.1.5" in voice_block
     assert "abstractmusic" not in voice_block
     assert "abstractvoice>=0.10.17" in audio_block
-    assert "omnivoice>=0.1.5" in audio_block
-    assert "abstractvision>=0.3.17" in vision_block
-    assert "abstractvision[huggingface]>=0.3.17" in vision_diffusers_block
-    assert "abstractvision[sdcpp]>=0.3.17" in vision_sdcpp_block
-    assert "abstractvision[local]>=0.3.17" in vision_local_block
+    assert "abstractvision>=0.3.18" in vision_block
+    assert "abstractvision[huggingface]>=0.3.18" in vision_diffusers_block
+    assert "abstractvision[sdcpp]>=0.3.18" in vision_sdcpp_block
+    assert "abstractvision[local]>=0.3.18" in vision_local_block
     assert "abstractmusic>=0.1.12" in music_block
     assert "abstractvoice[all-apple]>=0.10.17" in all_apple_block
     assert "omnivoice>=0.1.5" in all_apple_block
-    assert "abstractvision[all-apple]>=0.3.17" in all_apple_block
+    assert "abstractvision[all-apple]>=0.3.18" in all_apple_block
     assert "abstractmusic[all-apple]>=0.1.12" in all_apple_block
     assert "vllm" not in all_apple_block
     assert "abstractvoice[all-gpu]>=0.10.17" in all_gpu_block
     assert "omnivoice>=0.1.5" in all_gpu_block
-    assert "abstractvision[all-gpu]>=0.3.17" in all_gpu_block
+    assert "abstractvision[all-gpu]>=0.3.18" in all_gpu_block
     assert "abstractmusic[all-gpu]>=0.1.12" in all_gpu_block
     assert "mlx-lm" not in all_gpu_block
     assert "abstractvoice>=0.10.17" in full_dev_block
     assert "omnivoice>=0.1.5" in full_dev_block
-    assert "abstractvision>=0.3.17" in full_dev_block
+    assert "abstractvision>=0.3.18" in full_dev_block
     assert "abstractmusic>=0.1.12" in full_dev_block
 
     assert "transformers>=5.3.0,<6.0.0" in all_apple_block
@@ -80,6 +78,32 @@ def test_server_extra_stays_vision_runtime_light() -> None:
     assert "accelerate>=1.0.0" in all_apple_block
     assert "numpy>=2.1.0,<3.0.0" in all_apple_block
     assert "Pillow>=12.1.1,<13.0.0" in all_apple_block
+
+
+def test_light_capability_extras_do_not_pull_local_inference_engines() -> None:
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    text = pyproject.read_text(encoding="utf-8")
+
+    light_blocks = {
+        "voice": _extract_optional_dependency_block(text, key="voice"),
+        "audio": _extract_optional_dependency_block(text, key="audio"),
+        "vision": _extract_optional_dependency_block(text, key="vision"),
+        "music": _extract_optional_dependency_block(text, key="music"),
+    }
+    local_runtime_markers = (
+        "omnivoice",
+        "torch",
+        "torchaudio",
+        "torchvision",
+        "transformers",
+        "sentence-transformers",
+        "mlx",
+        "vllm",
+    )
+
+    for extra, block in light_blocks.items():
+        for marker in local_runtime_markers:
+            assert marker not in block, f"{extra} unexpectedly includes {marker}"
 
 
 def test_server_docker_image_installs_exact_lightweight_release_wheel() -> None:

@@ -746,7 +746,7 @@ Install for remote audio:
 pip install "abstractcore[server,remote]"
 ```
 
-Install for local plugin fallback:
+Install for plugin-backed routing:
 ```bash
 pip install "abstractcore[server]"
 pip install "abstractcore[voice]"
@@ -754,10 +754,11 @@ pip install "abstractcore[music]"
 ```
 
 Notes:
-- `abstractvoice` 0.10.11+ can install the base plugin path on Python 3.9,
-  but Python 3.10+ is recommended. Optional/heavier engines and clone backends
-  such as OpenF5/F5-TTS, Chroma, and OmniVoice are Python 3.10+ paths; AEC
-  requires Python 3.11+.
+- `abstractvoice` 0.10.17+ can install the base plugin path on Python 3.9
+  without OmniVoice, torch, or torchaudio. Python 3.10+ is recommended. Use
+  explicit local aggregate profiles such as `abstractcore[all-apple]` or
+  `abstractcore[all-gpu]` when you want local voice engines; AEC requires
+  Python 3.11+.
 - `/v1/audio/transcriptions` requires `python-multipart` for form parsing (included in the server extra).
 - Uploaded audio is limited by `ABSTRACTCORE_SERVER_AUDIO_MAX_BYTES` (default: 25 MB).
 
@@ -1403,6 +1404,12 @@ Generate embedding vectors for semantic search, RAG, and similarity analysis.
 Anthropic does not expose a native embeddings API. Use OpenAI, OpenRouter,
 Portkey, an OpenAI-compatible endpoint, or a local embedding provider.
 
+For endpoint-backed providers such as LM Studio, vLLM, and generic
+OpenAI-compatible servers, the embedding route does not require the embedding
+model to appear in a chat model catalogue before the request is sent. This
+supports embedding-only endpoints whose `/models` response is incomplete or
+chat-only.
+
 OpenAI-compatible request fields are forwarded where supported:
 - `dimensions`
 - `encoding_format`
@@ -1739,12 +1746,14 @@ It includes remote chat/responses, remote embeddings, remote STT/TTS routing,
 remote OpenAI-compatible image proxying, server dependencies, media parsing,
 token counting, and compression helpers. It intentionally does not include
 AbstractCore local LLM runtimes (`vllm`, `mlx`, `huggingface`), local embedding
-dependencies (`sentence-transformers`), or AbstractVoice/AbstractVision plugin
-entry points. Remote image/audio OpenAI-compatible endpoint routes still work
-without those plugins. Build a custom image with
+dependencies (`sentence-transformers`), or optional capability plugin entry
+points. Remote image/audio OpenAI-compatible endpoint routes still work without
+those plugins. Build a custom image with
 `abstractcore[server,remote,media,tokens,compression,voice,vision]` when you
-want plugin-backed media catalogs or plugin default routes, and add explicit
-local plugin extras only when you want local native inference engines.
+want plugin-backed media catalogs or plugin default routes; these capability
+extras stay remote-light. Add explicit local aggregate profiles such as
+`abstractcore[all-apple]` or `abstractcore[all-gpu]` only when you want local
+native inference engines.
 
 **Run:**
 ```bash
