@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.32] - 2026-06-03
+
+### Added
+- **Provider endpoint profiles**: added first-class Core config support for reusable OpenAI-compatible/provider endpoint profiles, including model discovery with profile-specific base URLs and API keys.
+- **Capability default CLI**: expanded `abstractcore config` so provider/model defaults can be set, listed, cleared, and discovered from the same Core config surface used by Gateway.
+- **Audio understanding registry**: added reviewed audio-understanding model metadata for Qwen Omni/Audio candidates while keeping Qwen3.6 text/vision models marked as non-audio.
+
+### Changed
+- **Capability routing metadata**: refined multimodal route metadata for text, image, video, speech, sound effects, music, and embeddings so hosts can distinguish generation routes and fallback routes.
+- **Generated media outputs**: tightened output-spec normalization and media typing so image/video/voice/music/sound artifacts are routed consistently through Core.
+- **Plugin floors**: raised AbstractMusic to `>=0.1.13` and AbstractVision to `>=0.3.19`.
+
+### Fixed
+- **Provider discovery**: model listing now honors per-provider/profile base URLs instead of falling back to the global provider endpoint.
+- **Embedding discovery**: embedding managers use provider endpoint profile configuration when resolving remote embedding models.
+- **Media content round-trips**: audio/video/media payload normalization preserves content dictionaries used by Gateway sandbox and Runtime calls.
+
 ## [2.13.31] - 2026-05-31
 
 ### Changed

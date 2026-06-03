@@ -166,7 +166,7 @@ class EmbeddingManager:
 
         # Validate provider
         supported_providers = list_available_providers()
-        if self.provider not in supported_providers:
+        if self.provider not in supported_providers and not self.provider.startswith("endpoint:"):
             raise ValueError(
                 f"Unsupported provider: {provider}. "
                 f"Supported: {', '.join(supported_providers)}"
@@ -247,6 +247,16 @@ class EmbeddingManager:
                 vllm_kwargs.setdefault("validate_model", False)
                 self._provider_instance = VLLMProvider(model=self._resolved_model, **vllm_kwargs)
                 logger.info(f"Initialized vLLM embedding provider with model: {self._resolved_model}")
+            elif self.provider.startswith("endpoint:"):
+                from ..providers.registry import create_provider
+
+                endpoint_kwargs = dict(self.provider_kwargs)
+                endpoint_kwargs.setdefault("validate_model", False)
+                self._provider_instance = create_provider(self._resolved_provider, model=self._resolved_model, **endpoint_kwargs)
+                logger.info(
+                    f"Initialized endpoint embedding provider {self._resolved_provider} "
+                    f"with model: {self._resolved_model}"
+                )
 
         # Common setup for all providers
         self.cache_dir = Path(cache_dir) if cache_dir else Path.home() / ".abstractcore" / "embeddings"
@@ -260,7 +270,8 @@ class EmbeddingManager:
             self._load_model()
 
         # Set up persistent cache (include provider in cache name for isolation)
-        cache_name = f"{self.provider}_{self.model_id.replace('/', '_').replace('-', '_')}"
+        provider_cache_key = self.provider.replace("/", "_").replace("-", "_").replace(":", "_")
+        cache_name = f"{provider_cache_key}_{self.model_id.replace('/', '_').replace('-', '_').replace(':', '_')}"
         if self.output_dims:
             cache_name += f"_dim{self.output_dims}"
         self.cache_file = self.cache_dir / f"{cache_name}_cache.pkl"

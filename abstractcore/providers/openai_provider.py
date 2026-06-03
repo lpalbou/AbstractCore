@@ -39,10 +39,17 @@ except ImportError:
 class OpenAIProvider(BaseProvider):
     """OpenAI API provider with full integration"""
 
-    def __init__(self, model: str = "gpt-3.5-turbo", api_key: Optional[str] = None,
-                 base_url: Optional[str] = None, **kwargs):
+    def __init__(
+        self,
+        model: str = "gpt-3.5-turbo",
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        validate_model: bool = True,
+        **kwargs,
+    ):
         super().__init__(model, **kwargs)
         self.provider = "openai"
+        self._validate_model_on_init = bool(validate_model)
 
         # Track which generation params were explicitly provided at init so we can warn
         # only when callers intentionally requested unsupported behaviour.
@@ -73,8 +80,9 @@ class OpenAIProvider(BaseProvider):
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
 
-        # Preflight check: validate model exists
-        self._validate_model_exists()
+        # Preflight check: validate model exists unless caller is doing catalog discovery.
+        if self._validate_model_on_init:
+            self._validate_model_exists()
 
         # Store provider-specific configuration
         self.top_p = kwargs.get("top_p", getattr(self, "top_p", 1.0))
@@ -1089,13 +1097,17 @@ class OpenAIProvider(BaseProvider):
             import openai
             from .model_capabilities import filter_models_by_capabilities
 
-            # Get API key from kwargs or environment
+            # Get API key and optional endpoint override from kwargs or environment.
             api_key = kwargs.get('api_key') or os.getenv("OPENAI_API_KEY")
             if not api_key:
                 return []
+            base_url = kwargs.get('base_url') or os.getenv("OPENAI_BASE_URL")
 
             # Create temporary client
-            client = openai.OpenAI(api_key=api_key, timeout=5.0)
+            client_kwargs = {"api_key": api_key, "timeout": 5.0}
+            if isinstance(base_url, str) and base_url.strip():
+                client_kwargs["base_url"] = base_url.strip()
+            client = openai.OpenAI(**client_kwargs)
             models = client.models.list()
 
             # Extract model IDs and filter to the requested model family.

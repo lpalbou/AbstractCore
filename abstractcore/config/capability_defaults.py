@@ -15,7 +15,7 @@ from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 CAPABILITY_DEFAULTS_VERSION = 1
 
 CAPABILITY_KINDS = ("input", "output", "embedding", "rerank")
-CAPABILITY_MODALITIES = ("text", "image", "video", "voice", "sound", "scene3d")
+CAPABILITY_MODALITIES = ("text", "image", "video", "voice", "sound", "music", "scene3d")
 
 _KIND_ALIASES = {
     "in": "input",
@@ -40,7 +40,9 @@ _MODALITY_ALIASES = {
     "speech": "voice",
     "tts": "voice",
     "stt": "voice",
-    "music": "sound",
+    "sfx": "sound",
+    "sound_effect": "sound",
+    "sound_effects": "sound",
     "audio": "sound",
     "3d": "scene3d",
     "3d_scene": "scene3d",
@@ -138,7 +140,7 @@ def normalize_modality(value: Any) -> str:
     if raw not in CAPABILITY_MODALITIES:
         raise ValueError(
             f"Unknown capability modality: {value!r}. "
-            "Expected text, image, video, voice, sound, or scene3d."
+            "Expected text, image, video, voice, sound, music, or scene3d."
         )
     return raw
 
@@ -217,7 +219,8 @@ def iter_capability_default_specs() -> Iterable[CapabilityDefaultSpec]:
         ("output", "image", "Image Output", "image_generation", "abstractvision", {}),
         ("output", "video", "Video Output", "video_generation", "abstractvideo or abstractvision", {}),
         ("output", "voice", "Voice Output", "text_to_speech", "abstractvoice", {"voice": "default"}),
-        ("output", "sound", "Sound Output", "sound_generation", "abstractsound or abstractmusic", {}),
+        ("output", "sound", "Sound Effects Output", "sound_generation", "abstractsound or abstractmusic", {}),
+        ("output", "music", "Music Output", "music_generation", "abstractmusic", {}),
         ("output", "scene3d", "3D Scene Output", "scene3d_generation", "abstract3d", {}),
         ("embedding", "text", "Text Embeddings", "text_embedding", "abstractcore.embeddings", {}),
         ("embedding", "image", "Image Embeddings", "image_embedding", "abstractcore.embeddings or abstractvision", {}),

@@ -10,6 +10,7 @@ import importlib.util
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from dataclasses import dataclass, asdict, fields
+from datetime import datetime, timezone
 
 from .capability_defaults import (
     CapabilityDefaultsConfig,
@@ -18,6 +19,17 @@ from .capability_defaults import (
     capability_route_key,
     iter_capability_default_specs,
     split_capability_route,
+)
+from .provider_profiles import (
+    ProviderProfile,
+    ProviderProfilesConfig,
+    normalize_base_url,
+    normalize_profile_id,
+    normalize_provider_family,
+    normalize_string_list,
+    profile_id_from_virtual_provider,
+    provider_profiles_from_dict,
+    split_api_key_value,
 )
 
 _SERVER_AUTH_TOKEN_ENV_VAR = "ABSTRACTCORE_AUTH_TOKEN"
@@ -74,9 +86,8 @@ class VisionConfig:
 @dataclass
 class AudioConfig:
     """Audio configuration settings (input policy + optional fallback)."""
-    # Default: "auto" — use native audio when supported, otherwise fall back to STT via
-    # abstractvoice (if installed).  If abstractvoice is not installed, "auto" degrades
-    # gracefully to native-only behavior at runtime (no silent failure).
+    # Default: "auto" — use native audio when supported. Non-native STT fallback
+    # is authorized by an explicit input.voice capability default or per-call policy.
     strategy: str = "auto"  # native_only|speech_to_text|caption|auto
     # Optional preferred STT backend (capabilities plugin backend_id).
     stt_backend_id: Optional[str] = None
@@ -94,8 +105,8 @@ class AudioConfig:
 @dataclass
 class VideoConfig:
     """Video configuration settings (input policy + optional fallback)."""
-    # Default: best-effort usability. Prefer native video when supported; otherwise fall back
-    # to sampled frames routed through existing image/vision handling.
+    # Default: prefer native video when supported. Sampled-frame fallback is
+    # authorized by model capabilities or an explicit input.video capability default.
     strategy: str = "auto"  # native_only|frames_caption|auto
 
     # Frame sampling controls for frames-based fallback.
@@ -275,6 +286,7 @@ class AbstractCoreConfig:
     app_defaults: AppDefaults
     default_models: DefaultModels
     capability_defaults: CapabilityDefaultsConfig
+    provider_profiles: ProviderProfilesConfig
     api_keys: ApiKeysConfig
     server: ServerConfig
     cache: CacheConfig
@@ -296,6 +308,7 @@ class AbstractCoreConfig:
             app_defaults=AppDefaults(),
             default_models=DefaultModels(),
             capability_defaults=CapabilityDefaultsConfig(),
+            provider_profiles=ProviderProfilesConfig(),
             api_keys=ApiKeysConfig(),
             server=ServerConfig(),
             cache=CacheConfig(),
@@ -311,16 +324,34 @@ class AbstractCoreConfig:
 class ConfigurationManager:
     """Manages AbstractCore configuration."""
 
-    def __init__(self):
+    def __init__(
+        self,
+        config_dir: Optional[str | Path] = None,
+        config_file: Optional[str | Path] = None,
+        *,
+        apply_env: bool = True,
+    ):
         # Backward-compatible meta flags (stored at top-level in the JSON file).
         self._audio_strategy_explicit = False
 
-        self.config_dir = Path.home() / ".abstractcore" / "config"
-        self.config_file = self.config_dir / "abstractcore.json"
+        if config_file is not None:
+            self.config_file = Path(config_file).expanduser()
+            self.config_dir = self.config_file.parent
+        else:
+            env_config_file = os.getenv("ABSTRACTCORE_CONFIG_FILE")
+            env_config_dir = os.getenv("ABSTRACTCORE_CONFIG_DIR")
+            if env_config_file:
+                self.config_file = Path(env_config_file).expanduser()
+                self.config_dir = self.config_file.parent
+            else:
+                self.config_dir = Path(config_dir or env_config_dir or (Path.home() / ".abstractcore" / "config")).expanduser()
+                self.config_file = self.config_dir / "abstractcore.json"
+        self._apply_env = bool(apply_env)
         self.config = self._load_config()
         self._apply_smart_defaults()
-        self._apply_api_keys_to_env()
-        self._apply_server_config_to_env()
+        if self._apply_env:
+            self._apply_api_keys_to_env()
+            self._apply_server_config_to_env()
         self._provider_config: Dict[str, Dict[str, Any]] = {}  # Runtime config (not persisted)
 
     def _filter_dataclass_kwargs(self, cls, data: Any) -> Dict[str, Any]:
@@ -338,8 +369,8 @@ class ConfigurationManager:
     def _apply_smart_defaults(self) -> None:
         """Apply non-persisted, environment-aware defaults.
 
-        Goal: if `abstractvoice` is installed and the user has not explicitly chosen an audio policy,
-        default to `audio.strategy="auto"` so STT fallback works out-of-the-box across apps.
+        Goal: keep legacy `audio.strategy="auto"` usable for native-capable audio
+        models while Core capability defaults decide whether STT fallback is enabled.
         """
         try:
             audio = getattr(self.config, "audio", None)
@@ -454,6 +485,7 @@ class ConfigurationManager:
         app_defaults = AppDefaults(**self._filter_dataclass_kwargs(AppDefaults, data.get('app_defaults', {})))
         default_models = DefaultModels(**self._filter_dataclass_kwargs(DefaultModels, data.get('default_models', {})))
         capability_defaults = capability_defaults_from_dict(data.get('capability_defaults', {}))
+        provider_profiles = provider_profiles_from_dict(data.get('provider_profiles', {}))
         api_keys = ApiKeysConfig(**self._filter_dataclass_kwargs(ApiKeysConfig, data.get('api_keys', {})))
         server = ServerConfig(**self._filter_dataclass_kwargs(ServerConfig, data.get('server', {})))
         cache = CacheConfig(**self._filter_dataclass_kwargs(CacheConfig, data.get('cache', {})))
@@ -472,6 +504,7 @@ class ConfigurationManager:
             app_defaults=app_defaults,
             default_models=default_models,
             capability_defaults=capability_defaults,
+            provider_profiles=provider_profiles,
             api_keys=api_keys,
             server=server,
             cache=cache,
@@ -498,6 +531,7 @@ class ConfigurationManager:
             'app_defaults': asdict(self.config.app_defaults),
             'default_models': asdict(self.config.default_models),
             'capability_defaults': self.config.capability_defaults.to_dict(),
+            'provider_profiles': self.config.provider_profiles.to_dict(),
             'api_keys': asdict(self.config.api_keys),
             'server': asdict(self.config.server),
             'cache': asdict(self.config.cache),
@@ -509,8 +543,19 @@ class ConfigurationManager:
             'email': asdict(self.config.email),
         }
 
-        with open(self.config_file, 'w') as f:
+        tmp = self.config_file.with_suffix(self.config_file.suffix + ".tmp")
+        with open(tmp, 'w') as f:
             json.dump(config_dict, f, indent=2)
+            f.write("\n")
+        try:
+            os.chmod(tmp, 0o600)
+        except Exception:
+            pass
+        tmp.replace(self.config_file)
+        try:
+            os.chmod(self.config_file, 0o600)
+        except Exception:
+            pass
 
     def set_vision_provider(self, provider: str, model: str) -> bool:
         """Set vision provider and model."""
@@ -762,6 +807,7 @@ class ConfigurationManager:
                 "code_model": self.config.default_models.code_model
             },
             "capability_defaults": self.list_capability_defaults(),
+            "provider_profiles": self.list_provider_profiles(),
             "embeddings": {
                 "status": embedding_status,
                 "provider": embedding_provider,
@@ -837,6 +883,99 @@ class ConfigurationManager:
         except Exception:
             return False
 
+    def list_provider_profiles(self, *, include_disabled: bool = True) -> list[Dict[str, Any]]:
+        """Return redacted local provider endpoint profiles."""
+        rows: list[Dict[str, Any]] = []
+        for profile in sorted(self.config.provider_profiles.profiles.values(), key=lambda p: p.id.lower()):
+            if not include_disabled and not profile.enabled:
+                continue
+            rows.append(profile.public_dict())
+        return rows
+
+    def get_provider_profile(self, profile_id: str) -> Optional[ProviderProfile]:
+        """Return one provider profile by plain id or virtual provider id."""
+        try:
+            pid = normalize_profile_id(profile_id)
+        except Exception:
+            return None
+        return self.config.provider_profiles.profiles.get(pid.lower())
+
+    def resolve_provider_profile(self, provider: str, *, require_enabled: bool = True) -> Optional[ProviderProfile]:
+        """Resolve ``endpoint:<id>`` or a plain profile id to a provider profile."""
+        try:
+            raw = str(provider or "").strip()
+            pid = profile_id_from_virtual_provider(raw) or normalize_profile_id(raw)
+            profile = self.config.provider_profiles.profiles.get(pid.lower())
+            if profile is None:
+                return None
+            if require_enabled and not profile.enabled:
+                return None
+            return profile
+        except Exception:
+            return None
+
+    def set_provider_profile(
+        self,
+        profile_id: str,
+        *,
+        display_name: Optional[str] = None,
+        description: Optional[str] = None,
+        provider_family: Optional[str] = None,
+        base_url: Optional[str] = None,
+        api_key: Optional[str] = None,
+        clear_api_key: bool = False,
+        allowed_models: Optional[list[str]] = None,
+        enabled: Optional[bool] = None,
+    ) -> ProviderProfile:
+        """Create or update a local provider endpoint profile."""
+        pid = normalize_profile_id(profile_id)
+        existing = self.config.provider_profiles.profiles.get(pid.lower())
+        now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+        parsed_api_key = None
+        parsed_api_key_env_var = None
+        if api_key is not None:
+            parsed_api_key, parsed_api_key_env_var = split_api_key_value(api_key)
+
+        profile = ProviderProfile(
+            id=pid,
+            display_name=display_name if display_name is not None else (existing.display_name if existing else pid),
+            description=description if description is not None else (existing.description if existing else ""),
+            provider_family=provider_family if provider_family is not None else (existing.provider_family if existing else "openai-compatible"),
+            base_url=base_url if base_url is not None else (existing.base_url if existing else ""),
+            api_key=(
+                ""
+                if clear_api_key
+                else (parsed_api_key if parsed_api_key is not None else (existing.api_key if existing else ""))
+            ),
+            api_key_env_var=(
+                ""
+                if clear_api_key
+                else (parsed_api_key_env_var if parsed_api_key_env_var is not None else (existing.api_key_env_var if existing else ""))
+            ),
+            allowed_models=allowed_models if allowed_models is not None else (existing.allowed_models if existing else []),
+            enabled=bool(enabled) if enabled is not None else (existing.enabled if existing else True),
+            created_at=existing.created_at if existing else now,
+            updated_at=now,
+        )
+
+        # Run explicit normalization here to surface errors before saving.
+        normalize_provider_family(profile.provider_family)
+        normalize_base_url(profile.base_url)
+        normalize_string_list(profile.allowed_models)
+
+        self.config.provider_profiles.profiles[profile.id.lower()] = profile
+        self._save_config()
+        return profile
+
+    def delete_provider_profile(self, profile_id: str) -> bool:
+        """Delete a local provider endpoint profile."""
+        pid = normalize_profile_id(profile_id)
+        removed = self.config.provider_profiles.profiles.pop(pid.lower(), None)
+        if removed is None:
+            return False
+        self._save_config()
+        return True
+
     def get_capability_default(
         self,
         kind: str,
@@ -848,21 +987,113 @@ class ConfigurationManager:
         except Exception:
             return {}
 
+        if key == capability_route_key("output", "text"):
+            route = self.config.capability_defaults.routes.get(capability_route_key("input", "text"))
+            if route and route.configured():
+                out = route.to_dict()
+                out.update(
+                    {
+                        "key": key,
+                        "source": "abstractcore.capability_defaults",
+                        "derived_from": "input.text",
+                        "read_only": True,
+                    }
+                )
+                return out
+            return {"key": key, "source": "not_configured", "derived_from": "input.text", "read_only": True}
+
         route = self.config.capability_defaults.routes.get(key)
         if route and route.configured():
             out = route.to_dict()
             out.update({"key": key, "source": "abstractcore.capability_defaults"})
+            if key == capability_route_key("input", "image"):
+                out = self._decorate_image_input_default(out)
+            elif key == capability_route_key("input", "video"):
+                out.setdefault("overrideable", True)
             return out
 
-        return {"key": key, "source": "not_configured"}
+        out = {"key": key, "source": "not_configured"}
+        if key == capability_route_key("input", "image"):
+            out = self._decorate_image_input_default(out)
+        elif key == capability_route_key("input", "video"):
+            out = self._decorate_video_input_default(out)
+        return out
 
     def list_capability_defaults(self) -> list[Dict[str, Any]]:
         """Return all known capability routes with explicit persisted defaults."""
         rows: list[Dict[str, Any]] = []
         for spec in iter_capability_default_specs():
             route = self.get_capability_default(spec.kind, spec.modality)
-            rows.append({**spec.to_dict(), **route, "configured": bool(route.get("provider") or route.get("model") or route.get("base_url") or route.get("options"))})
+            row = {**spec.to_dict(), **route}
+            row["configured"] = bool(route.get("provider") or route.get("model") or route.get("base_url") or route.get("options"))
+            if spec.key == capability_route_key("input", "image"):
+                row = self._decorate_image_input_default(row)
+            elif spec.key == capability_route_key("input", "video") and not row["configured"]:
+                row = self._decorate_video_input_default(row)
+            rows.append(row)
         return rows
+
+    def _decorate_image_input_default(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        text_route = self.config.capability_defaults.routes.get(capability_route_key("input", "text"))
+        if not text_route or not text_route.provider or not text_route.model:
+            return row
+        if not self._model_supports_input(text_route.model, "image"):
+            return row
+        out = dict(row)
+        out.update(
+            {
+                "provider": text_route.provider,
+                "model": text_route.model,
+                "base_url": text_route.base_url,
+                "source": "abstractcore.capability_defaults",
+                "configured": True,
+                "covered_by": "input.text",
+                "read_only": True,
+            }
+        )
+        if text_route.options:
+            out["options"] = dict(text_route.options)
+        return out
+
+    def _decorate_video_input_default(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        text_route = self.config.capability_defaults.routes.get(capability_route_key("input", "text"))
+        if not text_route or not text_route.provider or not text_route.model:
+            return row
+        if not self._model_supports_input(text_route.model, "video"):
+            return row
+        out = dict(row)
+        out.update(
+            {
+                "provider": text_route.provider,
+                "model": text_route.model,
+                "base_url": text_route.base_url,
+                "source": "abstractcore.capability_defaults",
+                "configured": True,
+                "covered_by": "input.text",
+                "coverage_mode": "video_frames",
+                "overrideable": True,
+                "read_only": False,
+            }
+        )
+        if text_route.options:
+            out["options"] = dict(text_route.options)
+        return out
+
+    @staticmethod
+    def _model_supports_input(model: str, modality: str) -> bool:
+        try:
+            from ..providers.model_capabilities import ModelInputCapability, model_matches_input_capabilities
+
+            capability = {
+                "image": ModelInputCapability.IMAGE,
+                "audio": ModelInputCapability.AUDIO,
+                "video": ModelInputCapability.VIDEO,
+            }.get(str(modality or "").strip().lower())
+            if capability is None:
+                return False
+            return bool(model_matches_input_capabilities(str(model or ""), [capability]))
+        except Exception:
+            return False
 
     def set_capability_default(
         self,
@@ -879,6 +1110,8 @@ class ConfigurationManager:
             if modality is None:
                 kind, modality = split_capability_route(kind)
             key = capability_route_key(kind, modality)
+            if key == capability_route_key("output", "text"):
+                key = capability_route_key("input", "text")
             route = CapabilityRouteDefault(
                 provider=str(provider).strip() if isinstance(provider, str) and provider.strip() else None,
                 model=str(model).strip() if isinstance(model, str) and model.strip() else None,
@@ -887,6 +1120,8 @@ class ConfigurationManager:
             )
             if route.configured():
                 self.config.capability_defaults.routes[key] = route
+                if key == capability_route_key("input", "text"):
+                    self.config.capability_defaults.routes.pop(capability_route_key("output", "text"), None)
             else:
                 self.config.capability_defaults.routes.pop(key, None)
             self._save_config()
@@ -900,7 +1135,11 @@ class ConfigurationManager:
             if modality is None:
                 kind, modality = split_capability_route(kind)
             key = capability_route_key(kind, modality)
+            if key == capability_route_key("output", "text"):
+                key = capability_route_key("input", "text")
             self.config.capability_defaults.routes.pop(key, None)
+            if key == capability_route_key("input", "text"):
+                self.config.capability_defaults.routes.pop(capability_route_key("output", "text"), None)
             self._save_config()
             return True
         except Exception:
@@ -917,10 +1156,7 @@ class ConfigurationManager:
                 provider=provider,
                 model=model,
             )
-            self.config.capability_defaults.routes[capability_route_key("output", "text")] = CapabilityRouteDefault(
-                provider=provider,
-                model=model,
-            )
+            self.config.capability_defaults.routes.pop(capability_route_key("output", "text"), None)
             self._save_config()
             return True
         except Exception:
@@ -1422,7 +1658,24 @@ class ConfigurationManager:
         Returns:
             Dict with configured settings, or empty dict if no config
         """
-        return self._provider_config.get(provider.lower(), {}).copy()
+        provider_key = str(provider or "").strip().lower()
+        runtime_config = self._provider_config.get(provider_key, {}).copy()
+
+        profile = self.resolve_provider_profile(provider_key)
+        if profile is None:
+            return runtime_config
+
+        profile_resolution = profile.private_resolution()
+        profile_config = {
+            "provider_family": profile_resolution.get("provider_family"),
+            "base_url": profile_resolution.get("base_url"),
+            "api_key": profile_resolution.get("api_key"),
+            "allowed_models": profile_resolution.get("allowed_models") or [],
+            "virtual_provider": profile_resolution.get("virtual_provider"),
+            "provider_profile_id": profile_resolution.get("id"),
+        }
+        profile_config = {k: v for k, v in profile_config.items() if v not in (None, "", [])}
+        return {**profile_config, **runtime_config}
 
     def clear_provider_config(self, provider: Optional[str] = None) -> None:
         """

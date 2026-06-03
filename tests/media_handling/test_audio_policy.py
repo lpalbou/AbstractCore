@@ -10,9 +10,11 @@ from types import SimpleNamespace
 class _StubAudioBackend:
     backend_id: str = "stub:audio"
     calls: int = 0
+    last_kwargs: dict | None = None
 
     def transcribe(self, audio, language=None, **kwargs) -> str:  # pragma: no cover
         self.calls += 1
+        self.last_kwargs = dict(kwargs)
         return "stub transcript"
 
 
@@ -69,8 +71,9 @@ def test_default_audio_policy_from_config_native_only_is_strict(tmp_path, monkey
 
 
 @pytest.mark.basic
-def test_default_audio_policy_from_config_auto_runs_stt_fallback(tmp_path, monkeypatch) -> None:
+def test_default_audio_policy_from_config_auto_requires_input_voice_default(tmp_path, monkeypatch) -> None:
     from abstractcore.core.types import GenerateResponse
+    from abstractcore.exceptions import UnsupportedFeatureError
     from abstractcore.providers.base import BaseProvider
 
     monkeypatch.setattr(
@@ -108,10 +111,167 @@ def test_default_audio_policy_from_config_auto_runs_stt_fallback(tmp_path, monke
     audio_path.write_bytes(b"")
 
     provider = DummyProvider()
+    with pytest.raises(UnsupportedFeatureError, match="input.voice is not configured"):
+        provider.generate("What is in this audio?", media=[str(audio_path)], stream=False)
+
+    assert stub_audio.calls == 0
+
+
+@pytest.mark.basic
+def test_config_speech_to_text_policy_requires_input_voice_default(tmp_path, monkeypatch) -> None:
+    from abstractcore.core.types import GenerateResponse
+    from abstractcore.exceptions import UnsupportedFeatureError
+    from abstractcore.providers.base import BaseProvider
+
+    monkeypatch.setattr(
+        "abstractcore.config.manager.get_config_manager",
+        lambda: SimpleNamespace(config=SimpleNamespace(audio=SimpleNamespace(strategy="speech_to_text"))),
+    )
+
+    stub_audio = _StubAudioBackend()
+
+    class DummyProvider(BaseProvider):
+        def __init__(self):
+            super().__init__(model="qwen/qwen3-next-80b")
+            self._audio_backend = stub_audio
+
+        @property
+        def audio(self):
+            return self._audio_backend
+
+        def _generate_internal(self, prompt, messages=None, system_prompt=None, tools=None, media=None, stream=False, **kwargs):
+            _ = prompt, messages, system_prompt, tools, media, stream, kwargs
+            return GenerateResponse(content="ok", model=self.model, finish_reason="stop", metadata={})
+
+        def get_capabilities(self):
+            return []
+
+        def unload_model(self, model_name: str) -> None:
+            return None
+
+        def list_available_models(self, **kwargs):
+            return []
+
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(b"")
+
+    provider = DummyProvider()
+    with pytest.raises(UnsupportedFeatureError, match="input.voice is not configured"):
+        provider.generate("What is in this audio?", media=[str(audio_path)], stream=False)
+
+    assert stub_audio.calls == 0
+
+
+@pytest.mark.basic
+def test_default_audio_policy_from_config_auto_uses_input_voice_default(tmp_path, monkeypatch) -> None:
+    from abstractcore.core.types import GenerateResponse
+    from abstractcore.providers.base import BaseProvider
+
+    class StubConfigManager:
+        config = SimpleNamespace(audio=SimpleNamespace(strategy="auto", stt_language=None))
+
+        def get_capability_default(self, kind: str, modality: str) -> dict:
+            if kind == "input" and modality == "voice":
+                return {
+                    "key": "input.voice",
+                    "source": "abstractcore.capability_defaults",
+                    "provider": "faster-whisper",
+                    "model": "large-v3",
+                }
+            return {"key": f"{kind}.{modality}", "source": "not_configured"}
+
+    monkeypatch.setattr("abstractcore.config.manager.get_config_manager", lambda: StubConfigManager())
+
+    stub_audio = _StubAudioBackend()
+
+    class DummyProvider(BaseProvider):
+        def __init__(self):
+            super().__init__(model="qwen/qwen3-next-80b")
+            self._audio_backend = stub_audio
+            self.last_media = None
+
+        @property
+        def audio(self):
+            return self._audio_backend
+
+        def _generate_internal(self, prompt, messages=None, system_prompt=None, tools=None, media=None, stream=False, **kwargs):
+            _ = prompt, messages, system_prompt, tools, stream, kwargs
+            self.last_media = media
+            return GenerateResponse(content="ok", model=self.model, finish_reason="stop", metadata={})
+
+        def get_capabilities(self):
+            return []
+
+        def unload_model(self, model_name: str) -> None:
+            return None
+
+        def list_available_models(self, **kwargs):
+            return []
+
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(b"")
+
+    provider = DummyProvider()
     resp = provider.generate("What is in this audio?", media=[str(audio_path)], stream=False)
     assert resp.content == "ok"
     assert stub_audio.calls == 1
+    assert stub_audio.last_kwargs == {"provider": "faster-whisper", "model": "large-v3"}
     assert provider.last_media == []
+
+
+@pytest.mark.basic
+def test_instance_scoped_capability_defaults_override_global_audio_default(tmp_path, monkeypatch) -> None:
+    from abstractcore.core.types import GenerateResponse
+    from abstractcore.providers.base import BaseProvider
+
+    class StubConfigManager:
+        config = SimpleNamespace(audio=SimpleNamespace(strategy="auto", stt_language=None))
+
+        def get_capability_default(self, kind: str, modality: str) -> dict:
+            return {"key": f"{kind}.{modality}", "source": "not_configured"}
+
+    monkeypatch.setattr("abstractcore.config.manager.get_config_manager", lambda: StubConfigManager())
+
+    stub_audio = _StubAudioBackend()
+
+    class DummyProvider(BaseProvider):
+        def __init__(self):
+            super().__init__(model="qwen/qwen3-next-80b")
+            self._audio_backend = stub_audio
+            self._abstractcore_capability_defaults = {
+                "input.voice": {
+                    "key": "input.voice",
+                    "source": "abstractgateway.runtime",
+                    "provider": "faster-whisper",
+                    "model": "large-v3",
+                }
+            }
+
+        @property
+        def audio(self):
+            return self._audio_backend
+
+        def _generate_internal(self, prompt, messages=None, system_prompt=None, tools=None, media=None, stream=False, **kwargs):
+            _ = prompt, messages, system_prompt, tools, media, stream, kwargs
+            return GenerateResponse(content="ok", model=self.model, finish_reason="stop", metadata={})
+
+        def get_capabilities(self):
+            return []
+
+        def unload_model(self, model_name: str) -> None:
+            return None
+
+        def list_available_models(self, **kwargs):
+            return []
+
+    audio_path = tmp_path / "sample.wav"
+    audio_path.write_bytes(b"")
+
+    provider = DummyProvider()
+    resp = provider.generate("What is in this audio?", media=[str(audio_path)], stream=False)
+    assert resp.content == "ok"
+    assert stub_audio.calls == 1
+    assert stub_audio.last_kwargs == {"provider": "faster-whisper", "model": "large-v3"}
 
 
 @pytest.mark.basic

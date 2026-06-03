@@ -98,6 +98,10 @@ class MediaContent:
             mime_type_raw = data.get("mimeType")
         if mime_type_raw is None:
             mime_type_raw = data.get("mime")
+        if mime_type_raw is None:
+            mime_type_raw = data.get("content_type")
+        if mime_type_raw is None:
+            mime_type_raw = data.get("contentType")
 
         mime_type = str(mime_type_raw or "application/octet-stream")
 

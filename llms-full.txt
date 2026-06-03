@@ -14,7 +14,7 @@ Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 - Default tool execution is **pass-through**: AbstractCore returns tool calls; the host/runtime executes them.
 - In the AbstractFramework ecosystem, **AbstractRuntime** is the recommended runtime for executing tool calls durably (policy, retries, persistence): https://github.com/lpalbou/abstractruntime
 - Media handling is **policy-driven** by design (no silent semantic changes). If audio/video/images "don't work", check policy + configured fallbacks.
-- Framework defaults use capability routes such as `input.text`, `output.text`, `embedding.text`, and future `rerank.text`; Core owns persistence and Gateway can act as a control plane.
+- Framework defaults use capability routes such as canonical `input.text`, fallback `input.image`, explicit `input.voice` and `input.video`, `embedding.text`, and future `rerank.text`; Core owns persistence and Gateway can act as a control plane. `output.text` is a read-only view of `input.text`.
 - `llms.txt` is the short index; this file is intentionally large. Prefer pulling only the sections you need.
 
 ## Table of contents
@@ -612,13 +612,15 @@ Audio and video input are controlled by explicit policies:
 - `audio_policy`: `native_only|speech_to_text|auto|caption`
 - `video_policy`: `native_only|frames_caption|auto`
 
-Defaults are strict (`native_only`) unless you configure a fallback.
+Defaults are explicit. Native model support may handle the media directly, but
+text-only fallback requires configured capability routes such as `input.voice`
+for STT or `input.video` for a dedicated video/VLM route.
 
 ### Vision fallback (for text-only main models)
 
-If your main model is text-only, you can configure a vision fallback pipeline:
-- caption the image (or sampled video frames),
-- inject short observations into the main request.
+If your main model is text-only, configure image/video fallback through
+capability routes. `input.image` can be covered by a vision-capable
+`input.text` route; `input.video` can also be covered but remains overrideable.
 
 Config CLI examples:
 
@@ -643,10 +645,11 @@ abstractcore --set-video-max-frame-side 1024
 
 ### Audio fallback requirements
 
-Speech-to-text fallback typically uses a capability plugin backend:
+Speech-to-text fallback uses the configured `input.voice` capability route:
 
 ```bash
 pip install abstractvoice
+abstractcore config set-default input.voice --provider faster-whisper --model large-v3
 abstractcore --set-audio-strategy auto
 abstractcore --set-stt-language en
 ```
@@ -1210,12 +1213,14 @@ Audio and video attachments are also supported, but they are **policy-driven** (
 - audio: `audio_policy` (`native_only|speech_to_text|auto|caption`)
 - video: `video_policy` (`native_only|frames_caption|auto`)
 
-Speech-to-text fallback (`audio_policy="speech_to_text"`) typically requires installing `abstractvoice` (capability plugin).
+Speech-to-text fallback for normal framework defaults requires an `input.voice`
+route. Direct per-call `audio_policy="speech_to_text"` can still force STT with
+explicit parameters.
 
 What you need (quick checklist):
 - **Images**: `abstractcore[media]` + either a vision-capable model (VLM/VL) **or** configured vision fallback (`abstractcore --set-vision-provider PROVIDER MODEL`).
-- **Video**: `ffmpeg`/`ffprobe` on `PATH` + either a vision-capable model **or** configured vision fallback (for frame sampling). Native video input is model/provider dependent.
-- **Audio**: either an audio-capable model **or** speech-to-text fallback via `abstractvoice` + `audio_policy="auto"`/`"speech_to_text"`.
+- **Video**: `ffmpeg`/`ffprobe` on `PATH` + either native/visual support in the selected text route or an explicit `input.video` route. Native video input is model/provider dependent.
+- **Audio**: either an audio-capable model **or** an explicit `input.voice` speech-to-text route.
 
 Defaults can be configured via the config CLI (`abstractcore --config`, `abstractcore --status`). See [Centralized Config](centralized-config.md).
 
@@ -5433,9 +5438,9 @@ except PDFProcessingError:
 
 ### Audio (policy-driven; optional STT fallback)
 - **Formats**: common `audio/*` types (WAV, MP3, M4A, …) as attachments via `media=[...]`
-- **Default behavior**: `audio_policy="native_only"` (fails loudly unless the model supports native audio input)
-- **Speech-to-text**: `audio_policy="speech_to_text"` runs STT via the capability plugin layer (`llm.audio.transcribe(...)`; typically install `abstractvoice`) and injects a transcript into the main request
-- **Auto**: `audio_policy="auto"` uses native audio when supported, otherwise STT when configured, otherwise errors
+- **Default behavior**: `audio_policy="auto"` uses native audio when supported and otherwise requires the configured `input.voice` route
+- **Speech-to-text**: `audio_policy="speech_to_text"` runs STT via the capability plugin layer (`llm.audio.transcribe(...)`) and injects a transcript into the main request; normal defaults should route this through `input.voice`
+- **Auto**: `audio_policy="auto"` uses native audio when supported, otherwise the `input.voice` route, otherwise errors
 - **Reserved**: `audio_policy="caption"` is not configured in v0 (must error; non-speech audio analysis needs an explicit capability)
 
 Transparency:
@@ -5443,16 +5448,16 @@ Transparency:
 
 Requirements:
 - **Native audio** requires an audio-capable model.
-- **STT fallback** requires installing an STT capability plugin (typically `pip install abstractvoice`) and using `audio_policy="auto"`/`"speech_to_text"` (or setting a default via `abstractcore --set-audio-strategy ...`).
+- **STT fallback** requires installing an STT capability plugin (typically `pip install abstractvoice`) and configuring `input.voice`; `abstractcore --set-audio-strategy auto` only chooses the policy.
 
 ### Video (policy-driven; native or frames fallback)
 - **Formats**: common `video/*` types as attachments via `media=[...]`
-- **Default behavior**: `video_policy="auto"` (native video when supported; otherwise sample frames and route through the vision pipeline)
+- **Default behavior**: `video_policy="auto"` (native video when supported; otherwise sample frames and route through visual support on `input.text` or an explicit `input.video` route)
 - **Budgets**: frame count and downscale are explicit and logged (see `abstractcore/providers/base.py`)
 
 Requirements:
 - Frame sampling fallback requires **`ffmpeg`/`ffprobe`** available on `PATH`.
-- For the sampled-frame path, you also need **image/vision handling**: either a vision-capable main model or configured vision fallback, and (for local frame attachments) `pip install "abstractcore[media]"` so Pillow-based image processing is available.
+- For the sampled-frame path, you also need visual handling: either a vision-capable main model, an `input.text` route that supports frames/images, or an explicit `input.video` route; for local frame attachments, install `abstractcore[media]` so Pillow-based image processing is available.
 
 ### Processing Features
 - **Intelligent Detection**: Automatic file type recognition and processor selection
@@ -6764,9 +6769,11 @@ abstractcore --set-chat-model openai/gpt-4o-mini
 abstractcore --set-code-model anthropic/claude-haiku-4-5
 ```
 
-`--set-global-default` also writes explicit `input.text` and `output.text`
-capability route defaults. These route defaults are the framework-level source
-of truth for text understanding/generation defaults.
+`--set-global-default` writes the canonical `input.text` capability route
+default. `output.text` is a read-only derived view of `input.text`, so text
+understanding and text generation stay on the same LLM route. Commands that
+target `output.text` are accepted for compatibility, but persist to
+`input.text`.
 
 ### Capability Routing Defaults
 
@@ -6783,19 +6790,35 @@ Route kinds:
 Examples:
 
 ```bash
-abstractcore --set-capability-default output.text \
-  --capability-provider lmstudio \
-  --capability-model qwen/qwen3.6-35b-a3b \
-  --capability-base-url http://127.0.0.1:1234/v1
+abstractcore config set-default input.text \
+  --provider lmstudio \
+  --model qwen/qwen3.6-35b-a3b \
+  --base-url http://127.0.0.1:1234/v1
 
-abstractcore --set-capability-default embedding.text \
-  --capability-provider lmstudio \
-  --capability-model text-embedding-nomic-embed-text-v1.5 \
-  --capability-base-url http://127.0.0.1:1234/v1
+abstractcore config set-default embedding.text \
+  --provider lmstudio \
+  --model text-embedding-nomic-embed-text-v1.5 \
+  --base-url http://127.0.0.1:1234/v1
 ```
 
 Route defaults are configuration only; they do not load a model into a provider.
 Provider residency is reported separately.
+
+`input.image` is a fallback route for image understanding when the configured
+text route cannot natively accept images. If the `input.text` model is known in
+AbstractCore's model-capability registry as image-capable, the effective
+`input.image` route is marked as covered by `input.text` and should not be
+edited separately.
+
+`input.video` is the corresponding video-understanding route. If the
+`input.text` model can process visual frames, Core may report `input.video` as
+covered by `input.text`; unlike `input.image`, that coverage is overrideable so
+you can route video through a dedicated VLM or video-capable endpoint.
+
+`input.voice` is the speech-to-text fallback route. Core does not silently use a
+locally installed STT package just because `audio.strategy=auto`; a text-only
+model needs `input.voice` configured before audio attachments are transcribed
+automatically.
 
 ### Cache Directories
 
@@ -6894,13 +6917,18 @@ Notes:
 - `abstractcore --set-vision-caption ...` is deprecated but kept for compatibility.
 - Vision fallback is only used for **image/video inputs** when the *main* model is text-only.
 
-### Audio (default policy + optional speech-to-text fallback)
+### Audio (default policy + explicit speech-to-text fallback)
 
-Audio attachments are controlled by `audio_policy`. The default is `auto`: use native audio when supported, otherwise fall back to STT via `abstractvoice` (if installed). If `abstractvoice` is not installed, `auto` degrades gracefully to native-only behavior at runtime.
+Audio attachments are controlled by `audio_policy`. The default is `auto`: use native audio when supported, otherwise use the configured `input.voice` capability route as the speech-to-text fallback. If `input.voice` is not configured, Core reports a configuration error for text-only models instead of silently choosing an installed STT backend.
 
 ```bash
 # STT fallback requires abstractvoice
 pip install abstractvoice
+
+# Select the STT route used by audio_policy=auto
+abstractcore config set-default input.voice \
+  --provider faster-whisper \
+  --model large-v3
 
 # Override strategy explicitly (auto is the default)
 abstractcore --set-audio-strategy auto
@@ -6910,24 +6938,28 @@ abstractcore --set-stt-language fr
 ```
 
 Notes:
-- `audio_policy="auto"` uses native audio when supported, otherwise STT when available (default).
-- `audio_policy="speech_to_text"` forces STT and injects a transcript into the request.
+- `audio_policy="auto"` uses native audio when supported, otherwise the configured `input.voice` route.
+- `audio_policy="speech_to_text"` forces STT and injects a transcript into the request; direct per-call routing may still provide explicit STT parameters.
 - `audio_policy="native_only"` errors on text-only models (no fallback).
 
-### Video (native vs frames fallback)
+### Video (native vs configured frame/video fallback)
 
-Video attachments are controlled by `video_policy`. By default (`auto`), AbstractCore uses native video input when supported, otherwise it samples frames via `ffmpeg` and routes them through image/vision handling.
+Video attachments are controlled by `video_policy`. By default (`auto`), AbstractCore uses native video input when supported. Otherwise it can sample frames via `ffmpeg` and route those frames through the selected `input.text` model when that model supports visual input, or through an explicit `input.video` route when configured.
 
 ```bash
 abstractcore --set-video-strategy auto
 abstractcore --set-video-max-frames 6
 abstractcore --set-video-sampling-strategy keyframes
 abstractcore --set-video-max-frame-side 1024
+
+abstractcore config set-default input.video \
+  --provider endpoint:office-vlm \
+  --model qwen2.5-vl-72b
 ```
 
 Notes:
 - Frame sampling requires `ffmpeg`/`ffprobe` available on `PATH`.
-- If your main model is text-only, frame fallback still requires **vision fallback** to be configured (see above).
+- If the main model is text-only and `input.video` is not configured, Core reports a configuration error rather than silently using an unrelated vision/video backend.
 
 ### API Keys
 
@@ -9844,10 +9876,10 @@ Then pass `media=[...]` to `generate()` or use the media pipeline. See [Media Ha
 
 Audio and video attachments are supported via `media=[...]`, but they are **policy-driven** by design:
 
-- **Audio** defaults to `audio_policy="native_only"` (fails loudly unless the model supports native audio input).
-- **Video** defaults to `video_policy="auto"` (native video when supported; otherwise sample frames and route through image/vision handling). Frame sampling requires `ffmpeg`/`ffprobe`.
+- **Audio** defaults to `audio_policy="auto"`: native audio when supported, otherwise the configured `input.voice` route.
+- **Video** defaults to `video_policy="auto"`: native video when supported, otherwise sampled frames routed through visual support on `input.text` or an explicit `input.video` route. Frame sampling requires `ffmpeg`/`ffprobe`.
 
-Speech-to-text fallback for audio (`audio_policy="speech_to_text"` or `"auto"`) typically requires installing `abstractvoice` (capability plugin).
+Speech-to-text fallback for audio requires an `input.voice` route for normal defaults. Direct `audio_policy="speech_to_text"` can still force explicit STT routing.
 
 You can set defaults via the config CLI:
 

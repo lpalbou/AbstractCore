@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -190,3 +191,127 @@ def test_native_video_defaults_use_max_frames_native(monkeypatch, tmp_path: Path
     _ = provider.generate("What is this video?", media=[str(video_path)], stream=False, video_policy="native_only")
     assert provider.last_kwargs is not None
     assert provider.last_kwargs.get("video_max_frames") == 8
+
+
+@pytest.mark.basic
+def test_auto_video_uses_explicit_endpoint_capability_default(monkeypatch, tmp_path: Path) -> None:
+    from abstractcore.core.types import GenerateResponse
+    from abstractcore.providers.base import BaseProvider
+
+    try:
+        from PIL import Image as PILImage
+    except ImportError:
+        pytest.skip("PIL not installed")
+
+    class StubConfigManager:
+        config = SimpleNamespace(
+            video=SimpleNamespace(
+                strategy="auto",
+                max_frames=2,
+                max_frames_native=2,
+                frame_format="jpg",
+                sampling_strategy="uniform",
+                max_frame_side=64,
+            )
+        )
+
+        def get_capability_default(self, kind: str, modality: str) -> dict:
+            if kind == "input" and modality == "video":
+                return {
+                    "key": "input.video",
+                    "source": "abstractcore.capability_defaults",
+                    "provider": "endpoint:office-vlm",
+                    "model": "route-video-model",
+                }
+            return {"key": f"{kind}.{modality}", "source": "not_configured"}
+
+    monkeypatch.setattr("abstractcore.config.manager.get_config_manager", lambda: StubConfigManager())
+
+    def fake_extract_video_frames(
+        video_path: Path,
+        *,
+        max_frames: int = 3,
+        frame_format: str = "jpg",
+        sampling_strategy: str = "uniform",
+        max_side=None,
+        output_dir=None,
+    ):
+        _ = video_path, max_frames, sampling_strategy, max_side
+        out_dir = Path(output_dir) if output_dir is not None else tmp_path
+        out_dir.mkdir(parents=True, exist_ok=True)
+        frame_path = out_dir / f"frame_01.{frame_format}"
+        img = PILImage.new("RGB", (16, 16), color="blue")
+        img.save(frame_path)
+        return [frame_path], [0.0]
+
+    class FakeFallbackLLM:
+        def __init__(self):
+            self.calls = []
+
+        def generate(self, prompt, media=None, stream=False, **kwargs):
+            self.calls.append({"prompt": prompt, "media": list(media or []), "stream": stream, "kwargs": kwargs})
+            return GenerateResponse(content="fallback video description", model="route-video-model", finish_reason="stop")
+
+    fallback_llm = FakeFallbackLLM()
+    created = {}
+
+    def fake_create_llm(provider: str, model: str, **kwargs):
+        created["provider"] = provider
+        created["model"] = model
+        created["kwargs"] = dict(kwargs)
+        return fallback_llm
+
+    monkeypatch.setattr("abstractcore.media.utils.video_frames.extract_video_frames", fake_extract_video_frames)
+    monkeypatch.setattr("abstractcore.media.utils.video_frames.probe_duration_s", lambda _path: 1.0)
+    monkeypatch.setattr("abstractcore.core.factory.create_llm", fake_create_llm)
+
+    class DummyProvider(BaseProvider):
+        def __init__(self):
+            super().__init__(model="plain-text-model")
+            self.provider = "lmstudio"
+            self.model_capabilities = {}
+            self.last_media = None
+
+        def resolve_provider_endpoint_profile(self, provider_id: str) -> dict:
+            assert provider_id == "endpoint:office-vlm"
+            return {
+                "virtual_provider": provider_id,
+                "provider": "openai-compatible",
+                "base_url": "http://127.0.0.1:1234/v1",
+                "api_key": "secret-token",
+            }
+
+        def _generate_internal(self, prompt, messages=None, system_prompt=None, tools=None, media=None, stream=False, **kwargs):
+            _ = prompt, messages, system_prompt, tools, stream, kwargs
+            self.last_media = media
+            return GenerateResponse(content="ok", model=self.model, finish_reason="stop", metadata={})
+
+        def get_capabilities(self):
+            return []
+
+        def unload_model(self, model_name: str) -> None:
+            return None
+
+        def list_available_models(self, **kwargs):
+            return []
+
+    video_path = tmp_path / "sample.mp4"
+    video_path.write_bytes(b"fake")
+
+    provider = DummyProvider()
+    resp = provider.generate("What is in this video?", media=[str(video_path)], stream=False)
+
+    assert resp.content == "ok"
+    assert created == {
+        "provider": "openai-compatible",
+        "model": "route-video-model",
+        "kwargs": {"base_url": "http://127.0.0.1:1234/v1", "api_key": "secret-token"},
+    }
+    assert len(fallback_llm.calls) == 1
+    assert fallback_llm.calls[0]["media"], "Expected sampled frame paths to be sent to the configured fallback model"
+    assert isinstance(provider.last_media, list)
+    kinds = [getattr(getattr(item, "media_type", None), "value", None) for item in provider.last_media]
+    assert kinds == ["text"]
+    marker_text = str(getattr(provider.last_media[0], "content", "") or "")
+    assert "fallback video description" in marker_text
+    assert "Do not mention fallback models" in marker_text

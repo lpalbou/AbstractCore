@@ -175,6 +175,10 @@ with open("assets/architecture_formats.json") as f:
 #### Multimodal Capabilities
 - `vision_support` - **Provider-native** image input support (boolean)
 - `audio_support` - **Provider-native** audio input support (boolean)
+- `audio_input_capabilities` - Optional route hints for audio-capable models:
+  `["speech"]`, `["speech", "sound"]`, or `["speech", "sound", "music"]`.
+  Use this only when model cards explicitly support those audio input classes.
+  It must not be set unless `audio_support` is `true`.
 - `video_support` - **Provider-native** video input support (boolean; v0 native video is HF-only in this framework)
 - `video_input_mode` - Video handling mode (enum): `"none" | "frames" | "native"`
   - `native`: provider receives `video/*` directly (no conversion)

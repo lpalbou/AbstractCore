@@ -144,6 +144,24 @@
 	        },
 	        "patterns": ["qwen3-30b-a3b", "qwen3-235b-a22b", "qwen3:30b-a3b", "qwen3-coder:30b", "qwen/qwen3-coder-30b"]
 	      },
+    "qwen3_omni": {
+      "description": "Alibaba's Qwen3-Omni MoE architecture for text, image, audio, and video inputs",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "tool_format": "special_token",
+      "tool_prefix": "<|tool_call|>",
+      "inference_parameters": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "top_k": 20
+      },
+      "patterns": ["qwen3-omni", "qwen/qwen3-omni"]
+    },
     "qwen2_5": {
       "description": "Alibaba's Qwen2.5 architecture (September 2024)",
       "message_format": "im_start_end",
@@ -156,6 +174,19 @@
       "tool_format": "special_token",
       "tool_prefix": "<|tool_call|>",
       "patterns": ["qwen2.5", "qwen-2.5"]
+    },
+    "qwen2_5_omni": {
+      "description": "Alibaba's Qwen2.5-Omni architecture for text, image, audio, and video inputs",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "tool_format": "special_token",
+      "tool_prefix": "<|tool_call|>",
+      "patterns": ["qwen2.5-omni", "qwen/qwen2.5-omni"]
     },
     "qwen2_vl": {
       "description": "Alibaba's Qwen2-VL multimodal architecture (September 2024)",
@@ -302,6 +333,19 @@
       "tool_format": "special_token",
       "tool_prefix": "<|tool_call|>",
       "patterns": ["qwen2.", "qwen2-"]
+    },
+    "qwen2_audio": {
+      "description": "Alibaba's Qwen2-Audio architecture for audio-language input",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "tool_format": "special_token",
+      "tool_prefix": "<|tool_call|>",
+      "patterns": ["qwen2-audio", "qwen/qwen2-audio"]
     },
     "mistral": {
       "description": "Mistral AI 7B base architecture",

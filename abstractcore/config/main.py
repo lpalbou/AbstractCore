@@ -1433,6 +1433,346 @@ def _parse_capability_options(items: List[str]) -> dict:
     return out
 
 
+def _config_manager_for_cli(args):
+    if not CONFIG_AVAILABLE:
+        raise RuntimeError("Configuration system not available")
+    from abstractcore.config.manager import ConfigurationManager
+
+    config_file = getattr(args, "config_file", None)
+    config_dir = getattr(args, "config_dir", None)
+    if config_file or config_dir:
+        return ConfigurationManager(config_file=config_file, config_dir=config_dir)
+    return get_config_manager()
+
+
+def _print_capability_defaults(payload: dict) -> None:
+    print("AbstractCore capability defaults")
+    print(f"- config_file: {payload.get('config_file')}")
+    for item in payload.get("routes", []):
+        if not isinstance(item, dict):
+            continue
+        key = item.get("key") or f"{item.get('kind')}.{item.get('modality')}"
+        provider = item.get("provider") or "-"
+        model = item.get("model") or "-"
+        source = item.get("source") or "-"
+        print(f"- {key}: {provider}/{model} ({source})")
+
+
+def _config_payload(manager) -> dict:
+    return {
+        "ok": True,
+        "version": 1,
+        "authority": "abstractcore.local",
+        "writable": True,
+        "source": "abstractcore.local",
+        "config_file": str(manager.config_file),
+        "routes": manager.list_capability_defaults(),
+        "errors": [],
+    }
+
+
+def _provider_profiles_payload(manager) -> dict:
+    return {
+        "ok": True,
+        "version": 1,
+        "authority": "abstractcore.local",
+        "writable": True,
+        "source": "abstractcore.local",
+        "config_file": str(manager.config_file),
+        "profiles": manager.list_provider_profiles(),
+        "errors": [],
+    }
+
+
+def _print_provider_profiles(payload: dict) -> None:
+    print("AbstractCore provider endpoint profiles")
+    print(f"- config_file: {payload.get('config_file')}")
+    profiles = payload.get("profiles", [])
+    if not profiles:
+        print("- no profiles configured")
+        return
+    for profile in profiles:
+        enabled = "enabled" if profile.get("enabled") else "disabled"
+        key_state = "key set" if profile.get("api_key_set") else "no key"
+        models = profile.get("allowed_models") or []
+        model_text = "live discovery" if not models else f"{len(models)} fixed model(s)"
+        print(
+            f"- {profile.get('virtual_provider')}: {profile.get('display_name')} "
+            f"({profile.get('provider_family')}, {enabled}, {key_state}, {model_text})"
+        )
+
+
+def _handle_config_defaults(args) -> int:
+    manager = _config_manager_for_cli(args)
+    payload = _config_payload(manager)
+    if getattr(args, "json", False):
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        _print_capability_defaults(payload)
+    return 0
+
+
+def _handle_config_set_default(args) -> int:
+    manager = _config_manager_for_cli(args)
+    try:
+        options = _parse_capability_options(getattr(args, "option", []) or [])
+    except ValueError as e:
+        print(f"❌ Error: {e}")
+        return 1
+    ok = manager.set_capability_default(
+        args.route,
+        provider=getattr(args, "provider", None),
+        model=getattr(args, "model", None),
+        base_url=getattr(args, "base_url", None),
+        options=options,
+    )
+    if not ok:
+        print(f"❌ Error: Failed to set capability default for {args.route}")
+        return 1
+    print(f"✅ Set capability default for {args.route}")
+    return 0
+
+
+def _handle_config_clear_default(args) -> int:
+    manager = _config_manager_for_cli(args)
+    ok = manager.clear_capability_default(args.route)
+    if not ok:
+        print(f"❌ Error: Failed to clear capability default for {args.route}")
+        return 1
+    print(f"✅ Cleared capability default for {args.route}")
+    return 0
+
+
+def _handle_config_providers(args) -> int:
+    manager = _config_manager_for_cli(args)
+    payload = _provider_profiles_payload(manager)
+    if getattr(args, "json", False):
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        _print_provider_profiles(payload)
+    return 0
+
+
+def _handle_config_provider(args) -> int:
+    manager = _config_manager_for_cli(args)
+    profile = manager.get_provider_profile(args.profile)
+    if profile is None:
+        print(f"❌ Error: Provider profile not found: {args.profile}")
+        return 1
+    payload = {
+        "ok": True,
+        "version": 1,
+        "authority": "abstractcore.local",
+        "config_file": str(manager.config_file),
+        "profile": profile.public_dict(),
+        "errors": [],
+    }
+    if getattr(args, "json", False):
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        _print_provider_profiles({"config_file": str(manager.config_file), "profiles": [payload["profile"]]})
+    return 0
+
+
+def _handle_config_set_provider(args) -> int:
+    manager = _config_manager_for_cli(args)
+    try:
+        allowed_models = None
+        if getattr(args, "clear_models", False):
+            allowed_models = []
+        elif getattr(args, "allow_model", None):
+            allowed_models = list(args.allow_model or [])
+
+        profile = manager.set_provider_profile(
+            args.profile,
+            display_name=getattr(args, "name", None),
+            description=getattr(args, "description", None),
+            provider_family=getattr(args, "family", None),
+            base_url=getattr(args, "base_url", None),
+            api_key=getattr(args, "api_key", None),
+            clear_api_key=bool(getattr(args, "clear_api_key", False)),
+            allowed_models=allowed_models,
+            enabled=(
+                False
+                if bool(getattr(args, "disabled", False))
+                else (True if bool(getattr(args, "enabled", False)) else None)
+            ),
+        )
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return 1
+
+    if getattr(args, "json", False):
+        print(json.dumps({"ok": True, "profile": profile.public_dict()}, indent=2, sort_keys=True))
+    else:
+        print(f"✅ Set provider profile {profile.virtual_provider_id}")
+    return 0
+
+
+def _handle_config_delete_provider(args) -> int:
+    manager = _config_manager_for_cli(args)
+    try:
+        ok = manager.delete_provider_profile(args.profile)
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return 1
+    if not ok:
+        print(f"❌ Error: Provider profile not found: {args.profile}")
+        return 1
+    print(f"✅ Deleted provider profile {args.profile}")
+    return 0
+
+
+def _provider_for_model_discovery(manager, provider: str) -> str:
+    raw = str(provider or "").strip()
+    if raw.lower().startswith("endpoint:"):
+        profile = manager.resolve_provider_profile(raw)
+        return profile.virtual_provider_id if profile is not None else raw
+    try:
+        from abstractcore.providers.registry import get_provider_registry
+
+        if get_provider_registry().get_provider_info(raw) is not None:
+            return raw
+    except Exception:
+        pass
+    profile = manager.resolve_provider_profile(raw)
+    return profile.virtual_provider_id if profile is not None else raw
+
+
+def _bind_cli_manager_for_registry(manager) -> None:
+    """Make provider registry helpers use the same manager selected by CLI flags."""
+    try:
+        import abstractcore.config.manager as manager_module
+        import abstractcore.providers.registry as registry_module
+
+        manager_module._config_manager = manager
+        registry_module._registry = None
+    except Exception:
+        return
+
+
+def _handle_config_models(args) -> int:
+    manager = _config_manager_for_cli(args)
+    _bind_cli_manager_for_registry(manager)
+    provider = _provider_for_model_discovery(manager, args.provider)
+    try:
+        from abstractcore.providers.registry import get_available_models_for_provider
+
+        models = get_available_models_for_provider(
+            provider,
+            force_live_discovery=bool(getattr(args, "live", False)),
+            raise_on_error=bool(getattr(args, "raise_on_error", False)),
+        )
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return 1
+    payload = {
+        "ok": True,
+        "provider": provider,
+        "models": list(models),
+        "count": len(models),
+        "errors": [],
+    }
+    if getattr(args, "json", False):
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        print(f"Models for {provider}:")
+        if not models:
+            print("- no models discovered")
+        for model in models:
+            print(f"- {model}")
+    return 0
+
+
+def _handle_config_test_provider(args) -> int:
+    args.live = True
+    args.raise_on_error = True
+    rc = _handle_config_models(args)
+    if rc == 0:
+        if not getattr(args, "json", False):
+            print(f"✅ Provider profile reachable: {_provider_for_model_discovery(_config_manager_for_cli(args), args.provider)}")
+    return rc
+
+
+def _handle_config_subcommand(argv: List[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="abstractcore config",
+        description="Inspect and edit AbstractCore configuration.",
+    )
+    parser.add_argument("--config-file", default=None, help="Use a specific AbstractCore config JSON file")
+    parser.add_argument("--config-dir", default=None, help="Use a directory containing abstractcore.json")
+    sub = parser.add_subparsers(dest="cmd")
+
+    defaults = sub.add_parser("defaults", help="Show effective capability routing defaults")
+    defaults.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    defaults.set_defaults(func=_handle_config_defaults)
+
+    set_default = sub.add_parser("set-default", help="Persist one Core capability routing default")
+    set_default.add_argument("route", help="Capability route, e.g. output.text, input.image, embedding.text")
+    set_default.add_argument("--provider", default=None, help="Provider/backend id")
+    set_default.add_argument("--model", default=None, help="Model id")
+    set_default.add_argument("--base-url", default=None, help="Optional provider base URL")
+    set_default.add_argument("--option", action="append", default=[], metavar="KEY=VALUE", help="Optional JSON-capable parameter; repeatable")
+    set_default.set_defaults(func=_handle_config_set_default)
+
+    clear_default = sub.add_parser("clear-default", help="Clear one Core capability routing default")
+    clear_default.add_argument("route", help="Capability route, e.g. output.text")
+    clear_default.set_defaults(func=_handle_config_clear_default)
+
+    providers = sub.add_parser("providers", help="Show local provider endpoint profiles")
+    providers.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    providers.set_defaults(func=_handle_config_providers)
+
+    provider = sub.add_parser("provider", help="Show one local provider endpoint profile")
+    provider.add_argument("profile", help="Profile id or endpoint:<id>")
+    provider.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    provider.set_defaults(func=_handle_config_provider)
+
+    set_provider = sub.add_parser("set-provider", help="Create or update a local provider endpoint profile")
+    set_provider.add_argument("profile", help="Profile id, e.g. ovh-provider")
+    set_provider.add_argument("--family", default=None, help="Provider family, default: openai-compatible")
+    set_provider.add_argument("--base-url", default=None, help="Endpoint base URL, e.g. https://host/v1")
+    set_provider.add_argument(
+        "--api-key",
+        default=None,
+        help="API key value. Use a quoted literal like '$OVH_AI_API_KEY' to store an environment reference.",
+    )
+    set_provider.add_argument("--clear-api-key", action="store_true", help="Clear the stored API key or environment reference")
+    set_provider.add_argument("--name", default=None, help="Human-readable display name")
+    set_provider.add_argument("--description", default=None, help="Human-readable profile description")
+    set_provider.add_argument("--allow-model", action="append", default=None, help="Expose one fixed model id; repeatable")
+    set_provider.add_argument("--clear-models", action="store_true", help="Clear fixed model allowlist and use live discovery")
+    set_provider.add_argument("--enabled", action="store_true", help="Enable this profile")
+    set_provider.add_argument("--disabled", action="store_true", help="Disable this profile")
+    set_provider.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    set_provider.set_defaults(func=_handle_config_set_provider)
+
+    delete_provider = sub.add_parser("delete-provider", help="Delete a local provider endpoint profile")
+    delete_provider.add_argument("profile", help="Profile id or endpoint:<id>")
+    delete_provider.set_defaults(func=_handle_config_delete_provider)
+
+    models = sub.add_parser("models", help="List models for a provider or endpoint profile")
+    models.add_argument("provider", help="Provider id, profile id, or endpoint:<id>")
+    models.add_argument("--live", action="store_true", help="Force live model discovery instead of fixed allowlist")
+    models.add_argument("--raise-on-error", action="store_true", help="Fail instead of returning an empty list")
+    models.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    models.set_defaults(func=_handle_config_models)
+
+    test_provider = sub.add_parser("test-provider", help="Force live model discovery for a provider endpoint profile")
+    test_provider.add_argument("provider", help="Provider id, profile id, or endpoint:<id>")
+    test_provider.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    test_provider.set_defaults(func=_handle_config_test_provider)
+
+    args = parser.parse_args(argv)
+    if not getattr(args, "cmd", None):
+        args = parser.parse_args([*(argv or []), "defaults"])
+    try:
+        return args.func(args)
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return 1
+
+
 def handle_commands(args) -> bool:
     """Handle AbstractCore configuration commands."""
     if not CONFIG_AVAILABLE or get_config_manager is None:
@@ -1873,10 +2213,30 @@ def handle_commands(args) -> bool:
 
     return handled
 
+_CONFIG_SUBCOMMANDS = {
+    "defaults",
+    "set-default",
+    "clear-default",
+    "providers",
+    "provider",
+    "set-provider",
+    "delete-provider",
+    "models",
+    "test-provider",
+}
+
+
 def main(argv: List[str] = None):
     """Main CLI entry point."""
     if argv is None:
         argv = sys.argv[1:]
+
+    if argv and argv[0] == "config":
+        return _handle_config_subcommand(argv[1:])
+    if Path(sys.argv[0]).name == "abstractcore-config" and (
+        not argv or argv[0] in _CONFIG_SUBCOMMANDS or argv[0].startswith("--")
+    ):
+        return _handle_config_subcommand(argv)
 
     parser = argparse.ArgumentParser(
         prog="abstractcore",

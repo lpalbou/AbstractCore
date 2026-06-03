@@ -1011,6 +1011,11 @@ class AnthropicProvider(BaseProvider):
                 self.logger.debug("No Anthropic API key available for model listing")
                 return []
 
+            base_url = kwargs.get('base_url') or self.base_url or os.getenv("ANTHROPIC_BASE_URL")
+            models_url = "https://api.anthropic.com/v1/models"
+            if isinstance(base_url, str) and base_url.strip():
+                models_url = f"{base_url.strip().rstrip('/')}/models"
+
             # Make API call to list models
             headers = {
                 "x-api-key": api_key,
@@ -1018,7 +1023,7 @@ class AnthropicProvider(BaseProvider):
             }
 
             response = httpx.get(
-                "https://api.anthropic.com/v1/models",
+                models_url,
                 headers=headers,
                 timeout=10.0
             )

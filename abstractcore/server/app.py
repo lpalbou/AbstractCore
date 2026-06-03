@@ -6403,7 +6403,7 @@ def list_capability_defaults():
 def set_capability_default(
     req: CapabilityDefaultRouteRequest,
     kind: str = FastAPIPath(..., description="Capability route kind: input, output, embedding, or rerank."),
-    modality: str = FastAPIPath(..., description="Capability modality: text, image, video, voice, sound, or scene3d."),
+    modality: str = FastAPIPath(..., description="Capability modality: text, image, video, voice, sound, music, or scene3d."),
 ):
     from ..config.manager import ConfigurationManager
 
@@ -6429,7 +6429,7 @@ def set_capability_default(
 )
 def clear_capability_default(
     kind: str = FastAPIPath(..., description="Capability route kind: input, output, embedding, or rerank."),
-    modality: str = FastAPIPath(..., description="Capability modality: text, image, video, voice, sound, or scene3d."),
+    modality: str = FastAPIPath(..., description="Capability modality: text, image, video, voice, sound, music, or scene3d."),
 ):
     from ..config.manager import ConfigurationManager
 

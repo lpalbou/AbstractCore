@@ -1170,6 +1170,37 @@
       "max_tools": -1,
       "video_input_mode": "frames"
     },
+    "qwen2-audio-7b-instruct": {
+      "max_output_tokens": 4096,
+      "tool_support": "none",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound",
+        "music"
+      ],
+      "video_support": false,
+      "architecture": "qwen2_audio",
+      "model_type": "qwen2_audio",
+      "total_parameters": "7B",
+      "model_class": "Qwen2AudioForConditionalGeneration",
+      "notes": "Qwen2-Audio Instruct audio-language model. The model card defines voice chat and audio analysis modes and includes a sound-recognition example for glass shattering. Use as an older Qwen-family fallback for input.sound and speech/audio QA when Qwen3-Omni or Qwen2.5-Omni are not practical. The config text context is 8,192 positions.",
+      "source": "Hugging Face model card and config (Qwen/Qwen2-Audio-7B-Instruct, accessed 2026-06-02)",
+      "canonical_name": "qwen2-audio-7b-instruct",
+      "aliases": [
+        "Qwen/Qwen2-Audio-7B-Instruct",
+        "Qwen2-Audio-7B-Instruct",
+        "qwen2-audio:7b",
+        "qwen2audio:7b"
+      ],
+      "max_tokens": 8192,
+      "license": "Apache-2.0",
+      "max_tools": 0,
+      "video_input_mode": "none"
+    },
     "qwen2.5-vl": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
@@ -1188,6 +1219,96 @@
       "video_support": false,
       "max_tools": -1,
       "video_input_mode": "frames"
+    },
+    "qwen2.5-omni-7b": {
+      "max_output_tokens": 8192,
+      "tool_support": "none",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound",
+        "music"
+      ],
+      "video_support": true,
+      "architecture": "qwen2_5_omni",
+      "model_type": "qwen2_5_omni",
+      "total_parameters": "7B",
+      "model_class": "Qwen2_5OmniModel",
+      "notes": "Qwen2.5-Omni end-to-end multimodal model for text, image, audio, and video input with text and natural-speech response support. Its model card reports OmniBench categories for speech, sound events, and music, making it a smaller Qwen-family candidate for input.sound/input.music than Qwen3-Omni. The config thinker text context uses 32,768 max position embeddings.",
+      "source": "Hugging Face model card and config (Qwen/Qwen2.5-Omni-7B, accessed 2026-06-02)",
+      "canonical_name": "qwen2.5-omni-7b",
+      "aliases": [
+        "Qwen/Qwen2.5-Omni-7B",
+        "Qwen2.5-Omni-7B",
+        "qwen2.5-omni:7b"
+      ],
+      "max_tokens": 32768,
+      "license": "Apache-2.0",
+      "max_tools": 0,
+      "video_input_mode": "native"
+    },
+    "audio-flamingo-3-hf": {
+      "max_output_tokens": 1024,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound",
+        "music"
+      ],
+      "video_support": false,
+      "thinking_support": false,
+      "architecture": "audio_flamingo",
+      "model_type": "audioflamingo3",
+      "notes": "Large audio-language model for speech, sound, and music understanding. The Hugging Face card states a 10-minute audio cap, 30-second windows, and non-commercial research-only use; keep it as a research candidate, not a framework default.",
+      "source": "Hugging Face model card and config (nvidia/audio-flamingo-3-hf, accessed 2026-06-02)",
+      "status": "research_noncommercial",
+      "canonical_name": "audio-flamingo-3-hf",
+      "aliases": [
+        "nvidia/audio-flamingo-3-hf",
+        "audio-flamingo-3",
+        "af3"
+      ],
+      "max_tokens": 20000,
+      "license": "other; non-commercial research only",
+      "max_tools": 0,
+      "video_input_mode": "none"
+    },
+    "moss-audio-8b-thinking": {
+      "max_output_tokens": 4096,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound",
+        "music"
+      ],
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "moss_audio",
+      "model_type": "moss_audio",
+      "total_parameters": "8.6B",
+      "notes": "Apache-2.0 audio-understanding model from OpenMOSS with explicit speech, environmental sound, music, audio captioning, time-aware QA, and complex reasoning coverage. Registry token bounds are conservative because the model card emphasizes long-audio understanding but does not publish a single context-token limit.",
+      "source": "Hugging Face model card and config (OpenMOSS-Team/MOSS-Audio-8B-Thinking, accessed 2026-06-02)",
+      "status": "candidate",
+      "canonical_name": "moss-audio-8b-thinking",
+      "aliases": [
+        "OpenMOSS-Team/MOSS-Audio-8B-Thinking",
+        "moss-audio:8b-thinking"
+      ],
+      "max_tokens": 8192,
+      "license": "Apache-2.0",
+      "max_tools": 0,
+      "video_input_mode": "none"
     },
     "phi-2": {
       "max_output_tokens": 2048,
@@ -2407,9 +2528,9 @@
       "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
-      "vision_support": true,
+      "vision_support": false,
       "audio_support": false,
-      "video_support": true,
+      "video_support": false,
       "thinking_support": true,
       "thinking_control": "enable_thinking",
       "thinking_tags": [
@@ -2418,11 +2539,7 @@
       ],
       "architecture": "qwen3_6",
       "total_parameters": "27B",
-      "vision_encoder": "Qwen3.6 vision encoder",
-      "image_resolutions": [
-        "variable"
-      ],
-      "notes": "Unsloth GGUF distribution of Qwen3.6-27B with MTP layers. The repo targets llama.cpp-style runtimes and ships standard GGUF quantizations plus mmproj weights.",
+      "notes": "Unsloth GGUF distribution of Qwen3.6-27B with MTP layers. The repo targets llama.cpp-style runtimes. Its README says --mmproj is not yet supported with MTP, so this packaged variant is treated as text-only for native media routing even though the upstream base model has a vision encoder.",
       "source": "Hugging Face model tree (unsloth/Qwen3.6-27B-MTP-GGUF, accessed 2026-05-18)",
       "repository": "unsloth/Qwen3.6-27B-MTP-GGUF",
       "canonical_name": "qwen3.6-27b-mtp-gguf",
@@ -2434,7 +2551,7 @@
       "max_tokens": 262144,
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "none"
     },
     "qwen3.6-35b-a3b": {
       "max_output_tokens": 81920,
@@ -2517,9 +2634,9 @@
       "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
-      "vision_support": true,
+      "vision_support": false,
       "audio_support": false,
-      "video_support": true,
+      "video_support": false,
       "thinking_support": true,
       "thinking_control": "enable_thinking",
       "thinking_tags": [
@@ -2533,11 +2650,7 @@
       "experts_activated": 8,
       "shared_experts": 1,
       "expert_hidden_size": 512,
-      "vision_encoder": "Qwen3.6 vision encoder",
-      "image_resolutions": [
-        "variable"
-      ],
-      "notes": "Unsloth GGUF distribution of Qwen3.6-35B-A3B with MTP layers. The repo targets llama.cpp-style runtimes and ships Dynamic GGUF quantizations plus mmproj weights.",
+      "notes": "Unsloth GGUF distribution of Qwen3.6-35B-A3B with MTP layers. The repo targets llama.cpp-style runtimes. Its README says --mmproj is not yet supported with MTP, so this packaged variant is treated as text-only for native media routing even though the upstream base model has a vision encoder.",
       "source": "Hugging Face model tree (unsloth/Qwen3.6-35B-A3B-MTP-GGUF, accessed 2026-05-18)",
       "repository": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF",
       "canonical_name": "qwen3.6-35b-a3b-mtp-gguf",
@@ -2549,7 +2662,70 @@
       "max_tokens": 262144,
       "license": "Apache-2.0",
       "max_tools": -1,
+      "video_input_mode": "none"
+    },
+    "qwen3-omni-30b-a3b-instruct": {
+      "max_output_tokens": 16384,
+      "tool_support": "none",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound",
+        "music"
+      ],
+      "video_support": true,
+      "thinking_support": false,
+      "architecture": "qwen3_omni",
+      "model_type": "qwen3_omni_moe",
+      "model_class": "Qwen3OmniMoeForConditionalGeneration",
+      "total_parameters": "30B",
+      "active_parameters": "3B",
+      "notes": "Promptable Qwen3-Omni model for text, image, audio, and video input with text and natural-speech response support. The model card includes sound-analysis and music-analysis cookbooks. Use this as the preferred Qwen3-Omni candidate for prompted audio QA workflows; use the Captioner variant for automatic low-hallucination audio captioning.",
+      "source": "Hugging Face model card, config, and vLLM example (Qwen/Qwen3-Omni-30B-A3B-Instruct, accessed 2026-06-02)",
+      "canonical_name": "qwen3-omni-30b-a3b-instruct",
+      "aliases": [
+        "Qwen/Qwen3-Omni-30B-A3B-Instruct",
+        "qwen3-omni:30b-a3b"
+      ],
+      "max_tokens": 65536,
+      "license": "Apache-2.0",
+      "max_tools": 0,
       "video_input_mode": "native"
+    },
+    "qwen3-omni-30b-a3b-captioner": {
+      "max_output_tokens": 32768,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound",
+        "music"
+      ],
+      "video_support": false,
+      "thinking_support": false,
+      "architecture": "qwen3_omni",
+      "model_type": "qwen3_omni_moe",
+      "model_class": "Qwen3OmniMoeForConditionalGeneration",
+      "total_parameters": "30B",
+      "active_parameters": "3B",
+      "notes": "Audio-only captioner fine-tuned from Qwen3-Omni-30B-A3B. The model card says it accepts exactly one audio input, emits text only, supports speech, environmental sounds, music, and cinematic sound effects, and recommends audio clips of no more than 30 seconds. Use as an input.sound/input.music candidate, not as a general text or vision model.",
+      "source": "Hugging Face model card, config, and vLLM example (Qwen/Qwen3-Omni-30B-A3B-Captioner, accessed 2026-06-02)",
+      "canonical_name": "qwen3-omni-30b-a3b-captioner",
+      "aliases": [
+        "Qwen/Qwen3-Omni-30B-A3B-Captioner",
+        "qwen3-omni-captioner",
+        "qwen3-omni-30b-captioner"
+      ],
+      "max_tokens": 32768,
+      "license": "Apache-2.0",
+      "max_tools": 0,
+      "video_input_mode": "none"
     },
     "qwen3-14b": {
       "max_output_tokens": 8192,

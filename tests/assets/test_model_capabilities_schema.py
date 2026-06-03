@@ -15,6 +15,15 @@ def _load_model_capabilities() -> Dict[str, Any]:
     return data
 
 
+def _load_model_capabilities_raw_pairs() -> list[tuple[str, Any]]:
+    assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
+    path = assets_dir / "model_capabilities.json"
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f, object_pairs_hook=lambda pairs: pairs)
+    assert isinstance(data, list), "model_capabilities.json must parse to an object"
+    return data
+
+
 def _non_empty_str(value: Any) -> bool:
     return isinstance(value, str) and value.strip() == value and bool(value.strip())
 
@@ -47,6 +56,22 @@ def _validate_reasoning_levels(label: str, levels: Any) -> None:
     for level in levels:
         assert _non_empty_str(level), f"{label}.reasoning_levels contains invalid: {level!r}"
         assert level in allowed, f"{label}.reasoning_levels must be subset of {sorted(allowed)}"
+
+
+def _validate_audio_input_capabilities(label: str, capabilities: Any) -> None:
+    assert isinstance(capabilities, list) and capabilities, (
+        f"{label}.audio_input_capabilities must be a non-empty list when set"
+    )
+    allowed = {"speech", "sound", "music"}
+    normalized = []
+    for capability in capabilities:
+        assert _non_empty_str(capability), (
+            f"{label}.audio_input_capabilities contains invalid: {capability!r}"
+        )
+        value = capability.strip().lower()
+        assert value in allowed, f"{label}.audio_input_capabilities must be subset of {sorted(allowed)}"
+        normalized.append(value)
+    assert len(normalized) == len(set(normalized)), f"{label}.audio_input_capabilities must not contain duplicates"
 
 
 def _validate_inference_parameters(label: str, params: Any) -> None:
@@ -109,6 +134,7 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
         "aspect_ratio_support",
         "attention_layers",
         "attention_mechanism",
+        "audio_input_capabilities",
         "base_image_tokens",
         "base_model",
         "base_tokens_per_resolution",
@@ -269,6 +295,13 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
         value = cfg.get(key)
         assert isinstance(value, bool), f"{label}.{key} must be boolean"
 
+    audio_input_capabilities = cfg.get("audio_input_capabilities")
+    if audio_input_capabilities is not None:
+        _validate_audio_input_capabilities(label, audio_input_capabilities)
+        assert cfg.get("audio_support") is True, (
+            f"{label}.audio_support must be true when audio_input_capabilities is set"
+        )
+
     video_support = bool(cfg.get("video_support"))
     video_mode = cfg.get("video_input_mode")
     assert video_mode in {"none", "frames", "native"}, (
@@ -348,6 +381,26 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
         assert token_param_name in {"max_tokens", "max_completion_tokens"}, (
             f"{label}.token_param_name must be one of: max_tokens, max_completion_tokens"
         )
+
+
+@pytest.mark.basic
+def test_model_capabilities_json_has_unique_model_keys():
+    data = _load_model_capabilities_raw_pairs()
+    models_pairs = None
+    for key, value in data:
+        if key == "models":
+            models_pairs = value
+            break
+
+    assert isinstance(models_pairs, list), "top-level key 'models' must exist and be an object"
+
+    model_key_to_count: defaultdict[str, int] = defaultdict(int)
+    for key, _value in models_pairs:
+        assert isinstance(key, str) and key.strip(), f"model key must be a non-empty string: {key!r}"
+        model_key_to_count[key] += 1
+
+    duplicates = sorted(key for key, count in model_key_to_count.items() if count > 1)
+    assert not duplicates, f"model_capabilities.json contains duplicate model keys: {duplicates}"
 
 
 @pytest.mark.basic

@@ -266,13 +266,13 @@ all = [
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice>=0.10.17",
     "omnivoice>=0.1.5",
-    "abstractmusic>=0.1.12",
+    "abstractmusic>=0.1.13",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.18",
+    "abstractvision>=0.3.19",
 ]
 
 all-apple = [
@@ -309,13 +309,13 @@ all-apple = [
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice[all-apple]>=0.10.17",
     "omnivoice>=0.1.5",
-    "abstractmusic[all-apple]>=0.1.12",
+    "abstractmusic[all-apple]>=0.1.13",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision[all-apple]>=0.3.18",
+    "abstractvision[all-apple]>=0.3.19",
 ]
 
 all-gpu = [
@@ -348,13 +348,13 @@ all-gpu = [
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice[all-gpu]>=0.10.17",
     "omnivoice>=0.1.5",
-    "abstractmusic[all-gpu]>=0.1.12",
+    "abstractmusic[all-gpu]>=0.1.13",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision[all-gpu]>=0.3.18",
+    "abstractvision[all-gpu]>=0.3.19",
 ]
 
 # Legacy broad bundle kept for existing users. New installs should usually
@@ -388,13 +388,13 @@ all-non-mlx = [
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice>=0.10.17",
     "omnivoice>=0.1.5",
-    "abstractmusic>=0.1.12",
+    "abstractmusic>=0.1.13",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.18",
+    "abstractvision>=0.3.19",
 ]
 
 # Development dependencies
@@ -423,23 +423,23 @@ server = [
 # Vision (optional) - delegates to AbstractVision.
 # Kept as a separate extra for installs that want vision without the HTTP server.
 vision = [
-    "abstractvision>=0.3.18",
+    "abstractvision>=0.3.19",
 ]
 
 vision-diffusers = [
-    "abstractvision[huggingface]>=0.3.18",
+    "abstractvision[huggingface]>=0.3.19",
 ]
 
 vision-sdcpp = [
-    "abstractvision[sdcpp]>=0.3.18",
+    "abstractvision[sdcpp]>=0.3.19",
 ]
 
 vision-local = [
-    "abstractvision[local]>=0.3.18",
+    "abstractvision[local]>=0.3.19",
 ]
 
 music = [
-    "abstractmusic>=0.1.12",
+    "abstractmusic>=0.1.13",
 ]
 
 # Testing dependencies
@@ -506,12 +506,12 @@ full-dev = [
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice>=0.10.17",
     "omnivoice>=0.1.5",
-    "abstractmusic>=0.1.12",
+    "abstractmusic>=0.1.13",
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.18",
+    "abstractvision>=0.3.19",
     # Tooling
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",

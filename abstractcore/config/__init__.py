@@ -14,6 +14,12 @@ from .capability_defaults import (
     iter_capability_default_specs,
     normalize_kind,
 )
+from .provider_profiles import (
+    ProviderProfile,
+    ProviderProfilesConfig,
+    profile_id_from_virtual_provider,
+    virtual_provider_id,
+)
 
 
 def configure_provider(provider: str, **kwargs) -> None:
@@ -41,6 +47,10 @@ __all__ = [
     'capability_route_key',
     'iter_capability_default_specs',
     'normalize_kind',
+    'ProviderProfile',
+    'ProviderProfilesConfig',
+    'profile_id_from_virtual_provider',
+    'virtual_provider_id',
     'configure_provider',
     'get_provider_config',
     'clear_provider_config'

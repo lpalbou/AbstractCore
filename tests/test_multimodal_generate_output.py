@@ -487,6 +487,30 @@ def test_output_music_with_text_calls_music_generate(fake_plugins):
 
 
 @pytest.mark.basic
+def test_output_sound_uses_text_to_audio_task(fake_plugins):
+    llm = _FakeProvider()
+
+    response = llm.generate(
+        text="A short notification chime.",
+        output={
+            "modality": "music",
+            "task": "text_to_audio",
+            "format": "wav",
+        },
+    )
+
+    assert response.outputs["sound"][0].task == "sound_generation"
+    assert response.outputs["sound"][0].modality == "sound"
+    assert response.outputs["sound"][0].data == b"music-bytes"
+    assert llm.plugin_calls[0][0:4] == (
+        "t2m",
+        "A short notification chime.",
+        None,
+        "wav",
+    )
+
+
+@pytest.mark.basic
 def test_output_music_request_scoped_backend_selection_is_real_and_reporting_is_truthful(monkeypatch):
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_music_plugin_ep()]))
 

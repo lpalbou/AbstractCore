@@ -266,20 +266,90 @@ class ProviderRegistry:
         self._providers[provider_info.name] = provider_info
         self._logger.debug(f"Registered provider: {provider_info.name}")
 
+    def _resolve_endpoint_profile(self, provider_name: str):
+        """Resolve an explicit endpoint profile id, if provider_name is endpoint:<id>."""
+        raw = str(provider_name or "").strip()
+        if not raw.lower().startswith("endpoint:"):
+            return None
+        try:
+            from ..config import get_config_manager
+
+            return get_config_manager().resolve_provider_profile(raw)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _provider_constructor_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """Remove profile metadata before passing kwargs to provider constructors."""
+        blocked = {"allowed_models", "provider_family", "provider_profile_id", "virtual_provider"}
+        return {k: v for k, v in dict(kwargs or {}).items() if k not in blocked}
+
+    def _filter_model_list(self, models: List[str], kwargs: Dict[str, Any]) -> List[str]:
+        input_capabilities = kwargs.get("input_capabilities")
+        output_capabilities = kwargs.get("output_capabilities")
+        if not input_capabilities and not output_capabilities:
+            return list(models)
+        try:
+            from .model_capabilities import filter_models_by_capabilities
+
+            return filter_models_by_capabilities(
+                list(models),
+                input_capabilities=input_capabilities,
+                output_capabilities=output_capabilities,
+            )
+        except Exception:
+            return list(models)
+
     def get_provider_info(self, provider_name: str) -> Optional[ProviderInfo]:
         """Get information about a specific provider."""
-        return self._providers.get(provider_name.lower())
+        provider_key = str(provider_name or "").strip().lower()
+        endpoint_profile = self._resolve_endpoint_profile(provider_key)
+        if endpoint_profile is not None:
+            family_info = self._providers.get(endpoint_profile.provider_family.lower())
+            if family_info is None:
+                return None
+            return ProviderInfo(
+                name=endpoint_profile.virtual_provider_id,
+                display_name=endpoint_profile.display_name,
+                provider_class=family_info.provider_class,
+                description=endpoint_profile.description or family_info.description,
+                provider_type=family_info.provider_type,
+                default_model=(endpoint_profile.allowed_models[0] if endpoint_profile.allowed_models else family_info.default_model),
+                supported_features=list(family_info.supported_features),
+                authentication_required=family_info.authentication_required,
+                local_provider=family_info.local_provider,
+                installation_extras=family_info.installation_extras,
+                import_path=family_info.import_path,
+            )
+        return self._providers.get(provider_key)
 
     def list_provider_names(self) -> List[str]:
         """Get list of all registered provider names."""
-        return list(self._providers.keys())
+        names = list(self._providers.keys())
+        try:
+            from ..config import get_config_manager
+
+            existing = {name.lower() for name in names}
+            for profile in get_config_manager().list_provider_profiles(include_disabled=False):
+                virtual = str(profile.get("virtual_provider") or "").strip()
+                if virtual and virtual.lower() not in existing:
+                    names.append(virtual)
+                    existing.add(virtual.lower())
+        except Exception:
+            pass
+        return names
 
     def is_provider_available(self, provider_name: str) -> bool:
         """Check if a provider is registered."""
-        return provider_name.lower() in self._providers
+        provider_key = str(provider_name or "").strip().lower()
+        return provider_key in self._providers or self._resolve_endpoint_profile(provider_key) is not None
 
     def get_provider_class(self, provider_name: str):
         """Get the provider class, loading it lazily if needed."""
+        endpoint_profile = self._resolve_endpoint_profile(provider_name)
+        if endpoint_profile is not None:
+            return self.get_provider_class(endpoint_profile.provider_family)
+
         provider_info = self.get_provider_info(provider_name)
         if not provider_info:
             raise ValueError(f"Unknown provider: {provider_name}")
@@ -350,6 +420,13 @@ class ProviderRegistry:
         try:
             raise_on_error = bool(kwargs.get("raise_on_error", False))
             provider_name_norm = str(provider_name or "").strip().lower()
+            endpoint_profile = self._resolve_endpoint_profile(provider_name_norm)
+            endpoint_provider_name = provider_name_norm
+
+            if endpoint_profile is not None:
+                if endpoint_profile.allowed_models and not bool(kwargs.get("force_live_discovery", False)):
+                    return self._filter_model_list(endpoint_profile.allowed_models, kwargs)
+                provider_name_norm = endpoint_profile.provider_family.lower()
 
             # Merge in runtime provider configuration (configured via `configure_provider`).
             # Explicit kwargs always win.
@@ -358,12 +435,16 @@ class ProviderRegistry:
                 from ..config import get_provider_config
 
                 runtime_config = get_provider_config(provider_name_norm)
+                if endpoint_profile is not None:
+                    endpoint_config = get_provider_config(endpoint_provider_name)
+                    runtime_config = {**runtime_config, **endpoint_config}
                 if isinstance(runtime_config, dict) and runtime_config:
                     merged_kwargs = {**runtime_config, **merged_kwargs}
             except Exception:
                 pass
+            constructor_kwargs = self._provider_constructor_kwargs(merged_kwargs)
 
-            base_url_override = merged_kwargs.get("base_url")
+            base_url_override = constructor_kwargs.get("base_url")
 
             # Avoid probing generic OpenAI-compatible endpoints unless explicitly configured.
             # (Default ports like :8080/:8000 are often wrong in real setups.)
@@ -400,18 +481,18 @@ class ProviderRegistry:
                 except Exception:
                     pass
                 # Create minimal instance for API access
-                instance = provider_class(model=model_for_listing, **merged_kwargs)
-                return instance.list_available_models(**merged_kwargs)
+                instance = provider_class(model=model_for_listing, **constructor_kwargs)
+                return instance.list_available_models(**constructor_kwargs)
             else:
                 # Handle providers with static method or class method
                 try:
                     # First try as static/class method
-                    return provider_class.list_available_models(**merged_kwargs)
+                    return provider_class.list_available_models(**constructor_kwargs)
                 except TypeError:
                     # If that fails (method needs 'self'), create temporary instance
                     provider_info = self.get_provider_info(provider_name_norm)
-                    instance = provider_class(model=provider_info.default_model, **merged_kwargs)
-                    return instance.list_available_models(**merged_kwargs)
+                    instance = provider_class(model=provider_info.default_model, **constructor_kwargs)
+                    return instance.list_available_models(**constructor_kwargs)
 
         except Exception as e:
             if bool(kwargs.get("raise_on_error", False)):
@@ -542,22 +623,37 @@ class ProviderRegistry:
 
         _preimport_llama_cpp_for_macos()
 
-        provider_info = self.get_provider_info(provider_name)
+        requested_provider = str(provider_name or "").strip()
+        endpoint_profile = self._resolve_endpoint_profile(requested_provider)
+        provider_lookup_name = endpoint_profile.provider_family if endpoint_profile is not None else requested_provider
+
+        provider_info = self.get_provider_info(provider_lookup_name)
         if not provider_info:
             available_providers = ", ".join(self.list_provider_names())
             raise ValueError(f"Unknown provider: {provider_name}. Available providers: {available_providers}")
 
-        provider_class = self.get_provider_class(provider_name)
+        provider_class = self.get_provider_class(provider_lookup_name)
         model = model or provider_info.default_model
 
-        # Get runtime config for this provider
-        runtime_config = get_provider_config(provider_name)
+        # Get runtime config for this provider. Endpoint profile config wins over
+        # family defaults, while explicit kwargs still win over everything.
+        runtime_config = get_provider_config(provider_lookup_name)
+        if endpoint_profile is not None:
+            endpoint_config = get_provider_config(requested_provider)
+            runtime_config = {**runtime_config, **endpoint_config}
 
         # Merge: runtime_config < kwargs (user kwargs take precedence)
         merged_kwargs = {**runtime_config, **kwargs}
+        constructor_kwargs = self._provider_constructor_kwargs(merged_kwargs)
 
         try:
-            return provider_class(model=model, **merged_kwargs)
+            instance = provider_class(model=model, **constructor_kwargs)
+            if endpoint_profile is not None:
+                setattr(instance, "_abstractcore_virtual_provider", endpoint_profile.virtual_provider_id)
+                setattr(instance, "_abstractcore_provider_profile_id", endpoint_profile.id)
+                setattr(instance, "_abstractcore_provider_family", endpoint_profile.provider_family)
+                setattr(instance, "_abstractcore_provider_profile", endpoint_profile.public_dict())
+            return instance
         except ImportError as e:
             # Re-raise import errors with helpful message
             if provider_info.installation_extras:

@@ -85,15 +85,16 @@ summarize this clip @/path/to/video.mp4
 Fallback behavior is explicit and policy-driven:
 
 - **Images**: a vision-capable model can process images natively. For text-only models, AbstractCore can use **vision fallback** (caption → inject short observations) when configured.
-- **Audio**: if the model is not audio-capable, `abstractcore-chat` defaults to `audio_policy="auto"` when audio is attached, so speech-to-text can run when `abstractvoice` is installed.
-- **Video**: `video_policy="auto"` uses native video when supported; otherwise it can sample frames via `ffmpeg`/`ffprobe` and route them through image/vision handling.
+- **Audio**: if the model is not audio-capable, `abstractcore-chat` defaults to `audio_policy="auto"` when audio is attached, so speech-to-text can run through the configured `input.voice` route.
+- **Video**: `video_policy="auto"` uses native video when supported; otherwise it can sample frames via `ffmpeg`/`ffprobe` and route them through visual support on `input.text` or an explicit `input.video` route.
 
 Configure defaults (optional):
 
 ```bash
 abstractcore --config
 abstractcore --set-vision-provider lmstudio qwen/qwen3-vl-4b
-abstractcore --set-audio-strategy auto            # requires: pip install "abstractcore[voice]"
+abstractcore config set-default input.voice --provider faster-whisper --model large-v3
+abstractcore --set-audio-strategy auto            # policy; STT route comes from input.voice
 abstractcore --set-video-strategy auto            # frames fallback requires ffmpeg
 ```
 

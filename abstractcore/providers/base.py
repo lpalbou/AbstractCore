@@ -2293,9 +2293,17 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if artifact_store is not None:
             kwargs["artifact_store"] = artifact_store
 
+        provider_task = str(spec.get("task") or "music_generation").strip().lower().replace("-", "_") or "music_generation"
+        if provider_task in {"music", "song", "t2m", "music_generation", "text_to_music", "lyrics_to_music"}:
+            provider_task = "text_to_music"
+        elif provider_task in {"sound", "sfx", "sound_generation", "audio_generation", "text_to_audio"}:
+            provider_task = "text_to_audio"
+        result_task = "sound_generation" if provider_task == "text_to_audio" else "music_generation"
+        result_modality = "sound" if result_task == "sound_generation" else "music"
+
         raw = self.music.generate(
             prompt,
-            task=str(spec.get("task") or "music_generation"),
+            task=provider_task,
             lyrics=spec.get("lyrics"),
             format=fmt,
             **kwargs,
@@ -2319,10 +2327,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
             )
             artifact_ref = stored_ref
         result.add_output(
-            "music",
+            result_modality,
             GeneratedItem(
-                modality="music",
-                task="music_generation",
+                modality=result_modality,
+                task=result_task,
                 data=data,
                 artifact_ref=artifact_ref,
                 content_type=content_type,
@@ -2542,6 +2550,68 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     if hasattr(media_content, 'metadata') and media_content.metadata:
                         media_metadata.append(media_content.metadata)
 
+        def _configured_capability_default(kind: str, modality: str) -> Dict[str, Any]:
+            key = f"{str(kind or '').strip().lower()}.{str(modality or '').strip().lower()}"
+
+            scoped_routes = getattr(self, "_abstractcore_capability_defaults", None)
+            if isinstance(scoped_routes, dict):
+                route = scoped_routes.get(key)
+                if isinstance(route, dict):
+                    if route.get("source") == "not_configured":
+                        return {}
+                    if route.get("provider") or route.get("model") or route.get("base_url") or route.get("options"):
+                        return dict(route)
+
+            resolver = getattr(self, "resolve_capability_default", None)
+            if callable(resolver):
+                try:
+                    route = resolver(kind, modality)
+                except Exception:
+                    route = None
+                if isinstance(route, dict):
+                    if route.get("source") == "not_configured":
+                        return {}
+                    if route.get("provider") or route.get("model") or route.get("base_url") or route.get("options"):
+                        return dict(route)
+
+            try:
+                config_file = getattr(self, "_abstractcore_config_file", None)
+                if isinstance(config_file, str) and config_file.strip():
+                    from ..config.manager import ConfigurationManager
+
+                    route = ConfigurationManager(config_file=config_file.strip(), apply_env=False).get_capability_default(kind, modality)
+                else:
+                    from ..config.manager import get_config_manager
+
+                    route = get_config_manager().get_capability_default(kind, modality)
+            except Exception:
+                return {}
+            if not isinstance(route, dict):
+                return {}
+            if route.get("source") == "not_configured":
+                return {}
+            if not (route.get("provider") or route.get("model") or route.get("base_url") or route.get("options")):
+                return {}
+            return route
+
+        def _pop_stt_route_params(route: Dict[str, Any]) -> Dict[str, Any]:
+            out: Dict[str, Any] = {}
+            provider = kwargs.pop("stt_provider", None)
+            if provider is None:
+                provider = kwargs.pop("audio_provider", None)
+            if provider is None:
+                provider = route.get("provider")
+            model = kwargs.pop("stt_model", None)
+            if model is None:
+                model = kwargs.pop("audio_model", None)
+            if model is None:
+                model = route.get("model")
+            if isinstance(provider, str) and provider.strip():
+                out["provider"] = provider.strip()
+            if isinstance(model, str) and model.strip():
+                out["model"] = model.strip()
+            return out
+
         # Audio input policy (v0): avoid placeholder degradation and require explicit fallbacks.
         if processed_media:
             try:
@@ -2562,8 +2632,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if audio_items:
                 # Resolve policy: per-call kwarg > config default.
                 policy_raw = kwargs.pop("audio_policy", None)
+                policy_explicit = policy_raw is not None
                 if policy_raw is None:
                     policy_raw = kwargs.pop("audio_handling_policy", None)
+                    policy_explicit = policy_raw is not None
                 if policy_raw is None:
                     try:
                         from ..config.manager import get_config_manager
@@ -2574,17 +2646,25 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
                 policy = str(policy_raw or "native_only").strip().lower()
                 model_supports_audio = bool(getattr(self, "model_capabilities", {}).get("audio_support", False))
+                stt_route_default = _configured_capability_default("input", "voice")
 
                 if policy in ("native_only", "native", "disabled"):
                     if not model_supports_audio:
                         raise UnsupportedFeatureError(
                             f"Audio input is not supported by model '{self.model}'. "
-                            "Choose an audio-capable model, or pass audio_policy='auto' or audio_policy='speech_to_text' "
-                            "(requires an STT capability plugin, e.g. install abstractvoice)."
+                            "Choose an audio-capable model, configure the input.voice capability default, "
+                            "or pass audio_policy='speech_to_text' for this call."
                         )
                     # Keep audio media for provider-native handling (provider support may still vary).
 
                 elif policy in ("speech_to_text", "stt"):
+                    if not policy_explicit and not stt_route_default:
+                        raise UnsupportedFeatureError(
+                            f"Audio input is not supported by model '{self.model}', and input.voice is not configured. "
+                            "Configure the input.voice capability default for STT fallback, or pass audio_policy='speech_to_text' "
+                            "with explicit stt_provider/stt_model for this call."
+                        )
+                    stt_route_params = _pop_stt_route_params(stt_route_default)
                     stt_language = kwargs.pop("audio_language", None)
                     if stt_language is None:
                         stt_language = kwargs.pop("stt_language", None)
@@ -2630,20 +2710,25 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             raise UnsupportedFeatureError("Audio STT fallback requires a file path or raw bytes for the audio input.")
 
                         try:
-                            transcript = self.audio.transcribe(audio_input, language=stt_language)
+                            transcript = self.audio.transcribe(audio_input, language=stt_language, **stt_route_params)
                         except CapabilityUnavailableError as e:  # type: ignore[misc]
                             raise UnsupportedFeatureError(str(e))
 
                         transcript = str(transcript or "").strip()
                         audio_context_parts.append(f"Audio {idx+1} ({name}): {transcript}")
                         if build_enrichment_item is not None:
+                            backend_for_item = dict(backend)
+                            if stt_route_params.get("provider"):
+                                backend_for_item["provider"] = stt_route_params.get("provider")
+                            if stt_route_params.get("model"):
+                                backend_for_item["model"] = stt_route_params.get("model")
                             enrichments.append(
                                 build_enrichment_item(
                                     status="used",
                                     input_modality="audio",
                                     summary_kind="transcript",
                                     policy="speech_to_text",
-                                    backend=backend,
+                                    backend=backend_for_item,
                                     input_index=idx + 1,
                                     input_name=str(name),
                                     injected_text=transcript,
@@ -2672,9 +2757,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     if model_supports_audio:
                         pass  # provider-native path
                     else:
-                        # Explicit "auto" allows fallback, but never silently for default policy.
-                        # Re-enter through the explicit STT path by recursion is risky; inline minimal.
+                        if not stt_route_default:
+                            raise UnsupportedFeatureError(
+                                f"Audio input is not supported by model '{self.model}', and input.voice is not configured. "
+                                "Configure the input.voice capability default for STT fallback, or choose an audio-capable model."
+                            )
                         stt_language = kwargs.pop("audio_language", None) or kwargs.pop("stt_language", None)
+                        stt_route_params = _pop_stt_route_params(stt_route_default)
                         audio_context_parts: List[str] = []
                         enrichments: List[Dict[str, Any]] = []
                         backend_id = getattr(getattr(self, "audio", None), "backend_id", None)
@@ -2702,19 +2791,24 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             if audio_input is None:
                                 raise UnsupportedFeatureError("Audio STT fallback requires a file path or raw bytes for the audio input.")
                             try:
-                                transcript = self.audio.transcribe(audio_input, language=stt_language)
+                                transcript = self.audio.transcribe(audio_input, language=stt_language, **stt_route_params)
                             except CapabilityUnavailableError as e:  # type: ignore[misc]
                                 raise UnsupportedFeatureError(str(e))
                             transcript = str(transcript or "").strip()
                             audio_context_parts.append(f"Audio {idx+1} ({name}): {transcript}")
                             if build_enrichment_item is not None:
+                                backend_for_item = dict(backend)
+                                if stt_route_params.get("provider"):
+                                    backend_for_item["provider"] = stt_route_params.get("provider")
+                                if stt_route_params.get("model"):
+                                    backend_for_item["model"] = stt_route_params.get("model")
                                 enrichments.append(
                                     build_enrichment_item(
                                         status="used",
                                         input_modality="audio",
                                         summary_kind="transcript",
                                         policy="auto",
-                                        backend=backend,
+                                        backend=backend_for_item,
                                         input_index=idx + 1,
                                         input_name=str(name),
                                         injected_text=transcript,
@@ -2777,6 +2871,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     and isinstance(getattr(self, "model_capabilities", None), dict)
                     and getattr(self, "model_capabilities", {}).get("video_support", False)
                 )
+                model_caps = getattr(self, "model_capabilities", {}) if isinstance(getattr(self, "model_capabilities", None), dict) else {}
+                video_input_mode = str(model_caps.get("video_input_mode") or "").strip().lower()
+                model_supports_frame_video = bool(
+                    model_supports_native_video
+                    or video_input_mode == "frames"
+                    or (video_input_mode == "native" and bool(model_caps.get("video_support", False)))
+                    or bool(model_caps.get("vision_support", False))
+                )
+                video_route_default = _configured_capability_default("input", "video")
 
                 cfg_video = None
                 try:
@@ -2849,6 +2952,218 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 kwargs["video_frame_format"] = frame_format
                 kwargs["video_sampling_strategy"] = sampling_strategy
                 kwargs["video_max_frame_side"] = max_frame_side
+
+                def _video_route_matches_current(route: Dict[str, Any]) -> bool:
+                    route_provider = str(route.get("provider") or "").strip().lower()
+                    route_model = str(route.get("model") or "").strip()
+                    current_model = str(getattr(self, "model", "") or "").strip()
+                    return bool(route_provider and route_model and route_provider == provider_name and route_model == current_model)
+
+                def _route_llm_kwargs(route: Dict[str, Any]) -> Dict[str, Any]:
+                    out: Dict[str, Any] = {}
+                    options = route.get("options")
+                    if isinstance(options, dict):
+                        out.update(dict(options))
+                    base_url = route.get("base_url")
+                    if isinstance(base_url, str) and base_url.strip():
+                        out["base_url"] = base_url.strip()
+                    return out
+
+                def _resolve_endpoint_route_provider(provider_id: str, route: Dict[str, Any]) -> tuple[str, Dict[str, Any], Optional[Dict[str, Any]]]:
+                    provider_s = str(provider_id or "").strip()
+                    route_kwargs = _route_llm_kwargs(route)
+                    if not provider_s.startswith("endpoint:"):
+                        return provider_s, route_kwargs, None
+                    resolver = getattr(self, "resolve_provider_endpoint_profile", None)
+                    if not callable(resolver):
+                        raise UnsupportedFeatureError(
+                            f"input.video fallback uses Gateway endpoint profile {provider_s!r}, "
+                            "but no endpoint-profile resolver is attached to this Core provider."
+                        )
+                    try:
+                        resolved = resolver(provider_s)
+                    except Exception as e:
+                        raise UnsupportedFeatureError(f"Failed to resolve Gateway endpoint profile {provider_s!r}: {e}") from e
+                    if not isinstance(resolved, dict):
+                        raise UnsupportedFeatureError(f"Gateway endpoint profile {provider_s!r} is not configured or is disabled.")
+                    resolved_provider = str(resolved.get("provider") or resolved.get("provider_family") or "").strip()
+                    if not resolved_provider:
+                        raise UnsupportedFeatureError(f"Gateway endpoint profile {provider_s!r} did not provide a concrete provider family.")
+                    resolved_kwargs = dict(route_kwargs)
+                    base_url = resolved.get("base_url")
+                    if isinstance(base_url, str) and base_url.strip():
+                        resolved_kwargs["base_url"] = base_url.strip()
+                    api_key = resolved.get("api_key")
+                    if isinstance(api_key, str) and api_key.strip():
+                        resolved_kwargs["api_key"] = api_key.strip()
+                    return resolved_provider, resolved_kwargs, resolved
+
+                def _extract_response_text(value: Any) -> str:
+                    if isinstance(value, str):
+                        return value.strip()
+                    if isinstance(value, dict):
+                        for key in ("content", "text", "response", "message"):
+                            item = value.get(key)
+                            if isinstance(item, str) and item.strip():
+                                return item.strip()
+                    content = getattr(value, "content", None)
+                    if isinstance(content, str) and content.strip():
+                        return content.strip()
+                    return str(value or "").strip()
+
+                def _caption_videos_with_route(route: Dict[str, Any]) -> tuple[List[Any], List[Dict[str, Any]]]:
+                    route_provider = str(route.get("provider") or "").strip()
+                    route_model = str(route.get("model") or "").strip()
+                    if not route_provider or not route_model:
+                        raise UnsupportedFeatureError("input.video fallback requires both provider and model.")
+
+                    try:
+                        from pathlib import Path
+                        import tempfile
+
+                        from ..core.factory import create_llm
+                        from ..media import AutoMediaHandler
+                        from ..media.types import ContentFormat, MediaContent
+                        from ..media.utils.video_frames import extract_video_frames, probe_duration_s
+                    except Exception as e:
+                        raise UnsupportedFeatureError(f"Video route fallback is not available: {e}")
+
+                    routed_provider, route_kwargs, endpoint_profile = _resolve_endpoint_route_provider(route_provider, route)
+                    try:
+                        fallback_llm = create_llm(routed_provider, model=route_model, **route_kwargs)
+                        resolver = getattr(self, "resolve_provider_endpoint_profile", None)
+                        if callable(resolver):
+                            try:
+                                setattr(fallback_llm, "resolve_provider_endpoint_profile", resolver)
+                            except Exception:
+                                pass
+                    except Exception as e:
+                        raise UnsupportedFeatureError(
+                            f"Failed to create input.video fallback provider {route_provider}/{route_model}: {e}"
+                        )
+
+                    new_media: List[Any] = []
+                    enrichments: List[Dict[str, Any]] = []
+                    video_group_index = 0
+                    for idx, mc in enumerate(processed_media or []):
+                        if getattr(mc, "media_type", None) != MediaType.VIDEO:  # type: ignore[operator]
+                            new_media.append(mc)
+                            continue
+
+                        video_group_index += 1
+                        video_path_raw = getattr(mc, "file_path", None) or getattr(mc, "content", None)
+                        if not isinstance(video_path_raw, str) or not video_path_raw.strip():
+                            raise UnsupportedFeatureError("Video route fallback requires a video file path.")
+                        video_path = Path(video_path_raw)
+                        if not video_path.exists():
+                            raise UnsupportedFeatureError(f"Video file not found: {video_path}")
+
+                        out_dir = Path(tempfile.mkdtemp(prefix="abstractcore_video_route_frames_"))
+                        duration_s = probe_duration_s(video_path)
+                        frames, timestamps_s = extract_video_frames(
+                            video_path,
+                            max_frames=max_frames,
+                            frame_format=frame_format,
+                            sampling_strategy=sampling_strategy,
+                            max_side=max_frame_side,
+                            output_dir=out_dir,
+                        )
+                        if not frames:
+                            raise UnsupportedFeatureError("Video route fallback failed: no frames extracted.")
+
+                        handler = AutoMediaHandler(enable_glyph_compression=False)
+                        frame_paths: List[str] = []
+                        max_res = None
+                        if isinstance(max_frame_side, int) and max_frame_side > 0:
+                            max_res = (max_frame_side, max_frame_side)
+                        for fp in frames:
+                            res = handler.process_file(
+                                fp,
+                                provider=routed_provider,
+                                model=route_model,
+                                glyph_compression="never",
+                                max_resolution=max_res,
+                            )
+                            if res and getattr(res, "success", False) and getattr(res, "media_content", None) is not None:
+                                frame_paths.append(str(fp))
+
+                        if not frame_paths:
+                            raise UnsupportedFeatureError("Video route fallback failed: extracted frames could not be processed as images.")
+
+                        caption_prompt = (
+                            "Provide grounded observations from these sampled video frames to help answer the user's request.\n"
+                            "- Treat the frames as chronological samples from one video.\n"
+                            "- Write 3-5 concise natural sentences.\n"
+                            "- Include visible text verbatim when useful.\n"
+                            "- Do not mention frames, sampling, extraction, tooling, or this instruction.\n\n"
+                            f"User request: {prompt.strip() if isinstance(prompt, str) and prompt.strip() else 'Describe the video.'}"
+                        )
+                        try:
+                            fallback_response = fallback_llm.generate(caption_prompt, media=frame_paths, stream=False)
+                        except Exception as e:
+                            raise UnsupportedFeatureError(
+                                f"input.video fallback {route_provider}/{route_model} failed: {e}"
+                            )
+                        description = _extract_response_text(fallback_response)
+                        if not description:
+                            raise UnsupportedFeatureError(
+                                f"input.video fallback {route_provider}/{route_model} returned no description."
+                            )
+
+                        new_media.append(
+                            MediaContent(  # type: ignore[name-defined]
+                                media_type=MediaType.TEXT,  # type: ignore[union-attr]
+                                content=(
+                                    f"Video {video_group_index} ({video_path.name}) observations: {description}\n"
+                                    "Use these observations as direct context for the user's current video question. "
+                                    "Do not mention fallback models, frames, extraction, or this marker."
+                                ),
+                                content_format=ContentFormat.TEXT,  # type: ignore[name-defined]
+                                mime_type="text/plain",
+                                file_path=None,
+                                metadata={
+                                    "processor": "VideoCapabilityDefaultFallback",
+                                    "source_video": video_path.name,
+                                    "frame_count": len(frame_paths),
+                                    "timestamps_s": timestamps_s,
+                                    "duration_s": duration_s,
+                                    "provider": route_provider,
+                                    "routed_provider": routed_provider,
+                                    "model": route_model,
+                                },
+                            )
+                        )
+                        if build_enrichment_item is not None:
+                            enrichments.append(
+                                build_enrichment_item(
+                                    status="used",
+                                    input_modality="video",
+                                    summary_kind="caption",
+                                    policy="input.video",
+                                    backend={
+                                        "kind": "llm",
+                                        "provider": route_provider,
+                                        "routed_provider": routed_provider,
+                                        "model": route_model,
+                                        "source": "capability_default",
+                                        **(
+                                            {"endpoint_profile": str(endpoint_profile.get("virtual_provider") or endpoint_profile.get("id") or "")}
+                                            if isinstance(endpoint_profile, dict)
+                                            else {}
+                                        ),
+                                    },
+                                    input_index=idx + 1,
+                                    input_name=str(video_path.name),
+                                    injected_text=description,
+                                    artifact={
+                                        "frame_count": len(frame_paths),
+                                        "timestamps_s": timestamps_s,
+                                        "duration_s": duration_s,
+                                    },
+                                )
+                            )
+
+                    return new_media, enrichments
 
                 if policy in ("native_only", "native", "disabled"):
                     if not model_supports_native_video:
@@ -3149,12 +3464,21 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             media_enrichment.extend(enrichments)
 
                 elif policy == "auto":
-                    if model_supports_native_video:
+                    explicit_video_route = bool(video_route_default and not video_route_default.get("covered_by"))
+                    if explicit_video_route and (not _video_route_matches_current(video_route_default) or not model_supports_frame_video):
+                        routed_media, routed_enrichments = _caption_videos_with_route(video_route_default)
+                        processed_media = routed_media
+                        if routed_enrichments:
+                            if media_enrichment is None:
+                                media_enrichment = routed_enrichments
+                            else:
+                                media_enrichment.extend(routed_enrichments)
+                    elif model_supports_native_video:
                         # Use native video when available.
                         pass
-                    else:
+                    elif model_supports_frame_video or video_route_default:
                         # Auto fallback: sample frames and proceed with existing image pipeline.
-                        # This works well for vision-capable models; for text-only models it requires a vision fallback.
+                        # This works for vision-capable models and explicit video-default routes.
                         policy_to_use = "frames_caption"
                         kwargs["video_policy"] = policy_to_use
                         # Re-run this branch once with explicit policy.
@@ -3172,6 +3496,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             execute_tools=execute_tools,
                             stream=stream,
                             **kwargs,
+                        )
+                    else:
+                        raise UnsupportedFeatureError(
+                            f"Video input is not supported by model '{self.model}', and input.video is not configured. "
+                            "Configure the input.video capability default, choose a video/vision-capable model, "
+                            "or pass video_policy='frames_caption' for this call."
                         )
 
                 else:
@@ -4869,6 +5199,41 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     processed_media.append(media_item)
 
                 elif isinstance(media_item, dict):
+                    file_path_raw = media_item.get("file_path")
+                    if file_path_raw is None:
+                        file_path_raw = media_item.get("filePath")
+                    if file_path_raw is None:
+                        file_path_raw = media_item.get("path")
+                    has_inline_content = media_item.get("content") is not None
+                    if isinstance(file_path_raw, str) and file_path_raw.strip() and not has_inline_content:
+                        handler = AutoMediaHandler(
+                            enable_glyph_compression=True,
+                            glyph_config=getattr(self, 'glyph_config', None)
+                        )
+                        result = handler.process_file(
+                            file_path_raw.strip(),
+                            provider=self.provider,
+                            model=self.model,
+                            glyph_compression=glyph_compression
+                        )
+                        if result.success:
+                            media_content = result.media_content
+                            metadata = dict(getattr(media_content, "metadata", None) or {})
+                            for key in ("artifact_id", "$artifact", "filename", "role", "purpose", "kind"):
+                                value = media_item.get(key)
+                                if value is not None and str(value).strip():
+                                    metadata[key] = str(value).strip()
+                            media_content.metadata = metadata
+                            content_type = media_item.get("content_type") or media_item.get("mime_type")
+                            if isinstance(content_type, str) and content_type.strip():
+                                media_content.mime_type = content_type.strip()
+                            processed_media.append(media_content)
+                        else:
+                            self.logger.warning(
+                                f"Failed to process media file {file_path_raw}: {result.error_message}"
+                            )
+                        continue
+
                     # Dictionary format - convert to MediaContent
                     try:
                         media_content = MediaContent.from_dict(media_item)

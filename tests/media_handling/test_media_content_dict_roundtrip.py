@@ -19,6 +19,23 @@ def test_media_content_from_dict_parses_basic_shape() -> None:
     assert mc.metadata.get("source") == "test"
 
 
+def test_media_content_from_dict_accepts_content_type_alias() -> None:
+    from abstractcore.media.types import ContentFormat, MediaContent, MediaType
+
+    mc = MediaContent.from_dict(
+        {
+            "type": "image",
+            "path": "/tmp/content-without-extension",
+            "content_type": "image/png",
+        }
+    )
+
+    assert mc.media_type == MediaType.IMAGE
+    assert mc.content_format == ContentFormat.FILE_PATH
+    assert mc.mime_type == "image/png"
+    assert mc.file_path == "/tmp/content-without-extension"
+
+
 def test_media_content_to_dict_is_json_safe() -> None:
     from abstractcore.media.types import ContentFormat, MediaContent, MediaType
 
@@ -35,4 +52,3 @@ def test_media_content_to_dict_is_json_safe() -> None:
     assert d.get("media_type") == "document"
     assert d.get("content_format") == "binary"
     assert isinstance(d.get("content"), str)  # base64-encoded
-

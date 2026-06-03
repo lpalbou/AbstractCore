@@ -26,7 +26,52 @@ API keys saved via `--config` or `--set-api-key` are persisted here and automati
 
 HTTP server settings saved via `--config` or the `--set-server-*` commands are also injected into the corresponding `ABSTRACTCORE_SERVER_*`, `HOST`, and `PORT` environment variables when those variables are not already set.
 
+Provider endpoint profiles are also stored in this file. They let you create a
+named reusable provider such as `endpoint:ovh-provider` without putting the
+endpoint URL or API key in workflows or route defaults.
+
 ## Configuration Sections
+
+### Provider Endpoint Profiles
+
+Use provider endpoint profiles for OpenAI-compatible or provider-compatible
+servers that you want to reuse by name. Core profiles are local and
+single-principal; Gateway adds user and runtime scoping on top for hosted
+deployments.
+
+```bash
+export OVH_AI_API_KEY="..."
+
+abstractcore config set-provider ovh-provider \
+  --family openai-compatible \
+  --base-url https://oai.endpoints.kepler.ai.cloud.ovh.net/v1 \
+  --api-key $OVH_AI_API_KEY \
+  --name "OVH Provider" \
+  --description "OVH hosted OpenAI-compatible endpoint"
+
+abstractcore config providers
+abstractcore config models ovh-provider
+
+abstractcore config set-default input.text \
+  --provider endpoint:ovh-provider \
+  --model Qwen3.5-9B
+```
+
+The config file is written with private file permissions. Listing commands never
+print raw keys:
+
+```bash
+abstractcore config providers --json
+abstractcore config provider endpoint:ovh-provider --json
+```
+
+If you want a fixed model allowlist instead of live `/v1/models` discovery, add
+one or more `--allow-model MODEL` flags when creating or updating the profile.
+Clear that allowlist with `--clear-models`.
+
+If you want the config to store an environment reference instead of the expanded
+secret value, pass the variable literally, for example `--api-key
+'$OVH_AI_API_KEY'`. To remove the stored key source, use `--clear-api-key`.
 
 ### Application Defaults
 
@@ -56,9 +101,11 @@ abstractcore --set-chat-model openai/gpt-4o-mini
 abstractcore --set-code-model anthropic/claude-haiku-4-5
 ```
 
-`--set-global-default` also writes explicit `input.text` and `output.text`
-capability route defaults. These route defaults are the framework-level source
-of truth for text understanding/generation defaults.
+`--set-global-default` writes the canonical `input.text` capability route
+default. `output.text` is a read-only derived view of `input.text`, so text
+understanding and text generation stay on the same LLM route. Commands that
+target `output.text` are accepted for compatibility, but persist to
+`input.text`.
 
 ### Capability Routing Defaults
 
@@ -75,21 +122,61 @@ Route kinds:
 Examples:
 
 ```bash
-abstractcore --set-capability-default output.text \
-  --capability-provider lmstudio \
-  --capability-model qwen/qwen3.6-35b-a3b \
-  --capability-base-url http://127.0.0.1:1234/v1
+abstractcore config set-default input.text \
+  --provider lmstudio \
+  --model qwen/qwen3.6-35b-a3b \
+  --base-url http://127.0.0.1:1234/v1
 
-abstractcore --set-capability-default output.voice \
-  --capability-provider supertonic \
-  --capability-model supertonic-3 \
-  --capability-option voice=M1
+abstractcore config set-default output.voice \
+  --provider supertonic \
+  --model supertonic-3 \
+  --option voice=M1
 
-abstractcore --clear-capability-default output.voice
+abstractcore config defaults
+
+abstractcore config clear-default output.voice
 ```
 
 Route defaults are configuration only; they do not load a model into a provider.
 Provider residency is reported separately.
+
+`input.image` is a fallback route for image understanding when the configured
+text route cannot natively accept images. If the `input.text` model is known in
+AbstractCore's model-capability registry as image-capable, the effective
+`input.image` route is marked as covered by `input.text` and should not be
+edited separately.
+
+`input.video` is the corresponding video-understanding route. If the
+`input.text` model can process visual frames, Core may report `input.video` as
+covered by `input.text`; unlike `input.image`, that coverage is overrideable so
+you can route video through a dedicated VLM or video-capable endpoint.
+
+`input.voice` is the speech-to-text fallback route. Core does not silently use a
+locally installed STT package just because `audio.strategy=auto`; a text-only
+model needs `input.voice` configured before audio attachments are transcribed
+automatically.
+
+`input.sound` is reserved for non-speech audio understanding: environmental
+sound, SFX, audio scenes, and later music-understanding routes. Do not configure
+STT-only models there. Source-backed open candidates in the model registry now
+include `qwen3-omni-30b-a3b-instruct`,
+`qwen3-omni-30b-a3b-captioner`, `qwen2.5-omni-7b`, and
+`qwen2-audio-7b-instruct`. Qwen3.6 text/vision/video models remain
+`audio_support=false`.
+
+The older `abstractcore --set-capability-default ...`,
+`--capability-provider`, `--capability-model`, `--capability-base-url`, and
+`--clear-capability-default` flags remain supported for compatibility. The
+`abstractcore config ...` command is the preferred explicit route-default
+interface.
+
+By default Core writes to `~/.abstractcore/config/abstractcore.json`. Operators
+and embedded hosts can target a specific Core config with
+`ABSTRACTCORE_CONFIG_FILE`, `ABSTRACTCORE_CONFIG_DIR`, or:
+
+```bash
+abstractcore config --config-file /srv/runtime/config/abstractcore.json defaults
+```
 
 ### Cache Directories
 
@@ -188,13 +275,22 @@ Notes:
 - `abstractcore --set-vision-caption ...` is deprecated but kept for compatibility.
 - Vision fallback is only used for **image/video inputs** when the *main* model is text-only.
 
-### Audio (default policy + optional speech-to-text fallback)
+### Audio (default policy + explicit speech-to-text fallback)
 
-Audio attachments are controlled by `audio_policy`. The default is `auto`: use native audio when supported, otherwise fall back to STT via `abstractvoice` (if installed). If `abstractvoice` is not installed, `auto` degrades gracefully to native-only behavior at runtime.
+Audio attachments are controlled by `audio_policy`. The default is `auto`: use
+native audio when the selected model supports audio, otherwise use the
+configured `input.voice` capability route as the speech-to-text fallback. If
+`input.voice` is not configured, Core reports a configuration error for
+text-only models instead of silently choosing an installed STT backend.
 
 ```bash
 # STT fallback requires abstractvoice
 pip install "abstractcore[voice]"
+
+# Select the STT route used by audio_policy=auto
+abstractcore config set-default input.voice \
+  --provider faster-whisper \
+  --model large-v3
 
 # Override strategy explicitly (auto is the default)
 abstractcore --set-audio-strategy auto
@@ -204,24 +300,32 @@ abstractcore --set-stt-language fr
 ```
 
 Notes:
-- `audio_policy="auto"` uses native audio when supported, otherwise STT when available (default).
-- `audio_policy="speech_to_text"` forces STT and injects a transcript into the request.
+- `audio_policy="auto"` uses native audio when supported, otherwise the configured `input.voice` route.
+- `audio_policy="speech_to_text"` forces STT and injects a transcript into the request; direct per-call routing may still provide explicit STT parameters.
 - `audio_policy="native_only"` errors on text-only models (no fallback).
 
-### Video (native vs frames fallback)
+### Video (native vs configured frame/video fallback)
 
-Video attachments are controlled by `video_policy`. By default (`auto`), AbstractCore uses native video input when supported, otherwise it samples frames via `ffmpeg` and routes them through image/vision handling.
+Video attachments are controlled by `video_policy`. By default (`auto`),
+AbstractCore uses native video input when supported. Otherwise it can sample
+frames via `ffmpeg` and route those frames through the selected `input.text`
+model when that model supports visual input, or through an explicit
+`input.video` route when configured.
 
 ```bash
 abstractcore --set-video-strategy auto
 abstractcore --set-video-max-frames 6
 abstractcore --set-video-sampling-strategy keyframes
 abstractcore --set-video-max-frame-side 1024
+
+abstractcore config set-default input.video \
+  --provider endpoint:office-vlm \
+  --model qwen2.5-vl-72b
 ```
 
 Notes:
 - Frame sampling requires `ffmpeg`/`ffprobe` available on `PATH`.
-- If your main model is text-only, frame fallback still requires **vision fallback** to be configured (see above).
+- If the main model is text-only and `input.video` is not configured, Core reports a configuration error rather than silently using an unrelated vision/video backend.
 
 ### API Keys
 

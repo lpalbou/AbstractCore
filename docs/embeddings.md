@@ -55,10 +55,10 @@ not passed explicitly, and server-backed providers receive the configured
 `base_url`.
 
 ```bash
-abstractcore --set-capability-default embedding.text \
-  --capability-provider lmstudio \
-  --capability-model text-embedding-nomic-embed-text-v1.5 \
-  --capability-base-url http://127.0.0.1:1234/v1
+abstractcore config set-default embedding.text \
+  --provider lmstudio \
+  --model text-embedding-nomic-embed-text-v1.5 \
+  --base-url http://127.0.0.1:1234/v1
 ```
 
 Gateway uses the same execution-host `embedding.text` route for

@@ -141,6 +141,7 @@ def test_2026_frontier_model_entries_expose_expected_capabilities() -> None:
     assert qwen.get("architecture") == "qwen3_6"
     assert qwen.get("max_tokens") == 262144
     assert qwen.get("vision_support") is True
+    assert qwen.get("audio_support") is False
     assert qwen.get("video_support") is True
 
     kimi = get_model_capabilities("moonshotai/Kimi-K2.6")
@@ -166,6 +167,46 @@ def test_2026_frontier_model_entries_expose_expected_capabilities() -> None:
     assert omni.get("video_support") is True
 
 
+def test_audio_understanding_registry_entries_resolve_with_route_hints() -> None:
+    expected_audio_routes = {"speech", "sound", "music"}
+
+    qwen3_captioner = get_model_capabilities("Qwen/Qwen3-Omni-30B-A3B-Captioner")
+    assert qwen3_captioner.get("architecture") == "qwen3_omni"
+    assert qwen3_captioner.get("vision_support") is False
+    assert qwen3_captioner.get("audio_support") is True
+    assert set(qwen3_captioner.get("audio_input_capabilities", [])) == expected_audio_routes
+    assert qwen3_captioner.get("video_support") is False
+    assert qwen3_captioner.get("video_input_mode") == "none"
+    assert qwen3_captioner.get("max_tokens") == 32768
+
+    qwen25_omni = get_model_capabilities("qwen2.5-omni:7b")
+    assert qwen25_omni.get("architecture") == "qwen2_5_omni"
+    assert qwen25_omni.get("vision_support") is True
+    assert qwen25_omni.get("audio_support") is True
+    assert set(qwen25_omni.get("audio_input_capabilities", [])) == expected_audio_routes
+    assert qwen25_omni.get("video_support") is True
+    assert qwen25_omni.get("video_input_mode") == "native"
+
+    qwen2_audio = get_model_capabilities("Qwen/Qwen2-Audio-7B-Instruct")
+    assert qwen2_audio.get("architecture") == "qwen2_audio"
+    assert qwen2_audio.get("vision_support") is False
+    assert qwen2_audio.get("audio_support") is True
+    assert set(qwen2_audio.get("audio_input_capabilities", [])) == expected_audio_routes
+    assert qwen2_audio.get("max_tokens") == 8192
+
+    audio_flamingo = get_model_capabilities("nvidia/audio-flamingo-3-hf")
+    assert audio_flamingo.get("architecture") == "audio_flamingo"
+    assert audio_flamingo.get("audio_support") is True
+    assert set(audio_flamingo.get("audio_input_capabilities", [])) == expected_audio_routes
+    assert audio_flamingo.get("status") == "research_noncommercial"
+
+    moss_audio = get_model_capabilities("OpenMOSS-Team/MOSS-Audio-8B-Thinking")
+    assert moss_audio.get("architecture") == "moss_audio"
+    assert moss_audio.get("audio_support") is True
+    assert set(moss_audio.get("audio_input_capabilities", [])) == expected_audio_routes
+    assert moss_audio.get("thinking_support") is True
+
+
 def test_qwen3_6_mtp_gguf_variants_resolve_to_explicit_catalog_entries() -> None:
     architecture_detection._load_json_assets()
     models = (architecture_detection._model_capabilities or {}).get("models", {})
@@ -177,13 +218,19 @@ def test_qwen3_6_mtp_gguf_variants_resolve_to_explicit_catalog_entries() -> None
     assert qwen27.get("repository") == "unsloth/Qwen3.6-27B-MTP-GGUF"
     assert qwen27.get("architecture") == "qwen3_6"
     assert qwen27.get("max_tokens") == 262144
-    assert qwen27.get("vision_support") is True
+    assert qwen27.get("vision_support") is False
+    assert qwen27.get("audio_support") is False
+    assert qwen27.get("video_support") is False
+    assert qwen27.get("video_input_mode") == "none"
 
     qwen35 = get_model_capabilities("unsloth/Qwen3.6-35B-A3B-MTP-GGUF:UD-Q4_K_M")
     assert qwen35.get("repository") == "unsloth/Qwen3.6-35B-A3B-MTP-GGUF"
     assert qwen35.get("architecture") == "qwen3_6"
     assert qwen35.get("active_parameters") == "3B"
-    assert qwen35.get("vision_support") is True
+    assert qwen35.get("vision_support") is False
+    assert qwen35.get("audio_support") is False
+    assert qwen35.get("video_support") is False
+    assert qwen35.get("video_input_mode") == "none"
 
 
 def test_granite_and_nemotron_architecture_formats_match_upstream_tool_transcripts() -> None:
