@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **HTTP server CLI**: added `abstractcore serve` as the first-class command for starting the OpenAI-compatible AbstractCore server. Existing module and uvicorn entrypoints remain available for compatibility.
+
+### Removed
+- **Capability default CLI compatibility flags**: removed the top-level `abstractcore --set-capability-default` / `--clear-capability-default` form. Use `abstractcore config set-default`, `abstractcore config defaults`, and `abstractcore config clear-default` instead.
+
 ## [2.13.32] - 2026-06-03
 
 ### Added

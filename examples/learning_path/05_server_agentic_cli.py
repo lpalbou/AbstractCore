@@ -94,7 +94,7 @@ def starting_the_server():
     # Basic startup
     print("\n1️⃣ Basic Server Start:")
     print("   ```bash")
-    print("   python -m abstractcore.server")
+    print("   abstractcore serve")
     print("   ```")
     print("   • Runs on http://localhost:8000")
     print("   • Auto-detects available providers")
@@ -102,7 +102,7 @@ def starting_the_server():
     # Custom configuration
     print("\n2️⃣ Custom Configuration:")
     print("   ```bash")
-    print("   python -m abstractcore.server \\")
+    print("   abstractcore serve \\")
     print("     --host 0.0.0.0 \\")
     print("     --port 8080 \\")
     print("     --reload")
@@ -114,7 +114,7 @@ def starting_the_server():
     print("   export OPENAI_API_KEY='your-key'")
     print("   export ANTHROPIC_API_KEY='your-key'")
     print("   export OLLAMA_BASE_URL='http://localhost:11434'")
-    print("   python -m abstractcore.server")
+    print("   abstractcore serve")
     print("   ```")
 
     # Docker deployment
@@ -297,7 +297,7 @@ def codex_cli_integration():
     print("\n1️⃣ Configure Codex to Use AbstractCore Server:")
     print("   ```bash")
     print("   # Start AbstractCore server")
-    print("   python -m abstractcore.server &")
+    print("   abstractcore serve &")
     print("   ")
     print("   # Configure Codex")
     print("   export CODEX_API_BASE='http://localhost:8000/ollama/v1'")

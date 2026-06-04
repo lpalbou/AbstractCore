@@ -50,7 +50,7 @@ from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, HTTPException, Request, Query, Body, Path as FastAPIPath
 from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_oauth2_redirect_html
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse
+from fastapi.responses import StreamingResponse, JSONResponse, HTMLResponse, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError, AliasChoices, model_validator
@@ -347,7 +347,7 @@ def _request_is_auth_exempt(request: Request) -> bool:
     path = str(getattr(request.url, "path", "") or "")
     if request.method.upper() == "OPTIONS":
         return True
-    if path == "/health":
+    if path in {"/", "/favicon.ico", "/health"}:
         return True
     if not _server_protect_docs() and path in {"/docs", "/docs-lite", "/docs/oauth2-redirect", "/openapi.json", "/redoc"}:
         return True
@@ -1557,7 +1557,11 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ============================================================================
 
 # Import the core capability enums directly
-from ..providers.model_capabilities import ModelInputCapability, ModelOutputCapability
+from ..providers.model_capabilities import (
+    ModelInputCapability,
+    ModelOutputCapability,
+    normalize_capability_route_filter,
+)
 
 
 # ============================================================================
@@ -1568,6 +1572,7 @@ def get_models_from_provider(
     provider_name: str, 
     input_capabilities=None, 
     output_capabilities=None,
+    capability_routes=None,
     **kwargs,
 ) -> List[str]:
     """
@@ -1577,6 +1582,7 @@ def get_models_from_provider(
         provider_name: Name of the provider
         input_capabilities: Optional list of ModelInputCapability enums
         output_capabilities: Optional list of ModelOutputCapability enums
+        capability_routes: Optional list of route keys such as input.image/output.text
 
     Returns:
         List of model names from the provider, optionally filtered
@@ -1587,6 +1593,7 @@ def get_models_from_provider(
             provider_name, 
             input_capabilities=input_capabilities,
             output_capabilities=output_capabilities,
+            capability_routes=capability_routes,
             **kwargs,
         )
     except Exception as e:
@@ -4643,6 +4650,51 @@ class UnloadModelRequest(BaseModel):
 # Endpoints
 # ============================================================================
 
+@app.get("/", include_in_schema=False)
+async def server_root():
+    """Small browser landing page for the server root."""
+    return HTMLResponse(
+        """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AbstractCore Server</title>
+  <style>
+    :root { color-scheme: dark; --bg:#0b1020; --panel:#121a30; --text:#e8edff; --muted:#9ca8cc; --line:#2b3860; --accent:#35d0ff; }
+    * { box-sizing: border-box; }
+    body { margin:0; min-height:100vh; display:grid; place-items:center; font:15px/1.55 ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; color:var(--text); background:var(--bg); }
+    main { width:min(720px, calc(100vw - 32px)); border:1px solid var(--line); border-radius:18px; background:var(--panel); padding:28px; }
+    h1 { margin:0 0 8px; font-size:2rem; }
+    p { margin:0 0 18px; color:var(--muted); }
+    nav { display:flex; flex-wrap:wrap; gap:10px; }
+    a { display:inline-flex; align-items:center; border:1px solid var(--line); border-radius:999px; padding:10px 14px; color:var(--text); text-decoration:none; font-weight:700; }
+    a:hover { border-color:var(--accent); color:var(--accent); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>AbstractCore Server</h1>
+    <p>OpenAI-compatible API gateway is running.</p>
+    <nav>
+      <a href="/docs">Swagger UI</a>
+      <a href="/docs-lite">Docs Lite</a>
+      <a href="/redoc">ReDoc</a>
+      <a href="/openapi.json">OpenAPI JSON</a>
+      <a href="/health">Health</a>
+    </nav>
+  </main>
+</body>
+</html>"""
+    )
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Return an empty favicon response to avoid browser startup noise."""
+    return Response(status_code=204)
+
+
 @app.get("/health", tags=["health"])
 async def health_check():
     """Health check endpoint."""
@@ -6566,6 +6618,13 @@ async def list_models(
         None,
         description="Filter by output capability: 'text', 'embeddings'"
     ),
+    capability_route: Optional[List[str]] = Query(
+        None,
+        description=(
+            "Precise capability route filter. Repeat or comma-separate values, "
+            "for example capability_route=input.image&capability_route=output.text."
+        ),
+    ),
     api_key: Optional[str] = Query(
         None,
         description=(
@@ -6586,10 +6645,14 @@ async def list_models(
     **Filtering System:**
     - `input_type`: Filter by what INPUT the model can process (text, image, audio, video)
     - `output_type`: Filter by what OUTPUT the model generates (text, embeddings)
+    - `capability_route`: Precise route filter using `<kind>.<modality>` keys
+      such as `input.image`, `output.text`, or `embedding.text`
 
     **Examples:**
     - `/v1/models` - All models from all providers
     - `/v1/models?output_type=embeddings` - Only embedding models
+    - `/v1/models?capability_route=embedding.text` - Only text embedding models
+    - `/v1/models?capability_route=input.image,output.text` - Vision text models
     - `/v1/models?input_type=text&output_type=text` - Text-only models that generate text
     - `/v1/models?input_type=image` - Models that can analyze images
     - `/v1/models?provider=ollama&input_type=image` - Ollama vision models only
@@ -6600,6 +6663,10 @@ async def list_models(
         # Use the capability enums directly
         input_capabilities = [input_type] if input_type else None
         output_capabilities = [output_type] if output_type else None
+        try:
+            capability_routes = normalize_capability_route_filter(capability_route)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         api_key_s = str(api_key).strip() if isinstance(api_key, str) and str(api_key).strip() else ""
         if api_key_s and not provider:
             raise HTTPException(
@@ -6676,6 +6743,7 @@ async def list_models(
                     provider_norm,
                     input_capabilities=input_capabilities,
                     output_capabilities=output_capabilities,
+                    capability_routes=capability_routes,
                     raise_on_error=True,
                     **provider_kwargs,
                 )
@@ -6699,6 +6767,8 @@ async def list_models(
                 filter_parts.append(f"input_type={input_type.value}")
             if output_type:
                 filter_parts.append(f"output_type={output_type.value}")
+            if capability_routes:
+                filter_parts.append(f"capability_route={','.join(capability_routes)}")
 
             filter_msg = f" ({', '.join(filter_parts)})" if filter_parts else ""
             logger.info(f"Listed {len(models_data)} models for provider {provider}{filter_msg}")
@@ -6716,7 +6786,8 @@ async def list_models(
                 models = get_models_from_provider(
                     prov, 
                     input_capabilities=input_capabilities,
-                    output_capabilities=output_capabilities
+                    output_capabilities=output_capabilities,
+                    capability_routes=capability_routes,
                 )
                 for model in models:
                     model_id = f"{prov}/{model}"
@@ -6733,6 +6804,8 @@ async def list_models(
                 filter_parts.append(f"input_type={input_type.value}")
             if output_type:
                 filter_parts.append(f"output_type={output_type.value}")
+            if capability_routes:
+                filter_parts.append(f"capability_route={','.join(capability_routes)}")
 
             filter_msg = f" ({', '.join(filter_parts)})" if filter_parts else ""
             logger.info(f"Listed {len(models_data)} models from all providers{filter_msg}")
@@ -8623,13 +8696,17 @@ def run_server(host: str = "0.0.0.0", port: int = 8000):
 # Server Runner Function
 # ============================================================================
 
-def run_server_with_args():
+def run_server_with_args(argv: Optional[List[str]] = None, *, prog: Optional[str] = None):
     """Run the server with argument parsing for CLI usage."""
     parser = argparse.ArgumentParser(
+        prog=prog,
         description="AbstractCore Server - Universal LLM Gateway with Media Processing",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  abstractcore serve                                  # Start server with defaults
+  abstractcore serve --host 127.0.0.1 --port 8080    # Custom host/port
+  abstractcore serve --reload                        # Development auto-reload
   python -m abstractcore.server.app                    # Start server with defaults
   python -m abstractcore.server.app --debug           # Start with debug logging
   python -m abstractcore.server.app --host 127.0.0.1 --port 8080  # Custom host/port
@@ -8666,8 +8743,13 @@ Debug Mode:
         default=int(os.getenv("PORT", "8000")),
         help='Port to bind the server to (default: 8000)'
     )
+    parser.add_argument(
+        '--reload',
+        action='store_true',
+        help='Enable uvicorn auto-reload (development only)'
+    )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     # Reconfigure logging if debug mode is requested (--debug overrides config defaults)
     if args.debug:
@@ -8691,10 +8773,11 @@ Debug Mode:
 
     # Enhanced uvicorn configuration for debug mode
     uvicorn_config = {
-        "app": app,
+        "app": "abstractcore.server.app:app" if args.reload else app,
         "host": args.host,
         "port": args.port,
         "log_level": "debug" if debug_mode else "error",
+        "reload": bool(args.reload),
     }
 
     # In debug mode, enable more detailed uvicorn logging

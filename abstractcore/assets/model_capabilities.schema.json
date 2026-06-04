@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://abstractframework.local/abstractcore/model_capabilities.schema.json",
+  "title": "AbstractCore Model Capabilities",
+  "type": "object",
+  "required": [
+    "default_capabilities",
+    "models"
+  ],
+  "properties": {
+    "default_capabilities": {
+      "$ref": "#/$defs/modelCapabilityEntry"
+    },
+    "generic_vision_model": {
+      "$ref": "#/$defs/modelCapabilityEntry"
+    },
+    "models": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/modelCapabilityEntry"
+      }
+    }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "capabilityRouteKind": {
+      "type": "string",
+      "enum": [
+        "input",
+        "output",
+        "embedding",
+        "rerank"
+      ]
+    },
+    "capabilityRouteModalities": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "enum": [
+          "text",
+          "image",
+          "video",
+          "voice",
+          "sound",
+          "music",
+          "scene3d"
+        ]
+      }
+    },
+    "capabilityRoutes": {
+      "type": "object",
+      "description": "Grouped native model I/O metadata. Keys are route kinds; values are supported modalities.",
+      "propertyNames": {
+        "$ref": "#/$defs/capabilityRouteKind"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/capabilityRouteModalities"
+      }
+    },
+    "modelCapabilityEntry": {
+      "type": "object",
+      "properties": {
+        "capability_routes": {
+          "$ref": "#/$defs/capabilityRoutes"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

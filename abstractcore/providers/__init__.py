@@ -49,6 +49,10 @@ _LAZY_ATTRS: Dict[str, Tuple[str, str]] = {
     "ModelOutputCapability": ("abstractcore.providers.model_capabilities", "ModelOutputCapability"),
     "get_model_input_capabilities": ("abstractcore.providers.model_capabilities", "get_model_input_capabilities"),
     "get_model_output_capabilities": ("abstractcore.providers.model_capabilities", "get_model_output_capabilities"),
+    "get_model_capability_routes": ("abstractcore.providers.model_capabilities", "get_model_capability_routes"),
+    "model_supports_capability_route": ("abstractcore.providers.model_capabilities", "model_supports_capability_route"),
+    "model_matches_capability_routes": ("abstractcore.providers.model_capabilities", "model_matches_capability_routes"),
+    "normalize_capability_route_filter": ("abstractcore.providers.model_capabilities", "normalize_capability_route_filter"),
     "filter_models_by_capabilities": ("abstractcore.providers.model_capabilities", "filter_models_by_capabilities"),
     "get_capability_summary": ("abstractcore.providers.model_capabilities", "get_capability_summary"),
 }

@@ -100,7 +100,12 @@ def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
     elif tool_format == ToolFormat.SPECIAL_TOKEN:
         # Qwen uses <|tool_call|> ... </|tool_call|>
         # Gemma4 uses <|tool_call> ... <tool_call|>
-        return "<|tool_call|>" in response_lower or "<|tool_call>" in response_lower
+        # Liquid LFM2.5 uses <|tool_call_start|> ... <|tool_call_end|>
+        return (
+            "<|tool_call|>" in response_lower
+            or "<|tool_call>" in response_lower
+            or "<|tool_call_start|>" in response_lower
+        )
     elif tool_format == ToolFormat.FUNCTION_CALL:
         return "<function_call" in response_lower or _has_json_tool_pattern(response)
     elif tool_format == ToolFormat.XML_WRAPPED:
@@ -112,6 +117,7 @@ def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
             "```tool_call" in response_lower,
             "<|tool_call|>" in response_lower,
             "<|tool_call>" in response_lower,
+            "<|tool_call_start|>" in response_lower,
             "<function_call" in response_lower,
             "<tool_call>" in response_lower,
             _has_bracket_tool_prefix(response),
@@ -207,6 +213,124 @@ def format_tool_prompt(
 
 # Internal helpers
 
+def _format_python_literal(value: Any) -> str:
+    """Render a value as a Python literal for Pythonic tool-call formats."""
+    return repr(value)
+
+
+def _format_pythonic_call(tool_name: str, arguments: Dict[str, Any]) -> str:
+    """Format a Pythonic call expression such as `tool(arg="value")`."""
+    if not isinstance(arguments, dict) or not arguments:
+        return f"{tool_name}()"
+
+    parts = []
+    expanded: Dict[str, Any] = {}
+    for key, value in arguments.items():
+        key_str = str(key)
+        if re.match(r"^[A-Za-z_][A-Za-z0-9_]*$", key_str):
+            parts.append(f"{key_str}={_format_python_literal(value)}")
+        else:
+            expanded[key_str] = value
+    if expanded:
+        parts.append(f"**{_format_python_literal(expanded)}")
+    return f"{tool_name}({', '.join(parts)})"
+
+
+def _literal_from_ast_node(node: ast.AST) -> Any:
+    """Safely convert a Python AST expression node to a plain value."""
+    try:
+        return ast.literal_eval(node)
+    except Exception:
+        pass
+
+    if isinstance(node, ast.Name):
+        lower = node.id.lower()
+        if lower == "true":
+            return True
+        if lower == "false":
+            return False
+        if lower in {"none", "null"}:
+            return None
+        return node.id
+
+    try:
+        return ast.unparse(node)
+    except Exception:
+        return ""
+
+
+def _call_name_from_ast(func: ast.AST) -> Optional[str]:
+    """Return the dotted function name from an AST call node."""
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        base = _call_name_from_ast(func.value)
+        return f"{base}.{func.attr}" if base else func.attr
+    return None
+
+
+def _parse_pythonic_tool_payload(payload: str) -> List[ToolCall]:
+    """Parse Pythonic tool calls such as `[tool(arg="value")]`.
+
+    Liquid LFM2.5 documents tool calls as a list of function-call expressions
+    wrapped in `<|tool_call_start|>` / `<|tool_call_end|>` special tokens.
+    This parser uses Python's AST, not eval, so emitted calls are inspected
+    without executing model text.
+    """
+    source = (payload or "").strip()
+    if not source:
+        return []
+
+    try:
+        body = ast.parse(source, mode="eval").body
+    except SyntaxError:
+        if "[" in source and "]" in source:
+            bracketed = source[source.find("[") : source.rfind("]") + 1]
+            try:
+                body = ast.parse(bracketed, mode="eval").body
+            except SyntaxError:
+                return []
+        else:
+            return []
+
+    nodes: List[ast.AST]
+    if isinstance(body, (ast.List, ast.Tuple)):
+        nodes = list(body.elts)
+    else:
+        nodes = [body]
+
+    tool_calls: List[ToolCall] = []
+    for node in nodes:
+        if not isinstance(node, ast.Call):
+            continue
+
+        name = _call_name_from_ast(node.func)
+        if not isinstance(name, str) or not name.strip():
+            continue
+
+        arguments: Dict[str, Any] = {}
+        if node.args:
+            if len(node.args) == 1:
+                positional = _literal_from_ast_node(node.args[0])
+                if isinstance(positional, dict):
+                    arguments.update(positional)
+                else:
+                    arguments["_args"] = [positional]
+            else:
+                arguments["_args"] = [_literal_from_ast_node(arg) for arg in node.args]
+
+        for keyword in node.keywords:
+            value = _literal_from_ast_node(keyword.value)
+            if keyword.arg is None:
+                if isinstance(value, dict):
+                    arguments.update(value)
+                continue
+            arguments[keyword.arg] = value
+
+        tool_calls.append(ToolCall(name=name.strip(), arguments=arguments, call_id=None))
+
+    return tool_calls
+
 def _sanitize_tool_call_tags(response: str) -> str:
     """
     Sanitize malformed tool call tags before parsing.
@@ -234,6 +358,7 @@ def _sanitize_tool_call_tags(response: str) -> str:
     # - Gemma4: <|tool_call>
     response = re.sub(r'(<\|tool_call\|>\s*)+', r'<|tool_call|>', response, flags=re.IGNORECASE)
     response = re.sub(r'(<\|tool_call>\s*)+', r'<|tool_call>', response, flags=re.IGNORECASE)
+    response = re.sub(r'(<\|tool_call_start\|>\s*)+', r'<|tool_call_start|>', response, flags=re.IGNORECASE)
 
     # Fix malformed closing tags with } instead of |>
     # Handles: </|tool_call|} → </|tool_call|>
@@ -247,6 +372,7 @@ def _sanitize_tool_call_tags(response: str) -> str:
     # Fix doubled/multiple closing tags (collapse to single)
     response = re.sub(r'(</\|tool_call\|>\s*)+', r'</|tool_call|>', response, flags=re.IGNORECASE)
     response = re.sub(r'(<tool_call\|>\s*)+', r'<tool_call|>', response, flags=re.IGNORECASE)
+    response = re.sub(r'(<\|tool_call_end\|>\s*)+', r'<|tool_call_end|>', response, flags=re.IGNORECASE)
 
     if response != original:
         logger.debug(f"Sanitized malformed tool call tags")
@@ -304,6 +430,7 @@ def _parse_special_token(response: str) -> List[ToolCall]:
     Supported variants:
     - Qwen-style:   <|tool_call|>{...}</|tool_call|>
     - Gemma4-style: <|tool_call>call:tool_name{...}<tool_call|>
+    - LFM2.5-style: <|tool_call_start|>[tool(arg="value")]<|tool_call_end|>
     """
     tool_calls = []
 
@@ -324,6 +451,11 @@ def _parse_special_token(response: str) -> List[ToolCall]:
     # Strategy 1: Look for properly closed tags (Qwen + Gemma4)
     pattern_with_close = open_tag + r'\s*(.*?)\s*' + close_tag
     for match in re.finditer(pattern_with_close, cleaned_response, re.DOTALL | re.IGNORECASE):
+        all_matches.append((match.start(), match.end(), match.group(1).strip()))
+
+    # Liquid LFM2.5-style special-token block.
+    liquid_pattern = r'<\|tool_call_start\|>\s*(.*?)\s*<\|tool_call_end\|>'
+    for match in re.finditer(liquid_pattern, cleaned_response, re.DOTALL | re.IGNORECASE):
         all_matches.append((match.start(), match.end(), match.group(1).strip()))
 
     # Strategy 2: Look for opening tags followed by valid JSON (no closing tag)
@@ -470,6 +602,11 @@ def _parse_special_token(response: str) -> List[ToolCall]:
                 if not isinstance(args, dict):
                     args = {}
                 tool_calls.append(ToolCall(name=name, arguments=args, call_id=None))
+                continue
+
+            pythonic_calls = _parse_pythonic_tool_payload(payload)
+            if pythonic_calls:
+                tool_calls.extend(pythonic_calls)
         except json.JSONDecodeError as e:
             logger.debug(f"JSON decode error for tool call: {e}, payload: {repr(payload)}")
             continue
@@ -1175,6 +1312,7 @@ def _format_qwen_style(
     tool_call_start = "<|tool_call|>"
     tool_call_end = "</|tool_call|>"
     example_payload = '{"name": "tool_name", "arguments": {"param1": "value1", "param2": "value2"}}'
+    multi_call_instruction = "To call multiple tools, repeat the block once per call."
 
     if model_name:
         try:
@@ -1188,6 +1326,11 @@ def _format_qwen_style(
             tool_call_start = "<|tool_call>"
             tool_call_end = "<tool_call|>"
             example_payload = 'call:tool_name{"param1":"value1","param2":"value2"}'
+        elif tool_prefix == "<|tool_call_start|>":
+            tool_call_start = "<|tool_call_start|>"
+            tool_call_end = "<|tool_call_end|>"
+            example_payload = '[tool_name(param1="value1", param2="value2")]'
+            multi_call_instruction = "To call multiple tools, include multiple calls in the list."
 
     if include_tool_list:
         total_tools = len(tools)
@@ -1204,7 +1347,7 @@ def _format_qwen_style(
         f"{tool_call_start}\n"
         f"{example_payload}\n"
         f"{tool_call_end}\n\n"
-        "To call multiple tools, repeat the block once per call.\n"
+        f"{multi_call_instruction}\n"
         + _critical_rules()
     )
 
@@ -1536,6 +1679,9 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
 
     # Use the same sophisticated patterns as the _parse_special_token function
     patterns = [
+        # Liquid LFM2.5: <|tool_call_start|>[tool(arg="value")]<|tool_call_end|>
+        r'<\|tool_call_start\|>\s*.*?\s*<\|tool_call_end\|>',
+
         # Strategy 1: Properly closed special-token tool blocks
         # - Qwen:   <|tool_call|> ... </|tool_call|>
         # - Gemma4: <|tool_call> ... <tool_call|>
@@ -1561,6 +1707,8 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
         # Orphan tags (some models emit a closing tag on its own line)
         r'(?im)^\s*<\|tool_call\|>\s*$',
         r'(?im)^\s*<\|tool_call>\s*$',
+        r'(?im)^\s*<\|tool_call_start\|>\s*$',
+        r'(?im)^\s*<\|tool_call_end\|>\s*$',
         r'(?im)^\s*</\|tool_call\|>\s*$',
         r'(?im)^\s*<tool_call\|>\s*$',
         r'(?im)^\s*<tool_call>\s*$',
@@ -1612,6 +1760,8 @@ def _format_tool_call_example(
         if tool_prefix == "<|tool_call>":
             args_json = json.dumps(arguments, separators=(",", ":"), ensure_ascii=False)
             return f"<|tool_call>\ncall:{tool_name}{args_json}\n<tool_call|>"
+        if tool_prefix == "<|tool_call_start|>":
+            return f"<|tool_call_start|>\n[{_format_pythonic_call(tool_name, arguments)}]\n<|tool_call_end|>"
 
         return f"<|tool_call|>\n{tool_call_json}\n</|tool_call|>"
     elif tool_format == ToolFormat.FUNCTION_CALL:

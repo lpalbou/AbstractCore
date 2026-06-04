@@ -1,4 +1,5 @@
-from abstractcore.architectures import detect_architecture, get_model_capabilities
+from abstractcore.architectures import detect_architecture, get_architecture_format, get_context_limits, get_model_capabilities
+from abstractcore.providers.model_capabilities import get_model_capability_routes
 
 
 def test_qwen3_5_variants_detect_qwen3_5_architecture() -> None:
@@ -51,12 +52,14 @@ def test_qwen3_5_family_capabilities_cover_dense_and_moe_variants() -> None:
         caps = get_model_capabilities(model_id)
         assert caps.get("architecture") == "qwen3_5"
         assert caps.get("max_tokens") == 262144
+        assert caps.get("max_output_tokens") == 81920
         assert caps.get("tool_support") == "native"
         assert caps.get("structured_output") == "prompted"
         assert caps.get("vision_support") is True
 
     moe = get_model_capabilities("qwen/qwen3.5-35b-a3b")
     assert moe.get("architecture") == "qwen3_5"
+    assert moe.get("max_output_tokens") == 81920
     assert moe.get("total_parameters") == "35B"
     assert moe.get("active_parameters") == "3B"
     assert moe.get("experts") == 256
@@ -65,6 +68,7 @@ def test_qwen3_5_family_capabilities_cover_dense_and_moe_variants() -> None:
 
     flagship_moe = get_model_capabilities("qwen/qwen3.5-397b-a17b")
     assert flagship_moe.get("architecture") == "qwen3_5"
+    assert flagship_moe.get("max_output_tokens") == 81920
     assert flagship_moe.get("total_parameters") == "397B"
     assert flagship_moe.get("active_parameters") == "17B"
     assert flagship_moe.get("experts") == 512
@@ -74,6 +78,7 @@ def test_qwen3_5_family_capabilities_cover_dense_and_moe_variants() -> None:
     frontier_moe = get_model_capabilities("qwen/qwen3.5-122b-a10b")
     assert frontier_moe.get("architecture") == "qwen3_5"
     assert frontier_moe.get("max_tokens") == 262144
+    assert frontier_moe.get("max_output_tokens") == 81920
     assert frontier_moe.get("total_parameters") == "122B"
     assert frontier_moe.get("active_parameters") == "10B"
     assert frontier_moe.get("experts") == 256
@@ -81,7 +86,30 @@ def test_qwen3_5_family_capabilities_cover_dense_and_moe_variants() -> None:
     assert frontier_moe.get("experts_activated") == 8
 
 
+def test_qwen3_6_family_output_budgets_match_model_cards() -> None:
+    variants = [
+        "Qwen/Qwen3.6-27B",
+        "Qwen/Qwen3.6-27B-FP8",
+        "unsloth/Qwen3.6-27B-MTP-GGUF",
+        "Qwen/Qwen3.6-35B-A3B",
+        "Qwen/Qwen3.6-35B-A3B-FP8",
+        "unsloth/Qwen3.6-35B-A3B-MTP-GGUF",
+    ]
+
+    for model_id in variants:
+        caps = get_model_capabilities(model_id)
+        assert caps.get("architecture") == "qwen3_6"
+        assert caps.get("max_tokens") == 262144
+        assert caps.get("max_output_tokens") == 81920
+        assert caps.get("thinking_support") is True
+
+
 def test_lfm2_family_capabilities_resolve_from_aliases() -> None:
+    assert detect_architecture("lfm2_moe") == "lfm2"
+    arch = get_architecture_format("lfm2")
+    assert arch.get("tool_format") == "special_token"
+    assert arch.get("tool_prefix") == "<|tool_call_start|>"
+
     tiny = get_model_capabilities("LiquidAI/LFM2.5-350M")
     assert tiny.get("architecture") == "lfm2"
     assert tiny.get("max_tokens") == 32768
@@ -89,6 +117,31 @@ def test_lfm2_family_capabilities_resolve_from_aliases() -> None:
     assert tiny.get("tool_support") == "prompted"
     assert tiny.get("structured_output") == "prompted"
     assert tiny.get("total_parameters") == "350M"
+
+    reasoning_moe = get_model_capabilities("LiquidAI/LFM2.5-8B-A1B")
+    assert reasoning_moe.get("architecture") == "lfm2"
+    assert reasoning_moe.get("model_type") == "lfm2_moe"
+    assert reasoning_moe.get("max_tokens") == 128000
+    assert reasoning_moe.get("max_output_tokens") is None
+    assert get_context_limits("LiquidAI/LFM2.5-8B-A1B")["max_output_tokens"] == 4096
+    assert reasoning_moe.get("tool_support") == "prompted"
+    assert reasoning_moe.get("structured_output") == "prompted"
+    assert reasoning_moe.get("thinking_support") is True
+    assert reasoning_moe.get("total_parameters") == "8.3B"
+    assert reasoning_moe.get("active_parameters") == "1.5B"
+    assert reasoning_moe.get("experts") == 32
+    assert reasoning_moe.get("experts_activated") == 4
+    assert get_model_capability_routes("LiquidAI/LFM2.5-8B-A1B") == ["input.text", "output.text"]
+
+    for model_id in (
+        "mlx-community/LFM2.5-8B-A1B-MLX-4bit",
+        "mlx-community/LFM2.5-8B-A1B-MLX-8bit",
+    ):
+        caps = get_model_capabilities(model_id)
+        assert caps.get("architecture") == "lfm2"
+        assert caps.get("max_tokens") == 128000
+        assert caps.get("max_output_tokens") is None
+        assert caps.get("tool_support") == "prompted"
 
     instruct = get_model_capabilities("liquidai/lfm2.5-1.2b-instruct")
     assert instruct.get("architecture") == "lfm2"

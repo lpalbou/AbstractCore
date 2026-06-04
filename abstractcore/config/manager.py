@@ -1010,6 +1010,10 @@ class ConfigurationManager:
                 out = self._decorate_image_input_default(out)
             elif key == capability_route_key("input", "video"):
                 out.setdefault("overrideable", True)
+            elif key == capability_route_key("input", "sound"):
+                out.setdefault("overrideable", True)
+            elif key == capability_route_key("input", "music"):
+                out.setdefault("overrideable", True)
             return out
 
         out = {"key": key, "source": "not_configured"}
@@ -1017,6 +1021,10 @@ class ConfigurationManager:
             out = self._decorate_image_input_default(out)
         elif key == capability_route_key("input", "video"):
             out = self._decorate_video_input_default(out)
+        elif key == capability_route_key("input", "sound"):
+            out = self._decorate_sound_input_default(out)
+        elif key == capability_route_key("input", "music"):
+            out = self._decorate_music_input_default(out)
         return out
 
     def list_capability_defaults(self) -> list[Dict[str, Any]]:
@@ -1030,36 +1038,44 @@ class ConfigurationManager:
                 row = self._decorate_image_input_default(row)
             elif spec.key == capability_route_key("input", "video") and not row["configured"]:
                 row = self._decorate_video_input_default(row)
+            elif spec.key == capability_route_key("input", "sound") and not row["configured"]:
+                row = self._decorate_sound_input_default(row)
+            elif spec.key == capability_route_key("input", "music") and not row["configured"]:
+                row = self._decorate_music_input_default(row)
             rows.append(row)
         return rows
 
     def _decorate_image_input_default(self, row: Dict[str, Any]) -> Dict[str, Any]:
-        text_route = self.config.capability_defaults.routes.get(capability_route_key("input", "text"))
-        if not text_route or not text_route.provider or not text_route.model:
-            return row
-        if not self._model_supports_input(text_route.model, "image"):
-            return row
-        out = dict(row)
-        out.update(
-            {
-                "provider": text_route.provider,
-                "model": text_route.model,
-                "base_url": text_route.base_url,
-                "source": "abstractcore.capability_defaults",
-                "configured": True,
-                "covered_by": "input.text",
-                "read_only": True,
-            }
-        )
-        if text_route.options:
-            out["options"] = dict(text_route.options)
-        return out
+        return self._decorate_text_covered_input_default(row, "image", read_only=True)
 
     def _decorate_video_input_default(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        return self._decorate_text_covered_input_default(
+            row,
+            "video",
+            coverage_mode="video_frames",
+            overrideable=True,
+            read_only=False,
+        )
+
+    def _decorate_sound_input_default(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        return self._decorate_text_covered_input_default(row, "sound", overrideable=True, read_only=False)
+
+    def _decorate_music_input_default(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        return self._decorate_text_covered_input_default(row, "music", overrideable=True, read_only=False)
+
+    def _decorate_text_covered_input_default(
+        self,
+        row: Dict[str, Any],
+        modality: str,
+        *,
+        coverage_mode: Optional[str] = None,
+        overrideable: bool = False,
+        read_only: bool = True,
+    ) -> Dict[str, Any]:
         text_route = self.config.capability_defaults.routes.get(capability_route_key("input", "text"))
         if not text_route or not text_route.provider or not text_route.model:
             return row
-        if not self._model_supports_input(text_route.model, "video"):
+        if not self._model_supports_input(text_route.model, modality):
             return row
         out = dict(row)
         out.update(
@@ -1070,11 +1086,13 @@ class ConfigurationManager:
                 "source": "abstractcore.capability_defaults",
                 "configured": True,
                 "covered_by": "input.text",
-                "coverage_mode": "video_frames",
-                "overrideable": True,
-                "read_only": False,
+                "read_only": read_only,
             }
         )
+        if coverage_mode:
+            out["coverage_mode"] = coverage_mode
+        if overrideable:
+            out["overrideable"] = True
         if text_route.options:
             out["options"] = dict(text_route.options)
         return out
@@ -1082,13 +1100,27 @@ class ConfigurationManager:
     @staticmethod
     def _model_supports_input(model: str, modality: str) -> bool:
         try:
-            from ..providers.model_capabilities import ModelInputCapability, model_matches_input_capabilities
+            from ..providers.model_capabilities import (
+                ModelInputCapability,
+                model_matches_input_capabilities,
+                model_supports_capability_route,
+            )
+
+            normalized_modality = str(modality or "").strip().lower()
+            try:
+                if model_supports_capability_route(str(model or ""), capability_route_key("input", normalized_modality)):
+                    return True
+            except Exception:
+                pass
 
             capability = {
                 "image": ModelInputCapability.IMAGE,
                 "audio": ModelInputCapability.AUDIO,
+                "sound": ModelInputCapability.SOUND,
+                "voice": ModelInputCapability.VOICE,
+                "music": ModelInputCapability.MUSIC,
                 "video": ModelInputCapability.VIDEO,
-            }.get(str(modality or "").strip().lower())
+            }.get(normalized_modality)
             if capability is None:
                 return False
             return bool(model_matches_input_capabilities(str(model or ""), [capability]))

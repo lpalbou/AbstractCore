@@ -33,7 +33,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 - **[Generation Parameters](generation-parameters.md)** — unified parameter vocabulary, default hierarchy, caller overrides, and provider quirks
 - **[HuggingFace Model Compatibility](huggingface-model-compatibility.md)** — Transformers/GGUF loading rules, quantized checkpoint caveats, and trusted proof targets
 - **[Memory Blocs](memory-blocs.md)** — persistent extracted text snapshots + per-model KV artifacts
-- **Model/architecture registries (source of truth)** — `abstractcore/assets/model_capabilities.json` + `abstractcore/assets/architecture_formats.json` (see `abstractcore/assets/README.md`)
+- **Model/architecture registries (source of truth)** — `abstractcore/assets/model_capabilities.json`, `abstractcore/assets/model_capabilities.schema.json`, and `abstractcore/assets/architecture_formats.json` (see `abstractcore/assets/README.md`)
 - **[Centralized Config](centralized-config.md)** — config file, config CLI (`abstractcore --config`), and capability route defaults (`input.*`, `output.*`, `embedding.*`, `rerank.*`)
 - **[Events](events.md)** and **[Structured Logging](structured-logging.md)** — observability hooks
 - **[Interaction Tracing](interaction-tracing.md)** — record prompts/responses/usage for debugging
@@ -50,7 +50,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 
 ## Server (optional HTTP API)
 
-- **[Server](server.md)** — OpenAI-compatible `/v1` gateway (install `pip install "abstractcore[server]"`)
+- **[Server](server.md)** — OpenAI-compatible `/v1` gateway (install `pip install "abstractcore[server]"`; run `abstractcore serve`)
 - **[Endpoint](endpoint.md)** — single-model OpenAI-compatible `/v1` endpoint (install `pip install "abstractcore[server]"`; run `abstractcore-endpoint`)
 
 ## Built-in CLI apps

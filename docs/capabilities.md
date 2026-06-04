@@ -174,6 +174,22 @@ Keep `/v1/models` for LLM/embedding provider discovery. Generated-media
 catalogs are intentionally separate so image and voice backends can expose their
 own provider-specific metadata without blurring the LLM model taxonomy.
 
+`/v1/models` supports precise route filters for model metadata that belongs in
+the LLM/embedding registry:
+
+```bash
+curl 'http://localhost:8000/v1/models?capability_route=input.image,output.text'
+curl 'http://localhost:8000/v1/models?capability_route=input.sound,output.text'
+curl 'http://localhost:8000/v1/models?capability_route=input.music,output.text'
+curl 'http://localhost:8000/v1/models?capability_route=embedding.text'
+```
+
+Route filters use the same `<kind>.<modality>` vocabulary as capability
+defaults and are backed by `abstractcore/assets/model_capabilities.json`
+`capability_routes` metadata plus compatibility derivation for older entries.
+They do not report plugin readiness, download status, configured defaults, or
+generated-media backend catalogs.
+
 ### Plugin host text service
 
 Plugins that need text planning can use the host context supplied by AbstractCore instead of

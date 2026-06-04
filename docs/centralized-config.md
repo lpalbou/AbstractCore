@@ -164,10 +164,15 @@ include `qwen3-omni-30b-a3b-instruct`,
 `qwen2-audio-7b-instruct`. Qwen3.6 text/vision/video models remain
 `audio_support=false`.
 
-The older `abstractcore --set-capability-default ...`,
-`--capability-provider`, `--capability-model`, `--capability-base-url`, and
-`--clear-capability-default` flags remain supported for compatibility. The
-`abstractcore config ...` command is the preferred explicit route-default
+`input.music` is the corresponding music-audio understanding route. If the
+configured `input.text` model is known to accept native music/audio input, Core
+may report `input.sound` and `input.music` as covered by `input.text`; both rows
+remain overrideable so a dedicated audio-understanding backend can be selected.
+
+Use `abstractcore config set-default`, `abstractcore config defaults`, and
+`abstractcore config clear-default` for capability route defaults. Capability
+route defaults are intentionally managed through the `config` subcommand so
+route discovery, provider profiles, and scoped config files share one explicit
 interface.
 
 By default Core writes to `~/.abstractcore/config/abstractcore.json`. Operators
@@ -356,7 +361,7 @@ abstractcore --set-server-auth-token acore-server-secret
 
 # Start the server; clients now authenticate with:
 # Authorization: Bearer acore-server-secret
-python -m abstractcore.server.app
+abstractcore serve
 ```
 
 When a server auth token is configured, authenticated clients can use provider keys configured on the server through `abstractcore --set-api-key ...` or environment variables. To override one upstream provider for one request, clients can send `X-AbstractCore-Provider-API-Key`.
@@ -383,7 +388,7 @@ abstractcore --set-server-media-root /srv/abstractcore-media
 abstractcore --allow-server-local-files
 abstractcore --disallow-server-local-files
 
-# Defaults for `python -m abstractcore.server.app`
+# Defaults for `abstractcore serve`
 abstractcore --set-server-host 127.0.0.1
 abstractcore --set-server-port 8000
 ```
@@ -711,7 +716,7 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 - **url_fetch_allowlist**: URL media fetch allowlist for otherwise blocked targets
 - **media_root**: Safe root for local media file paths accepted by the HTTP server
 - **allow_local_files**: Unsafe unrestricted local file toggle
-- **host** / **port**: Defaults for `python -m abstractcore.server.app`
+- **host** / **port**: Defaults for `abstractcore serve`
 
 ### Cache Section
 - **default_cache_dir**: General cache directory for AbstractCore (`~/.cache/abstractcore`)

@@ -1030,12 +1030,14 @@ class OllamaProvider(BaseProvider):
                 # Apply new capability filtering if provided
                 input_capabilities = kwargs.get('input_capabilities')
                 output_capabilities = kwargs.get('output_capabilities')
+                capability_routes = kwargs.get('capability_routes')
 
-                if input_capabilities or output_capabilities:
+                if input_capabilities or output_capabilities or capability_routes:
                     models = filter_models_by_capabilities(
                         models, 
                         input_capabilities=input_capabilities,
-                        output_capabilities=output_capabilities
+                        output_capabilities=output_capabilities,
+                        capability_routes=capability_routes,
                     )
 
 

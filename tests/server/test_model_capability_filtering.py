@@ -61,6 +61,7 @@ def _use_deterministic_model_discovery(monkeypatch):
         provider_name,
         input_capabilities=None,
         output_capabilities=None,
+        capability_routes=None,
         **_kwargs,
     ):
         models = FAKE_PROVIDER_MODELS.get(str(provider_name or "").strip().lower(), [])
@@ -68,6 +69,7 @@ def _use_deterministic_model_discovery(monkeypatch):
             list(models),
             input_capabilities=input_capabilities,
             output_capabilities=output_capabilities,
+            capability_routes=capability_routes,
         )
 
     monkeypatch.setattr(
@@ -188,6 +190,39 @@ class TestModelCapabilityFiltering:
         # May or may not have vision models
         assert len(vision_text_models) >= 0
 
+    def test_capability_route_filtering(self, client, monkeypatch):
+        """Test precise route-key capability filtering."""
+        from abstractcore.providers import registry as provider_registry
+        from abstractcore.server import app as server_app
+
+        def fake_is_provider_available(provider_name):
+            return str(provider_name or "").strip().lower() == "openai"
+
+        def fake_get_models_from_provider(
+            provider_name,
+            input_capabilities=None,
+            output_capabilities=None,
+            capability_routes=None,
+            **_kwargs,
+        ):
+            assert provider_name == "openai"
+            assert input_capabilities is None
+            assert output_capabilities is None
+            assert capability_routes == ["input.image", "output.text"]
+            return filter_models_by_capabilities(
+                ["gpt-4o", "text-embedding-3-small"],
+                capability_routes=capability_routes,
+            )
+
+        monkeypatch.setattr(provider_registry, "is_provider_available", fake_is_provider_available)
+        monkeypatch.setattr(server_app, "get_models_from_provider", fake_get_models_from_provider)
+
+        response = client.get("/v1/models?provider=openai&capability_route=input.image,output.text")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert [item["id"] for item in data["data"]] == ["openai/gpt-4o"]
+
     def test_provider_specific_filtering(self, client):
         """Test provider-specific filtering with capabilities."""
         # Test OpenAI models with image input
@@ -225,6 +260,10 @@ class TestModelCapabilityFiltering:
         response = client.get("/v1/models?output_type=invalid")
         # Should return 422 validation error
         assert response.status_code == 422
+
+        # Test invalid route filter
+        response = client.get("/v1/models?capability_route=unsupported")
+        assert response.status_code == 400
 
     def test_nonexistent_provider(self, client):
         """Test filtering with nonexistent provider."""

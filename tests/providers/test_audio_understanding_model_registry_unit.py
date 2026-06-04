@@ -1,5 +1,6 @@
 from abstractcore.architectures import detect_architecture, get_model_capabilities
 from abstractcore.architectures import detection as architecture_detection
+from abstractcore.providers.model_capabilities import get_model_capability_routes
 
 
 def test_qwen_audio_understanding_models_resolve_as_audio_capable() -> None:
@@ -27,6 +28,12 @@ def test_qwen_audio_understanding_models_resolve_as_audio_capable() -> None:
     assert set(qwen25_omni.get("audio_input_capabilities", [])) == expected_audio_routes
     assert qwen25_omni.get("video_support") is True
 
+    qwen25_omni_3b = get_model_capabilities("Qwen/Qwen2.5-Omni-3B")
+    assert qwen25_omni_3b.get("architecture") == "qwen2_5_omni"
+    assert qwen25_omni_3b.get("audio_support") is True
+    assert set(qwen25_omni_3b.get("audio_input_capabilities", [])) == expected_audio_routes
+    assert qwen25_omni_3b.get("video_support") is True
+
     qwen2_audio = get_model_capabilities("Qwen/Qwen2-Audio-7B-Instruct")
     assert qwen2_audio.get("architecture") == "qwen2_audio"
     assert qwen2_audio.get("audio_support") is True
@@ -48,10 +55,12 @@ def test_qwen_audio_understanding_aliases_and_architectures() -> None:
         == "qwen3-omni-30b-a3b-captioner"
     )
     assert architecture_detection.resolve_model_alias("qwen2.5-omni:7b", models) == "qwen2.5-omni-7b"
+    assert architecture_detection.resolve_model_alias("qwen2.5-omni:3b", models) == "qwen2.5-omni-3b"
     assert architecture_detection.resolve_model_alias("qwen2-audio:7b", models) == "qwen2-audio-7b-instruct"
 
     assert detect_architecture("Qwen/Qwen3-Omni-30B-A3B-Instruct") == "qwen3_omni"
     assert detect_architecture("Qwen/Qwen2.5-Omni-7B") == "qwen2_5_omni"
+    assert detect_architecture("Qwen/Qwen2.5-Omni-3B") == "qwen2_5_omni"
     assert detect_architecture("Qwen/Qwen2-Audio-7B-Instruct") == "qwen2_audio"
 
 
@@ -63,3 +72,27 @@ def test_qwen3_6_remains_not_audio_capable() -> None:
     assert caps.get("vision_support") is True
     assert caps.get("video_support") is True
     assert caps.get("audio_support") is False
+
+
+def test_gemma3n_audio_routes_cover_speech_and_generic_audio_not_music() -> None:
+    caps = get_model_capabilities("google/gemma-3n-e4b")
+    assert caps.get("audio_support") is True
+    assert set(caps.get("audio_input_capabilities", [])) == {"speech", "sound"}
+
+    routes = set(get_model_capability_routes("google/gemma-3n-e4b"))
+    assert {"input.voice", "input.sound", "output.text"} <= routes
+    assert "input.music" not in routes
+
+
+def test_small_music_understanding_candidates_resolve_to_input_music() -> None:
+    for model in (
+        "Qwen/Qwen2.5-Omni-3B",
+        "OpenMOSS-Team/MOSS-Audio-4B-Instruct",
+        "OpenMOSS-Team/MOSS-Audio-4B-Thinking",
+        "OpenMOSS-Team/MOSS-Audio-8B-Instruct",
+        "OpenMOSS-Team/MOSS-Audio-8B-Thinking",
+    ):
+        caps = get_model_capabilities(model)
+        assert set(caps.get("audio_input_capabilities", [])) == {"speech", "sound", "music"}
+        routes = set(get_model_capability_routes(model))
+        assert {"input.voice", "input.sound", "input.music", "output.text"} <= routes

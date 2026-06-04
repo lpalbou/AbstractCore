@@ -42,7 +42,7 @@ export ABSTRACTCORE_AUTH_TOKEN="acore-server-secret"
 export OPENAI_API_KEY="sk-..."
 
 # Start server
-python -m abstractcore.server.app
+abstractcore serve
 
 # Or with uvicorn directly
 uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
@@ -124,7 +124,7 @@ export VLLM_BASE_URL="http://localhost:8000/v1"
 export OPENAI_BASE_URL="http://localhost:1234/v1"
 export OPENAI_API_KEY="your-endpoint-key"                # optional, if the endpoint requires auth
 
-# Server bind (only used by `python -m abstractcore.server.app`)
+# Server bind (used by `abstractcore serve` and compatibility module entrypoints)
 export HOST="0.0.0.0"
 export PORT="8000"
 
@@ -157,10 +157,15 @@ export ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1
 
 ```bash
 # Using AbstractCore's built-in CLI
-python -m abstractcore.server.app --help                    # View all options
-python -m abstractcore.server.app --debug                   # Debug mode
-python -m abstractcore.server.app --host 127.0.0.1 --port 8080  # Custom host/port
-python -m abstractcore.server.app --debug --port 8001       # Debug on custom port
+abstractcore serve --help                              # View all options
+abstractcore serve --debug                             # Debug mode
+abstractcore serve --host 127.0.0.1 --port 8080        # Custom host/port
+abstractcore serve --debug --port 8001                 # Debug on custom port
+abstractcore serve --reload                            # Development auto-reload
+
+# Compatibility module entrypoints
+python -m abstractcore.server
+python -m abstractcore.server.app
 
 # Using uvicorn directly
 uvicorn abstractcore.server.app:app --reload                # Development with auto-reload
@@ -185,7 +190,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Configuration | GET | `/v1/config/capability-defaults` | List explicit input/output/embedding/rerank route defaults | none |
 | Configuration | PUT | `/v1/config/capability-defaults/{kind}/{modality}` | Set one capability route default | path `kind`, `modality`; body `provider`, `model`, `base_url`, `options` |
 | Configuration | DELETE | `/v1/config/capability-defaults/{kind}/{modality}` | Clear one capability route default | path `kind`, `modality` |
-| Discovery | GET | `/v1/models` | List models and filter by provider/capabilities | `provider`, `input_type`, `output_type`, `base_url`, `api_key` |
+| Discovery | GET | `/v1/models` | List models and filter by provider/capabilities | `provider`, `input_type`, `output_type`, `capability_route`, `base_url`, `api_key` |
 | Discovery | GET | `/providers` | Provider status/capabilities | `include_models` |
 | Discovery | GET | `/v1/vision/providers/` | AbstractVision provider catalog for image/video generation models | optional `task`, `provider`, `include_models`, `base_url`, `api_key` |
 | Discovery | GET | `/v1/audio/voices` | AbstractVoice voice/profile catalog for TTS | optional `provider`, `model`, `providers_only`, `base_url`, `api_key` |
@@ -1448,8 +1453,12 @@ List all available models from configured providers.
 
 **Query Parameters:**
 - `provider`: Filter by provider (e.g., `ollama`, `openai`, `anthropic`, `lmstudio`, `openai-compatible`).
-- `input_type`: Filter by input capability: `text`, `image`, `audio`, or `video`.
-- `output_type`: Filter by output capability: `text` or `embeddings`.
+- `input_type`: Legacy broad input filter such as `text`, `image`, `audio`, or `video`.
+- `output_type`: Legacy broad output filter such as `text` or `embeddings`.
+- `capability_route`: Precise route-key filter. Repeat the query parameter or
+  comma-separate values, for example `capability_route=input.image,output.text`
+  or `capability_route=embedding.text`. Route keys use `<kind>.<modality>` and
+  are normalized through the same vocabulary as capability defaults.
 - `base_url`: Optional upstream base URL override for providers that support OpenAI-compatible discovery. Loopback is allowed by default; non-loopback requires `ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST`.
 - `api_key`: Optional upstream provider API key override for discovery. Requires `provider=...` so the override target is unambiguous. Prefer `X-AbstractCore-Provider-API-Key`.
 
@@ -1464,8 +1473,14 @@ curl http://localhost:8000/v1/models?provider=ollama
 # Embedding models only
 curl http://localhost:8000/v1/models?output_type=embeddings
 
+# Text embedding models only, using the route filter
+curl http://localhost:8000/v1/models?capability_route=embedding.text
+
 # Vision-capable input models
 curl http://localhost:8000/v1/models?input_type=image
+
+# Vision models that return text, using precise route keys
+curl 'http://localhost:8000/v1/models?capability_route=input.image,output.text'
 
 # Ollama embeddings
 curl http://localhost:8000/v1/models?provider=ollama&output_type=embeddings
@@ -1845,11 +1860,11 @@ Debug mode provides comprehensive logging and detailed error reporting for troub
 
 ```bash
 # Method 1: Using command line flag (recommended)
-python -m abstractcore.server.app --debug
+abstractcore serve --debug
 
 # Method 2: Using environment variable
 export ABSTRACTCORE_DEBUG=true
-python -m abstractcore.server.app
+abstractcore serve
 
 # Method 3: With uvicorn directly
 export ABSTRACTCORE_DEBUG=true

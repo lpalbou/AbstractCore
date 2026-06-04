@@ -419,12 +419,19 @@ async polling routes under `/v1/vision/jobs/images/*` and
 `/v1/vision/jobs/videos/*`; video jobs include the latest backend progress event
 when the selected backend reports it.
 `/v1/models` remains focused on LLM and embedding provider models.
+Use `capability_route` to filter those models by precise route-keyed support:
+`/v1/models?capability_route=input.image,output.text`,
+`/v1/models?capability_route=input.sound,output.text`,
+`/v1/models?capability_route=input.music,output.text`, or
+`/v1/models?capability_route=embedding.text`. Generated-media provider
+readiness and download/setup status remain on the capability plugin catalog
+routes, not in `/v1/models`.
 
 ## HTTP server (OpenAI-compatible gateway)
 
 ```bash
 pip install "abstractcore[server]"
-python -m abstractcore.server.app
+abstractcore serve
 ```
 
 Use any OpenAI-compatible client, and route to any provider/model via `model="provider/model"`:

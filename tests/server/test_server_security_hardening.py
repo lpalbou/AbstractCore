@@ -163,6 +163,10 @@ def test_server_auth_is_required_by_default_when_key_is_not_configured(monkeypat
 
     client = TestClient(server_app.app)
     assert client.get("/health").status_code == 200
+    root = client.get("/")
+    assert root.status_code == 200
+    assert "AbstractCore Server" in root.text
+    assert client.get("/favicon.ico").status_code == 204
 
     r = client.post(
         "/v1/chat/completions",

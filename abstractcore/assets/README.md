@@ -20,7 +20,8 @@ This module contains static resources that are referenced throughout AbstractCor
 ```
 assets/
 ├── architecture_formats.json    (16.6 KB) - Message formatting for 30+ LLM architectures
-├── model_capabilities.json      (67.1 KB) - Capability database for 150+ models
+├── model_capabilities.json      (~248 KiB) - Capability database for 240 models
+├── model_capabilities.schema.json - JSON Schema contract for model capability metadata
 ├── session_schema.json          (10.6 KB) - JSON schema for session serialization
 ├── semantic_models.md           (36.8 KB) - Ontology selection guide (Dublin Core, Schema.org)
 ├── OCRA.ttf                     (15.9 KB) - OCR-A monospace font
@@ -115,6 +116,11 @@ with open("assets/architecture_formats.json") as f:
 
 **Size**: 67,073 bytes (~2,000 lines)
 
+**Schema**: `model_capabilities.schema.json` declares the reusable JSON Schema
+contract. Python tests in `abstractcore/tests/assets/test_model_capabilities_schema.py`
+remain the semantic enforcement layer for allowed route kinds, modalities, and
+cross-field invariants.
+
 **Structure**:
 ```json
 {
@@ -149,7 +155,7 @@ with open("assets/architecture_formats.json") as f:
 }
 ```
 
-**Coverage** (150+ models):
+**Coverage** (240 models):
 - **OpenAI**: gpt-4, gpt-4-turbo, gpt-4o, gpt-4o-mini, gpt-3.5-turbo, o1, o3-mini
 - **Anthropic**: claude-3-5-sonnet, claude-3-5-haiku, claude-3-opus, claude-3-sonnet, claude-3-haiku
 - **Google**: gemini-2.0-flash, gemini-1.5-pro, gemini-1.5-flash
@@ -184,6 +190,34 @@ with open("assets/architecture_formats.json") as f:
   - `native`: provider receives `video/*` directly (no conversion)
   - `frames`: AbstractCore samples frames and routes them through image/vision handling
   - `none`: video inputs are unsupported (will error unless a custom enrichment path is added)
+
+#### Route-Keyed Model Capabilities
+- `capability_routes` - Native model I/O metadata grouped by route kind:
+
+  ```json
+  {
+    "capability_routes": {
+      "input": ["text", "image", "video"],
+      "output": ["text"],
+      "embedding": ["text"]
+    }
+  }
+  ```
+
+  - Allowed kinds: `input`, `output`, `embedding`, `rerank`.
+  - Allowed modalities: `text`, `image`, `video`, `voice`, `sound`, `music`, `scene3d`.
+  - `audio` is accepted by route filters as an alias, but registry entries store
+    the canonical `sound` modality. Use `voice` for speech and `music` for music.
+  - Explicit route metadata is precise. For example, an audio-only captioner can
+    declare `"input": ["sound"]` and `"output": ["text"]` without being treated
+    as a generic text-input model.
+  - Existing broad booleans remain for compatibility. Route-aware callers should
+    use `abstractcore.providers.model_capabilities.get_model_capability_routes()`
+    or `model_supports_capability_route()` instead of reading raw booleans.
+
+`capability_routes` describes model support only. It must not contain configured
+default source/status/action fields, provider readiness, install/download state,
+or capability plugin catalog data.
 
 **Important**: these flags describe **native provider/model I/O** and AbstractCore’s explicit media policies. They do not
 imply “the framework can always make it work” via optional enrichment plugins (e.g., STT or image captioning).
@@ -845,7 +879,7 @@ def test_ocr_fonts():
 The assets module provides critical static resources for AbstractCore:
 
 1. **architecture_formats.json**: Enables architecture detection and message formatting for 30+ model families
-2. **model_capabilities.json**: Comprehensive capability database for 150+ models across all providers
+2. **model_capabilities.json**: Comprehensive capability database for 240 models across all providers
 3. **session_schema.json**: Formal schema for session serialization with summary, assessment, and fact extraction
 4. **semantic_models.md**: Ontology selection guide for semantic knowledge representation
 5. **OCR fonts**: ISO-standard monospace fonts for glyph compression

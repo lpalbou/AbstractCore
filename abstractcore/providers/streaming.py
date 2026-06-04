@@ -64,6 +64,12 @@ class IncrementalToolDetector:
                 'start': r'<\|tool_call>',
                 'end': r'<tool_call\|>',
             },
+            # Liquid LFM2.5 special-token tool blocks:
+            #   <|tool_call_start|>[tool_name(arg="value")]<|tool_call_end|>
+            'liquid': {
+                'start': r'<\|tool_call_start\|>',
+                'end': r'<\|tool_call_end\|>',
+            },
             # Harmony/ChatML-style tool transcript (no explicit closing tag; ends at end of JSON after <|message|>).
             'harmony': {
                 'start': r'<\|channel\|>',
@@ -124,7 +130,13 @@ class IncrementalToolDetector:
 
         # Special-token tools (Qwen-style). Some "prompted" models share this convention.
         if tool_format == "special_token" or (tool_format == "prompted" and message_format == "im_start_end"):
-            return [self.patterns["qwen"], self.patterns["gemma4"], self.patterns["llama"], self.patterns["xml"]]
+            return [
+                self.patterns["qwen"],
+                self.patterns["gemma4"],
+                self.patterns["liquid"],
+                self.patterns["llama"],
+                self.patterns["xml"],
+            ]
 
         # XML-wrapped tools.
         if tool_format in {"xml", "glm_xml"}:
@@ -371,6 +383,7 @@ class IncrementalToolDetector:
             '<fu', '<fun', '<func', '<funct', '<functi', '<functio', '<function',  # <function_call>
             '<tool', '<tool_', '<tool_c', '<tool_ca', '<tool_cal',  # <tool_call>
             '<|t', '<|to', '<|too', '<|tool', '<|tool_', '<|tool_c',  # <|tool_call|>
+            '<|tool_call_s', '<|tool_call_sta', '<|tool_call_start',  # <|tool_call_start|>
             '<|c', '<|ch', '<|cha', '<|chan', '<|chann', '<|channe', '<|channel',  # <|channel|>
             '<|m', '<|me', '<|mes', '<|mess', '<|messa', '<|messag', '<|message',  # <|message|>
         ]
@@ -381,7 +394,7 @@ class IncrementalToolDetector:
                 return True
 
         # Also check if we have the start of any tag pattern in the middle
-        for pattern_partial in ['<function', '<tool_call', '<|tool', '```tool']:
+        for pattern_partial in ['<function', '<tool_call', '<|tool', '<|tool_call_start', '```tool']:
             if pattern_partial in tail:
                 return True
         if '<|channel' in tail or '<|message' in tail:
@@ -442,6 +455,15 @@ class IncrementalToolDetector:
             arguments = parsed_args if isinstance(parsed_args, dict) else {}
             if isinstance(name, str) and name.strip():
                 return ToolCall(name=name.strip(), arguments=arguments, call_id=None)
+
+        try:
+            from ..tools.parser import _parse_pythonic_tool_payload
+
+            pythonic_calls = _parse_pythonic_tool_payload(cleaned)
+        except Exception:
+            pythonic_calls = []
+        if pythonic_calls:
+            return pythonic_calls[0]
 
         # Handle missing braces (best-effort).
         if cleaned.count("{") > cleaned.count("}"):

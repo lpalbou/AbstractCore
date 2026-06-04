@@ -1117,12 +1117,24 @@ class OpenAIProvider(BaseProvider):
             available_models = [model.id for model in models.data]
             input_capabilities = kwargs.get('input_capabilities')
             output_capabilities = kwargs.get('output_capabilities')
+            capability_routes = kwargs.get('capability_routes')
 
             output_values = {
                 str(getattr(cap, "value", cap)).strip().lower()
                 for cap in (output_capabilities or [])
             }
-            embeddings_requested = "embeddings" in output_values
+            route_values = set()
+            route_source = [capability_routes] if isinstance(capability_routes, str) else (capability_routes or [])
+            for route in route_source:
+                route_values.update(
+                    part.strip().lower().replace(":", ".")
+                    for part in str(route or "").split(",")
+                    if part.strip()
+                )
+            embeddings_requested = "embeddings" in output_values or any(
+                route.startswith("embedding.") or route in {"embedding", "embeddings", "output.embedding", "output.embeddings"}
+                for route in route_values
+            )
 
             if embeddings_requested:
                 embedding_models = sorted(
@@ -1133,11 +1145,12 @@ class OpenAIProvider(BaseProvider):
                     ],
                     reverse=True,
                 )
-                if input_capabilities or output_capabilities:
+                if input_capabilities or output_capabilities or capability_routes:
                     embedding_models = filter_models_by_capabilities(
                         embedding_models,
                         input_capabilities=input_capabilities,
                         output_capabilities=output_capabilities,
+                        capability_routes=capability_routes,
                     )
                 return embedding_models
 
@@ -1145,12 +1158,18 @@ class OpenAIProvider(BaseProvider):
 
             for model_id in available_models:
                 # Include GPT models for chat completions
-                if any(pattern in model_id for pattern in [
-                    "gpt-3.5", "gpt-4", "gpt-5", "gpt-o1", "o1-",  # Standard patterns
-                    "text-davinci", "code-davinci"  # Legacy but still chat-capable
-                ]):
+                model_id_s = str(model_id)
+                model_id_l = model_id_s.lower()
+                if (
+                    any(pattern in model_id_l for pattern in [
+                        "gpt-3.5", "gpt-4", "gpt-5", "gpt-o1",
+                        "text-davinci", "code-davinci"  # Legacy but still chat-capable
+                    ])
+                    or model_id_l in {"o1", "o1-pro", "o3", "o3-pro", "o4-mini", "chat-latest"}
+                    or model_id_l.startswith(("o1-", "o3-", "o4-"))
+                ):
                     # Exclude embedding, fine-tuning, and other non-chat models
-                    if not any(exclude in model_id for exclude in [
+                    if not any(exclude in model_id_l for exclude in [
                         "embedding", "similarity", "search", "edit",
                         "insert", "davinci-002", "babbage", "ada", "curie"
                     ]):
@@ -1159,11 +1178,12 @@ class OpenAIProvider(BaseProvider):
             chat_models = sorted(chat_models, reverse=True)  # Latest models first
 
             # Apply new capability filtering if provided
-            if input_capabilities or output_capabilities:
+            if input_capabilities or output_capabilities or capability_routes:
                 chat_models = filter_models_by_capabilities(
                     chat_models, 
                     input_capabilities=input_capabilities,
-                    output_capabilities=output_capabilities
+                    output_capabilities=output_capabilities,
+                    capability_routes=capability_routes,
                 )
 
 

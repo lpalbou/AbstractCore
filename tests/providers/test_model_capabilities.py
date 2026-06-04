@@ -10,10 +10,14 @@ from unittest.mock import Mock, patch
 from abstractcore.providers.model_capabilities import (
     ModelInputCapability,
     ModelOutputCapability,
+    get_model_capability_routes,
     get_model_input_capabilities,
     get_model_output_capabilities,
+    model_matches_capability_routes,
     model_matches_input_capabilities,
     model_matches_output_capabilities,
+    model_supports_capability_route,
+    normalize_capability_route_filter,
     filter_models_by_capabilities,
     get_capability_summary
 )
@@ -29,11 +33,99 @@ class TestModelCapabilityEnums:
         assert ModelInputCapability.IMAGE.value == "image"
         assert ModelInputCapability.AUDIO.value == "audio"
         assert ModelInputCapability.VIDEO.value == "video"
+        assert ModelInputCapability.VOICE.value == "voice"
+        assert ModelInputCapability.SOUND.value == "sound"
+        assert ModelInputCapability.MUSIC.value == "music"
 
     def test_output_capability_values(self):
         """Test that output capability enum has correct values."""
         assert ModelOutputCapability.TEXT.value == "text"
         assert ModelOutputCapability.EMBEDDINGS.value == "embeddings"
+        assert ModelOutputCapability.IMAGE.value == "image"
+        assert ModelOutputCapability.VIDEO.value == "video"
+        assert ModelOutputCapability.VOICE.value == "voice"
+        assert ModelOutputCapability.SOUND.value == "sound"
+        assert ModelOutputCapability.MUSIC.value == "music"
+
+
+class TestCapabilityRouteHelpers:
+    """Test route-key capability helpers."""
+
+    def test_normalize_capability_route_filter_accepts_comma_and_aliases(self):
+        assert normalize_capability_route_filter(["input.image,output.text", "output.embeddings"]) == [
+            "input.image",
+            "output.text",
+            "embedding.text",
+        ]
+
+    @patch('abstractcore.providers.model_capabilities.get_model_capabilities')
+    def test_get_model_capability_routes_from_explicit_metadata(self, mock_get_caps):
+        mock_get_caps.return_value = {
+            "vision_support": True,
+            "audio_support": False,
+            "video_support": True,
+            "video_input_mode": "native",
+            "capability_routes": {
+                "input": ["image", "video"],
+                "output": ["text"],
+            },
+        }
+
+        routes = get_model_capability_routes("qwen3.6-35b-a3b")
+
+        assert "input.image" in routes
+        assert "input.video" in routes
+        assert "output.text" in routes
+        assert "input.text" not in routes
+
+    @patch('abstractcore.providers.model_capabilities.get_model_capabilities')
+    def test_get_model_capability_routes_accepts_legacy_route_key_metadata(self, mock_get_caps):
+        mock_get_caps.return_value = {
+            "vision_support": True,
+            "audio_support": False,
+            "video_support": True,
+            "video_input_mode": "native",
+            "capability_routes": {
+                "input.image": ["image_understanding"],
+                "input.video": ["video_understanding"],
+                "output.text": ["text_generation"],
+            },
+        }
+
+        assert get_model_capability_routes("legacy-vlm") == [
+            "input.image",
+            "input.video",
+            "output.text",
+        ]
+
+    @patch('abstractcore.providers.model_capabilities.get_model_capabilities')
+    def test_get_model_capability_routes_maps_broad_audio_to_sound(self, mock_get_caps):
+        mock_get_caps.return_value = {
+            "vision_support": False,
+            "audio_support": True,
+            "video_support": False,
+            "video_input_mode": "none",
+        }
+
+        routes = get_model_capability_routes("audio-capable-model")
+
+        assert "input.sound" in routes
+        assert "output.text" in routes
+
+    def test_model_matches_capability_routes_from_real_asset(self):
+        assert model_matches_capability_routes(
+            "qwen3.6-35b-a3b",
+            ["input.image", "input.video", "output.text"],
+        )
+        assert not model_matches_capability_routes(
+            "qwen3.6-35b-a3b",
+            ["input.sound", "output.text"],
+        )
+
+    def test_model_supports_audio_specific_routes_from_real_asset(self):
+        assert model_supports_capability_route("qwen3-omni-30b-a3b-captioner", "input.sound")
+        assert model_supports_capability_route("qwen3-omni-30b-a3b-captioner", "input.music")
+        assert not model_supports_capability_route("qwen3-omni-30b-a3b-captioner", "input.text")
 
 
 class TestCapabilityDetection:
@@ -78,7 +170,8 @@ class TestCapabilityDetection:
         assert ModelInputCapability.TEXT in caps
         assert ModelInputCapability.IMAGE in caps
         assert ModelInputCapability.AUDIO in caps
-        assert len(caps) == 3
+        assert ModelInputCapability.SOUND in caps
+        assert len(caps) == 4
 
     @patch('abstractcore.providers.model_capabilities.get_model_capabilities')
     def test_get_model_input_capabilities_error_fallback(self, mock_get_caps):
@@ -258,6 +351,26 @@ class TestModelFiltering:
 
         assert filtered == models
 
+    def test_filter_models_by_capability_routes(self):
+        """Test filtering models by precise route keys."""
+        models = [
+            "qwen3.6-35b-a3b",
+            "qwen3-omni-30b-a3b-captioner",
+            "nomic-embed-text-v1.5",
+        ]
+
+        sound_text_models = filter_models_by_capabilities(
+            models,
+            capability_routes=["input.sound", "output.text"],
+        )
+        assert sound_text_models == ["qwen3-omni-30b-a3b-captioner"]
+
+        embedding_models = filter_models_by_capabilities(
+            models,
+            capability_routes="embedding.text",
+        )
+        assert embedding_models == ["nomic-embed-text-v1.5"]
+
     @patch('abstractcore.providers.model_capabilities.get_model_capabilities')
     def test_filter_models_by_capabilities_error_handling(self, mock_get_caps):
         """Test that models with capability detection errors fall back to text-only."""
@@ -298,12 +411,17 @@ class TestModelFiltering:
 class TestCapabilitySummary:
     """Test capability summary functionality."""
 
+    @patch('abstractcore.providers.model_capabilities.get_model_capability_routes')
     @patch('abstractcore.providers.model_capabilities.get_model_input_capabilities')
     @patch('abstractcore.providers.model_capabilities.get_model_output_capabilities')
-    def test_get_capability_summary_text_only(self, mock_get_output_caps, mock_get_input_caps):
+    def test_get_capability_summary_text_only(self, mock_get_output_caps, mock_get_input_caps, mock_get_routes):
         """Test capability summary for text-only model."""
         mock_get_input_caps.return_value = [ModelInputCapability.TEXT]
         mock_get_output_caps.return_value = [ModelOutputCapability.TEXT]
+        mock_get_routes.return_value = {
+            "input.text",
+            "output.text",
+        }
 
         summary = get_capability_summary("gpt-4")
 
@@ -311,18 +429,29 @@ class TestCapabilitySummary:
             'model_name': 'gpt-4',
             'input_capabilities': ['text'],
             'output_capabilities': ['text'],
+            'capability_routes': {
+                "input": ["text"],
+                "output": ["text"],
+            },
+            'capability_route_keys': ["input.text", "output.text"],
             'is_multimodal': False,
             'is_embedding_model': False
         }
 
         assert summary == expected
 
+    @patch('abstractcore.providers.model_capabilities.get_model_capability_routes')
     @patch('abstractcore.providers.model_capabilities.get_model_input_capabilities')
     @patch('abstractcore.providers.model_capabilities.get_model_output_capabilities')
-    def test_get_capability_summary_vision(self, mock_get_output_caps, mock_get_input_caps):
+    def test_get_capability_summary_vision(self, mock_get_output_caps, mock_get_input_caps, mock_get_routes):
         """Test capability summary for vision model."""
         mock_get_input_caps.return_value = [ModelInputCapability.TEXT, ModelInputCapability.IMAGE]
         mock_get_output_caps.return_value = [ModelOutputCapability.TEXT]
+        mock_get_routes.return_value = {
+            "input.text",
+            "input.image",
+            "output.text",
+        }
 
         summary = get_capability_summary("gpt-4-vision-preview")
 
@@ -330,18 +459,28 @@ class TestCapabilitySummary:
             'model_name': 'gpt-4-vision-preview',
             'input_capabilities': ['text', 'image'],
             'output_capabilities': ['text'],
+            'capability_routes': {
+                "input": ["text", "image"],
+                "output": ["text"],
+            },
+            'capability_route_keys': ["input.text", "input.image", "output.text"],
             'is_multimodal': True,
             'is_embedding_model': False
         }
 
         assert summary == expected
 
+    @patch('abstractcore.providers.model_capabilities.get_model_capability_routes')
     @patch('abstractcore.providers.model_capabilities.get_model_input_capabilities')
     @patch('abstractcore.providers.model_capabilities.get_model_output_capabilities')
-    def test_get_capability_summary_embedding(self, mock_get_output_caps, mock_get_input_caps):
+    def test_get_capability_summary_embedding(self, mock_get_output_caps, mock_get_input_caps, mock_get_routes):
         """Test capability summary for embedding model."""
         mock_get_input_caps.return_value = [ModelInputCapability.TEXT]
         mock_get_output_caps.return_value = [ModelOutputCapability.EMBEDDINGS]
+        mock_get_routes.return_value = {
+            "input.text",
+            "embedding.text",
+        }
 
         summary = get_capability_summary("text-embedding-3-small")
 
@@ -349,6 +488,11 @@ class TestCapabilitySummary:
             'model_name': 'text-embedding-3-small',
             'input_capabilities': ['text'],
             'output_capabilities': ['embeddings'],
+            'capability_routes': {
+                "input": ["text"],
+                "embedding": ["text"],
+            },
+            'capability_route_keys': ["input.text", "embedding.text"],
             'is_multimodal': False,
             'is_embedding_model': True
         }

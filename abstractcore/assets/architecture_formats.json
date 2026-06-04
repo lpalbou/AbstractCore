@@ -508,7 +508,7 @@
 		          "top_k": 64
 		        },
 		        "prompt_cache_position_strategy": "dynamic_cache_cumulative_length",
-		        "patterns": ["gemma-4", "gemma4", "google/gemma-4"]
+		        "patterns": ["gemma-4", "gemma4", "gemma4_unified", "gemma4-unified", "google/gemma-4"]
 		      },
 	    "gemma2": {
 	      "description": "Google's Gemma 2 architecture (June 2024)",
@@ -711,8 +711,9 @@
       "user_suffix": "<|im_end|>\n",
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-      "tool_format": "json",
-      "patterns": ["lfm2.5-", "lfm2-"]
+      "tool_format": "special_token",
+      "tool_prefix": "<|tool_call_start|>",
+      "patterns": ["lfm2_moe", "lfm2.5-", "lfm2-"]
     },
     "seed_oss": {
       "description": "ByteDance's Seed-OSS long-context architecture (August 2025)",

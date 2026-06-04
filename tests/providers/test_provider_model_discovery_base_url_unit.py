@@ -27,6 +27,34 @@ def test_openai_model_discovery_uses_base_url(monkeypatch) -> None:
     assert captured["base_url"] == "https://openai-proxy.example/v1"
 
 
+def test_openai_model_discovery_includes_current_reasoning_ids(monkeypatch) -> None:
+    from abstractcore.providers.openai_provider import OpenAIProvider
+
+    class FakeModels:
+        def list(self):
+            return types.SimpleNamespace(
+                data=[
+                    types.SimpleNamespace(id="gpt-5.5"),
+                    types.SimpleNamespace(id="o3"),
+                    types.SimpleNamespace(id="o3-pro"),
+                    types.SimpleNamespace(id="o4-mini"),
+                    types.SimpleNamespace(id="chat-latest"),
+                    types.SimpleNamespace(id="text-embedding-3-small"),
+                ]
+            )
+
+    class FakeOpenAI:
+        def __init__(self, **_kwargs):
+            self.models = FakeModels()
+
+    monkeypatch.setitem(__import__("sys").modules, "openai", types.SimpleNamespace(OpenAI=FakeOpenAI))
+
+    models = OpenAIProvider.list_available_models(api_key="openai-key")
+
+    assert {"gpt-5.5", "o3", "o3-pro", "o4-mini", "chat-latest"} <= set(models)
+    assert "text-embedding-3-small" not in models
+
+
 def test_anthropic_model_discovery_uses_base_url(monkeypatch) -> None:
     from abstractcore.providers.anthropic_provider import AnthropicProvider
 

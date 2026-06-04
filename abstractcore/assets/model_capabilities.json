@@ -13,7 +13,15 @@
       "aliases": [],
       "max_tokens": 128000,
       "video_support": false,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-4-turbo": {
       "max_output_tokens": 4096,
@@ -34,7 +42,17 @@
       ],
       "max_tokens": 128000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-4-turbo-with-vision": {
       "max_output_tokens": 4096,
@@ -56,7 +74,17 @@
       ],
       "max_tokens": 128000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-4o": {
       "max_output_tokens": 16384,
@@ -67,6 +95,16 @@
       "vision_support": true,
       "audio_support": false,
       "video_support": false,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
       "image_resolutions": [
         "variable"
       ],
@@ -103,7 +141,17 @@
       "aliases": [],
       "max_tokens": 128000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-4o-mini": {
       "max_output_tokens": 16000,
@@ -118,7 +166,17 @@
       "aliases": [],
       "max_tokens": 128000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-3.5-turbo": {
       "max_output_tokens": 4096,
@@ -133,7 +191,15 @@
       "aliases": [],
       "max_tokens": 16385,
       "video_support": false,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "o1": {
       "max_output_tokens": 32768,
@@ -143,7 +209,12 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "unsupported_parameters": ["temperature", "top_p", "frequency_penalty", "presence_penalty"],
+      "unsupported_parameters": [
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty"
+      ],
       "token_param_name": "max_completion_tokens",
       "notes": "Reasoning model with internal chain-of-thought. Rejects temperature/top_p/frequency_penalty/presence_penalty (empirically verified 2026-02-22). Accepts seed",
       "source": "OpenAI official docs + empirical API testing 2026-02-22",
@@ -152,7 +223,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "o1-mini": {
       "max_output_tokens": 65536,
@@ -162,7 +241,12 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "unsupported_parameters": ["temperature", "top_p", "frequency_penalty", "presence_penalty"],
+      "unsupported_parameters": [
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty"
+      ],
       "token_param_name": "max_completion_tokens",
       "notes": "Deprecated small reasoning model alternative to o1. Parameter restrictions inherited from o1",
       "source": "OpenAI official docs",
@@ -171,7 +255,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "o3": {
       "max_output_tokens": 32768,
@@ -182,7 +274,12 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "unsupported_parameters": ["temperature", "top_p", "frequency_penalty", "presence_penalty"],
+      "unsupported_parameters": [
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty"
+      ],
       "token_param_name": "max_completion_tokens",
       "notes": "Reasoning model for complex tasks, succeeded by GPT-5. May hallucinate tools with complex sets. Rejects temperature (but temperature=1 accepted)/top_p/frequency_penalty/presence_penalty (empirically verified o3-mini 2026-02-22). Accepts seed",
       "source": "OpenAI official docs + empirical API testing 2026-02-22",
@@ -190,7 +287,15 @@
       "aliases": [],
       "max_tokens": 128000,
       "video_support": false,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "o3-mini": {
       "max_output_tokens": 32768,
@@ -201,7 +306,12 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "unsupported_parameters": ["temperature", "top_p", "frequency_penalty", "presence_penalty"],
+      "unsupported_parameters": [
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty"
+      ],
       "token_param_name": "max_completion_tokens",
       "notes": "Small reasoning model alternative to o3. Rejects temperature (but temperature=1 accepted)/top_p/frequency_penalty/presence_penalty (empirically verified 2026-02-22). Accepts seed. Known issues in Assistants API",
       "source": "OpenAI official docs + empirical API testing 2026-02-22",
@@ -209,7 +319,15 @@
       "aliases": [],
       "max_tokens": 128000,
       "video_support": false,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "claude-3.5-sonnet": {
       "max_output_tokens": 8192,
@@ -234,7 +352,17 @@
       "aliases": [],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "claude-3.7-sonnet": {
       "max_output_tokens": 128000,
@@ -253,7 +381,17 @@
       "aliases": [],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "claude-3.5-haiku": {
       "max_output_tokens": 8192,
@@ -274,7 +412,17 @@
       ],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "claude-3-opus": {
       "max_output_tokens": 4096,
@@ -292,7 +440,17 @@
       "aliases": [],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "claude-3-sonnet": {
       "max_output_tokens": 4096,
@@ -310,7 +468,17 @@
       "aliases": [],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "claude-3-haiku": {
       "max_output_tokens": 4096,
@@ -328,7 +496,17 @@
       "aliases": [],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "claude-haiku-4-5": {
       "max_output_tokens": 64000,
@@ -343,7 +521,12 @@
       "audio_support": false,
       "thinking_support": true,
       "thinking_control_mode": "budget",
-      "reasoning_levels": ["low", "medium", "high", "xhigh"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "notes": "Claude Haiku 4.5 with extended thinking. Fastest model with near-frontier intelligence",
       "source": "Anthropic official docs 2025",
       "canonical_name": "claude-haiku-4-5",
@@ -353,7 +536,17 @@
       ],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "claude-4-opus": {
       "max_output_tokens": 4096,
@@ -368,14 +561,29 @@
       "audio_support": false,
       "thinking_support": true,
       "thinking_control_mode": "budget",
-      "reasoning_levels": ["low", "medium", "high", "xhigh"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "notes": "Claude 4 Opus with extended thinking",
       "source": "Anthropic official docs",
       "canonical_name": "claude-4-opus",
       "aliases": [],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "claude-4.1-opus": {
       "max_output_tokens": 4096,
@@ -390,14 +598,29 @@
       "audio_support": false,
       "thinking_support": true,
       "thinking_control_mode": "budget",
-      "reasoning_levels": ["low", "medium", "high", "xhigh"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "notes": "Claude 4.1 Opus with extended thinking",
       "source": "Anthropic official docs",
       "canonical_name": "claude-4.1-opus",
       "aliases": [],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "claude-4-sonnet": {
       "max_output_tokens": 8192,
@@ -412,14 +635,29 @@
       "audio_support": false,
       "thinking_support": true,
       "thinking_control_mode": "budget",
-      "reasoning_levels": ["low", "medium", "high", "xhigh"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "notes": "Claude 4 Sonnet with extended thinking",
       "source": "Anthropic official docs",
       "canonical_name": "claude-4-sonnet",
       "aliases": [],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "claude-4.5-sonnet": {
       "max_output_tokens": 64000,
@@ -434,7 +672,12 @@
       "audio_support": false,
       "thinking_support": true,
       "thinking_control_mode": "budget",
-      "reasoning_levels": ["low", "medium", "high", "xhigh"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "notes": "Claude 4.5 Sonnet with extended thinking. Anthropic API enforces a 64K max output token cap.",
       "source": "Anthropic official docs 2025",
       "canonical_name": "claude-4.5-sonnet",
@@ -445,7 +688,17 @@
       ],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "claude-opus-4-5": {
       "max_output_tokens": 64000,
@@ -460,7 +713,12 @@
       "audio_support": false,
       "thinking_support": true,
       "thinking_control_mode": "budget",
-      "reasoning_levels": ["low", "medium", "high", "xhigh"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "notes": "Claude Opus 4.5 with extended thinking. Anthropic API enforces a 64K max output token cap.",
       "source": "Anthropic official docs 2025",
       "canonical_name": "claude-opus-4-5",
@@ -470,7 +728,17 @@
       ],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "claude-opus-4-6": {
       "max_output_tokens": 128000,
@@ -487,7 +755,12 @@
       "thinking_budget": true,
       "thinking_control_mode": "adaptive",
       "max_effort_supported": true,
-      "reasoning_levels": ["low", "medium", "high", "xhigh"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "notes": "Claude Opus 4.6. Most intelligent Anthropic model for building agents and coding. Extended + adaptive thinking",
       "source": "Anthropic official docs 2026",
       "canonical_name": "claude-opus-4-6",
@@ -496,7 +769,17 @@
       ],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "claude-sonnet-4-6": {
       "max_output_tokens": 64000,
@@ -513,7 +796,12 @@
       "thinking_budget": true,
       "thinking_control_mode": "adaptive",
       "max_effort_supported": false,
-      "reasoning_levels": ["low", "medium", "high", "xhigh"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "notes": "Claude Sonnet 4.6. Best combination of speed and intelligence. Extended + adaptive thinking",
       "source": "Anthropic official docs 2026",
       "canonical_name": "claude-sonnet-4-6",
@@ -522,7 +810,58 @@
       ],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "claude-opus-4-8": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "thinking_control_mode": "adaptive",
+      "max_effort_supported": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "notes": "Current Anthropic flagship for complex reasoning, long-horizon agentic coding, and high-autonomy work. Official docs list text and image input, text output, vision, 1M context on Claude API, 128K max output, adaptive thinking, and default high effort.",
+      "source": "Anthropic Claude models overview (accessed 2026-06-03)",
+      "canonical_name": "claude-opus-4-8",
+      "aliases": [
+        "anthropic/claude-opus-4-8"
+      ],
+      "max_tokens": 1000000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "cogito:3b": {
       "max_output_tokens": 4096,
@@ -543,7 +882,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "cogito:8b": {
       "max_output_tokens": 4096,
@@ -563,7 +910,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "cogito:14b": {
       "max_output_tokens": 4096,
@@ -583,7 +938,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "cogito:32b": {
       "max_output_tokens": 4096,
@@ -603,7 +966,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "cogito:70b": {
       "max_output_tokens": 4096,
@@ -623,7 +994,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama-3.2-1b": {
       "max_output_tokens": 2048,
@@ -639,7 +1018,15 @@
       "max_tokens": 8192,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama-3.2-3b": {
       "max_output_tokens": 2048,
@@ -655,7 +1042,15 @@
       "max_tokens": 8192,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama-3.2-11b-vision": {
       "max_output_tokens": 2048,
@@ -674,7 +1069,17 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama-3.3-70b": {
       "max_output_tokens": 8192,
@@ -690,7 +1095,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama-3.1-8b": {
       "max_output_tokens": 8192,
@@ -706,7 +1119,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama-3.1-70b": {
       "max_output_tokens": 8192,
@@ -722,7 +1143,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama-3.1-405b": {
       "max_output_tokens": 8192,
@@ -738,7 +1167,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama-4": {
       "max_output_tokens": 8192,
@@ -754,7 +1191,18 @@
       "max_tokens": 10000000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llava-next-video-7b-hf": {
       "max_output_tokens": 1024,
@@ -773,7 +1221,17 @@
       ],
       "max_tokens": 10250,
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen2.5-0.5b": {
       "max_output_tokens": 8192,
@@ -789,7 +1247,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen2.5-1.5b": {
       "max_output_tokens": 8192,
@@ -805,7 +1271,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen2.5-3b": {
       "max_output_tokens": 8192,
@@ -821,7 +1295,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen2.5-7b": {
       "max_output_tokens": 8192,
@@ -837,7 +1319,15 @@
       "max_tokens": 131072,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen2.5-14b": {
       "max_output_tokens": 8192,
@@ -853,7 +1343,15 @@
       "max_tokens": 131072,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen2.5-32b": {
       "max_output_tokens": 8192,
@@ -869,7 +1367,15 @@
       "max_tokens": 131072,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen2.5-72b": {
       "max_output_tokens": 8192,
@@ -885,7 +1391,15 @@
       "max_tokens": 131072,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-0.6b": {
       "max_output_tokens": 8192,
@@ -903,7 +1417,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-1.7b": {
       "max_output_tokens": 8192,
@@ -921,7 +1443,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-4b": {
       "max_output_tokens": 8192,
@@ -939,7 +1469,15 @@
       "max_tokens": 131072,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-4b-2507": {
       "max_output_tokens": 8192,
@@ -958,7 +1496,15 @@
       "max_tokens": 262144,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-4b-thinking-2507": {
       "max_output_tokens": 8192,
@@ -978,7 +1524,15 @@
       "max_tokens": 262144,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-32b": {
       "max_output_tokens": 8192,
@@ -996,7 +1550,15 @@
       "max_tokens": 131072,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "sera-32b": {
       "max_output_tokens": 8192,
@@ -1019,7 +1581,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "sera-32b-ga": {
       "max_output_tokens": 8192,
@@ -1042,7 +1612,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "sera-8b": {
       "max_output_tokens": 8192,
@@ -1065,7 +1643,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "sera-8b-ga": {
       "max_output_tokens": 8192,
@@ -1088,7 +1674,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-30b-a3b": {
       "max_output_tokens": 8192,
@@ -1106,7 +1700,15 @@
       "max_tokens": 40960,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-30b-a3b-2507": {
       "max_output_tokens": 8192,
@@ -1125,7 +1727,15 @@
       "max_tokens": 262144,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-coder-30b": {
       "max_output_tokens": 65536,
@@ -1150,7 +1760,15 @@
       "max_tokens": 262144,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen2-vl": {
       "max_output_tokens": 8192,
@@ -1168,7 +1786,17 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen2-audio-7b-instruct": {
       "max_output_tokens": 4096,
@@ -1182,6 +1810,17 @@
         "sound",
         "music"
       ],
+      "capability_routes": {
+        "input": [
+          "text",
+          "voice",
+          "sound",
+          "music"
+        ],
+        "output": [
+          "text"
+        ]
+      },
       "video_support": false,
       "architecture": "qwen2_audio",
       "model_type": "qwen2_audio",
@@ -1197,7 +1836,7 @@
         "qwen2audio:7b"
       ],
       "max_tokens": 8192,
-      "license": "Apache-2.0",
+      "license": "qwen-research",
       "max_tools": 0,
       "video_input_mode": "none"
     },
@@ -1218,7 +1857,17 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen2.5-omni-7b": {
       "max_output_tokens": 8192,
@@ -1233,6 +1882,20 @@
         "music"
       ],
       "video_support": true,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "voice",
+          "sound",
+          "music"
+        ],
+        "output": [
+          "text",
+          "voice"
+        ]
+      },
       "architecture": "qwen2_5_omni",
       "model_type": "qwen2_5_omni",
       "total_parameters": "7B",
@@ -1244,6 +1907,50 @@
         "Qwen/Qwen2.5-Omni-7B",
         "Qwen2.5-Omni-7B",
         "qwen2.5-omni:7b"
+      ],
+      "max_tokens": 32768,
+      "license": "qwen-research",
+      "max_tools": 0,
+      "video_input_mode": "native"
+    },
+    "qwen2.5-omni-3b": {
+      "max_output_tokens": 8192,
+      "tool_support": "none",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound",
+        "music"
+      ],
+      "video_support": true,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "voice",
+          "sound",
+          "music"
+        ],
+        "output": [
+          "text",
+          "voice"
+        ]
+      },
+      "architecture": "qwen2_5_omni",
+      "model_type": "qwen2_5_omni",
+      "total_parameters": "3B",
+      "model_class": "Qwen2_5OmniModel",
+      "notes": "Smaller Qwen2.5-Omni checkpoint for text, image, audio, and video input with text and speech response support. Its model card reports the same speech, sound-event, and music benchmark families as the 7B checkpoint, making it the smallest practical candidate for local input.music discovery.",
+      "source": "Hugging Face model card (Qwen/Qwen2.5-Omni-3B, accessed 2026-06-03)",
+      "canonical_name": "qwen2.5-omni-3b",
+      "aliases": [
+        "Qwen/Qwen2.5-Omni-3B",
+        "Qwen2.5-Omni-3B",
+        "qwen2.5-omni:3b"
       ],
       "max_tokens": 32768,
       "license": "Apache-2.0",
@@ -1262,6 +1969,16 @@
         "sound",
         "music"
       ],
+      "capability_routes": {
+        "input": [
+          "voice",
+          "sound",
+          "music"
+        ],
+        "output": [
+          "text"
+        ]
+      },
       "video_support": false,
       "thinking_support": false,
       "architecture": "audio_flamingo",
@@ -1279,6 +1996,131 @@
       "license": "other; non-commercial research only",
       "max_tools": 0,
       "video_input_mode": "none"
+    },
+    "moss-audio-4b-instruct": {
+      "max_output_tokens": 4096,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound",
+        "music"
+      ],
+      "video_support": false,
+      "thinking_support": false,
+      "architecture": "moss_audio",
+      "model_type": "moss_audio",
+      "total_parameters": "4.6B",
+      "notes": "Small OpenMOSS audio-understanding instruct model for speech recognition, environmental sound analysis, music understanding, audio QA, and captioning. Prefer this or the 4B Thinking variant for constrained local input.music setups before 8B/30B models.",
+      "source": "OpenMOSS MOSS-Audio model page and GitHub README (accessed 2026-06-03)",
+      "status": "candidate",
+      "canonical_name": "moss-audio-4b-instruct",
+      "aliases": [
+        "OpenMOSS-Team/MOSS-Audio-4B-Instruct",
+        "moss-audio:4b-instruct"
+      ],
+      "max_tokens": 8192,
+      "license": "Apache-2.0",
+      "max_tools": 0,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "voice",
+          "sound",
+          "music"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "moss-audio-4b-thinking": {
+      "max_output_tokens": 4096,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound",
+        "music"
+      ],
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "moss_audio",
+      "model_type": "moss_audio",
+      "total_parameters": "4.6B",
+      "notes": "Small OpenMOSS audio-understanding thinking model for speech, environmental sound, music understanding, audio captioning, time-aware QA, and reasoning. Good first recommendation for 4-bit local input.music when available.",
+      "source": "OpenMOSS MOSS-Audio model page and GitHub README (accessed 2026-06-03)",
+      "status": "candidate",
+      "canonical_name": "moss-audio-4b-thinking",
+      "aliases": [
+        "OpenMOSS-Team/MOSS-Audio-4B-Thinking",
+        "RumiLabs/MOSS-Audio-4B-Thinking-MLX-4bit",
+        "MOSS-Audio-4B-Thinking-MLX-4bit",
+        "moss-audio:4b-thinking"
+      ],
+      "max_tokens": 8192,
+      "license": "Apache-2.0",
+      "max_tools": 0,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "voice",
+          "sound",
+          "music"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "moss-audio-8b-instruct": {
+      "max_output_tokens": 4096,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound",
+        "music"
+      ],
+      "video_support": false,
+      "thinking_support": false,
+      "architecture": "moss_audio",
+      "model_type": "moss_audio",
+      "total_parameters": "8.6B",
+      "notes": "OpenMOSS audio-understanding instruct model for unified speech, environmental sound, music, captioning, QA, and reasoning workflows. Use when 4B quality is insufficient and the Thinking variant's reasoning trace is not needed.",
+      "source": "OpenMOSS MOSS-Audio model page and GitHub README (accessed 2026-06-03)",
+      "status": "candidate",
+      "canonical_name": "moss-audio-8b-instruct",
+      "aliases": [
+        "OpenMOSS-Team/MOSS-Audio-8B-Instruct",
+        "moss-audio:8b-instruct"
+      ],
+      "max_tokens": 8192,
+      "license": "Apache-2.0",
+      "max_tools": 0,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "voice",
+          "sound",
+          "music"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "moss-audio-8b-thinking": {
       "max_output_tokens": 4096,
@@ -1303,12 +2145,25 @@
       "canonical_name": "moss-audio-8b-thinking",
       "aliases": [
         "OpenMOSS-Team/MOSS-Audio-8B-Thinking",
+        "RumiLabs/MOSS-Audio-8B-Thinking-MLX-hybrid",
+        "MOSS-Audio-8B-Thinking-MLX-hybrid",
         "moss-audio:8b-thinking"
       ],
       "max_tokens": 8192,
       "license": "Apache-2.0",
       "max_tools": 0,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "voice",
+          "sound",
+          "music"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "phi-2": {
       "max_output_tokens": 2048,
@@ -1323,7 +2178,15 @@
       "max_tokens": 2048,
       "video_support": false,
       "max_tools": 0,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "phi-3-mini": {
       "max_output_tokens": 4096,
@@ -1339,7 +2202,15 @@
       "max_tokens": 4096,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "phi-3-small": {
       "max_output_tokens": 8192,
@@ -1354,7 +2225,15 @@
       "max_tokens": 8192,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "phi-3-medium": {
       "max_output_tokens": 4096,
@@ -1369,7 +2248,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "phi-3.5-mini": {
       "max_output_tokens": 4096,
@@ -1384,7 +2271,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "phi-3.5-moe": {
       "max_output_tokens": 4096,
@@ -1400,7 +2295,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "phi-3-vision": {
       "max_output_tokens": 4096,
@@ -1418,7 +2321,17 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "phi-4": {
       "max_output_tokens": 16000,
@@ -1434,7 +2347,15 @@
       "max_tokens": 16000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "mistral-7b": {
       "max_output_tokens": 8192,
@@ -1449,7 +2370,15 @@
       "max_tokens": 8192,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "mixtral-8x7b": {
       "max_output_tokens": 32768,
@@ -1465,7 +2394,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "mixtral-8x22b": {
       "max_output_tokens": 65536,
@@ -1480,7 +2417,15 @@
       "max_tokens": 65536,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "mistral-small": {
       "max_output_tokens": 32768,
@@ -1495,7 +2440,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "mistral-medium": {
       "max_output_tokens": 32768,
@@ -1510,7 +2463,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "mistral-medium-3.5-128b": {
       "max_output_tokens": 32768,
@@ -1557,7 +2518,17 @@
       "release_date": "2026-05",
       "license": "modified-mit",
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "mistral-large": {
       "max_output_tokens": 128000,
@@ -1572,7 +2543,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "codestral": {
       "max_output_tokens": 32768,
@@ -1588,7 +2567,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "magistral-small-2509": {
       "max_output_tokens": 8192,
@@ -1610,7 +2597,17 @@
       ],
       "max_tokens": 128000,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "Qwen/Qwen3-VL-8B-Instruct-FP8": {
       "max_output_tokens": 8192,
@@ -1636,7 +2633,17 @@
       ],
       "max_tokens": 262144,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama3.2-vision:11b": {
       "max_output_tokens": 4096,
@@ -1689,7 +2696,17 @@
       ],
       "max_tokens": 131072,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama3.2-vision:70b": {
       "max_output_tokens": 4096,
@@ -1717,7 +2734,17 @@
       ],
       "max_tokens": 131072,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama3.2-vision:90b": {
       "max_output_tokens": 4096,
@@ -1745,7 +2772,17 @@
       ],
       "max_tokens": 131072,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma-2b": {
       "max_output_tokens": 8192,
@@ -1760,7 +2797,15 @@
       "max_tokens": 8192,
       "video_support": false,
       "max_tools": 0,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma-7b": {
       "max_output_tokens": 8192,
@@ -1775,7 +2820,15 @@
       "max_tokens": 8192,
       "video_support": false,
       "max_tools": 0,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma2-9b": {
       "max_output_tokens": 8192,
@@ -1790,7 +2843,15 @@
       "max_tokens": 8192,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma2-27b": {
       "max_output_tokens": 8192,
@@ -1805,7 +2866,15 @@
       "max_tokens": 8192,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma3": {
       "max_output_tokens": 8192,
@@ -1821,23 +2890,35 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma-4-e2b-it": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 131072,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
       "vision_support": true,
       "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound"
+      ],
       "video_support": true,
       "image_resolutions": [
         "variable"
       ],
       "max_image_tokens": 1120,
       "thinking_support": true,
-      "notes": "Gemma 4 E2B instruction-tuned multimodal model (text, image, audio, video), 128K context",
-      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "notes": "Gemma 4 E2B instruction-tuned multimodal model (text, image, audio, video input; text output), 128K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Model-card max_new_tokens=512/1024 values are examples, not limits.",
+      "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-E2B-it, accessed 2026-06-04). Context length: 128K / raw max_position_embeddings 131072. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
       "canonical_name": "gemma-4-e2b-it",
       "aliases": [
         "google/gemma-4-E2B-it",
@@ -1845,23 +2926,39 @@
       ],
       "max_tokens": 131072,
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "voice",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma-4-e4b-it": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 131072,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
       "vision_support": true,
       "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound"
+      ],
       "video_support": true,
       "image_resolutions": [
         "variable"
       ],
       "max_image_tokens": 1120,
       "thinking_support": true,
-      "notes": "Gemma 4 E4B instruction-tuned multimodal model (text, image, audio, video), 128K context",
-      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "notes": "Gemma 4 E4B instruction-tuned multimodal model (text, image, audio, video input; text output), 128K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Model-card max_new_tokens=512/1024 values are examples, not limits.",
+      "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-E4B-it, accessed 2026-06-04). Context length: 128K / raw max_position_embeddings 131072. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
       "canonical_name": "gemma-4-e4b-it",
       "aliases": [
         "google/gemma-4-E4B-it",
@@ -1869,10 +2966,64 @@
       ],
       "max_tokens": 131072,
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "voice",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "gemma-4-12b-it": {
+      "max_output_tokens": 262144,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound"
+      ],
+      "video_support": true,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_tokens": 1120,
+      "thinking_support": true,
+      "architecture": "gemma4",
+      "model_type": "gemma4_unified",
+      "notes": "Gemma 4 12B instruction-tuned unified multimodal model (text, image, audio, video input; text output). Official model cards list the 12B Unified context length as 256K tokens; current raw config exposes text_config.max_position_embeddings=131072 with proportional RoPE. No separate hard completion cap is published, so the registry records the card-level context-bounded model output maximum. Model-card max_new_tokens=512/1024 values are examples, not limits.",
+      "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-12B-it, accessed 2026-06-04). Model card context length: 256K. Raw config text_config.max_position_embeddings: 131072. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
+      "canonical_name": "gemma-4-12b-it",
+      "aliases": [
+        "google/gemma-4-12B-it",
+        "gemma-4-12B-it"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "voice",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma-4-26b-a4b-it": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 262144,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -1884,8 +3035,8 @@
       ],
       "max_image_tokens": 1120,
       "thinking_support": true,
-      "notes": "Gemma 4 26B A4B instruction-tuned MoE multimodal model (text, image, video), 256K context",
-      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "notes": "Gemma 4 26B A4B instruction-tuned MoE multimodal model (text, image, video input; text output), 256K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Provider route caps vary from 8K to 262K, so provider discovery should clamp lower when a route advertises a smaller limit.",
+      "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-26B-A4B-it, accessed 2026-06-04), plus OpenRouter endpoint metadata for provider-route cap variance. Context length: 256K / raw max_position_embeddings 262144. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
       "canonical_name": "gemma-4-26b-a4b-it",
       "aliases": [
         "google/gemma-4-26B-A4B-it",
@@ -1893,10 +3044,20 @@
       ],
       "max_tokens": 262144,
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma-4-31b-it": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 262144,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -1908,8 +3069,8 @@
       ],
       "max_image_tokens": 1120,
       "thinking_support": true,
-      "notes": "Gemma 4 31B instruction-tuned dense multimodal model (text, image, video), 256K context",
-      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "notes": "Gemma 4 31B instruction-tuned dense multimodal model (text, image, video input; text output), 256K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Provider route caps vary from 8K to 262K, so provider discovery should clamp lower when a route advertises a smaller limit.",
+      "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-31B-it, accessed 2026-06-04), plus OpenRouter endpoint metadata for provider-route cap variance. Context length: 256K / raw max_position_embeddings 262144. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
       "canonical_name": "gemma-4-31b-it",
       "aliases": [
         "google/gemma-4-31B-it",
@@ -1917,23 +3078,37 @@
       ],
       "max_tokens": 262144,
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma-4-e2b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 131072,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
       "vision_support": true,
       "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound"
+      ],
       "video_support": true,
       "image_resolutions": [
         "variable"
       ],
       "max_image_tokens": 1120,
       "thinking_support": true,
-      "notes": "Gemma 4 E2B pretrained multimodal model (text, image, audio, video), 128K context",
-      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "notes": "Gemma 4 E2B pretrained multimodal model (text, image, audio, video input; text output), 128K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Model-card max_new_tokens=512/1024 values are examples, not limits.",
+      "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-E2B, accessed 2026-06-04). Context length: 128K / raw max_position_embeddings 131072. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
       "canonical_name": "gemma-4-e2b",
       "aliases": [
         "google/gemma-4-E2B",
@@ -1941,23 +3116,39 @@
       ],
       "max_tokens": 131072,
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "voice",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma-4-e4b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 131072,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
       "vision_support": true,
       "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound"
+      ],
       "video_support": true,
       "image_resolutions": [
         "variable"
       ],
       "max_image_tokens": 1120,
       "thinking_support": true,
-      "notes": "Gemma 4 E4B pretrained multimodal model (text, image, audio, video), 128K context",
-      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "notes": "Gemma 4 E4B pretrained multimodal model (text, image, audio, video input; text output), 128K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Model-card max_new_tokens=512/1024 values are examples, not limits.",
+      "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-E4B, accessed 2026-06-04). Context length: 128K / raw max_position_embeddings 131072. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
       "canonical_name": "gemma-4-e4b",
       "aliases": [
         "google/gemma-4-E4B",
@@ -1965,10 +3156,68 @@
       ],
       "max_tokens": 131072,
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "voice",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "gemma-4-12b": {
+      "max_output_tokens": 262144,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "vision_support": true,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound"
+      ],
+      "video_support": true,
+      "image_resolutions": [
+        "variable"
+      ],
+      "max_image_tokens": 1120,
+      "thinking_support": true,
+      "architecture": "gemma4",
+      "model_type": "gemma4_unified",
+      "notes": "Gemma 4 12B pretrained unified multimodal model (text, image, audio, video input; text output). MLX 4-bit and 8-bit community conversions inherit these model I/O routes. Official model cards list the 12B Unified context length as 256K tokens; current raw config exposes text_config.max_position_embeddings=131072 with proportional RoPE. No separate hard completion cap is published, so the registry records the card-level context-bounded model output maximum.",
+      "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config, and MLX conversion cards (google/gemma-4-12B; mlx-community/gemma-4-12B-4bit/8bit, accessed 2026-06-04). Model card context length: 256K. Raw config text_config.max_position_embeddings: 131072. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
+      "canonical_name": "gemma-4-12b",
+      "aliases": [
+        "google/gemma-4-12B",
+        "gemma-4-12B",
+        "mlx-community/gemma-4-12B-4bit",
+        "mlx-community/gemma-4-12B-8bit",
+        "gemma-4-12B-4bit",
+        "gemma-4-12B-8bit"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "voice",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma-4-26b-a4b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 262144,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -1980,8 +3229,8 @@
       ],
       "max_image_tokens": 1120,
       "thinking_support": true,
-      "notes": "Gemma 4 26B A4B pretrained MoE multimodal model (text, image, video), 256K context",
-      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "notes": "Gemma 4 26B A4B pretrained MoE multimodal model (text, image, video input; text output), 256K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Provider route caps vary from 8K to 262K, so provider discovery should clamp lower when a route advertises a smaller limit.",
+      "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-26B-A4B, accessed 2026-06-04), plus OpenRouter endpoint metadata for provider-route cap variance. Context length: 256K / raw max_position_embeddings 262144. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
       "canonical_name": "gemma-4-26b-a4b",
       "aliases": [
         "google/gemma-4-26B-A4B",
@@ -1989,10 +3238,20 @@
       ],
       "max_tokens": 262144,
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma-4-31b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 262144,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -2004,8 +3263,8 @@
       ],
       "max_image_tokens": 1120,
       "thinking_support": true,
-      "notes": "Gemma 4 31B pretrained dense multimodal model (text, image, video), 256K context",
-      "source": "Google Gemma 4 model card (Hugging Face) / tokenizer_config.json",
+      "notes": "Gemma 4 31B pretrained dense multimodal model (text, image, video input; text output), 256K context. Official sources do not publish a separate hard completion cap; open-weight generation is bounded by the remaining context window. Provider route caps vary from 8K to 262K, so provider discovery should clamp lower when a route advertises a smaller limit.",
+      "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-31B, accessed 2026-06-04), plus OpenRouter endpoint metadata for provider-route cap variance. Context length: 256K / raw max_position_embeddings 262144. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
       "canonical_name": "gemma-4-31b",
       "aliases": [
         "google/gemma-4-31B",
@@ -2013,7 +3272,17 @@
       ],
       "max_tokens": 262144,
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "codegemma": {
       "max_output_tokens": 8192,
@@ -2029,7 +3298,15 @@
       "max_tokens": 8192,
       "video_support": false,
       "max_tools": 0,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "paligemma": {
       "max_output_tokens": 1024,
@@ -2050,7 +3327,17 @@
       "max_tokens": 8192,
       "video_support": false,
       "max_tools": 0,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "glm-4": {
       "max_output_tokens": 4096,
@@ -2066,7 +3353,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "glm-4-9b": {
       "max_output_tokens": 4096,
@@ -2082,7 +3377,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "glm-4-9b-0414-4bit": {
       "max_output_tokens": 4096,
@@ -2098,7 +3401,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "deepseek-r1": {
       "max_output_tokens": 8192,
@@ -2115,7 +3426,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "deepseek-v4-pro": {
       "max_output_tokens": 65536,
@@ -2157,7 +3476,15 @@
       "release_date": "2026-04",
       "license": "MIT",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "deepseek-v4-flash": {
       "max_output_tokens": 65536,
@@ -2199,7 +3526,15 @@
       "release_date": "2026-04",
       "license": "MIT",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "kimi-k2.6": {
       "max_output_tokens": 98304,
@@ -2234,7 +3569,17 @@
       "release_date": "2026-04",
       "license": "modified-mit",
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3": {
       "max_output_tokens": 8192,
@@ -2250,7 +3595,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3.5-9b": {
       "max_output_tokens": 81920,
@@ -2261,17 +3614,27 @@
       "audio_support": false,
       "thinking_support": true,
       "notes": "Qwen3.5-9B dense multimodal reasoning model with 262,144-token default context (extensible to ~1,010,000 via YaRN). Official docs suggest 32,768 output tokens for most queries and up to 81,920 for complex benchmarking.",
-      "source": "Hugging Face model card (Qwen/Qwen3.5-9B, accessed 2026-03-11)",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.5-9B, accessed 2026-06-04)",
       "canonical_name": "qwen3.5-9b",
       "aliases": [
         "qwen/qwen3.5-9b",
         "qwen3.5:9b",
         "Jackrong/Qwopus3.5-9B-v3-GGUF"
       ],
-		      "max_tokens": 262144,
-		      "video_support": false,
-		      "max_tools": -1,
-		      "video_input_mode": "frames"
+      "max_tokens": 262144,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3.5-0.8b": {
       "max_output_tokens": 81920,
@@ -2283,21 +3646,31 @@
       "thinking_support": true,
       "total_parameters": "0.8B",
       "notes": "Qwen3.5-0.8B dense multimodal reasoning model with 262,144-token default context (extensible to ~1,010,000 via YaRN). Official docs suggest 32,768 output tokens for most queries and up to 81,920 for complex benchmarking.",
-      "source": "Hugging Face model card (Qwen/Qwen3.5-0.8B, accessed 2026-03-11)",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.5-0.8B, accessed 2026-06-04)",
       "canonical_name": "qwen3.5-0.8b",
       "aliases": [
         "qwen/qwen3.5-0.8b",
         "qwen3.5:0.8b"
       ],
-	      "max_tokens": 262144,
-	      "inference_parameters": {
-	        "temperature": 1.0,
-	        "top_p": 0.95,
-	        "top_k": 20
-	      },
-	      "video_support": false,
-	      "max_tools": -1,
-	      "video_input_mode": "frames"
+      "max_tokens": 262144,
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20
+      },
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3.5-2b": {
       "max_output_tokens": 81920,
@@ -2309,16 +3682,26 @@
       "thinking_support": true,
       "total_parameters": "2B",
       "notes": "Qwen3.5-2B dense multimodal reasoning model with 262,144-token default context (extensible to ~1,010,000 via YaRN). Official docs suggest 32,768 output tokens for most queries and up to 81,920 for complex benchmarking.",
-      "source": "Hugging Face model card (Qwen/Qwen3.5-2B, accessed 2026-03-11)",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.5-2B, accessed 2026-06-04)",
       "canonical_name": "qwen3.5-2b",
       "aliases": [
         "qwen/qwen3.5-2b",
         "qwen3.5:2b"
       ],
-		      "max_tokens": 262144,
-		      "video_support": false,
-	      "max_tools": -1,
-	      "video_input_mode": "frames"
+      "max_tokens": 262144,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3.5-4b": {
       "max_output_tokens": 81920,
@@ -2330,16 +3713,26 @@
       "thinking_support": true,
       "total_parameters": "4B",
       "notes": "Qwen3.5-4B dense multimodal reasoning model with 262,144-token default context (extensible to ~1,010,000 via YaRN). Official docs suggest 32,768 output tokens for most queries and up to 81,920 for complex benchmarking.",
-      "source": "Hugging Face model card (Qwen/Qwen3.5-4B, accessed 2026-03-11)",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.5-4B, accessed 2026-06-04)",
       "canonical_name": "qwen3.5-4b",
       "aliases": [
         "qwen/qwen3.5-4b",
         "qwen3.5:4b"
-	      ],
-	      "max_tokens": 262144,
-	      "video_support": false,
-	      "max_tools": -1,
-	      "video_input_mode": "frames"
+      ],
+      "max_tokens": 262144,
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3.5-27b": {
       "max_output_tokens": 81920,
@@ -2351,22 +3744,32 @@
       "thinking_support": true,
       "total_parameters": "27B",
       "notes": "Qwen3.5-27B dense multimodal reasoning model with 262,144-token default context (extensible to ~1,010,000 via YaRN). Official docs suggest 32,768 output tokens for most queries and up to 81,920 for complex benchmarking.",
-      "source": "Hugging Face model card (Qwen/Qwen3.5-27B, accessed 2026-03-11)",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.5-27B, accessed 2026-06-04)",
       "canonical_name": "qwen3.5-27b",
       "aliases": [
         "qwen/qwen3.5-27b",
         "qwen3.5:27b",
         "Jackrong/Qwopus3.5-27B-v3"
-	      ],
-	      "max_tokens": 262144,
-	      "inference_parameters": {
-	        "temperature": 0.6,
-	        "top_p": 0.95,
-	        "top_k": 20
-	      },
-	      "video_support": false,
-	      "max_tools": -1,
-	      "video_input_mode": "frames"
+      ],
+      "max_tokens": 262144,
+      "inference_parameters": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "top_k": 20
+      },
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3.5-35b-a3b": {
       "max_output_tokens": 81920,
@@ -2382,21 +3785,31 @@
       "shared_experts": 1,
       "experts_activated": 8,
       "notes": "Qwen3.5-35B-A3B multimodal MoE reasoning model with 262,144-token default context (extensible to ~1,010,000 via YaRN). Experts: 256 routed + 1 shared (8 activated). Official docs suggest 32,768 output tokens for most queries and up to 81,920 for complex benchmarking.",
-      "source": "Hugging Face model card + config metadata (Qwen/Qwen3.5-35B-A3B, accessed 2026-03-11)",
+      "source": "Hugging Face model card and config metadata (Qwen/Qwen3.5-35B-A3B, accessed 2026-06-04)",
       "canonical_name": "qwen3.5-35b-a3b",
       "aliases": [
         "qwen/qwen3.5-35b-a3b",
         "qwen3.5:35b"
-	      ],
-	      "max_tokens": 262144,
-	      "inference_parameters": {
-	        "temperature": 1.0,
-	        "top_p": 0.95,
-	        "top_k": 20
-	      },
-	      "video_support": false,
-	      "max_tools": -1,
-	      "video_input_mode": "frames"
+      ],
+      "max_tokens": 262144,
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20
+      },
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3.5-397b-a17b": {
       "max_output_tokens": 81920,
@@ -2412,20 +3825,30 @@
       "shared_experts": 1,
       "experts_activated": 10,
       "notes": "Qwen3.5-397B-A17B multimodal MoE reasoning model with 262,144-token default context (extensible to ~1,010,000 via YaRN). Experts: 512 routed + 1 shared (10 activated). Official docs suggest 32,768 output tokens for most queries and up to 81,920 for complex benchmarking.",
-      "source": "Hugging Face model card + config metadata (Qwen/Qwen3.5-397B-A17B, accessed 2026-03-11)",
+      "source": "Hugging Face model card and config metadata (Qwen/Qwen3.5-397B-A17B, accessed 2026-06-04)",
       "canonical_name": "qwen3.5-397b-a17b",
       "aliases": [
         "qwen/qwen3.5-397b-a17b"
-	      ],
-	      "max_tokens": 262144,
-	      "inference_parameters": {
-	        "temperature": 0.6,
-	        "top_p": 0.95,
-	        "top_k": 20
-	      },
-	      "video_support": false,
-	      "max_tools": -1,
-	      "video_input_mode": "frames"
+      ],
+      "max_tokens": 262144,
+      "inference_parameters": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "top_k": 20
+      },
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3.5-122b-a10b": {
       "max_output_tokens": 81920,
@@ -2441,21 +3864,31 @@
       "shared_experts": 1,
       "experts_activated": 8,
       "notes": "Qwen3.5-122B-A10B multimodal MoE reasoning model with 262,144-token default context (extensible to ~1,010,000 via YaRN). Experts: 256 routed + 1 shared (8 activated). Official docs suggest 32,768 output tokens for most queries and up to 81,920 for complex benchmarking.",
-      "source": "Hugging Face model card (Qwen/Qwen3.5-122B-A10B, accessed 2026-03-11)",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.5-122B-A10B, accessed 2026-06-04)",
       "canonical_name": "qwen3.5-122b-a10b",
       "aliases": [
         "qwen/qwen3.5-122b-a10b",
         "qwen3.5:122b"
-	      ],
-	      "max_tokens": 262144,
-	      "inference_parameters": {
-	        "temperature": 0.6,
-	        "top_p": 0.95,
-	        "top_k": 20
-	      },
-	      "video_support": false,
-	      "max_tools": -1,
-	      "video_input_mode": "frames"
+      ],
+      "max_tokens": 262144,
+      "inference_parameters": {
+        "temperature": 0.6,
+        "top_p": 0.95,
+        "top_k": 20
+      },
+      "video_support": false,
+      "max_tools": -1,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3.6-27b": {
       "max_output_tokens": 81920,
@@ -2465,6 +3898,16 @@
       "vision_support": true,
       "audio_support": false,
       "video_support": true,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
       "thinking_support": true,
       "thinking_control": "enable_thinking",
       "thinking_tags": [
@@ -2478,7 +3921,7 @@
         "variable"
       ],
       "notes": "Qwen3.6-27B dense multimodal reasoning model with 262,144-token native context, optional YaRN extension to about 1,010,000 tokens, image/video input examples, 81,920-token complex-query output examples, thinking enabled by default, and Qwen3/Qwen3-Coder reasoning/tool parsers in vLLM/SGLang.",
-      "source": "Hugging Face model card and config (Qwen/Qwen3.6-27B, accessed 2026-05-03)",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.6-27B, accessed 2026-06-04)",
       "canonical_name": "qwen3.6-27b",
       "aliases": [
         "Qwen/Qwen3.6-27B",
@@ -2511,8 +3954,8 @@
       "image_resolutions": [
         "variable"
       ],
-      "notes": "FP8-quantized Qwen3.6-27B checkpoint with the same 262,144-token native context, multimodal input support, thinking behavior, and serving parser recommendations as the BF16 release.",
-      "source": "Hugging Face model card and config (Qwen/Qwen3.6-27B-FP8, accessed 2026-05-03)",
+      "notes": "FP8-quantized Qwen3.6-27B checkpoint with the same 262,144-token native context, multimodal input support, thinking behavior, serving parser recommendations, and 81,920-token complex-query output examples as the BF16 release.",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.6-27B-FP8, accessed 2026-06-04)",
       "canonical_name": "qwen3.6-27b-fp8",
       "aliases": [
         "Qwen/Qwen3.6-27B-FP8",
@@ -2521,7 +3964,17 @@
       "max_tokens": 262144,
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3.6-27b-mtp-gguf": {
       "max_output_tokens": 81920,
@@ -2539,8 +3992,8 @@
       ],
       "architecture": "qwen3_6",
       "total_parameters": "27B",
-      "notes": "Unsloth GGUF distribution of Qwen3.6-27B with MTP layers. The repo targets llama.cpp-style runtimes. Its README says --mmproj is not yet supported with MTP, so this packaged variant is treated as text-only for native media routing even though the upstream base model has a vision encoder.",
-      "source": "Hugging Face model tree (unsloth/Qwen3.6-27B-MTP-GGUF, accessed 2026-05-18)",
+      "notes": "Unsloth GGUF distribution of Qwen3.6-27B with MTP layers. The repo targets llama.cpp-style runtimes. Its README says --mmproj is not yet supported with MTP, so this packaged variant is treated as text-only for native media routing even though the upstream base model has a vision encoder. It inherits the Qwen3.6 262,144-token context and 81,920-token complex-query output budget.",
+      "source": "Hugging Face model card/tree (unsloth/Qwen3.6-27B-MTP-GGUF and Qwen/Qwen3.6-27B, accessed 2026-06-04)",
       "repository": "unsloth/Qwen3.6-27B-MTP-GGUF",
       "canonical_name": "qwen3.6-27b-mtp-gguf",
       "aliases": [
@@ -2551,7 +4004,15 @@
       "max_tokens": 262144,
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3.6-35b-a3b": {
       "max_output_tokens": 81920,
@@ -2561,6 +4022,16 @@
       "vision_support": true,
       "audio_support": false,
       "video_support": true,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
       "thinking_support": true,
       "thinking_control": "enable_thinking",
       "thinking_tags": [
@@ -2578,8 +4049,8 @@
       "image_resolutions": [
         "variable"
       ],
-      "notes": "Qwen3.6-35B-A3B multimodal MoE reasoning model with 35B total/3B active parameters, 256 routed experts plus 1 shared expert, 262,144-token native context, optional YaRN extension to about 1,010,000 tokens, image/video input examples, and Qwen3/Qwen3-Coder reasoning/tool parsers in vLLM/SGLang.",
-      "source": "Hugging Face model card and config (Qwen/Qwen3.6-35B-A3B, accessed 2026-05-03)",
+      "notes": "Qwen3.6-35B-A3B multimodal MoE reasoning model with 35B total/3B active parameters, 256 routed experts plus 1 shared expert, 262,144-token native context, optional YaRN extension to about 1,010,000 tokens, image/video input examples, 81,920-token complex-query output examples, and Qwen3/Qwen3-Coder reasoning/tool parsers in vLLM/SGLang.",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.6-35B-A3B, accessed 2026-06-04)",
       "canonical_name": "qwen3.6-35b-a3b",
       "aliases": [
         "Qwen/Qwen3.6-35B-A3B",
@@ -2617,8 +4088,8 @@
       "image_resolutions": [
         "variable"
       ],
-      "notes": "FP8-quantized Qwen3.6-35B-A3B checkpoint with the same multimodal MoE architecture and 262,144-token native context as the BF16 release.",
-      "source": "Hugging Face model card and config (Qwen/Qwen3.6-35B-A3B-FP8, accessed 2026-05-03)",
+      "notes": "FP8-quantized Qwen3.6-35B-A3B checkpoint with the same multimodal MoE architecture, 262,144-token native context, and 81,920-token complex-query output examples as the BF16 release.",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.6-35B-A3B-FP8, accessed 2026-06-04)",
       "canonical_name": "qwen3.6-35b-a3b-fp8",
       "aliases": [
         "Qwen/Qwen3.6-35B-A3B-FP8",
@@ -2627,7 +4098,17 @@
       "max_tokens": 262144,
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3.6-35b-a3b-mtp-gguf": {
       "max_output_tokens": 81920,
@@ -2650,8 +4131,8 @@
       "experts_activated": 8,
       "shared_experts": 1,
       "expert_hidden_size": 512,
-      "notes": "Unsloth GGUF distribution of Qwen3.6-35B-A3B with MTP layers. The repo targets llama.cpp-style runtimes. Its README says --mmproj is not yet supported with MTP, so this packaged variant is treated as text-only for native media routing even though the upstream base model has a vision encoder.",
-      "source": "Hugging Face model tree (unsloth/Qwen3.6-35B-A3B-MTP-GGUF, accessed 2026-05-18)",
+      "notes": "Unsloth GGUF distribution of Qwen3.6-35B-A3B with MTP layers. The repo targets llama.cpp-style runtimes. Its README says --mmproj is not yet supported with MTP, so this packaged variant is treated as text-only for native media routing even though the upstream base model has a vision encoder. It inherits the Qwen3.6 262,144-token context and 81,920-token complex-query output budget.",
+      "source": "Hugging Face model card/tree (unsloth/Qwen3.6-35B-A3B-MTP-GGUF and Qwen/Qwen3.6-35B-A3B, accessed 2026-06-04)",
       "repository": "unsloth/Qwen3.6-35B-A3B-MTP-GGUF",
       "canonical_name": "qwen3.6-35b-a3b-mtp-gguf",
       "aliases": [
@@ -2662,7 +4143,15 @@
       "max_tokens": 262144,
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-omni-30b-a3b-instruct": {
       "max_output_tokens": 16384,
@@ -2677,6 +4166,20 @@
         "music"
       ],
       "video_support": true,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "voice",
+          "sound",
+          "music"
+        ],
+        "output": [
+          "text",
+          "voice"
+        ]
+      },
       "thinking_support": false,
       "architecture": "qwen3_omni",
       "model_type": "qwen3_omni_moe",
@@ -2707,6 +4210,16 @@
         "sound",
         "music"
       ],
+      "capability_routes": {
+        "input": [
+          "voice",
+          "sound",
+          "music"
+        ],
+        "output": [
+          "text"
+        ]
+      },
       "video_support": false,
       "thinking_support": false,
       "architecture": "qwen3_omni",
@@ -2743,7 +4256,15 @@
       "max_tokens": 131072,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-next-80b-a3b": {
       "max_output_tokens": 16384,
@@ -2763,7 +4284,15 @@
       "max_tokens": 262144,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-coder-next": {
       "max_output_tokens": 81920,
@@ -2785,7 +4314,15 @@
       "max_tokens": 262144,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5": {
       "max_output_tokens": 128000,
@@ -2796,16 +4333,36 @@
       "vision_support": true,
       "audio_support": false,
       "thinking_support": true,
-      "unsupported_parameters": ["temperature", "top_p", "frequency_penalty", "presence_penalty"],
+      "unsupported_parameters": [
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty"
+      ],
       "token_param_name": "max_completion_tokens",
-      "reasoning_levels": ["minimal", "low", "medium", "high"],
+      "reasoning_levels": [
+        "minimal",
+        "low",
+        "medium",
+        "high"
+      ],
       "notes": "GPT-5 reasoning model for coding and agentic tasks. Official docs list 400,000-token total context and 128,000 max output (so max prompt ≈ 272,000 at full output), tools, structured outputs, and reasoning.effort levels: minimal, low, medium (default), high. Audio not supported. Rejects temperature/top_p/frequency_penalty/presence_penalty.",
       "source": "OpenAI API model card (gpt-5, accessed 2026-03-21) + OpenAI Chat Completions API reference (reasoning_effort, accessed 2026-03-21)",
       "canonical_name": "gpt-5",
       "aliases": [],
       "max_tokens": 400000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5-nano": {
       "max_output_tokens": 128000,
@@ -2816,16 +4373,35 @@
       "vision_support": true,
       "audio_support": false,
       "thinking_support": true,
-      "unsupported_parameters": ["temperature", "top_p", "frequency_penalty", "presence_penalty"],
+      "unsupported_parameters": [
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty"
+      ],
       "token_param_name": "max_completion_tokens",
-      "reasoning_levels": ["low", "medium", "high"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high"
+      ],
       "notes": "Fastest, most cost-efficient version of GPT-5. Official docs list 400,000-token context, 128,000 output, tools, and structured outputs. Audio not supported. Rejects temperature/top_p/frequency_penalty/presence_penalty.",
       "source": "OpenAI API model card (gpt-5-nano, accessed 2026-03-21) + OpenAI Chat Completions API reference (reasoning_effort, accessed 2026-03-21)",
       "canonical_name": "gpt-5-nano",
       "aliases": [],
       "max_tokens": 400000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5-pro": {
       "max_output_tokens": 128000,
@@ -2836,16 +4412,33 @@
       "vision_support": true,
       "audio_support": false,
       "thinking_support": true,
-      "unsupported_parameters": ["temperature", "top_p", "frequency_penalty", "presence_penalty"],
+      "unsupported_parameters": [
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty"
+      ],
       "token_param_name": "max_completion_tokens",
-      "reasoning_levels": ["high"],
+      "reasoning_levels": [
+        "high"
+      ],
       "notes": "Pro GPT-5 model. Official docs list 400,000-token context and 128,000 max output tokens. As OpenAI’s most advanced reasoning model, it defaults to (and only supports) reasoning.effort: high. Audio not supported.",
       "source": "OpenAI API model card (gpt-5-pro, accessed 2026-03-21)",
       "canonical_name": "gpt-5-pro",
       "aliases": [],
       "max_tokens": 400000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5-mini": {
       "max_output_tokens": 128000,
@@ -2856,16 +4449,35 @@
       "vision_support": true,
       "audio_support": false,
       "thinking_support": true,
-      "unsupported_parameters": ["temperature", "top_p", "frequency_penalty", "presence_penalty"],
+      "unsupported_parameters": [
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty"
+      ],
       "token_param_name": "max_completion_tokens",
-      "reasoning_levels": ["low", "medium", "high"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high"
+      ],
       "notes": "Faster, cost-efficient version of GPT-5 for well-defined tasks. Official docs list 400,000-token context, 128,000 output, tools, and structured outputs. Audio not supported. Rejects temperature/top_p/frequency_penalty/presence_penalty.",
       "source": "OpenAI API model card (gpt-5-mini, accessed 2026-03-21) + OpenAI Chat Completions API reference (reasoning_effort, accessed 2026-03-21)",
       "canonical_name": "gpt-5-mini",
       "aliases": [],
       "max_tokens": 400000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5-codex": {
       "max_output_tokens": 128000,
@@ -2876,16 +4488,34 @@
       "vision_support": true,
       "audio_support": false,
       "thinking_support": true,
-      "unsupported_parameters": ["temperature", "top_p", "frequency_penalty", "presence_penalty"],
+      "unsupported_parameters": [
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty"
+      ],
       "token_param_name": "max_completion_tokens",
-      "reasoning_levels": ["low", "medium", "high"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high"
+      ],
       "notes": "Version of GPT-5 optimized for agentic coding in Codex. Parameter restrictions inherited from GPT-5 base",
       "source": "OpenAI official docs 2025",
       "canonical_name": "gpt-5-codex",
       "aliases": [],
       "max_tokens": 400000,
       "video_support": false,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5.1": {
       "max_output_tokens": 128000,
@@ -2897,14 +4527,29 @@
       "audio_support": false,
       "thinking_support": true,
       "token_param_name": "max_completion_tokens",
-      "reasoning_levels": ["none", "low", "medium", "high"],
+      "reasoning_levels": [
+        "none",
+        "low",
+        "medium",
+        "high"
+      ],
       "notes": "GPT-5.1 reasoning model for coding and agentic tasks. reasoning_effort defaults to none and supports none, low, medium, high. Sampling params (temperature/top_p/frequency_penalty/presence_penalty) are accepted when reasoning_effort='none', but are restricted to default values when reasoning_effort!='none' (empirically verified 2026-02-25). Accepts seed. Rejects max_tokens (use max_completion_tokens)",
       "source": "OpenAI official docs 2025 + empirical API testing 2026-02-22, 2026-02-25",
       "canonical_name": "gpt-5.1",
       "aliases": [],
       "max_tokens": 400000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5.1-codex": {
       "max_output_tokens": 128000,
@@ -2922,7 +4567,16 @@
       "aliases": [],
       "max_tokens": 400000,
       "video_support": false,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5.2": {
       "max_output_tokens": 128000,
@@ -2934,7 +4588,13 @@
       "audio_support": false,
       "thinking_support": true,
       "token_param_name": "max_completion_tokens",
-      "reasoning_levels": ["none", "low", "medium", "high", "xhigh"],
+      "reasoning_levels": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "web_browsing": true,
       "python_execution": true,
       "notes": "Previous frontier GPT-5.2 model. Official docs list 400,000-token context, 128,000 output, tools, structured outputs, and reasoning.effort levels: none (default), low, medium, high, xhigh. Audio not supported.",
@@ -2943,7 +4603,17 @@
       "aliases": [],
       "max_tokens": 400000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5.2-pro": {
       "max_output_tokens": 128000,
@@ -2955,7 +4625,11 @@
       "audio_support": false,
       "thinking_support": true,
       "token_param_name": "max_completion_tokens",
-      "reasoning_levels": ["medium", "high", "xhigh"],
+      "reasoning_levels": [
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "web_browsing": true,
       "python_execution": true,
       "notes": "Higher-compute GPT-5.2 pro model. Official docs list 400,000-token context, 128,000 output, and reasoning.effort levels: medium, high, xhigh. Audio not supported. Structured outputs not supported.",
@@ -2964,7 +4638,17 @@
       "aliases": [],
       "max_tokens": 400000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5.2-codex": {
       "max_output_tokens": 128000,
@@ -2982,7 +4666,16 @@
       "aliases": [],
       "max_tokens": 400000,
       "video_support": false,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5.3-codex": {
       "max_output_tokens": 128000,
@@ -2994,7 +4687,12 @@
       "audio_support": false,
       "thinking_support": true,
       "token_param_name": "max_completion_tokens",
-      "reasoning_levels": ["low", "medium", "high", "xhigh"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "web_browsing": true,
       "python_execution": true,
       "notes": "GPT-5.3 Codex coding model. Official docs list 400,000-token context, 128,000 output, tools, structured outputs, and reasoning.effort levels: low, medium, high, xhigh.",
@@ -3003,7 +4701,17 @@
       "aliases": [],
       "max_tokens": 400000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5.4": {
       "max_output_tokens": 128000,
@@ -3015,7 +4723,13 @@
       "audio_support": false,
       "thinking_support": true,
       "token_param_name": "max_completion_tokens",
-      "reasoning_levels": ["none", "low", "medium", "high", "xhigh"],
+      "reasoning_levels": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "web_browsing": true,
       "python_execution": true,
       "notes": "Latest flagship GPT-5.4 model. Official docs list 1,050,000-token context, 128,000 output, tools, structured outputs, and reasoning.effort levels: none (default), low, medium, high, xhigh. Audio not supported.",
@@ -3024,7 +4738,17 @@
       "aliases": [],
       "max_tokens": 1050000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5.4-mini": {
       "max_output_tokens": 128000,
@@ -3044,7 +4768,17 @@
       "aliases": [],
       "max_tokens": 400000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5.4-nano": {
       "max_output_tokens": 128000,
@@ -3064,7 +4798,17 @@
       "aliases": [],
       "max_tokens": 400000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-5.4-pro": {
       "max_output_tokens": 128000,
@@ -3076,7 +4820,11 @@
       "audio_support": false,
       "thinking_support": true,
       "token_param_name": "max_completion_tokens",
-      "reasoning_levels": ["medium", "high", "xhigh"],
+      "reasoning_levels": [
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "web_browsing": true,
       "python_execution": true,
       "notes": "Higher-compute GPT-5.4 pro model. Official docs list 1,050,000-token context, 128,000 output, and reasoning.effort levels: medium, high, xhigh. Audio not supported. Structured outputs not supported.",
@@ -3085,7 +4833,180 @@
       "aliases": [],
       "max_tokens": 1050000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "gpt-5.5": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "thinking_support": true,
+      "token_param_name": "max_completion_tokens",
+      "reasoning_levels": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "web_browsing": true,
+      "python_execution": true,
+      "notes": "Current OpenAI frontier model for complex coding and professional work. Official model card lists 1,050,000-token context, 128,000 max output, text+image input, text output, function calling, structured outputs, Responses/Chat/Batch endpoints, and reasoning.effort levels none, low, medium, high, xhigh. Audio and native video are not supported.",
+      "source": "OpenAI API model card (gpt-5.5, accessed 2026-06-03)",
+      "canonical_name": "gpt-5.5",
+      "aliases": [
+        "gpt-5.5-2026-04-23"
+      ],
+      "max_tokens": 1050000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "gpt-5.5-pro": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "thinking_support": true,
+      "token_param_name": "max_completion_tokens",
+      "reasoning_levels": [
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "web_browsing": true,
+      "python_execution": true,
+      "notes": "Higher-compute GPT-5.5 pro model for harder professional tasks. Official model card lists 1,050,000-token context, 128,000 max output, text+image input, text output, function calling, structured outputs, Responses/Batch availability, and no audio/native video support. Streaming is not supported.",
+      "source": "OpenAI API model card (gpt-5.5-pro, accessed 2026-06-03)",
+      "canonical_name": "gpt-5.5-pro",
+      "aliases": [
+        "gpt-5.5-pro-2026-04-23"
+      ],
+      "max_tokens": 1050000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "text-embedding-ada-002": {
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "max_tools": 0,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "model_type": "embedding",
+      "embedding_dimension": 1536,
+      "embedding_support": true,
+      "notes": "OpenAI text embedding model.",
+      "source": "OpenAI models list (accessed 2026-06-03)",
+      "canonical_name": "text-embedding-ada-002",
+      "aliases": [
+        "openai/text-embedding-ada-002"
+      ],
+      "max_tokens": 8192,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "embedding": [
+          "text"
+        ]
+      }
+    },
+    "text-embedding-3-small": {
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "max_tools": 0,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "model_type": "embedding",
+      "embedding_dimension": 1536,
+      "embedding_support": true,
+      "notes": "OpenAI text embedding model.",
+      "source": "OpenAI models list (accessed 2026-06-03)",
+      "canonical_name": "text-embedding-3-small",
+      "aliases": [
+        "openai/text-embedding-3-small"
+      ],
+      "max_tokens": 8192,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "embedding": [
+          "text"
+        ]
+      }
+    },
+    "text-embedding-3-large": {
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "max_tools": 0,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "model_type": "embedding",
+      "embedding_dimension": 3072,
+      "embedding_support": true,
+      "notes": "OpenAI text embedding model.",
+      "source": "OpenAI models list (accessed 2026-06-03)",
+      "canonical_name": "text-embedding-3-large",
+      "aliases": [
+        "openai/text-embedding-3-large"
+      ],
+      "max_tokens": 8192,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "embedding": [
+          "text"
+        ]
+      }
     },
     "o4-mini": {
       "max_output_tokens": 100000,
@@ -3096,7 +5017,12 @@
       "vision_support": true,
       "audio_support": false,
       "thinking_support": true,
-      "unsupported_parameters": ["temperature", "top_p", "frequency_penalty", "presence_penalty"],
+      "unsupported_parameters": [
+        "temperature",
+        "top_p",
+        "frequency_penalty",
+        "presence_penalty"
+      ],
       "token_param_name": "max_completion_tokens",
       "notes": "Fast, cost-efficient o-series reasoning model, succeeded by GPT-5 mini. Rejects temperature/top_p/frequency_penalty/presence_penalty (empirically verified 2026-02-22). Accepts seed",
       "source": "OpenAI official docs 2025 + empirical API testing 2026-02-22",
@@ -3104,7 +5030,17 @@
       "aliases": [],
       "max_tokens": 200000,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-4.1": {
       "max_output_tokens": 32768,
@@ -3121,7 +5057,17 @@
       "aliases": [],
       "max_tokens": 1047576,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-4.1-mini": {
       "max_output_tokens": 32768,
@@ -3138,7 +5084,17 @@
       "aliases": [],
       "max_tokens": 1047576,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-4.1-nano": {
       "max_output_tokens": 32768,
@@ -3155,7 +5111,17 @@
       "aliases": [],
       "max_tokens": 1047576,
       "video_support": false,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-8b": {
       "max_output_tokens": 8192,
@@ -3173,7 +5139,15 @@
       "max_tokens": 131072,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-235b-a22b": {
       "max_output_tokens": 8192,
@@ -3191,7 +5165,15 @@
       "max_tokens": 40960,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-vl": {
       "max_output_tokens": 8192,
@@ -3213,7 +5195,17 @@
       "aliases": [],
       "max_tokens": 131072,
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen2.5-vl-7b": {
       "max_output_tokens": 8192,
@@ -3244,7 +5236,17 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma3-4b": {
       "max_output_tokens": 8192,
@@ -3275,7 +5277,17 @@
       ],
       "max_tokens": 128000,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen2.5vl:7b": {
       "max_output_tokens": 8192,
@@ -3300,7 +5312,17 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma3:4b-it-qat": {
       "max_output_tokens": 8192,
@@ -3323,7 +5345,17 @@
       "aliases": [],
       "max_tokens": 128000,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemma3n:e4b": {
       "max_output_tokens": 8192,
@@ -3332,6 +5364,10 @@
       "parallel_tools": true,
       "vision_support": true,
       "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound"
+      ],
       "video_support": true,
       "image_resolutions": [
         "896x896"
@@ -3354,7 +5390,19 @@
       ],
       "max_tokens": 32768,
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "voice",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "seed-oss": {
       "max_output_tokens": 8192,
@@ -3365,7 +5413,12 @@
       "audio_support": false,
       "thinking_support": true,
       "thinking_budget": true,
-      "reasoning_levels": ["low", "medium", "high", "xhigh"],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
       "notes": "SEED-OSS 36B parameter model with 512K context and thinking budget control",
       "source": "ByteDance SEED-OSS documentation",
       "canonical_name": "seed-oss",
@@ -3373,7 +5426,15 @@
       "max_tokens": 524288,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "glm-4.5": {
       "max_output_tokens": 4096,
@@ -3390,7 +5451,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "glm-4.6": {
       "max_output_tokens": 4096,
@@ -3411,7 +5480,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "glm-4.5-air": {
       "max_output_tokens": 4096,
@@ -3428,7 +5505,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "glm-4.7-flash": {
       "max_output_tokens": 131072,
@@ -3453,7 +5538,15 @@
       "license": "MIT",
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "glm-5": {
       "max_output_tokens": 96000,
@@ -3475,7 +5568,15 @@
       "max_tokens": 128000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama-4-109b": {
       "max_output_tokens": 8192,
@@ -3491,7 +5592,18 @@
       "max_tokens": 10000000,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite3.2:2b": {
       "max_output_tokens": 8192,
@@ -3509,7 +5621,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite3.2:8b": {
       "max_output_tokens": 8192,
@@ -3527,7 +5647,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite3.2-vision:2b": {
       "max_output_tokens": 8192,
@@ -3555,7 +5683,17 @@
       ],
       "max_tokens": 32768,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemini-2.5-flash": {
       "max_output_tokens": 8192,
@@ -3582,7 +5720,18 @@
         "gemini-2.5-flash-001"
       ],
       "max_tokens": 1000000,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gemini-2.5-pro": {
       "max_output_tokens": 65536,
@@ -3609,7 +5758,53 @@
         "gemini-2.5-pro-001"
       ],
       "max_tokens": 1048576,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "gemini-3-pro-preview": {
+      "max_output_tokens": 65536,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": true,
+      "video_support": true,
+      "image_resolutions": [
+        "variable"
+      ],
+      "image_tokenization_method": "gemini_vision_encoder",
+      "thinking_support": true,
+      "thinking_budget": true,
+      "web_browsing": true,
+      "python_execution": true,
+      "notes": "Gemini 3 Pro preview, Google’s current most capable Gemini model. Official docs list text, image, video, audio, and PDF inputs; text output; 1,048,576 input token limit; 65,536 output token limit; function calling; structured outputs; code execution; file search; search grounding; URL context; and thinking.",
+      "source": "Google AI Gemini models docs (gemini-3-pro-preview, accessed 2026-06-03)",
+      "canonical_name": "gemini-3-pro-preview",
+      "aliases": [],
+      "max_tokens": 1048576,
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite3.3:2b": {
       "max_output_tokens": 8192,
@@ -3627,7 +5822,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite3.3:8b": {
       "max_output_tokens": 8192,
@@ -3645,7 +5848,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "embeddinggemma:300m": {
       "max_output_tokens": 0,
@@ -3654,6 +5865,14 @@
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "embedding": [
+          "text"
+        ]
+      },
       "notes": "Text embedding model, not for generation or vision",
       "source": "Google Gemma documentation",
       "canonical_name": "embeddinggemma:300m",
@@ -3673,6 +5892,14 @@
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "embedding": [
+          "text"
+        ]
+      },
       "notes": "Nomic Embed v1.5 text embedding model (Matryoshka). Embedding dims commonly used: 768 (and truncation-friendly sizes like 512/256/128/64). Not a text-generative model.",
       "source": "Nomic AI documentation + HuggingFace model card",
       "canonical_name": "nomic-embed-text-v1.5",
@@ -3723,7 +5950,17 @@
       ],
       "max_tokens": 2048,
       "max_tools": 0,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "glyph": {
       "max_output_tokens": 8192,
@@ -3769,7 +6006,17 @@
       "arxiv": "2510.17800",
       "repository": "https://github.com/thu-coai/Glyph",
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "glm-4.1v-9b-base": {
       "max_output_tokens": 8192,
@@ -3801,7 +6048,17 @@
       ],
       "max_tokens": 131072,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "glm-4.1v-9b-thinking": {
       "max_output_tokens": 8192,
@@ -3840,7 +6097,17 @@
       "max_tokens": 65536,
       "arxiv": "2507.01006",
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "mistral-small-3.1-24b-instruct": {
       "max_output_tokens": 8192,
@@ -3865,7 +6132,17 @@
       "total_parameters": "24B",
       "release_date": "2025-03-17",
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "mistral-small-3.2-24b-instruct": {
       "max_output_tokens": 8192,
@@ -3892,7 +6169,17 @@
       "total_parameters": "24B",
       "release_date": "2025-06-01",
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "mistral-small-4-119b-2603": {
       "max_output_tokens": 8192,
@@ -3918,7 +6205,17 @@
       ],
       "max_tokens": 262144,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "mistral-large-3-675b-2512": {
       "max_output_tokens": 8192,
@@ -3943,7 +6240,17 @@
       "release_date": "2025-11-28",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "ministral-3-14b-2512": {
       "max_output_tokens": 8192,
@@ -3969,7 +6276,17 @@
       "arxiv": "2601.08584",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "ministral-3-8b-2512": {
       "max_output_tokens": 8192,
@@ -3995,7 +6312,17 @@
       "arxiv": "2601.08584",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "ministral-3-3b-2512": {
       "max_output_tokens": 8192,
@@ -4021,7 +6348,17 @@
       "arxiv": "2601.08584",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama-4-scout": {
       "max_output_tokens": 8192,
@@ -4052,7 +6389,18 @@
       "image_patch_size": 14,
       "max_image_tokens": 6400,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama-4-maverick": {
       "max_output_tokens": 8192,
@@ -4082,7 +6430,18 @@
       "image_patch_size": 14,
       "max_image_tokens": 6400,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "llama-4-behemoth": {
       "max_output_tokens": 8192,
@@ -4113,7 +6472,18 @@
       "image_patch_size": 14,
       "max_image_tokens": 6400,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "lfm2.5-350m": {
       "max_output_tokens": 4096,
@@ -4135,7 +6505,59 @@
       "release_date": "2026-03-31",
       "license": "lfm1.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "lfm2.5-8b-a1b": {
+      "max_output_tokens": null,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "lfm2",
+      "model_type": "lfm2_moe",
+      "total_parameters": "8.3B",
+      "active_parameters": "1.5B",
+      "experts": 32,
+      "experts_activated": 4,
+      "notes": "Liquid AI LFM2.5 8B-A1B reasoning-tuned hybrid MoE chat model with 128,000-token context. The model card recommends it for agentic workflows, tool use, structured outputs, multilingual assistants, and on-device personal-assistant applications. Tool calls are prompted/template-driven via ChatML-like messages and <|tool_call_start|>/<|tool_call_end|> special tokens, not an OpenAI-native tools API. MLX 4-bit and 8-bit community conversions inherit these text input/output routes. The model card example uses max_new_tokens=8192, but no primary source publishes a hard max-output-token cap, so max_output_tokens is null.",
+      "source": "Hugging Face model card and config metadata (LiquidAI/LFM2.5-8B-A1B; mlx-community/LFM2.5-8B-A1B-MLX-4bit/8bit, accessed 2026-06-04). Model card context length: 128,000. Raw config max_position_embeddings: 128000. Generation config does not define max_new_tokens/max_output_tokens; README inference example uses max_new_tokens=8192.",
+      "canonical_name": "lfm2.5-8b-a1b",
+      "aliases": [
+        "LiquidAI/LFM2.5-8B-A1B",
+        "LFM2.5-8B-A1B",
+        "mlx-community/LFM2.5-8B-A1B-MLX-4bit",
+        "mlx-community/LFM2.5-8B-A1B-MLX-8bit",
+        "LFM2.5-8B-A1B-MLX-4bit",
+        "LFM2.5-8B-A1B-MLX-8bit"
+      ],
+      "max_tokens": 128000,
+      "license": "lfm1.0",
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "inference_parameters": {
+        "temperature": 0.2,
+        "top_k": 80,
+        "repeat_penalty": 1.05
+      },
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "lfm2.5-1.2b-instruct": {
       "max_output_tokens": 8192,
@@ -4153,12 +6575,20 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
-	    "lfm2.5-1.2b": {
-	      "max_output_tokens": 8192,
-	      "tool_support": "none",
-	      "structured_output": "none",
+    "lfm2.5-1.2b": {
+      "max_output_tokens": 8192,
+      "tool_support": "none",
+      "structured_output": "none",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -4166,13 +6596,21 @@
       "notes": "Liquid AI LFM2.5 1.2B base checkpoint with 32,768-token context (non-instruct). Treat as a text-only base model; tool calling and structured outputs are not documented as first-class behaviors for this base checkpoint.",
       "source": "Hugging Face model card (LiquidAI/LFM2.5-1.2B, accessed 2026-03-11)",
       "canonical_name": "lfm2.5-1.2b",
-	      "aliases": [
-	        "liquidai/lfm2.5-1.2b"
-	      ],
-	      "max_tokens": 32768,
-	      "max_tools": 0,
-	      "video_input_mode": "none"
-	    },
+      "aliases": [
+        "liquidai/lfm2.5-1.2b"
+      ],
+      "max_tokens": 32768,
+      "max_tools": 0,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
     "lfm2.5-1.2b-thinking": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
@@ -4190,12 +6628,20 @@
       ],
       "max_tokens": 32768,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
-	    "lfm2.5-1.2b-jp": {
-	      "max_output_tokens": 8192,
-	      "tool_support": "none",
-	      "structured_output": "none",
+    "lfm2.5-1.2b-jp": {
+      "max_output_tokens": 8192,
+      "tool_support": "none",
+      "structured_output": "none",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": false,
@@ -4203,13 +6649,21 @@
       "notes": "Liquid AI LFM2.5 1.2B JP checkpoint with 32,768-token context. Japanese-focused variant; tool calling and structured outputs are not documented as first-class behaviors for this checkpoint.",
       "source": "Hugging Face model card (LiquidAI/LFM2.5-1.2B-JP, accessed 2026-03-11)",
       "canonical_name": "lfm2.5-1.2b-jp",
-	      "aliases": [
-	        "liquidai/lfm2.5-1.2b-jp"
-	      ],
-	      "max_tokens": 32768,
-	      "max_tools": 0,
-	      "video_input_mode": "none"
-	    },
+      "aliases": [
+        "liquidai/lfm2.5-1.2b-jp"
+      ],
+      "max_tokens": 32768,
+      "max_tools": 0,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
     "lfm2.5-vl-1.6b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
@@ -4226,12 +6680,22 @@
       ],
       "max_tokens": 32768,
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
-	    "lfm2.5-audio-1.5b": {
-	      "max_output_tokens": 8192,
-	      "tool_support": "none",
-	      "structured_output": "none",
+    "lfm2.5-audio-1.5b": {
+      "max_output_tokens": 8192,
+      "tool_support": "none",
+      "structured_output": "none",
       "parallel_tools": false,
       "vision_support": false,
       "audio_support": true,
@@ -4239,13 +6703,22 @@
       "notes": "Liquid AI LFM2.5 Audio 1.5B checkpoint. Audio-specialized variant; audio input requires a provider path that can send audio content to the model (capability flag marks audio as supported at the model/provider I/O layer). The model card does not document tool calling or a native structured-output/JSON-mode interface for this checkpoint, so registry treats those as unsupported.",
       "source": "Hugging Face model card (LiquidAI/LFM2.5-Audio-1.5B, accessed 2026-03-11)",
       "canonical_name": "lfm2.5-audio-1.5b",
-	      "aliases": [
-	        "liquidai/lfm2.5-audio-1.5b"
-	      ],
-	      "max_tokens": 32768,
-	      "max_tools": 0,
-	      "video_input_mode": "none"
-	    },
+      "aliases": [
+        "liquidai/lfm2.5-audio-1.5b"
+      ],
+      "max_tokens": 32768,
+      "max_tools": 0,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
     "lfm2-24b-a2b": {
       "max_output_tokens": 8192,
       "tool_support": "prompted",
@@ -4267,7 +6740,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "lfm2-8b-a1b": {
       "max_output_tokens": 8192,
@@ -4289,7 +6770,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "lfm2-2.6b": {
       "max_output_tokens": 8192,
@@ -4309,7 +6798,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "lfm2-1.2b": {
       "max_output_tokens": 8192,
@@ -4328,7 +6825,15 @@
       "max_tokens": 32768,
       "video_support": false,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "minimax-m2": {
       "max_output_tokens": 131072,
@@ -4365,7 +6870,15 @@
       },
       "default_system_prompt": "You are a helpful assistant. Your name is MiniMax-M2 and is built by MiniMax.",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "minimax-m2.1": {
       "max_output_tokens": 131072,
@@ -4424,7 +6937,7 @@
         "SciCode": 41.0,
         "IFBench": 70.0,
         "AA-LCR": 62.0,
-        "\u03c4\u00b2-Bench Telecom": 87.0
+        "τ²-Bench Telecom": 87.0
       },
       "inference_parameters": {
         "temperature": 1.0,
@@ -4433,7 +6946,15 @@
       },
       "default_system_prompt": "You are a helpful assistant. Your name is MiniMax-M2.1 and is built by MiniMax.",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "minimax-m2.5": {
       "max_output_tokens": 8192,
@@ -4456,7 +6977,15 @@
       ],
       "max_tokens": 196608,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "omnicoder-9b": {
       "max_output_tokens": 81920,
@@ -4479,7 +7008,17 @@
       "max_tools": -1,
       "video_input_mode": "frames",
       "release_date": "2026-03-12",
-      "license": "Apache-2.0"
+      "license": "Apache-2.0",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "omnicoder-9b-gguf": {
       "max_output_tokens": 4096,
@@ -4497,7 +7036,15 @@
       ],
       "max_tokens": 8192,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "glm-4.6v": {
       "max_output_tokens": 16384,
@@ -4547,7 +7094,17 @@
       "arxiv": "2507.01006",
       "license": "MIT",
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "glm-4.6v-flash": {
       "max_output_tokens": 8192,
@@ -4596,7 +7153,17 @@
       "arxiv": "2507.01006",
       "license": "MIT",
       "max_tools": -1,
-      "video_input_mode": "frames"
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "glm-4.7": {
       "max_output_tokens": 32768,
@@ -4621,7 +7188,7 @@
       "web_browsing": true,
       "tool_calling_parser": "glm47",
       "reasoning_parser": "glm45",
-      "notes": "GLM-4.7 latest MoE model (358B params) with enhanced coding, reasoning, and agentic capabilities. Achieves 73.8% on SWE-bench Verified, 66.7% on SWE-bench Multilingual, and 41% on Terminal Bench 2.0. Supports advanced thinking modes: Interleaved (think before actions), Preserved (cross-turn consistency), and Turn-level. Excels at tool using (\u03c4\u00b2-Bench: 87.4%), web browsing (BrowseComp: 52%), and complex reasoning (HLE w/ Tools: 42.8%, AIME 2025: 95.7%). 128K context window with 32K output capacity. Optimized for modern coding environments including Claude Code, Kilo Code, Cline, Roo Code.",
+      "notes": "GLM-4.7 latest MoE model (358B params) with enhanced coding, reasoning, and agentic capabilities. Achieves 73.8% on SWE-bench Verified, 66.7% on SWE-bench Multilingual, and 41% on Terminal Bench 2.0. Supports advanced thinking modes: Interleaved (think before actions), Preserved (cross-turn consistency), and Turn-level. Excels at tool using (τ²-Bench: 87.4%), web browsing (BrowseComp: 52%), and complex reasoning (HLE w/ Tools: 42.8%, AIME 2025: 95.7%). 128K context window with 32K output capacity. Optimized for modern coding environments including Claude Code, Kilo Code, Cline, Roo Code.",
       "source": "HuggingFace zai-org/GLM-4.7 and GLM technical blog",
       "canonical_name": "glm-4.7",
       "aliases": [
@@ -4649,7 +7216,7 @@
         "BrowseComp": 52.0,
         "BrowseComp (w/ Context Manage)": 67.5,
         "BrowseComp-Zh": 66.6,
-        "\u03c4\u00b2-Bench": 87.4,
+        "τ²-Bench": 87.4,
         "MMLU-Pro": 84.3,
         "GPQA-Diamond": 85.7
       },
@@ -4660,7 +7227,15 @@
         "clear_thinking": false
       },
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "devstral-small-2-24b": {
       "max_output_tokens": 16384,
@@ -4690,7 +7265,15 @@
       "release_date": "2025-12",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "devstral-2-123b": {
       "max_output_tokens": 16384,
@@ -4718,7 +7301,15 @@
       "release_date": "2025-12",
       "license": "Modified-MIT",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-235b-a22b-2507": {
       "max_output_tokens": 16384,
@@ -4748,7 +7339,15 @@
       "arxiv": "2505.09388",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-235b-a22b-2507-fp8": {
       "max_output_tokens": 16384,
@@ -4779,7 +7378,15 @@
       "arxiv": "2505.09388",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite-4.1-3b": {
       "max_output_tokens": 16384,
@@ -4806,7 +7413,15 @@
       "release_date": "2026-04",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite-4.1-8b": {
       "max_output_tokens": 16384,
@@ -4833,7 +7448,15 @@
       "release_date": "2026-04",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite-4.1-30b": {
       "max_output_tokens": 16384,
@@ -4860,7 +7483,15 @@
       "release_date": "2026-04",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite-4.0-h-tiny": {
       "max_output_tokens": 16384,
@@ -4894,7 +7525,15 @@
       "release_date": "2025-10-02",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite-4.0-micro": {
       "max_output_tokens": 16384,
@@ -4916,7 +7555,15 @@
       "release_date": "2025-10-02",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite-4.0-h-micro": {
       "max_output_tokens": 16384,
@@ -4939,7 +7586,15 @@
       "release_date": "2025-10-02",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite-4.0-h-small": {
       "max_output_tokens": 16384,
@@ -4961,7 +7616,15 @@
       "release_date": "2025-10-02",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite-4.0-1b": {
       "max_output_tokens": 16384,
@@ -4983,7 +7646,15 @@
       "release_date": "2025-10-28",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite-4.0-h-350m": {
       "max_output_tokens": 16384,
@@ -5005,7 +7676,15 @@
       "release_date": "2025-10-28",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite-4.0-h-1b": {
       "max_output_tokens": 16384,
@@ -5027,7 +7706,15 @@
       "release_date": "2025-10-28",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "granite-4.0-350m": {
       "max_output_tokens": 16384,
@@ -5049,7 +7736,15 @@
       "release_date": "2025-10-28",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-oss-20b": {
       "max_output_tokens": 8192,
@@ -5089,7 +7784,15 @@
       "arxiv": "2508.10925",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-oss-120b": {
       "max_output_tokens": 8192,
@@ -5130,7 +7833,15 @@
       "arxiv": "2508.10925",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "gpt-oss-puzzle-88b": {
       "max_output_tokens": 8192,
@@ -5156,7 +7867,15 @@
       ],
       "max_tokens": 131072,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-vl-2b": {
       "max_output_tokens": 8192,
@@ -5200,7 +7919,17 @@
       "arxiv": "2505.09388",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-vl-4b": {
       "max_output_tokens": 8192,
@@ -5246,7 +7975,17 @@
       "arxiv": "2505.09388",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-vl-8b": {
       "max_output_tokens": 8192,
@@ -5292,7 +8031,17 @@
       "arxiv": "2505.09388",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-vl-30b-a3b": {
       "max_output_tokens": 8192,
@@ -5340,7 +8089,17 @@
       "arxiv": "2505.09388",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "qwen3-vl-235b-a22b": {
       "max_output_tokens": 8192,
@@ -5389,7 +8148,17 @@
       "arxiv": "2505.09388",
       "license": "Apache-2.0",
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "nemotron-3-nano-omni-30b-a3b-reasoning-bf16": {
       "max_output_tokens": 20480,
@@ -5432,7 +8201,18 @@
       "release_date": "2026-04",
       "license": "nvidia-open-model-agreement",
       "max_tools": -1,
-      "video_input_mode": "native"
+      "video_input_mode": "native",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "sound"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "nemotron-3-nano-30b-a3b": {
       "max_output_tokens": 8192,
@@ -5501,7 +8281,15 @@
         "Arena-Hard-V2 (Average)": 67.7
       },
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "nemotron-3-nano-30b-a3b-nvfp4": {
       "max_output_tokens": 8192,
@@ -5542,7 +8330,15 @@
       "release_date": "2025-12-20",
       "license": "nvidia-open-model-license",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "nemotron-cascade-2-30b-a3b": {
       "max_output_tokens": 8192,
@@ -5564,7 +8360,15 @@
       ],
       "max_tokens": 262144,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "nemotron-3-super-120b-a12b": {
       "max_output_tokens": 8192,
@@ -5588,7 +8392,15 @@
       ],
       "max_tokens": 1000000,
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     },
     "nemotron-3-super-120b-a12b-nvfp4": {
       "max_output_tokens": 8192,
@@ -5628,7 +8440,15 @@
       "release_date": "2026-03-11",
       "license": "nvidia-open-model-license",
       "max_tools": -1,
-      "video_input_mode": "none"
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
     }
   },
   "tool_support_levels": {
@@ -5665,7 +8485,7 @@
       "research_source": "Anthropic Claude documentation + research analysis"
     },
     "google_gemini_formula": {
-      "small_image": "width <= 384 AND height <= 384 \u2192 258 tokens",
+      "small_image": "width <= 384 AND height <= 384 → 258 tokens",
       "large_image": "ceil(width/768) * ceil(height/768) * 258 tokens",
       "small_threshold": 384,
       "tile_size": 768,

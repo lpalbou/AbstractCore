@@ -214,6 +214,7 @@ def iter_capability_default_specs() -> Iterable[CapabilityDefaultSpec]:
         ("input", "video", "Video Input", "video_understanding", "abstractvideo or a video-capable LLM", {}),
         ("input", "voice", "Voice Input", "speech_to_text", "abstractvoice", {"language": "en"}),
         ("input", "sound", "Sound Input", "audio_understanding", "abstractsound or abstractmusic", {}),
+        ("input", "music", "Music Input", "music_understanding", "abstractmusic or a music-capable LLM", {}),
         ("input", "scene3d", "3D Scene Input", "scene3d_understanding", "abstract3d", {}),
         ("output", "text", "Text Output", "text_generation", None, {}),
         ("output", "image", "Image Output", "image_generation", "abstractvision", {}),

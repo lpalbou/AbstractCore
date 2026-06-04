@@ -2,8 +2,8 @@
 
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
-Last updated: 2026-05-31
-Package version: 2.13.31
+Last updated: 2026-06-04
+Package version: 2.13.32
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -777,7 +777,7 @@ The server turns AbstractCore into an OpenAI-compatible API gateway.
 
 ```bash
 pip install "abstractcore[server]"
-python -m abstractcore.server.app
+abstractcore serve
 ```
 
 Health check:
@@ -2290,7 +2290,7 @@ If you want an OpenAI-compatible `/v1` gateway, install and run the server:
 
 ```bash
 pip install "abstractcore[server]"
-python -m abstractcore.server.app
+abstractcore serve
 ```
 
 See **[Server](server.md)**.
@@ -6646,7 +6646,7 @@ If you prefer HTTP endpoints over Python code, use the AbstractCore server:
 ```bash
 # Start the server
 pip install "abstractcore[server]"
-python -m abstractcore.server.app
+abstractcore serve
 ```
 
 **HTTP Request:**
@@ -6795,10 +6795,14 @@ abstractcore config set-default input.text \
   --model qwen/qwen3.6-35b-a3b \
   --base-url http://127.0.0.1:1234/v1
 
-abstractcore config set-default embedding.text \
-  --provider lmstudio \
-  --model text-embedding-nomic-embed-text-v1.5 \
-  --base-url http://127.0.0.1:1234/v1
+abstractcore config set-default output.voice \
+  --provider supertonic \
+  --model supertonic-3 \
+  --option voice=M1
+
+abstractcore config defaults
+
+abstractcore config clear-default output.voice
 ```
 
 Route defaults are configuration only; they do not load a model into a provider.
@@ -6819,6 +6823,33 @@ you can route video through a dedicated VLM or video-capable endpoint.
 locally installed STT package just because `audio.strategy=auto`; a text-only
 model needs `input.voice` configured before audio attachments are transcribed
 automatically.
+
+`input.sound` is reserved for non-speech audio understanding: environmental
+sound, SFX, audio scenes, and later music-understanding routes. Do not configure
+STT-only models there. Source-backed open candidates in the model registry now
+include `qwen3-omni-30b-a3b-instruct`,
+`qwen3-omni-30b-a3b-captioner`, `qwen2.5-omni-7b`, and
+`qwen2-audio-7b-instruct`. Qwen3.6 text/vision/video models remain
+`audio_support=false`.
+
+`input.music` is the corresponding music-audio understanding route. If the
+configured `input.text` model is known to accept native music/audio input, Core
+may report `input.sound` and `input.music` as covered by `input.text`; both rows
+remain overrideable so a dedicated audio-understanding backend can be selected.
+
+Use `abstractcore config set-default`, `abstractcore config defaults`, and
+`abstractcore config clear-default` for capability route defaults. Capability
+route defaults are intentionally managed through the `config` subcommand so
+route discovery, provider profiles, and scoped config files share one explicit
+interface.
+
+By default Core writes to `~/.abstractcore/config/abstractcore.json`. Operators
+and embedded hosts can target a specific Core config with
+`ABSTRACTCORE_CONFIG_FILE`, `ABSTRACTCORE_CONFIG_DIR`, or:
+
+```bash
+abstractcore config --config-file /srv/runtime/config/abstractcore.json defaults
+```
 
 ### Cache Directories
 
@@ -6990,7 +7021,7 @@ abstractcore --set-server-auth-token acore-server-secret
 
 # Start the server; clients now authenticate with:
 # Authorization: Bearer acore-server-secret
-python -m abstractcore.server.app
+abstractcore serve
 ```
 
 When a server auth token is configured, authenticated clients can use provider keys configured on the server through `abstractcore --set-api-key ...` or environment variables. To override one upstream provider for one request, clients can send `X-AbstractCore-Provider-API-Key`.
@@ -7017,7 +7048,7 @@ abstractcore --set-server-media-root /srv/abstractcore-media
 abstractcore --allow-server-local-files
 abstractcore --disallow-server-local-files
 
-# Defaults for `python -m abstractcore.server.app`
+# Defaults for `abstractcore serve`
 abstractcore --set-server-host 127.0.0.1
 abstractcore --set-server-port 8000
 ```
@@ -7345,7 +7376,7 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 - **url_fetch_allowlist**: URL media fetch allowlist for otherwise blocked targets
 - **media_root**: Safe root for local media file paths accepted by the HTTP server
 - **allow_local_files**: Unsafe unrestricted local file toggle
-- **host** / **port**: Defaults for `python -m abstractcore.server.app`
+- **host** / **port**: Defaults for `abstractcore serve`
 
 ### Cache Section
 - **default_cache_dir**: General cache directory for AbstractCore (`~/.cache/abstractcore`)
@@ -7524,7 +7555,7 @@ export ABSTRACTCORE_AUTH_TOKEN="acore-server-secret"
 export OPENAI_API_KEY="sk-..."
 
 # Start server
-python -m abstractcore.server.app
+abstractcore serve
 
 # Or with uvicorn directly
 uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
@@ -7583,7 +7614,7 @@ export OLLAMA_BASE_URL="http://localhost:11434"          # (or legacy: OLLAMA_HO
 export LMSTUDIO_BASE_URL="http://localhost:1234/v1"
 export VLLM_BASE_URL="http://localhost:8000/v1"
 
-# Server bind (only used by `python -m abstractcore.server.app`)
+# Server bind (used by `abstractcore serve` and compatibility module entrypoints)
 export HOST="0.0.0.0"
 export PORT="8000"
 
@@ -7616,10 +7647,10 @@ export ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1
 
 ```bash
 # Using AbstractCore's built-in CLI
-python -m abstractcore.server.app --help                    # View all options
-python -m abstractcore.server.app --debug                   # Debug mode
-python -m abstractcore.server.app --host 127.0.0.1 --port 8080  # Custom host/port
-python -m abstractcore.server.app --debug --port 8001       # Debug on custom port
+abstractcore serve --help                    # View all options
+abstractcore serve --debug                   # Debug mode
+abstractcore serve --host 127.0.0.1 --port 8080  # Custom host/port
+abstractcore serve --debug --port 8001       # Debug on custom port
 
 # Using uvicorn directly
 uvicorn abstractcore.server.app:app --reload                # Development with auto-reload
@@ -8308,8 +8339,13 @@ curl -X POST http://localhost:8000/v1/embeddings \
 List all available models from configured providers.
 
 **Query Parameters:**
-- `provider`: Filter by provider (e.g., `ollama`, `openai`)
-- `type`: Filter by type (`text-generation` or `text-embedding`)
+- `provider`: Filter by provider (e.g., `ollama`, `openai`, `anthropic`, `lmstudio`, `openai-compatible`).
+- `input_type`: Legacy broad input filter such as `text`, `image`, `audio`, or `video`.
+- `output_type`: Legacy broad output filter such as `text` or `embeddings`.
+- `capability_route`: Precise route-key filter. Repeat the query parameter or
+  comma-separate values, for example `capability_route=input.image,output.text`
+  or `capability_route=embedding.text`. Route keys use `<kind>.<modality>` and
+  are normalized through the same vocabulary as capability defaults.
 
 **Examples:**
 ```bash
@@ -8320,10 +8356,19 @@ curl http://localhost:8000/v1/models
 curl http://localhost:8000/v1/models?provider=ollama
 
 # Embedding models only
-curl http://localhost:8000/v1/models?type=text-embedding
+curl http://localhost:8000/v1/models?output_type=embeddings
+
+# Text embedding models only, using the route filter
+curl http://localhost:8000/v1/models?capability_route=embedding.text
+
+# Vision-capable input models
+curl http://localhost:8000/v1/models?input_type=image
+
+# Vision models that return text, using precise route keys
+curl 'http://localhost:8000/v1/models?capability_route=input.image,output.text'
 
 # Ollama embeddings
-curl http://localhost:8000/v1/models?provider=ollama&type=text-embedding
+curl http://localhost:8000/v1/models?provider=ollama&output_type=embeddings
 ```
 
 ---
@@ -8473,11 +8518,11 @@ Debug mode provides comprehensive logging and detailed error reporting for troub
 
 ```bash
 # Method 1: Using command line flag (recommended)
-python -m abstractcore.server.app --debug
+abstractcore serve --debug
 
 # Method 2: Using environment variable
 export ABSTRACTCORE_DEBUG=true
-python -m abstractcore.server.app
+abstractcore serve
 
 # Method 3: With uvicorn directly
 export ABSTRACTCORE_DEBUG=true
@@ -9975,7 +10020,7 @@ Install and run:
 
 ```bash
 pip install "abstractcore[server]"
-python -m abstractcore.server.app
+abstractcore serve
 ```
 
 See [Server](server.md).

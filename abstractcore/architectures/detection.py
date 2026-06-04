@@ -630,9 +630,11 @@ def supports_embeddings(model_name: str) -> bool:
 def get_context_limits(model_name: str) -> Dict[str, int]:
     """Get context and output token limits."""
     capabilities = get_model_capabilities(model_name)
+    max_tokens = capabilities.get("max_tokens") or 16384
+    max_output_tokens = capabilities.get("max_output_tokens") or 4096
     return {
-        "max_tokens": capabilities.get("max_tokens", 16384),  # 16K total context window
-        "max_output_tokens": capabilities.get("max_output_tokens", 4096)  # 4K output tokens
+        "max_tokens": int(max_tokens),  # Total context window
+        "max_output_tokens": int(max_output_tokens)  # Runtime default when hard cap is unpublished
     }
 
 

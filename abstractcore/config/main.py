@@ -220,39 +220,6 @@ def add_arguments(parser: argparse.ArgumentParser):
                             help="Set specialized chat model (optional)")
     model_group.add_argument("--set-code-model", metavar="PROVIDER/MODEL",
                             help="Set specialized coding model (optional)")
-    model_group.add_argument(
-        "--set-capability-default",
-        metavar="KIND.MODALITY",
-        help="Set a capability route default, e.g. output.text, input.image, embedding.text",
-    )
-    model_group.add_argument(
-        "--capability-provider",
-        metavar="PROVIDER",
-        help="Provider/backend for --set-capability-default",
-    )
-    model_group.add_argument(
-        "--capability-model",
-        metavar="MODEL",
-        help="Model id for --set-capability-default",
-    )
-    model_group.add_argument(
-        "--capability-base-url",
-        metavar="URL",
-        help="Optional provider base URL for --set-capability-default",
-    )
-    model_group.add_argument(
-        "--capability-option",
-        action="append",
-        default=[],
-        metavar="KEY=VALUE",
-        help="Optional plugin/provider parameter for --set-capability-default; repeatable (JSON values allowed)",
-    )
-    model_group.add_argument(
-        "--clear-capability-default",
-        metavar="KIND.MODALITY",
-        help="Clear a persisted capability route default",
-    )
-
     # Authentication group
     auth_group = parser.add_argument_group('Authentication')
     auth_group.add_argument("--set-api-key", nargs=2, metavar=("PROVIDER", "KEY"),
@@ -281,9 +248,9 @@ def add_arguments(parser: argparse.ArgumentParser):
     server_group.add_argument("--disallow-server-local-files", action="store_true",
                              help="Disable unrestricted local file paths in HTTP requests")
     server_group.add_argument("--set-server-host", metavar="HOST",
-                             help="Set default bind host for `python -m abstractcore.server.app`")
+                             help="Set default bind host for `abstractcore serve`")
     server_group.add_argument("--set-server-port", type=int, metavar="PORT",
-                             help="Set default bind port for `python -m abstractcore.server.app`")
+                             help="Set default bind port for `abstractcore serve`")
 
     # Media processing group
     media_group = parser.add_argument_group('Media & Vision Configuration')
@@ -1773,6 +1740,13 @@ def _handle_config_subcommand(argv: List[str]) -> int:
         return 1
 
 
+def _handle_serve_subcommand(argv: List[str]) -> int:
+    from abstractcore.server.app import run_server_with_args
+
+    run_server_with_args(argv, prog="abstractcore serve")
+    return 0
+
+
 def handle_commands(args) -> bool:
     """Handle AbstractCore configuration commands."""
     if not CONFIG_AVAILABLE or get_config_manager is None:
@@ -1836,33 +1810,6 @@ def handle_commands(args) -> bool:
     if args.set_code_model:
         config_manager.set_code_model(args.set_code_model)
         print(f"✅ Set code model to: {args.set_code_model}")
-        handled = True
-
-    if getattr(args, "set_capability_default", None):
-        try:
-            options = _parse_capability_options(getattr(args, "capability_option", []) or [])
-        except ValueError as e:
-            print(f"❌ Error: {e}")
-            return True
-        ok = config_manager.set_capability_default(
-            args.set_capability_default,
-            provider=getattr(args, "capability_provider", None),
-            model=getattr(args, "capability_model", None),
-            base_url=getattr(args, "capability_base_url", None),
-            options=options,
-        )
-        if ok:
-            print(f"✅ Set capability default for {args.set_capability_default}")
-        else:
-            print(f"❌ Error: Failed to set capability default for {args.set_capability_default}")
-        handled = True
-
-    if getattr(args, "clear_capability_default", None):
-        ok = config_manager.clear_capability_default(args.clear_capability_default)
-        if ok:
-            print(f"✅ Cleared capability default for {args.clear_capability_default}")
-        else:
-            print(f"❌ Error: Failed to clear capability default for {args.clear_capability_default}")
         handled = True
 
     # Vision configuration
@@ -2231,6 +2178,8 @@ def main(argv: List[str] = None):
     if argv is None:
         argv = sys.argv[1:]
 
+    if argv and argv[0] == "serve":
+        return _handle_serve_subcommand(argv[1:])
     if argv and argv[0] == "config":
         return _handle_config_subcommand(argv[1:])
     if Path(sys.argv[0]).name == "abstractcore-config" and (
@@ -2246,6 +2195,7 @@ def main(argv: List[str] = None):
 QUICK START:
   abstractcore --status                           # Show current configuration
   abstractcore --configure                       # Interactive guided setup (8 steps)
+  abstractcore serve                              # Start OpenAI-compatible HTTP server
   abstractcore --install                          # Check & install missing models/deps
   abstractcore --install --yes                   # Auto-download everything that's missing
 
@@ -2266,6 +2216,7 @@ COMMON TASKS:
   # Configure HTTP server auth/gateway behavior
   abstractcore --set-server-auth-token acore-server-secret
   abstractcore --set-server-base-url-allowlist https://example.com/v1
+  abstractcore serve --host 127.0.0.1 --port 8000
 
   # Setup vision for images (with text-only models)
   abstractcore --set-vision-provider ollama qwen2.5vl:7b

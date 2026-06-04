@@ -623,7 +623,7 @@ If you prefer HTTP endpoints over Python code, use the AbstractCore server:
 ```bash
 # Start the server
 pip install "abstractcore[server]"
-python -m abstractcore.server.app
+abstractcore serve
 ```
 
 **HTTP Request:**

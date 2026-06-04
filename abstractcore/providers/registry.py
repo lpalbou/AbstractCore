@@ -287,7 +287,8 @@ class ProviderRegistry:
     def _filter_model_list(self, models: List[str], kwargs: Dict[str, Any]) -> List[str]:
         input_capabilities = kwargs.get("input_capabilities")
         output_capabilities = kwargs.get("output_capabilities")
-        if not input_capabilities and not output_capabilities:
+        capability_routes = kwargs.get("capability_routes")
+        if not input_capabilities and not output_capabilities and not capability_routes:
             return list(models)
         try:
             from .model_capabilities import filter_models_by_capabilities
@@ -296,6 +297,7 @@ class ProviderRegistry:
                 list(models),
                 input_capabilities=input_capabilities,
                 output_capabilities=output_capabilities,
+                capability_routes=capability_routes,
             )
         except Exception:
             return list(models)

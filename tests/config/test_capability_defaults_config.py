@@ -6,6 +6,8 @@ import json
 import os
 import stat
 
+import pytest
+
 from abstractcore.config.main import main as config_main
 from abstractcore.config.manager import ConfigurationManager
 
@@ -100,6 +102,21 @@ def test_config_subcommand_set_list_and_clear_defaults(monkeypatch, tmp_path, ca
     assert "Cleared capability default for output.text" in capsys.readouterr().out
 
 
+def test_top_level_capability_default_flags_are_not_supported() -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        config_main(
+            [
+                "--set-capability-default",
+                "output.voice",
+                "--capability-provider",
+                "supertonic",
+                "--capability-model",
+                "supertonic-3",
+            ]
+        )
+    assert exc_info.value.code == 2
+
+
 def test_global_default_writes_explicit_text_capability_defaults(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
 
@@ -180,6 +197,27 @@ def test_video_input_is_covered_by_text_default_but_overrideable(monkeypatch, tm
     assert "covered_by" not in explicit
 
 
+def test_sound_and_music_input_are_covered_by_audio_capable_text_default_without_stt(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    manager = ConfigurationManager()
+    assert manager.set_capability_default("input.text", provider="lmstudio", model="qwen3-omni-30b-a3b-instruct")
+
+    rows = {row["key"]: row for row in ConfigurationManager().list_capability_defaults()}
+
+    for key in ("input.sound", "input.music"):
+        row = rows[key]
+        assert row["provider"] == "lmstudio"
+        assert row["model"] == "qwen3-omni-30b-a3b-instruct"
+        assert row["covered_by"] == "input.text"
+        assert row["overrideable"] is True
+        assert row["read_only"] is False
+
+    assert rows["input.voice"]["source"] == "not_configured"
+    assert rows["input.voice"]["configured"] is False
+    assert "covered_by" not in rows["input.voice"]
+
+
 def test_embeddings_defaults_sync_to_embedding_text_route(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
 
@@ -225,6 +263,7 @@ def test_capability_defaults_include_embedding_and_rerank_route_specs(monkeypatc
 
     assert by_key["embedding.text"]["kind"] == "embedding"
     assert by_key["embedding.image"]["kind"] == "embedding"
+    assert by_key["input.music"]["task"] == "music_understanding"
     assert by_key["output.sound"]["task"] == "sound_generation"
     assert by_key["output.music"]["task"] == "music_generation"
     assert by_key["rerank.text"]["kind"] == "rerank"

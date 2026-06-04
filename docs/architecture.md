@@ -185,7 +185,8 @@ compatible with live requests.
 
 #### Model Metadata Registry (Source of Truth)
 AbstractCore's model capability routing and architecture formatting are driven by two canonical JSON registries:
-- `abstractcore/assets/model_capabilities.json` — model limits, tool/structured output flags, multimodal support, aliases
+- `abstractcore/assets/model_capabilities.json` — model limits, tool/structured output flags, multimodal support, route-keyed `capability_routes`, aliases
+- `abstractcore/assets/model_capabilities.schema.json` — JSON Schema contract for model capability metadata
 - `abstractcore/assets/architecture_formats.json` — message formats, tool call syntax, response wrappers, detection patterns
 
 When a new model or architecture is released (or an existing one changes), update these files first. See `abstractcore/assets/README.md` for field requirements and update rules.

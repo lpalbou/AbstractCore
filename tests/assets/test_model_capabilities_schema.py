@@ -74,6 +74,53 @@ def _validate_audio_input_capabilities(label: str, capabilities: Any) -> None:
     assert len(normalized) == len(set(normalized)), f"{label}.audio_input_capabilities must not contain duplicates"
 
 
+_CAPABILITY_ROUTE_KINDS = {"input", "output", "embedding", "rerank"}
+_CAPABILITY_ROUTE_MODALITIES = {"text", "image", "video", "voice", "sound", "music", "scene3d"}
+
+
+def _validate_capability_routes(label: str, routes: Any, cfg: Mapping[str, Any]) -> None:
+    assert isinstance(routes, dict) and routes, f"{label}.capability_routes must be a non-empty object when set"
+    normalized_routes: list[str] = []
+    for kind, modalities in routes.items():
+        assert _non_empty_str(kind), f"{label}.capability_routes contains invalid kind: {kind!r}"
+        assert kind in _CAPABILITY_ROUTE_KINDS, (
+            f"{label}.capability_routes route kind {kind!r} must be one of {sorted(_CAPABILITY_ROUTE_KINDS)}"
+        )
+        assert isinstance(modalities, list) and modalities, (
+            f"{label}.capability_routes[{kind!r}] must be a non-empty modality list"
+        )
+        normalized_modalities: list[str] = []
+        for modality in modalities:
+            assert _non_empty_str(modality), (
+                f"{label}.capability_routes[{kind!r}] contains invalid modality: {modality!r}"
+            )
+            assert modality in _CAPABILITY_ROUTE_MODALITIES, (
+                f"{label}.capability_routes[{kind!r}] modality {modality!r} must be one of "
+                f"{sorted(_CAPABILITY_ROUTE_MODALITIES)}"
+            )
+            normalized_modalities.append(modality)
+            normalized_routes.append(f"{kind}.{modality}")
+        assert len(normalized_modalities) == len(set(normalized_modalities)), (
+            f"{label}.capability_routes[{kind!r}] must not contain duplicate modalities"
+        )
+
+    assert len(normalized_routes) == len(set(normalized_routes)), (
+        f"{label}.capability_routes must not contain duplicate route keys"
+    )
+    route_set = set(normalized_routes)
+    if "input.image" in route_set:
+        assert cfg.get("vision_support") is True, f"{label}.vision_support must be true when input.image is routed"
+    if "input.video" in route_set:
+        assert cfg.get("video_input_mode") in {"frames", "native"} or cfg.get("video_support") is True, (
+            f"{label}.video_input_mode must be frames/native when input.video is routed"
+        )
+    audio_routes = {"input.voice", "input.sound", "input.music"} & route_set
+    if audio_routes:
+        assert cfg.get("audio_support") is True, (
+            f"{label}.audio_support must be true when audio input routes are declared: {sorted(audio_routes)}"
+        )
+
+
 def _validate_inference_parameters(label: str, params: Any) -> None:
     assert isinstance(params, dict), f"{label}.inference_parameters must be an object"
     allowed = {
@@ -139,6 +186,7 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
         "base_model",
         "base_tokens_per_resolution",
         "benchmarks",
+        "capability_routes",
         "conversation_template",
         "default_system_prompt",
         "detail_levels",
@@ -266,12 +314,18 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
     max_tokens = _require_int(cfg.get("max_tokens"), name=f"{label}.max_tokens")
     assert max_tokens > 0, f"{label}.max_tokens must be > 0"
 
-    max_output_tokens = _require_int(cfg.get("max_output_tokens"), name=f"{label}.max_output_tokens")
-    assert max_output_tokens >= 0, f"{label}.max_output_tokens must be >= 0"
-    if max_output_tokens == 0:
-        assert cfg.get("model_type") == "embedding", (
-            f"{label}.max_output_tokens==0 is only allowed for embedding models (model_type='embedding')"
+    max_output_tokens_raw = cfg.get("max_output_tokens")
+    if max_output_tokens_raw is None:
+        assert cfg.get("model_type") != "embedding", (
+            f"{label}.max_output_tokens may be null only when no primary source publishes a hard generation cap"
         )
+    else:
+        max_output_tokens = _require_int(max_output_tokens_raw, name=f"{label}.max_output_tokens")
+        assert max_output_tokens >= 0, f"{label}.max_output_tokens must be >= 0"
+        if max_output_tokens == 0:
+            assert cfg.get("model_type") == "embedding", (
+                f"{label}.max_output_tokens==0 is only allowed for embedding models (model_type='embedding')"
+            )
 
     tool_support = cfg.get("tool_support")
     assert tool_support in {"native", "prompted", "none"}, (
@@ -301,6 +355,10 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
         assert cfg.get("audio_support") is True, (
             f"{label}.audio_support must be true when audio_input_capabilities is set"
         )
+
+    capability_routes = cfg.get("capability_routes")
+    if capability_routes is not None:
+        _validate_capability_routes(label, capability_routes, cfg)
 
     video_support = bool(cfg.get("video_support"))
     video_mode = cfg.get("video_input_mode")
@@ -413,6 +471,23 @@ def test_model_capabilities_json_has_required_top_level_sections():
 
     assert "default_capabilities" in data, "top-level key 'default_capabilities' is required"
     assert isinstance(data["default_capabilities"], dict), "'default_capabilities' must be an object"
+
+
+@pytest.mark.basic
+def test_model_capabilities_schema_declares_route_metadata_contract():
+    assets_dir = Path(__file__).parent.parent.parent / "abstractcore" / "assets"
+    path = assets_dir / "model_capabilities.schema.json"
+    with open(path, "r", encoding="utf-8") as f:
+        schema = json.load(f)
+
+    defs = schema.get("$defs")
+    assert isinstance(defs, dict), "model_capabilities.schema.json must define $defs"
+    assert "capabilityRoutes" in defs, "schema must define capabilityRoutes"
+    assert "capabilityRouteKind" in defs, "schema must define capabilityRouteKind"
+    assert set(defs.get("capabilityRouteKind", {}).get("enum") or []) == _CAPABILITY_ROUTE_KINDS
+    route_modality_items = defs.get("capabilityRouteModalities", {}).get("items")
+    assert isinstance(route_modality_items, dict), "schema must constrain capability route modality items"
+    assert set(route_modality_items.get("enum") or []) == _CAPABILITY_ROUTE_MODALITIES
 
 
 @pytest.mark.basic

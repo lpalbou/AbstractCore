@@ -295,7 +295,7 @@ Install and run:
 
 ```bash
 pip install "abstractcore[server]"
-python -m abstractcore.server.app
+abstractcore serve
 ```
 
 See [Server](server.md).
