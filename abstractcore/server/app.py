@@ -1227,6 +1227,29 @@ def _custom_openapi() -> Dict[str, Any]:
     _request_example("/v1/images/edits", "post", "multipart/form-data", "remote_openai_compatible", "Remote OpenAI-compatible image edit", image_edit_example)
     _request_example("/{provider}/v1/images/edits", "post", "multipart/form-data", "provider_scoped_image_edit", "Provider-scoped image edit", {**image_edit_example, "model": "gpt-image-1"})
     _request_example("/v1/vision/jobs/images/edits", "post", "multipart/form-data", "async_image_edit", "Async image edit job", image_edit_example)
+    image_upscale_example = {
+        "image": "<upload source.png>",
+        "provider": "mlx-gen",
+        "model": "mlx-gen/AbstractFramework/seedvr2-3b-8bit",
+        "base_url": None,
+        "response_format": "b64_json",
+        "scale": "2x",
+        "resolution": "2x",
+        "softness": "0.0",
+        "seed": "1234",
+        "quantize": None,
+        "vae_tiling": "false",
+    }
+    _request_example("/v1/images/upscale", "post", "multipart/form-data", "local_seedvr2", "Local SeedVR2 image upscale", image_upscale_example)
+    _request_example(
+        "/{provider}/v1/images/upscale",
+        "post",
+        "multipart/form-data",
+        "provider_scoped_seedvr2",
+        "Provider-scoped SeedVR2 image upscale",
+        {**image_upscale_example, "model": "AbstractFramework/seedvr2-3b-8bit", "provider": None},
+    )
+    _request_example("/v1/vision/jobs/images/upscale", "post", "multipart/form-data", "async_seedvr2", "Async SeedVR2 image upscale job", image_upscale_example)
     video_edit_example = {
         "prompt": "Slow camera push-in.",
         "image": "<upload first-frame.png>",

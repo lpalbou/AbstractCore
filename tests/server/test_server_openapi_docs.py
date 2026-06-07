@@ -171,6 +171,13 @@ def test_media_swagger_examples_are_complete_and_executable_defaults():
     assert music_example["model"] == "acemusic/ace-step-api"
     assert music_example["response_format"] == "wav"
 
+    upscale_examples = schema["paths"]["/v1/images/upscale"]["post"]["requestBody"]["content"]["multipart/form-data"]["examples"]
+    upscale_example = upscale_examples["local_seedvr2"]["value"]
+    assert upscale_example["provider"] == "mlx-gen"
+    assert upscale_example["model"] == "mlx-gen/AbstractFramework/seedvr2-3b-8bit"
+    assert upscale_example["scale"] == "2x"
+    assert upscale_example["response_format"] == "b64_json"
+
 
 def test_all_request_bodies_have_swagger_examples():
     schema = TestClient(app).get("/openapi.json").json()
