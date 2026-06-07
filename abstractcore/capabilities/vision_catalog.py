@@ -434,7 +434,13 @@ def get_local_vision_cache_catalog() -> Dict[str, Any]:
     for model_id in model_ids:
         spec = registry.get(model_id)
         supported_tasks = sorted(spec.tasks.keys())
-        if not {"text_to_image", "image_to_image", "text_to_video", "image_to_video"}.intersection(spec.tasks):
+        if not {
+            "text_to_image",
+            "image_to_image",
+            "image_upscale",
+            "text_to_video",
+            "image_to_video",
+        }.intersection(spec.tasks):
             continue
 
         for download in list(getattr(spec, "downloads", []) or []):

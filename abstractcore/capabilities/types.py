@@ -366,6 +366,17 @@ class VisionCapability(Protocol):
         **kwargs: Any,
     ) -> BytesOrArtifactRef: ...
 
+    def upscale_image(
+        self,
+        image: Union[bytes, ArtifactRef, str],
+        *,
+        artifact_store: Optional[ArtifactStoreLike] = None,
+        run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> BytesOrArtifactRef: ...
+
     def t2v(
         self,
         prompt: str,

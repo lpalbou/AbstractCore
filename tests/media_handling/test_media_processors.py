@@ -179,22 +179,50 @@ class TestPDFProcessor:
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def test_pdf_processing_mock(self):
-        """Test PDF processing with mocked PyMuPDF4LLM."""
-        # Create a fake PDF file
-        fake_pdf = Path(self.temp_dir) / "test.pdf"
-        fake_pdf.write_bytes(b"%PDF-1.4\nfake pdf content")
+    def test_pdf_processing_with_permissive_backend(self):
+        """Test PDF processing with the default pypdf backend."""
+        from pypdf import PdfWriter
+
+        test_pdf = Path(self.temp_dir) / "test.pdf"
+        writer = PdfWriter()
+        writer.add_blank_page(width=200, height=200)
+        writer.add_metadata({"/Title": "Test PDF"})
+        with test_pdf.open("wb") as fh:
+            writer.write(fh)
 
         processor = PDFProcessor()
+        result = processor.process_file(test_pdf)
 
-        # Mock the dependency to avoid requiring PyMuPDF4LLM in tests
-        try:
-            result = processor.process_file(fake_pdf)
-            # If PyMuPDF4LLM is available, test normally
-            assert result.success or "PyMuPDF4LLM not installed" in result.error_message
-        except Exception as e:
-            # If dependency not available, ensure proper error handling
-            assert "PyMuPDF4LLM not installed" in str(e) or "dependency" in str(e).lower()
+        assert result.success
+        assert result.media_content.media_type == MediaType.DOCUMENT
+        assert result.media_content.metadata["pdf_backend"] == "pypdf"
+        assert result.media_content.metadata["extraction_method"] == "pypdf"
+        assert result.media_content.metadata["page_count"] == 1
+
+    def test_pdf_processing_extracts_text_with_permissive_backend(self):
+        """Test pypdf text extraction on a text-bearing PDF."""
+        reportlab_canvas = pytest.importorskip("reportlab.pdfgen.canvas")
+
+        test_pdf = Path(self.temp_dir) / "text.pdf"
+        canvas = reportlab_canvas.Canvas(str(test_pdf))
+        canvas.drawString(72, 720, "Hello permissive PDF")
+        canvas.drawString(72, 700, "Generated without PyMuPDF.")
+        canvas.save()
+
+        processor = PDFProcessor()
+        result = processor.process_file(test_pdf)
+
+        assert result.success
+        assert result.media_content.metadata["pdf_backend"] == "pypdf"
+        assert "Hello permissive PDF" in result.media_content.content
+        assert "Generated without PyMuPDF" in result.media_content.content
+
+    def test_pypdf_backend_does_not_claim_vision_support(self):
+        """pypdf is the default PDF route and does not extract embedded images."""
+        processor = PDFProcessor(extract_images=True)
+
+        assert processor.pdf_backend == "pypdf"
+        assert processor.capabilities.vision_support is False
 
     def test_non_pdf_file(self):
         """Test handling of non-PDF file."""

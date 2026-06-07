@@ -87,6 +87,7 @@ class ServerVisionFacade:
         image_edit_request_cls: Any,
         video_generation_request_cls: Optional[Any] = None,
         image_to_video_request_cls: Optional[Any] = None,
+        image_upscale_request_cls: Optional[Any] = None,
         backend_id: str,
     ) -> None:
         self._backend = backend
@@ -95,6 +96,7 @@ class ServerVisionFacade:
         self._image_edit_request_cls = image_edit_request_cls
         self._video_generation_request_cls = video_generation_request_cls
         self._image_to_video_request_cls = image_to_video_request_cls
+        self._image_upscale_request_cls = image_upscale_request_cls
         self.backend_id = backend_id
 
     def t2i(self, prompt: str, **kwargs: Any) -> Any:
@@ -106,7 +108,7 @@ class ServerVisionFacade:
             steps=kwargs.get("steps"),
             guidance_scale=kwargs.get("guidance_scale"),
             seed=kwargs.get("seed"),
-            extra=kwargs.get("extra"),
+            extra=self._extra_with_image_params(kwargs),
         )
         with self._call_lock:
             asset = self._backend.generate_image(req)
@@ -121,34 +123,33 @@ class ServerVisionFacade:
             seed=kwargs.get("seed"),
             steps=kwargs.get("steps"),
             guidance_scale=kwargs.get("guidance_scale"),
-            extra=kwargs.get("extra"),
+            extra=self._extra_with_image_params(kwargs),
         )
         with self._call_lock:
             asset = self._backend.edit_image(req)
         return bytes(getattr(asset, "data", b""))
 
+    def upscale_image(self, image: Any, **kwargs: Any) -> Any:
+        if self._image_upscale_request_cls is None:
+            raise AttributeError("The selected AbstractVision backend does not expose ImageUpscaleRequest.")
+        req = self._image_upscale_request_cls(
+            image=image,
+            resolution=kwargs.get("resolution"),
+            scale=kwargs.get("scale"),
+            seed=kwargs.get("seed"),
+            softness=kwargs.get("softness"),
+            quantize=kwargs.get("quantize"),
+            vae_tiling=kwargs.get("vae_tiling"),
+            extra=self._extra_with_image_params(kwargs),
+        )
+        with self._call_lock:
+            asset = self._backend.upscale_image(req)
+        return bytes(getattr(asset, "data", b""))
+
     @staticmethod
-    def _extra_with_video_params(kwargs: dict[str, Any]) -> dict[str, Any]:
+    def _extra_with_params(kwargs: dict[str, Any], *, request_keys: set[str]) -> dict[str, Any]:
         extra = kwargs.get("extra")
         merged = dict(extra) if isinstance(extra, dict) else {}
-        request_keys = {
-            "prompt",
-            "image",
-            "negative_prompt",
-            "width",
-            "height",
-            "fps",
-            "num_frames",
-            "seed",
-            "steps",
-            "guidance_scale",
-            "extra",
-            "provider",
-            "model",
-            "artifact_store",
-            "run_id",
-            "tags",
-        }
         for key in ("on_progress", "progress_event_callback", "progress_callback"):
             callback = kwargs.get(key)
             if callback is not None:
@@ -159,6 +160,60 @@ class ServerVisionFacade:
             if value is not None:
                 merged[str(key)] = value
         return merged
+
+    @classmethod
+    def _extra_with_image_params(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
+        return cls._extra_with_params(
+            kwargs,
+            request_keys={
+                "prompt",
+                "image",
+                "mask",
+                "negative_prompt",
+                "width",
+                "height",
+                "resolution",
+                "scale",
+                "seed",
+                "steps",
+                "guidance_scale",
+                "guidance_2",
+                "softness",
+                "quantize",
+                "vae_tiling",
+                "extra",
+                "provider",
+                "model",
+                "artifact_store",
+                "run_id",
+                "tags",
+            },
+        )
+
+    @classmethod
+    def _extra_with_video_params(cls, kwargs: dict[str, Any]) -> dict[str, Any]:
+        return cls._extra_with_params(
+            kwargs,
+            request_keys={
+                "prompt",
+                "image",
+                "negative_prompt",
+                "width",
+                "height",
+                "fps",
+                "num_frames",
+                "seed",
+                "steps",
+                "guidance_scale",
+                "guidance_2",
+                "extra",
+                "provider",
+                "model",
+                "artifact_store",
+                "run_id",
+                "tags",
+            },
+        )
 
     def t2v(self, prompt: str, **kwargs: Any) -> Any:
         if self._video_generation_request_cls is None:
@@ -173,6 +228,7 @@ class ServerVisionFacade:
             seed=kwargs.get("seed"),
             steps=kwargs.get("steps"),
             guidance_scale=kwargs.get("guidance_scale"),
+            guidance_2=kwargs.get("guidance_2"),
             extra=self._extra_with_video_params(kwargs),
         )
         with self._call_lock:
@@ -193,6 +249,7 @@ class ServerVisionFacade:
             seed=kwargs.get("seed"),
             steps=kwargs.get("steps"),
             guidance_scale=kwargs.get("guidance_scale"),
+            guidance_2=kwargs.get("guidance_2"),
             extra=self._extra_with_video_params(kwargs),
         )
         with self._call_lock:

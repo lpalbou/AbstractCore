@@ -230,8 +230,15 @@ text = llm.generate("Explain cache invalidation.")
 # Image generation.
 image = llm.generate("A red ceramic mug on a white table.", output="image")
 
-# Image edit. One image media item plus output="image" infers image edit.
-edited = llm.generate("Make the mug blue.", media="mug.png", output="image")
+# Image edit. Source plus optional reference/style media infers image edit.
+edited = llm.generate(
+    "Make the mug blue using the second image as a style reference.",
+    media=[
+        {"type": "image", "path": "mug.png", "role": "source"},
+        {"type": "image", "path": "style.png", "role": "style"},
+    ],
+    output="image",
+)
 
 # Text-to-video. Progress callbacks are forwarded to AbstractVision.
 video = llm.generate(
@@ -240,9 +247,14 @@ video = llm.generate(
     output={
         "task": "text_to_video",
         "provider": "mlx-gen",
-        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
-        "num_frames": 121,
+        "model": "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit",
+        "width": 432,
+        "height": 240,
+        "num_frames": 41,
         "fps": 24,
+        "steps": 20,
+        "guidance_scale": 4.0,
+        "guidance_2": 3.0,
         "extra": {"max_sequence_length": 256},
     },
 )
@@ -254,7 +266,15 @@ i2v = llm.generate(
     output={
         "task": "image_to_video",
         "provider": "mlx-gen",
-        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "model": "AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit",
+        "width": 432,
+        "height": 240,
+        "num_frames": 41,
+        "fps": 24,
+        "steps": 20,
+        "guidance_scale": 3.5,
+        "guidance_2": 3.5,
+        "extra": {"max_sequence_length": 256},
     },
 )
 

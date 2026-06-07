@@ -71,10 +71,10 @@ abstractcore --add-vision-fallback huggingface Salesforce/blip-image-captioning-
 
 Creating/editing images and videos is a **deterministic capability** that can be integrated in two ways:
 
-1) **Capability plugin (library mode)**: install `abstractvision` and use `llm.vision.*` (e.g. `t2i`, `i2i`, `t2v`, `i2v`) or the unified `llm.generate(..., output=...)` surface. Configure the AbstractVision backend/default for your environment; local Diffusers remains cache-only unless downloads are explicitly enabled, and MLX-Gen local models are selected by exact repo id.
+1) **Capability plugin (library mode)**: install `abstractvision` and use `llm.vision.*` (e.g. `t2i`, `i2i`, `upscale_image`, `t2v`, `i2v`) or the unified `llm.generate(..., output=...)` surface. Configure the AbstractVision backend/default for your environment; local Diffusers remains cache-only unless downloads are explicitly enabled, and MLX-Gen local models are selected by exact repo id. Install `abstractvision[mlx-gen]` when you need the local MLX-Gen runtime.
    See: `abstractvision/docs/reference/abstractcore-integration.md`
 
-2) **AbstractCore Server (HTTP interop)**: run the optional server and use `/v1/images/*` and `/v1/videos/*` as OpenAI-compatible media routes. Local Diffusers/sdcpp/MLX-Gen backends remain available when `abstractvision` is installed via `abstractcore[server,vision]`; omit `model` only when the server has a configured default, or use provider/model ids such as `model="diffusers/default"`, `model="diffusers/<huggingface-repo>"`, `model="mlx-gen/AbstractFramework/qwen-image-2512-4bit"`, `model="mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers"`, `model="sdcpp/default"`, or `model="openai-compatible/gpt-image-2"` with a configured upstream media endpoint.
+2) **AbstractCore Server (HTTP interop)**: run the optional server and use `/v1/images/*` and `/v1/videos/*` as OpenAI-compatible media routes. Local Diffusers/sdcpp/MLX-Gen backends remain available when `abstractvision` and the needed backend runtime extra are installed in the server environment; `abstractcore[server,vision]` installs the plugin API surface, while `abstractvision[mlx-gen]` or aggregate profiles such as `abstractcore[all-apple]` provide local MLX-Gen execution. Omit `model` only when the server has a configured default, or use provider/model ids such as `model="diffusers/default"`, `model="diffusers/<huggingface-repo>"`, `model="mlx-gen/AbstractFramework/qwen-image-2512-4bit"`, `model="mlx-gen/AbstractFramework/seedvr2-3b-8bit"`, `model="mlx-gen/AbstractFramework/seedvr2-7b-4bit"`, `model="mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit"`, `model="sdcpp/default"`, or `model="openai-compatible/gpt-image-2"` with a configured upstream media endpoint.
    See: `docs/server.md`
 
 Python progress callbacks can be supplied on the unified call for generated image/video outputs:
@@ -83,15 +83,40 @@ Python progress callbacks can be supplied on the unified call for generated imag
 def on_progress(event):
     print(event)
 
+upscaled_direct = llm.vision.upscale_image(
+    "input.png",
+    provider="mlx-gen",
+    model="AbstractFramework/seedvr2-3b-8bit",
+    scale="2x",
+    on_progress=on_progress,
+)
+
+upscaled = llm.generate(
+    media={"type": "image", "path": "input.png", "role": "source"},
+    on_progress=on_progress,
+    output={
+        "task": "image_upscale",
+        "provider": "mlx-gen",
+        "model": "AbstractFramework/seedvr2-3b-8bit",
+        "scale": "2x",
+    },
+)
+png = upscaled.outputs["image"][0].data
+
 resp = llm.generate(
     "A slow camera move through a luminous data center.",
     on_progress=on_progress,
     output={
         "task": "text_to_video",
         "provider": "mlx-gen",
-        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
-        "num_frames": 121,
+        "model": "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit",
+        "width": 432,
+        "height": 240,
+        "num_frames": 41,
         "fps": 24,
+        "steps": 20,
+        "guidance_scale": 4.0,
+        "guidance_2": 3.0,
         "extra": {"max_sequence_length": 256},
     },
 )
@@ -107,17 +132,32 @@ resp = llm.generate(
     output={
         "task": "image_to_video",
         "provider": "mlx-gen",
-        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
-        "num_frames": 121,
+        "model": "AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit",
+        "width": 432,
+        "height": 240,
+        "num_frames": 41,
         "fps": 24,
+        "steps": 20,
+        "guidance_scale": 3.5,
+        "guidance_2": 3.5,
+        "extra": {"max_sequence_length": 256},
     },
 )
 ```
 
-Async HTTP routes under `/v1/vision/jobs/videos/*` expose `progress.last_event`
-when the selected backend reports richer progress events.
+Image edits can also pass additional media items with `role="reference"` or
+`role="style"`; Core forwards those as AbstractVision `reference_images` for
+backends that support multi-image composition. Async HTTP routes under
+`/v1/vision/jobs/images/*` and `/v1/vision/jobs/videos/*` expose
+`progress.last_event` when the selected backend reports richer progress events.
+For MLX-Gen, `progress` is denoise-step progress; video frame context is exposed
+separately as `frame`, `total_frames`, and `frame_progress`.
 
-This separation keeps the default `abstractcore` install dependency-light: remote media proxying lives in the server, while local generative vision runtimes remain opt-in through `abstractvision`. Quantized MLX-Gen models are selected by their published repo id; Core does not expose a separate quantization override.
+For task-specific Wan A14B video models, pass `guidance_2` as a normal output
+field when you need the second-stage/low-noise guidance control. Keep
+backend-specific fields such as `max_sequence_length` in `extra`.
+
+This separation keeps the default `abstractcore` install dependency-light: remote media proxying lives in the server, while local generative vision runtimes remain opt-in through `abstractvision`. Quantized MLX-Gen generation/edit/video models are selected by their published repo id. SeedVR2 upscaling follows the same rule for the canonical packages: use `AbstractFramework/seedvr2-3b-8bit` by default, `AbstractFramework/seedvr2-7b-8bit` when memory allows, or the matching q4 package when memory is tight. Core forwards the runtime `quantize` request field only for official/source SeedVR2 loads that need runtime quantization.
 
 ## Troubleshooting (common)
 

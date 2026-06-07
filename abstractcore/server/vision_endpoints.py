@@ -103,6 +103,18 @@ class _ProxyImageEditRequest:
 
 
 @dataclass
+class _ProxyImageUpscaleRequest:
+    image: bytes
+    resolution: Optional[Any] = None
+    scale: Optional[Any] = None
+    seed: Optional[int] = None
+    softness: Optional[float] = None
+    quantize: Optional[int] = None
+    vae_tiling: Optional[bool] = None
+    extra: Optional[Dict[str, Any]] = None
+
+
+@dataclass
 class _ProxyVideoGenerationRequest:
     prompt: str
     negative_prompt: Optional[str] = None
@@ -113,6 +125,7 @@ class _ProxyVideoGenerationRequest:
     seed: Optional[int] = None
     steps: Optional[int] = None
     guidance_scale: Optional[float] = None
+    guidance_2: Optional[float] = None
     extra: Optional[Dict[str, Any]] = None
 
 
@@ -128,6 +141,7 @@ class _ProxyImageToVideoRequest:
     seed: Optional[int] = None
     steps: Optional[int] = None
     guidance_scale: Optional[float] = None
+    guidance_2: Optional[float] = None
     extra: Optional[Dict[str, Any]] = None
 
 
@@ -230,7 +244,7 @@ class _OpenAICompatibleImageProxyBackend:
         if request.width is not None and request.height is not None:
             payload["size"] = f"{int(request.width)}x{int(request.height)}"
         if isinstance(request.extra, dict):
-            payload.update({k: v for k, v in request.extra.items() if v is not None})
+            payload.update({k: v for k, v in request.extra.items() if v is not None and not callable(v)})
 
         with httpx.Client(timeout=self.timeout_s) as client:
             resp = client.post(
@@ -250,7 +264,7 @@ class _OpenAICompatibleImageProxyBackend:
             fields["model"] = self.model_id
         if isinstance(request.extra, dict):
             for key, value in request.extra.items():
-                if value is not None:
+                if value is not None and not callable(value):
                     fields[str(key)] = str(value)
 
         files: Dict[str, Tuple[str, bytes, str]] = {
@@ -272,10 +286,27 @@ class _OpenAICompatibleImageProxyBackend:
             raise ValueError("Invalid upstream image edit response: expected JSON object")
         return self._parse_media(data, fallback_mime="image/png")
 
+    def upscale_image(self, request: _ProxyImageUpscaleRequest) -> _ProxyGeneratedAsset:
+        _ = request
+        raise _ProxyOptionalDependencyMissingError(
+            "image_upscale is not configured for this OpenAI-compatible vision backend."
+        )
+
     @staticmethod
     def _video_payload_fields(request: Any) -> Dict[str, Any]:
         payload: Dict[str, Any] = {}
-        for attr in ("prompt", "negative_prompt", "width", "height", "fps", "num_frames", "seed", "steps", "guidance_scale"):
+        for attr in (
+            "prompt",
+            "negative_prompt",
+            "width",
+            "height",
+            "fps",
+            "num_frames",
+            "seed",
+            "steps",
+            "guidance_scale",
+            "guidance_2",
+        ):
             value = getattr(request, attr, None)
             if value is not None:
                 payload[attr] = value
@@ -479,15 +510,16 @@ class VideoGenerationBody(BaseModel):
         json_schema_extra={
             "examples": [
                 {
-                    "model": "mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+                    "model": "mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit",
                     "provider": "mlx-gen",
                     "prompt": "A slow camera move through a luminous data center.",
-                    "width": 1280,
-                    "height": 704,
+                    "width": 432,
+                    "height": 240,
                     "fps": 24,
-                    "num_frames": 121,
-                    "steps": 50,
-                    "guidance_scale": 5.0,
+                    "num_frames": 41,
+                    "steps": 20,
+                    "guidance_scale": 4.0,
+                    "guidance_2": 3.0,
                     "response_format": "b64_json",
                     "extra": {"max_sequence_length": 256},
                 }
@@ -505,10 +537,10 @@ class VideoGenerationBody(BaseModel):
         default=None,
         description=(
             "Optional provider/model video id. Local MLX-Gen video models use exact model ids such as "
-            "`mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers`; remote providers use "
+            "`mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`; remote providers use "
             "`openai-compatible/<model>` with a configured upstream video endpoint."
         ),
-        examples=["mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers"],
+        examples=["mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit"],
     )
     base_url: Optional[str] = Field(
         default=None,
@@ -516,17 +548,25 @@ class VideoGenerationBody(BaseModel):
         examples=["http://127.0.0.1:5000/v1"],
     )
     n: Optional[int] = Field(default=1, description="Number of videos to generate. Clamped to 1..4.", examples=[1])
-    width: Optional[int] = Field(default=None, description="Requested video width in pixels.", examples=[1280])
-    height: Optional[int] = Field(default=None, description="Requested video height in pixels.", examples=[704])
-    size: Optional[str] = Field(default=None, description="Optional WIDTHxHEIGHT size selector.", examples=["1280x704"])
+    width: Optional[int] = Field(default=None, description="Requested video width in pixels.", examples=[432])
+    height: Optional[int] = Field(default=None, description="Requested video height in pixels.", examples=[240])
+    size: Optional[str] = Field(default=None, description="Optional WIDTHxHEIGHT size selector.", examples=["432x240"])
     fps: Optional[int] = Field(default=None, description="Requested frames per second.", examples=[24])
-    num_frames: Optional[int] = Field(default=None, description="Requested frame count.", examples=[121])
-    frames: Optional[int] = Field(default=None, description="Alias for num_frames.", examples=[121])
+    num_frames: Optional[int] = Field(default=None, description="Requested frame count.", examples=[41])
+    frames: Optional[int] = Field(default=None, description="Alias for num_frames.", examples=[41])
     response_format: Optional[str] = Field(default="b64_json", description="Response format. Only `b64_json` is currently supported.", examples=["b64_json"])
     negative_prompt: Optional[str] = Field(default=None, description="Optional negative prompt for backends that support it.")
     seed: Optional[int] = Field(default=None, description="Optional deterministic seed for local generation backends.", examples=[1234])
-    steps: Optional[int] = Field(default=None, description="Optional inference step count.", examples=[50])
-    guidance_scale: Optional[float] = Field(default=None, description="Optional guidance scale.", examples=[5.0])
+    steps: Optional[int] = Field(default=None, description="Optional inference step count.", examples=[20])
+    guidance_scale: Optional[float] = Field(default=None, description="Optional primary guidance scale.", examples=[4.0])
+    guidance_2: Optional[float] = Field(
+        default=None,
+        description=(
+            "Optional second-stage low-noise guidance scale for dual-transformer video models "
+            "such as Wan 2.2 A14B."
+        ),
+        examples=[3.0],
+    )
     max_sequence_length: Optional[int] = Field(default=None, description="Optional backend-specific prompt token length cap.", examples=[256])
     extra: Optional[Dict[str, Any]] = Field(
         default=None,
@@ -653,6 +693,10 @@ def _progress_event_payload(event: Any) -> Dict[str, Any]:
             "step",
             "total_steps",
             "progress",
+            "step_progress",
+            "frame_progress",
+            "task",
+            "timestep",
             "eta_seconds",
             "raw",
         ):
@@ -666,10 +710,10 @@ def _progress_event_payload(event: Any) -> Dict[str, Any]:
         total_frames = _coerce_int(payload.get("total_frames"))
         step = _coerce_int(payload.get("step"))
         total_steps = _coerce_int(payload.get("total_steps"))
-        if frame is not None and total_frames:
-            payload["progress"] = max(0.0, min(1.0, float(frame) / float(total_frames)))
-        elif step is not None and total_steps:
+        if step is not None and total_steps:
             payload["progress"] = max(0.0, min(1.0, float(step) / float(total_steps)))
+        elif frame is not None and total_frames:
+            payload["progress"] = max(0.0, min(1.0, float(frame) / float(total_frames)))
     return payload
 
 
@@ -703,17 +747,20 @@ def _job_update_progress(
             event_frame = _coerce_int(safe_event.get("frame"))
             event_total_frames = _coerce_int(safe_event.get("total_frames"))
             if step is None:
+                if event_step is not None:
+                    prog["step"] = event_step
                 if event_frame is not None:
                     prog["frame"] = event_frame
-                elif event_step is not None:
-                    prog["step"] = event_step
             if total is None:
+                if event_total_steps is not None:
+                    prog["total_steps"] = event_total_steps
                 if event_total_frames is not None:
                     prog["total_frames"] = event_total_frames
-                elif event_total_steps is not None:
-                    prog["total_steps"] = event_total_steps
             if "progress" in safe_event:
                 prog["progress"] = safe_event.get("progress")
+            for key in ("step_progress", "frame_progress"):
+                if key in safe_event:
+                    prog[key] = safe_event.get(key)
         job["updated_at_s"] = time.time()
 
 
@@ -724,6 +771,9 @@ def _job_finish(job_id: str, *, ok: bool, result: Optional[Dict[str, Any]] = Non
             return
         job["state"] = "succeeded" if ok else "failed"
         job["updated_at_s"] = time.time()
+        prog = job.get("progress")
+        if isinstance(prog, dict):
+            prog["message"] = "succeeded" if ok else "failed"
         if ok:
             job["result"] = result
             job.pop("error", None)
@@ -805,7 +855,7 @@ def _vision_load_id_for_key(key: Tuple[Any, ...]) -> str:
     return hashlib.sha256(repr(key).encode("utf-8")).hexdigest()[:16]
 
 
-def _unpack_resolved_backend(resolved: Tuple[Any, ...]) -> Tuple[Any, Any, Any, Any, Any, Any, Any]:
+def _unpack_resolved_backend(resolved: Tuple[Any, ...]) -> Tuple[Any, Any, Any, Any, Any, Any, Any, Any]:
     if len(resolved) < 5:
         raise RuntimeError("Vision backend resolver returned an invalid result.")
     return (
@@ -816,6 +866,7 @@ def _unpack_resolved_backend(resolved: Tuple[Any, ...]) -> Tuple[Any, Any, Any, 
         resolved[4],
         resolved[5] if len(resolved) > 5 else None,
         resolved[6] if len(resolved) > 6 else None,
+        resolved[7] if len(resolved) > 7 else None,
     )
 
 
@@ -831,6 +882,10 @@ def _normalize_vision_residency_task(value: Any) -> Optional[str]:
         "image_to_image": "image_to_image",
         "i2i": "image_to_image",
         "image_edit": "image_to_image",
+        "image_upscale": "image_upscale",
+        "upscale": "image_upscale",
+        "upscale_image": "image_upscale",
+        "super_resolution": "image_upscale",
         "video_generation": "video_generation",
         "text_to_video": "text_to_video",
         "t2v": "text_to_video",
@@ -844,6 +899,8 @@ def _vision_record_tasks(task: Optional[str]) -> list[str]:
     task = _normalize_vision_residency_task(task)
     if task in {"video_generation", "text_to_video", "image_to_video"}:
         return ["video_generation", "text_to_video", "image_to_video"]
+    if task == "image_upscale":
+        return ["image_upscale"]
     return ["image_generation", "text_to_image", "image_to_image"]
 
 
@@ -1049,7 +1106,7 @@ def load_server_vision_loaded_model(
         record["loaded_new"] = bool(loaded_new)
         return record
 
-    backend, call_lock, _missing, _gen_req, _edit_req, _video_req, _i2v_req = _unpack_resolved_backend(
+    backend, call_lock, _missing, _gen_req, _edit_req, _video_req, _i2v_req, _upscale_req = _unpack_resolved_backend(
         _resolve_backend(
             request_model,
             base_url=payload.get("base_url"),
@@ -1875,6 +1932,7 @@ def _import_abstractvision() -> Tuple[Any, ...]:
             ImageEditRequest,
             ImageGenerationRequest,
             ImageToVideoRequest,
+            ImageUpscaleRequest,
             VideoGenerationRequest,
         )
     except Exception as e:  # pragma: no cover
@@ -1899,7 +1957,13 @@ def _import_abstractvision() -> Tuple[Any, ...]:
         StableDiffusionCppBackendConfig,
         StableDiffusionCppVisionBackend,
         OptionalDependencyMissingError,
-        (ImageGenerationRequest, ImageEditRequest, VideoGenerationRequest, ImageToVideoRequest),
+        (
+            ImageGenerationRequest,
+            ImageEditRequest,
+            VideoGenerationRequest,
+            ImageToVideoRequest,
+            ImageUpscaleRequest,
+        ),
     )
 
 
@@ -1953,6 +2017,7 @@ _VIDEO_GENERATION_CORE_FIELDS = {
     "seed",
     "steps",
     "guidance_scale",
+    "guidance_2",
     "extra",
 }
 
@@ -2064,6 +2129,128 @@ def _coerce_float(v: Any) -> Optional[float]:
         return float(str(v).strip())
     except Exception:
         return None
+
+
+def _coerce_bool(v: Any) -> Optional[bool]:
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return v
+    text = str(v).strip().lower()
+    if text in {"", "none", "null"}:
+        return None
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def _blank_form_value(v: Any) -> bool:
+    if v is None:
+        return True
+    return str(v).strip().lower() in {"", "none", "null"}
+
+
+def _coerce_form_int(name: str, v: Any, *, allowed: Optional[set[int]] = None) -> Optional[int]:
+    if _blank_form_value(v):
+        return None
+    if isinstance(v, bool):
+        raise HTTPException(status_code=400, detail=f"{name} must be an integer.")
+    try:
+        value = int(str(v).strip())
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"{name} must be an integer.") from e
+    if allowed is not None and value not in allowed:
+        allowed_s = ", ".join(str(x) for x in sorted(allowed))
+        raise HTTPException(status_code=400, detail=f"{name} must be one of: {allowed_s}.")
+    return value
+
+
+def _coerce_form_float(
+    name: str,
+    v: Any,
+    *,
+    minimum: Optional[float] = None,
+    maximum: Optional[float] = None,
+) -> Optional[float]:
+    if _blank_form_value(v):
+        return None
+    if isinstance(v, bool):
+        raise HTTPException(status_code=400, detail=f"{name} must be a number.")
+    try:
+        value = float(str(v).strip())
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"{name} must be a number.") from e
+    if minimum is not None and value < minimum:
+        raise HTTPException(status_code=400, detail=f"{name} must be >= {minimum}.")
+    if maximum is not None and value > maximum:
+        raise HTTPException(status_code=400, detail=f"{name} must be <= {maximum}.")
+    return value
+
+
+def _coerce_form_bool(name: str, v: Any) -> Optional[bool]:
+    if _blank_form_value(v):
+        return None
+    if isinstance(v, bool):
+        return v
+    text = str(v).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+    raise HTTPException(status_code=400, detail=f"{name} must be a boolean.")
+
+
+def _validate_scale_factor_field(name: str, v: Optional[str]) -> Optional[str]:
+    if _blank_form_value(v):
+        return None
+    text = str(v).strip().lower()
+    numeric_text = text[:-1].strip() if text.endswith("x") else text
+    try:
+        value = float(numeric_text)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"{name} must be a positive scale factor.") from e
+    if value <= 0:
+        raise HTTPException(status_code=400, detail=f"{name} must be positive.")
+    return str(v).strip()
+
+
+def _validate_upscale_resolution_field(v: Optional[str]) -> Optional[str]:
+    if _blank_form_value(v):
+        return None
+    text = str(v).strip().lower()
+    if text.endswith("x"):
+        return _validate_scale_factor_field("resolution", text)
+    try:
+        value = int(text)
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail="resolution must be a positive integer shortest edge or scale factor such as 2x.",
+        ) from e
+    if value <= 0:
+        raise HTTPException(status_code=400, detail="resolution must be positive.")
+    return str(v).strip()
+
+
+def _parse_upscale_form_fields(
+    *,
+    scale: Optional[str],
+    resolution: Optional[str],
+    softness: Optional[str],
+    seed: Optional[str],
+    quantize: Optional[str],
+    vae_tiling: Optional[str],
+) -> Dict[str, Any]:
+    return {
+        "scale": _validate_scale_factor_field("scale", scale),
+        "resolution": _validate_upscale_resolution_field(resolution),
+        "softness": _coerce_form_float("softness", softness, minimum=0.0, maximum=1.0),
+        "seed": _coerce_form_int("seed", seed),
+        "quantize": _coerce_form_int("quantize", quantize, allowed={3, 4, 5, 6, 8}),
+        "vae_tiling": _coerce_form_bool("vae_tiling", vae_tiling),
+    }
 
 
 def _parse_extra_json_form(extra_json: Optional[str]) -> Dict[str, Any]:
@@ -2180,6 +2367,7 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
             _ProxyImageEditRequest,
             _ProxyVideoGenerationRequest,
             _ProxyImageToVideoRequest,
+            _ProxyImageUpscaleRequest,
         )
     elif backend_kind == "diffusers":
         model_id = _require_diffusers_model_id(request_model)
@@ -2252,6 +2440,7 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
     ImageEditRequest = req_types[1]
     VideoGenerationRequest = req_types[2] if len(req_types) > 2 else None
     ImageToVideoRequest = req_types[3] if len(req_types) > 3 else None
+    ImageUpscaleRequest = req_types[4] if len(req_types) > 4 else None
 
     active_model_id, active_kind, active_backend, active_call_lock = _get_active_backend()
     if active_backend is not None and active_call_lock is not None and (not req_model or req_model == active_model_id):
@@ -2263,6 +2452,7 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
             ImageEditRequest,
             VideoGenerationRequest,
             ImageToVideoRequest,
+            ImageUpscaleRequest,
         )
 
     if backend_kind == "diffusers":
@@ -2292,6 +2482,7 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
             ImageEditRequest,
             VideoGenerationRequest,
             ImageToVideoRequest,
+            ImageUpscaleRequest,
         )
 
     if backend_kind == "mlx-gen":
@@ -2317,6 +2508,7 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
             ImageEditRequest,
             VideoGenerationRequest,
             ImageToVideoRequest,
+            ImageUpscaleRequest,
         )
 
     if backend_kind == "sdcpp":
@@ -2359,6 +2551,7 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
             ImageEditRequest,
             VideoGenerationRequest,
             ImageToVideoRequest,
+            ImageUpscaleRequest,
         )
 
     raise HTTPException(status_code=501, detail=f"Unknown vision backend kind: {backend_kind!r} (set ABSTRACTCORE_VISION_BACKEND)")
@@ -2378,6 +2571,7 @@ def _create_vision_generation_core(
         ImageEditRequest,
         VideoGenerationRequest,
         ImageToVideoRequest,
+        ImageUpscaleRequest,
     ) = _unpack_resolved_backend(
         _resolve_backend(
             request_model,
@@ -2392,6 +2586,7 @@ def _create_vision_generation_core(
         image_edit_request_cls=ImageEditRequest,
         video_generation_request_cls=VideoGenerationRequest,
         image_to_video_request_cls=ImageToVideoRequest,
+        image_upscale_request_cls=ImageUpscaleRequest,
         backend_id=f"abstractcore-server:{_effective_backend_kind(request_model)}",
     )
     core = create_capability_generation_core(vision_facade=facade)
@@ -2436,11 +2631,13 @@ def _vision_catalog_error(exc: Exception) -> HTTPException:
 
 
 def _vision_provider_model_capabilities_for_task(task: Optional[str]) -> list[str]:
-    image_caps = ["text_to_image", "image_to_image", "image_generation", "image_edit"]
+    image_caps = ["text_to_image", "image_to_image", "image_generation", "image_edit", "image_upscale"]
     video_caps = ["text_to_video", "image_to_video", "video_generation"]
     normalized = _normalize_vision_residency_task(task)
     if normalized in {"text_to_video", "image_to_video", "video_generation"}:
         return video_caps
+    if normalized == "image_upscale":
+        return ["image_upscale"]
     if normalized in {"text_to_image", "image_to_image", "image_generation", "image_edit"}:
         return image_caps
     if normalized:
@@ -2645,10 +2842,10 @@ async def _vision_providers_payload(
 ) -> Dict[str, Any]:
     if task is not None:
         task = str(task).strip() or None
-    if task and task not in {"text_to_image", "image_to_image", "text_to_video", "image_to_video"}:
+    if task and task not in {"text_to_image", "image_to_image", "image_upscale", "text_to_video", "image_to_video"}:
         raise HTTPException(
             status_code=400,
-            detail="task must be one of: text_to_image, image_to_image, text_to_video, image_to_video",
+            detail="task must be one of: text_to_image, image_to_image, image_upscale, text_to_video, image_to_video",
         )
 
     if not include_models:
@@ -2730,7 +2927,7 @@ async def list_vision_providers(
     request: Request,
     task: Optional[str] = Query(
         default=None,
-        description="Optional provider catalog task filter: text_to_image, image_to_image, text_to_video, or image_to_video.",
+        description="Optional provider catalog task filter: text_to_image, image_to_image, image_upscale, text_to_video, or image_to_video.",
         examples=["text_to_image"],
     ),
     provider: Optional[str] = Query(
@@ -2776,7 +2973,7 @@ async def list_vision_provider_models(
     request: Request,
     task: Optional[str] = Query(
         default=None,
-        description="Optional provider catalog task filter: text_to_image, image_to_image, text_to_video, or image_to_video.",
+        description="Optional provider catalog task filter: text_to_image, image_to_image, image_upscale, text_to_video, or image_to_video.",
         examples=["text_to_image"],
     ),
     provider: Optional[str] = Query(
@@ -2825,7 +3022,7 @@ async def list_cached_vision_models(
     request: Request,
     task: Optional[str] = Query(
         default=None,
-        description="Optional model catalog task filter: text_to_image, image_to_image, text_to_video, or image_to_video.",
+        description="Optional model catalog task filter: text_to_image, image_to_image, image_upscale, text_to_video, or image_to_video.",
         examples=["text_to_image"],
     ),
     provider: Optional[str] = Query(
@@ -2854,10 +3051,10 @@ async def list_cached_vision_models(
     """List available vision provider models, including local cached models."""
     if task is not None:
         task = str(task).strip() or None
-    if task and task not in {"text_to_image", "image_to_image", "text_to_video", "image_to_video"}:
+    if task and task not in {"text_to_image", "image_to_image", "image_upscale", "text_to_video", "image_to_video"}:
         raise HTTPException(
             status_code=400,
-            detail="task must be one of: text_to_image, image_to_image, text_to_video, image_to_video",
+            detail="task must be one of: text_to_image, image_to_image, image_upscale, text_to_video, image_to_video",
         )
 
     provider_norm = str(provider or "").strip() or None
@@ -3061,6 +3258,7 @@ async def _videos_generations_impl(
     negative_prompt = payload.get("negative_prompt")
     steps = _coerce_int(payload.get("steps"))
     guidance_scale = _coerce_float(payload.get("guidance_scale"))
+    guidance_2 = _coerce_float(payload.get("guidance_2"))
     seed = _coerce_int(payload.get("seed"))
     request_model = _scoped_request_model_for_request(
         payload.get("model"),
@@ -3090,6 +3288,7 @@ async def _videos_generations_impl(
                 "num_frames": num_frames,
                 "steps": steps,
                 "guidance_scale": guidance_scale,
+                "guidance_2": guidance_2,
                 "seed": seed,
                 "format": "mp4",
                 "extra": extra,
@@ -3169,6 +3368,7 @@ async def jobs_images_generations(request: Request, payload: ImageGenerationBody
         _ImageEditRequest,
         _VideoGenerationRequest,
         _ImageToVideoRequest,
+        _ImageUpscaleRequest,
     ) = _unpack_resolved_backend(
         _resolve_backend(
             request_model,
@@ -3207,6 +3407,13 @@ async def jobs_images_generations(request: Request, payload: ImageGenerationBody
 
             data_items = []
             for i in range(int(n)):
+                run_extra = dict(extra or {})
+
+                def _event_progress(raw_event: Any) -> None:
+                    event = _progress_event_payload(raw_event)
+                    _job_update_progress(job_id, step=None, total=None, event=event)
+
+                run_extra["on_progress"] = _event_progress
                 req = ImageGenerationRequest(
                     prompt=prompt,
                     negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
@@ -3215,7 +3422,7 @@ async def jobs_images_generations(request: Request, payload: ImageGenerationBody
                     steps=steps,
                     guidance_scale=guidance_scale,
                     seed=seed,
-                    extra=extra,
+                    extra=run_extra,
                 )
 
                 offset = int(steps) * i if steps is not None else 0
@@ -3264,6 +3471,7 @@ async def jobs_videos_generations(request: Request, payload: VideoGenerationBody
     negative_prompt = payload.get("negative_prompt")
     steps = _coerce_int(payload.get("steps"))
     guidance_scale = _coerce_float(payload.get("guidance_scale"))
+    guidance_2 = _coerce_float(payload.get("guidance_2"))
     seed = _coerce_int(payload.get("seed"))
     request_model = _scoped_request_model_for_request(
         payload.get("model"),
@@ -3283,6 +3491,7 @@ async def jobs_videos_generations(request: Request, payload: VideoGenerationBody
         _ImageEditRequest,
         VideoGenerationRequest,
         _ImageToVideoRequest,
+        _ImageUpscaleRequest,
     ) = _unpack_resolved_backend(
         _resolve_backend(
             request_model,
@@ -3336,6 +3545,7 @@ async def jobs_videos_generations(request: Request, payload: VideoGenerationBody
                 num_frames=num_frames,
                 steps=steps,
                 guidance_scale=guidance_scale,
+                guidance_2=guidance_2,
                 seed=seed,
                 extra=run_extra,
             )
@@ -3397,6 +3607,7 @@ if _HAS_MULTIPART:
         prompt: str = Form(..., description="Text prompt describing the desired image edit.", examples=["Make the mug blue and keep the white background."]),
         image: UploadFile = File(..., description="Source image to edit. Upload a PNG, JPEG, or WebP file supported by the selected backend."),
         mask: Optional[UploadFile] = File(None, description="Optional mask image for inpainting/edit backends that support it. Transparent pixels mark editable areas for OpenAI-style masks."),
+        reference_images: Optional[list[UploadFile]] = File(None, description="Optional additional reference images for backends that support multi-image composition or style/layout references."),
         provider: Optional[str] = Form(
             None,
             description="Optional image provider/backend hint, e.g. `openai-compatible`, `openai`, `diffusers`, `mflux`, or `sdcpp`.",
@@ -3438,6 +3649,11 @@ if _HAS_MULTIPART:
             raise HTTPException(status_code=400, detail="Missing required image bytes")
 
         mask_bytes = await mask.read() if mask is not None else None
+        reference_image_bytes: list[bytes] = []
+        for ref in reference_images or []:
+            content = await ref.read()
+            if content:
+                reference_image_bytes.append(bytes(content))
 
         extra: Dict[str, Any] = {}
         if extra_json:
@@ -3460,6 +3676,8 @@ if _HAS_MULTIPART:
             raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
         if size:
             extra.setdefault("size", str(size).strip())
+        if reference_image_bytes:
+            extra.setdefault("reference_images", reference_image_bytes)
         request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
         provider_api_key = _provider_api_key_from_request(request)
         if _is_remote_vision_request(request_model):
@@ -3472,6 +3690,7 @@ if _HAS_MULTIPART:
             ImageEditRequest,
             _VideoGenerationRequest,
             _ImageToVideoRequest,
+            _ImageUpscaleRequest,
         ) = _unpack_resolved_backend(
             _resolve_backend(
                 request_model,
@@ -3506,6 +3725,13 @@ if _HAS_MULTIPART:
                         job["state"] = "running"
                         job["updated_at_s"] = time.time()
 
+                run_extra = dict(extra or {})
+
+                def _event_progress(raw_event: Any) -> None:
+                    event = _progress_event_payload(raw_event)
+                    _job_update_progress(job_id, step=None, total=None, event=event)
+
+                run_extra["on_progress"] = _event_progress
                 req = ImageEditRequest(
                     prompt=prompt_s,
                     image=bytes(image_bytes),
@@ -3514,7 +3740,7 @@ if _HAS_MULTIPART:
                     seed=seed_i,
                     steps=steps_i,
                     guidance_scale=guidance_f,
-                    extra=extra,
+                    extra=run_extra,
                 )
 
                 def _progress(step_i: int, total_i: Optional[int] = None) -> None:
@@ -3547,6 +3773,7 @@ if _HAS_MULTIPART:
         prompt: str = Form(..., description="Text prompt describing the desired image edit.", examples=["Make the mug blue and keep the white background."]),
         image: UploadFile = File(..., description="Source image to edit. Upload a PNG, JPEG, or WebP file supported by the selected backend."),
         mask: Optional[UploadFile] = File(None, description="Optional mask image for inpainting/edit backends that support it. Transparent pixels mark editable areas for OpenAI-style masks."),
+        reference_images: Optional[list[UploadFile]] = File(None, description="Optional additional reference images for backends that support multi-image composition or style/layout references."),
         provider: Optional[str] = Form(
             None,
             description="Optional image provider/backend hint, e.g. `openai-compatible`, `openai`, `diffusers`, `mflux`, or `sdcpp`.",
@@ -3592,6 +3819,11 @@ if _HAS_MULTIPART:
             raise HTTPException(status_code=400, detail="Missing required image bytes")
 
         mask_bytes = await mask.read() if mask is not None else None
+        reference_image_bytes: list[bytes] = []
+        for ref in reference_images or []:
+            content = await ref.read()
+            if content:
+                reference_image_bytes.append(bytes(content))
 
         extra: Dict[str, Any] = {}
         if extra_json:
@@ -3611,6 +3843,8 @@ if _HAS_MULTIPART:
             raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
         if size:
             extra.setdefault("size", str(size).strip())
+        if reference_image_bytes:
+            extra.setdefault("reference_images", reference_image_bytes)
         request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
         provider_api_key = _provider_api_key_from_request(request)
         if _is_remote_vision_request(request_model):
@@ -3674,6 +3908,7 @@ if _HAS_MULTIPART:
         prompt: str = Form(..., description="Text prompt describing the desired image edit.", examples=["Make the mug blue and keep the white background."]),
         image: UploadFile = File(..., description="Source image to edit. Upload a PNG, JPEG, or WebP file supported by the selected backend."),
         mask: Optional[UploadFile] = File(None, description="Optional mask image for inpainting/edit backends that support it. Transparent pixels mark editable areas for OpenAI-style masks."),
+        reference_images: Optional[list[UploadFile]] = File(None, description="Optional additional reference images for backends that support multi-image composition or style/layout references."),
         model: Optional[str] = Form(
             None,
             description=(
@@ -3704,6 +3939,7 @@ if _HAS_MULTIPART:
             prompt=prompt,
             image=image,
             mask=mask,
+            reference_images=reference_images,
             provider=provider,
             model=model,
             base_url=base_url,
@@ -3716,6 +3952,229 @@ if _HAS_MULTIPART:
             extra_json=extra_json,
         )
 
+    @router.post("/images/upscale")
+    async def images_upscale(
+        request: Request,
+        image: UploadFile = File(..., description="Source image to upscale."),
+        provider: Optional[str] = Form(None, description="Optional image provider/backend hint.", examples=["mlx-gen"]),
+        model: Optional[str] = Form(None, description="Optional provider/model image id.", examples=["mlx-gen/AbstractFramework/seedvr2-3b-8bit"]),
+        base_url: Optional[str] = Form(None, description="Optional request-level base URL override for compatible backends."),
+        response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported.", examples=["b64_json"]),
+        scale: Optional[str] = Form(None, description="Friendly scale factor, for example `2`, `2x`, or `1.5x`.", examples=["2x"]),
+        resolution: Optional[str] = Form(None, description="SeedVR2 target shortest edge in pixels or scale factor such as `2x`.", examples=["2x"]),
+        softness: Optional[str] = Form(None, description="SeedVR2 softness in [0.0, 1.0].", examples=["0.0"]),
+        seed: Optional[str] = Form(None, description="Deterministic seed.", examples=["1234"]),
+        quantize: Optional[str] = Form(None, description="Runtime quantization for official/source SeedVR2 loading: 3, 4, 5, 6, or 8. Canonical prepared q8/q4 packages do not require this field.", examples=["8"]),
+        vae_tiling: Optional[str] = Form(None, description="Enable tiled VAE encode/decode for very large outputs.", examples=["false"]),
+        extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific parameters."),
+    ) -> Dict[str, Any]:
+        image_bytes = await image.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="Missing required image bytes")
+        response_format_s = str(response_format or "b64_json").strip().lower()
+        if response_format_s not in {"b64_json"}:
+            raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
+        extra = _parse_extra_json_form(extra_json)
+        upscale_fields = _parse_upscale_form_fields(
+            scale=scale,
+            resolution=resolution,
+            softness=softness,
+            seed=seed,
+            quantize=quantize,
+            vae_tiling=vae_tiling,
+        )
+        request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
+        provider_api_key = _provider_api_key_from_request(request)
+        if _is_remote_vision_request(request_model):
+            _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+        core, OptionalDependencyMissingError = _create_vision_generation_core(
+            request_model,
+            base_url=base_url,
+            api_key=provider_api_key,
+        )
+        try:
+            result = core.generate(
+                "",
+                media=[
+                    {
+                        "type": "image",
+                        "content": bytes(image_bytes),
+                        "role": "source",
+                    }
+                ],
+                output={
+                    "modality": "image",
+                    "task": "image_upscale",
+                    "provider": provider,
+                    "model": model,
+                    "scale": upscale_fields["scale"],
+                    "resolution": upscale_fields["resolution"],
+                    "softness": upscale_fields["softness"],
+                    "seed": upscale_fields["seed"],
+                    "quantize": upscale_fields["quantize"],
+                    "vae_tiling": upscale_fields["vae_tiling"],
+                    "extra": extra,
+                },
+            )
+            image_bytes_out = _first_generated_image_bytes(result)
+        except OptionalDependencyMissingError as e:
+            raise HTTPException(status_code=501, detail=str(e)) from e
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e)) from e
+        b64 = base64.b64encode(image_bytes_out).decode("ascii")
+        return {"created": int(time.time()), "data": [{"b64_json": b64}]}
+
+    @provider_router.post("/{provider}/v1/images/upscale")
+    async def provider_images_upscale(
+        request: Request,
+        provider: str = FastAPIPath(..., description="Image provider route prefix, e.g. `mlx-gen`."),
+        image: UploadFile = File(..., description="Source image to upscale."),
+        model: Optional[str] = Form(None, description="Optional unprefixed model id for the provider route.", examples=["AbstractFramework/seedvr2-3b-8bit"]),
+        base_url: Optional[str] = Form(None, description="Optional request-level base URL override for compatible backends."),
+        response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported.", examples=["b64_json"]),
+        scale: Optional[str] = Form(None, description="Friendly scale factor, for example `2`, `2x`, or `1.5x`.", examples=["2x"]),
+        resolution: Optional[str] = Form(None, description="SeedVR2 target shortest edge in pixels or scale factor such as `2x`.", examples=["2x"]),
+        softness: Optional[str] = Form(None, description="SeedVR2 softness in [0.0, 1.0].", examples=["0.0"]),
+        seed: Optional[str] = Form(None, description="Deterministic seed.", examples=["1234"]),
+        quantize: Optional[str] = Form(None, description="Runtime quantization for official/source SeedVR2 loading: 3, 4, 5, 6, or 8. Canonical prepared q8/q4 packages do not require this field.", examples=["8"]),
+        vae_tiling: Optional[str] = Form(None, description="Enable tiled VAE encode/decode for very large outputs.", examples=["false"]),
+        extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific parameters."),
+    ) -> Dict[str, Any]:
+        return await images_upscale(
+            request=request,
+            image=image,
+            provider=provider,
+            model=model,
+            base_url=base_url,
+            response_format=response_format,
+            scale=scale,
+            resolution=resolution,
+            softness=softness,
+            seed=seed,
+            quantize=quantize,
+            vae_tiling=vae_tiling,
+            extra_json=extra_json,
+        )
+
+    @router.post("/vision/jobs/images/upscale")
+    async def jobs_images_upscale(
+        request: Request,
+        image: UploadFile = File(..., description="Source image to upscale."),
+        provider: Optional[str] = Form(None, description="Optional image provider/backend hint.", examples=["mlx-gen"]),
+        model: Optional[str] = Form(None, description="Optional provider/model image id.", examples=["mlx-gen/AbstractFramework/seedvr2-3b-8bit"]),
+        base_url: Optional[str] = Form(None, description="Optional request-level base URL override for compatible backends."),
+        scale: Optional[str] = Form(None, description="Friendly scale factor, for example `2`, `2x`, or `1.5x`.", examples=["2x"]),
+        resolution: Optional[str] = Form(None, description="SeedVR2 target shortest edge in pixels or scale factor such as `2x`.", examples=["2x"]),
+        softness: Optional[str] = Form(None, description="SeedVR2 softness in [0.0, 1.0].", examples=["0.0"]),
+        seed: Optional[str] = Form(None, description="Deterministic seed.", examples=["1234"]),
+        quantize: Optional[str] = Form(None, description="Runtime quantization for official/source SeedVR2 loading: 3, 4, 5, 6, or 8. Canonical prepared q8/q4 packages do not require this field.", examples=["8"]),
+        vae_tiling: Optional[str] = Form(None, description="Enable tiled VAE encode/decode for very large outputs.", examples=["false"]),
+        response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported.", examples=["b64_json"]),
+        extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific parameters."),
+    ) -> Dict[str, Any]:
+        image_bytes = await image.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="Missing required image bytes")
+        response_format_s = str(response_format or "b64_json").strip().lower()
+        if response_format_s not in {"b64_json"}:
+            raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
+        extra = _parse_extra_json_form(extra_json)
+        upscale_fields = _parse_upscale_form_fields(
+            scale=scale,
+            resolution=resolution,
+            softness=softness,
+            seed=seed,
+            quantize=quantize,
+            vae_tiling=vae_tiling,
+        )
+        request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
+        provider_api_key = _provider_api_key_from_request(request)
+        if _is_remote_vision_request(request_model):
+            _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
+        (
+            backend,
+            call_lock,
+            OptionalDependencyMissingError,
+            _ImageGenerationRequest,
+            _ImageEditRequest,
+            _VideoGenerationRequest,
+            _ImageToVideoRequest,
+            ImageUpscaleRequest,
+        ) = _unpack_resolved_backend(
+            _resolve_backend(
+                request_model,
+                base_url=base_url,
+                api_key=provider_api_key,
+            )
+        )
+        if ImageUpscaleRequest is None:
+            raise HTTPException(status_code=501, detail="The selected vision backend does not expose ImageUpscaleRequest.")
+
+        now_s = time.time()
+        with _JOBS_LOCK:
+            _jobs_cleanup_locked(now_s=now_s)
+            if _any_inflight_job_locked():
+                raise HTTPException(status_code=409, detail="Another generation is already running; wait for it to finish.")
+            job_id = _new_job_id()
+            _JOBS[job_id] = {
+                "id": job_id,
+                "kind": "images/upscale",
+                "state": "queued",
+                "created_at_s": now_s,
+                "updated_at_s": now_s,
+                "progress": {"step": 0, "total_steps": None},
+            }
+
+        def _runner() -> None:
+            try:
+                _job_update_progress(job_id, step=0, total=None, message="running")
+                with _JOBS_LOCK:
+                    job = _JOBS.get(job_id)
+                    if job is not None:
+                        job["state"] = "running"
+                        job["updated_at_s"] = time.time()
+
+                run_extra = dict(extra or {})
+
+                def _event_progress(raw_event: Any) -> None:
+                    event = _progress_event_payload(raw_event)
+                    _job_update_progress(job_id, step=None, total=None, event=event)
+
+                run_extra["on_progress"] = _event_progress
+                req = ImageUpscaleRequest(
+                    image=bytes(image_bytes),
+                    resolution=upscale_fields["resolution"],
+                    scale=upscale_fields["scale"],
+                    seed=upscale_fields["seed"],
+                    softness=upscale_fields["softness"],
+                    quantize=upscale_fields["quantize"],
+                    vae_tiling=upscale_fields["vae_tiling"],
+                    extra=run_extra,
+                )
+
+                def _progress(step_i: int, total_i: Optional[int] = None) -> None:
+                    _job_update_progress(job_id, step=max(0, int(step_i)), total=total_i)
+
+                with call_lock:
+                    fn = getattr(backend, "upscale_image_with_progress", None)
+                    if callable(fn):
+                        asset = fn(req, progress_callback=_progress)
+                    else:
+                        asset = backend.upscale_image(req)
+                b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
+                _job_finish(job_id, ok=True, result={"created": int(time.time()), "data": [{"b64_json": b64}]})
+            except OptionalDependencyMissingError as e:
+                _job_finish(job_id, ok=False, error=str(e))
+            except Exception as e:
+                _job_finish(job_id, ok=False, error=str(e))
+
+        threading.Thread(target=_runner, name=f"vision-job-{job_id}", daemon=True).start()
+        return {"job_id": job_id}
+
     @router.post("/vision/jobs/videos/edits")
     @router.post("/vision/jobs/videos/from-image", include_in_schema=False)
     async def jobs_videos_edits(
@@ -3723,7 +4182,7 @@ if _HAS_MULTIPART:
         prompt: str = Form("", description="Text prompt describing the desired image-to-video motion."),
         image: UploadFile = File(..., description="Source image / first frame to animate."),
         provider: Optional[str] = Form(None, description="Optional video provider/backend hint.", examples=["mlx-gen"]),
-        model: Optional[str] = Form(None, description="Optional provider/model video id.", examples=["mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers"]),
+        model: Optional[str] = Form(None, description="Optional provider/model video id.", examples=["mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit"]),
         base_url: Optional[str] = Form(None, description="Optional request-level base URL override for OpenAI-compatible video backends."),
         width: Optional[str] = Form(None, description="Requested video width in pixels.", examples=["1280"]),
         height: Optional[str] = Form(None, description="Requested video height in pixels.", examples=["704"]),
@@ -3736,6 +4195,7 @@ if _HAS_MULTIPART:
         seed: Optional[str] = Form(None, description="Optional deterministic seed."),
         steps: Optional[str] = Form(None, description="Optional inference step count."),
         guidance_scale: Optional[str] = Form(None, description="Optional guidance scale."),
+        guidance_2: Optional[str] = Form(None, description="Optional second-stage low-noise guidance scale for dual-transformer video models."),
         max_sequence_length: Optional[str] = Form(None, description="Optional backend-specific prompt token length cap."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters."),
     ) -> Dict[str, Any]:
@@ -3762,6 +4222,7 @@ if _HAS_MULTIPART:
             "seed": _coerce_int(seed),
             "steps": _coerce_int(steps),
             "guidance_scale": _coerce_float(guidance_scale),
+            "guidance_2": _coerce_float(guidance_2),
             "max_sequence_length": _coerce_int(max_sequence_length),
             "extra": _parse_extra_json_form(extra_json),
         }
@@ -3778,6 +4239,7 @@ if _HAS_MULTIPART:
             _ImageEditRequest,
             _VideoGenerationRequest,
             ImageToVideoRequest,
+            _ImageUpscaleRequest,
         ) = _unpack_resolved_backend(
             _resolve_backend(
                 request_model,
@@ -3832,6 +4294,7 @@ if _HAS_MULTIPART:
                     seed=_coerce_int(seed),
                     steps=_coerce_int(steps),
                     guidance_scale=_coerce_float(guidance_scale),
+                    guidance_2=_coerce_float(guidance_2),
                     extra=run_extra,
                 )
 
@@ -3875,6 +4338,7 @@ if _HAS_MULTIPART:
         seed: Optional[str],
         steps: Optional[str],
         guidance_scale: Optional[str],
+        guidance_2: Optional[str],
         max_sequence_length: Optional[str],
         extra_json: Optional[str],
     ) -> Dict[str, Any]:
@@ -3900,6 +4364,7 @@ if _HAS_MULTIPART:
             "seed": _coerce_int(seed),
             "steps": _coerce_int(steps),
             "guidance_scale": _coerce_float(guidance_scale),
+            "guidance_2": _coerce_float(guidance_2),
             "max_sequence_length": _coerce_int(max_sequence_length),
             "extra": _parse_extra_json_form(extra_json),
         }
@@ -3931,6 +4396,7 @@ if _HAS_MULTIPART:
                     "seed": _coerce_int(seed),
                     "steps": _coerce_int(steps),
                     "guidance_scale": _coerce_float(guidance_scale),
+                    "guidance_2": _coerce_float(guidance_2),
                     "format": "mp4",
                     "extra": extra,
                 },
@@ -3953,7 +4419,7 @@ if _HAS_MULTIPART:
         prompt: str = Form("", description="Text prompt describing the desired image-to-video motion."),
         image: UploadFile = File(..., description="Source image / first frame to animate."),
         provider: Optional[str] = Form(None, description="Optional video provider/backend hint.", examples=["mlx-gen"]),
-        model: Optional[str] = Form(None, description="Optional provider/model video id.", examples=["mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers"]),
+        model: Optional[str] = Form(None, description="Optional provider/model video id.", examples=["mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit"]),
         base_url: Optional[str] = Form(None, description="Optional request-level base URL override for OpenAI-compatible video backends."),
         width: Optional[str] = Form(None, description="Requested video width in pixels.", examples=["1280"]),
         height: Optional[str] = Form(None, description="Requested video height in pixels.", examples=["704"]),
@@ -3966,6 +4432,7 @@ if _HAS_MULTIPART:
         seed: Optional[str] = Form(None, description="Optional deterministic seed."),
         steps: Optional[str] = Form(None, description="Optional inference step count."),
         guidance_scale: Optional[str] = Form(None, description="Optional guidance scale."),
+        guidance_2: Optional[str] = Form(None, description="Optional second-stage low-noise guidance scale for dual-transformer video models."),
         max_sequence_length: Optional[str] = Form(None, description="Optional backend-specific prompt token length cap."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters."),
     ) -> Dict[str, Any]:
@@ -3988,6 +4455,7 @@ if _HAS_MULTIPART:
             seed=seed,
             steps=steps,
             guidance_scale=guidance_scale,
+            guidance_2=guidance_2,
             max_sequence_length=max_sequence_length,
             extra_json=extra_json,
         )
@@ -4012,6 +4480,7 @@ if _HAS_MULTIPART:
         seed: Optional[str] = Form(None, description="Optional deterministic seed."),
         steps: Optional[str] = Form(None, description="Optional inference step count."),
         guidance_scale: Optional[str] = Form(None, description="Optional guidance scale."),
+        guidance_2: Optional[str] = Form(None, description="Optional second-stage low-noise guidance scale for dual-transformer video models."),
         max_sequence_length: Optional[str] = Form(None, description="Optional backend-specific prompt token length cap."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters."),
     ) -> Dict[str, Any]:
@@ -4033,6 +4502,7 @@ if _HAS_MULTIPART:
             seed=seed,
             steps=steps,
             guidance_scale=guidance_scale,
+            guidance_2=guidance_2,
             max_sequence_length=max_sequence_length,
             extra_json=extra_json,
         )
@@ -4058,6 +4528,39 @@ else:
             status_code=501,
             detail=(
                 "The /{provider}/v1/images/edits endpoint requires python-multipart for multipart/form-data parsing. "
+                "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
+            ),
+        )
+
+    @router.post("/images/upscale")
+    async def images_upscale() -> Dict[str, Any]:
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "The /v1/images/upscale endpoint requires python-multipart for multipart/form-data parsing. "
+                "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
+            ),
+        )
+
+    @provider_router.post("/{provider}/v1/images/upscale")
+    async def provider_images_upscale(
+        provider: str = FastAPIPath(..., description="Image provider route prefix."),
+    ) -> Dict[str, Any]:
+        _ = provider
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "The /{provider}/v1/images/upscale endpoint requires python-multipart for multipart/form-data parsing. "
+                "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
+            ),
+        )
+
+    @router.post("/vision/jobs/images/upscale")
+    async def jobs_images_upscale() -> Dict[str, Any]:
+        raise HTTPException(
+            status_code=501,
+            detail=(
+                "The /v1/vision/jobs/images/upscale endpoint requires python-multipart for multipart/form-data parsing. "
                 "Install it via: pip install \"abstractcore[server]\" (or: pip install python-multipart)."
             ),
         )

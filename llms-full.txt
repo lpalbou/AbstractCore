@@ -3,7 +3,7 @@
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
 Last updated: 2026-06-04
-Package version: 2.13.32
+Package version: 2.13.33
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -660,7 +660,8 @@ AbstractCore supports optional capability plugins discovered via Python entry po
 - install `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
 - install `abstractvision` -> enables `llm.vision` (generative images/video through OpenAI-compatible endpoints or local backends such as MLX-Gen)
 - install `abstractcore[music]` -> enables `llm.music` and music output routing for text-to-music through `abstractmusic`
-- current plugin floors in this source: `abstractvoice>=0.10.17`, `abstractvision>=0.3.18`, `abstractmusic>=0.1.12`; `llm.vision` exposes `t2i`, `i2i`, `t2v`, and `i2v`, and `generate(..., output=...)` forwards progress callbacks for generated image/video outputs
+- current plugin floors in this source: `abstractvoice>=0.10.17`, `abstractvision>=0.3.22`, `abstractmusic>=0.1.13`; `llm.vision` exposes `t2i`, `i2i`, `upscale_image`, `t2v`, and `i2v`, supports SeedVR2 image upscaling and typed Wan A14B `guidance_2` video controls, and `generate(..., output=...)` forwards progress callbacks for generated image/video outputs
+- SeedVR2 upscaling can be called directly with `llm.vision.upscale_image("input.png", provider="mlx-gen", model="AbstractFramework/seedvr2-3b-8bit", scale="2x", on_progress=on_progress)` or through the unified output route with `llm.generate(media={"type": "image", "path": "input.png", "role": "source"}, output={"task": "image_upscale", "provider": "mlx-gen", "model": "AbstractFramework/seedvr2-3b-8bit", "scale": "2x"})`; canonical q8/q4 SeedVR2 package ids do not need runtime `quantize`, official/source weights can use SeedVR2 runtime `quantize`, and prepared local folders can be passed as the model value when available.
 
 Server note:
 - the server can optionally expose `/v1/images/*`, `/v1/videos/*`, and `/v1/vision/*` model/control surfaces (requires `abstractvision` for local backends; remote OpenAI-compatible proxy paths can run through the server)
@@ -848,7 +849,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \\
 
 ### Optional images/audio endpoints
 
-- Images/video: `POST /v1/images/generations`, `POST /v1/images/edits`, `POST /v1/videos/generations`, `POST /v1/videos/edits`, and async `/v1/vision/jobs/videos/*` (requires `abstractvision` for local backends; global routes accept `model`, optional `provider`, and optional `base_url`; exact MLX-Gen ids such as `mlx-gen/AbstractFramework/qwen-image-2512-4bit` and `mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers` are valid when cached)
+- Images/video: `POST /v1/images/generations`, `POST /v1/images/edits`, `POST /v1/images/upscale`, `POST /v1/videos/generations`, `POST /v1/videos/edits`, and async `/v1/vision/jobs/images/*` / `/v1/vision/jobs/videos/*` (requires `abstractvision` for local backends; global routes accept `model`, optional `provider`, and optional `base_url`; image edits accept repeatable multipart `reference_images`; exact MLX-Gen ids such as `mlx-gen/AbstractFramework/qwen-image-2512-4bit`, `mlx-gen/AbstractFramework/seedvr2-3b-8bit`, `mlx-gen/AbstractFramework/seedvr2-7b-8bit`, `mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`, and `mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit` are valid when cached; SeedVR2 upscale routes accept `scale` or `resolution` plus optional runtime `quantize`)
 - Audio: `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`, `POST /v1/voice/clone` (requires an audio/voice plugin; commonly `abstractvoice`; global routes accept `model`, optional `provider`, and optional `base_url`)
 
 If a required plugin/backend is missing, the server returns `501` with actionable messaging.
@@ -5311,18 +5312,18 @@ llm.generate("Analyze these files", media=["report.pdf", "chart.png"])
 ```python
 # 1. Detect file types automatically
 MediaType.IMAGE     -> ImageProcessor (PIL-based)
-MediaType.DOCUMENT  -> PDFProcessor (PyMuPDF4LLM) or OfficeProcessor (Unstructured)
+MediaType.DOCUMENT  -> PDFProcessor (pypdf) or OfficeProcessor (Unstructured)
 MediaType.TEXT      -> TextProcessor (pandas for CSV/TSV)
 
 # 2. Process each file with specialized processor
-pdf_content = PDFProcessor.process("report.pdf")      # → Markdown text
+pdf_content = PDFProcessor.process("report.pdf")      # → text/Markdown from permissive PDF extraction
 image_content = ImageProcessor.process("chart.png")   # → Base64 + metadata
 ```
 
 **Graceful Fallback System:**
 ```python
 try:
-    # Advanced processing (PyMuPDF4LLM, Unstructured)
+    # Specialized processing (pypdf, Unstructured)
     content = advanced_processor.process(file)
 except Exception:
     # Always falls back to basic processing
@@ -5400,7 +5401,7 @@ graph TD
 ### 5. Error Handling & Resilience
 
 **Multi-Level Fallback Strategy:**
-1. **Advanced Processing**: Try specialized libraries (PyMuPDF4LLM, Unstructured)
+1. **Specialized Processing**: Use configured specialized libraries (pypdf, Unstructured)
 2. **Basic Processing**: Fall back to simple text extraction
 3. **Metadata Only**: If all else fails, provide file metadata
 4. **Graceful Degradation**: Best-effort results with clear errors (no silent semantic changes)
@@ -5408,7 +5409,7 @@ graph TD
 **Example of Robust Error Handling:**
 ```python
 try:
-    # Try advanced PDF processing with PyMuPDF4LLM
+    # Try default PDF processing with pypdf
     content = pdf_processor.extract_with_formatting(file)
 except PDFProcessingError:
     try:
@@ -5430,7 +5431,7 @@ except PDFProcessingError:
 
 ### Documents
 - **Text Files**: TXT, MD, CSV, TSV, JSON with intelligent parsing and data analysis
-- **PDF**: Text extraction with PyMuPDF4LLM (when installed), with best-effort structure preservation
+- **PDF**: Text and metadata extraction with pypdf by default. Optional PyMuPDF4LLM layout extraction requires the explicit `abstractcore[pdf-pymupdf-commercial]` extra after license review.
 - **Office**: DOCX, XLSX, PPTX via Unstructured (when installed), with best-effort extraction
   - **Word**: section/paragraph extraction
   - **Excel**: sheet-by-sheet extraction
@@ -5936,7 +5937,7 @@ Advanced: If you prefer to install only the pieces you need (instead of `abstrac
 these are the main libraries AbstractCore uses:
 
 - `Pillow` (images)
-- `pymupdf4llm` + `pymupdf-layout` (PDF extraction)
+- `pypdf` (permissive PDF text/metadata extraction)
 - `unstructured[docx,pptx,xlsx,odt,rtf]` (Office docs)
 - `pandas` (tabular helpers)
 
@@ -6018,7 +6019,7 @@ from abstractcore.media.types import MediaType, ContentFormat
 from abstractcore.media.processors import (
     ImageProcessor,    # Images with PIL
     TextProcessor,     # Text, CSV, JSON with pandas
-    PDFProcessor,      # PDFs with PyMuPDF4LLM
+    PDFProcessor,      # PDFs with pypdf by default
     OfficeProcessor    # DOCX, XLSX, PPT with unstructured
 )
 ```
@@ -7814,18 +7815,60 @@ Important notes:
 Endpoints:
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
+- `POST /v1/images/upscale`
 - `POST /v1/videos/generations`
 - `POST /v1/videos/edits`
+- `POST /v1/vision/jobs/images/generations`
+- `POST /v1/vision/jobs/images/edits`
+- `POST /v1/vision/jobs/images/upscale`
 - `POST /v1/vision/jobs/videos/generations`
 - `POST /v1/vision/jobs/videos/edits`
-- `/v1/vision/*` catalog and model residency surfaces, including video-capable local models such as `mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers`
+- `/v1/vision/*` catalog and model residency surfaces, including video-capable local models such as `mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit` and `mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit`
 
 Python `generate(..., output={"task":"text_to_video"})` and
 `generate(..., output={"task":"image_to_video"})` use the same Core output
-dispatcher. A top-level `on_progress`, `progress_event_callback`, or
+dispatcher. Wan A14B video requests can set typed `guidance_2` beside
+`guidance_scale`, while backend-only values such as `max_sequence_length` stay
+in `extra`. A top-level `on_progress`, `progress_event_callback`, or
 `progress_callback` kwarg is attached to generated image/video output specs and
 reaches AbstractVision; async video job polling exposes `progress.last_event`
 when the backend reports rich events.
+
+Image upscaling uses the same async job model through
+`POST /v1/vision/jobs/images/upscale`. Send multipart fields such as
+`provider=mlx-gen`, `model=AbstractFramework/seedvr2-3b-8bit`,
+`image=@./input.png`, and `scale=2x`, then poll
+`GET /v1/vision/jobs/{job_id}`. MLX-Gen reports denoise-step progress in
+`progress.last_event`; for SeedVR2, use `AbstractFramework/seedvr2-3b-8bit`
+by default, `AbstractFramework/seedvr2-7b-8bit` when memory allows, or the
+matching q4 package when memory is tight.
+
+Python calls for the same path:
+
+```python
+def on_progress(event):
+    print(event)
+
+direct_png = llm.vision.upscale_image(
+    "input.png",
+    provider="mlx-gen",
+    model="AbstractFramework/seedvr2-3b-8bit",
+    scale="2x",
+    on_progress=on_progress,
+)
+
+resp = llm.generate(
+    media={"type": "image", "path": "input.png", "role": "source"},
+    on_progress=on_progress,
+    output={
+        "task": "image_upscale",
+        "provider": "mlx-gen",
+        "model": "AbstractFramework/seedvr2-3b-8bit",
+        "scale": "2x",
+    },
+)
+png = resp.outputs["image"][0].data
+```
 
 Install:
 ```bash
@@ -9980,7 +10023,7 @@ You can use it through AbstractCore’s `llm.vision.*` capability plugin surface
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
 
-Local MLX-Gen models are selected by exact repo id, for example `AbstractFramework/qwen-image-2512-4bit`, `briaai/FIBO`, or `Wan-AI/Wan2.2-TI2V-5B-Diffusers`.
+Local MLX-Gen models are selected by exact repo id, for example `AbstractFramework/qwen-image-2512-4bit`, `briaai/FIBO`, `AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`, or `AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit`.
 
 See: [Server](server.md), [Capabilities](capabilities.md), and `abstractvision/docs/reference/abstractcore-integration.md` (in the AbstractVision repo).
 
@@ -10306,7 +10349,7 @@ graph TD
 - **AutoMediaHandler**: Intelligent coordinator that selects appropriate processors
 - **Specialized Processors**:
   - `ImageProcessor` (PIL-based for images)
-  - `PDFProcessor` (PyMuPDF4LLM for documents)
+  - `PDFProcessor` (pypdf by default for permissive PDF text/metadata extraction; optional PyMuPDF4LLM backend is explicit opt-in)
   - `OfficeProcessor` (Unstructured for DOCX/XLSX/PPTX)
   - `TextProcessor` (pandas for CSV/TSV data analysis)
 - **Provider Handlers**: Format media content for each provider's API requirements
@@ -10338,7 +10381,7 @@ graph TD
 ```
 
 **Graceful Fallback Strategy:**
-1. **Advanced Processing**: PyMuPDF4LLM, Unstructured libraries
+1. **Specialized Processing**: pypdf for PDFs by default, Unstructured for Office documents
 2. **Basic Processing**: Simple text extraction
 3. **Metadata Fallback**: File information and properties
 4. **Degrades gracefully for documents**: PDFs/Office/text aim to return best-effort extracted text/metadata rather than crashing.
@@ -10367,7 +10410,7 @@ python -m abstractcore.utils.cli --prompt "What's in @document.pdf and @image.jp
 To keep the default `abstractcore` install dependency-light while still enabling deterministic modality APIs, AbstractCore supports optional **capability plugins**:
 - `abstractvoice` provides `core.voice` + `core.audio` (TTS/STT).
 - `abstractvision` provides `core.vision` (T2I/I2I/T2V/I2V; backend-pluggable).
-- `abstractmusic` can provide `core.music` (text-to-music) when installed; `abstractmusic>=0.1.12` includes the remote ACE Music backend through `ACEMUSIC_API_KEY`.
+- `abstractmusic` can provide `core.music` (text-to-music) when installed; `abstractmusic>=0.1.13` includes the remote ACE Music backend through `ACEMUSIC_API_KEY`.
 
 Discovery:
 - `llm.capabilities.status()` returns a JSON-safe snapshot (which backends are available/selected, plus install hints).

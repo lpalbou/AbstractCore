@@ -2024,6 +2024,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if len(source_items) > 1:
             raise ValueError("Image edit supports at most one source image in v1.")
 
+        should_upscale = task == "image_upscale"
         should_edit = task == "image_edit"
         if not task:
             if source_items or mask_items:
@@ -2034,6 +2035,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 raise ValueError("Multiple image media items require explicit roles.")
         if mask_items and len(unroled) > 1:
             raise ValueError("Image edit with a mask requires exactly one source image.")
+        if should_upscale:
+            source = source_items[0] if source_items else (unroled[0] if unroled else None)
+            if source is None:
+                raise ValueError("Image upscale requires one source image.")
+            if mask_items or reference_like:
+                raise ValueError("Image upscale accepts one source image and no mask/reference images.")
+            if len(source_items) + len(unroled) != 1:
+                raise ValueError("Image upscale requires exactly one source image.")
 
         kwargs = self._output_plugin_kwargs(
             spec,
@@ -2044,12 +2053,36 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if artifact_store is not None:
             kwargs["artifact_store"] = artifact_store
 
-        if should_edit:
+        if should_upscale:
+            raw = self.vision.upscale_image(self._media_payload(source), **kwargs)
+            task_name = "image_upscale"
+        elif should_edit:
             kwargs = {k: v for k, v in kwargs.items() if k not in {"width", "height"}}
             source = source_items[0] if source_items else (unroled[0] if unroled else None)
             if source is None:
                 raise ValueError("Image edit requires one source image.")
             mask = mask_items[0] if mask_items else None
+            reference_payloads = [self._media_payload(item) for item in reference_like]
+            if reference_payloads:
+                nested_extra = kwargs.get("extra")
+                if isinstance(nested_extra, dict):
+                    merged_extra = dict(nested_extra)
+                    existing = merged_extra.get("reference_images")
+                    if existing is None:
+                        merged_extra["reference_images"] = reference_payloads
+                    elif isinstance(existing, (list, tuple)):
+                        merged_extra["reference_images"] = list(existing) + reference_payloads
+                    else:
+                        merged_extra["reference_images"] = [existing] + reference_payloads
+                    kwargs["extra"] = merged_extra
+                else:
+                    existing = kwargs.get("reference_images")
+                    if existing is None:
+                        kwargs["reference_images"] = reference_payloads
+                    elif isinstance(existing, (list, tuple)):
+                        kwargs["reference_images"] = list(existing) + reference_payloads
+                    else:
+                        kwargs["reference_images"] = [existing] + reference_payloads
             raw = self.vision.i2i(
                 prompt,
                 self._media_payload(source),

@@ -7,7 +7,16 @@ from abstractcore.capabilities import vision_catalog
 
 
 class _FakeDownload:
-    def __init__(self, *, key: str, engine: str, target: str, bits: int, repo_id: str, source: str = "test"):
+    def __init__(
+        self,
+        *,
+        key: str,
+        engine: str,
+        target: str,
+        bits: int | None,
+        repo_id: str,
+        source: str = "test",
+    ):
         self.key = key
         self.engine = engine
         self.target = target
@@ -261,6 +270,65 @@ def test_local_vision_cache_catalog_surfaces_cached_mlx_gen_video_only_model(mon
     assert payload["models"][0]["id"] == "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
     assert payload["models"][0]["bits"] == 16
     assert payload["models"][0]["tasks"] == ["image_to_video", "text_to_video"]
+
+
+def test_local_vision_cache_catalog_surfaces_cached_mlx_gen_upscale_only_model(monkeypatch, tmp_path: Path) -> None:
+    hf_dir = tmp_path / "hf"
+    local_dir = tmp_path / "local"
+    lmstudio_dir = tmp_path / "lmstudio"
+    seed_snapshot = hf_dir / "models--AbstractFramework--seedvr2-3b-8bit" / "snapshots" / "seed"
+    (seed_snapshot / "transformer").mkdir(parents=True)
+    (seed_snapshot / "transformer" / "model.safetensors").write_bytes(b"x")
+    (seed_snapshot.parents[1] / "refs").mkdir()
+    (seed_snapshot.parents[1] / "refs" / "main").write_text("seed", encoding="utf-8")
+    local_dir.mkdir()
+    lmstudio_dir.mkdir()
+
+    specs = {
+        "ByteDance-Seed/SeedVR2-3B": _FakeVisionSpec(
+            provider="mlx-gen",
+            license="apache-2.0",
+            tasks={"image_upscale": {}},
+            notes="seedvr2",
+            downloads=[
+                _FakeDownload(
+                    key="seedvr2-3b",
+                    engine="mlx-gen",
+                    target="mlx",
+                    bits=8,
+                    repo_id="AbstractFramework/seedvr2-3b-8bit",
+                    source="abstractframework-mlx-gen",
+                ),
+            ],
+        ),
+    }
+
+    class _Registry:
+        def list_models(self):
+            return list(specs)
+
+        def get(self, model_id):
+            return specs[model_id]
+
+    monkeypatch.setattr(vision_catalog, "_load_vision_model_capabilities_registry", lambda: _Registry)
+    monkeypatch.setattr(vision_catalog, "_default_hf_hub_cache_dirs", lambda: [hf_dir])
+    monkeypatch.setattr(vision_catalog, "_default_local_diffusers_model_dirs", lambda: [local_dir])
+    monkeypatch.setattr(vision_catalog, "_default_lmstudio_model_dirs", lambda: [lmstudio_dir])
+    monkeypatch.setattr(vision_catalog, "_is_hf_model_cached", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(vision_catalog, "_is_lmstudio_model_cached", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(vision_catalog, "_discover_cached_hf_diffusers_models", lambda _dirs: [])
+    monkeypatch.setattr(vision_catalog, "_discover_local_diffusers_models", lambda _dirs: [])
+
+    payload = vision_catalog.get_local_vision_cache_catalog()
+
+    assert payload["cached_total"] == 1
+    model = payload["models"][0]
+    assert model["provider"] == "mlx-gen"
+    assert model["id"] == "AbstractFramework/seedvr2-3b-8bit"
+    assert model["model_id"] == "ByteDance-Seed/SeedVR2-3B"
+    assert model["download_repo_id"] == "AbstractFramework/seedvr2-3b-8bit"
+    assert model["bits"] == 8
+    assert model["tasks"] == ["image_upscale"]
 
 
 def test_local_vision_cache_catalog_returns_bounded_error_without_registry(monkeypatch, tmp_path: Path) -> None:

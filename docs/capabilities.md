@@ -54,9 +54,14 @@ image_models = llm.vision.list_provider_models(task="text_to_image")
 mp4_bytes = llm.vision.t2v(
     "A slow camera move through a luminous data center.",
     provider="mlx-gen",
-    model="Wan-AI/Wan2.2-TI2V-5B-Diffusers",
-    num_frames=121,
+    model="AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit",
+    width=432,
+    height=240,
+    num_frames=41,
     fps=24,
+    steps=20,
+    guidance_scale=4.0,
+    guidance_2=3.0,
     extra={"max_sequence_length": 256},
 )
 
@@ -88,8 +93,15 @@ capabilities:
 # Image generation.
 image = llm.generate("A red square on a white background.", output="image")
 
-# Image edit. One image media item plus output="image" infers image-to-image.
-edited = llm.generate("Make it blue.", media="red-square.png", output="image")
+# Image edit. Source plus optional reference/style media infers image-to-image.
+edited = llm.generate(
+    "Make it blue using the second image as a style reference.",
+    media=[
+        {"type": "image", "path": "red-square.png", "role": "source"},
+        {"type": "image", "path": "style.png", "role": "style"},
+    ],
+    output="image",
+)
 
 # Text-to-video. Top-level progress callbacks are forwarded to AbstractVision.
 video = llm.generate(
@@ -98,9 +110,14 @@ video = llm.generate(
     output={
         "task": "text_to_video",
         "provider": "mlx-gen",
-        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
-        "num_frames": 121,
+        "model": "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit",
+        "width": 432,
+        "height": 240,
+        "num_frames": 41,
         "fps": 24,
+        "steps": 20,
+        "guidance_scale": 4.0,
+        "guidance_2": 3.0,
         "extra": {"max_sequence_length": 256},
     },
 )
@@ -112,7 +129,15 @@ i2v = llm.generate(
     output={
         "task": "image_to_video",
         "provider": "mlx-gen",
-        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "model": "AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit",
+        "width": 432,
+        "height": 240,
+        "num_frames": 41,
+        "fps": 24,
+        "steps": 20,
+        "guidance_scale": 3.5,
+        "guidance_2": 3.5,
+        "extra": {"max_sequence_length": 256},
     },
 )
 
@@ -141,8 +166,12 @@ choose an explicit model/default in AbstractVision, pre-download model weights,
 or explicitly opt in to runtime downloads with
 `ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD=1`. For local MLX-Gen, select exact
 model repo ids such as `AbstractFramework/qwen-image-2512-4bit`,
-`briaai/FIBO`, or `Wan-AI/Wan2.2-TI2V-5B-Diffusers`; quantized models are
-selected by repo id, not by a Core-side quant parameter. For
+`briaai/FIBO`, `AbstractFramework/seedvr2-3b-8bit`,
+`AbstractFramework/seedvr2-7b-8bit`,
+`AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`,
+or `AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit`; quantized image models are
+selected by repo id, while SeedVR2 upscaling accepts runtime `quantize` through
+the AbstractVision request. For
 server/OpenAI-compatible use, point `OPENAI_BASE_URL` at a media endpoint such
 as AbstractCore Server's `/v1`.
 
@@ -161,10 +190,14 @@ The server exposes the same deep catalogs through:
 - `GET /v1/audio/music/models`
 - `POST /v1/videos/generations`
 - `POST /v1/videos/edits`
+- `POST /v1/images/upscale`
+- `POST /v1/vision/jobs/images/generations`
+- `POST /v1/vision/jobs/images/edits`
+- `POST /v1/vision/jobs/images/upscale`
 - `POST /v1/vision/jobs/videos/generations`
 - `POST /v1/vision/jobs/videos/edits`
 
-For `abstractmusic>=0.1.12`, the default lightweight music backend is the
+For `abstractmusic>=0.1.13`, the default lightweight music backend is the
 remote ACE Music API path (`provider="acemusic"` or `/acemusic/v1/audio/music`).
 Set `ACEMUSIC_API_KEY` in the server or Python environment. The server music
 route accepts `wav`, `mp3`, and `flac`; individual backends may support fewer

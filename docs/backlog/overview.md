@@ -9,9 +9,9 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 12
+- Planned: 13
 - Proposed: 11
-- Completed: 16
+- Completed: 17
 - Deprecated: 3
 - Recurrent: 0
 
@@ -42,6 +42,7 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/791_server-metrics-otel.md` | Server metrics and OpenTelemetry work. |
 | `planned/0801_rerank_manager.md` | First-class reranking manager (cross-encoder / hosted rerank APIs); linked to 0803/0804 for embedding/provider boundary decisions. |
 | `planned/0803_image_embedding_manager_and_multimodal_embeddings.md` | First-class image/multimodal embedding manager and server endpoint extension. |
+| `planned/0806_pdf_images_tables_and_extraction_strategy.md` | Richer PDF image/table/OCR strategy without reintroducing PyMuPDF-family packages into default profiles. |
 
 ## Proposed ledger
 
@@ -79,6 +80,7 @@ Use this file as the entry point for planning status, recommended next work, and
 | `proposed/0798_provider_owned_text_residency_truth_contract.md` | `completed/0798_provider_owned_text_residency_truth_contract.md` | 2026-05-21 | Done | Provider-owned text residency truth contract (providers + `/acore/models/*`) is implemented and validated. | Provider/server unit coverage + hermetic suite run recorded in completion report. |
 | `planned/0794_generic_capability_plugin_contract.md` | `completed/0794_generic_capability_plugin_contract.md` | 2026-05-21 | Done | Generic capability plugin contract (discovery + optional residency + host text service) is implemented and validated. | `tests/test_capabilities_registry.py` + server capability route + OpenAPI tests. |
 | `planned/788-response.md` | `completed/788-response.md` | 2026-05-21 | Done | Vision image routing mismatch is resolved (provider/model normalization and provider-scoped routes). | Completion report cites current server routing helpers; hermetic suite coverage. |
+| `planned/0805_permissive_pdf_document_media_dependencies.md` | `completed/0805_permissive_pdf_document_media_dependencies.md` | 2026-06-05 | Done | Core PDF/media defaults now use `pypdf`; PyMuPDF-family packages are isolated under `pdf-pymupdf-commercial`. | Focused py_compile, packaging/import-safety, PDF compatibility, and media processor tests recorded in item. |
 
 ## Deprecated ledger
 

@@ -26,6 +26,7 @@ targets = [
     # Embeddings extra
     "sentence_transformers",
     # Media extra (PDF tooling)
+    "pypdf",
     "pymupdf",
     "fitz",
     "pymupdf4llm",
@@ -44,6 +45,7 @@ print(json.dumps({m: (m in sys.modules) for m in targets}))
     assert data["lxml"] is False
     assert data["ddgs"] is False
     assert data["sentence_transformers"] is False
+    assert data["pypdf"] is False
     assert data["pymupdf"] is False
     assert data["fitz"] is False
     assert data["pymupdf4llm"] is False

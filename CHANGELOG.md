@@ -7,11 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.33] - 2026-06-07
+
 ### Added
+- **Image upscaling routes**: added `/v1/images/upscale`, `/{provider}/v1/images/upscale`, and async `/v1/vision/jobs/images/upscale` with polling/progress support.
+- **Generated image upscaling**: `generate(..., output={"task": "image_upscale"})` routes source images through the AbstractVision upscaler capability.
 - **HTTP server CLI**: added `abstractcore serve` as the first-class command for starting the OpenAI-compatible AbstractCore server. Existing module and uvicorn entrypoints remain available for compatibility.
+- **MLX-Gen reference-image edits**: `/v1/images/edits` and async `/v1/vision/jobs/images/edits` now accept repeated multipart `reference_images` files and forward them to AbstractVision backends for composition/style-reference image edits.
+- **Image progress events**: async image generation/edit jobs now capture AbstractVision `on_progress(event)` payloads in `progress.last_event`, matching the existing video job surface.
+- **Wan A14B second guidance**: video generation routes, async video jobs, and generated-video output specs now accept typed `guidance_2` for dual-transformer video models.
 
 ### Removed
 - **Capability default CLI compatibility flags**: removed the top-level `abstractcore --set-capability-default` / `--clear-capability-default` form. Use `abstractcore config set-default`, `abstractcore config defaults`, and `abstractcore config clear-default` instead.
+
+### Changed
+- **Permissive PDF media path**: moved the default `PDFProcessor` and `media`/aggregate install profiles from PyMuPDF-family packages to the BSD-licensed `pypdf` baseline. PyMuPDF4LLM and `pymupdf-layout` remain available only through the explicit `pdf-pymupdf-commercial` opt-in extra.
+- **Vision plugin floor**: raised AbstractVision integration requirements to `abstractvision>=0.3.22` so Core installs pick up MLX-Gen `0.18.13`, SeedVR2 image upscaling, canonical q8/q4 upscaler packages, and the current upscaler progress event surface.
+- **Vision job progress semantics**: normalized server job payloads now preserve AbstractVision `step_progress` and `frame_progress`; `progress` follows the backend event's canonical progress value, which is denoise-step progress for MLX-Gen.
+- **Generated media examples**: updated Core docs and OpenAPI examples to use task-specific MLX-Gen A14B text-to-video and image-to-video model ids.
+
+### Fixed
+- **PDF capability truth**: the default `pypdf` processor no longer advertises image extraction support, and page-level text extraction errors are reported as warnings instead of aborting the whole document.
+- **Vision upscaler discovery**: local vision catalogs now surface MLX-Gen models that only support `image_upscale`, including canonical `AbstractFramework/seedvr2-{3b,7b}-{8bit,4bit}` packages.
+- **Generated image callback forwarding**: server-local generated image/edit dispatch now forwards top-level progress callbacks and backend-specific parameters through the same AbstractVision `extra` path used for video generation.
+- **Reference media routing**: unified Python image-edit generation forwards `media` items with `reference`, `style`, or `context` roles as AbstractVision `reference_images`.
 
 ## [2.13.32] - 2026-06-03
 

@@ -205,14 +205,17 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Embeddings | POST | `/v1/embeddings` | OpenAI-compatible embedding vectors | `model`, `input`, `dimensions`, `encoding_format`, `user`, `base_url` |
 | Images | POST | `/v1/images/generations` | Text-to-image generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `size`, `n`, `steps`, `guidance_scale`, `seed`, `quality`, `extra` |
 | Images | POST | `/{provider}/v1/images/generations` | Provider-scoped text-to-image route where body model is unprefixed | path `provider`, body `model`, optional `base_url`, image generation parameters |
-| Images | POST | `/v1/images/edits` | Image edit/inpaint via multipart form | `prompt`, `image`, optional `mask`, `model`, `provider`, `base_url`, `size`, `steps`, `guidance_scale`, `seed`, `extra_json` |
+| Images | POST | `/v1/images/edits` | Image edit/inpaint via multipart form | `prompt`, `image`, optional `mask`, repeatable `reference_images`, `model`, `provider`, `base_url`, `size`, `steps`, `guidance_scale`, `seed`, `extra_json` |
 | Images | POST | `/{provider}/v1/images/edits` | Provider-scoped image edit route where body model is unprefixed | path `provider`, optional `base_url`, image edit form fields |
-| Videos | POST | `/v1/videos/generations` | Text-to-video generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `steps`, `guidance_scale`, `extra` |
+| Images | POST | `/v1/images/upscale` | Image upscaling via multipart form | `image`, optional `model`, `provider`, `base_url`, `scale`, `resolution`, `softness`, `seed`, `quantize`, `vae_tiling`, `extra_json` |
+| Images | POST | `/{provider}/v1/images/upscale` | Provider-scoped image upscale route where body model is unprefixed | path `provider`, optional `base_url`, image upscale form fields |
+| Videos | POST | `/v1/videos/generations` | Text-to-video generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `steps`, `guidance_scale`, `guidance_2`, `extra` |
 | Videos | POST | `/{provider}/v1/videos/generations` | Provider-scoped text-to-video route where body model is unprefixed | path `provider`, body `model`, optional `base_url`, video generation parameters |
-| Videos | POST | `/v1/videos/edits` | Image-to-video via multipart form | `prompt`, `image`, optional `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `extra_json` |
+| Videos | POST | `/v1/videos/edits` | Image-to-video via multipart form | `prompt`, `image`, optional `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `steps`, `guidance_scale`, `guidance_2`, `extra_json` |
 | Videos | POST | `/{provider}/v1/videos/edits` | Provider-scoped image-to-video route where body model is unprefixed | path `provider`, optional `base_url`, image-to-video form fields |
-| Vision Jobs | POST | `/v1/vision/jobs/images/generations` | Async image generation with polling | same body as `/v1/images/generations` |
-| Vision Jobs | POST | `/v1/vision/jobs/images/edits` | Async image edit with polling | same form fields as `/v1/images/edits` |
+| Vision Jobs | POST | `/v1/vision/jobs/images/generations` | Async image generation with polling and progress events | same body as `/v1/images/generations` |
+| Vision Jobs | POST | `/v1/vision/jobs/images/edits` | Async image edit with polling and progress events | same form fields as `/v1/images/edits` |
+| Vision Jobs | POST | `/v1/vision/jobs/images/upscale` | Async image upscale with polling and progress events | same form fields as `/v1/images/upscale` |
 | Vision Jobs | POST | `/v1/vision/jobs/videos/generations` | Async text-to-video with polling and progress events | same body as `/v1/videos/generations` |
 | Vision Jobs | POST | `/v1/vision/jobs/videos/edits` | Async image-to-video with polling and progress events | same form fields as `/v1/videos/edits` |
 | Vision Jobs | GET | `/v1/vision/jobs/{job_id}` | Poll/consume async job state | path `job_id`, query `consume` |
@@ -528,8 +531,9 @@ Use provider/model-style image ids:
 - `mlx-gen/<exact-huggingface-repo>` selects an explicit cached MLX-Gen model
   such as `mlx-gen/AbstractFramework/flux.2-klein-4b-4bit` or
   `mlx-gen/AbstractFramework/qwen-image-edit-2511-4bit`. Official MLX-Gen
-  runtime snapshots such as `mlx-gen/briaai/FIBO` and
-  `mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers` are selected the same way. Legacy
+  runtime snapshots such as `mlx-gen/briaai/FIBO`,
+  `mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`, and
+  `mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit` are selected the same way. Legacy
   `mflux` prefixes remain accepted as compatibility aliases, but the model id
   itself must be the exact published repo id.
 - `sdcpp/default` selects the configured stable-diffusion.cpp model.
@@ -570,6 +574,7 @@ intentional.
 | `prompt` | yes | Edit/inpaint instruction. |
 | `image` | yes | Source image file. |
 | `mask` | no | Optional mask image for inpainting/edit-capable backends. |
+| `reference_images` | no | Repeatable file field for optional style/layout/composition reference images. Forwarded to AbstractVision backends that support multi-image edits. |
 | `model` | no | Same provider/model routing as generation; omit for the server default. Provider-scoped routes accept the same model without the prefix. |
 | `provider` | no | Optional routing hint when you want the configured default backend for a specific provider, or when pairing a request with `base_url`. |
 | `size` | no | OpenAI-style edit output size such as `1024x1024`; multipart edit compatibility keeps this field. |
@@ -584,9 +589,13 @@ is preferable:
   `/v1/images/generations` and returns `{"job_id": "..."}`.
 - `POST /v1/vision/jobs/images/edits` uses the same multipart fields as
   `/v1/images/edits` and returns `{"job_id": "..."}`.
+- `POST /v1/vision/jobs/images/upscale` uses the same multipart fields as
+  `/v1/images/upscale` and returns `{"job_id": "..."}`.
 - `GET /v1/vision/jobs/{job_id}` returns `queued`, `running`, `succeeded`, or
   `failed`. Add `?consume=true` to remove a completed job from the in-memory job
   store after reading it.
+When the backend reports rich progress events, image jobs include the latest
+event in `progress.last_event`.
 
 #### Videos (text-to-video/image-to-video)
 
@@ -603,12 +612,15 @@ The synchronous video routes use the same internal
 return `{"data":[{"b64_json":"..."}]}` with MP4 bytes encoded in base64.
 Async video jobs are the preferred path for longer local runs; polling
 `GET /v1/vision/jobs/{job_id}` includes `progress.last_event` when the selected
-backend reports richer progress events.
+backend reports richer progress events. For MLX-Gen, `progress` is denoise-step
+progress; video frame context is exposed separately as `frame`, `total_frames`,
+and `frame_progress`.
 
 Use exact provider/model ids. For MLX-Gen, select the published model repo id,
 for example:
 
-- `mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers` for text-to-video or image-to-video.
+- `mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit` for text-to-video.
+- `mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit` for image-to-video.
 - `mlx-gen/AbstractFramework/qwen-image-2512-4bit` for text-to-image.
 
 Core does not expose a quantization override. Q4/Q8 choices are part of the
@@ -619,16 +631,18 @@ model id that AbstractVision/MLX-Gen loads.
 | Field | Required | Notes |
 |---|---:|---|
 | `prompt` | yes | Text prompt to render as video. |
-| `model` | no | Provider/model id such as `mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers` or `openai-compatible/<model>`. Provider-scoped routes accept the same model without the prefix. |
+| `model` | no | Provider/model id such as `mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit` or `openai-compatible/<model>`. Provider-scoped routes accept the same model without the prefix. |
 | `provider` | no | Optional routing hint, e.g. `mlx-gen` or `openai-compatible`. |
 | `width`, `height`, `size` | no | Requested output dimensions. `size` accepts `WIDTHxHEIGHT`. |
 | `fps`, `num_frames` / `frames` | no | Video frame rate and frame count. |
 | `response_format` | no | `b64_json` is the supported response shape. |
-| `negative_prompt`, `seed`, `steps`, `guidance_scale` | no | Backend-specific generation controls. |
+| `negative_prompt`, `seed`, `steps`, `guidance_scale`, `guidance_2` | no | Backend-specific generation controls. `guidance_2` is the typed second-stage/low-noise guidance control for dual-transformer video models such as Wan A14B. |
 | `extra.max_sequence_length` | no | Useful for MLX-Gen Wan-style video runs. |
 
 `POST /v1/videos/edits` multipart parameters mirror generation and add
-required `image=@first-frame.png`. This route is the image-to-video path; the
+required `image=@first-frame.png`. Send `guidance_2` as a normal form field
+when the selected image-to-video model declares that parameter. This route is
+the image-to-video path; the
 alias `/v1/videos/from-image` is accepted for clients that prefer a literal
 name.
 
@@ -660,6 +674,7 @@ curl -sS -X POST "$BASE/v1/images/edits" \
   -F "model=openai-compatible/gpt-image-1" \
   -F "prompt=Make the mug blue while keeping the white table." \
   -F "image=@/tmp/acore-image.png;type=image/png" \
+  -F "reference_images=@./style-reference.png;type=image/png" \
   -F "size=1024x1024" \
   -F "response_format=b64_json" \
   -F 'extra_json={"quality":"low"}' \
@@ -684,20 +699,38 @@ curl -sS -X POST "$BASE/v1/images/generations" \
 curl -sS -X POST "$BASE/v1/vision/jobs/videos/generations" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"provider":"mlx-gen","model":"Wan-AI/Wan2.2-TI2V-5B-Diffusers","prompt":"A slow camera move through a luminous data center.","width":1280,"height":704,"fps":24,"num_frames":121,"steps":50,"guidance_scale":5.0,"extra":{"max_sequence_length":256}}'
+  -d '{"provider":"mlx-gen","model":"AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit","prompt":"A slow camera move through a luminous data center.","width":432,"height":240,"fps":24,"num_frames":41,"steps":20,"guidance_scale":4.0,"guidance_2":3.0,"extra":{"max_sequence_length":256}}'
+
+# Image upscale, asynchronous job with progress polling. Use the canonical
+# SeedVR2 q8 package by default, or the 7B/q4 variants explicitly.
+JOB_ID=$(curl -sS -X POST "$BASE/v1/vision/jobs/images/upscale" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "provider=mlx-gen" \
+  -F "model=AbstractFramework/seedvr2-3b-8bit" \
+  -F "image=@./input.png;type=image/png" \
+  -F "scale=2x" \
+  -F "seed=2405" \
+  | python -c 'import json,sys; print(json.load(sys.stdin)["job_id"])')
+
+# Poll until `status` is terminal. MLX-Gen progress is denoise-step progress;
+# the latest callback is available at `progress.last_event`.
+curl -sS "$BASE/v1/vision/jobs/$JOB_ID" \
+  -H "Authorization: Bearer $TOKEN"
 
 # Image-to-video, synchronous multipart route.
 curl -sS -X POST "$BASE/v1/videos/edits" \
   -H "Authorization: Bearer $TOKEN" \
   -F "provider=mlx-gen" \
-  -F "model=Wan-AI/Wan2.2-TI2V-5B-Diffusers" \
+  -F "model=AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit" \
   -F "prompt=Slow camera push-in." \
   -F "image=@./first-frame.png;type=image/png" \
-  -F "width=1280" \
-  -F "height=704" \
+  -F "width=432" \
+  -F "height=240" \
   -F "fps=24" \
-  -F "num_frames=121" \
-  -F "steps=50" \
+  -F "num_frames=41" \
+  -F "steps=20" \
+  -F "guidance_scale=3.5" \
+  -F "guidance_2=3.5" \
   -F 'extra_json={"max_sequence_length":256}'
 ```
 
@@ -843,7 +876,7 @@ The returned `voice_id` / `id` can be used as the `voice` value in
 | `response_format` or `format` | no | Server contract supports `wav`, `mp3`, and `flac`; backend support can be narrower. |
 | extra top-level fields | no | Best-effort passthrough to the installed music capability plugin. |
 
-With `abstractmusic>=0.1.12`, the base install includes the remote ACE Music
+With `abstractmusic>=0.1.13`, the base install includes the remote ACE Music
 backend. Configure `ACEMUSIC_API_KEY` in the server environment, optionally set
 `ACEMUSIC_BASE_URL`, and use `provider="acemusic"` or the `/acemusic/v1/audio/music`
 path. Local ACE-Step/Diffusers routes remain opt-in AbstractMusic extras.

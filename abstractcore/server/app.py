@@ -1186,19 +1186,19 @@ def _custom_openapi() -> Dict[str, Any]:
     video_generation_example = {
         "prompt": "A slow camera move through a luminous data center.",
         "provider": "mlx-gen",
-        "model": "mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "model": "mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit",
         "base_url": None,
-        "width": 1280,
-        "height": 704,
+        "width": 432,
+        "height": 240,
         "fps": 24,
-        "num_frames": 121,
-        "steps": 50,
-        "guidance_scale": 5.0,
+        "num_frames": 41,
+        "steps": 20,
+        "guidance_scale": 4.0,
         "response_format": "b64_json",
         "extra": {"max_sequence_length": 256},
     }
     _request_example("/v1/videos/generations", "post", "application/json", "text_to_video", "Text-to-video generation", video_generation_example)
-    _request_example("/{provider}/v1/videos/generations", "post", "application/json", "provider_scoped_video_generation", "Provider-scoped text-to-video generation", {**video_generation_example, "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers", "provider": None})
+    _request_example("/{provider}/v1/videos/generations", "post", "application/json", "provider_scoped_video_generation", "Provider-scoped text-to-video generation", {**video_generation_example, "model": "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit", "provider": None})
     _request_example("/v1/vision/jobs/videos/generations", "post", "application/json", "async_video_generation", "Async text-to-video generation job", video_generation_example)
     _request_example(
         "/v1/audio/translations",
@@ -1212,6 +1212,7 @@ def _custom_openapi() -> Dict[str, Any]:
         "prompt": "Make the mug blue and keep the white background.",
         "image": "<upload source.png>",
         "mask": None,
+        "reference_images": ["<optional style-reference.png>"],
         "provider": "openai-compatible",
         "model": "openai-compatible/gpt-image-1",
         "base_url": None,
@@ -1230,19 +1231,19 @@ def _custom_openapi() -> Dict[str, Any]:
         "prompt": "Slow camera push-in.",
         "image": "<upload first-frame.png>",
         "provider": "mlx-gen",
-        "model": "mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+        "model": "mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit",
         "base_url": None,
-        "width": 1280,
-        "height": 704,
+        "width": 432,
+        "height": 240,
         "fps": 24,
-        "num_frames": 121,
-        "steps": 50,
-        "guidance_scale": 5.0,
+        "num_frames": 41,
+        "steps": 20,
+        "guidance_scale": 4.0,
         "response_format": "b64_json",
         "extra_json": '{"max_sequence_length":256}',
     }
     _request_example("/v1/videos/edits", "post", "multipart/form-data", "image_to_video", "Image-to-video generation", video_edit_example)
-    _request_example("/{provider}/v1/videos/edits", "post", "multipart/form-data", "provider_scoped_image_to_video", "Provider-scoped image-to-video generation", {**video_edit_example, "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers"})
+    _request_example("/{provider}/v1/videos/edits", "post", "multipart/form-data", "provider_scoped_image_to_video", "Provider-scoped image-to-video generation", {**video_edit_example, "model": "AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit"})
     _request_example("/v1/vision/jobs/videos/edits", "post", "multipart/form-data", "async_image_to_video", "Async image-to-video generation job", video_edit_example)
     _request_example(
         "/v1/voice/clone",
@@ -4317,6 +4318,10 @@ def _normalize_model_residency_task(task: Optional[str]) -> str:
         "i2i": "image_to_image",
         "image_edit": "image_to_image",
         "edit_image": "image_to_image",
+        "image_upscale": "image_upscale",
+        "upscale": "image_upscale",
+        "upscale_image": "image_upscale",
+        "super_resolution": "image_upscale",
         "video": "video_generation",
         "video_generation": "video_generation",
         "text_to_video": "text_to_video",
@@ -4350,6 +4355,7 @@ def _normalize_model_residency_task(task: Optional[str]) -> str:
 _VISION_RESIDENCY_TASKS = {
     "image_generation",
     "image_to_image",
+    "image_upscale",
     "video_generation",
     "text_to_video",
     "image_to_video",

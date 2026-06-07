@@ -66,18 +66,18 @@ llm.generate("Analyze these files", media=["report.pdf", "chart.png"])
 ```python
 # 1. Detect file types automatically
 MediaType.IMAGE     -> ImageProcessor (PIL-based)
-MediaType.DOCUMENT  -> PDFProcessor (PyMuPDF4LLM) or OfficeProcessor (Unstructured)
+MediaType.DOCUMENT  -> PDFProcessor (pypdf) or OfficeProcessor (Unstructured)
 MediaType.TEXT      -> TextProcessor (pandas for CSV/TSV)
 
 # 2. Process each file with specialized processor
-pdf_content = PDFProcessor.process("report.pdf")      # → Markdown text
+pdf_content = PDFProcessor.process("report.pdf")      # → text/Markdown from permissive PDF extraction
 image_content = ImageProcessor.process("chart.png")   # → Base64 + metadata
 ```
 
 **Graceful Fallback System:**
 ```python
 try:
-    # Advanced processing (PyMuPDF4LLM, Unstructured)
+    # Specialized processing (pypdf, Unstructured)
     content = advanced_processor.process(file)
 except Exception:
     # Always falls back to basic processing
@@ -154,8 +154,8 @@ graph TD
 
 ### 5. Error Handling & Resilience
 
-**Multi-Level Fallback Strategy:**
-1. **Advanced Processing**: Try specialized libraries (PyMuPDF4LLM, Unstructured)
+**Multi-Level Processing Strategy:**
+1. **Specialized Processing**: Use configured specialized libraries (pypdf, Unstructured)
 2. **Basic Processing**: Fall back to simple text extraction
 3. **Metadata Only**: If all else fails, provide file metadata
 4. **Graceful Degradation**: Best-effort results with clear errors (no silent semantic changes)
@@ -163,7 +163,7 @@ graph TD
 **Example of Robust Error Handling:**
 ```python
 try:
-    # Try advanced PDF processing with PyMuPDF4LLM
+    # Try default PDF processing with pypdf
     content = pdf_processor.extract_with_formatting(file)
 except PDFProcessingError:
     try:
@@ -185,7 +185,7 @@ except PDFProcessingError:
 
 ### Documents
 - **Text Files**: TXT, MD, CSV, TSV, JSON with intelligent parsing and data analysis
-- **PDF**: Text extraction with PyMuPDF4LLM (when installed), with best-effort structure preservation
+- **PDF**: Text and metadata extraction with pypdf by default. Optional PyMuPDF4LLM layout extraction requires the explicit `abstractcore[pdf-pymupdf-commercial]` extra after license review.
 - **Office**: DOCX, XLSX, PPTX via Unstructured (when installed), with best-effort extraction
   - **Word**: section/paragraph extraction
   - **Excel**: sheet-by-sheet extraction
@@ -691,9 +691,13 @@ Advanced: If you prefer to install only the pieces you need (instead of `abstrac
 these are the main libraries AbstractCore uses:
 
 - `Pillow` (images)
-- `pymupdf4llm` + `pymupdf-layout` (PDF extraction)
+- `pypdf` (permissive PDF text/metadata extraction)
 - `unstructured[docx,pptx,xlsx,odt,rtf]` (Office docs)
 - `pandas` (tabular helpers)
+
+Optional commercial-license PDF backend:
+
+- `pymupdf4llm` + `pymupdf-layout` via `abstractcore[pdf-pymupdf-commercial]`
 
 ## Troubleshooting
 
@@ -773,7 +777,7 @@ from abstractcore.media.types import MediaType, ContentFormat
 from abstractcore.media.processors import (
     ImageProcessor,    # Images with PIL
     TextProcessor,     # Text, CSV, JSON with pandas
-    PDFProcessor,      # PDFs with PyMuPDF4LLM
+    PDFProcessor,      # PDFs with pypdf by default
     OfficeProcessor    # DOCX, XLSX, PPT with unstructured
 )
 ```

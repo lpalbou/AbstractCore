@@ -1098,6 +1098,20 @@ class _VisionFacade:
     def t2i(self, prompt: str, **kwargs: Any) -> Any:
         return self._registry.get_vision().t2i(prompt, **kwargs)
 
+    def upscale_image(self, image: Any, **kwargs: Any) -> Any:
+        backend = self._registry.get_vision()
+        method = getattr(backend, "upscale_image", None)
+        if not callable(method):
+            method = getattr(backend, "image_upscale", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="vision",
+                reason="The selected vision capability backend does not expose image_upscale.",
+                install_hint=self._registry._default_install_hint("vision"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        return method(image, **kwargs)
+
     def load_resident_model(self, request: Mapping[str, Any]) -> Dict[str, Any]:
         return _call_residency_mapping_method(
             self._registry.get_vision(),

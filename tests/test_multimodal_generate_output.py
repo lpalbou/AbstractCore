@@ -133,6 +133,10 @@ def _make_plugin_ep():
                 self.owner.plugin_calls.append(("i2i", prompt, image, mask, kwargs))
                 return b"edited-png-bytes"
 
+            def upscale_image(self, image, **kwargs):
+                self.owner.plugin_calls.append(("upscale_image", image, kwargs))
+                return b"upscaled-png-bytes"
+
             def t2v(self, prompt: str, **kwargs):
                 self.owner.plugin_calls.append(("t2v", prompt, kwargs))
                 return b"mp4"
@@ -245,6 +249,24 @@ def test_output_image_without_media_calls_t2i_not_text_provider(fake_plugins):
 
 
 @pytest.mark.basic
+def test_output_image_top_level_progress_callback_reaches_t2i_plugin(fake_plugins):
+    llm = _FakeProvider()
+
+    def on_progress(event):
+        return None
+
+    llm.generate(
+        "red cube",
+        output={"modality": "image", "width": 64, "height": 64},
+        on_progress=on_progress,
+    )
+
+    assert llm.provider_calls == []
+    assert llm.plugin_calls[0][0] == "t2i"
+    assert llm.plugin_calls[0][2]["on_progress"] is on_progress
+
+
+@pytest.mark.basic
 def test_output_image_with_one_image_media_infers_edit(fake_plugins):
     llm = _FakeProvider()
 
@@ -257,6 +279,55 @@ def test_output_image_with_one_image_media_infers_edit(fake_plugins):
     assert response.outputs["image"][0].task == "image_edit"
     assert llm.provider_calls == []
     assert llm.plugin_calls[0] == ("i2i", "make it watercolor", "source.png", None, {})
+
+
+@pytest.mark.basic
+def test_output_image_edit_forwards_reference_media_and_progress(fake_plugins):
+    llm = _FakeProvider()
+
+    def on_progress(event):
+        return None
+
+    llm.generate(
+        "compose source with the style reference",
+        media=[
+            {"type": "image", "path": "source.png", "role": "source"},
+            {"type": "image", "path": "style.png", "role": "style"},
+        ],
+        output={"task": "image_edit", "provider": "mlx-gen"},
+        on_progress=on_progress,
+    )
+
+    assert llm.provider_calls == []
+    assert llm.plugin_calls[0][0:4] == (
+        "i2i",
+        "compose source with the style reference",
+        "source.png",
+        None,
+    )
+    kwargs = llm.plugin_calls[0][4]
+    assert kwargs["provider"] == "mlx-gen"
+    assert kwargs["reference_images"] == ["style.png"]
+    assert kwargs["on_progress"] is on_progress
+
+
+@pytest.mark.basic
+def test_output_image_upscale_calls_upscale_plugin(fake_plugins):
+    llm = _FakeProvider()
+
+    response = llm.generate(
+        "",
+        media={"type": "image", "path": "source.png", "role": "source"},
+        output={"task": "image_upscale", "scale": "2x", "provider": "mlx-gen"},
+    )
+
+    assert response.outputs["image"][0].task == "image_upscale"
+    assert llm.provider_calls == []
+    assert llm.plugin_calls[0] == (
+        "upscale_image",
+        "source.png",
+        {"scale": "2x", "provider": "mlx-gen"},
+    )
 
 
 @pytest.mark.basic
@@ -324,6 +395,7 @@ def test_output_video_without_media_calls_t2v(fake_plugins):
             "provider": "mlx-gen",
             "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
             "num_frames": 17,
+            "guidance_2": 3.0,
             "format": "mp4",
         },
     )
@@ -336,6 +408,7 @@ def test_output_video_without_media_calls_t2v(fake_plugins):
     assert llm.plugin_calls[0][2]["provider"] == "mlx-gen"
     assert llm.plugin_calls[0][2]["model"] == "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
     assert llm.plugin_calls[0][2]["num_frames"] == 17
+    assert llm.plugin_calls[0][2]["guidance_2"] == 3.0
 
 
 @pytest.mark.basic
@@ -402,7 +475,7 @@ def test_output_video_with_one_image_media_infers_i2v(fake_plugins):
     response = llm.generate(
         "slow camera push-in",
         media={"type": "image", "path": "first-frame.png", "role": "source"},
-        output={"task": "i2v", "provider": "mlx-gen"},
+        output={"task": "i2v", "provider": "mlx-gen", "guidance_2": 3.5},
     )
 
     assert response.outputs["video"][0].task == "image_to_video"
@@ -411,7 +484,7 @@ def test_output_video_with_one_image_media_infers_i2v(fake_plugins):
     assert llm.plugin_calls[0] == (
         "i2v",
         "first-frame.png",
-        {"prompt": "slow camera push-in", "provider": "mlx-gen"},
+        {"prompt": "slow camera push-in", "provider": "mlx-gen", "guidance_2": 3.5},
     )
 
 

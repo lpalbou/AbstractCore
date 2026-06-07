@@ -13,7 +13,7 @@ The media module provides unified, provider-agnostic multimodal processing capab
 | File Type | Processor | Best For | Requirements |
 |-----------|-----------|----------|--------------|
 | Images (jpg, png) | ImageProcessor | Vision models, analysis | PIL/Pillow |
-| PDF (text-heavy) | PDFProcessor | Text extraction | PyMuPDF4LLM |
+| PDF (text-heavy) | PDFProcessor | Text/metadata extraction | pypdf |
 | PDF (math/tables) | DirectPDFProcessor | Visual fidelity | pdf2image |
 | Office docs | OfficeProcessor | DOCX, XLSX, PPTX | unstructured |
 | Text/CSV/JSON | TextProcessor | Data files | Built-in |
@@ -122,7 +122,7 @@ media/
 │
 ├── processors/                  # Media type processors
 │   ├── image_processor.py       # Image processing with PIL (resize, optimize)
-│   ├── pdf_processor.py         # PDF extraction with PyMuPDF4LLM (markdown)
+│   ├── pdf_processor.py         # PDF extraction with pypdf by default
 │   ├── direct_pdf_processor.py  # Direct PDF→image conversion (Glyph)
 │   ├── glyph_pdf_processor.py   # Glyph-optimized PDF extraction (math/tables)
 │   ├── text_processor.py        # Text/CSV/JSON/Markdown processing
@@ -226,7 +226,7 @@ caps = get_media_capabilities("gpt-4o", provider="openai")
 
 **Features**:
 - Lazy processor initialization
-- Dependency checking (PIL, PyMuPDF4LLM, unstructured)
+- Dependency checking (PIL, pypdf, unstructured)
 - Glyph compression integration
 - Fallback processing
 
@@ -247,7 +247,7 @@ if result.success:
 **Processor Selection Logic**:
 ```python
 .jpg/.png → ImageProcessor (if PIL available)
-.pdf → PDFProcessor (if PyMuPDF4LLM) else TextProcessor
+.pdf → PDFProcessor (pypdf by default; PyMuPDF4LLM requires explicit opt-in)
 .docx/.xlsx/.pptx → OfficeProcessor (if unstructured) else TextProcessor
 .txt/.md/.csv → TextProcessor (always available)
 ```
@@ -325,7 +325,7 @@ result = processor.process_file("photo.jpg", model_name="gpt-4o")
 
 #### 7. `pdf_processor.py` - PDF Extraction
 
-**Dependencies**: PyMuPDF4LLM, PyMuPDF
+**Dependencies**: pypdf by default. Optional PyMuPDF4LLM / PyMuPDF support requires `abstractcore[pdf-pymupdf-commercial]` after license review.
 
 **Features**:
 - LLM-optimized markdown output
@@ -392,7 +392,7 @@ result = processor.process_file("research.pdf")
 
 #### 9. `glyph_pdf_processor.py` - Glyph-Optimized PDF Extraction
 
-**Dependencies**: PyMuPDF
+**Dependencies**: PyMuPDF from the explicit `abstractcore[pdf-pymupdf-commercial]` opt-in extra.
 
 **Purpose**: Extracts PDF content while preserving compact mathematical notation and table layouts for optimal Glyph visual compression.
 
@@ -1182,7 +1182,7 @@ result = handler.process_file("report.docx")
 
 # ✓ Good: Install media extras
 # $ pip install "abstractcore[media]"
-# Includes PIL, PyMuPDF4LLM, unstructured
+# Includes PIL, pypdf, unstructured
 ```
 
 ### 6. PDF Processing Choice
@@ -1397,7 +1397,7 @@ print(result.media_content.content)
 **Module Statistics**:
 - **Total Files**: 15 (5 root + 6 processors + 3 handlers + 1 util)
 - **Total Lines**: ~7,500
-- **Dependencies**: PIL, PyMuPDF4LLM, PyMuPDF, pdf2image, unstructured, pandas (optional)
+- **Dependencies**: PIL, pypdf, pdf2image, unstructured, pandas (optional). PyMuPDF-family tooling is an explicit commercial-license opt-in.
 - **Supported Formats**: Images (8), Documents (3), Text (8), Office (3)
 - **Providers**: OpenAI, Anthropic, Ollama, MLX, LMStudio, HuggingFace
 

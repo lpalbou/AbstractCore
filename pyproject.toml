@@ -203,14 +203,19 @@ tool = [
 
 media = [
     "Pillow>=10.0.0,<13.0.0",
-    "pymupdf4llm>=0.0.20,<1.0.0",
-    # Enables `pymupdf.layout` (improves reading order / tables) and prevents PyMuPDF's startup recommendation print.
-    "pymupdf-layout>=1.26.6,<2.0.0",
+    "pypdf>=6.0.0,<7.0.0",
     # NOTE: unstructured does not provide an "office" extra. Use the specific
     # format extras so DOCX/XLSX/PPTX parsing works out-of-the-box when users
     # install `abstractcore[media]`.
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
+]
+
+pdf-pymupdf-commercial = [
+    # Explicit opt-in for users who have reviewed PyMuPDF-family licensing.
+    "pypdf>=6.0.0,<7.0.0",
+    "pymupdf4llm>=0.0.20,<1.0.0",
+    "pymupdf-layout>=1.26.6,<2.0.0",
 ]
 
 voice = [
@@ -260,8 +265,7 @@ all = [
     "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
     "psutil>=5.9.0,<6.0.0",
     "Pillow>=10.0.0,<13.0.0",
-    "pymupdf4llm>=0.0.20,<1.0.0",
-    "pymupdf-layout>=1.26.6,<2.0.0",
+    "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice>=0.10.17",
@@ -272,7 +276,7 @@ all = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.19",
+    "abstractvision>=0.3.22",
 ]
 
 all-apple = [
@@ -303,8 +307,7 @@ all-apple = [
     "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
     "psutil>=5.9.0,<6.0.0",
     "Pillow>=12.1.1,<13.0.0",
-    "pymupdf4llm>=0.0.20,<1.0.0",
-    "pymupdf-layout>=1.26.6,<2.0.0",
+    "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice[all-apple]>=0.10.17",
@@ -315,7 +318,7 @@ all-apple = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision[all-apple]>=0.3.19",
+    "abstractvision[all-apple]>=0.3.22",
 ]
 
 all-gpu = [
@@ -342,8 +345,7 @@ all-gpu = [
     "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
     "psutil>=5.9.0,<6.0.0",
     "Pillow>=10.0.0,<13.0.0",
-    "pymupdf4llm>=0.0.20,<1.0.0",
-    "pymupdf-layout>=1.26.6,<2.0.0",
+    "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice[all-gpu]>=0.10.17",
@@ -354,7 +356,7 @@ all-gpu = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision[all-gpu]>=0.3.19",
+    "abstractvision[all-gpu]>=0.3.22",
 ]
 
 # Legacy broad bundle kept for existing users. New installs should usually
@@ -382,8 +384,7 @@ all-non-mlx = [
     "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
     "psutil>=5.9.0,<6.0.0",
     "Pillow>=10.0.0,<13.0.0",
-    "pymupdf4llm>=0.0.20,<1.0.0",
-    "pymupdf-layout>=1.26.6,<2.0.0",
+    "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice>=0.10.17",
@@ -394,7 +395,7 @@ all-non-mlx = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.19",
+    "abstractvision>=0.3.22",
 ]
 
 # Development dependencies
@@ -423,19 +424,19 @@ server = [
 # Vision (optional) - delegates to AbstractVision.
 # Kept as a separate extra for installs that want vision without the HTTP server.
 vision = [
-    "abstractvision>=0.3.19",
+    "abstractvision>=0.3.22",
 ]
 
 vision-diffusers = [
-    "abstractvision[huggingface]>=0.3.19",
+    "abstractvision[huggingface]>=0.3.22",
 ]
 
 vision-sdcpp = [
-    "abstractvision[sdcpp]>=0.3.19",
+    "abstractvision[sdcpp]>=0.3.22",
 ]
 
 vision-local = [
-    "abstractvision[local]>=0.3.19",
+    "abstractvision[local]>=0.3.22",
 ]
 
 music = [
@@ -460,6 +461,7 @@ test = [
     "fastapi>=0.100.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "uvicorn>=0.23.0,<1.0.0",
+    "pypdf>=6.0.0,<7.0.0",
     # Tools HTML parsing tests expect these to be installed.
     "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
@@ -500,8 +502,7 @@ full-dev = [
     "duckduckgo-search>=3.8.0,<4.0.0; python_version < '3.10'",
     "psutil>=5.9.0,<6.0.0",
     "Pillow>=10.0.0,<13.0.0",
-    "pymupdf4llm>=0.0.20,<1.0.0",
-    "pymupdf-layout>=1.26.6,<2.0.0",
+    "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
     "abstractvoice>=0.10.17",
@@ -511,7 +512,7 @@ full-dev = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.19",
+    "abstractvision>=0.3.22",
     # Tooling
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",

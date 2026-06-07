@@ -13,7 +13,7 @@ The system follows AbstractCore's proven architectural patterns:
 from __future__ import annotations
 
 # NOTE: Keep this package import-safe for minimal installs.
-# Many submodules have optional dependencies (Pillow, PyMuPDF4LLM, unstructured, ...).
+# Many submodules have optional dependencies (Pillow, pypdf, unstructured, ...).
 # Import them lazily so `from abstractcore.media.capabilities import ...` works without extras.
 
 from importlib import import_module

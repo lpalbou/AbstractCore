@@ -264,7 +264,7 @@ graph TD
 - **AutoMediaHandler**: Intelligent coordinator that selects appropriate processors
 - **Specialized Processors**:
   - `ImageProcessor` (PIL-based for images)
-  - `PDFProcessor` (PyMuPDF4LLM for documents)
+  - `PDFProcessor` (pypdf by default for permissive PDF text/metadata extraction; optional PyMuPDF4LLM backend is explicit opt-in)
   - `OfficeProcessor` (Unstructured for DOCX/XLSX/PPTX)
   - `TextProcessor` (pandas for CSV/TSV data analysis)
 - **Provider Handlers**: Format media content for each provider's API requirements
@@ -295,8 +295,8 @@ graph TD
 "Analyze this\n\nImage description: A chart showing quarterly trends..."
 ```
 
-**Graceful Fallback Strategy:**
-1. **Advanced Processing**: PyMuPDF4LLM, Unstructured libraries
+**Document Processing Strategy:**
+1. **Specialized Processing**: pypdf for PDFs by default, Unstructured for Office documents
 2. **Basic Processing**: Simple text extraction
 3. **Metadata Fallback**: File information and properties
 4. **Degrades gracefully for documents**: PDFs/Office/text aim to return best-effort extracted text/metadata rather than crashing.
@@ -779,7 +779,7 @@ The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top o
 - **Streaming Support**: Server-sent events for real-time responses
 - **Model Discovery**: Dynamic model listing across all providers
 - **Embedding Support**: Multi-provider embedding generation (remote OpenAI-compatible providers plus local backends)
-- **Optional Vision Endpoints**: OpenAI-compatible `/v1/images/generations`, `/v1/images/edits`, `/v1/videos/generations`, and `/v1/videos/edits` can proxy to an upstream media server without local vision runtimes; `/v1/vision/*` local model control remains delegated to `abstractvision` when installed and configured. Deep provider catalog discovery is exposed separately at `/v1/vision/providers/` and `/v1/vision/models`, and long video runs can use `/v1/vision/jobs/videos/*` progress polling.
+- **Optional Vision Endpoints**: OpenAI-compatible `/v1/images/generations`, `/v1/images/edits`, `/v1/videos/generations`, and `/v1/videos/edits` can proxy to an upstream media server without local vision runtimes; `/v1/vision/*` local model control remains delegated to `abstractvision` when installed and configured. Deep provider catalog discovery is exposed separately at `/v1/vision/providers/` and `/v1/vision/models`, and long image/video runs can use `/v1/vision/jobs/images/*` or `/v1/vision/jobs/videos/*` progress polling.
 - **Optional Audio Endpoints**: OpenAI-compatible `/v1/audio/transcriptions` and `/v1/audio/speech` delegated to capability plugins (typically `abstractvoice`). Voice/profile and TTS model discovery are exposed at `/v1/audio/voices` and `/v1/audio/speech/models`.
 - **Prompt Cache Control Plane**: `/acore/prompt_cache/*` proxy endpoints for cache stats/set/update/fork/clear (best-effort; typically targets an `abstractcore.endpoint` upstream).
 

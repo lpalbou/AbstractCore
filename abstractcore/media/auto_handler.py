@@ -86,9 +86,9 @@ class AutoMediaHandler(BaseMediaHandler):
         # TextProcessor (always available - uses built-in libraries)
         availability['text'] = True
 
-        # PDFProcessor (requires PyMuPDF4LLM)
+        # PDFProcessor (requires pypdf by default; PyMuPDF is explicit opt-in)
         try:
-            import pymupdf4llm
+            import pypdf
             availability['pdf'] = True
         except ImportError:
             availability['pdf'] = False
@@ -182,9 +182,10 @@ class AutoMediaHandler(BaseMediaHandler):
                 if self._available_processors.get('pdf', False):
                     return self._get_pdf_processor()
                 else:
-                    self.logger.warning("PDF processing requested but PyMuPDF4LLM not available")
-                    # Fall back to text processor for basic extraction
-                    return self._get_text_processor()
+                    self.logger.warning("PDF processing requested but pypdf not available")
+                    # Let PDFProcessor raise the actionable dependency error instead of
+                    # pretending a binary PDF can be handled as plain text.
+                    return self._get_pdf_processor()
 
             # Office documents
             elif file_extension in {'.docx', '.xlsx', '.pptx'}:

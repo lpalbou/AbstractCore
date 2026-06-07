@@ -29,9 +29,9 @@ The Server Module provides a production-ready FastAPI REST server that exposes A
 | `/{provider}/v1/images/generations` | POST | Provider-scoped image generation | `model` (no prefix), `prompt`, `base_url` |
 | `/v1/images/edits` | POST | Image editing (optional) | `prompt`, `image`, `model`, `provider`, `base_url`, `mask`, `size` |
 | `/{provider}/v1/images/edits` | POST | Provider-scoped image editing | `model` (no prefix), `prompt`, `image`, `base_url` |
-| `/v1/videos/generations` | POST | Text-to-video generation (optional) | `prompt`, `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames` |
+| `/v1/videos/generations` | POST | Text-to-video generation (optional) | `prompt`, `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `steps`, `guidance_scale`, `guidance_2` |
 | `/{provider}/v1/videos/generations` | POST | Provider-scoped text-to-video | `model` (no prefix), `prompt`, `base_url` |
-| `/v1/videos/edits` | POST | Image-to-video generation (optional) | `prompt`, `image`, `model`, `provider`, `base_url`, `fps`, `num_frames` |
+| `/v1/videos/edits` | POST | Image-to-video generation (optional) | `prompt`, `image`, `model`, `provider`, `base_url`, `fps`, `num_frames`, `steps`, `guidance_scale`, `guidance_2` |
 | `/{provider}/v1/videos/edits` | POST | Provider-scoped image-to-video | `model` (no prefix), `prompt`, `image`, `base_url` |
 | `/v1/vision/models` | GET | Available vision model catalog | `task`, `provider`, `base_url`, `api_key` |
 | `/v1/vision/jobs/*` | GET/POST | Async image/video jobs | `job_id`, `consume`, media parameters, `progress.last_event` |
@@ -67,7 +67,7 @@ Runtime note: omitted `task` on `/acore/models/load` keeps the existing text-gen
 | **Audio Translations** | `/v1/audio/translations` | `file` | Translate audio (not yet supported) |
 | **Text-to-Speech** | `/v1/audio/speech`, `/{provider}/v1/audio/speech` | `input`, optional `model`/`provider`/`base_url` | Generate audio (optional) |
 | **Voice Clone** | `/v1/voice/clone`, `/{provider}/v1/voice/clone` | `file`, optional `model`/`provider`/`base_url` | Create a compatible custom voice (optional) |
-| **Text-to-Music** | `/v1/audio/music` | `prompt` | Generate music/audio through optional AbstractMusic backends; `abstractmusic>=0.1.12` supports remote ACE Music with `ACEMUSIC_API_KEY` |
+| **Text-to-Music** | `/v1/audio/music` | `prompt` | Generate music/audio through optional AbstractMusic backends; `abstractmusic>=0.1.13` supports remote ACE Music with `ACEMUSIC_API_KEY` |
 | **Documents** | `/v1/chat/completions` | `content: [text, file_url]` | PDF/CSV processing |
 | **Tools** | `/v1/chat/completions` | `tools`, `tool_choice` | Function calling |
 | **Embeddings** | `/v1/embeddings` | `model`, `input` | Text embeddings |
@@ -671,19 +671,39 @@ AbstractCore Server can optionally expose OpenAI-compatible image and video endp
 - `POST /{provider}/v1/images/generations`
 - `POST /v1/images/edits`
 - `POST /{provider}/v1/images/edits`
+- `POST /v1/images/upscale`
+- `POST /{provider}/v1/images/upscale`
 - `POST /v1/videos/generations`
 - `POST /{provider}/v1/videos/generations`
 - `POST /v1/videos/edits`
 - `POST /{provider}/v1/videos/edits`
+- `POST /v1/vision/jobs/images/generations`
+- `POST /v1/vision/jobs/images/edits`
+- `POST /v1/vision/jobs/images/upscale`
 - `POST /v1/vision/jobs/videos/generations`
 - `POST /v1/vision/jobs/videos/edits`
+
+Example async SeedVR2 image upscale job:
+
+```bash
+JOB_ID=$(curl -sS -X POST "$BASE/v1/vision/jobs/images/upscale" \
+  -H "Authorization: Bearer $TOKEN" \
+  -F "provider=mlx-gen" \
+  -F "model=AbstractFramework/seedvr2-3b-8bit" \
+  -F "image=@./input.png;type=image/png" \
+  -F "scale=2x" \
+  | python -c 'import json,sys; print(json.load(sys.stdin)["job_id"])')
+
+curl -sS "$BASE/v1/vision/jobs/$JOB_ID" \
+  -H "Authorization: Bearer $TOKEN"
+```
 
 If `model` is omitted, the server uses its configured AbstractVision/OpenAI-compatible
 media default. AbstractCore does not hardcode a local image or video model default.
 Provider-scoped routes accept an unprefixed body `model`, matching the chat
 route pattern used by `/{provider}/v1/chat/completions`.
 Global routes also accept optional `provider` and `base_url` overrides so image
-generation, image edits, text-to-video, and image-to-video follow the same routing contract as the audio
+generation, image edits/upscaling, text-to-video, and image-to-video follow the same routing contract as the audio
 endpoints and the Python `generate(..., output="image")` path.
 
 **Backends (env vars)**:
@@ -741,7 +761,8 @@ curl http://localhost:8000/v1/images/edits \\
   -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \\
   -F "model=diffusers/default" \\
   -F "prompt=make it watercolor" \\
-  -F "image=@./input.png"
+  -F "image=@./input.png" \\
+  -F "reference_images=@./style-reference.png"
 ```
 
 **Text-to-video (JSON, async job with progress polling)**:
@@ -749,36 +770,45 @@ curl http://localhost:8000/v1/images/edits \\
 curl http://localhost:8000/v1/vision/jobs/videos/generations \\
   -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \\
   -H "Content-Type: application/json" \\
-  -d '{"provider":"mlx-gen","model":"Wan-AI/Wan2.2-TI2V-5B-Diffusers","prompt":"A slow camera move through a luminous data center.","width":1280,"height":704,"fps":24,"num_frames":121,"steps":50,"guidance_scale":5.0,"extra":{"max_sequence_length":256}}'
+  -d '{"provider":"mlx-gen","model":"AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit","prompt":"A slow camera move through a luminous data center.","width":432,"height":240,"fps":24,"num_frames":41,"steps":20,"guidance_scale":4.0,"guidance_2":3.0,"extra":{"max_sequence_length":256}}'
 ```
 
-Poll `GET /v1/vision/jobs/{job_id}`. For video jobs, `progress.last_event`
-contains the latest normalized backend progress event when the selected backend
-reports one.
+Poll `GET /v1/vision/jobs/{job_id}`. Image and video jobs expose
+`progress.last_event` when the selected backend reports a normalized progress
+event. For MLX-Gen, `progress` is denoise-step progress; video frame context is
+exposed separately as `frame`, `total_frames`, and `frame_progress`.
 
 **Image-to-video (multipart/form-data)**:
 ```bash
 curl http://localhost:8000/v1/videos/edits \\
   -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \\
   -F "provider=mlx-gen" \\
-  -F "model=Wan-AI/Wan2.2-TI2V-5B-Diffusers" \\
+  -F "model=AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit" \\
   -F "prompt=Slow camera push-in." \\
   -F "image=@./first-frame.png" \\
-  -F "num_frames=121" \\
+  -F "width=432" \\
+  -F "height=240" \\
+  -F "num_frames=41" \\
   -F "fps=24" \\
+  -F "steps=20" \\
+  -F "guidance_scale=3.5" \\
+  -F "guidance_2=3.5" \\
   -F 'extra_json={"max_sequence_length":256}'
 ```
 
 Notes:
 - The server returns `b64_json` outputs, matching the OpenAI media API shape.
 - OpenAI-compatible image proxying is built into `abstractcore[server]`.
+- Wan A14B video models use `guidance_2` as a typed second-stage/low-noise
+  guidance control. Keep backend-only values such as `max_sequence_length` in
+  `extra` / `extra_json`.
 - Strict OpenAI-compatible upstreams receive only OpenAI-compatible top-level
   fields by default. Put backend-specific knobs such as `seed`, `steps`,
   `guidance_scale`, or `negative_prompt` in `extra` / `extra_json` only when
   your custom upstream supports them.
-- Local Diffusers/sdcpp/MLX-Gen generation delegates to AbstractVision; install it in the same env as the server with `pip install "abstractcore[server,vision]"` and prefer `python -m uvicorn ...`.
+- Local Diffusers/sdcpp/MLX-Gen generation delegates to AbstractVision; install it in the same env as the server with `pip install "abstractcore[server,vision]"` and add the backend runtime extra you need, such as `pip install "abstractvision[mlx-gen]"` for MLX-Gen. Aggregate local profiles such as `abstractcore[all-apple]` include the MLX-Gen path. Prefer `python -m uvicorn ...`.
 - Local Diffusers is cache-only by default, matching AbstractVision. Pre-download model weights or opt in with `ABSTRACTCORE_VISION_ALLOW_DOWNLOAD=1`.
-- MLX-Gen quantized models are selected by their exact published repo id (for example `AbstractFramework/qwen-image-2512-4bit` or `Wan-AI/Wan2.2-TI2V-5B-Diffusers`); Core does not expose a separate quantization override.
+- MLX-Gen quantized prepared models are selected by their exact published repo id (for example `AbstractFramework/qwen-image-2512-4bit`, `AbstractFramework/seedvr2-3b-8bit`, `AbstractFramework/seedvr2-7b-4bit`, `AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`, or `AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit`). For SeedVR2 official/source-weight upscaling only, the `quantize` form field can request runtime quantization (`3`, `4`, `5`, `6`, or `8`). Prepared q4/q8 package ids do not need `quantize`. Use `ABSTRACTCORE_VISION_MODEL_DIR` or `ABSTRACTVISION_MODEL_DIR` when prepared folders live outside the Hugging Face cache.
 
 ---
 

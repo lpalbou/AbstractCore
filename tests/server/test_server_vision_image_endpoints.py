@@ -365,6 +365,7 @@ def test_openai_compatible_video_generation_proxy_success(client, monkeypatch):
             "num_frames": 41,
             "steps": 10,
             "guidance_scale": 5.0,
+            "guidance_2": 3.0,
             "response_format": "b64_json",
             "extra": {"max_sequence_length": 256},
         },
@@ -382,6 +383,7 @@ def test_openai_compatible_video_generation_proxy_success(client, monkeypatch):
     assert call["json"]["height"] == 704
     assert call["json"]["fps"] == 24
     assert call["json"]["num_frames"] == 41
+    assert call["json"]["guidance_2"] == 3.0
     assert call["json"]["max_sequence_length"] == 256
 
 
@@ -403,6 +405,7 @@ def test_openai_compatible_image_to_video_proxy_success(client, monkeypatch):
             "height": "704",
             "fps": "24",
             "num_frames": "41",
+            "guidance_2": "3.5",
             "max_sequence_length": "256",
         },
         files=files,
@@ -418,6 +421,7 @@ def test_openai_compatible_image_to_video_proxy_success(client, monkeypatch):
     assert call["data"]["prompt"] == "slow camera push-in"
     assert call["data"]["width"] == "1280"
     assert call["data"]["height"] == "704"
+    assert call["data"]["guidance_2"] == "3.5"
     assert call["data"]["fps"] == "24"
     assert call["data"]["num_frames"] == "41"
     assert call["data"]["max_sequence_length"] == "256"
@@ -541,6 +545,11 @@ class _FakeImageToVideoRequest:
         self.__dict__.update(kwargs)
 
 
+class _FakeImageUpscaleRequest:
+    def __init__(self, **kwargs):
+        self.__dict__.update(kwargs)
+
+
 class _FakeDiffusersConfig:
     instances: list["_FakeDiffusersConfig"] = []
 
@@ -559,8 +568,58 @@ class _FakeDiffusersBackend:
         self.requests.append(request)
         return _FakeGeneratedAsset()
 
+    def generate_image_with_progress(self, request, progress_callback=None):
+        self.requests.append(request)
+        if callable(request.extra.get("on_progress")):
+            class _Event:
+                phase = "denoise"
+                step = 2
+                total_steps = 4
+                progress = 0.5
+                step_progress = 0.5
+
+            request.extra["on_progress"](_Event())
+        if progress_callback is not None:
+            progress_callback(2, 4)
+        return _FakeGeneratedAsset()
+
     def edit_image(self, request):
         self.requests.append(request)
+        return _FakeGeneratedAsset()
+
+    def edit_image_with_progress(self, request, progress_callback=None):
+        self.requests.append(request)
+        if callable(request.extra.get("on_progress")):
+            class _Event:
+                phase = "denoise"
+                step = 3
+                total_steps = 6
+                progress = 0.5
+                step_progress = 0.5
+
+            request.extra["on_progress"](_Event())
+        if progress_callback is not None:
+            progress_callback(3, 6)
+        return _FakeGeneratedAsset()
+
+    def upscale_image(self, request):
+        self.requests.append(request)
+        return _FakeGeneratedAsset()
+
+    def upscale_image_with_progress(self, request, progress_callback=None):
+        self.requests.append(request)
+        if callable(request.extra.get("on_progress")):
+            class _Event:
+                phase = "denoise"
+                step = 1
+                total_steps = 1
+                progress = 1.0
+                step_progress = 1.0
+                task = "image_upscale"
+
+            request.extra["on_progress"](_Event())
+        if progress_callback is not None:
+            progress_callback(1, 1)
         return _FakeGeneratedAsset()
 
     def generate_video(self, request):
@@ -574,11 +633,15 @@ class _FakeDiffusersBackend:
                 phase = "generate"
                 frame = 3
                 total_frames = 5
-                progress = 0.6
+                step = 2
+                total_steps = 4
+                progress = 0.5
+                step_progress = 0.5
+                frame_progress = 0.6
 
             request.extra["on_progress"](_Event())
         if progress_callback is not None:
-            progress_callback(3, 5)
+            progress_callback(2, 4)
         return _FakeGeneratedAsset(data=_MP4_BYTES, mime_type="video/mp4")
 
     def image_to_video(self, request):
@@ -708,6 +771,7 @@ def test_mflux_provider_video_generation_uses_exact_model_and_video_request(clie
             "fps": 24,
             "num_frames": 41,
             "steps": 10,
+            "guidance_2": 3.25,
             "extra": {"max_sequence_length": 256},
         },
     )
@@ -722,6 +786,7 @@ def test_mflux_provider_video_generation_uses_exact_model_and_video_request(clie
     assert req.height == 704
     assert req.fps == 24
     assert req.num_frames == 41
+    assert req.guidance_2 == 3.25
     assert req.extra["max_sequence_length"] == 256
 
 
@@ -755,6 +820,7 @@ def test_video_generation_job_records_progress_event(client, monkeypatch):
             "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
             "num_frames": 5,
             "steps": 4,
+            "guidance_2": 2.75,
         },
     )
 
@@ -772,9 +838,260 @@ def test_video_generation_job_records_progress_event(client, monkeypatch):
     assert data["state"] == "succeeded"
     assert base64.b64decode(data["result"]["data"][0]["b64_json"]) == _MP4_BYTES
     progress = data["progress"]
+    assert progress["step"] == 2
+    assert progress["total_steps"] == 4
     assert progress["last_event"]["frame"] == 3
     assert progress["last_event"]["total_frames"] == 5
-    assert progress["last_event"]["progress"] == 0.6
+    assert progress["last_event"]["step"] == 2
+    assert progress["last_event"]["total_steps"] == 4
+    assert progress["last_event"]["progress"] == 0.5
+    assert progress["last_event"]["step_progress"] == 0.5
+    assert progress["last_event"]["frame_progress"] == 0.6
+    assert _FakeDiffusersBackend.requests[0].guidance_2 == 2.75
+
+
+def test_image_generation_job_records_progress_event(client, monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    _FakeDiffusersConfig.instances = []
+    _FakeDiffusersBackend.requests = []
+
+    def fake_import_abstractvision():
+        return (
+            object,
+            object,
+            object,
+            object,
+            _FakeDiffusersConfig,
+            _FakeDiffusersBackend,
+            object,
+            object,
+            RuntimeError,
+            (_FakeImageGenerationRequest, _FakeImageEditRequest, _FakeVideoGenerationRequest, _FakeImageToVideoRequest),
+        )
+
+    monkeypatch.setattr(vision_endpoints, "_import_abstractvision", fake_import_abstractvision)
+
+    resp = client.post(
+        "/v1/vision/jobs/images/generations",
+        json={
+            "prompt": "a small red square",
+            "provider": "mlx-gen",
+            "model": "AbstractFramework/flux.2-klein-9b-8bit",
+            "steps": 4,
+        },
+    )
+
+    assert resp.status_code == 200
+    job_id = resp.json()["job_id"]
+    data = {}
+    for _ in range(50):
+        poll = client.get(f"/v1/vision/jobs/{job_id}")
+        assert poll.status_code == 200
+        data = poll.json()
+        if data["state"] == "succeeded":
+            break
+        time.sleep(0.02)
+
+    assert data["state"] == "succeeded"
+    assert base64.b64decode(data["result"]["data"][0]["b64_json"]) == _PNG_BYTES
+    progress = data["progress"]
+    assert progress["step"] == 2
+    assert progress["total_steps"] == 4
+    assert progress["progress"] == 0.5
+    assert progress["last_event"]["phase"] == "denoise"
+    assert progress["last_event"]["step_progress"] == 0.5
+
+
+def test_image_upscale_job_records_progress_event(client, monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    _FakeDiffusersConfig.instances = []
+    _FakeDiffusersBackend.requests = []
+
+    def fake_import_abstractvision():
+        return (
+            object,
+            object,
+            object,
+            object,
+            _FakeDiffusersConfig,
+            _FakeDiffusersBackend,
+            object,
+            object,
+            RuntimeError,
+            (
+                _FakeImageGenerationRequest,
+                _FakeImageEditRequest,
+                _FakeVideoGenerationRequest,
+                _FakeImageToVideoRequest,
+                _FakeImageUpscaleRequest,
+            ),
+        )
+
+    monkeypatch.setattr(vision_endpoints, "_import_abstractvision", fake_import_abstractvision)
+
+    files = {"image": ("image.png", b"\x89PNG\r\n\x1a\nabc", "image/png")}
+    resp = client.post(
+        "/v1/vision/jobs/images/upscale",
+        data={
+            "provider": "mlx-gen",
+            "model": "AbstractFramework/seedvr2-3b-8bit",
+            "scale": "2x",
+            "softness": "0.25",
+            "quantize": "8",
+        },
+        files=files,
+    )
+
+    assert resp.status_code == 200
+    job_id = resp.json()["job_id"]
+    data = {}
+    for _ in range(50):
+        poll = client.get(f"/v1/vision/jobs/{job_id}")
+        assert poll.status_code == 200
+        data = poll.json()
+        if data["state"] == "succeeded":
+            break
+        time.sleep(0.02)
+
+    assert data["state"] == "succeeded"
+    assert base64.b64decode(data["result"]["data"][0]["b64_json"]) == _PNG_BYTES
+    req = _FakeDiffusersBackend.requests[0]
+    assert isinstance(req, _FakeImageUpscaleRequest)
+    assert req.scale == "2x"
+    assert req.softness == 0.25
+    assert req.quantize == 8
+    progress = data["progress"]
+    assert progress["step"] == 1
+    assert progress["total_steps"] == 1
+    assert progress["last_event"]["task"] == "image_upscale"
+    assert progress["last_event"]["step_progress"] == 1.0
+
+
+def test_images_upscale_route_forwards_exact_q4_seedvr2_model(client, monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    _FakeDiffusersConfig.instances = []
+    _FakeDiffusersBackend.requests = []
+
+    def fake_import_abstractvision():
+        return (
+            object,
+            object,
+            object,
+            object,
+            _FakeDiffusersConfig,
+            _FakeDiffusersBackend,
+            object,
+            object,
+            RuntimeError,
+            (
+                _FakeImageGenerationRequest,
+                _FakeImageEditRequest,
+                _FakeVideoGenerationRequest,
+                _FakeImageToVideoRequest,
+                _FakeImageUpscaleRequest,
+            ),
+        )
+
+    monkeypatch.setattr(vision_endpoints, "_import_abstractvision", fake_import_abstractvision)
+
+    files = {"image": ("image.png", b"\x89PNG\r\n\x1a\nabc", "image/png")}
+    resp = client.post(
+        "/v1/images/upscale",
+        data={
+            "provider": "mlx-gen",
+            "model": "AbstractFramework/seedvr2-7b-4bit",
+            "scale": "2x",
+            "softness": "0.25",
+        },
+        files=files,
+    )
+
+    assert resp.status_code == 200
+    assert base64.b64decode(resp.json()["data"][0]["b64_json"]) == _PNG_BYTES
+    assert _FakeDiffusersConfig.instances[-1].model == "AbstractFramework/seedvr2-7b-4bit"
+    req = _FakeDiffusersBackend.requests[0]
+    assert isinstance(req, _FakeImageUpscaleRequest)
+    assert req.scale == "2x"
+    assert req.softness == 0.25
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "detail"),
+    [
+        ("scale", "-1", "scale must be positive"),
+        ("resolution", "large", "resolution must be a positive integer"),
+        ("softness", "2", "softness must be <="),
+        ("seed", "abc", "seed must be an integer"),
+        ("quantize", "abc", "quantize must be an integer"),
+        ("quantize", "7", "quantize must be one of"),
+        ("vae_tiling", "maybe", "vae_tiling must be a boolean"),
+    ],
+)
+@pytest.mark.parametrize("path", ["/v1/images/upscale", "/v1/vision/jobs/images/upscale"])
+def test_image_upscale_routes_reject_malformed_form_fields(client, path, field, value, detail):
+    data = {
+        "provider": "mlx-gen",
+        "model": "AbstractFramework/seedvr2-3b-8bit",
+        "scale": "2x",
+        "softness": "0.25",
+        "seed": "1234",
+        "quantize": "8",
+        "vae_tiling": "false",
+    }
+    data[field] = value
+    files = {"image": ("image.png", b"\x89PNG\r\n\x1a\nabc", "image/png")}
+
+    resp = client.post(path, data=data, files=files)
+
+    assert resp.status_code == 400
+    assert detail in resp.text
+
+
+def test_images_edits_forwards_reference_images_to_abstractvision(client, monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    _FakeDiffusersConfig.instances = []
+    _FakeDiffusersBackend.requests = []
+
+    def fake_import_abstractvision():
+        return (
+            object,
+            object,
+            object,
+            object,
+            _FakeDiffusersConfig,
+            _FakeDiffusersBackend,
+            object,
+            object,
+            RuntimeError,
+            (_FakeImageGenerationRequest, _FakeImageEditRequest, _FakeVideoGenerationRequest, _FakeImageToVideoRequest),
+        )
+
+    monkeypatch.setattr(vision_endpoints, "_import_abstractvision", fake_import_abstractvision)
+
+    files = [
+        ("image", ("source.png", b"source-image", "image/png")),
+        ("reference_images", ("style.png", b"style-reference", "image/png")),
+        ("reference_images", ("layout.png", b"layout-reference", "image/png")),
+    ]
+    resp = client.post(
+        "/v1/images/edits",
+        data={
+            "prompt": "compose with references",
+            "provider": "mlx-gen",
+            "model": "AbstractFramework/flux.2-klein-9b-8bit",
+        },
+        files=files,
+    )
+
+    assert resp.status_code == 200
+    assert base64.b64decode(resp.json()["data"][0]["b64_json"]) == _PNG_BYTES
+    req = _FakeDiffusersBackend.requests[0]
+    assert req.prompt == "compose with references"
+    assert req.extra["reference_images"] == [b"style-reference", b"layout-reference"]
 
 
 def test_diffusers_default_provider_model_requires_configured_model(client):

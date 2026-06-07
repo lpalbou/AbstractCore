@@ -52,7 +52,7 @@ Generative vision uses `abstractvision` when installed. In server mode, omit
 `model` only when the server has a configured default, or use explicit
 provider/model ids such as `diffusers/default`, `diffusers/<huggingface-repo>`,
 `mlx-gen/AbstractFramework/qwen-image-2512-4bit`,
-`mlx-gen/Wan-AI/Wan2.2-TI2V-5B-Diffusers`, `sdcpp/default`, or
+`mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`, `sdcpp/default`, or
 `openai-compatible/<model>`. Quantized MLX-Gen models are selected by their
 published repo id; Core does not add a separate quant override.
 
@@ -339,11 +339,40 @@ Optional capability plugins can also generate media through the normal
 image = llm.generate("A red ceramic mug on a white table.", output="image")
 png_bytes = image.outputs["image"][0].data
 
-# Image edit: image media + image output infers image-to-image.
-edited = llm.generate("Make the mug blue.", media="mug.png", output="image")
+# Image edit: source plus optional reference/style media infers image-to-image.
+edited = llm.generate(
+    "Make the mug blue using the second image as a style reference.",
+    media=[
+        {"type": "image", "path": "mug.png", "role": "source"},
+        {"type": "image", "path": "style.png", "role": "style"},
+    ],
+    output="image",
+)
 
 def progress(event):
-    print("video progress", event)
+    print("media progress", event)
+
+# Image upscale via the AbstractVision plugin. Canonical q8 packages do not
+# need runtime quantize; pass a local prepared folder as model when needed.
+upscaled_direct = llm.vision.upscale_image(
+    "mug.png",
+    provider="mlx-gen",
+    model="AbstractFramework/seedvr2-3b-8bit",
+    scale="2x",
+    on_progress=progress,
+)
+
+upscaled = llm.generate(
+    media={"type": "image", "path": "mug.png", "role": "source"},
+    on_progress=progress,
+    output={
+        "task": "image_upscale",
+        "provider": "mlx-gen",
+        "model": "AbstractFramework/seedvr2-3b-8bit",
+        "scale": "2x",
+    },
+)
+upscaled_png = upscaled.outputs["image"][0].data
 
 # Text-to-video via abstractvision. The callback is forwarded to the plugin.
 video = llm.generate(
@@ -353,9 +382,15 @@ video = llm.generate(
         "modality": "video",
         "task": "text_to_video",
         "provider": "mlx-gen",
-        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
-        "num_frames": 121,
+        "model": "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit",
+        "width": 432,
+        "height": 240,
+        "num_frames": 41,
         "fps": 24,
+        "steps": 20,
+        "guidance_scale": 4.0,
+        "guidance_2": 3.0,
+        "extra": {"max_sequence_length": 256},
     },
 )
 mp4_bytes = video.outputs["video"][0].data
@@ -367,9 +402,15 @@ i2v = llm.generate(
     output={
         "task": "image_to_video",
         "provider": "mlx-gen",
-        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
-        "num_frames": 121,
+        "model": "AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit",
+        "width": 432,
+        "height": 240,
+        "num_frames": 41,
         "fps": 24,
+        "steps": 20,
+        "guidance_scale": 3.5,
+        "guidance_2": 3.5,
+        "extra": {"max_sequence_length": 256},
     },
 )
 
@@ -394,7 +435,7 @@ Text-only `generate(...)` is unchanged. For advanced/provider-specific work,
 the direct `llm.vision.*`, `llm.voice.*`, `llm.audio.*`, and `llm.music.*` facades remain
 available. Configure `abstractvision` and `abstractvoice` backends first for
 real generation; configure `abstractmusic` for music generation. With
-`abstractmusic>=0.1.12`, the default music backend is the lightweight remote
+`abstractmusic>=0.1.13`, the default music backend is the lightweight remote
 ACE Music path; set `ACEMUSIC_API_KEY` before use. Local music engines remain
 optional plugin extras.
 
@@ -416,8 +457,8 @@ The HTTP server exposes equivalent discovery at
 Generated media HTTP routes include `/v1/images/generations`,
 `/v1/images/edits`, `/v1/videos/generations`, `/v1/videos/edits`, and
 async polling routes under `/v1/vision/jobs/images/*` and
-`/v1/vision/jobs/videos/*`; video jobs include the latest backend progress event
-when the selected backend reports it.
+`/v1/vision/jobs/videos/*`; image and video jobs include the latest backend
+progress event when the selected backend reports it.
 `/v1/models` remains focused on LLM and embedding provider models.
 Use `capability_route` to filter those models by precise route-keyed support:
 `/v1/models?capability_route=input.image,output.text`,
