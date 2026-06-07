@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [2.13.34] - 2026-06-07
+## [2.13.35] - 2026-06-07
 
 ### Added
 - **Image upscaling routes**: added `/v1/images/upscale`, `/{provider}/v1/images/upscale`, and async `/v1/vision/jobs/images/upscale` with polling/progress support.
@@ -32,6 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Generated image callback forwarding**: server-local generated image/edit dispatch now forwards top-level progress callbacks and backend-specific parameters through the same AbstractVision `extra` path used for video generation.
 - **Reference media routing**: unified Python image-edit generation forwards `media` items with `reference`, `style`, or `context` roles as AbstractVision `reference_images`.
 - **Upscale Swagger examples**: multipart OpenAPI examples now cover direct, provider-scoped, and async SeedVR2 image upscaling routes.
+- **Python 3.9 configuration import**: `ConfigurationManager` constructor annotations remain importable on Python 3.9.
 
 ## [2.13.32] - 2026-06-03
 

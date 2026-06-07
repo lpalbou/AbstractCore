@@ -8,7 +8,7 @@ import json
 import os
 import importlib.util
 from pathlib import Path
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional, Tuple, Union
 from dataclasses import dataclass, asdict, fields
 from datetime import datetime, timezone
 
@@ -326,8 +326,8 @@ class ConfigurationManager:
 
     def __init__(
         self,
-        config_dir: Optional[str | Path] = None,
-        config_file: Optional[str | Path] = None,
+        config_dir: Optional[Union[str, Path]] = None,
+        config_file: Optional[Union[str, Path]] = None,
         *,
         apply_env: bool = True,
     ):
