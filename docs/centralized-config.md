@@ -109,8 +109,10 @@ target `output.text` are accepted for compatibility, but persist to
 
 ### Capability Routing Defaults
 
-Capability route defaults use `kind.modality` keys and store a small provider
-target: `provider`, `model`, optional `base_url`, and provider/plugin `options`.
+Capability route defaults use `kind.modality` keys, with optional
+`kind.modality.task` keys for generated-media defaults that need finer routing.
+Each route stores a small provider target: `provider`, `model`, optional
+`base_url`, and provider/plugin `options`.
 
 Route kinds:
 
@@ -131,6 +133,20 @@ abstractcore config set-default output.voice \
   --provider supertonic \
   --model supertonic-3 \
   --option voice=M1
+
+abstractcore config set-default output.image.image_to_image \
+  --provider mlx-gen \
+  --model AbstractFramework/qwen-image-edit-2511-4bit
+
+abstractcore config set-default output.image.image_upscale \
+  --provider mlx-gen \
+  --model AbstractFramework/seedvr2-3b-8bit \
+  --option resolution=2x \
+  --option softness=0.25
+
+abstractcore config set-default output.video.image_to_video \
+  --provider mlx-gen \
+  --model AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit
 
 abstractcore config defaults
 

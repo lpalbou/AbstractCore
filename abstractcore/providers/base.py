@@ -1799,6 +1799,42 @@ class BaseProvider(AbstractCoreInterface, ABC):
         return output_plugin_kwargs(spec, exclude=exclude)
 
     @staticmethod
+    def _output_generation_count(spec: Dict[str, Any]) -> int:
+        raw = spec.get("count", spec.get("n"))
+        if raw is None:
+            return 1
+        try:
+            count = int(raw)
+        except Exception as exc:
+            raise ValueError("Vision output count must be an integer >= 1.") from exc
+        if count < 1:
+            raise ValueError("Vision output count must be >= 1.")
+        return count
+
+    @staticmethod
+    def _output_generation_seeds(spec: Dict[str, Any]) -> Optional[List[int]]:
+        raw = spec.get("seeds")
+        if raw is None:
+            return None
+        if isinstance(raw, str):
+            parts = [part.strip() for part in raw.replace(";", ",").split(",") if part.strip()]
+            if not parts:
+                raise ValueError("Vision output seeds cannot be empty.")
+            try:
+                return [int(part) for part in parts]
+            except Exception as exc:
+                raise ValueError("Vision output seeds must be integers.") from exc
+        if not isinstance(raw, (list, tuple)):
+            raise ValueError("Vision output seeds must be a list of integers.")
+        try:
+            seeds = [int(value) for value in raw]
+        except Exception as exc:
+            raise ValueError("Vision output seeds must be integers.") from exc
+        if not seeds:
+            raise ValueError("Vision output seeds cannot be empty.")
+        return seeds
+
+    @staticmethod
     def _artifact_or_data(value: Any) -> tuple[Optional[bytes], Optional[Dict[str, Any]], Dict[str, Any]]:
         if isinstance(value, (bytes, bytearray)):
             return bytes(value), None, {}
@@ -1821,6 +1857,53 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     meta[key] = raw
             return bytes(content), None, meta
         return None, None, {"value": value}
+
+    def _add_generated_media_items(
+        self,
+        *,
+        result: MultimodalGenerateResponse,
+        output_key: str,
+        modality: str,
+        task_name: str,
+        raws: List[Any],
+        spec: Dict[str, Any],
+        artifact_store: Optional[Any],
+        default_format: str,
+    ) -> None:
+        capability_backend = self.vision if modality in {"image", "video"} else None
+        for raw in raws:
+            data, artifact_ref, metadata = self._artifact_or_data(raw)
+            fmt = str(spec.get("format") or default_format).strip().lower() or default_format
+            content_type = str(
+                metadata.get("content_type")
+                or metadata.get("mime_type")
+                or f"{modality}/{fmt}"
+            )
+            if artifact_ref is None:
+                data, stored_ref = self._store_generated_data(
+                    data,
+                    artifact_store=artifact_store,
+                    content_type=content_type,
+                    spec=spec,
+                )
+                artifact_ref = stored_ref
+            item = GeneratedItem(
+                modality=modality,
+                task=task_name,
+                data=data,
+                artifact_ref=artifact_ref,
+                content_type=content_type,
+                format=fmt,
+                backend_id=getattr(capability_backend, "backend_id", None),
+                provider=str(
+                    spec.get("provider")
+                    or getattr(capability_backend, "backend_id", None)
+                    or self.__class__.__name__
+                ),
+                model=str(spec.get("model") or self.model),
+                metadata=metadata,
+            )
+            result.add_output(output_key, item)
 
     @staticmethod
     def _artifact_ref_from_store_result(value: Any) -> Optional[Dict[str, Any]]:
@@ -2046,12 +2129,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         kwargs = self._output_plugin_kwargs(
             spec,
-            exclude={"format", "content_type", "mime_type", "provider", "response_format"},
+            exclude={"format", "content_type", "mime_type", "provider", "response_format", "count", "n", "seeds"},
         )
         if spec.get("provider") is not None:
             kwargs["provider"] = spec.get("provider")
         if artifact_store is not None:
             kwargs["artifact_store"] = artifact_store
+        count = self._output_generation_count(spec)
+        seeds = self._output_generation_seeds(spec)
+        batch_requested = not should_upscale and (count > 1 or seeds is not None)
 
         if should_upscale:
             raw = self.vision.upscale_image(self._media_payload(source), **kwargs)
@@ -2083,41 +2169,40 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         kwargs["reference_images"] = list(existing) + reference_payloads
                     else:
                         kwargs["reference_images"] = [existing] + reference_payloads
-            raw = self.vision.i2i(
-                prompt,
-                self._media_payload(source),
-                mask=self._media_payload(mask) if mask is not None else None,
-                **kwargs,
-            )
+            if batch_requested:
+                raw = self.vision.i2i_batch(
+                    prompt,
+                    self._media_payload(source),
+                    mask=self._media_payload(mask) if mask is not None else None,
+                    count=count,
+                    seeds=seeds,
+                    **kwargs,
+                )
+            else:
+                raw = self.vision.i2i(
+                    prompt,
+                    self._media_payload(source),
+                    mask=self._media_payload(mask) if mask is not None else None,
+                    **kwargs,
+                )
             task_name = "image_edit"
         else:
-            raw = self.vision.t2i(prompt, **kwargs)
+            if batch_requested:
+                raw = self.vision.t2i_batch(prompt, count=count, seeds=seeds, **kwargs)
+            else:
+                raw = self.vision.t2i(prompt, **kwargs)
             task_name = "image_generation"
-
-        data, artifact_ref, metadata = self._artifact_or_data(raw)
-        fmt = str(spec.get("format") or "png")
-        content_type = str(metadata.get("content_type") or metadata.get("mime_type") or f"image/{fmt}")
-        if artifact_ref is None:
-            data, stored_ref = self._store_generated_data(
-                data,
-                artifact_store=artifact_store,
-                content_type=content_type,
-                spec=spec,
-            )
-            artifact_ref = stored_ref
-        item = GeneratedItem(
+        raws = list(raw) if isinstance(raw, list) else [raw]
+        self._add_generated_media_items(
+            result=result,
+            output_key="image",
             modality="image",
-            task=task_name,
-            data=data,
-            artifact_ref=artifact_ref,
-            content_type=content_type,
-            format=fmt,
-            backend_id=getattr(self.vision, "backend_id", None),
-            provider=str(spec.get("provider") or getattr(self.vision, "backend_id", None) or self.__class__.__name__),
-            model=str(spec.get("model") or self.model),
-            metadata=metadata,
+            task_name=task_name,
+            raws=raws,
+            spec=spec,
+            artifact_store=artifact_store,
+            default_format="png",
         )
-        result.add_output("image", item)
 
     def _run_video_output(
         self,
@@ -2155,48 +2240,47 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         kwargs = self._output_plugin_kwargs(
             spec,
-            exclude={"format", "content_type", "mime_type", "provider", "response_format"},
+            exclude={"format", "content_type", "mime_type", "provider", "response_format", "count", "n", "seeds"},
         )
         if spec.get("provider") is not None:
             kwargs["provider"] = spec.get("provider")
         if artifact_store is not None:
             kwargs["artifact_store"] = artifact_store
+        count = self._output_generation_count(spec)
+        seeds = self._output_generation_seeds(spec)
+        batch_requested = count > 1 or seeds is not None
 
         if should_i2v:
             source = source_items[0] if source_items else (unroled[0] if unroled else None)
             if source is None:
                 raise ValueError("Image-to-video requires one source image.")
-            raw = self.vision.i2v(self._media_payload(source), prompt=prompt, **kwargs)
+            if batch_requested:
+                raw = self.vision.i2v_batch(
+                    self._media_payload(source),
+                    prompt=prompt,
+                    count=count,
+                    seeds=seeds,
+                    **kwargs,
+                )
+            else:
+                raw = self.vision.i2v(self._media_payload(source), prompt=prompt, **kwargs)
             task_name = "image_to_video"
         else:
-            raw = self.vision.t2v(prompt, **kwargs)
+            if batch_requested:
+                raw = self.vision.t2v_batch(prompt, count=count, seeds=seeds, **kwargs)
+            else:
+                raw = self.vision.t2v(prompt, **kwargs)
             task_name = "text_to_video"
-
-        data, artifact_ref, metadata = self._artifact_or_data(raw)
-        fmt = str(spec.get("format") or "mp4").strip().lower() or "mp4"
-        content_type = str(metadata.get("content_type") or metadata.get("mime_type") or f"video/{fmt}")
-        if artifact_ref is None:
-            data, stored_ref = self._store_generated_data(
-                data,
-                artifact_store=artifact_store,
-                content_type=content_type,
-                spec=spec,
-            )
-            artifact_ref = stored_ref
-        result.add_output(
-            "video",
-            GeneratedItem(
-                modality="video",
-                task=task_name,
-                data=data,
-                artifact_ref=artifact_ref,
-                content_type=content_type,
-                format=fmt,
-                backend_id=getattr(self.vision, "backend_id", None),
-                provider=str(spec.get("provider") or getattr(self.vision, "backend_id", None) or self.__class__.__name__),
-                model=str(spec.get("model") or self.model),
-                metadata=metadata,
-            ),
+        raws = list(raw) if isinstance(raw, list) else [raw]
+        self._add_generated_media_items(
+            result=result,
+            output_key="video",
+            modality="video",
+            task_name=task_name,
+            raws=raws,
+            spec=spec,
+            artifact_store=artifact_store,
+            default_format="mp4",
         )
 
     def _run_voice_output(

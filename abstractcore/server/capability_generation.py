@@ -7,8 +7,9 @@ and future media behavior can reuse BaseProvider's unified output dispatcher.
 
 from __future__ import annotations
 
+import random
 import threading
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from ..core.types import GenerateResponse
 from ..providers.base import BaseProvider
@@ -99,8 +100,105 @@ class ServerVisionFacade:
         self._image_upscale_request_cls = image_upscale_request_cls
         self.backend_id = backend_id
 
-    def t2i(self, prompt: str, **kwargs: Any) -> Any:
-        req = self._image_generation_request_cls(
+    @staticmethod
+    def plan_batch_seeds(
+        *,
+        count: int,
+        seed: Optional[int] = None,
+        seeds: Optional[Any] = None,
+    ) -> list[Optional[int]]:
+        if seeds is not None:
+            if not isinstance(seeds, (list, tuple)):
+                raise ValueError("Batch generation seeds must be a list of integers.")
+            planned = [int(value) for value in seeds]
+            if not planned:
+                raise ValueError("Batch generation seeds cannot be empty.")
+            if int(count) != len(planned):
+                raise ValueError(
+                    f"Batch generation count ({int(count)}) must match the number of explicit seeds ({len(planned)})."
+                )
+            return planned
+        if int(count) <= 0:
+            raise ValueError("Batch generation count must be >= 1.")
+        if int(count) == 1:
+            return [int(seed)] if seed is not None else [None]
+        if seed is not None:
+            base_seed = int(seed)
+            return [base_seed + index for index in range(int(count))]
+        rng = random.SystemRandom()
+        return [int(rng.randrange(0, 1_000_000_000)) for _ in range(int(count))]
+
+    @staticmethod
+    def _backend_overrides_progress_method(backend: Any, method_name: str) -> bool:
+        fn = getattr(backend, method_name, None)
+        if not callable(fn):
+            return False
+        for cls in type(backend).__mro__:
+            if method_name not in getattr(cls, "__dict__", {}):
+                continue
+            module = str(getattr(cls, "__module__", "") or "")
+            qualname = str(getattr(cls, "__qualname__", "") or "")
+            if module.endswith(".base_backend") and qualname == "VisionBackend":
+                return False
+            return True
+        return False
+
+    @staticmethod
+    def _request_has_progress_hooks(req: Any) -> bool:
+        extra = getattr(req, "extra", None)
+        if not isinstance(extra, dict):
+            return False
+        for key in ("on_progress", "progress_event_callback", "progress_callback"):
+            if callable(extra.get(key)):
+                return True
+        return False
+
+    def _call_backend(
+        self,
+        *,
+        standard_method: str,
+        progress_method: str,
+        req: Any,
+        progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
+    ) -> Any:
+        use_progress_method = self._backend_overrides_progress_method(self._backend, progress_method) and (
+            callable(progress_callback) or self._request_has_progress_hooks(req)
+        )
+        with self._call_lock:
+            if use_progress_method:
+                fn = getattr(self._backend, progress_method)
+                return fn(req, progress_callback=progress_callback)
+            fn = getattr(self._backend, standard_method)
+            return fn(req)
+
+    def list_provider_adapters(
+        self,
+        *,
+        model: Optional[str] = None,
+        task: Optional[str] = None,
+        provider: Optional[str] = None,
+    ) -> list[dict[str, Any]]:
+        _ = provider
+        method = getattr(self._backend, "list_provider_adapters", None)
+        if not callable(method):
+            return []
+        out = method(model=model, task=task)
+        return list(out or [])
+
+    @property
+    def supports_video_generation(self) -> bool:
+        return self._video_generation_request_cls is not None
+
+    @property
+    def supports_image_to_video(self) -> bool:
+        return self._image_to_video_request_cls is not None
+
+    @property
+    def supports_image_upscale(self) -> bool:
+        return self._image_upscale_request_cls is not None
+
+    def build_image_generation_request(self, prompt: str, **kwargs: Any) -> Any:
+        return self._image_generation_request_cls(
             prompt=str(prompt or ""),
             negative_prompt=kwargs.get("negative_prompt"),
             width=kwargs.get("width"),
@@ -108,14 +206,31 @@ class ServerVisionFacade:
             steps=kwargs.get("steps"),
             guidance_scale=kwargs.get("guidance_scale"),
             seed=kwargs.get("seed"),
+            lora_adapters=kwargs.get("lora_adapters") or (),
             extra=self._extra_with_image_params(kwargs),
         )
-        with self._call_lock:
-            asset = self._backend.generate_image(req)
+
+    def generate_image_asset(
+        self,
+        prompt: str,
+        *,
+        progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
+        **kwargs: Any,
+    ) -> Any:
+        req = self.build_image_generation_request(prompt, **kwargs)
+        return self._call_backend(
+            standard_method="generate_image",
+            progress_method="generate_image_with_progress",
+            req=req,
+            progress_callback=progress_callback,
+        )
+
+    def t2i(self, prompt: str, **kwargs: Any) -> Any:
+        asset = self.generate_image_asset(prompt, **kwargs)
         return bytes(getattr(asset, "data", b""))
 
-    def i2i(self, prompt: str, image: Any, *, mask: Any = None, **kwargs: Any) -> Any:
-        req = self._image_edit_request_cls(
+    def build_image_edit_request(self, prompt: str, image: Any, *, mask: Any = None, **kwargs: Any) -> Any:
+        return self._image_edit_request_cls(
             prompt=str(prompt or ""),
             image=image,
             mask=mask,
@@ -123,16 +238,35 @@ class ServerVisionFacade:
             seed=kwargs.get("seed"),
             steps=kwargs.get("steps"),
             guidance_scale=kwargs.get("guidance_scale"),
+            lora_adapters=kwargs.get("lora_adapters") or (),
             extra=self._extra_with_image_params(kwargs),
         )
-        with self._call_lock:
-            asset = self._backend.edit_image(req)
+
+    def edit_image_asset(
+        self,
+        prompt: str,
+        image: Any,
+        *,
+        mask: Any = None,
+        progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
+        **kwargs: Any,
+    ) -> Any:
+        req = self.build_image_edit_request(prompt, image, mask=mask, **kwargs)
+        return self._call_backend(
+            standard_method="edit_image",
+            progress_method="edit_image_with_progress",
+            req=req,
+            progress_callback=progress_callback,
+        )
+
+    def i2i(self, prompt: str, image: Any, *, mask: Any = None, **kwargs: Any) -> Any:
+        asset = self.edit_image_asset(prompt, image, mask=mask, **kwargs)
         return bytes(getattr(asset, "data", b""))
 
-    def upscale_image(self, image: Any, **kwargs: Any) -> Any:
+    def build_image_upscale_request(self, image: Any, **kwargs: Any) -> Any:
         if self._image_upscale_request_cls is None:
             raise AttributeError("The selected AbstractVision backend does not expose ImageUpscaleRequest.")
-        req = self._image_upscale_request_cls(
+        return self._image_upscale_request_cls(
             image=image,
             resolution=kwargs.get("resolution"),
             scale=kwargs.get("scale"),
@@ -142,8 +276,24 @@ class ServerVisionFacade:
             vae_tiling=kwargs.get("vae_tiling"),
             extra=self._extra_with_image_params(kwargs),
         )
-        with self._call_lock:
-            asset = self._backend.upscale_image(req)
+
+    def upscale_image_asset(
+        self,
+        image: Any,
+        *,
+        progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
+        **kwargs: Any,
+    ) -> Any:
+        req = self.build_image_upscale_request(image, **kwargs)
+        return self._call_backend(
+            standard_method="upscale_image",
+            progress_method="upscale_image_with_progress",
+            req=req,
+            progress_callback=progress_callback,
+        )
+
+    def upscale_image(self, image: Any, **kwargs: Any) -> Any:
+        asset = self.upscale_image_asset(image, **kwargs)
         return bytes(getattr(asset, "data", b""))
 
     @staticmethod
@@ -178,6 +328,7 @@ class ServerVisionFacade:
                 "steps",
                 "guidance_scale",
                 "guidance_2",
+                "lora_adapters",
                 "softness",
                 "quantize",
                 "vae_tiling",
@@ -206,6 +357,8 @@ class ServerVisionFacade:
                 "steps",
                 "guidance_scale",
                 "guidance_2",
+                "flow_shift",
+                "lora_adapters",
                 "extra",
                 "provider",
                 "model",
@@ -215,10 +368,10 @@ class ServerVisionFacade:
             },
         )
 
-    def t2v(self, prompt: str, **kwargs: Any) -> Any:
+    def build_video_generation_request(self, prompt: str, **kwargs: Any) -> Any:
         if self._video_generation_request_cls is None:
             raise AttributeError("The selected AbstractVision backend does not expose VideoGenerationRequest.")
-        req = self._video_generation_request_cls(
+        return self._video_generation_request_cls(
             prompt=str(prompt or ""),
             negative_prompt=kwargs.get("negative_prompt"),
             width=kwargs.get("width"),
@@ -229,16 +382,34 @@ class ServerVisionFacade:
             steps=kwargs.get("steps"),
             guidance_scale=kwargs.get("guidance_scale"),
             guidance_2=kwargs.get("guidance_2"),
+            flow_shift=kwargs.get("flow_shift"),
+            lora_adapters=kwargs.get("lora_adapters") or (),
             extra=self._extra_with_video_params(kwargs),
         )
-        with self._call_lock:
-            asset = self._backend.generate_video(req)
+
+    def generate_video_asset(
+        self,
+        prompt: str,
+        *,
+        progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
+        **kwargs: Any,
+    ) -> Any:
+        req = self.build_video_generation_request(prompt, **kwargs)
+        return self._call_backend(
+            standard_method="generate_video",
+            progress_method="generate_video_with_progress",
+            req=req,
+            progress_callback=progress_callback,
+        )
+
+    def t2v(self, prompt: str, **kwargs: Any) -> Any:
+        asset = self.generate_video_asset(prompt, **kwargs)
         return bytes(getattr(asset, "data", b""))
 
-    def i2v(self, image: Any, **kwargs: Any) -> Any:
+    def build_image_to_video_request(self, image: Any, **kwargs: Any) -> Any:
         if self._image_to_video_request_cls is None:
             raise AttributeError("The selected AbstractVision backend does not expose ImageToVideoRequest.")
-        req = self._image_to_video_request_cls(
+        return self._image_to_video_request_cls(
             image=image,
             prompt=kwargs.get("prompt"),
             negative_prompt=kwargs.get("negative_prompt"),
@@ -250,11 +421,81 @@ class ServerVisionFacade:
             steps=kwargs.get("steps"),
             guidance_scale=kwargs.get("guidance_scale"),
             guidance_2=kwargs.get("guidance_2"),
+            flow_shift=kwargs.get("flow_shift"),
+            lora_adapters=kwargs.get("lora_adapters") or (),
             extra=self._extra_with_video_params(kwargs),
         )
-        with self._call_lock:
-            asset = self._backend.image_to_video(req)
+
+    def image_to_video_asset(
+        self,
+        image: Any,
+        *,
+        progress_callback: Optional[Callable[[int, Optional[int]], None]] = None,
+        **kwargs: Any,
+    ) -> Any:
+        req = self.build_image_to_video_request(image, **kwargs)
+        return self._call_backend(
+            standard_method="image_to_video",
+            progress_method="image_to_video_with_progress",
+            req=req,
+            progress_callback=progress_callback,
+        )
+
+    def i2v(self, image: Any, **kwargs: Any) -> Any:
+        asset = self.image_to_video_asset(image, **kwargs)
         return bytes(getattr(asset, "data", b""))
+
+    def t2i_batch(self, prompt: str, **kwargs: Any) -> Any:
+        planned_seeds = self.plan_batch_seeds(
+            count=int(kwargs.pop("count", 1) or 1),
+            seed=kwargs.get("seed"),
+            seeds=kwargs.pop("seeds", None),
+        )
+        out = []
+        for planned_seed in planned_seeds:
+            call_kwargs = dict(kwargs)
+            call_kwargs["seed"] = planned_seed
+            out.append(self.t2i(prompt, **call_kwargs))
+        return out
+
+    def i2i_batch(self, prompt: str, image: Any, *, mask: Any = None, **kwargs: Any) -> Any:
+        planned_seeds = self.plan_batch_seeds(
+            count=int(kwargs.pop("count", 1) or 1),
+            seed=kwargs.get("seed"),
+            seeds=kwargs.pop("seeds", None),
+        )
+        out = []
+        for planned_seed in planned_seeds:
+            call_kwargs = dict(kwargs)
+            call_kwargs["seed"] = planned_seed
+            out.append(self.i2i(prompt, image, mask=mask, **call_kwargs))
+        return out
+
+    def t2v_batch(self, prompt: str, **kwargs: Any) -> Any:
+        planned_seeds = self.plan_batch_seeds(
+            count=int(kwargs.pop("count", 1) or 1),
+            seed=kwargs.get("seed"),
+            seeds=kwargs.pop("seeds", None),
+        )
+        out = []
+        for planned_seed in planned_seeds:
+            call_kwargs = dict(kwargs)
+            call_kwargs["seed"] = planned_seed
+            out.append(self.t2v(prompt, **call_kwargs))
+        return out
+
+    def i2v_batch(self, image: Any, **kwargs: Any) -> Any:
+        planned_seeds = self.plan_batch_seeds(
+            count=int(kwargs.pop("count", 1) or 1),
+            seed=kwargs.get("seed"),
+            seeds=kwargs.pop("seeds", None),
+        )
+        out = []
+        for planned_seed in planned_seeds:
+            call_kwargs = dict(kwargs)
+            call_kwargs["seed"] = planned_seed
+            out.append(self.i2v(image, **call_kwargs))
+        return out
 
 
 def create_capability_generation_core(

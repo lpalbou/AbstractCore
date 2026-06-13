@@ -18,7 +18,7 @@ from .capability_defaults import (
     capability_defaults_from_dict,
     capability_route_key,
     iter_capability_default_specs,
-    split_capability_route,
+    split_capability_default_route,
 )
 from .provider_profiles import (
     ProviderProfile,
@@ -979,11 +979,16 @@ class ConfigurationManager:
     def get_capability_default(
         self,
         kind: str,
-        modality: str,
+        modality: Optional[str] = None,
+        task: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Return the effective default route for a capability."""
         try:
-            key = capability_route_key(kind, modality)
+            if modality is None:
+                kind, modality, task = split_capability_default_route(kind)
+            else:
+                kind, modality, task = split_capability_default_route(kind, modality, task)
+            key = capability_route_key(kind, modality, task)
         except Exception:
             return {}
 
@@ -1031,7 +1036,7 @@ class ConfigurationManager:
         """Return all known capability routes with explicit persisted defaults."""
         rows: list[Dict[str, Any]] = []
         for spec in iter_capability_default_specs():
-            route = self.get_capability_default(spec.kind, spec.modality)
+            route = self.get_capability_default(spec.key)
             row = {**spec.to_dict(), **route}
             row["configured"] = bool(route.get("provider") or route.get("model") or route.get("base_url") or route.get("options"))
             if spec.key == capability_route_key("input", "image"):
@@ -1136,12 +1141,15 @@ class ConfigurationManager:
         model: Optional[str] = None,
         base_url: Optional[str] = None,
         options: Optional[Dict[str, Any]] = None,
+        task: Optional[str] = None,
     ) -> bool:
         """Persist a capability default route."""
         try:
             if modality is None:
-                kind, modality = split_capability_route(kind)
-            key = capability_route_key(kind, modality)
+                kind, modality, task = split_capability_default_route(kind)
+            else:
+                kind, modality, task = split_capability_default_route(kind, modality, task)
+            key = capability_route_key(kind, modality, task)
             if key == capability_route_key("output", "text"):
                 key = capability_route_key("input", "text")
             route = CapabilityRouteDefault(
@@ -1161,12 +1169,14 @@ class ConfigurationManager:
         except Exception:
             return False
 
-    def clear_capability_default(self, kind: str, modality: Optional[str] = None) -> bool:
+    def clear_capability_default(self, kind: str, modality: Optional[str] = None, task: Optional[str] = None) -> bool:
         """Clear one persisted capability default route."""
         try:
             if modality is None:
-                kind, modality = split_capability_route(kind)
-            key = capability_route_key(kind, modality)
+                kind, modality, task = split_capability_default_route(kind)
+            else:
+                kind, modality, task = split_capability_default_route(kind, modality, task)
+            key = capability_route_key(kind, modality, task)
             if key == capability_route_key("output", "text"):
                 key = capability_route_key("input", "text")
             self.config.capability_defaults.routes.pop(key, None)

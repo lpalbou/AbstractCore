@@ -17,7 +17,7 @@ AbstractCore is **production-ready LLM infrastructure**. It provides a unified, 
 AbstractCore stays dependency-light by default. Deterministic modality APIs (STT/TTS, generative vision) live in **optional packages** and are exposed through the capability plugin layer:
 
 - Install `abstractcore[voice]` → `llm.voice` / `llm.audio` via `abstractvoice` (TTS/STT)
-- Install `abstractcore[vision]` → `llm.vision` via `abstractvision` (text→image, image→image, text→video, image→video)
+- Install `abstractcore[vision]` → `llm.vision` via `abstractvision` (text→image, image→image, image upscaling, text→video, image→video, provider model discovery, and provider adapter discovery)
 - Install `abstractcore[music]` → `llm.music` for text→music through `abstractmusic`
 
 ```bash
@@ -51,6 +51,11 @@ tts_models = llm.voice.list_tts_models()
 # Configure AbstractVision's backend/default first, or pass backend-specific kwargs.
 png_bytes = llm.vision.t2i("a red square", width=512, height=512, steps=20)
 image_models = llm.vision.list_provider_models(task="text_to_image")
+image_adapters = llm.vision.list_provider_adapters(
+    provider="mlx-gen",
+    model="AbstractFramework/qwen-image-edit-2511-8bit",
+    task="image_to_image",
+)
 mp4_bytes = llm.vision.t2v(
     "A slow camera move through a luminous data center.",
     provider="mlx-gen",
@@ -63,6 +68,20 @@ mp4_bytes = llm.vision.t2v(
     guidance_scale=4.0,
     guidance_2=3.0,
     extra={"max_sequence_length": 256},
+)
+
+batch = llm.vision.t2i_batch(
+    "An isometric research outpost on an icy exoplanet at blue hour.",
+    provider="mlx-gen",
+    model="AbstractFramework/qwen-image-2512-8bit",
+    count=2,
+    seeds=[2512, 2513],
+    lora_adapters=[
+        {
+            "source": "prithivMLmods/Qwen-Image-2512-Pixel-Art-LoRA:Qwen-Image-2512-Master-Pixel-Art-LoRA.safetensors",
+            "scale": 1.0,
+        }
+    ],
 )
 
 # Generic discovery for plugins that expose the shared contract.

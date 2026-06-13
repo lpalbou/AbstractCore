@@ -1235,10 +1235,9 @@ def _custom_openapi() -> Dict[str, Any]:
         "response_format": "b64_json",
         "scale": "2x",
         "resolution": "2x",
-        "softness": "0.0",
+        "softness": "0.25",
         "seed": "1234",
         "quantize": None,
-        "vae_tiling": "false",
     }
     _request_example("/v1/images/upscale", "post", "multipart/form-data", "local_seedvr2", "Local SeedVR2 image upscale", image_upscale_example)
     _request_example(
@@ -6502,6 +6501,35 @@ def set_capability_default(
     return _capability_defaults_payload()
 
 
+@app.put(
+    "/v1/config/capability-defaults/{kind}/{modality}/{task}",
+    tags=["configuration"],
+    summary="Set Task-Specific Capability Routing Default",
+    description="Persist one task-specific capability routing default on this AbstractCore execution host.",
+)
+def set_task_capability_default(
+    req: CapabilityDefaultRouteRequest,
+    kind: str = FastAPIPath(..., description="Capability route kind: input, output, embedding, or rerank."),
+    modality: str = FastAPIPath(..., description="Capability modality: text, image, video, voice, sound, music, or scene3d."),
+    task: str = FastAPIPath(..., description="Capability task such as text_to_image, image_to_image, image_upscale, text_to_video, or image_to_video."),
+):
+    from ..config.manager import ConfigurationManager
+
+    manager = ConfigurationManager()
+    ok = manager.set_capability_default(
+        kind,
+        modality,
+        task=task,
+        provider=req.provider,
+        model=req.model,
+        base_url=req.base_url,
+        options=dict(req.options or {}) if isinstance(req.options, dict) else {},
+    )
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"Failed to set capability default {kind}.{modality}.{task}")
+    return _capability_defaults_payload()
+
+
 @app.delete(
     "/v1/config/capability-defaults/{kind}/{modality}",
     tags=["configuration"],
@@ -6518,6 +6546,26 @@ def clear_capability_default(
     ok = manager.clear_capability_default(kind, modality)
     if not ok:
         raise HTTPException(status_code=400, detail=f"Failed to clear capability default {kind}.{modality}")
+    return _capability_defaults_payload()
+
+
+@app.delete(
+    "/v1/config/capability-defaults/{kind}/{modality}/{task}",
+    tags=["configuration"],
+    summary="Clear Task-Specific Capability Routing Default",
+    description="Clear one task-specific persisted capability routing default on this AbstractCore execution host.",
+)
+def clear_task_capability_default(
+    kind: str = FastAPIPath(..., description="Capability route kind: input, output, embedding, or rerank."),
+    modality: str = FastAPIPath(..., description="Capability modality: text, image, video, voice, sound, music, or scene3d."),
+    task: str = FastAPIPath(..., description="Capability task such as text_to_image, image_to_image, image_upscale, text_to_video, or image_to_video."),
+):
+    from ..config.manager import ConfigurationManager
+
+    manager = ConfigurationManager()
+    ok = manager.clear_capability_default(kind, modality, task=task)
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"Failed to clear capability default {kind}.{modality}.{task}")
     return _capability_defaults_payload()
 
 

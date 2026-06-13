@@ -189,10 +189,13 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Health | GET | `/health` | Liveness/version probe; never requires auth | none |
 | Configuration | GET | `/v1/config/capability-defaults` | List explicit input/output/embedding/rerank route defaults | none |
 | Configuration | PUT | `/v1/config/capability-defaults/{kind}/{modality}` | Set one capability route default | path `kind`, `modality`; body `provider`, `model`, `base_url`, `options` |
+| Configuration | PUT | `/v1/config/capability-defaults/{kind}/{modality}/{task}` | Set one task-specific generated-media route default | path `kind`, `modality`, `task`; body `provider`, `model`, `base_url`, `options` |
 | Configuration | DELETE | `/v1/config/capability-defaults/{kind}/{modality}` | Clear one capability route default | path `kind`, `modality` |
+| Configuration | DELETE | `/v1/config/capability-defaults/{kind}/{modality}/{task}` | Clear one task-specific generated-media route default | path `kind`, `modality`, `task` |
 | Discovery | GET | `/v1/models` | List models and filter by provider/capabilities | `provider`, `input_type`, `output_type`, `capability_route`, `base_url`, `api_key` |
 | Discovery | GET | `/providers` | Provider status/capabilities | `include_models` |
 | Discovery | GET | `/v1/vision/providers/` | AbstractVision provider catalog for image/video generation models | optional `task`, `provider`, `include_models`, `base_url`, `api_key` |
+| Discovery | GET | `/v1/vision/adapters` | Installed compatible AbstractVision adapter catalog for one provider/model/task route | optional `provider`, `model`, `task`, `base_url`, `api_key` |
 | Discovery | GET | `/v1/audio/voices` | AbstractVoice voice/profile catalog for TTS | optional `provider`, `model`, `providers_only`, `base_url`, `api_key` |
 | Discovery | GET | `/v1/audio/speech/models` | AbstractVoice TTS model/provider catalog | optional `provider`, `base_url`, `api_key` |
 | Discovery | GET | `/v1/audio/speech/providers` | AbstractVoice TTS provider catalog | optional `base_url` |
@@ -203,15 +206,15 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Chat | POST | `/{provider}/v1/chat/completions` | Provider-scoped chat route where body model is unprefixed | path `provider`, body `model`, `messages`, chat parameters |
 | Responses | POST | `/v1/responses` | OpenAI Responses API (`object:"response"`) + legacy chat fallback | `model`, `input` or `messages`, `stream`, generation parameters, `base_url`, `agent_format`, `thinking`, `prompt_cache_key`, `prompt_cache_binding` |
 | Embeddings | POST | `/v1/embeddings` | OpenAI-compatible embedding vectors | `model`, `input`, `dimensions`, `encoding_format`, `user`, `base_url` |
-| Images | POST | `/v1/images/generations` | Text-to-image generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `size`, `n`, `steps`, `guidance_scale`, `seed`, `quality`, `extra` |
+| Images | POST | `/v1/images/generations` | Text-to-image generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `size`, `n`, `seeds`, `steps`, `guidance_scale`, `seed`, `lora_adapters`, `quality`, `extra` |
 | Images | POST | `/{provider}/v1/images/generations` | Provider-scoped text-to-image route where body model is unprefixed | path `provider`, body `model`, optional `base_url`, image generation parameters |
-| Images | POST | `/v1/images/edits` | Image edit/inpaint via multipart form | `prompt`, `image`, optional `mask`, repeatable `reference_images`, `model`, `provider`, `base_url`, `size`, `steps`, `guidance_scale`, `seed`, `extra_json` |
+| Images | POST | `/v1/images/edits` | Image edit/inpaint via multipart form | `prompt`, `image`, optional `mask`, repeatable `reference_images`, `model`, `provider`, `base_url`, `n`, `seeds`, `size`, `steps`, `guidance_scale`, `seed`, `lora_adapters_json`, `extra_json` |
 | Images | POST | `/{provider}/v1/images/edits` | Provider-scoped image edit route where body model is unprefixed | path `provider`, optional `base_url`, image edit form fields |
 | Images | POST | `/v1/images/upscale` | Image upscaling via multipart form | `image`, optional `model`, `provider`, `base_url`, `scale`, `resolution`, `softness`, `seed`, `quantize`, `vae_tiling`, `extra_json` |
 | Images | POST | `/{provider}/v1/images/upscale` | Provider-scoped image upscale route where body model is unprefixed | path `provider`, optional `base_url`, image upscale form fields |
-| Videos | POST | `/v1/videos/generations` | Text-to-video generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `steps`, `guidance_scale`, `guidance_2`, `extra` |
+| Videos | POST | `/v1/videos/generations` | Text-to-video generation | `prompt`, optional `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `n`, `seeds`, `steps`, `guidance_scale`, `guidance_2`, `flow_shift`, `lora_adapters`, `extra` |
 | Videos | POST | `/{provider}/v1/videos/generations` | Provider-scoped text-to-video route where body model is unprefixed | path `provider`, body `model`, optional `base_url`, video generation parameters |
-| Videos | POST | `/v1/videos/edits` | Image-to-video via multipart form | `prompt`, `image`, optional `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `steps`, `guidance_scale`, `guidance_2`, `extra_json` |
+| Videos | POST | `/v1/videos/edits` | Image-to-video via multipart form | `prompt`, `image`, optional `model`, `provider`, `base_url`, `width`, `height`, `fps`, `num_frames`, `n`, `seeds`, `steps`, `guidance_scale`, `guidance_2`, `flow_shift`, `lora_adapters_json`, `extra_json` |
 | Videos | POST | `/{provider}/v1/videos/edits` | Provider-scoped image-to-video route where body model is unprefixed | path `provider`, optional `base_url`, image-to-video form fields |
 | Vision Jobs | POST | `/v1/vision/jobs/images/generations` | Async image generation with polling and progress events | same body as `/v1/images/generations` |
 | Vision Jobs | POST | `/v1/vision/jobs/images/edits` | Async image edit with polling and progress events | same form fields as `/v1/images/edits` |
@@ -261,6 +264,13 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 defaults for `input`, `output`, `embedding`, and `rerank` capabilities. Gateway
 uses this route as its control-plane source when `ABSTRACTCORE_SERVER_BASE_URL`
 points at a remote Core server.
+
+Generated-media defaults may use task-specific routes such as
+`output.image.text_to_image`, `output.image.image_to_image`,
+`output.image.image_upscale`, `output.video.text_to_video`, and
+`output.video.image_to_video`. The broad `output.image` and `output.video`
+routes remain compatibility fallbacks; Gateway Console presents the
+task-specific routes as the normal generated-media configuration surface.
 
 These defaults are configuration only; they do not load a model. Use the
 runtime residency routes under `/acore/models/*` to inspect or change
@@ -561,8 +571,10 @@ intentional.
 | `response_format` | no | Server response format. `b64_json` is the supported response shape. |
 | `negative_prompt` | no | Local/backend-specific negative prompt. Strict OpenAI-compatible upstreams do not receive this top-level field; use `extra` only when your custom upstream supports it. |
 | `seed` | no | Local deterministic seed. Strict OpenAI-compatible upstreams do not receive this top-level field; use `extra.seed` only when your custom upstream supports it. |
+| `seeds` | no | Explicit seed list for batch generation. When supplied, `n` must match the number of seeds. |
 | `steps` | no | Local denoising/inference step count. Strict OpenAI-compatible upstreams do not receive this top-level field; use `extra.steps` only when your custom upstream supports it. |
 | `guidance_scale` | no | Local classifier-free guidance scale. Strict OpenAI-compatible upstreams do not receive this top-level field; use `extra.guidance_scale` only when your custom upstream supports it. |
+| `lora_adapters` | no | Ordered LoRA adapter stack for local backends that support adapters. Each item can include `source`, `scale`, `weight_name`, `subfolder`, `adapter_name`, and `target_role`. |
 | `quality`, `style`, `user`, `background`, `output_format`, `output_compression`, `moderation` | no | Named OpenAI-compatible passthrough fields for upstream image endpoints. |
 | `base_url` | no | OpenAI-compatible endpoint override. Prefer this with `openai-compatible/...`; if set with `openai/...`, the request is sent to that URL instead of api.openai.com. Loopback is allowed by default; non-loopback requires allowlist. |
 | `extra` | no | JSON object for backend-specific passthrough fields. Prefer this over arbitrary top-level keys so the schema stays explicit. |
@@ -579,7 +591,9 @@ intentional.
 | `provider` | no | Optional routing hint when you want the configured default backend for a specific provider, or when pairing a request with `base_url`. |
 | `size` | no | OpenAI-style edit output size such as `1024x1024`; multipart edit compatibility keeps this field. |
 | `response_format` | no | Server response shape; `b64_json` is supported. |
+| `n`, `seeds` | no | Batch edit controls. `seeds` is a comma-separated list for multipart forms, and its length must match `n`. |
 | `negative_prompt`, `seed`, `steps`, `guidance_scale` | no | Local/backend-specific fields. Strict OpenAI-compatible upstreams do not receive them as top-level fields; use `extra_json` only when your custom upstream supports them. |
+| `lora_adapters_json` | no | JSON array describing an ordered LoRA adapter stack for local backends that support adapters. |
 | `base_url` | no | OpenAI-compatible endpoint override. Loopback is allowed by default; non-loopback requires allowlist. |
 | `extra_json` | no | JSON object string with backend/upstream-specific parameters. |
 
@@ -596,6 +610,14 @@ is preferable:
   store after reading it.
 When the backend reports rich progress events, image jobs include the latest
 event in `progress.last_event`.
+
+Use `GET /v1/vision/adapters` to inspect installed compatible adapters before a
+local run:
+
+```bash
+curl -sS "$BASE/v1/vision/adapters?provider=mlx-gen&task=text_to_video&model=AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit" \
+  -H "Authorization: Bearer $TOKEN"
+```
 
 #### Videos (text-to-video/image-to-video)
 
@@ -636,12 +658,15 @@ model id that AbstractVision/MLX-Gen loads.
 | `width`, `height`, `size` | no | Requested output dimensions. `size` accepts `WIDTHxHEIGHT`. |
 | `fps`, `num_frames` / `frames` | no | Video frame rate and frame count. |
 | `response_format` | no | `b64_json` is the supported response shape. |
-| `negative_prompt`, `seed`, `steps`, `guidance_scale`, `guidance_2` | no | Backend-specific generation controls. `guidance_2` is the typed second-stage/low-noise guidance control for dual-transformer video models such as Wan A14B. |
+| `negative_prompt`, `seed`, `steps`, `guidance_scale`, `guidance_2`, `flow_shift` | no | Backend-specific generation controls. `guidance_2` is the typed second-stage/low-noise guidance control for dual-transformer video models such as Wan A14B. `flow_shift` is a typed video control used by models such as Wan TI2V 5B. |
+| `n`, `seeds` | no | Batch generation controls. When `seeds` is provided, its length must match `n`. |
+| `lora_adapters` | no | Ordered LoRA adapter stack for local video backends that support adapters. |
 | `extra.max_sequence_length` | no | Useful for MLX-Gen Wan-style video runs. |
 
 `POST /v1/videos/edits` multipart parameters mirror generation and add
 required `image=@first-frame.png`. Send `guidance_2` as a normal form field
-when the selected image-to-video model declares that parameter. This route is
+when the selected image-to-video model declares that parameter, and `flow_shift`
+when the selected route supports it. This route is
 the image-to-video path; the
 alias `/v1/videos/from-image` is accepted for clients that prefer a literal
 name.
@@ -708,7 +733,8 @@ JOB_ID=$(curl -sS -X POST "$BASE/v1/vision/jobs/images/upscale" \
   -F "provider=mlx-gen" \
   -F "model=AbstractFramework/seedvr2-3b-8bit" \
   -F "image=@./input.png;type=image/png" \
-  -F "scale=2x" \
+  -F "resolution=2x" \
+  -F "softness=0.25" \
   -F "seed=2405" \
   | python -c 'import json,sys; print(json.load(sys.stdin)["job_id"])')
 
@@ -1490,7 +1516,8 @@ List all available models from configured providers.
 - `output_type`: Legacy broad output filter such as `text` or `embeddings`.
 - `capability_route`: Precise route-key filter. Repeat the query parameter or
   comma-separate values, for example `capability_route=input.image,output.text`
-  or `capability_route=embedding.text`. Route keys use `<kind>.<modality>` and
+  or `capability_route=embedding.text`. Model-discovery route keys use broad
+  `<kind>.<modality>` values and
   are normalized through the same vocabulary as capability defaults.
 - `base_url`: Optional upstream base URL override for providers that support OpenAI-compatible discovery. Loopback is allowed by default; non-loopback requires `ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST`.
 - `api_key`: Optional upstream provider API key override for discovery. Requires `provider=...` so the override target is unambiguous. Prefer `X-AbstractCore-Provider-API-Key`.

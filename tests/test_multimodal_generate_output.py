@@ -129,9 +129,33 @@ def _make_plugin_ep():
                 self.owner.plugin_calls.append(("t2i", prompt, kwargs))
                 return b"png-bytes"
 
+            def t2i_batch(self, prompt: str, **kwargs):
+                self.owner.plugin_calls.append(("t2i_batch", prompt, kwargs))
+                seeds = list(kwargs.get("seeds") or [])
+                if not seeds:
+                    count = int(kwargs.get("count") or 1)
+                    base_seed = kwargs.get("seed")
+                    if base_seed is not None:
+                        seeds = [int(base_seed) + index for index in range(count)]
+                    else:
+                        seeds = [None for _ in range(count)]
+                return [f"png-{seed}".encode() for seed in seeds]
+
             def i2i(self, prompt: str, image, *, mask=None, **kwargs):
                 self.owner.plugin_calls.append(("i2i", prompt, image, mask, kwargs))
                 return b"edited-png-bytes"
+
+            def i2i_batch(self, prompt: str, image, *, mask=None, **kwargs):
+                self.owner.plugin_calls.append(("i2i_batch", prompt, image, mask, kwargs))
+                seeds = list(kwargs.get("seeds") or [])
+                if not seeds:
+                    count = int(kwargs.get("count") or 1)
+                    base_seed = kwargs.get("seed")
+                    if base_seed is not None:
+                        seeds = [int(base_seed) + index for index in range(count)]
+                    else:
+                        seeds = [None for _ in range(count)]
+                return [f"edited-{seed}".encode() for seed in seeds]
 
             def upscale_image(self, image, **kwargs):
                 self.owner.plugin_calls.append(("upscale_image", image, kwargs))
@@ -141,9 +165,33 @@ def _make_plugin_ep():
                 self.owner.plugin_calls.append(("t2v", prompt, kwargs))
                 return b"mp4"
 
+            def t2v_batch(self, prompt: str, **kwargs):
+                self.owner.plugin_calls.append(("t2v_batch", prompt, kwargs))
+                seeds = list(kwargs.get("seeds") or [])
+                if not seeds:
+                    count = int(kwargs.get("count") or 1)
+                    base_seed = kwargs.get("seed")
+                    if base_seed is not None:
+                        seeds = [int(base_seed) + index for index in range(count)]
+                    else:
+                        seeds = [None for _ in range(count)]
+                return [f"mp4-{seed}".encode() for seed in seeds]
+
             def i2v(self, image, **kwargs):
                 self.owner.plugin_calls.append(("i2v", image, kwargs))
                 return b"mp4"
+
+            def i2v_batch(self, image, **kwargs):
+                self.owner.plugin_calls.append(("i2v_batch", image, kwargs))
+                seeds = list(kwargs.get("seeds") or [])
+                if not seeds:
+                    count = int(kwargs.get("count") or 1)
+                    base_seed = kwargs.get("seed")
+                    if base_seed is not None:
+                        seeds = [int(base_seed) + index for index in range(count)]
+                    else:
+                        seeds = [None for _ in range(count)]
+                return [f"i2v-{seed}".encode() for seed in seeds]
 
         class _Music:
             backend_id = "fake-music"
@@ -385,6 +433,29 @@ def test_output_image_with_ambiguous_images_raises(fake_plugins):
 
 
 @pytest.mark.basic
+def test_output_image_batch_uses_t2i_batch_and_returns_multiple_items(fake_plugins):
+    llm = _FakeProvider()
+
+    response = llm.generate(
+        "red cube",
+        output={
+            "modality": "image",
+            "task": "text_to_image",
+            "count": 2,
+            "seeds": [41, 42],
+            "lora_adapters": [{"source": "owner/flux-style:adapter.safetensors", "scale": 0.8}],
+            "format": "png",
+        },
+    )
+
+    assert [item.data for item in response.outputs["image"]] == [b"png-41", b"png-42"]
+    assert llm.plugin_calls[0][0:2] == ("t2i_batch", "red cube")
+    assert llm.plugin_calls[0][2]["count"] == 2
+    assert llm.plugin_calls[0][2]["seeds"] == [41, 42]
+    assert llm.plugin_calls[0][2]["lora_adapters"][0]["scale"] == 0.8
+
+
+@pytest.mark.basic
 def test_output_video_without_media_calls_t2v(fake_plugins):
     llm = _FakeProvider()
 
@@ -486,6 +557,33 @@ def test_output_video_with_one_image_media_infers_i2v(fake_plugins):
         "first-frame.png",
         {"prompt": "slow camera push-in", "provider": "mlx-gen", "guidance_2": 3.5},
     )
+
+
+@pytest.mark.basic
+def test_output_video_batch_uses_i2v_batch_and_returns_multiple_items(fake_plugins):
+    llm = _FakeProvider()
+
+    response = llm.generate(
+        "slow camera push-in",
+        media={"type": "image", "path": "first-frame.png", "role": "source"},
+        output={
+            "task": "image_to_video",
+            "provider": "mlx-gen",
+            "count": 2,
+            "seeds": [101, 202],
+            "guidance_2": 3.5,
+            "flow_shift": 3.0,
+            "lora_adapters": [
+                {"source": "owner/wan-lora:video.safetensors", "target_role": "high_noise_transformer"}
+            ],
+        },
+    )
+
+    assert [item.data for item in response.outputs["video"]] == [b"i2v-101", b"i2v-202"]
+    assert llm.plugin_calls[0][0:2] == ("i2v_batch", "first-frame.png")
+    assert llm.plugin_calls[0][2]["prompt"] == "slow camera push-in"
+    assert llm.plugin_calls[0][2]["seeds"] == [101, 202]
+    assert llm.plugin_calls[0][2]["flow_shift"] == 3.0
 
 
 @pytest.mark.basic

@@ -1161,6 +1161,28 @@ class _VisionFacade:
         out = method(task=task)
         return list(out or [])
 
+    def list_provider_adapters(
+        self,
+        *,
+        model: Optional[str] = None,
+        task: Optional[str] = None,
+        provider: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        backend = self._registry.get_vision()
+        method = getattr(backend, "list_provider_adapters", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="vision",
+                reason=(
+                    "The selected vision capability backend does not expose "
+                    "list_provider_adapters(model=..., task=..., provider=...)."
+                ),
+                install_hint=self._registry._default_install_hint("vision"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        out = method(model=model, task=task, provider=provider)
+        return list(out or [])
+
     def available_providers(self, *, task: Optional[str] = None) -> Dict[str, Any]:
         """Return lightweight provider availability for vision backends."""
         backend = self._registry.get_vision()
@@ -1187,11 +1209,59 @@ class _VisionFacade:
     def i2i(self, prompt: str, image: Any, **kwargs: Any) -> Any:
         return self._registry.get_vision().i2i(prompt, image, **kwargs)
 
+    def t2i_batch(self, prompt: str, **kwargs: Any) -> Any:
+        backend = self._registry.get_vision()
+        method = getattr(backend, "t2i_batch", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="vision",
+                reason="The selected vision capability backend does not expose t2i_batch(...).",
+                install_hint=self._registry._default_install_hint("vision"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        return method(prompt, **kwargs)
+
+    def i2i_batch(self, prompt: str, image: Any, **kwargs: Any) -> Any:
+        backend = self._registry.get_vision()
+        method = getattr(backend, "i2i_batch", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="vision",
+                reason="The selected vision capability backend does not expose i2i_batch(...).",
+                install_hint=self._registry._default_install_hint("vision"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        return method(prompt, image, **kwargs)
+
     def t2v(self, prompt: str, **kwargs: Any) -> Any:
         return self._registry.get_vision().t2v(prompt, **kwargs)
 
+    def t2v_batch(self, prompt: str, **kwargs: Any) -> Any:
+        backend = self._registry.get_vision()
+        method = getattr(backend, "t2v_batch", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="vision",
+                reason="The selected vision capability backend does not expose t2v_batch(...).",
+                install_hint=self._registry._default_install_hint("vision"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        return method(prompt, **kwargs)
+
     def i2v(self, image: Any, **kwargs: Any) -> Any:
         return self._registry.get_vision().i2v(image, **kwargs)
+
+    def i2v_batch(self, image: Any, **kwargs: Any) -> Any:
+        backend = self._registry.get_vision()
+        method = getattr(backend, "i2v_batch", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="vision",
+                reason="The selected vision capability backend does not expose i2v_batch(...).",
+                install_hint=self._registry._default_install_hint("vision"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        return method(image, **kwargs)
 
 
 class _MusicFacade:

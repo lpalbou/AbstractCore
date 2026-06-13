@@ -29,7 +29,7 @@ import urllib.parse
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import httpx
 from fastapi import APIRouter, Body, File, Form, HTTPException, Path as FastAPIPath, Query, Request, UploadFile
@@ -66,6 +66,19 @@ _JOBS: Dict[str, Dict[str, Any]] = {}
 
 _DEFAULT_MODEL_ALIASES = {"default", "configured-default"}
 _REMOVED_VISION_MODEL_ALIASES = {"local/abstractvision", "abstractvision/default", "server/default"}
+_DEFAULT_IMAGE_UPSCALE_PROVIDER = "mlx-gen"
+_DEFAULT_IMAGE_UPSCALE_MODEL = "AbstractFramework/seedvr2-3b-8bit"
+
+
+def _image_upscale_route_defaults(
+    *,
+    provider: Optional[str],
+    model: Optional[str],
+    base_url: Optional[str],
+) -> Tuple[Optional[str], Optional[str]]:
+    if str(provider or "").strip() or str(model or "").strip() or str(base_url or "").strip():
+        return provider, model
+    return _DEFAULT_IMAGE_UPSCALE_PROVIDER, _DEFAULT_IMAGE_UPSCALE_MODEL
 
 
 class _ProxyOptionalDependencyMissingError(Exception):
@@ -87,6 +100,7 @@ class _ProxyImageGenerationRequest:
     steps: Optional[int] = None
     guidance_scale: Optional[float] = None
     seed: Optional[int] = None
+    lora_adapters: Optional[List[Dict[str, Any]]] = None
     extra: Optional[Dict[str, Any]] = None
 
 
@@ -99,6 +113,7 @@ class _ProxyImageEditRequest:
     seed: Optional[int] = None
     steps: Optional[int] = None
     guidance_scale: Optional[float] = None
+    lora_adapters: Optional[List[Dict[str, Any]]] = None
     extra: Optional[Dict[str, Any]] = None
 
 
@@ -126,6 +141,8 @@ class _ProxyVideoGenerationRequest:
     steps: Optional[int] = None
     guidance_scale: Optional[float] = None
     guidance_2: Optional[float] = None
+    flow_shift: Optional[float] = None
+    lora_adapters: Optional[List[Dict[str, Any]]] = None
     extra: Optional[Dict[str, Any]] = None
 
 
@@ -142,6 +159,8 @@ class _ProxyImageToVideoRequest:
     steps: Optional[int] = None
     guidance_scale: Optional[float] = None
     guidance_2: Optional[float] = None
+    flow_shift: Optional[float] = None
+    lora_adapters: Optional[List[Dict[str, Any]]] = None
     extra: Optional[Dict[str, Any]] = None
 
 
@@ -190,17 +209,18 @@ class _OpenAICompatibleImageProxyBackend:
         base_url: str,
         api_key: Optional[str],
         model_id: Optional[str],
-        timeout_s: float,
+        timeout_s: Optional[float],
         image_generations_path: str,
         image_edits_path: str,
         text_to_video_path: Optional[str] = None,
         image_to_video_path: Optional[str] = None,
         image_to_video_mode: str = "multipart",
     ) -> None:
+        _ = timeout_s
         self.base_url = str(base_url).rstrip("/")
         self.api_key = api_key
         self.model_id = model_id
-        self.timeout_s = float(timeout_s)
+        self.timeout_s = None
         self.image_generations_path = image_generations_path or "/images/generations"
         self.image_edits_path = image_edits_path or "/images/edits"
         self.text_to_video_path = text_to_video_path
@@ -243,6 +263,8 @@ class _OpenAICompatibleImageProxyBackend:
             payload["model"] = self.model_id
         if request.width is not None and request.height is not None:
             payload["size"] = f"{int(request.width)}x{int(request.height)}"
+        if request.lora_adapters:
+            payload["lora_adapters"] = request.lora_adapters
         if isinstance(request.extra, dict):
             payload.update({k: v for k, v in request.extra.items() if v is not None and not callable(v)})
 
@@ -262,6 +284,8 @@ class _OpenAICompatibleImageProxyBackend:
         fields: Dict[str, str] = {"prompt": request.prompt}
         if self.model_id:
             fields["model"] = self.model_id
+        if request.lora_adapters:
+            fields["lora_adapters"] = json.dumps(request.lora_adapters)
         if isinstance(request.extra, dict):
             for key, value in request.extra.items():
                 if value is not None and not callable(value):
@@ -306,6 +330,8 @@ class _OpenAICompatibleImageProxyBackend:
             "steps",
             "guidance_scale",
             "guidance_2",
+            "flow_shift",
+            "lora_adapters",
         ):
             value = getattr(request, attr, None)
             if value is not None:
@@ -376,6 +402,27 @@ class _OpenAICompatibleImageProxyBackend:
         return self._parse_media(data, fallback_mime="video/mp4")
 
 
+class LoRAAdapterBody(BaseModel):
+    """Typed LoRA adapter attachment for local image/video generation backends."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: str = Field(
+        ...,
+        description="Adapter source repo, repo:file handle, or local file path accepted by the selected backend.",
+        examples=["owner/my-wan-lora:video.safetensors"],
+    )
+    scale: Optional[float] = Field(default=None, description="Optional adapter scale.", examples=[0.75])
+    weight_name: Optional[str] = Field(default=None, description="Optional weight filename inside a repo/subfolder.")
+    subfolder: Optional[str] = Field(default=None, description="Optional subfolder inside an adapter repo.")
+    adapter_name: Optional[str] = Field(default=None, description="Optional explicit backend adapter name.")
+    target_role: Optional[str] = Field(
+        default=None,
+        description="Optional backend-specific target role, for example `transformer` or `high_noise_transformer`.",
+        examples=["high_noise_transformer"],
+    )
+
+
 class ImageGenerationBody(BaseModel):
     """OpenAI-compatible image generation request body."""
 
@@ -391,10 +438,17 @@ class ImageGenerationBody(BaseModel):
                     "width": 1024,
                     "height": 1024,
                     "response_format": "b64_json",
+                    "seeds": [41, 42],
                     "negative_prompt": None,
                     "seed": None,
                     "steps": None,
                     "guidance_scale": None,
+                    "lora_adapters": [
+                        {
+                            "source": "owner/flux-style:adapter.safetensors",
+                            "scale": 0.8,
+                        }
+                    ],
                     "quality": "low",
                     "style": None,
                     "user": "swagger-user",
@@ -438,6 +492,11 @@ class ImageGenerationBody(BaseModel):
         examples=["http://127.0.0.1:5000/v1"],
     )
     n: Optional[int] = Field(default=1, description="Number of images to generate. Clamped to 1..10.", examples=[1])
+    seeds: Optional[List[int]] = Field(
+        default=None,
+        description="Optional explicit seed list. When supplied, `n` must match the number of seeds.",
+        examples=[[41, 42]],
+    )
     width: Optional[int] = Field(default=None, description="Requested image width in pixels, backend permitting.", examples=[1024])
     height: Optional[int] = Field(default=None, description="Requested image height in pixels, backend permitting.", examples=[1024])
     size: Optional[str] = Field(default=None, description="OpenAI-compatible size selector such as 1024x1024 or auto.", examples=["auto"])
@@ -467,6 +526,10 @@ class ImageGenerationBody(BaseModel):
             "For custom OpenAI-compatible upstreams, pass this through `extra`."
         ),
         examples=[7.5],
+    )
+    lora_adapters: Optional[List[LoRAAdapterBody]] = Field(
+        default=None,
+        description="Optional ordered LoRA adapter stack for local backends that support adapters.",
     )
     quality: Optional[str] = Field(default=None, description="Optional OpenAI-compatible image quality forwarded to upstream providers. GPT image models commonly support `low`, `medium`, `high`, or `auto`; DALL-E models use their own quality options.", examples=["low"])
     style: Optional[str] = Field(default=None, description="Optional OpenAI-compatible image style forwarded to upstream providers that support it, such as `vivid` or `natural` for DALL-E 3.", examples=["natural"])
@@ -513,6 +576,8 @@ class VideoGenerationBody(BaseModel):
                     "model": "mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit",
                     "provider": "mlx-gen",
                     "prompt": "A slow camera move through a luminous data center.",
+                    "n": 2,
+                    "seeds": [101, 202],
                     "width": 432,
                     "height": 240,
                     "fps": 24,
@@ -520,6 +585,14 @@ class VideoGenerationBody(BaseModel):
                     "steps": 20,
                     "guidance_scale": 4.0,
                     "guidance_2": 3.0,
+                    "flow_shift": 3.0,
+                    "lora_adapters": [
+                        {
+                            "source": "owner/wan-lora:video.safetensors",
+                            "scale": 0.9,
+                            "target_role": "high_noise_transformer",
+                        }
+                    ],
                     "response_format": "b64_json",
                     "extra": {"max_sequence_length": 256},
                 }
@@ -548,6 +621,11 @@ class VideoGenerationBody(BaseModel):
         examples=["http://127.0.0.1:5000/v1"],
     )
     n: Optional[int] = Field(default=1, description="Number of videos to generate. Clamped to 1..4.", examples=[1])
+    seeds: Optional[List[int]] = Field(
+        default=None,
+        description="Optional explicit seed list. When supplied, `n` must match the number of seeds.",
+        examples=[[101, 202]],
+    )
     width: Optional[int] = Field(default=None, description="Requested video width in pixels.", examples=[432])
     height: Optional[int] = Field(default=None, description="Requested video height in pixels.", examples=[240])
     size: Optional[str] = Field(default=None, description="Optional WIDTHxHEIGHT size selector.", examples=["432x240"])
@@ -566,6 +644,15 @@ class VideoGenerationBody(BaseModel):
             "such as Wan 2.2 A14B."
         ),
         examples=[3.0],
+    )
+    flow_shift: Optional[float] = Field(
+        default=None,
+        description="Optional flow-shift control for video models that support it, such as Wan TI2V 5B.",
+        examples=[3.0],
+    )
+    lora_adapters: Optional[List[LoRAAdapterBody]] = Field(
+        default=None,
+        description="Optional ordered LoRA adapter stack for local video backends that support adapters.",
     )
     max_sequence_length: Optional[int] = Field(default=None, description="Optional backend-specific prompt token length cap.", examples=[256])
     extra: Optional[Dict[str, Any]] = Field(
@@ -688,6 +775,11 @@ def _progress_event_payload(event: Any) -> Dict[str, Any]:
             "stage",
             "status",
             "message",
+            "progress_mode",
+            "progress_source",
+            "reported",
+            "terminal",
+            "job_state",
             "frame",
             "total_frames",
             "step",
@@ -717,6 +809,102 @@ def _progress_event_payload(event: Any) -> Dict[str, Any]:
     return payload
 
 
+def _unreported_progress_event(message: str, *, phase: str = "waiting_provider") -> Dict[str, Any]:
+    return {
+        "phase": phase,
+        "status": "running",
+        "message": message,
+        "progress_mode": "unreported",
+        "progress_source": "core",
+        "reported": False,
+        "terminal": False,
+    }
+
+
+def _batch_progress_state(
+    *,
+    item_index: int,
+    batch_count: int,
+    explicit_item_total: Optional[int] = None,
+    reported_item_total: Optional[int] = None,
+    raw_step: Optional[int] = None,
+) -> Tuple[Optional[int], Optional[int]]:
+    item_total = _coerce_int(explicit_item_total)
+    if item_total is None:
+        item_total = _coerce_int(reported_item_total)
+    step_value = _coerce_int(raw_step)
+    if step_value is not None:
+        step_value = max(0, int(step_value))
+        if item_total is not None:
+            step_value = min(step_value, int(item_total))
+    offset = (int(item_total) * int(item_index)) if item_total is not None else 0
+    overall_step = (offset + int(step_value)) if step_value is not None else None
+    if item_total is None:
+        overall_total = None
+    elif int(batch_count) > 1:
+        overall_total = int(item_total) * int(batch_count)
+    else:
+        overall_total = int(item_total)
+    return overall_step, overall_total
+
+
+def _progress_number(value: Any) -> Optional[float]:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return float(value)
+    if isinstance(value, str) and value.strip():
+        try:
+            return float(value)
+        except Exception:
+            return None
+    return None
+
+
+def _progress_looks_complete(progress: Dict[str, Any]) -> bool:
+    direct = _progress_number(progress.get("progress"))
+    if direct is None:
+        direct = _progress_number(progress.get("percent"))
+        if direct is not None and direct > 1:
+            direct = direct / 100.0
+    if direct is not None and direct >= 1.0:
+        return True
+    for current_key, total_key in (("step", "total_steps"), ("frame", "total_frames"), ("current", "total")):
+        current = _progress_number(progress.get(current_key))
+        total = _progress_number(progress.get(total_key))
+        if current is not None and total is not None and total > 0 and current >= total:
+            return True
+    return False
+
+
+def _progress_for_job_response(progress: Any, *, state: str) -> Any:
+    if not isinstance(progress, dict):
+        return progress
+    payload = dict(progress)
+    payload["job_state"] = state
+    terminal = state in {"succeeded", "failed"}
+    if terminal:
+        payload["terminal"] = True
+        payload["progress_mode"] = "terminal"
+        payload.setdefault("progress_source", "core")
+        payload.setdefault("status", state)
+        payload.setdefault("phase", state)
+        if state == "succeeded":
+            payload["progress"] = 1.0
+        return payload
+    payload.setdefault("terminal", False)
+    if _progress_looks_complete(payload):
+        raw_progress = payload.get("progress")
+        if raw_progress is not None:
+            payload.setdefault("raw_progress", raw_progress)
+        payload["progress"] = min(float(_progress_number(payload.get("progress")) or 1.0), 0.999)
+        payload["phase"] = "finalizing"
+        payload["status"] = "running"
+        payload["message"] = "Finalizing output"
+        payload["progress_mode"] = "finalizing"
+        payload.setdefault("progress_source", "core")
+        payload["terminal"] = False
+    return payload
+
+
 def _job_update_progress(
     job_id: str,
     *,
@@ -741,6 +929,10 @@ def _job_update_progress(
             prog["message"] = str(message)
         if isinstance(event, dict):
             safe_event = _progress_event_payload(event)
+            if safe_event.get("reported") is not False:
+                safe_event.setdefault("reported", True)
+                safe_event.setdefault("progress_mode", "reported")
+                safe_event.setdefault("progress_source", "provider")
             prog["last_event"] = safe_event
             event_step = _coerce_int(safe_event.get("step"))
             event_total_steps = _coerce_int(safe_event.get("total_steps"))
@@ -761,6 +953,31 @@ def _job_update_progress(
             for key in ("step_progress", "frame_progress"):
                 if key in safe_event:
                     prog[key] = safe_event.get(key)
+            for key in (
+                "phase",
+                "stage",
+                "status",
+                "message",
+                "task",
+                "timestep",
+                "eta_seconds",
+                "progress_mode",
+                "progress_source",
+                "reported",
+                "terminal",
+                "job_state",
+            ):
+                if key in safe_event:
+                    prog[key] = safe_event.get(key)
+        if step is not None and int(step) > 0:
+            prog.setdefault("reported", True)
+            prog.setdefault("progress_mode", "reported")
+            prog.setdefault("progress_source", "provider")
+        elif step is not None and int(step) == 0 and not isinstance(event, dict):
+            prog.setdefault("progress_mode", "unreported")
+            prog.setdefault("progress_source", "core")
+            prog.setdefault("reported", False)
+            prog.setdefault("terminal", False)
         job["updated_at_s"] = time.time()
 
 
@@ -773,7 +990,22 @@ def _job_finish(job_id: str, *, ok: bool, result: Optional[Dict[str, Any]] = Non
         job["updated_at_s"] = time.time()
         prog = job.get("progress")
         if isinstance(prog, dict):
+            prog["phase"] = "succeeded" if ok else "failed"
+            prog["status"] = "succeeded" if ok else "failed"
             prog["message"] = "succeeded" if ok else "failed"
+            prog["progress_mode"] = "terminal"
+            prog["progress_source"] = "core"
+            prog["terminal"] = True
+            prog["reported"] = True
+            prog["job_state"] = job["state"]
+            if ok:
+                prog["progress"] = 1.0
+                total_steps = _coerce_int(prog.get("total_steps"))
+                total_frames = _coerce_int(prog.get("total_frames"))
+                if total_steps is not None and total_steps > 0:
+                    prog["step"] = total_steps
+                if total_frames is not None and total_frames > 0:
+                    prog["frame"] = total_frames
         if ok:
             job["result"] = result
             job.pop("error", None)
@@ -1988,6 +2220,7 @@ _IMAGE_GENERATION_CORE_FIELDS = {
     "model",
     "base_url",
     "n",
+    "seeds",
     "size",
     "response_format",
     "width",
@@ -1996,6 +2229,7 @@ _IMAGE_GENERATION_CORE_FIELDS = {
     "seed",
     "steps",
     "guidance_scale",
+    "lora_adapters",
     "extra",
 }
 
@@ -2006,6 +2240,7 @@ _VIDEO_GENERATION_CORE_FIELDS = {
     "model",
     "base_url",
     "n",
+    "seeds",
     "size",
     "response_format",
     "width",
@@ -2018,6 +2253,9 @@ _VIDEO_GENERATION_CORE_FIELDS = {
     "steps",
     "guidance_scale",
     "guidance_2",
+    "flow_shift",
+    "lora_adapters",
+    "max_sequence_length",
     "extra",
 }
 
@@ -2267,6 +2505,46 @@ def _parse_extra_json_form(extra_json: Optional[str]) -> Dict[str, Any]:
     raise HTTPException(status_code=400, detail="extra_json must be a JSON object string")
 
 
+def _parse_seeds_form(seeds: Optional[str]) -> Optional[List[int]]:
+    if _blank_form_value(seeds):
+        return None
+    parts = [part.strip() for part in str(seeds).replace(";", ",").split(",") if part.strip()]
+    if not parts:
+        raise HTTPException(status_code=400, detail="seeds must be a comma-separated list of integers.")
+    try:
+        return [int(part) for part in parts]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="seeds must be a comma-separated list of integers.") from e
+
+
+def _parse_lora_adapters_form(lora_adapters_json: Optional[str]) -> Optional[List[Dict[str, Any]]]:
+    if _blank_form_value(lora_adapters_json):
+        return None
+    try:
+        parsed = json.loads(str(lora_adapters_json))
+    except Exception as e:
+        raise HTTPException(
+            status_code=400,
+            detail="lora_adapters_json must be a JSON array of adapter objects.",
+        ) from e
+    if parsed is None:
+        return None
+    if not isinstance(parsed, list):
+        raise HTTPException(
+            status_code=400,
+            detail="lora_adapters_json must be a JSON array of adapter objects.",
+        )
+    out: List[Dict[str, Any]] = []
+    for index, item in enumerate(parsed):
+        if not isinstance(item, dict):
+            raise HTTPException(
+                status_code=400,
+                detail=f"lora_adapters_json[{index}] must be an object.",
+            )
+        out.append({str(key): value for key, value in item.items() if value is not None})
+    return out or None
+
+
 def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_key: Optional[str] = None):
     normalized = _normalize_request_model_for_backend(request_model)
     req_model = str(normalized or "").strip()
@@ -2297,7 +2575,7 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
             {
                 "base_url": base_url,
                 "model_id": model_id,
-                "timeout_s": float(_env_first("ABSTRACTCORE_VISION_TIMEOUT_S", "ABSTRACTVISION_TIMEOUT_S", default="300") or "300"),
+                "timeout_s": None,
                 "image_generations_path": _env_first(
                     "ABSTRACTCORE_VISION_UPSTREAM_IMAGES_GENERATIONS_PATH",
                     "ABSTRACTVISION_IMAGES_GENERATIONS_PATH",
@@ -2418,7 +2696,7 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
                 "clip_g": _sdcpp_env("CLIP_G"),
                 "t5xxl": _sdcpp_env("T5XXL"),
                 "extra_args": extra_args,
-                "timeout_s": float(_env_first("ABSTRACTCORE_VISION_TIMEOUT_S", "ABSTRACTVISION_TIMEOUT_S", default="3600") or "3600"),
+                "timeout_s": None,
             }
         )
     else:
@@ -2597,22 +2875,38 @@ def _is_remote_vision_request(request_model: Any) -> bool:
     return _effective_backend_kind(request_model) == "openai_compatible_proxy"
 
 
-def _first_generated_image_bytes(result: Any) -> bytes:
+def _generated_image_bytes_list(result: Any) -> list[bytes]:
     image_items = getattr(result, "outputs", {}).get("image", [])
-    item = image_items[0] if image_items else None
-    data = getattr(item, "data", None)
-    if not isinstance(data, (bytes, bytearray)):
-        raise RuntimeError("Image backend returned an unexpected type (expected raw bytes).")
-    return bytes(data)
+    if not image_items:
+        raise RuntimeError("Image backend returned no image outputs.")
+    out: list[bytes] = []
+    for item in image_items:
+        data = getattr(item, "data", None)
+        if not isinstance(data, (bytes, bytearray)):
+            raise RuntimeError("Image backend returned an unexpected type (expected raw bytes).")
+        out.append(bytes(data))
+    return out
+
+
+def _first_generated_image_bytes(result: Any) -> bytes:
+    return _generated_image_bytes_list(result)[0]
+
+
+def _generated_video_bytes_list(result: Any) -> list[bytes]:
+    video_items = getattr(result, "outputs", {}).get("video", [])
+    if not video_items:
+        raise RuntimeError("Video backend returned no video outputs.")
+    out: list[bytes] = []
+    for item in video_items:
+        data = getattr(item, "data", None)
+        if not isinstance(data, (bytes, bytearray)):
+            raise RuntimeError("Video backend returned an unexpected type (expected raw bytes).")
+        out.append(bytes(data))
+    return out
 
 
 def _first_generated_video_bytes(result: Any) -> bytes:
-    video_items = getattr(result, "outputs", {}).get("video", [])
-    item = video_items[0] if video_items else None
-    data = getattr(item, "data", None)
-    if not isinstance(data, (bytes, bytearray)):
-        raise RuntimeError("Video backend returned an unexpected type (expected raw bytes).")
-    return bytes(data)
+    return _generated_video_bytes_list(result)[0]
 
 
 def _vision_catalog_error(exc: Exception) -> HTTPException:
@@ -3122,6 +3416,100 @@ async def list_cached_vision_models(
     return out
 
 
+@router.get("/vision/adapters")
+async def list_vision_adapters(
+    request: Request,
+    model: Optional[str] = Query(
+        default=None,
+        description="Optional provider/model vision id to filter installed compatible adapters.",
+        examples=["mlx-gen/AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"],
+    ),
+    task: Optional[str] = Query(
+        default=None,
+        description="Optional task filter: text_to_image, image_to_image, text_to_video, or image_to_video.",
+        examples=["text_to_video"],
+    ),
+    provider: Optional[str] = Query(
+        default=None,
+        description="Optional provider filter, e.g. mlx-gen or diffusers.",
+        examples=["mlx-gen"],
+    ),
+    base_url: Optional[str] = Query(
+        default=None,
+        description="Optional OpenAI-compatible vision endpoint override used for remote catalog discovery.",
+        examples=["http://127.0.0.1:5000/v1"],
+    ),
+    api_key: Optional[str] = Query(
+        default=None,
+        description=(
+            "Optional upstream provider API key override for adapter discovery. Prefer "
+            "`X-AbstractCore-Provider-API-Key`; this query parameter exists for tooling convenience."
+        ),
+    ),
+) -> Dict[str, Any]:
+    if task is not None:
+        task = str(task).strip() or None
+    if task and task not in {"text_to_image", "image_to_image", "text_to_video", "image_to_video"}:
+        raise HTTPException(
+            status_code=400,
+            detail="task must be one of: text_to_image, image_to_image, text_to_video, image_to_video",
+        )
+    try:
+        core = _vision_catalog_core(request, base_url=base_url, api_key=api_key)
+        raw_adapters = list(
+            core.vision.list_provider_adapters(
+                model=model,
+                task=task,
+                provider=provider,
+            )
+            or []
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise _vision_catalog_error(exc) from exc
+
+    adapters: list[Dict[str, Any]] = []
+    for item in raw_adapters:
+        if isinstance(item, dict):
+            adapters.append(dict(item))
+            continue
+        data: Dict[str, Any] = {}
+        for key in (
+            "id",
+            "repo_id",
+            "base_models",
+            "compatible_models",
+            "compatible_tasks",
+            "suggested_target_roles",
+            "raw",
+        ):
+            value = getattr(item, key, None)
+            if value is not None:
+                data[key] = value
+        if data:
+            adapters.append(data)
+
+    if provider:
+        provider_lc = str(provider).strip().lower()
+        adapters = [
+            item
+            for item in adapters
+            if str(item.get("provider") or item.get("raw", {}).get("provider") or "").strip().lower() == provider_lc
+        ]
+
+    return {
+        "available": True,
+        "source": "abstractvision",
+        "backend_id": getattr(core.vision, "backend_id", None),
+        "model": model,
+        "task": task,
+        "provider": provider,
+        "adapters": adapters,
+        "count": len(adapters),
+    }
+
+
 async def _images_generations_impl(
     request: Request,
     payload: ImageGenerationBody,
@@ -3153,6 +3541,8 @@ async def _images_generations_impl(
     steps = _coerce_int(payload.get("steps"))
     guidance_scale = _coerce_float(payload.get("guidance_scale"))
     seed = _coerce_int(payload.get("seed"))
+    seeds = payload.get("seeds")
+    lora_adapters = payload.get("lora_adapters")
     request_model = _scoped_request_model_for_request(
         payload.get("model"),
         payload.get("provider"),
@@ -3168,39 +3558,39 @@ async def _images_generations_impl(
         api_key=provider_api_key,
     )
 
-    data_items = []
-    for _ in range(n):
-        try:
-            output_spec = {
-                "modality": "image",
-                "task": "image_generation",
-                "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
-                "width": width,
-                "height": height,
-                "steps": steps,
-                "guidance_scale": guidance_scale,
-                "seed": seed,
-                "extra": extra,
-            }
-            if payload.get("provider") is not None:
-                output_spec["provider"] = payload.get("provider")
-            if payload.get("model") is not None:
-                output_spec["model"] = payload.get("model")
-            result = core.generate(
-                prompt,
-                output=output_spec,
-            )
-            image_bytes = _first_generated_image_bytes(result)
-        except OptionalDependencyMissingError as e:
-            raise HTTPException(status_code=501, detail=str(e)) from e
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e)) from e
-        b64 = base64.b64encode(image_bytes).decode("ascii")
-        data_items.append({"b64_json": b64})
+    try:
+        output_spec = {
+            "modality": "image",
+            "task": "image_generation",
+            "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
+            "width": width,
+            "height": height,
+            "steps": steps,
+            "guidance_scale": guidance_scale,
+            "seed": seed,
+            "count": n,
+            "seeds": seeds,
+            "lora_adapters": lora_adapters,
+            "extra": extra,
+        }
+        if payload.get("provider") is not None:
+            output_spec["provider"] = payload.get("provider")
+        if payload.get("model") is not None:
+            output_spec["model"] = payload.get("model")
+        result = core.generate(
+            prompt,
+            output=output_spec,
+        )
+        image_bytes_list = _generated_image_bytes_list(result)
+    except OptionalDependencyMissingError as e:
+        raise HTTPException(status_code=501, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    data_items = [{"b64_json": base64.b64encode(image_bytes).decode("ascii")} for image_bytes in image_bytes_list]
 
     return {"created": int(time.time()), "data": data_items}
 
@@ -3259,7 +3649,10 @@ async def _videos_generations_impl(
     steps = _coerce_int(payload.get("steps"))
     guidance_scale = _coerce_float(payload.get("guidance_scale"))
     guidance_2 = _coerce_float(payload.get("guidance_2"))
+    flow_shift = _coerce_float(payload.get("flow_shift"))
     seed = _coerce_int(payload.get("seed"))
+    seeds = payload.get("seeds")
+    lora_adapters = payload.get("lora_adapters")
     request_model = _scoped_request_model_for_request(
         payload.get("model"),
         payload.get("provider"),
@@ -3275,39 +3668,41 @@ async def _videos_generations_impl(
         api_key=provider_api_key,
     )
 
-    data_items = []
-    for _ in range(n):
-        try:
-            output_spec = {
-                "modality": "video",
-                "task": "text_to_video",
-                "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
-                "width": width,
-                "height": height,
-                "fps": fps,
-                "num_frames": num_frames,
-                "steps": steps,
-                "guidance_scale": guidance_scale,
-                "guidance_2": guidance_2,
-                "seed": seed,
-                "format": "mp4",
-                "extra": extra,
-            }
-            if payload.get("provider") is not None:
-                output_spec["provider"] = payload.get("provider")
-            if payload.get("model") is not None:
-                output_spec["model"] = payload.get("model")
-            result = core.generate(prompt, output=output_spec)
-            video_bytes = _first_generated_video_bytes(result)
-        except OptionalDependencyMissingError as e:
-            raise HTTPException(status_code=501, detail=str(e)) from e
-        except ValueError as e:
-            raise HTTPException(status_code=400, detail=str(e)) from e
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e)) from e
-        data_items.append({"b64_json": base64.b64encode(video_bytes).decode("ascii")})
+    try:
+        output_spec = {
+            "modality": "video",
+            "task": "text_to_video",
+            "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
+            "width": width,
+            "height": height,
+            "fps": fps,
+            "num_frames": num_frames,
+            "steps": steps,
+            "guidance_scale": guidance_scale,
+            "guidance_2": guidance_2,
+            "flow_shift": flow_shift,
+            "seed": seed,
+            "count": n,
+            "seeds": seeds,
+            "lora_adapters": lora_adapters,
+            "format": "mp4",
+            "extra": extra,
+        }
+        if payload.get("provider") is not None:
+            output_spec["provider"] = payload.get("provider")
+        if payload.get("model") is not None:
+            output_spec["model"] = payload.get("model")
+        result = core.generate(prompt, output=output_spec)
+        video_bytes_list = _generated_video_bytes_list(result)
+    except OptionalDependencyMissingError as e:
+        raise HTTPException(status_code=501, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    data_items = [{"b64_json": base64.b64encode(video_bytes).decode("ascii")} for video_bytes in video_bytes_list]
 
     return {"created": int(time.time()), "data": data_items}
 
@@ -3350,6 +3745,8 @@ async def jobs_images_generations(request: Request, payload: ImageGenerationBody
     steps = _coerce_int(payload.get("steps"))
     guidance_scale = _coerce_float(payload.get("guidance_scale"))
     seed = _coerce_int(payload.get("seed"))
+    seeds = payload.get("seeds")
+    lora_adapters = payload.get("lora_adapters")
     request_model = _scoped_request_model_for_request(
         payload.get("model"),
         payload.get("provider"),
@@ -3360,23 +3757,15 @@ async def jobs_images_generations(request: Request, payload: ImageGenerationBody
     if _is_remote_vision_request(request_model):
         _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
 
-    (
-        backend,
-        call_lock,
-        OptionalDependencyMissingError,
-        ImageGenerationRequest,
-        _ImageEditRequest,
-        _VideoGenerationRequest,
-        _ImageToVideoRequest,
-        _ImageUpscaleRequest,
-    ) = _unpack_resolved_backend(
-        _resolve_backend(
-            request_model,
-            base_url=payload.get("base_url"),
-            api_key=provider_api_key,
-        )
+    core, OptionalDependencyMissingError = _create_vision_generation_core(
+        request_model,
+        base_url=payload.get("base_url"),
+        api_key=provider_api_key,
     )
-
+    try:
+        planned_seeds = core.vision.plan_batch_seeds(count=int(n), seed=seed, seeds=seeds)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     total_steps = (int(steps) * int(n)) if steps is not None else None
 
     now_s = time.time()
@@ -3406,43 +3795,55 @@ async def jobs_images_generations(request: Request, payload: ImageGenerationBody
                     job["updated_at_s"] = time.time()
 
             data_items = []
-            for i in range(int(n)):
+            for i, planned_seed in enumerate(planned_seeds):
                 run_extra = dict(extra or {})
+                offset = int(steps) * i if steps is not None else 0
 
                 def _event_progress(raw_event: Any) -> None:
                     event = _progress_event_payload(raw_event)
-                    _job_update_progress(job_id, step=None, total=None, event=event)
+                    derived_step, derived_total = _batch_progress_state(
+                        item_index=i,
+                        batch_count=len(planned_seeds),
+                        explicit_item_total=steps,
+                        reported_item_total=event.get("total_steps"),
+                        raw_step=event.get("step"),
+                    )
+                    _job_update_progress(
+                        job_id,
+                        step=derived_step,
+                        total=total_steps if total_steps is not None else derived_total,
+                        event=event,
+                    )
 
-                run_extra["on_progress"] = _event_progress
-                req = ImageGenerationRequest(
-                    prompt=prompt,
+                def _progress(step_i: int, total_i: Optional[int] = None) -> None:
+                    overall, derived_total = _batch_progress_state(
+                        item_index=i,
+                        batch_count=len(planned_seeds),
+                        explicit_item_total=steps,
+                        reported_item_total=total_i,
+                        raw_step=step_i,
+                    )
+                    _job_update_progress(job_id, step=overall, total=total_steps if total_steps is not None else derived_total)
+
+                _job_update_progress(
+                    job_id,
+                    step=offset,
+                    total=total_steps,
+                    event=_unreported_progress_event("Waiting for provider response"),
+                )
+                asset = core.vision.generate_image_asset(
+                    prompt,
                     negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
                     width=width,
                     height=height,
                     steps=steps,
                     guidance_scale=guidance_scale,
-                    seed=seed,
+                    seed=planned_seed,
+                    lora_adapters=lora_adapters or (),
                     extra=run_extra,
+                    on_progress=_event_progress,
+                    progress_callback=_progress,
                 )
-
-                offset = int(steps) * i if steps is not None else 0
-
-                def _progress(step_i: int, total_i: Optional[int] = None) -> None:
-                    # `step_i` is expected to be 0/1-based; normalize to 1..N for UI.
-                    s = int(step_i)
-                    if s < 0:
-                        s = 0
-                    if steps is not None and s > int(steps):
-                        s = int(steps)
-                    overall = offset + s
-                    _job_update_progress(job_id, step=overall, total=total_steps)
-
-                with call_lock:
-                    fn = getattr(backend, "generate_image_with_progress", None)
-                    if callable(fn):
-                        asset = fn(req, progress_callback=_progress)
-                    else:
-                        asset = backend.generate_image(req)
                 b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
                 data_items.append({"b64_json": b64})
 
@@ -3468,11 +3869,16 @@ async def jobs_videos_generations(request: Request, payload: VideoGenerationBody
     if response_format not in {"b64_json"}:
         raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
 
+    n = _coerce_int(payload.get("n")) or 1
+    n = max(1, min(int(n), 4))
     negative_prompt = payload.get("negative_prompt")
     steps = _coerce_int(payload.get("steps"))
     guidance_scale = _coerce_float(payload.get("guidance_scale"))
     guidance_2 = _coerce_float(payload.get("guidance_2"))
+    flow_shift = _coerce_float(payload.get("flow_shift"))
     seed = _coerce_int(payload.get("seed"))
+    seeds = payload.get("seeds")
+    lora_adapters = payload.get("lora_adapters")
     request_model = _scoped_request_model_for_request(
         payload.get("model"),
         payload.get("provider"),
@@ -3483,26 +3889,18 @@ async def jobs_videos_generations(request: Request, payload: VideoGenerationBody
     if _is_remote_vision_request(request_model):
         _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
 
-    (
-        backend,
-        call_lock,
-        OptionalDependencyMissingError,
-        _ImageGenerationRequest,
-        _ImageEditRequest,
-        VideoGenerationRequest,
-        _ImageToVideoRequest,
-        _ImageUpscaleRequest,
-    ) = _unpack_resolved_backend(
-        _resolve_backend(
-            request_model,
-            base_url=payload.get("base_url"),
-            api_key=provider_api_key,
-        )
+    core, OptionalDependencyMissingError = _create_vision_generation_core(
+        request_model,
+        base_url=payload.get("base_url"),
+        api_key=provider_api_key,
     )
-    if VideoGenerationRequest is None:
+    if not core.vision.supports_video_generation:
         raise HTTPException(status_code=501, detail="The selected vision backend does not expose VideoGenerationRequest.")
-
-    total_steps = int(steps) if steps is not None else int(num_frames) if num_frames is not None else None
+    try:
+        planned_seeds = core.vision.plan_batch_seeds(count=int(n), seed=seed, seeds=seeds)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    total_steps = (int(steps) * int(n)) if steps is not None else None
 
     now_s = time.time()
     with _JOBS_LOCK:
@@ -3529,40 +3927,68 @@ async def jobs_videos_generations(request: Request, payload: VideoGenerationBody
                     job["state"] = "running"
                     job["updated_at_s"] = time.time()
 
-            run_extra = dict(extra or {})
+            data_items = []
+            per_item_total = int(steps) if steps is not None else None
+            for i, planned_seed in enumerate(planned_seeds):
+                run_extra = dict(extra or {})
+                offset = int(per_item_total) * i if per_item_total is not None else 0
 
-            def _event_progress(raw_event: Any) -> None:
-                event = _progress_event_payload(raw_event)
-                _job_update_progress(job_id, step=None, total=None, event=event)
+                def _event_progress(raw_event: Any) -> None:
+                    event = _progress_event_payload(raw_event)
+                    derived_step = _coerce_int(event.get("step"))
+                    reported_total = _coerce_int(event.get("total_steps"))
+                    if derived_step is None:
+                        derived_step = _coerce_int(event.get("frame"))
+                        reported_total = _coerce_int(event.get("total_frames"))
+                    overall_step, derived_total = _batch_progress_state(
+                        item_index=i,
+                        batch_count=len(planned_seeds),
+                        explicit_item_total=per_item_total,
+                        reported_item_total=reported_total,
+                        raw_step=derived_step,
+                    )
+                    _job_update_progress(
+                        job_id,
+                        step=overall_step,
+                        total=total_steps if total_steps is not None else derived_total,
+                        event=event,
+                    )
 
-            run_extra["on_progress"] = _event_progress
-            req = VideoGenerationRequest(
-                prompt=prompt,
-                negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
-                width=width,
-                height=height,
-                fps=fps,
-                num_frames=num_frames,
-                steps=steps,
-                guidance_scale=guidance_scale,
-                guidance_2=guidance_2,
-                seed=seed,
-                extra=run_extra,
-            )
+                def _progress(step_i: int, total_i: Optional[int] = None) -> None:
+                    overall, derived_total = _batch_progress_state(
+                        item_index=i,
+                        batch_count=len(planned_seeds),
+                        explicit_item_total=per_item_total,
+                        reported_item_total=total_i,
+                        raw_step=step_i,
+                    )
+                    _job_update_progress(job_id, step=overall, total=total_steps if total_steps is not None else derived_total)
 
-            def _progress(step_i: int, total_i: Optional[int] = None) -> None:
-                s = max(0, int(step_i))
-                t = _coerce_int(total_i) or total_steps
-                _job_update_progress(job_id, step=s, total=t)
-
-            with call_lock:
-                fn = getattr(backend, "generate_video_with_progress", None)
-                if callable(fn):
-                    asset = fn(req, progress_callback=_progress)
-                else:
-                    asset = backend.generate_video(req)
-            b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
-            _job_finish(job_id, ok=True, result={"created": int(time.time()), "data": [{"b64_json": b64}]})
+                _job_update_progress(
+                    job_id,
+                    step=offset,
+                    total=total_steps,
+                    event=_unreported_progress_event("Waiting for provider response"),
+                )
+                asset = core.vision.generate_video_asset(
+                    prompt,
+                    negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
+                    width=width,
+                    height=height,
+                    fps=fps,
+                    num_frames=num_frames,
+                    steps=steps,
+                    guidance_scale=guidance_scale,
+                    guidance_2=guidance_2,
+                    flow_shift=flow_shift,
+                    seed=planned_seed,
+                    lora_adapters=lora_adapters or (),
+                    extra=run_extra,
+                    on_progress=_event_progress,
+                    progress_callback=_progress,
+                )
+                data_items.append({"b64_json": base64.b64encode(bytes(asset.data)).decode("ascii")})
+            _job_finish(job_id, ok=True, result={"created": int(time.time()), "data": data_items})
         except OptionalDependencyMissingError as e:
             _job_finish(job_id, ok=False, error=str(e))
         except Exception as e:
@@ -3590,6 +4016,7 @@ async def get_job(
             raise HTTPException(status_code=404, detail="Job not found")
         data = dict(job)
         state = str(data.get("state") or "")
+        data["progress"] = _progress_for_job_response(data.get("progress"), state=state)
         if consume and state in {"succeeded", "failed"}:
             _JOBS.pop(jid, None)
 
@@ -3633,10 +4060,13 @@ if _HAS_MULTIPART:
         ),
         size: Optional[str] = Form(None, description="OpenAI-style output image size such as `1024x1024`, `1536x1024`, `1024x1536`, or `auto` when supported.", examples=["1024x1024"]),
         response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported by the server response.", examples=["b64_json"]),
+        n: Optional[str] = Form("1", description="Number of edited images to return. Clamped to 1..10.", examples=["2"]),
+        seeds: Optional[str] = Form(None, description="Optional comma-separated seed list. When supplied, `n` must match the number of seeds.", examples=["41,42"]),
         negative_prompt: Optional[str] = Form(None, description="Local/backend-specific negative prompt. Strict OpenAI-compatible upstreams do not receive this top-level field unless supplied through `extra_json`.", examples=["blur, low quality"]),
         seed: Optional[str] = Form(None, description="Local/backend-specific deterministic seed. Use `extra_json` for custom OpenAI-compatible upstreams that support a seed field.", examples=["1234"]),
         steps: Optional[str] = Form(None, description="Local/backend-specific denoising/inference step count. Use `extra_json` for custom OpenAI-compatible upstreams that support a steps field.", examples=["20"]),
         guidance_scale: Optional[str] = Form(None, description="Local/backend-specific classifier-free guidance scale. Use `extra_json` for custom OpenAI-compatible upstreams that support this field.", examples=["7.5"]),
+        lora_adapters_json: Optional[str] = Form(None, description="Optional JSON array describing an ordered LoRA adapter stack."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters.", examples=['{"quality":"low","background":"auto","output_format":"png"}']),
     ) -> Dict[str, Any]:
         """Start an async image edit job with progress polling."""
@@ -3671,6 +4101,9 @@ if _HAS_MULTIPART:
         seed_i = _coerce_int(seed)
         steps_i = _coerce_int(steps)
         guidance_f = _coerce_float(guidance_scale)
+        count = _coerce_int(n) or 1
+        count = max(1, min(int(count), 10))
+        parsed_lora_adapters = _parse_lora_adapters_form(lora_adapters_json)
         response_format_s = str(response_format or "b64_json").strip().lower()
         if response_format_s not in {"b64_json"}:
             raise HTTPException(status_code=400, detail="Only response_format='b64_json' is supported.")
@@ -3682,23 +4115,16 @@ if _HAS_MULTIPART:
         provider_api_key = _provider_api_key_from_request(request)
         if _is_remote_vision_request(request_model):
             _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
-        (
-            backend,
-            call_lock,
-            OptionalDependencyMissingError,
-            _ImageGenerationRequest,
-            ImageEditRequest,
-            _VideoGenerationRequest,
-            _ImageToVideoRequest,
-            _ImageUpscaleRequest,
-        ) = _unpack_resolved_backend(
-            _resolve_backend(
-                request_model,
-                base_url=base_url,
-                api_key=provider_api_key,
-            )
+        core, OptionalDependencyMissingError = _create_vision_generation_core(
+            request_model,
+            base_url=base_url,
+            api_key=provider_api_key,
         )
-        total_steps = int(steps_i) if steps_i is not None else None
+        try:
+            planned_seeds = core.vision.plan_batch_seeds(count=count, seed=seed_i, seeds=_parse_seeds_form(seeds))
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
+        total_steps = (int(steps_i) * int(count)) if steps_i is not None else None
 
         now_s = time.time()
         with _JOBS_LOCK:
@@ -3725,40 +4151,59 @@ if _HAS_MULTIPART:
                         job["state"] = "running"
                         job["updated_at_s"] = time.time()
 
-                run_extra = dict(extra or {})
+                data_items = []
+                for index, planned_seed in enumerate(planned_seeds):
+                    run_extra = dict(extra or {})
+                    offset = int(steps_i) * index if steps_i is not None else 0
 
-                def _event_progress(raw_event: Any) -> None:
-                    event = _progress_event_payload(raw_event)
-                    _job_update_progress(job_id, step=None, total=None, event=event)
+                    def _event_progress(raw_event: Any) -> None:
+                        event = _progress_event_payload(raw_event)
+                        derived_step, derived_total = _batch_progress_state(
+                            item_index=index,
+                            batch_count=len(planned_seeds),
+                            explicit_item_total=steps_i,
+                            reported_item_total=event.get("total_steps"),
+                            raw_step=event.get("step"),
+                        )
+                        _job_update_progress(
+                            job_id,
+                            step=derived_step,
+                            total=total_steps if total_steps is not None else derived_total,
+                            event=event,
+                        )
 
-                run_extra["on_progress"] = _event_progress
-                req = ImageEditRequest(
-                    prompt=prompt_s,
-                    image=bytes(image_bytes),
-                    mask=bytes(mask_bytes) if mask_bytes else None,
-                    negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
-                    seed=seed_i,
-                    steps=steps_i,
-                    guidance_scale=guidance_f,
-                    extra=run_extra,
-                )
+                    def _progress(step_i: int, total_i: Optional[int] = None) -> None:
+                        overall, derived_total = _batch_progress_state(
+                            item_index=index,
+                            batch_count=len(planned_seeds),
+                            explicit_item_total=steps_i,
+                            reported_item_total=total_i,
+                            raw_step=step_i,
+                        )
+                        _job_update_progress(job_id, step=overall, total=total_steps if total_steps is not None else derived_total)
 
-                def _progress(step_i: int, total_i: Optional[int] = None) -> None:
-                    s = int(step_i)
-                    if s < 0:
-                        s = 0
-                    if total_steps is not None and s > int(total_steps):
-                        s = int(total_steps)
-                    _job_update_progress(job_id, step=s, total=total_steps)
-
-                with call_lock:
-                    fn = getattr(backend, "edit_image_with_progress", None)
-                    if callable(fn):
-                        asset = fn(req, progress_callback=_progress)
-                    else:
-                        asset = backend.edit_image(req)
-                b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
-                _job_finish(job_id, ok=True, result={"created": int(time.time()), "data": [{"b64_json": b64}]})
+                    _job_update_progress(
+                        job_id,
+                        step=offset,
+                        total=total_steps,
+                        event=_unreported_progress_event("Waiting for provider response"),
+                    )
+                    asset = core.vision.edit_image_asset(
+                        prompt_s,
+                        bytes(image_bytes),
+                        mask=bytes(mask_bytes) if mask_bytes else None,
+                        negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
+                        seed=planned_seed,
+                        steps=steps_i,
+                        guidance_scale=guidance_f,
+                        lora_adapters=parsed_lora_adapters or (),
+                        extra=run_extra,
+                        on_progress=_event_progress,
+                        progress_callback=_progress,
+                    )
+                    b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
+                    data_items.append({"b64_json": b64})
+                _job_finish(job_id, ok=True, result={"created": int(time.time()), "data": data_items})
             except OptionalDependencyMissingError as e:
                 _job_finish(job_id, ok=False, error=str(e))
             except Exception as e:
@@ -3798,11 +4243,14 @@ if _HAS_MULTIPART:
             examples=["http://127.0.0.1:5000/v1"],
         ),
         size: Optional[str] = Form(None, description="OpenAI-style output image size such as `1024x1024`, `1536x1024`, `1024x1536`, or `auto` when supported.", examples=["1024x1024"]),
+        n: Optional[str] = Form("1", description="Number of edited images to return. Clamped to 1..10.", examples=["2"]),
+        seeds: Optional[str] = Form(None, description="Optional comma-separated seed list. When supplied, `n` must match the number of seeds.", examples=["41,42"]),
         response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported by the server response.", examples=["b64_json"]),
         negative_prompt: Optional[str] = Form(None, description="Local/backend-specific negative prompt. Strict OpenAI-compatible upstreams do not receive this top-level field unless supplied through `extra_json`.", examples=["blur, low quality"]),
         seed: Optional[str] = Form(None, description="Local/backend-specific deterministic seed. Use `extra_json` for custom OpenAI-compatible upstreams that support a seed field.", examples=["1234"]),
         steps: Optional[str] = Form(None, description="Local/backend-specific denoising/inference step count. Use `extra_json` for custom OpenAI-compatible upstreams that support a steps field.", examples=["20"]),
         guidance_scale: Optional[str] = Form(None, description="Local/backend-specific classifier-free guidance scale. Use `extra_json` for custom OpenAI-compatible upstreams that support this field.", examples=["7.5"]),
+        lora_adapters_json: Optional[str] = Form(None, description="Optional JSON array describing an ordered LoRA adapter stack."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters.", examples=['{"quality":"low","background":"auto","output_format":"png"}']),
     ) -> Dict[str, Any]:
         """
@@ -3845,6 +4293,10 @@ if _HAS_MULTIPART:
             extra.setdefault("size", str(size).strip())
         if reference_image_bytes:
             extra.setdefault("reference_images", reference_image_bytes)
+        count = _coerce_int(n) or 1
+        count = max(1, min(int(count), 10))
+        parsed_seeds = _parse_seeds_form(seeds)
+        parsed_lora_adapters = _parse_lora_adapters_form(lora_adapters_json)
         request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
         provider_api_key = _provider_api_key_from_request(request)
         if _is_remote_vision_request(request_model):
@@ -3881,12 +4333,15 @@ if _HAS_MULTIPART:
                     "model": model,
                     "negative_prompt": str(negative_prompt) if negative_prompt is not None else None,
                     "seed": _coerce_int(seed),
+                    "count": count,
+                    "seeds": parsed_seeds,
                     "steps": _coerce_int(steps),
                     "guidance_scale": _coerce_float(guidance_scale),
+                    "lora_adapters": parsed_lora_adapters,
                     "extra": extra,
                 },
             )
-            image_bytes_out = _first_generated_image_bytes(result)
+            image_bytes_out = _generated_image_bytes_list(result)
         except OptionalDependencyMissingError as e:
             raise HTTPException(status_code=501, detail=str(e)) from e
         except ValueError as e:
@@ -3895,8 +4350,10 @@ if _HAS_MULTIPART:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e)) from e
-        b64 = base64.b64encode(image_bytes_out).decode("ascii")
-        return {"created": int(time.time()), "data": [{"b64_json": b64}]}
+        return {
+            "created": int(time.time()),
+            "data": [{"b64_json": base64.b64encode(item).decode("ascii")} for item in image_bytes_out],
+        }
 
     @provider_router.post("/{provider}/v1/images/edits")
     async def provider_images_edits(
@@ -3927,11 +4384,14 @@ if _HAS_MULTIPART:
             examples=["http://127.0.0.1:5000/v1"],
         ),
         size: Optional[str] = Form(None, description="OpenAI-style output image size such as `1024x1024`, `1536x1024`, `1024x1536`, or `auto` when supported.", examples=["1024x1024"]),
+        n: Optional[str] = Form("1", description="Number of edited images to return. Clamped to 1..10.", examples=["2"]),
+        seeds: Optional[str] = Form(None, description="Optional comma-separated seed list. When supplied, `n` must match the number of seeds.", examples=["41,42"]),
         response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported by the server response.", examples=["b64_json"]),
         negative_prompt: Optional[str] = Form(None, description="Local/backend-specific negative prompt. Strict OpenAI-compatible upstreams do not receive this top-level field unless supplied through `extra_json`.", examples=["blur, low quality"]),
         seed: Optional[str] = Form(None, description="Local/backend-specific deterministic seed. Use `extra_json` for custom OpenAI-compatible upstreams that support a seed field.", examples=["1234"]),
         steps: Optional[str] = Form(None, description="Local/backend-specific denoising/inference step count. Use `extra_json` for custom OpenAI-compatible upstreams that support a steps field.", examples=["20"]),
         guidance_scale: Optional[str] = Form(None, description="Local/backend-specific classifier-free guidance scale. Use `extra_json` for custom OpenAI-compatible upstreams that support this field.", examples=["7.5"]),
+        lora_adapters_json: Optional[str] = Form(None, description="Optional JSON array describing an ordered LoRA adapter stack."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters.", examples=['{"quality":"low","background":"auto","output_format":"png"}']),
     ) -> Dict[str, Any]:
         return await images_edits(
@@ -3944,11 +4404,14 @@ if _HAS_MULTIPART:
             model=model,
             base_url=base_url,
             size=size,
+            n=n,
+            seeds=seeds,
             response_format=response_format,
             negative_prompt=negative_prompt,
             seed=seed,
             steps=steps,
             guidance_scale=guidance_scale,
+            lora_adapters_json=lora_adapters_json,
             extra_json=extra_json,
         )
 
@@ -3962,10 +4425,10 @@ if _HAS_MULTIPART:
         response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported.", examples=["b64_json"]),
         scale: Optional[str] = Form(None, description="Friendly scale factor, for example `2`, `2x`, or `1.5x`.", examples=["2x"]),
         resolution: Optional[str] = Form(None, description="SeedVR2 target shortest edge in pixels or scale factor such as `2x`.", examples=["2x"]),
-        softness: Optional[str] = Form(None, description="SeedVR2 softness in [0.0, 1.0].", examples=["0.0"]),
+        softness: Optional[str] = Form(None, description="SeedVR2 softness in [0.0, 1.0].", examples=["0.25"]),
         seed: Optional[str] = Form(None, description="Deterministic seed.", examples=["1234"]),
         quantize: Optional[str] = Form(None, description="Runtime quantization for official/source SeedVR2 loading: 3, 4, 5, 6, or 8. Canonical prepared q8/q4 packages do not require this field.", examples=["8"]),
-        vae_tiling: Optional[str] = Form(None, description="Enable tiled VAE encode/decode for very large outputs.", examples=["false"]),
+        vae_tiling: Optional[str] = Form(None, description="Force tiled VAE encode/decode; leave unset for the MLX-Gen SeedVR2 runtime policy.", examples=["true"]),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific parameters."),
     ) -> Dict[str, Any]:
         image_bytes = await image.read()
@@ -3983,7 +4446,12 @@ if _HAS_MULTIPART:
             quantize=quantize,
             vae_tiling=vae_tiling,
         )
-        request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
+        route_provider, route_model = _image_upscale_route_defaults(
+            provider=provider,
+            model=model,
+            base_url=base_url,
+        )
+        request_model = _scoped_request_model_for_request(route_model, route_provider, base_url=base_url)
         provider_api_key = _provider_api_key_from_request(request)
         if _is_remote_vision_request(request_model):
             _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
@@ -4005,8 +4473,8 @@ if _HAS_MULTIPART:
                 output={
                     "modality": "image",
                     "task": "image_upscale",
-                    "provider": provider,
-                    "model": model,
+                    "provider": route_provider,
+                    "model": route_model,
                     "scale": upscale_fields["scale"],
                     "resolution": upscale_fields["resolution"],
                     "softness": upscale_fields["softness"],
@@ -4038,10 +4506,10 @@ if _HAS_MULTIPART:
         response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported.", examples=["b64_json"]),
         scale: Optional[str] = Form(None, description="Friendly scale factor, for example `2`, `2x`, or `1.5x`.", examples=["2x"]),
         resolution: Optional[str] = Form(None, description="SeedVR2 target shortest edge in pixels or scale factor such as `2x`.", examples=["2x"]),
-        softness: Optional[str] = Form(None, description="SeedVR2 softness in [0.0, 1.0].", examples=["0.0"]),
+        softness: Optional[str] = Form(None, description="SeedVR2 softness in [0.0, 1.0].", examples=["0.25"]),
         seed: Optional[str] = Form(None, description="Deterministic seed.", examples=["1234"]),
         quantize: Optional[str] = Form(None, description="Runtime quantization for official/source SeedVR2 loading: 3, 4, 5, 6, or 8. Canonical prepared q8/q4 packages do not require this field.", examples=["8"]),
-        vae_tiling: Optional[str] = Form(None, description="Enable tiled VAE encode/decode for very large outputs.", examples=["false"]),
+        vae_tiling: Optional[str] = Form(None, description="Force tiled VAE encode/decode; leave unset for the MLX-Gen SeedVR2 runtime policy.", examples=["true"]),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific parameters."),
     ) -> Dict[str, Any]:
         return await images_upscale(
@@ -4069,10 +4537,10 @@ if _HAS_MULTIPART:
         base_url: Optional[str] = Form(None, description="Optional request-level base URL override for compatible backends."),
         scale: Optional[str] = Form(None, description="Friendly scale factor, for example `2`, `2x`, or `1.5x`.", examples=["2x"]),
         resolution: Optional[str] = Form(None, description="SeedVR2 target shortest edge in pixels or scale factor such as `2x`.", examples=["2x"]),
-        softness: Optional[str] = Form(None, description="SeedVR2 softness in [0.0, 1.0].", examples=["0.0"]),
+        softness: Optional[str] = Form(None, description="SeedVR2 softness in [0.0, 1.0].", examples=["0.25"]),
         seed: Optional[str] = Form(None, description="Deterministic seed.", examples=["1234"]),
         quantize: Optional[str] = Form(None, description="Runtime quantization for official/source SeedVR2 loading: 3, 4, 5, 6, or 8. Canonical prepared q8/q4 packages do not require this field.", examples=["8"]),
-        vae_tiling: Optional[str] = Form(None, description="Enable tiled VAE encode/decode for very large outputs.", examples=["false"]),
+        vae_tiling: Optional[str] = Form(None, description="Force tiled VAE encode/decode; leave unset for the MLX-Gen SeedVR2 runtime policy.", examples=["true"]),
         response_format: Optional[str] = Form("b64_json", description="Response format. Only `b64_json` is currently supported.", examples=["b64_json"]),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific parameters."),
     ) -> Dict[str, Any]:
@@ -4091,27 +4559,21 @@ if _HAS_MULTIPART:
             quantize=quantize,
             vae_tiling=vae_tiling,
         )
-        request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
+        route_provider, route_model = _image_upscale_route_defaults(
+            provider=provider,
+            model=model,
+            base_url=base_url,
+        )
+        request_model = _scoped_request_model_for_request(route_model, route_provider, base_url=base_url)
         provider_api_key = _provider_api_key_from_request(request)
         if _is_remote_vision_request(request_model):
             _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
-        (
-            backend,
-            call_lock,
-            OptionalDependencyMissingError,
-            _ImageGenerationRequest,
-            _ImageEditRequest,
-            _VideoGenerationRequest,
-            _ImageToVideoRequest,
-            ImageUpscaleRequest,
-        ) = _unpack_resolved_backend(
-            _resolve_backend(
-                request_model,
-                base_url=base_url,
-                api_key=provider_api_key,
-            )
+        core, OptionalDependencyMissingError = _create_vision_generation_core(
+            request_model,
+            base_url=base_url,
+            api_key=provider_api_key,
         )
-        if ImageUpscaleRequest is None:
+        if not core.vision.supports_image_upscale:
             raise HTTPException(status_code=501, detail="The selected vision backend does not expose ImageUpscaleRequest.")
 
         now_s = time.time()
@@ -4144,9 +4606,17 @@ if _HAS_MULTIPART:
                     event = _progress_event_payload(raw_event)
                     _job_update_progress(job_id, step=None, total=None, event=event)
 
-                run_extra["on_progress"] = _event_progress
-                req = ImageUpscaleRequest(
-                    image=bytes(image_bytes),
+                def _progress(step_i: int, total_i: Optional[int] = None) -> None:
+                    _job_update_progress(job_id, step=max(0, int(step_i)), total=total_i)
+
+                _job_update_progress(
+                    job_id,
+                    step=0,
+                    total=None,
+                    event=_unreported_progress_event("Waiting for provider response"),
+                )
+                asset = core.vision.upscale_image_asset(
+                    bytes(image_bytes),
                     resolution=upscale_fields["resolution"],
                     scale=upscale_fields["scale"],
                     seed=upscale_fields["seed"],
@@ -4154,17 +4624,9 @@ if _HAS_MULTIPART:
                     quantize=upscale_fields["quantize"],
                     vae_tiling=upscale_fields["vae_tiling"],
                     extra=run_extra,
+                    on_progress=_event_progress,
+                    progress_callback=_progress,
                 )
-
-                def _progress(step_i: int, total_i: Optional[int] = None) -> None:
-                    _job_update_progress(job_id, step=max(0, int(step_i)), total=total_i)
-
-                with call_lock:
-                    fn = getattr(backend, "upscale_image_with_progress", None)
-                    if callable(fn):
-                        asset = fn(req, progress_callback=_progress)
-                    else:
-                        asset = backend.upscale_image(req)
                 b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
                 _job_finish(job_id, ok=True, result={"created": int(time.time()), "data": [{"b64_json": b64}]})
             except OptionalDependencyMissingError as e:
@@ -4184,6 +4646,8 @@ if _HAS_MULTIPART:
         provider: Optional[str] = Form(None, description="Optional video provider/backend hint.", examples=["mlx-gen"]),
         model: Optional[str] = Form(None, description="Optional provider/model video id.", examples=["mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit"]),
         base_url: Optional[str] = Form(None, description="Optional request-level base URL override for OpenAI-compatible video backends."),
+        n: Optional[str] = Form("1", description="Number of videos to return. Clamped to 1..4.", examples=["2"]),
+        seeds: Optional[str] = Form(None, description="Optional comma-separated seed list. When supplied, `n` must match the number of seeds.", examples=["101,202"]),
         width: Optional[str] = Form(None, description="Requested video width in pixels.", examples=["1280"]),
         height: Optional[str] = Form(None, description="Requested video height in pixels.", examples=["704"]),
         size: Optional[str] = Form(None, description="Optional WIDTHxHEIGHT size selector.", examples=["1280x704"]),
@@ -4196,7 +4660,9 @@ if _HAS_MULTIPART:
         steps: Optional[str] = Form(None, description="Optional inference step count."),
         guidance_scale: Optional[str] = Form(None, description="Optional guidance scale."),
         guidance_2: Optional[str] = Form(None, description="Optional second-stage low-noise guidance scale for dual-transformer video models."),
+        flow_shift: Optional[str] = Form(None, description="Optional flow-shift control for video models that support it."),
         max_sequence_length: Optional[str] = Form(None, description="Optional backend-specific prompt token length cap."),
+        lora_adapters_json: Optional[str] = Form(None, description="Optional JSON array describing an ordered LoRA adapter stack."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters."),
     ) -> Dict[str, Any]:
         """Start an async image-to-video generation job with progress polling."""
@@ -4223,34 +4689,37 @@ if _HAS_MULTIPART:
             "steps": _coerce_int(steps),
             "guidance_scale": _coerce_float(guidance_scale),
             "guidance_2": _coerce_float(guidance_2),
+            "flow_shift": _coerce_float(flow_shift),
             "max_sequence_length": _coerce_int(max_sequence_length),
             "extra": _parse_extra_json_form(extra_json),
         }
+        count = _coerce_int(n) or 1
+        count = max(1, min(int(count), 4))
+        parsed_lora_adapters = _parse_lora_adapters_form(lora_adapters_json)
         request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
         width_i, height_i, fps_i, num_frames_i, extra = _video_generation_request_parts(payload, request_model=request_model)
         provider_api_key = _provider_api_key_from_request(request)
         if _is_remote_vision_request(request_model):
             _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
-        (
-            backend,
-            call_lock,
-            OptionalDependencyMissingError,
-            _ImageGenerationRequest,
-            _ImageEditRequest,
-            _VideoGenerationRequest,
-            ImageToVideoRequest,
-            _ImageUpscaleRequest,
-        ) = _unpack_resolved_backend(
-            _resolve_backend(
-                request_model,
-                base_url=base_url,
-                api_key=provider_api_key,
-            )
+        core, OptionalDependencyMissingError = _create_vision_generation_core(
+            request_model,
+            base_url=base_url,
+            api_key=provider_api_key,
         )
-        if ImageToVideoRequest is None:
+        if not core.vision.supports_image_to_video:
             raise HTTPException(status_code=501, detail="The selected vision backend does not expose ImageToVideoRequest.")
+        try:
+            planned_seeds = core.vision.plan_batch_seeds(
+                count=count,
+                seed=_coerce_int(seed),
+                seeds=_parse_seeds_form(seeds),
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e)) from e
 
-        total_steps = _coerce_int(steps) or num_frames_i
+        steps_i = _coerce_int(steps)
+        per_item_total = steps_i
+        total_steps = (int(per_item_total) * int(count)) if per_item_total is not None else None
         now_s = time.time()
         with _JOBS_LOCK:
             _jobs_cleanup_locked(now_s=now_s)
@@ -4275,42 +4744,69 @@ if _HAS_MULTIPART:
                     if job is not None:
                         job["state"] = "running"
                         job["updated_at_s"] = time.time()
+                data_items = []
+                for index, planned_seed in enumerate(planned_seeds):
+                    run_extra = dict(extra or {})
+                    offset = int(per_item_total) * index if per_item_total is not None else 0
 
-                run_extra = dict(extra or {})
+                    def _event_progress(raw_event: Any) -> None:
+                        event = _progress_event_payload(raw_event)
+                        derived_step = _coerce_int(event.get("step"))
+                        reported_total = _coerce_int(event.get("total_steps"))
+                        if derived_step is None:
+                            derived_step = _coerce_int(event.get("frame"))
+                            reported_total = _coerce_int(event.get("total_frames"))
+                        overall_step, derived_total = _batch_progress_state(
+                            item_index=index,
+                            batch_count=len(planned_seeds),
+                            explicit_item_total=per_item_total,
+                            reported_item_total=reported_total,
+                            raw_step=derived_step,
+                        )
+                        _job_update_progress(
+                            job_id,
+                            step=overall_step,
+                            total=total_steps if total_steps is not None else derived_total,
+                            event=event,
+                        )
 
-                def _event_progress(raw_event: Any) -> None:
-                    event = _progress_event_payload(raw_event)
-                    _job_update_progress(job_id, step=None, total=None, event=event)
+                    def _progress(step_i: int, total_i: Optional[int] = None) -> None:
+                        overall, derived_total = _batch_progress_state(
+                            item_index=index,
+                            batch_count=len(planned_seeds),
+                            explicit_item_total=per_item_total,
+                            reported_item_total=total_i,
+                            raw_step=step_i,
+                        )
+                        _job_update_progress(job_id, step=overall, total=total_steps if total_steps is not None else derived_total)
 
-                run_extra["on_progress"] = _event_progress
-                req = ImageToVideoRequest(
-                    image=bytes(image_bytes),
-                    prompt=str(prompt or ""),
-                    negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
-                    width=width_i,
-                    height=height_i,
-                    fps=fps_i,
-                    num_frames=num_frames_i,
-                    seed=_coerce_int(seed),
-                    steps=_coerce_int(steps),
-                    guidance_scale=_coerce_float(guidance_scale),
-                    guidance_2=_coerce_float(guidance_2),
-                    extra=run_extra,
-                )
-
-                def _progress(step_i: int, total_i: Optional[int] = None) -> None:
-                    s = max(0, int(step_i))
-                    t = _coerce_int(total_i) or total_steps
-                    _job_update_progress(job_id, step=s, total=t)
-
-                with call_lock:
-                    fn = getattr(backend, "image_to_video_with_progress", None)
-                    if callable(fn):
-                        asset = fn(req, progress_callback=_progress)
-                    else:
-                        asset = backend.image_to_video(req)
-                b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
-                _job_finish(job_id, ok=True, result={"created": int(time.time()), "data": [{"b64_json": b64}]})
+                    _job_update_progress(
+                        job_id,
+                        step=offset,
+                        total=total_steps,
+                        event=_unreported_progress_event("Waiting for provider response"),
+                    )
+                    asset = core.vision.image_to_video_asset(
+                        bytes(image_bytes),
+                        prompt=str(prompt or ""),
+                        negative_prompt=str(negative_prompt) if negative_prompt is not None else None,
+                        width=width_i,
+                        height=height_i,
+                        fps=fps_i,
+                        num_frames=num_frames_i,
+                        seed=planned_seed,
+                        steps=steps_i,
+                        guidance_scale=_coerce_float(guidance_scale),
+                        guidance_2=_coerce_float(guidance_2),
+                        flow_shift=_coerce_float(flow_shift),
+                        lora_adapters=parsed_lora_adapters or (),
+                        extra=run_extra,
+                        on_progress=_event_progress,
+                        progress_callback=_progress,
+                    )
+                    b64 = base64.b64encode(bytes(asset.data)).decode("ascii")
+                    data_items.append({"b64_json": b64})
+                _job_finish(job_id, ok=True, result={"created": int(time.time()), "data": data_items})
             except OptionalDependencyMissingError as e:
                 _job_finish(job_id, ok=False, error=str(e))
             except Exception as e:
@@ -4327,6 +4823,8 @@ if _HAS_MULTIPART:
         provider: Optional[str],
         model: Optional[str],
         base_url: Optional[str],
+        n: Optional[str],
+        seeds: Optional[str],
         width: Optional[str],
         height: Optional[str],
         size: Optional[str],
@@ -4339,7 +4837,9 @@ if _HAS_MULTIPART:
         steps: Optional[str],
         guidance_scale: Optional[str],
         guidance_2: Optional[str],
+        flow_shift: Optional[str],
         max_sequence_length: Optional[str],
+        lora_adapters_json: Optional[str],
         extra_json: Optional[str],
     ) -> Dict[str, Any]:
         image_bytes = await image.read()
@@ -4365,9 +4865,14 @@ if _HAS_MULTIPART:
             "steps": _coerce_int(steps),
             "guidance_scale": _coerce_float(guidance_scale),
             "guidance_2": _coerce_float(guidance_2),
+            "flow_shift": _coerce_float(flow_shift),
             "max_sequence_length": _coerce_int(max_sequence_length),
             "extra": _parse_extra_json_form(extra_json),
         }
+        count = _coerce_int(n) or 1
+        count = max(1, min(int(count), 4))
+        parsed_seeds = _parse_seeds_form(seeds)
+        parsed_lora_adapters = _parse_lora_adapters_form(lora_adapters_json)
         request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
         width_i, height_i, fps_i, num_frames_i, extra = _video_generation_request_parts(payload, request_model=request_model)
         provider_api_key = _provider_api_key_from_request(request)
@@ -4394,14 +4899,18 @@ if _HAS_MULTIPART:
                     "fps": fps_i,
                     "num_frames": num_frames_i,
                     "seed": _coerce_int(seed),
+                    "count": count,
+                    "seeds": parsed_seeds,
                     "steps": _coerce_int(steps),
                     "guidance_scale": _coerce_float(guidance_scale),
                     "guidance_2": _coerce_float(guidance_2),
+                    "flow_shift": _coerce_float(flow_shift),
+                    "lora_adapters": parsed_lora_adapters,
                     "format": "mp4",
                     "extra": extra,
                 },
             )
-            video_bytes_out = _first_generated_video_bytes(result)
+            video_bytes_out = _generated_video_bytes_list(result)
         except OptionalDependencyMissingError as e:
             raise HTTPException(status_code=501, detail=str(e)) from e
         except ValueError as e:
@@ -4410,7 +4919,10 @@ if _HAS_MULTIPART:
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e)) from e
-        return {"created": int(time.time()), "data": [{"b64_json": base64.b64encode(video_bytes_out).decode("ascii")}]}
+        return {
+            "created": int(time.time()),
+            "data": [{"b64_json": base64.b64encode(item).decode("ascii")} for item in video_bytes_out],
+        }
 
     @router.post("/videos/edits")
     @router.post("/videos/from-image", include_in_schema=False)
@@ -4421,6 +4933,8 @@ if _HAS_MULTIPART:
         provider: Optional[str] = Form(None, description="Optional video provider/backend hint.", examples=["mlx-gen"]),
         model: Optional[str] = Form(None, description="Optional provider/model video id.", examples=["mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit"]),
         base_url: Optional[str] = Form(None, description="Optional request-level base URL override for OpenAI-compatible video backends."),
+        n: Optional[str] = Form("1", description="Number of videos to return. Clamped to 1..4.", examples=["2"]),
+        seeds: Optional[str] = Form(None, description="Optional comma-separated seed list. When supplied, `n` must match the number of seeds.", examples=["101,202"]),
         width: Optional[str] = Form(None, description="Requested video width in pixels.", examples=["1280"]),
         height: Optional[str] = Form(None, description="Requested video height in pixels.", examples=["704"]),
         size: Optional[str] = Form(None, description="Optional WIDTHxHEIGHT size selector.", examples=["1280x704"]),
@@ -4433,7 +4947,9 @@ if _HAS_MULTIPART:
         steps: Optional[str] = Form(None, description="Optional inference step count."),
         guidance_scale: Optional[str] = Form(None, description="Optional guidance scale."),
         guidance_2: Optional[str] = Form(None, description="Optional second-stage low-noise guidance scale for dual-transformer video models."),
+        flow_shift: Optional[str] = Form(None, description="Optional flow-shift control for video models that support it."),
         max_sequence_length: Optional[str] = Form(None, description="Optional backend-specific prompt token length cap."),
+        lora_adapters_json: Optional[str] = Form(None, description="Optional JSON array describing an ordered LoRA adapter stack."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters."),
     ) -> Dict[str, Any]:
         """OpenAI-compatible image-to-video endpoint."""
@@ -4444,6 +4960,8 @@ if _HAS_MULTIPART:
             provider=provider,
             model=model,
             base_url=base_url,
+            n=n,
+            seeds=seeds,
             width=width,
             height=height,
             size=size,
@@ -4456,7 +4974,9 @@ if _HAS_MULTIPART:
             steps=steps,
             guidance_scale=guidance_scale,
             guidance_2=guidance_2,
+            flow_shift=flow_shift,
             max_sequence_length=max_sequence_length,
+            lora_adapters_json=lora_adapters_json,
             extra_json=extra_json,
         )
 
@@ -4469,6 +4989,8 @@ if _HAS_MULTIPART:
         image: UploadFile = File(..., description="Source image / first frame to animate."),
         model: Optional[str] = Form(None, description="Optional unprefixed model id for the provider route."),
         base_url: Optional[str] = Form(None, description="Optional request-level base URL override for OpenAI-compatible video backends."),
+        n: Optional[str] = Form("1", description="Number of videos to return. Clamped to 1..4.", examples=["2"]),
+        seeds: Optional[str] = Form(None, description="Optional comma-separated seed list. When supplied, `n` must match the number of seeds.", examples=["101,202"]),
         width: Optional[str] = Form(None, description="Requested video width in pixels.", examples=["1280"]),
         height: Optional[str] = Form(None, description="Requested video height in pixels.", examples=["704"]),
         size: Optional[str] = Form(None, description="Optional WIDTHxHEIGHT size selector.", examples=["1280x704"]),
@@ -4481,7 +5003,9 @@ if _HAS_MULTIPART:
         steps: Optional[str] = Form(None, description="Optional inference step count."),
         guidance_scale: Optional[str] = Form(None, description="Optional guidance scale."),
         guidance_2: Optional[str] = Form(None, description="Optional second-stage low-noise guidance scale for dual-transformer video models."),
+        flow_shift: Optional[str] = Form(None, description="Optional flow-shift control for video models that support it."),
         max_sequence_length: Optional[str] = Form(None, description="Optional backend-specific prompt token length cap."),
+        lora_adapters_json: Optional[str] = Form(None, description="Optional JSON array describing an ordered LoRA adapter stack."),
         extra_json: Optional[str] = Form(None, description="Optional JSON object string with backend-specific generation parameters."),
     ) -> Dict[str, Any]:
         return await _videos_edits_impl(
@@ -4491,6 +5015,8 @@ if _HAS_MULTIPART:
             provider=provider,
             model=model,
             base_url=base_url,
+            n=n,
+            seeds=seeds,
             width=width,
             height=height,
             size=size,
@@ -4503,7 +5029,9 @@ if _HAS_MULTIPART:
             steps=steps,
             guidance_scale=guidance_scale,
             guidance_2=guidance_2,
+            flow_shift=flow_shift,
             max_sequence_length=max_sequence_length,
+            lora_adapters_json=lora_adapters_json,
             extra_json=extra_json,
         )
 

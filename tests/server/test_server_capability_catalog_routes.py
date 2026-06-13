@@ -79,6 +79,19 @@ class _FakeVision:
     def list_provider_models(self, *, task=None):
         return [{"id": "image-test", "model": "fake-vision/image-test", "provider": "fake-vision", "task": task}]
 
+    def list_provider_adapters(self, *, model=None, task=None, provider=None):
+        return [
+            {
+                "id": "wan-style-pack",
+                "provider": provider or "mlx-gen",
+                "model": model,
+                "task": task,
+                "compatible_models": ["AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"],
+                "compatible_tasks": ["text_to_video", "image_to_video"],
+                "suggested_target_roles": ["transformer", "high_noise_transformer"],
+            }
+        ]
+
 
 class _FakeCore:
     voice = _FakeVoice()
@@ -236,6 +249,31 @@ def test_audio_provider_catalog_routes(monkeypatch):
     assert client.get("/v1/audio/speech/providers").json()["providers"] == ["fake-tts"]
     assert client.get("/v1/audio/transcriptions/providers").json()["providers"] == ["fake-stt"]
     assert client.get("/v1/voice/clone/providers").json()["providers"] == ["fake-clone"]
+
+
+def test_vision_adapter_catalog_route(monkeypatch):
+    from abstractcore.server import vision_endpoints
+
+    monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
+    monkeypatch.setattr(vision_endpoints, "_vision_catalog_core", lambda request, *, base_url=None, api_key=None: _FakeCore())
+
+    response = TestClient(app).get(
+        "/v1/vision/adapters",
+        params={
+            "provider": "mlx-gen",
+            "model": "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit",
+            "task": "text_to_video",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["backend_id"] == "fake-vision"
+    assert payload["count"] == 1
+    adapter = payload["adapters"][0]
+    assert adapter["id"] == "wan-style-pack"
+    assert adapter["provider"] == "mlx-gen"
+    assert adapter["compatible_models"] == ["AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"]
 
 
 def test_voice_clone_models_catalog_route(monkeypatch):

@@ -16,6 +16,13 @@ CAPABILITY_DEFAULTS_VERSION = 1
 
 CAPABILITY_KINDS = ("input", "output", "embedding", "rerank")
 CAPABILITY_MODALITIES = ("text", "image", "video", "voice", "sound", "music", "scene3d")
+CAPABILITY_ROUTE_TASKS = (
+    "text_to_image",
+    "image_to_image",
+    "image_upscale",
+    "text_to_video",
+    "image_to_video",
+)
 
 _KIND_ALIASES = {
     "in": "input",
@@ -49,6 +56,25 @@ _MODALITY_ALIASES = {
     "scene_3d": "scene3d",
     "scene-3d": "scene3d",
     "scene": "scene3d",
+}
+
+_TASK_ALIASES = {
+    "t2i": "text_to_image",
+    "image_generation": "text_to_image",
+    "generate_image": "text_to_image",
+    "i2i": "image_to_image",
+    "image_edit": "image_to_image",
+    "edit_image": "image_to_image",
+    "upscale": "image_upscale",
+    "upscaler": "image_upscale",
+    "upscale_image": "image_upscale",
+    "image_upscaling": "image_upscale",
+    "t2v": "text_to_video",
+    "video_generation": "text_to_video",
+    "generate_video": "text_to_video",
+    "i2v": "image_to_video",
+    "video_from_image": "image_to_video",
+    "image_video": "image_to_video",
 }
 
 
@@ -145,8 +171,22 @@ def normalize_modality(value: Any) -> str:
     return raw
 
 
-def capability_route_key(kind: Any, modality: Any) -> str:
-    return f"{normalize_kind(kind)}.{normalize_modality(modality)}"
+def normalize_task(value: Any) -> str:
+    raw = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    raw = _TASK_ALIASES.get(raw, raw)
+    if raw not in CAPABILITY_ROUTE_TASKS:
+        raise ValueError(
+            f"Unknown capability route task: {value!r}. "
+            "Expected text_to_image, image_to_image, image_upscale, text_to_video, or image_to_video."
+        )
+    return raw
+
+
+def capability_route_key(kind: Any, modality: Any, task: Any = None) -> str:
+    base = f"{normalize_kind(kind)}.{normalize_modality(modality)}"
+    if task is None or str(task or "").strip() == "":
+        return base
+    return f"{base}.{normalize_task(task)}"
 
 
 def split_capability_route(value: Any, modality: Any = None) -> Tuple[str, str]:
@@ -161,6 +201,33 @@ def split_capability_route(value: Any, modality: Any = None) -> Tuple[str, str]:
         left, right = raw.split(":", 1)
         return normalize_kind(left), normalize_modality(right)
     raise ValueError("Capability route must be written as kind.modality, for example output.text.")
+
+
+def split_capability_default_route(value: Any, modality: Any = None, task: Any = None) -> Tuple[str, str, Optional[str]]:
+    """Split a persisted capability default route.
+
+    Defaults may be broad (`output.image`) or task-specific
+    (`output.image.image_to_image`). Model capability routes intentionally keep
+    using `split_capability_route` so static model metadata stays broad.
+    """
+
+    if modality is not None:
+        normalized_task = normalize_task(task) if task is not None and str(task or "").strip() else None
+        return normalize_kind(value), normalize_modality(modality), normalized_task
+
+    raw = str(value or "").strip()
+    separator = "." if "." in raw else ":" if ":" in raw else ""
+    if not separator:
+        raise ValueError("Capability route must be written as kind.modality, for example output.text.")
+    parts = [part.strip() for part in raw.replace(":", ".").split(".") if part.strip()]
+    if len(parts) == 2:
+        return normalize_kind(parts[0]), normalize_modality(parts[1]), None
+    if len(parts) == 3:
+        return normalize_kind(parts[0]), normalize_modality(parts[1]), normalize_task(parts[2])
+    raise ValueError(
+        "Capability default route must be written as kind.modality or kind.modality.task, "
+        "for example output.image.image_to_image."
+    )
 
 
 def clean_capability_route_default(value: Any) -> CapabilityRouteDefault:
@@ -192,8 +259,8 @@ def capability_defaults_from_dict(value: Any) -> CapabilityDefaultsConfig:
     routes: Dict[str, CapabilityRouteDefault] = {}
     for key_raw, route_raw in dict(routes_raw or {}).items():
         try:
-            kind, modality = split_capability_route(key_raw)
-            key = capability_route_key(kind, modality)
+            kind, modality, task = split_capability_default_route(key_raw)
+            key = capability_route_key(kind, modality, task)
             route = clean_capability_route_default(route_raw)
         except Exception:
             continue
@@ -218,7 +285,12 @@ def iter_capability_default_specs() -> Iterable[CapabilityDefaultSpec]:
         ("input", "scene3d", "3D Scene Input", "scene3d_understanding", "abstract3d", {}),
         ("output", "text", "Text Output", "text_generation", None, {}),
         ("output", "image", "Image Output", "image_generation", "abstractvision", {}),
+        ("output", "image.text_to_image", "Image Generation", "text_to_image", "abstractvision", {}),
+        ("output", "image.image_to_image", "Image Edit", "image_to_image", "abstractvision", {}),
+        ("output", "image.image_upscale", "Image Restore / Upscale", "image_upscale", "abstractvision", {"resolution": "2x", "softness": 0.25}),
         ("output", "video", "Video Output", "video_generation", "abstractvideo or abstractvision", {}),
+        ("output", "video.text_to_video", "Video Generation", "text_to_video", "abstractvideo or abstractvision", {}),
+        ("output", "video.image_to_video", "Image To Video", "image_to_video", "abstractvideo or abstractvision", {}),
         ("output", "voice", "Voice Output", "text_to_speech", "abstractvoice", {"voice": "default"}),
         ("output", "sound", "Sound Effects Output", "sound_generation", "abstractsound or abstractmusic", {}),
         ("output", "music", "Music Output", "music_generation", "abstractmusic", {}),
@@ -227,9 +299,12 @@ def iter_capability_default_specs() -> Iterable[CapabilityDefaultSpec]:
         ("embedding", "image", "Image Embeddings", "image_embedding", "abstractcore.embeddings or abstractvision", {}),
         ("rerank", "text", "Text Rerank", "text_rerank", "future reranker manager", {}),
     ]
-    for kind, modality, label, task, package_hint, option_examples in specs:
+    for kind, modality_raw, label, task, package_hint, option_examples in specs:
+        modality, route_task = (
+            str(modality_raw).split(".", 1) if "." in str(modality_raw) else (str(modality_raw), None)
+        )
         yield CapabilityDefaultSpec(
-            key=capability_route_key(kind, modality),
+            key=capability_route_key(kind, modality, route_task),
             kind=kind,
             modality=modality,
             label=label,

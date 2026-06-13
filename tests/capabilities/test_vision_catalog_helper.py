@@ -220,7 +220,7 @@ def test_local_vision_cache_catalog_surfaces_cached_mlx_gen_video_only_model(mon
     hf_dir = tmp_path / "hf"
     local_dir = tmp_path / "local"
     lmstudio_dir = tmp_path / "lmstudio"
-    wan_snapshot = hf_dir / "models--Wan-AI--Wan2.2-TI2V-5B-Diffusers" / "snapshots" / "wan"
+    wan_snapshot = hf_dir / "models--AbstractFramework--wan2.2-ti2v-5b-diffusers-8bit" / "snapshots" / "wan"
     (wan_snapshot / "transformer").mkdir(parents=True)
     (wan_snapshot / "transformer" / "model.safetensors").write_bytes(b"x")
     (wan_snapshot.parents[1] / "refs").mkdir()
@@ -239,9 +239,9 @@ def test_local_vision_cache_catalog_surfaces_cached_mlx_gen_video_only_model(mon
                     key="wan2.2-ti2v-5b",
                     engine="mlx-gen",
                     target="mlx",
-                    bits=16,
-                    repo_id="Wan-AI/Wan2.2-TI2V-5B-Diffusers",
-                    source="official",
+                    bits=8,
+                    repo_id="AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit",
+                    source="abstractframework-mlx-gen",
                 ),
             ],
         ),
@@ -267,8 +267,8 @@ def test_local_vision_cache_catalog_surfaces_cached_mlx_gen_video_only_model(mon
 
     assert payload["cached_total"] == 1
     assert payload["models"][0]["provider"] == "mlx-gen"
-    assert payload["models"][0]["id"] == "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
-    assert payload["models"][0]["bits"] == 16
+    assert payload["models"][0]["id"] == "AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit"
+    assert payload["models"][0]["bits"] == 8
     assert payload["models"][0]["tasks"] == ["image_to_video", "text_to_video"]
 
 

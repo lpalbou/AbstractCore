@@ -2,8 +2,8 @@
 
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
-Last updated: 2026-06-04
-Package version: 2.13.35
+Last updated: 2026-06-13
+Package version: 2.13.36
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -660,8 +660,8 @@ AbstractCore supports optional capability plugins discovered via Python entry po
 - install `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
 - install `abstractvision` -> enables `llm.vision` (generative images/video through OpenAI-compatible endpoints or local backends such as MLX-Gen)
 - install `abstractcore[music]` -> enables `llm.music` and music output routing for text-to-music through `abstractmusic`
-- current plugin floors in this source: `abstractvoice>=0.10.17`, `abstractvision>=0.3.22`, `abstractmusic>=0.1.13`; `llm.vision` exposes `t2i`, `i2i`, `upscale_image`, `t2v`, and `i2v`, supports SeedVR2 image upscaling and typed Wan A14B `guidance_2` video controls, and `generate(..., output=...)` forwards progress callbacks for generated image/video outputs
-- SeedVR2 upscaling can be called directly with `llm.vision.upscale_image("input.png", provider="mlx-gen", model="AbstractFramework/seedvr2-3b-8bit", scale="2x", on_progress=on_progress)` or through the unified output route with `llm.generate(media={"type": "image", "path": "input.png", "role": "source"}, output={"task": "image_upscale", "provider": "mlx-gen", "model": "AbstractFramework/seedvr2-3b-8bit", "scale": "2x"})`; canonical q8/q4 SeedVR2 package ids do not need runtime `quantize`, official/source weights can use SeedVR2 runtime `quantize`, and prepared local folders can be passed as the model value when available.
+- current plugin floors in this source: `abstractvoice>=0.10.17`, `abstractvision>=0.3.26`, `abstractmusic>=0.1.13`; `llm.vision` exposes `t2i`, `i2i`, `upscale_image`, `t2v`, and `i2v`, supports `llm.vision.list_provider_adapters(...)`, first-class batch `count` / `seeds` delegation, SeedVR2 image upscaling, typed Wan A14B `guidance_2`, typed Wan TI2V `flow_shift`, and `generate(..., output=...)` forwards progress callbacks for generated image/video outputs
+- SeedVR2 upscaling can be called directly with `llm.vision.upscale_image("input.png", provider="mlx-gen", model="AbstractFramework/seedvr2-3b-8bit", resolution="2x", softness=0.25, on_progress=on_progress)` or through the unified output route with `llm.generate(media={"type": "image", "path": "input.png", "role": "source"}, output={"task": "image_upscale", "provider": "mlx-gen", "model": "AbstractFramework/seedvr2-3b-8bit", "resolution": "2x", "softness": 0.25})`; canonical q8/q4 SeedVR2 package ids do not need runtime `quantize`, official/source weights can use SeedVR2 runtime `quantize`, and prepared local folders can be passed as the model value when available.
 
 Server note:
 - the server can optionally expose `/v1/images/*`, `/v1/videos/*`, and `/v1/vision/*` model/control surfaces (requires `abstractvision` for local backends; remote OpenAI-compatible proxy paths can run through the server)
@@ -849,7 +849,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \\
 
 ### Optional images/audio endpoints
 
-- Images/video: `POST /v1/images/generations`, `POST /v1/images/edits`, `POST /v1/images/upscale`, `POST /v1/videos/generations`, `POST /v1/videos/edits`, and async `/v1/vision/jobs/images/*` / `/v1/vision/jobs/videos/*` (requires `abstractvision` for local backends; global routes accept `model`, optional `provider`, and optional `base_url`; image edits accept repeatable multipart `reference_images`; exact MLX-Gen ids such as `mlx-gen/AbstractFramework/qwen-image-2512-4bit`, `mlx-gen/AbstractFramework/seedvr2-3b-8bit`, `mlx-gen/AbstractFramework/seedvr2-7b-8bit`, `mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`, and `mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit` are valid when cached; SeedVR2 upscale routes accept `scale` or `resolution` plus optional runtime `quantize`)
+- Images/video: `POST /v1/images/generations`, `POST /v1/images/edits`, `POST /v1/images/upscale`, `POST /v1/videos/generations`, `POST /v1/videos/edits`, `GET /v1/vision/adapters`, and async `/v1/vision/jobs/images/*` / `/v1/vision/jobs/videos/*` (requires `abstractvision` for local backends; global routes accept `model`, optional `provider`, and optional `base_url`; image edits accept repeatable multipart `reference_images`; image/video generation and edit routes accept batch `n` / `seeds`, typed `lora_adapters` or multipart `lora_adapters_json`, and video `guidance_2` / `flow_shift`; exact MLX-Gen ids such as `mlx-gen/AbstractFramework/qwen-image-2512-4bit`, `mlx-gen/AbstractFramework/seedvr2-3b-8bit`, `mlx-gen/AbstractFramework/seedvr2-7b-8bit`, `mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`, and `mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit` are valid when cached; SeedVR2 upscale routes default to `resolution=2x` and `softness=0.25`, accept `scale` or `resolution`, and support optional runtime `quantize`)
 - Audio: `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`, `POST /v1/voice/clone` (requires an audio/voice plugin; commonly `abstractvoice`; global routes accept `model`, optional `provider`, and optional `base_url`)
 
 If a required plugin/backend is missing, the server returns `501` with actionable messaging.
@@ -6778,8 +6778,10 @@ target `output.text` are accepted for compatibility, but persist to
 
 ### Capability Routing Defaults
 
-Capability route defaults use `kind.modality` keys and store a small provider
-target: `provider`, `model`, optional `base_url`, and provider/plugin `options`.
+Capability route defaults use `kind.modality` keys, with optional
+`kind.modality.task` keys for generated-media defaults that need finer routing.
+Each route stores a small provider target: `provider`, `model`, optional
+`base_url`, and provider/plugin `options`.
 
 Route kinds:
 
@@ -6800,6 +6802,20 @@ abstractcore config set-default output.voice \
   --provider supertonic \
   --model supertonic-3 \
   --option voice=M1
+
+abstractcore config set-default output.image.image_to_image \
+  --provider mlx-gen \
+  --model AbstractFramework/qwen-image-edit-2511-4bit
+
+abstractcore config set-default output.image.image_upscale \
+  --provider mlx-gen \
+  --model AbstractFramework/seedvr2-3b-8bit \
+  --option resolution=2x \
+  --option softness=0.25
+
+abstractcore config set-default output.video.image_to_video \
+  --provider mlx-gen \
+  --model AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit
 
 abstractcore config defaults
 
@@ -7837,7 +7853,7 @@ when the backend reports rich events.
 Image upscaling uses the same async job model through
 `POST /v1/vision/jobs/images/upscale`. Send multipart fields such as
 `provider=mlx-gen`, `model=AbstractFramework/seedvr2-3b-8bit`,
-`image=@./input.png`, and `scale=2x`, then poll
+`image=@./input.png`, `resolution=2x`, and `softness=0.25`, then poll
 `GET /v1/vision/jobs/{job_id}`. MLX-Gen reports denoise-step progress in
 `progress.last_event`; for SeedVR2, use `AbstractFramework/seedvr2-3b-8bit`
 by default, `AbstractFramework/seedvr2-7b-8bit` when memory allows, or the
@@ -7853,7 +7869,8 @@ direct_png = llm.vision.upscale_image(
     "input.png",
     provider="mlx-gen",
     model="AbstractFramework/seedvr2-3b-8bit",
-    scale="2x",
+    resolution="2x",
+    softness=0.25,
     on_progress=on_progress,
 )
 
@@ -7864,7 +7881,8 @@ resp = llm.generate(
         "task": "image_upscale",
         "provider": "mlx-gen",
         "model": "AbstractFramework/seedvr2-3b-8bit",
-        "scale": "2x",
+        "resolution": "2x",
+        "softness": 0.25,
     },
 )
 png = resp.outputs["image"][0].data

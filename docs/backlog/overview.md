@@ -11,7 +11,7 @@ Use this file as the entry point for planning status, recommended next work, and
 
 - Planned: 13
 - Proposed: 11
-- Completed: 17
+- Completed: 19
 - Deprecated: 3
 - Recurrent: 0
 
@@ -25,7 +25,6 @@ Use this file as the entry point for planning status, recommended next work, and
    but it must be done with strict keying and tenant/auth namespace rules.
 3. `planned/2026-05-18_mlx-provider-continuous-batching.md`
    Improve local text throughput and latency via continuous batching/scheduler safety for MLX.
-
 ## Planned ledger
 
 | Item | Notes |
@@ -81,6 +80,8 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/0794_generic_capability_plugin_contract.md` | `completed/0794_generic_capability_plugin_contract.md` | 2026-05-21 | Done | Generic capability plugin contract (discovery + optional residency + host text service) is implemented and validated. | `tests/test_capabilities_registry.py` + server capability route + OpenAPI tests. |
 | `planned/788-response.md` | `completed/788-response.md` | 2026-05-21 | Done | Vision image routing mismatch is resolved (provider/model normalization and provider-scoped routes). | Completion report cites current server routing helpers; hermetic suite coverage. |
 | `planned/0805_permissive_pdf_document_media_dependencies.md` | `completed/0805_permissive_pdf_document_media_dependencies.md` | 2026-06-05 | Done | Core PDF/media defaults now use `pypdf`; PyMuPDF-family packages are isolated under `pdf-pymupdf-commercial`. | Focused py_compile, packaging/import-safety, PDF compatibility, and media processor tests recorded in item. |
+| `planned/0807_task_specific_multimodal_default_routes.md` | `completed/0807_task_specific_multimodal_default_routes.md` | 2026-06-13 | Done | Core now supports task-specific generated-media defaults for text-to-image, image edit, image upscale, text-to-video, and image-to-video. | `tests/config/test_capability_defaults_config.py`, `tests/config/test_capability_defaults_server.py`, and focused py_compile. |
+| `planned/0808_vision_adapter_discovery_and_batch_serving.md` | `completed/0808_vision_adapter_discovery_and_batch_serving.md` | 2026-06-13 | Done | Core now exposes Vision adapter discovery, stacked LoRA fields, and multi-seed batch serving without duplicating Vision compatibility truth. | Focused AbstractVision plugin tests plus Core capability/output/server suites. |
 
 ## Deprecated ledger
 

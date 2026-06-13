@@ -34,6 +34,49 @@ def test_capability_defaults_persist_provider_model_base_url_and_options(monkeyp
     assert route["source"] == "abstractcore.capability_defaults"
 
 
+def test_task_specific_generative_capability_defaults_are_distinct(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    manager = ConfigurationManager()
+    assert manager.set_capability_default("output.image.text_to_image", provider="mlx-gen", model="AbstractFramework/z-image-turbo-8bit")
+    assert manager.set_capability_default("output.image.image_to_image", provider="mlx-gen", model="AbstractFramework/qwen-image-edit-2511-4bit")
+    assert manager.set_capability_default(
+        "output.image.image_upscale",
+        provider="mlx-gen",
+        model="AbstractFramework/seedvr2-3b-8bit",
+        options={"resolution": "2x", "softness": 0.25},
+    )
+    assert manager.set_capability_default("output.video.text_to_video", provider="mlx-gen", model="AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit")
+    assert manager.set_capability_default("output.video.image_to_video", provider="mlx-gen", model="AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit")
+
+    reloaded = ConfigurationManager()
+    t2i = reloaded.get_capability_default("output", "image", "text_to_image")
+    i2i = reloaded.get_capability_default("output", "image", "image_to_image")
+    upscale = reloaded.get_capability_default("output", "image", "image_upscale")
+    t2v = reloaded.get_capability_default("output", "video", "text_to_video")
+    i2v = reloaded.get_capability_default("output", "video", "image_to_video")
+    broad_image = reloaded.get_capability_default("output", "image")
+
+    assert t2i["key"] == "output.image.text_to_image"
+    assert t2i["model"] == "AbstractFramework/z-image-turbo-8bit"
+    assert i2i["key"] == "output.image.image_to_image"
+    assert i2i["model"] == "AbstractFramework/qwen-image-edit-2511-4bit"
+    assert upscale["key"] == "output.image.image_upscale"
+    assert upscale["model"] == "AbstractFramework/seedvr2-3b-8bit"
+    assert upscale["options"] == {"resolution": "2x", "softness": 0.25}
+    assert t2v["key"] == "output.video.text_to_video"
+    assert i2v["key"] == "output.video.image_to_video"
+    assert broad_image["key"] == "output.image"
+    assert broad_image["source"] == "not_configured"
+
+    rows = {row["key"]: row for row in reloaded.list_capability_defaults()}
+    assert rows["output.image.text_to_image"]["model"] == "AbstractFramework/z-image-turbo-8bit"
+    assert rows["output.image.image_to_image"]["label"] == "Image Edit"
+    assert rows["output.image.image_upscale"]["options"] == {"resolution": "2x", "softness": 0.25}
+    assert rows["output.video.text_to_video"]["model"] == "AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit"
+    assert rows["output.video.image_to_video"]["model"] == "AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit"
+
+
 def test_configuration_manager_supports_scoped_config_files_without_env_mutation(monkeypatch, tmp_path) -> None:
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)

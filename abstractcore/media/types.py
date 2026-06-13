@@ -368,6 +368,7 @@ FILE_TYPE_MAPPINGS = {
     # Video
     'mp4': MediaType.VIDEO, 'avi': MediaType.VIDEO, 'mov': MediaType.VIDEO,
     'mkv': MediaType.VIDEO, 'webm': MediaType.VIDEO, 'wmv': MediaType.VIDEO,
+    'mpg': MediaType.VIDEO, 'mpeg': MediaType.VIDEO, 'm4v': MediaType.VIDEO,
 }
 
 

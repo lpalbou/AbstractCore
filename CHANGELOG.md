@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.36] - 2026-06-13
+
+### Added
+- **Vision adapter discovery**: added `llm.vision.list_provider_adapters(...)` plus `GET /v1/vision/adapters` so Core can surface installed compatible LoRA adapters for a selected provider/model/task route without duplicating AbstractVision compatibility truth.
+- **Batch generated media through Core**: added first-class batch delegation for `t2i`, `i2i`, `t2v`, and `i2v` through the Python capability facade, unified `generate(..., output=...)`, sync media routes, and async vision jobs.
+
+### Changed
+- **Vision plugin floor**: raised AbstractVision integration requirements to `abstractvision>=0.3.26` so Core installs pick up the released plugin exposure for adapter discovery and batch request delegation.
+- **Generated media contract**: image/video output specs now preserve `count`/`n`, explicit `seeds`, stacked `lora_adapters`, `flow_shift`, and typed `guidance_2` across the full Core facade/server boundary instead of flattening them into generic extras or repeating the same singular call.
+- **Server async vision boundary**: `/v1/vision/jobs/images/*` and `/v1/vision/jobs/videos/*` now delegate batch seed planning, backend request construction, and progress-method selection through `ServerVisionFacade`, so the server keeps HTTP/job orchestration while AbstractVision integration remains the source of request semantics.
+
+### Fixed
+- **Server batch seed planning**: `/v1/images/*`, `/v1/videos/*`, and async `/v1/vision/jobs/*` routes now return all requested outputs and honor explicit seed lists instead of reusing one singular generation path.
+- **Remote/local bridge parity**: the server-local capability bridge now preserves typed LoRA stacks and task-specific video controls for both direct local backends and OpenAI-compatible proxy paths.
+- **Async progress totals without explicit steps**: async image, image-edit, text-to-video, and image-to-video jobs now preserve backend-reported denoise totals when the caller omits `steps`, instead of pre-committing misleading totals from request defaults or frame counts.
+
 ## [2.13.35] - 2026-06-07
 
 ### Added

@@ -342,6 +342,14 @@ class VisionCapability(Protocol):
 
     def list_provider_models(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]: ...
 
+    def list_provider_adapters(
+        self,
+        *,
+        model: Optional[str] = None,
+        task: Optional[str] = None,
+        provider: Optional[str] = None,
+    ) -> List[Dict[str, Any]]: ...
+
     def t2i(
         self,
         prompt: str,
@@ -352,6 +360,19 @@ class VisionCapability(Protocol):
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> BytesOrArtifactRef: ...
+
+    def t2i_batch(
+        self,
+        prompt: str,
+        *,
+        artifact_store: Optional[ArtifactStoreLike] = None,
+        run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        count: int = 1,
+        seeds: Optional[Sequence[int]] = None,
+        **kwargs: Any,
+    ) -> List[BytesOrArtifactRef]: ...
 
     def i2i(
         self,
@@ -365,6 +386,21 @@ class VisionCapability(Protocol):
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> BytesOrArtifactRef: ...
+
+    def i2i_batch(
+        self,
+        prompt: str,
+        image: Union[bytes, ArtifactRef, str],
+        *,
+        mask: Optional[Union[bytes, ArtifactRef, str]] = None,
+        artifact_store: Optional[ArtifactStoreLike] = None,
+        run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        count: int = 1,
+        seeds: Optional[Sequence[int]] = None,
+        **kwargs: Any,
+    ) -> List[BytesOrArtifactRef]: ...
 
     def upscale_image(
         self,
@@ -388,6 +424,19 @@ class VisionCapability(Protocol):
         **kwargs: Any,
     ) -> BytesOrArtifactRef: ...
 
+    def t2v_batch(
+        self,
+        prompt: str,
+        *,
+        artifact_store: Optional[ArtifactStoreLike] = None,
+        run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        count: int = 1,
+        seeds: Optional[Sequence[int]] = None,
+        **kwargs: Any,
+    ) -> List[BytesOrArtifactRef]: ...
+
     def i2v(
         self,
         image: Union[bytes, ArtifactRef, str],
@@ -399,6 +448,20 @@ class VisionCapability(Protocol):
         metadata: Optional[Dict[str, Any]] = None,
         **kwargs: Any,
     ) -> BytesOrArtifactRef: ...
+
+    def i2v_batch(
+        self,
+        image: Union[bytes, ArtifactRef, str],
+        *,
+        prompt: Optional[str] = None,
+        artifact_store: Optional[ArtifactStoreLike] = None,
+        run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        count: int = 1,
+        seeds: Optional[Sequence[int]] = None,
+        **kwargs: Any,
+    ) -> List[BytesOrArtifactRef]: ...
 
 
 class MusicCapability(Protocol):

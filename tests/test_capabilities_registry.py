@@ -89,6 +89,11 @@ def test_plugin_registration_and_backend_resolution(monkeypatch):
     assert llm.vision.list_provider_models(task="text_to_image") == [
         {"id": "image-test", "task": "text_to_image"}
     ]
+    assert llm.vision.list_provider_adapters(
+        model="AbstractFramework/wan2.2-ti2v-5b-diffusers-8bit",
+        task="text_to_video",
+        provider="mlx-gen",
+    )[0]["provider"] == "mlx-gen"
     assert llm.music.t2m("hello") == b"mp3-bytes"
     assert llm.music.generate("hello", duration_s=4) == b"mp3-bytes"
 
@@ -363,6 +368,16 @@ def _make_fake_plugin_ep():
 
             def list_provider_models(self, *, task=None):
                 return [{"id": "image-test", "task": task}]
+
+            def list_provider_adapters(self, *, model=None, task=None, provider=None):
+                return [
+                    {
+                        "id": "owner/wan-lora",
+                        "provider": provider or "mlx-gen",
+                        "model": model,
+                        "compatible_tasks": [task] if task else [],
+                    }
+                ]
 
             def t2i(self, prompt: str, **kwargs):
                 return b"png-bytes"
