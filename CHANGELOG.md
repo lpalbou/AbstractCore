@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.37] - 2026-06-13
+
+### Fixed
+- **Release packaging guard**: `tests/test_packaging_extras.py` now verifies AbstractVision extra wiring by dependency prefix instead of hard-coding one historical plugin floor, so AbstractCore patch releases no longer fail CI when the released AbstractVision minimum is bumped intentionally.
+
 ## [2.13.36] - 2026-06-13
 
 ### Added

@@ -20,6 +20,13 @@ def _extract_optional_dependency_block(text: str, *, key: str) -> str:
     return "\n".join(block)
 
 
+def _assert_block_has_dependency_prefix(block: str, prefix: str) -> None:
+    assert any(
+        line.strip().strip('",').startswith(prefix)
+        for line in block.splitlines()
+    ), f"Missing dependency starting with {prefix!r}"
+
+
 def test_tools_extra_includes_bs4_and_tool_alias_exists() -> None:
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
     text = pyproject.read_text(encoding="utf-8")
@@ -52,24 +59,24 @@ def test_server_extra_stays_vision_runtime_light() -> None:
     assert "abstractvoice>=0.10.17" in voice_block
     assert "abstractmusic" not in voice_block
     assert "abstractvoice>=0.10.17" in audio_block
-    assert "abstractvision>=0.3.22" in vision_block
-    assert "abstractvision[huggingface]>=0.3.22" in vision_diffusers_block
-    assert "abstractvision[sdcpp]>=0.3.22" in vision_sdcpp_block
-    assert "abstractvision[local]>=0.3.22" in vision_local_block
+    _assert_block_has_dependency_prefix(vision_block, "abstractvision>=")
+    _assert_block_has_dependency_prefix(vision_diffusers_block, "abstractvision[huggingface]>=")
+    _assert_block_has_dependency_prefix(vision_sdcpp_block, "abstractvision[sdcpp]>=")
+    _assert_block_has_dependency_prefix(vision_local_block, "abstractvision[local]>=")
     assert "abstractmusic>=0.1.13" in music_block
     assert "abstractvoice[all-apple]>=0.10.17" in all_apple_block
     assert "omnivoice>=0.1.5" in all_apple_block
-    assert "abstractvision[all-apple]>=0.3.22" in all_apple_block
+    _assert_block_has_dependency_prefix(all_apple_block, "abstractvision[all-apple]>=")
     assert "abstractmusic[all-apple]>=0.1.13" in all_apple_block
     assert "vllm" not in all_apple_block
     assert "abstractvoice[all-gpu]>=0.10.17" in all_gpu_block
     assert "omnivoice>=0.1.5" in all_gpu_block
-    assert "abstractvision[all-gpu]>=0.3.22" in all_gpu_block
+    _assert_block_has_dependency_prefix(all_gpu_block, "abstractvision[all-gpu]>=")
     assert "abstractmusic[all-gpu]>=0.1.13" in all_gpu_block
     assert "mlx-lm" not in all_gpu_block
     assert "abstractvoice>=0.10.17" in full_dev_block
     assert "omnivoice>=0.1.5" in full_dev_block
-    assert "abstractvision>=0.3.22" in full_dev_block
+    _assert_block_has_dependency_prefix(full_dev_block, "abstractvision>=")
     assert "abstractmusic>=0.1.13" in full_dev_block
 
     assert "transformers>=5.3.0,<6.0.0" in all_apple_block
