@@ -60,7 +60,7 @@ pip install "abstractcore[voice]"   # enables llm.voice / llm.audio via remote-l
 pip install "abstractcore[vision]"  # enables llm.vision via abstractvision (generative vision)
 ```
 
-For `abstractvoice` 0.10.17+, the base AbstractCore plugin path can install on
+For `abstractvoice` 0.10.18+, the base AbstractCore plugin path can install on
 Python 3.9 and does not install OmniVoice, torch, or torchaudio. Python 3.10+ is
 recommended. Local voice engines and voice-clone backends are part of explicit
 local aggregate profiles such as `abstractcore[all-apple]` and

@@ -316,7 +316,7 @@ Notes:
 - **Images**: use a vision-capable model, or configure **vision fallback** for text-only models (`abstractcore --config`; `abstractcore --set-vision-provider PROVIDER MODEL`).
 - **Video**: `video_policy="auto"` (default) uses native video when supported, otherwise samples frames (requires `ffmpeg`/`ffprobe`) and routes them through image/vision handling (so you still need a vision-capable model or vision fallback configured).
 - **Audio**: use an audio-capable model, or set `audio_policy="auto"`/`"speech_to_text"` and install `abstractcore[voice]` for speech-to-text.
-  `abstractvoice` 0.10.17+ can install its base plugin path on Python 3.9 without OmniVoice, torch, or torchaudio. Local voice engines and clone backends are part of explicit local aggregate profiles.
+  `abstractvoice` 0.10.18+ can install its base plugin path on Python 3.9 without OmniVoice, torch, or torchaudio. Local voice engines and clone backends are part of explicit local aggregate profiles.
 
 Configure defaults (optional):
 

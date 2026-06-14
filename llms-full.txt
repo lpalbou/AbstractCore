@@ -3,7 +3,7 @@
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
 Last updated: 2026-06-13
-Package version: 2.13.37
+Package version: 2.13.38
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -660,7 +660,7 @@ AbstractCore supports optional capability plugins discovered via Python entry po
 - install `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
 - install `abstractvision` -> enables `llm.vision` (generative images/video through OpenAI-compatible endpoints or local backends such as MLX-Gen)
 - install `abstractcore[music]` -> enables `llm.music` and music output routing for text-to-music through `abstractmusic`
-- current plugin floors in this source: `abstractvoice>=0.10.17`, `abstractvision>=0.3.26`, `abstractmusic>=0.1.13`; `llm.vision` exposes `t2i`, `i2i`, `upscale_image`, `t2v`, and `i2v`, supports `llm.vision.list_provider_adapters(...)`, first-class batch `count` / `seeds` delegation, SeedVR2 image upscaling, typed Wan A14B `guidance_2`, typed Wan TI2V `flow_shift`, and `generate(..., output=...)` forwards progress callbacks for generated image/video outputs
+- current plugin floors in this source: `abstractvoice>=0.10.18`, `abstractvision>=0.3.26`, `abstractmusic>=0.1.13`; `llm.vision` exposes `t2i`, `i2i`, `upscale_image`, `t2v`, and `i2v`, supports `llm.vision.list_provider_adapters(...)`, first-class batch `count` / `seeds` delegation, SeedVR2 image upscaling, typed Wan A14B `guidance_2`, typed Wan TI2V `flow_shift`, and `generate(..., output=...)` forwards progress callbacks for generated image/video outputs
 - SeedVR2 upscaling can be called directly with `llm.vision.upscale_image("input.png", provider="mlx-gen", model="AbstractFramework/seedvr2-3b-8bit", resolution="2x", softness=0.25, on_progress=on_progress)` or through the unified output route with `llm.generate(media={"type": "image", "path": "input.png", "role": "source"}, output={"task": "image_upscale", "provider": "mlx-gen", "model": "AbstractFramework/seedvr2-3b-8bit", "resolution": "2x", "softness": 0.25})`; canonical q8/q4 SeedVR2 package ids do not need runtime `quantize`, official/source weights can use SeedVR2 runtime `quantize`, and prepared local folders can be passed as the model value when available.
 
 Server note:

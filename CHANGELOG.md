@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.38] - 2026-06-14
+
+### Added
+- **Workspace-path utilities**: added shared `abstractcore.utils.workspace_paths`
+  helpers for canonical workspace path normalization, mount alias generation,
+  and safe root-bound path resolution.
+- **File-family utilities**: added shared `abstractcore.utils.file_filters`
+  helpers for extension normalization and media/code/document family matching.
+
+### Changed
+- **Voice plugin floor**: raised AbstractVoice integration requirements to
+  `abstractvoice>=0.10.18` so Core installs pick up the corrected local TTS
+  model discovery surface used by Gateway and AbstractFlow.
+
 ## [2.13.37] - 2026-06-13
 
 ### Fixed

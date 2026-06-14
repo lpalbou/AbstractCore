@@ -56,25 +56,25 @@ def test_server_extra_stays_vision_runtime_light() -> None:
 
     assert "abstractvision" not in server_block
     assert "abstractvoice" not in server_block
-    assert "abstractvoice>=0.10.17" in voice_block
+    assert "abstractvoice>=0.10.18" in voice_block
     assert "abstractmusic" not in voice_block
-    assert "abstractvoice>=0.10.17" in audio_block
+    assert "abstractvoice>=0.10.18" in audio_block
     _assert_block_has_dependency_prefix(vision_block, "abstractvision>=")
     _assert_block_has_dependency_prefix(vision_diffusers_block, "abstractvision[huggingface]>=")
     _assert_block_has_dependency_prefix(vision_sdcpp_block, "abstractvision[sdcpp]>=")
     _assert_block_has_dependency_prefix(vision_local_block, "abstractvision[local]>=")
     assert "abstractmusic>=0.1.13" in music_block
-    assert "abstractvoice[all-apple]>=0.10.17" in all_apple_block
+    assert "abstractvoice[all-apple]>=0.10.18" in all_apple_block
     assert "omnivoice>=0.1.5" in all_apple_block
     _assert_block_has_dependency_prefix(all_apple_block, "abstractvision[all-apple]>=")
     assert "abstractmusic[all-apple]>=0.1.13" in all_apple_block
     assert "vllm" not in all_apple_block
-    assert "abstractvoice[all-gpu]>=0.10.17" in all_gpu_block
+    assert "abstractvoice[all-gpu]>=0.10.18" in all_gpu_block
     assert "omnivoice>=0.1.5" in all_gpu_block
     _assert_block_has_dependency_prefix(all_gpu_block, "abstractvision[all-gpu]>=")
     assert "abstractmusic[all-gpu]>=0.1.13" in all_gpu_block
     assert "mlx-lm" not in all_gpu_block
-    assert "abstractvoice>=0.10.17" in full_dev_block
+    assert "abstractvoice>=0.10.18" in full_dev_block
     assert "omnivoice>=0.1.5" in full_dev_block
     _assert_block_has_dependency_prefix(full_dev_block, "abstractvision>=")
     assert "abstractmusic>=0.1.13" in full_dev_block

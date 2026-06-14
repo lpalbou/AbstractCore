@@ -818,7 +818,7 @@ pip install "abstractcore[music]"
 ```
 
 Notes:
-- `abstractvoice` 0.10.17+ can install the base plugin path on Python 3.9
+- `abstractvoice` 0.10.18+ can install the base plugin path on Python 3.9
   without OmniVoice, torch, or torchaudio. Python 3.10+ is recommended. Use
   explicit local aggregate profiles such as `abstractcore[all-apple]` or
   `abstractcore[all-gpu]` when you want local voice engines; AEC requires

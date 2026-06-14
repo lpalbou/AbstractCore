@@ -219,11 +219,11 @@ pdf-pymupdf-commercial = [
 ]
 
 voice = [
-    "abstractvoice>=0.10.17",
+    "abstractvoice>=0.10.18",
 ]
 
 audio = [
-    "abstractvoice>=0.10.17",
+    "abstractvoice>=0.10.18",
 ]
 
 compression = [
@@ -268,7 +268,7 @@ all = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.10.17",
+    "abstractvoice>=0.10.18",
     "omnivoice>=0.1.5",
     "abstractmusic>=0.1.13",
     # Server
@@ -310,7 +310,7 @@ all-apple = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice[all-apple]>=0.10.17",
+    "abstractvoice[all-apple]>=0.10.18",
     "omnivoice>=0.1.5",
     "abstractmusic[all-apple]>=0.1.13",
     # Server
@@ -348,7 +348,7 @@ all-gpu = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice[all-gpu]>=0.10.17",
+    "abstractvoice[all-gpu]>=0.10.18",
     "omnivoice>=0.1.5",
     "abstractmusic[all-gpu]>=0.1.13",
     # Server
@@ -387,7 +387,7 @@ all-non-mlx = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.10.17",
+    "abstractvoice>=0.10.18",
     "omnivoice>=0.1.5",
     "abstractmusic>=0.1.13",
     # Server
@@ -505,7 +505,7 @@ full-dev = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.10.17",
+    "abstractvoice>=0.10.18",
     "omnivoice>=0.1.5",
     "abstractmusic>=0.1.13",
     "fastapi>=0.100.0,<1.0.0",
