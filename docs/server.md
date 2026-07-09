@@ -227,6 +227,8 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Audio | POST | `/{provider}/v1/audio/transcriptions` | Provider-scoped speech-to-text route where body model is unprefixed | path `provider`, optional `base_url`, STT form fields |
 | Audio | POST | `/v1/audio/speech` | Text-to-speech endpoint | `input`/`text`, optional `provider`, `model`, `voice`, `response_format`/`format`, `speed`, `instructions`, `profile`, `quality_preset`, `quality`, `base_url` |
 | Audio | POST | `/{provider}/v1/audio/speech` | Provider-scoped text-to-speech route where body model is unprefixed | path `provider`, optional `base_url`, TTS body fields |
+| Audio | POST | `/v1/audio/speech/stream` | Text-to-speech JSON Lines stream endpoint | Local/plugin TTS stream events; currently `wav` segment chunks only |
+| Audio | POST | `/{provider}/v1/audio/speech/stream` | Provider-scoped text-to-speech stream route | path `provider`; currently local/plugin `wav` segment chunks only |
 | Audio | POST | `/v1/voice/clone` | AbstractVoice-compatible voice-clone/custom-voice extension | `file`, optional `provider`, `model`, `tts_model`, `cloning_engine`, `base_url`, `name`, `reference_text`, `validate` |
 | Audio | POST | `/{provider}/v1/voice/clone` | Provider-scoped voice-clone route where body model is unprefixed | path `provider`, optional `base_url`, voice-clone form fields |
 | Audio | POST | `/v1/audio/translations` | Reserved OpenAI-compatible translation route | `file`, `model`; returns `501` in this version |
@@ -855,6 +857,13 @@ Notes:
 | `quality_preset` | no | AbstractVoice/local-backend quality preset when supported. |
 | `quality` | no | OpenAI-compatible quality selector or backend-specific quality hint. |
 | `base_url` | no | Endpoint override for local/gateway routing. Prefer this with `openai-compatible/...`; if set with `openai/...`, the request is sent to that URL instead of api.openai.com. Loopback is allowed by default, non-loopback requires allowlist. |
+
+`POST /v1/audio/speech/stream` accepts the same local/plugin routing fields but
+returns `application/x-ndjson` stream events. Audio events carry base64 WAV
+segment chunks (`audio_b64`, `content_type=audio/wav`), followed by a terminal
+`done`, `cancelled`, or `error` event. The stream route currently supports
+`response_format`/`format="wav"` only and returns `501` for remote provider
+models that do not expose a native streaming TTS method.
 
 Swagger UI can execute `/v1/audio/speech`. AbstractCore serves a small custom
 Swagger wrapper that converts authenticated binary audio `POST` responses into

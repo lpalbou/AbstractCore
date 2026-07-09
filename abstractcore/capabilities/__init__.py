@@ -1,4 +1,4 @@
-"""Capability plugins + facades (voice/audio/vision/music).
+"""Capability plugins + facades (voice/audio/vision/music/scene3d).
 
 This module provides a dependency-light integration surface for optional
 capability packages (e.g. `abstractvoice`, `abstractvision`) without making
@@ -28,6 +28,7 @@ from .types import (
     CoreTextResult,
     GenerateWithOutputsResult,
     MusicCapability,
+    Scene3dCapability,
     VisionCapability,
     VoiceCapability,
     is_artifact_ref,
@@ -54,6 +55,7 @@ __all__ = [
     "GenerateWithOutputsResult",
     "get_local_vision_cache_catalog",
     "MusicCapability",
+    "Scene3dCapability",
     "VisionCapability",
     "VoiceCapability",
     "is_artifact_ref",

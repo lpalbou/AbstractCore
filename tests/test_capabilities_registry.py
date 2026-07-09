@@ -51,6 +51,8 @@ def test_capabilities_status_empty(monkeypatch):
     assert status["capabilities"]["voice"]["install_hint"] == 'pip install "abstractcore[voice]"'
     assert status["capabilities"]["vision"]["available"] is False
     assert status["capabilities"]["vision"]["install_hint"] == 'pip install "abstractcore[vision]"'
+    assert status["capabilities"]["scene3d"]["available"] is False
+    assert status["capabilities"]["scene3d"]["install_hint"] == 'pip install "abstractcore[scene3d]"'
 
 
 @pytest.mark.basic
@@ -76,6 +78,17 @@ def test_missing_music_capability_raises_actionable_error(monkeypatch):
 
 
 @pytest.mark.basic
+def test_missing_scene3d_capability_raises_actionable_error(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([]))
+
+    llm = _DummyProvider(model="dummy")
+    with pytest.raises(CapabilityUnavailableError) as e:
+        llm.scene3d.t23d("hello")
+    assert "scene3d:" in str(e.value)
+    assert 'pip install "abstractcore[scene3d]"' in str(e.value)
+
+
+@pytest.mark.basic
 def test_plugin_registration_and_backend_resolution(monkeypatch):
     monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_fake_plugin_ep()]))
 
@@ -96,6 +109,8 @@ def test_plugin_registration_and_backend_resolution(monkeypatch):
     )[0]["provider"] == "mlx-gen"
     assert llm.music.t2m("hello") == b"mp3-bytes"
     assert llm.music.generate("hello", duration_s=4) == b"mp3-bytes"
+    assert llm.scene3d.t23d("hello")["data"] == b"glb-bytes"
+    assert llm.scene3d.i23d("object.png")["format"] == "glb"
 
 
 @pytest.mark.basic
@@ -210,6 +225,40 @@ def test_voice_facade_delegates_remote_voice_to_backend(monkeypatch):
 
     llm = _DummyProvider(model="dummy")
     assert llm.voice.tts("hello", voice="coral", format="wav", speed=1.1) == b"remote:coral:wav:1.1"
+
+
+@pytest.mark.basic
+def test_scene3d_provider_field_selects_requested_backend(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_scene3d_plugin_ep()]))
+
+    llm = _DummyProvider(model="dummy")
+    out = llm.scene3d.generate(
+        "table lamp",
+        provider="trellis2",
+        model="microsoft/TRELLIS.2-4B",
+    )
+
+    assert out["data"] == b"abstract3d:trellis2-local"
+    assert out["backend_id"] == "abstract3d:trellis2-local"
+    assert out["provider"] == "abstract3d:trellis2-local"
+    assert out["model_id"] == "microsoft/TRELLIS.2-4B"
+
+
+@pytest.mark.basic
+def test_scene3d_provider_field_selects_step1x_backend(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_scene3d_plugin_ep()]))
+
+    llm = _DummyProvider(model="dummy")
+    out = llm.scene3d.generate(
+        "teapot",
+        provider="step1x",
+        model="stepfun-ai/Step1X-3D",
+    )
+
+    assert out["data"] == b"abstract3d:step1x-local"
+    assert out["backend_id"] == "abstract3d:step1x-local"
+    assert out["provider"] == "abstract3d:step1x-local"
+    assert out["model_id"] == "stepfun-ai/Step1X-3D"
 
 
 @pytest.mark.basic
@@ -397,6 +446,17 @@ def _make_fake_plugin_ep():
             def t2m(self, prompt: str, **kwargs):
                 return b"mp3-bytes"
 
+        class _Scene3d:
+            backend_id = "fake-scene3d"
+
+            def t23d(self, prompt: str, **kwargs):
+                _ = prompt, kwargs
+                return {"data": b"glb-bytes", "content_type": "model/gltf-binary", "format": "glb"}
+
+            def i23d(self, image, *, prompt=None, **kwargs):
+                _ = image, prompt, kwargs
+                return {"data": b"glb-bytes", "content_type": "model/gltf-binary", "format": "glb"}
+
         registry.register_voice_backend(
             backend_id="fake-voice",
             factory=lambda _owner: _Voice(),
@@ -420,6 +480,12 @@ def _make_fake_plugin_ep():
             factory=lambda _owner: _Music(),
             priority=0,
             description="Fake music backend for tests",
+        )
+        registry.register_scene3d_backend(
+            backend_id="fake-scene3d",
+            factory=lambda _owner: _Scene3d(),
+            priority=0,
+            description="Fake scene3d backend for tests",
         )
 
     return _FakeEntryPoint(name="fake", value="tests.fake_plugin:register", obj=register)
@@ -450,6 +516,53 @@ def _make_multi_backend_plugin_ep():
         registry.register_voice_backend(backend_id="b", factory=lambda _owner: _VoiceB(), priority=10)
 
     return _FakeEntryPoint(name="fake-multi", value="tests.fake_plugin_multi:register", obj=register)
+
+
+def _make_multi_scene3d_plugin_ep():
+    def register(registry):
+        class _Scene3d:
+            def __init__(self, backend_id: str):
+                self.backend_id = backend_id
+
+            def t23d(self, prompt: str, **kwargs):
+                _ = prompt
+                return {
+                    "data": self.backend_id.encode(),
+                    "content_type": "model/gltf-binary",
+                    "format": "glb",
+                    "model_id": kwargs.get("model"),
+                }
+
+            def i23d(self, image, **kwargs):
+                _ = image
+                return {
+                    "data": self.backend_id.encode(),
+                    "content_type": "model/gltf-binary",
+                    "format": "glb",
+                    "model_id": kwargs.get("model"),
+                }
+
+        registry.register_scene3d_backend(
+            backend_id="abstract3d:triposr",
+            factory=lambda _owner: _Scene3d("abstract3d:triposr"),
+            priority=50,
+        )
+        registry.register_scene3d_backend(
+            backend_id="abstract3d:step1x-local",
+            factory=lambda _owner: _Scene3d("abstract3d:step1x-local"),
+            priority=20,
+        )
+        registry.register_scene3d_backend(
+            backend_id="abstract3d:trellis2-local",
+            factory=lambda _owner: _Scene3d("abstract3d:trellis2-local"),
+            priority=10,
+        )
+
+    return _FakeEntryPoint(
+        name="fake-scene3d-multi",
+        value="tests.fake_plugin_scene3d_multi:register",
+        obj=register,
+    )
 
 
 def _make_remote_voice_plugin_ep():

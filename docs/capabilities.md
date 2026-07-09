@@ -41,6 +41,7 @@ print(llm.capabilities.list_backend_infos())  # registered backend metadata, no 
 
 # Voice/audio
 wav_bytes = llm.voice.tts("Hello", format="wav")
+events = llm.voice.tts_stream("Hello", format="wav")  # optional JSON-safe stream events when the backend supports it
 text = llm.audio.transcribe("speech.wav")
 voices = llm.voice.voice_catalog()
 tts_models = llm.voice.list_tts_models()

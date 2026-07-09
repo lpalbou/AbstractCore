@@ -10,6 +10,7 @@ import sys
 from abstractcore import create_llm
 from abstractcore.config.main import main as config_main
 from abstractcore.config.manager import ConfigurationManager
+from abstractcore.core.types import GenerateResponse
 
 
 def _reset_global_config(monkeypatch, config_file):
@@ -241,6 +242,42 @@ def test_endpoint_profile_is_available_and_injected_into_provider(monkeypatch, t
     assert provider.api_key == "stored-secret"
     assert provider._abstractcore_virtual_provider == "endpoint:ovh-provider"
     assert provider._abstractcore_provider_family == "openai-compatible"
+
+
+def test_endpoint_profile_qwen3_6_thinking_stays_strict_openai_compatible(monkeypatch, tmp_path) -> None:
+    config_file = tmp_path / "core" / "abstractcore.json"
+    _reset_global_config(monkeypatch, config_file)
+
+    from abstractcore.config import get_config_manager
+    from abstractcore.providers.openai_compatible_provider import OpenAICompatibleProvider
+
+    manager = get_config_manager()
+    manager.set_provider_profile(
+        "ovh-provider",
+        display_name="OVH Provider",
+        provider_family="openai-compatible",
+        base_url="https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+        api_key="stored-secret",
+        allowed_models=["Qwen/Qwen3.6-27B"],
+    )
+
+    monkeypatch.setattr(OpenAICompatibleProvider, "_validate_model", lambda self: None)
+    provider = create_llm("endpoint:ovh-provider", model="Qwen/Qwen3.6-27B")
+    captured = {}
+
+    def _capture_single_generate(payload):
+        captured["payload"] = payload
+        return GenerateResponse(content="ok", model=provider.model, finish_reason="stop")
+
+    monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
+
+    provider.generate("hi", thinking="high", temperature=0)
+
+    payload = captured["payload"]
+    assert "chat_template_kwargs" not in payload
+    assert "extra_body" not in payload
+    assert "enableThinking" not in str(payload)
+    assert "enable_thinking" not in str(payload)
 
 
 def test_endpoint_profile_can_back_embedding_manager(monkeypatch, tmp_path) -> None:

@@ -67,6 +67,45 @@ def test_non_streaming_prompted_tool_calls_are_parsed_and_content_is_cleaned() -
     assert resp.content.strip() == "Let me check."
 
 
+def test_non_streaming_xmlish_direct_tool_tag_is_parsed_and_content_is_cleaned() -> None:
+    provider = _DummyProvider(
+        model="nvidia/nemotron-3-nano",
+        response=GenerateResponse(
+            content=(
+                "Searching now.\n\n"
+                "<tool_call>\n"
+                "<web_search>\n"
+                "<parameter=query>Coolizi arnaque scam avis 2025 2026</parameter>\n"
+                "<parameter=num_results>10</parameter>\n"
+                "</function>\n"
+                "</tool_call>\n"
+            ),
+            tool_calls=None,
+            model="nvidia/nemotron-3-nano",
+        ),
+    )
+
+    tools = [
+        {
+            "name": "web_search",
+            "description": "Search the web",
+            "parameters": {"query": {"type": "string"}, "num_results": {"type": "integer"}},
+        }
+    ]
+    resp = provider.generate(prompt="search", tools=tools)
+
+    assert resp.tool_calls == [
+        {
+            "name": "web_search",
+            "arguments": {"query": "Coolizi arnaque scam avis 2025 2026", "num_results": "10"},
+            "call_id": None,
+        }
+    ]
+    assert "<tool_call>" not in (resp.content or "")
+    assert "<web_search>" not in (resp.content or "")
+    assert resp.content.strip() == "Searching now."
+
+
 def test_non_streaming_native_tool_calls_are_normalized_and_echoed_markup_is_cleaned() -> None:
     provider = _DummyProvider(
         model="openai/gpt-4o-mini",

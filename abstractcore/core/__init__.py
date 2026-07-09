@@ -27,6 +27,14 @@ from .output_specs import (
     output_requires_non_chat_dispatch,
     strip_runtime_output_metadata,
 )
+from .generate_contract import (
+    GenerateRequest,
+    ResolvedGenerateRoute,
+    ResolvedGenerateRouteEntry,
+    normalize_generate_request,
+    resolve_capability_default_route,
+    resolve_generate_route,
+)
 from .enums import ModelParameter, ModelCapability, MessageRole
 from .interface import AbstractCoreInterface
 from .bloc_kv import (
@@ -55,13 +63,19 @@ __all__ = [
     'GenerationOutputSpec',
     'GeneratedItem',
     'GeneratedResource',
+    'GenerateRequest',
     'GenerationIssue',
     'MultimodalGenerateResponse',
     'is_output_request',
     'normalize_output_spec',
     'normalize_output_specs',
+    'normalize_generate_request',
     'output_has_generated_media',
     'output_requires_non_chat_dispatch',
+    'ResolvedGenerateRoute',
+    'ResolvedGenerateRouteEntry',
+    'resolve_capability_default_route',
+    'resolve_generate_route',
     'strip_runtime_output_metadata',
     'Message',
     'ModelParameter',

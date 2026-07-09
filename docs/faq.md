@@ -129,10 +129,10 @@ These built-in web tools live in `abstractcore.tools.common_tools` and require:
 pip install "abstractcore[tools]"
 ```
 
-- `web_search`: fuller DuckDuckGo result set (good when you want breadth or more options).
-- `skim_websearch`: compact/filtered search results (good default for agents to keep prompts smaller). Defaults to 5 results and truncates long snippets.
-- `skim_url`: fast URL triage (fetches only a prefix and extracts lightweight metadata + a short preview). Defaults: `max_bytes=200_000`, `max_preview_chars=1200`, `max_headings=8`.
-- `fetch_url`: full fetch + parsing for text-first types (HTML→Markdown, JSON/XML/text). For PDFs/images/other binaries it returns metadata and optional previews; it does **not** do full PDF text extraction. It downloads up to 10MB by default; use `include_full_content=False` for smaller outputs.
+- `web_search`: fuller DuckDuckGo result set (good when you want breadth or more options). It normalizes JSON-style numeric `num_results` values such as `"5"` before calling `ddgs`, and invalid values fail explicitly instead of silently changing the request.
+- `skim_websearch`: compact/filtered search results (good default for agents to keep prompts smaller). Defaults to 5 results, truncates long snippets, accepts string-like numeric `num_results`, and surfaces its compact cap when a caller asks for more than 15 results.
+- `skim_url`: fast URL triage (fetches only a prefix and extracts lightweight metadata + a short preview). It can also summarize RSS/Atom/XML feeds and PDF content when those assets are detectable from headers or content bytes. Defaults: `max_bytes=200_000`, `max_preview_chars=1200`, `max_headings=8`.
+- `fetch_url`: full fetch + parsing for HTML, JSON, XML/RSS/Atom, plain text, and PDFs. PDF routing now follows `native_llm > pymupdf > pypdf` whenever a native OpenAI-compatible client is configured; otherwise it falls back to `pymupdf` and then `pypdf`. There is no separate enable flag. Native PDF calls try `file_id` first and then `data_url` when an OpenAI-compatible endpoint rejects uploaded PDF files. Results expose PDF backend provenance, including native transport. It downloads up to 10MB by default; use `include_full_content=False` for smaller outputs.
 
 Recommended workflow: `skim_websearch` → `skim_url` → `fetch_url` (use `include_full_content=False` when you want a smaller `fetch_url` output).
 

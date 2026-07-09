@@ -58,6 +58,32 @@ def _validate_reasoning_levels(label: str, levels: Any) -> None:
         assert level in allowed, f"{label}.reasoning_levels must be subset of {sorted(allowed)}"
 
 
+# Typed thinking-control surface keys (see abstractcore/architectures/thinking_controls.py).
+THINKING_CONTROL_SURFACE_KEYS = {
+    "prompt_disable_token",
+    "template_kwarg",
+    "assistant_prefill_disable",
+    "budget_template_kwarg",
+    "low_effort_template_kwarg",
+    "request_param",
+}
+
+
+def _validate_thinking_control(label: str, value: Any) -> None:
+    """thinking_control must be a typed object; legacy untyped strings are forbidden in shipped assets."""
+    assert isinstance(value, dict), (
+        f"{label}.thinking_control must be a typed object declaring control surfaces "
+        f"(e.g. {{'template_kwarg': 'enable_thinking'}}); legacy string form is forbidden"
+    )
+    assert value, f"{label}.thinking_control must declare at least one control surface"
+    extra = set(value) - THINKING_CONTROL_SURFACE_KEYS
+    assert not extra, f"{label}.thinking_control contains unknown surface keys: {sorted(extra)}"
+    for key, surface in value.items():
+        assert isinstance(surface, str) and surface.strip(), (
+            f"{label}.thinking_control[{key!r}] must be a non-empty string"
+        )
+
+
 def _validate_audio_input_capabilities(label: str, capabilities: Any) -> None:
     assert isinstance(capabilities, list) and capabilities, (
         f"{label}.audio_input_capabilities must be a non-empty list when set"
@@ -258,6 +284,7 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
         "thinking_budget",
         "thinking_control",
         "thinking_control_mode",
+        "reasoning_output",
         "thinking_format",
         "thinking_modes",
         "thinking_output_field",
@@ -383,10 +410,18 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
     if thinking_tags is not None:
         _validate_thinking_tags(label, thinking_tags)
 
-    for key in ("thinking_output_field", "thinking_control", "thinking_format", "tool_calling_format"):
+    for key in ("thinking_output_field", "thinking_format", "tool_calling_format"):
         value = cfg.get(key)
         if value is not None:
             assert _non_empty_str(value), f"{label}.{key} must be a non-empty string when set"
+
+    thinking_control = cfg.get("thinking_control")
+    if thinking_control is not None:
+        _validate_thinking_control(label, thinking_control)
+
+    reasoning_output = cfg.get("reasoning_output")
+    if reasoning_output is not None:
+        assert isinstance(reasoning_output, bool), f"{label}.reasoning_output must be boolean"
 
     thinking_support = cfg.get("thinking_support")
     if thinking_support is not None:

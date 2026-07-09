@@ -14,8 +14,19 @@ Supports any server implementing the OpenAI API format:
 import os
 import httpx
 import json
+import re
 import time
 from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING, Tuple
+
+# Server-side Harmony parse failures of the MODEL'S OWN OUTPUT (gpt-oss on
+# vLLM): "unexpected tokens remaining in message header" is the strict
+# openai-harmony parser rejecting a malformed sampled header; sibling shapes
+# name the harmony parser explicitly. These arrive as HTTP 400 but are
+# generation races, not request errors (see _raise_for_status).
+_HARMONY_GENERATION_ARTIFACT_RE = re.compile(
+    r"unexpected tokens remaining in message header|HarmonyError|openai[_-]harmony",
+    re.IGNORECASE,
+)
 
 try:
     from pydantic import BaseModel
@@ -136,11 +147,13 @@ class OpenAICompatibleProvider(BaseProvider):
         base_url: Optional[str] = None,
         api_key: Optional[str] = None,
         validate_model: bool = True,
+        supports_chat_template_kwargs: bool = False,
         **kwargs,
     ):
         super().__init__(model, **kwargs)
         self.provider = self.PROVIDER_ID
         self._validate_model_on_init = bool(validate_model)
+        self._supports_chat_template_kwargs = bool(supports_chat_template_kwargs)
 
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
@@ -239,6 +252,44 @@ class OpenAICompatibleProvider(BaseProvider):
 
         return payload
 
+    @staticmethod
+    def _build_usage_dict(usage: Any) -> Dict[str, Any]:
+        """Normalize OpenAI-compatible usage, preserving token detail breakdowns.
+
+        `completion_tokens_details.reasoning_tokens` is the only billing evidence of
+        invisible reasoning (e.g. grok-4-class models that reason without returning text),
+        so detail dicts must be passed through rather than rebuilt away.
+        """
+        usage = usage if isinstance(usage, dict) else {}
+        out: Dict[str, Any] = {
+            "input_tokens": usage.get("prompt_tokens", 0),
+            "output_tokens": usage.get("completion_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+            # Keep legacy keys for backward compatibility
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+        }
+        for detail_key in ("completion_tokens_details", "prompt_tokens_details"):
+            details = usage.get(detail_key)
+            if isinstance(details, dict) and details:
+                out[detail_key] = dict(details)
+        # Normalized cross-provider cache key: surfaced only when the server actually
+        # reported the field (absent != 0 — "cannot report" stays distinguishable).
+        prompt_details = usage.get("prompt_tokens_details")
+        if isinstance(prompt_details, dict) and "cached_tokens" in prompt_details:
+            try:
+                out["cached_input_tokens"] = int(prompt_details.get("cached_tokens") or 0)
+            except Exception:
+                pass
+        return out
+
+    @staticmethod
+    def _snake_to_camel(name: str) -> str:
+        parts = [p for p in str(name or "").split("_") if p]
+        if len(parts) <= 1:
+            return str(name or "")
+        return parts[0] + "".join(p[:1].upper() + p[1:] for p in parts[1:])
+
     def _apply_provider_thinking_kwargs(
         self,
         *,
@@ -252,34 +303,48 @@ class OpenAICompatibleProvider(BaseProvider):
         provider_id = str(getattr(self, "provider", "") or "").strip().lower()
         if provider_id not in {"lmstudio", "openai-compatible"}:
             return kwargs, ThinkingControlHandling()
+        template_kwargs_supported = bool(
+            provider_id == "lmstudio"
+            or getattr(self, "_supports_chat_template_kwargs", False)
+            or getattr(self, "supports_chat_template_kwargs", False)
+        )
 
-        architecture = str(getattr(self, "architecture", "") or "").strip().lower()
+        # Asset-driven control surfaces (see abstractcore/architectures/thinking_controls.py).
+        # Which chat-template variables a model's template understands is model knowledge and
+        # lives in the registries; this hook only owns the transport (how the kwargs are sent).
+        surfaces = self._thinking_control_surfaces()
 
-        # Qwen3 / Nemotron: disable thinking via chat-template kwargs (`enable_thinking`).
+        # Boolean template switch (e.g. Qwen3/Nemotron/Gemma-4 `enable_thinking`).
         #
         # Some backends do not interpret prompt-level control tokens (e.g. "/no_think") as
         # actual switches for these templates; a backend-native knob is more reliable when
         # supported.
-        if architecture in {"qwen3", "qwen3_5", "qwen3_6", "nemotron_hybrid_moe"}:
+        if surfaces.template_kwarg:
+            if not template_kwargs_supported:
+                return kwargs, ThinkingControlHandling()
             requested = enabled if enabled is not None else (level is not None)
+            template_kwarg = surfaces.template_kwarg
             new_kwargs = dict(kwargs)
             ctk = new_kwargs.get("chat_template_kwargs")
             ctk_dict: Dict[str, Any] = dict(ctk) if isinstance(ctk, dict) else {}
-            # Common Jinja variable name (used by Qwen docs, llama.cpp, vLLM recipes).
-            ctk_dict["enable_thinking"] = bool(requested)
+            # Snake_case Jinja variable name (used by Qwen docs, llama.cpp, vLLM recipes).
+            ctk_dict[template_kwarg] = bool(requested)
             # LM Studio model.yaml customFields often use camelCase keys like `enableThinking`
             # which may be forwarded to templates by some runtimes. Keep both for compatibility.
-            ctk_dict["enableThinking"] = bool(requested)
+            camel_kwarg = self._snake_to_camel(template_kwarg)
+            if camel_kwarg != template_kwarg:
+                ctk_dict[camel_kwarg] = bool(requested)
 
-            # Nemotron v3 models additionally expose a template-side "low_effort" switch that
+            # Some templates (Nemotron v3) additionally expose a "low effort" switch that
             # reduces reasoning tokens while keeping thinking enabled. Map our unified "low"
-            # (and "minimal") levels to this knob when available.
+            # (and "minimal") levels to this knob when declared.
             #
             # This is intentionally best-effort: if a backend/template ignores the kwarg, it
             # should not break the request.
-            if architecture == "nemotron_hybrid_moe" and enabled is not False:
-                if level in {"minimal", "low"}:
-                    ctk_dict["low_effort"] = True
+            handled_level = False
+            if surfaces.low_effort_template_kwarg and enabled is not False and level in {"minimal", "low"}:
+                ctk_dict[surfaces.low_effort_template_kwarg] = True
+                handled_level = True
             new_kwargs["chat_template_kwargs"] = ctk_dict
 
             # LM Studio's OpenAI-compatible endpoint does not document `chat_template_kwargs`,
@@ -302,18 +367,18 @@ class OpenAICompatibleProvider(BaseProvider):
                 # variable. Send both snake_case and camelCase to maximize compatibility.
                 tv = new_kwargs.get("lmstudio_template_vars")
                 tv_dict: Dict[str, Any] = dict(tv) if isinstance(tv, dict) else {}
-                tv_dict.setdefault("enable_thinking", bool(requested))
-                tv_dict.setdefault("enableThinking", bool(requested))
+                tv_dict.setdefault(template_kwarg, bool(requested))
+                if camel_kwarg != template_kwarg:
+                    tv_dict.setdefault(camel_kwarg, bool(requested))
                 new_kwargs["lmstudio_template_vars"] = tv_dict
-            handled_level = bool(architecture == "nemotron_hybrid_moe" and enabled is not False and level in {"minimal", "low"})
             return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=handled_level)
 
-        # Seed-OSS: control reasoning via chat-template kwargs (`thinking_budget`).
+        # Integer budget template kwarg (e.g. Seed-OSS `thinking_budget`).
         #
         # NOTE: This is currently best-effort and only enabled for local OpenAI-compatible
         # servers (LM Studio / generic OpenAI-compatible) to avoid breaking strict
         # third-party gateways that may reject unknown payload fields.
-        if architecture != "seed_oss":
+        if not surfaces.budget_template_kwarg or not template_kwargs_supported:
             return kwargs, ThinkingControlHandling()
 
         budget_map = {"low": 512, "medium": 1024, "high": 4096, "xhigh": 8192}
@@ -328,7 +393,7 @@ class OpenAICompatibleProvider(BaseProvider):
         new_kwargs = dict(kwargs)
         ctk = new_kwargs.get("chat_template_kwargs")
         ctk_dict: Dict[str, Any] = dict(ctk) if isinstance(ctk, dict) else {}
-        ctk_dict["thinking_budget"] = int(budget)
+        ctk_dict[surfaces.budget_template_kwarg] = int(budget)
         new_kwargs["chat_template_kwargs"] = ctk_dict
         return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=True)
 
@@ -420,21 +485,37 @@ class OpenAICompatibleProvider(BaseProvider):
 
         status = int(status_code)
         if status in (401, 403):
-            raise AuthenticationError(msg)
+            raise AuthenticationError(msg, status_code=status)
         if status == 429:
-            raise RateLimitError(msg)
+            raise RateLimitError(msg, status_code=status)
         if status == 400:
             # Many OpenAI-compatible servers use 400 for schema/model errors.
             if detail and ("model" in detail.lower()) and ("not found" in detail.lower()):
                 self._raise_model_not_found()
-            raise InvalidRequestError(msg)
+            # Harmony generation artifact (gpt-oss on vLLM): the MODEL's own
+            # sampled output sometimes violates its Harmony template (e.g. an
+            # unclosed `to=...` recipient header) and the server's strict
+            # openai-harmony parser surfaces the parse failure as a 400 on a
+            # perfectly valid request (vllm#23567, openai/harmony#38/#80;
+            # fixed upstream by lenient parsing, vllm#28303 — not yet on all
+            # deployments). The request is NOT invalid and a resample usually
+            # passes, so this must be classified TRANSIENT (retryable), never
+            # InvalidRequestError — otherwise every retry layer refuses and a
+            # sampling race becomes a hard failure.
+            if detail and _HARMONY_GENERATION_ARTIFACT_RE.search(detail):
+                raise ProviderAPIError(
+                    f"{msg} [transient harmony generation artifact - the model's sampled "
+                    "output violated its template; a retry resamples]",
+                    status_code=status,
+                )
+            raise InvalidRequestError(msg, status_code=status)
         if status == 404:
             # Could be endpoint misconfiguration (missing /v1) or an unknown model.
             if detail and ("model" in detail.lower()) and ("not found" in detail.lower()):
                 self._raise_model_not_found()
-            raise ProviderAPIError(msg if request_url is None else f"{msg} [{request_url}]")
+            raise ProviderAPIError(msg if request_url is None else f"{msg} [{request_url}]", status_code=status)
 
-        raise ProviderAPIError(msg if request_url is None else f"{msg} [{request_url}]")
+        raise ProviderAPIError(msg if request_url is None else f"{msg} [{request_url}]", status_code=status)
 
     def _raise_model_not_found(self) -> None:
         """Raise ModelNotFoundError with a best-effort available-model list."""
@@ -443,6 +524,32 @@ class OpenAICompatibleProvider(BaseProvider):
         except Exception:
             available_models = []
         raise ModelNotFoundError(format_model_error(self.PROVIDER_DISPLAY_NAME, self.model, available_models))
+
+    def _is_prompt_cache_key_rejection(self, response: Optional[httpx.Response], payload: Dict[str, Any]) -> bool:
+        """True when the server 400-rejected the request BECAUSE of `prompt_cache_key`.
+
+        Prompt caching is best-effort: most OpenAI-compatible servers ignore unknown fields,
+        but some (e.g. OVH AI Endpoints) reject them outright. Callers drop the key, mark the
+        provider instance, and retry once.
+        """
+        if "prompt_cache_key" not in payload:
+            return False
+        status = getattr(response, "status_code", None)
+        try:
+            if status is None or int(status) != 400:
+                return False
+        except Exception:
+            return False
+        detail = self._extract_error_detail(response) or ""
+        return "prompt_cache_key" in detail
+
+    def _mark_prompt_cache_key_unsupported(self) -> None:
+        self._prompt_cache_key_unsupported = True
+        if hasattr(self, "logger"):
+            self.logger.warning(
+                "#FALLBACK: server rejected 'prompt_cache_key'; retrying without it "
+                "(prompt caching disabled for this provider instance)"
+            )
 
     def _validate_model(self):
         """Validate that the model exists on the server (best-effort)."""
@@ -613,6 +720,9 @@ class OpenAICompatibleProvider(BaseProvider):
             fallback = str(prompt or "").strip() or "Continue."
             chat_messages.append({"role": "user", "content": fallback})
 
+        # Strict-server system-message normalization (must run after ALL message building).
+        chat_messages = self._normalize_system_messages_for_strict_servers(chat_messages)
+
         # Build request payload using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
         max_output_tokens = self._get_provider_max_tokens_param(generation_kwargs)
@@ -630,8 +740,15 @@ class OpenAICompatibleProvider(BaseProvider):
             payload["top_k"] = top_k_value
 
         # Prompt caching (best-effort): pass through `prompt_cache_key` when provided.
+        # Some OpenAI-compatible servers (e.g. OVH AI Endpoints) hard-reject unknown request
+        # fields with a 400 instead of ignoring them; once a server rejects the key we stop
+        # sending it (see _is_prompt_cache_key_rejection) so caching stays best-effort.
         prompt_cache_key = kwargs.get("prompt_cache_key")
-        if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
+        if (
+            isinstance(prompt_cache_key, str)
+            and prompt_cache_key.strip()
+            and not getattr(self, "_prompt_cache_key_unsupported", False)
+        ):
             payload["prompt_cache_key"] = prompt_cache_key.strip()
 
         # Native tools (OpenAI-compatible): send structured tools/tool_choice when supported.
@@ -686,6 +803,87 @@ class OpenAICompatibleProvider(BaseProvider):
 
             return response
 
+    @staticmethod
+    def _normalize_system_messages_for_strict_servers(chat_messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Make the message list valid for strict OpenAI-compatible servers.
+
+        vLLM-class servers (e.g. OVH AI Endpoints) reject requests whose system messages are
+        not at the beginning ('System message must be at the beginning.', HTTP 400) — unlike
+        native OpenAI, which accepts system/developer messages anywhere. Mirroring the shipped
+        Anthropic behavior:
+        - a LEADING run of system messages is merged into ONE system message at index 0
+          (some templates also reject multiple system messages);
+        - every NON-leading system message is converted in place into a
+          `<system_instruction>`-wrapped user message, DEFERRED past tool-result runs so
+          assistant tool_calls / tool-result adjacency is never broken.
+        Content semantics are preserved; only the transport shape changes.
+        """
+        if not chat_messages:
+            return chat_messages
+        if not any(
+            isinstance(m, dict) and m.get("role") == "system"
+            for i, m in enumerate(chat_messages)
+            if i > 0
+        ) and not (
+            len(chat_messages) > 1
+            and isinstance(chat_messages[0], dict)
+            and chat_messages[0].get("role") == "system"
+            and isinstance(chat_messages[1], dict)
+            and chat_messages[1].get("role") == "system"
+        ):
+            return chat_messages  # fast path: nothing to normalize
+
+        def _text(m: Dict[str, Any]) -> str:
+            content = m.get("content")
+            if isinstance(content, str):
+                return content
+            # Structured content parts (OpenAI content-part lists) must not become Python
+            # reprs: extract the text parts (adversarial-review fix, 2026-07-09).
+            if isinstance(content, list):
+                parts: List[str] = []
+                for part in content:
+                    if isinstance(part, dict):
+                        t = part.get("text")
+                        if isinstance(t, str) and t:
+                            parts.append(t)
+                    elif isinstance(part, str) and part:
+                        parts.append(part)
+                return "\n".join(parts)
+            return str(content or "")
+
+        # Merge the leading system run into one message.
+        out: List[Dict[str, Any]] = []
+        i = 0
+        leading_parts: List[str] = []
+        while i < len(chat_messages) and isinstance(chat_messages[i], dict) and chat_messages[i].get("role") == "system":
+            leading_parts.append(_text(chat_messages[i]))
+            i += 1
+        merged_leading = "\n\n".join(p for p in leading_parts if p)
+        if merged_leading:
+            out.append({"role": "system", "content": merged_leading})
+
+        # Convert non-leading system messages; defer flushes past tool-result runs.
+        pending: List[Dict[str, Any]] = []
+
+        def _flush() -> None:
+            while pending:
+                m = pending.pop(0)
+                out.append({"role": "user", "content": f"<system_instruction>\n{_text(m)}\n</system_instruction>"})
+
+        while i < len(chat_messages):
+            m = chat_messages[i]
+            role = m.get("role") if isinstance(m, dict) else None
+            if role == "system":
+                pending.append(m)
+            elif role == "tool":
+                out.append(m)  # never interleave inside a tool-result run
+            else:
+                _flush()
+                out.append(m)
+            i += 1
+        _flush()
+        return out
+
     def _single_generate(self, payload: Dict[str, Any]) -> GenerateResponse:
         """Generate single response"""
         try:
@@ -701,6 +899,10 @@ class OpenAICompatibleProvider(BaseProvider):
                 json=payload,
                 headers=self._get_headers()
             )
+            if self._is_prompt_cache_key_rejection(response, payload):
+                self._mark_prompt_cache_key_unsupported()
+                payload = {k: v for k, v in payload.items() if k != "prompt_cache_key"}
+                response = self.client.post(request_url, json=payload, headers=self._get_headers())
             self._raise_for_status(response, request_url=request_url)
             gen_time = round((time.time() - start_time) * 1000, 1)
 
@@ -749,14 +951,7 @@ class OpenAICompatibleProvider(BaseProvider):
                 raw_response=result,
                 tool_calls=tool_calls if isinstance(tool_calls, list) else None,
                 metadata=metadata,
-                usage={
-                    "input_tokens": usage.get("prompt_tokens", 0),
-                    "output_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0),
-                    # Keep legacy keys for backward compatibility
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0)
-                },
+                usage=self._build_usage_dict(usage),
                 gen_time=gen_time
             )
 
@@ -782,6 +977,17 @@ class OpenAICompatibleProvider(BaseProvider):
             json=payload,
             headers=self._get_headers()
         ) as response:
+            status0 = getattr(response, "status_code", None)
+            if status0 is not None and int(status0) >= 400:
+                try:
+                    response.read()  # buffer the error body so detail extraction can parse it
+                except Exception:
+                    pass
+                if self._is_prompt_cache_key_rejection(response, payload):
+                    self._mark_prompt_cache_key_unsupported()
+                    retry_payload = {k: v for k, v in payload.items() if k != "prompt_cache_key"}
+                    yield from self._stream_generate(retry_payload)
+                    return
             self._raise_for_status(response, request_url=request_url)
 
             for line in response.iter_lines():
@@ -906,6 +1112,15 @@ class OpenAICompatibleProvider(BaseProvider):
         elif prompt and prompt.strip():
             chat_messages.append({"role": "user", "content": prompt})
 
+        # Parity with the sync path (adversarial-review find: this fallback existed only in
+        # sync): some servers' templates fail on system-only requests ("No user query found").
+        if not any(isinstance(m, dict) and m.get("role") == "user" for m in chat_messages):
+            fallback = str(prompt or "").strip() or "Continue."
+            chat_messages.append({"role": "user", "content": fallback})
+
+        # Strict-server system-message normalization (must run after ALL message building).
+        chat_messages = self._normalize_system_messages_for_strict_servers(chat_messages)
+
         # Build request payload
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
         max_output_tokens = self._get_provider_max_tokens_param(generation_kwargs)
@@ -978,6 +1193,10 @@ class OpenAICompatibleProvider(BaseProvider):
                 json=payload,
                 headers=self._get_headers()
             )
+            if self._is_prompt_cache_key_rejection(response, payload):
+                self._mark_prompt_cache_key_unsupported()
+                payload = {k: v for k, v in payload.items() if k != "prompt_cache_key"}
+                response = await self.async_client.post(request_url, json=payload, headers=self._get_headers())
             self._raise_for_status(response, request_url=request_url)
             gen_time = round((time.time() - start_time) * 1000, 1)
 
@@ -1025,13 +1244,7 @@ class OpenAICompatibleProvider(BaseProvider):
                 raw_response=result,
                 tool_calls=tool_calls if isinstance(tool_calls, list) else None,
                 metadata=metadata,
-                usage={
-                    "input_tokens": usage.get("prompt_tokens", 0),
-                    "output_tokens": usage.get("completion_tokens", 0),
-                    "total_tokens": usage.get("total_tokens", 0),
-                    "prompt_tokens": usage.get("prompt_tokens", 0),
-                    "completion_tokens": usage.get("completion_tokens", 0)
-                },
+                usage=self._build_usage_dict(usage),
                 gen_time=gen_time
             )
 
@@ -1053,6 +1266,18 @@ class OpenAICompatibleProvider(BaseProvider):
             json=payload,
             headers=self._get_headers()
         ) as response:
+            status0 = getattr(response, "status_code", None)
+            if status0 is not None and int(status0) >= 400:
+                try:
+                    await response.aread()  # buffer the error body so detail extraction can parse it
+                except Exception:
+                    pass
+                if self._is_prompt_cache_key_rejection(response, payload):
+                    self._mark_prompt_cache_key_unsupported()
+                    retry_payload = {k: v for k, v in payload.items() if k != "prompt_cache_key"}
+                    async for chunk in self._async_stream_generate(retry_payload):
+                        yield chunk
+                    return
             self._raise_for_status(response, request_url=request_url)
 
             async for line in response.aiter_lines():

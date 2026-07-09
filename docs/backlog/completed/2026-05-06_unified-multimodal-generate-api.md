@@ -3,12 +3,14 @@
 ## Metadata
 - Created: 2026-05-06
 - Updated: 2026-05-07
-- Status: Planned
-- Completed: N/A
+- Status: Completed
+- Completed: 2026-05-06
 
 ## Context
-AbstractCore's primary public generation surface is `generate(...)`. Today it is mostly a
-text-generation API, even though the system now has three related but different multimodal concepts:
+AbstractCore's primary public generation surface is `generate(...)`. This item records the
+compatibility baseline that shipped as `generate(..., output=...)` before the later
+`generate(request, output)` convergence work. At the time this item was opened, the system had
+three related but different multimodal concepts:
 
 - multimodal input to text/chat models through `media=...`;
 - deterministic generated outputs through optional capability plugins:

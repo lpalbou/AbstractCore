@@ -33,6 +33,16 @@ OUTPUT_STRING_VALUES = {
     "t2m",
     "text_to_music",
     "music_generation",
+    "scene3d",
+    "3d",
+    "mesh",
+    "glb",
+    "obj",
+    "t23d",
+    "i23d",
+    "text_to_scene3d",
+    "image_to_scene3d",
+    "scene3d_generation",
 }
 
 OUTPUT_DICT_VALUES = {
@@ -70,6 +80,16 @@ OUTPUT_DICT_VALUES = {
     "text_to_music",
     "music_generation",
     "lyrics_to_music",
+    "scene3d",
+    "scene3d_generation",
+    "text_to_scene3d",
+    "image_to_scene3d",
+    "t23d",
+    "i23d",
+    "3d",
+    "mesh",
+    "glb",
+    "obj",
 }
 
 OUTPUT_MODALITY_ALIASES = {
@@ -103,6 +123,16 @@ OUTPUT_MODALITY_ALIASES = {
     "text_to_music": ("music", "music_generation"),
     "music_generation": ("music", "music_generation"),
     "lyrics_to_music": ("music", "music_generation"),
+    "scene3d": ("scene3d", "scene3d_generation"),
+    "3d": ("scene3d", "scene3d_generation"),
+    "mesh": ("scene3d", "scene3d_generation"),
+    "glb": ("scene3d", "scene3d_generation"),
+    "obj": ("scene3d", "scene3d_generation"),
+    "t23d": ("scene3d", "text_to_scene3d"),
+    "text_to_scene3d": ("scene3d", "text_to_scene3d"),
+    "i23d": ("scene3d", "image_to_scene3d"),
+    "image_to_scene3d": ("scene3d", "image_to_scene3d"),
+    "scene3d_generation": ("scene3d", "scene3d_generation"),
 }
 
 OUTPUT_TASK_ALIASES = {
@@ -124,6 +154,12 @@ OUTPUT_TASK_ALIASES = {
     "t2m": "music_generation",
     "text_to_music": "music_generation",
     "lyrics_to_music": "music_generation",
+    "3d": "scene3d_generation",
+    "mesh": "scene3d_generation",
+    "glb": "scene3d_generation",
+    "obj": "scene3d_generation",
+    "t23d": "text_to_scene3d",
+    "i23d": "image_to_scene3d",
 }
 
 OUTPUT_TASK_MODALITIES = {
@@ -139,6 +175,9 @@ OUTPUT_TASK_MODALITIES = {
     "voice_clone": "voice",
     "text_to_audio": "music",
     "music_generation": "music",
+    "scene3d_generation": "scene3d",
+    "text_to_scene3d": "scene3d",
+    "image_to_scene3d": "scene3d",
 }
 
 OUTPUT_PLUGIN_EXCLUDE_KEYS = {

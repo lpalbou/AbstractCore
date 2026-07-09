@@ -283,6 +283,19 @@ class VoiceCapability(Protocol):
         **kwargs: Any,
     ) -> BytesOrArtifactRef: ...
 
+    def tts_stream(
+        self,
+        text: str,
+        *,
+        voice: Optional[str] = None,
+        format: str = "wav",
+        profile: Optional[str] = None,
+        speed: Optional[float] = None,
+        instructions: Optional[str] = None,
+        quality_preset: Optional[str] = None,
+        **kwargs: Any,
+    ) -> Any: ...
+
     def stt(
         self,
         audio: Union[bytes, ArtifactRef, str],
@@ -514,6 +527,84 @@ class MusicCapability(Protocol):
         task: Optional[str] = None,
         lyrics: Optional[str] = None,
         format: str = "wav",
+        artifact_store: Optional[ArtifactStoreLike] = None,
+        run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> BytesOrArtifactRef: ...
+
+
+class Scene3dCapability(Protocol):
+    """Deterministic 3D scene/object generation capability.
+
+    The first release focuses on single-object mesh generation with a primary
+    binary artifact such as GLB. Capability metadata may reference preview
+    renders, secondary exports, and bundle paths when available.
+    """
+
+    backend_id: str
+
+    def available_providers(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]: ...
+
+    def list_models(
+        self,
+        *,
+        task: Optional[str] = None,
+        provider: Optional[str] = None,
+        provider_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]: ...
+
+    def list_provider_models(
+        self,
+        *,
+        task: Optional[str] = None,
+        provider: Optional[str] = None,
+        provider_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]: ...
+
+    def list_operations(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]: ...
+
+    def load_resident_model(self, request: Mapping[str, Any]) -> Mapping[str, Any]: ...
+
+    def list_loaded_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Mapping[str, Any]]: ...
+
+    def list_resident_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Mapping[str, Any]]: ...
+
+    def unload_resident_model(self, request: Mapping[str, Any]) -> Mapping[str, Any]: ...
+
+    def t23d(
+        self,
+        prompt: str,
+        *,
+        format: str = "glb",
+        artifact_store: Optional[ArtifactStoreLike] = None,
+        run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> BytesOrArtifactRef: ...
+
+    def i23d(
+        self,
+        image: Union[bytes, ArtifactRef, str],
+        *,
+        prompt: Optional[str] = None,
+        format: str = "glb",
+        artifact_store: Optional[ArtifactStoreLike] = None,
+        run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+        **kwargs: Any,
+    ) -> BytesOrArtifactRef: ...
+
+    def generate(
+        self,
+        prompt: str = "",
+        *,
+        task: Optional[str] = None,
+        image: Optional[Union[bytes, ArtifactRef, str]] = None,
+        format: str = "glb",
         artifact_store: Optional[ArtifactStoreLike] = None,
         run_id: Optional[str] = None,
         tags: Optional[Dict[str, str]] = None,

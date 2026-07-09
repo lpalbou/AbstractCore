@@ -701,17 +701,17 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
             logger.debug(f"📄 Search results preview: {preview_text(search_results, max_chars=500)}")
 
             # Parse search results to extract URLs and content
-            urls = self._extract_urls_from_search(search_results)
-            logger.info(f"🔗 Extracted {len(urls)} URLs from search results")
+            candidates = self._extract_search_candidates(search_results)
+            logger.info(f"🔗 Extracted {len(candidates)} URLs from search results")
 
             # Deduplicate URLs globally across all sub-tasks
-            original_count = len(urls)
-            urls = [(url, title) for url, title in urls if url not in processed_urls]
-            deduplicated_count = len(urls)
+            original_count = len(candidates)
+            candidates = [candidate for candidate in candidates if str(candidate.get("url") or "") not in processed_urls]
+            deduplicated_count = len(candidates)
 
             # Add new URLs to processed set
-            for url, title in urls:
-                processed_urls.add(url)
+            for candidate in candidates:
+                processed_urls.add(str(candidate.get("url") or ""))
 
             if self.debug_mode and original_count > deduplicated_count:
                 print(f"\n🔄 DEBUG: URL Deduplication for query \"{query}\":")
@@ -722,25 +722,49 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
             # Debug: Show all URLs found for this query
             if self.debug_mode:
                 print(f"\n🔍 DEBUG: URLs found for query \"{query}\":")
-                for i, (url, title) in enumerate(urls, 1):
+                for i, candidate in enumerate(candidates, 1):
+                    url = str(candidate.get("url") or "")
+                    title = str(candidate.get("title") or "")
                     print(f"   {i}. {title}")
                     print(f"      🔗 {url}")
+                    if candidate.get("snippet"):
+                        print(f"      📝 {preview_text(str(candidate.get('snippet') or ''), max_chars=280)}")
                     self.debug_info['all_urls_found'].append({
                         'query': query,
                         'sub_task_id': sub_task_id,
                         'url': url,
-                        'title': title
+                        'title': title,
+                        'snippet': str(candidate.get("snippet") or ""),
                     })
 
-            if not urls:
+            if not candidates:
                 logger.warning(f"⚠️ No URLs found in search results for query: {query}")
                 logger.debug(f"Full search results: {search_results}")
                 # Try to create a synthetic finding from the search results if they contain useful information
-                if len(search_results) > 100 and "Error searching internet" not in search_results:
+                payload = None
+                if isinstance(search_results, dict):
+                    payload = search_results
+                    search_text = json.dumps(search_results, ensure_ascii=False)
+                else:
+                    search_text = str(search_results or "")
+                    try:
+                        candidate = json.loads(search_text)
+                        if isinstance(candidate, dict):
+                            payload = candidate
+                    except Exception:
+                        payload = None
+
+                payload_failed = False
+                if isinstance(payload, dict):
+                    success_value = payload.get("success")
+                    status_hint = str(payload.get("status_hint") or "").strip().lower()
+                    payload_failed = success_value is False or status_hint == "error" or bool(payload.get("error"))
+
+                if len(search_text) > 100 and not payload_failed and "Error searching internet" not in search_text:
                     synthetic_finding = ResearchFinding(
                         source_url="https://duckduckgo.com/?q=" + query.replace(" ", "+"),
                         title=f"Search results for: {query}",
-                        content=preview_text(search_results, max_chars=500),
+                        content=preview_text(search_text, max_chars=500),
                         relevance_score=0.3,
                         timestamp=timestamp,
                         sub_task_id=sub_task_id
@@ -750,17 +774,32 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
                 return findings
 
             # Fetch content from promising URLs with source manager control
-            for i, (url, title) in enumerate(urls):
+            for i, candidate in enumerate(candidates):
                 # Check source manager capacity before processing
                 if source_manager.is_full():
                     logger.info(f"🎯 Source limit reached, stopping URL processing for query: {query}")
                     break
 
                 try:
+                    url = str(candidate.get("url") or "")
+                    title = str(candidate.get("title") or "")
+                    search_snippet = str(candidate.get("snippet") or "")
                     logger.debug(f"🌐 Fetching content from URL {i+1}: {url}")
                     content = fetch_url(url, timeout=15, include_full_content=self.full_text_extraction)
 
-                    if "Error" in content or len(content) < 100:
+                    if isinstance(content, dict):
+                        if not bool(content.get("success")):
+                            logger.debug(f"⚠️ Skipping URL due to fetch error: {url}")
+                            continue
+                        extracted_text = str(content.get("normalized_text") or content.get("raw_text") or "")
+                        if not extracted_text.strip():
+                            logger.debug(f"⚠️ Skipping URL because fetch returned no extracted text: {url}")
+                            continue
+                        content_length = len(extracted_text)
+                    else:
+                        content_length = len(str(content or ""))
+
+                    if content_length < 100:
                         logger.debug(f"⚠️ Skipping URL due to fetch error or short content: {url}")
                         continue
 
@@ -771,6 +810,9 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
                     else:
                         # Standard mode with structured parsing
                         relevant_content = self._extract_relevant_content(content, query)
+
+                    if relevant_content and search_snippet:
+                        relevant_content = self._merge_search_snippet(relevant_content, search_snippet)
 
                     if relevant_content:
                         # Use LLM to assess content relevance and quality
@@ -1239,10 +1281,56 @@ BE GENEROUS with relevance assessment - when in doubt, mark as relevant.
 
         return focus_areas_map.get(query_type, focus_areas_map["concept"])
 
-    def _extract_urls_from_search(self, search_results: str) -> List[tuple]:
-        """Extract URLs and titles from search results"""
-        urls = []
-        lines = search_results.split('\n')
+    def _structured_preview_limit(self) -> int:
+        """Character budget for text retained from fetched pages."""
+        return 6000 if self.full_text_extraction else 2400
+
+    def _final_content_preview_limit(self) -> int:
+        """Character budget for the final excerpt fed into downstream reasoning."""
+        return 4000 if self.full_text_extraction else 2200
+
+    def _extract_search_candidates(self, search_results: Union[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Extract structured search candidates while preserving snippets when available."""
+        if isinstance(search_results, dict):
+            payload = search_results
+        else:
+            payload = None
+            try:
+                candidate = json.loads(str(search_results or ""))
+                if isinstance(candidate, dict):
+                    payload = candidate
+            except Exception:
+                payload = None
+
+        if isinstance(payload, dict):
+            structured_results = payload.get("results")
+            if isinstance(structured_results, list):
+                candidates: List[Dict[str, Any]] = []
+                for item in structured_results:
+                    if not isinstance(item, dict):
+                        continue
+                    url = str(item.get("url") or item.get("href") or "").strip()
+                    if not url.startswith(("http://", "https://")):
+                        continue
+                    title = str(item.get("title") or "").strip() or f"Web Result from {url.split('/')[2]}"
+                    snippet = preview_text(str(item.get("snippet") or "").strip(), max_chars=720)
+                    candidates.append(
+                        {
+                            "url": url,
+                            "title": title,
+                            "snippet": snippet,
+                            "rank": item.get("rank"),
+                        }
+                    )
+                if candidates:
+                    logger.debug(
+                        f"🔗 Candidate extraction found {len(candidates)} structured URLs: {[u['url'] for u in candidates[:3]]}"
+                    )
+                    return candidates
+
+        urls: List[tuple] = []
+        search_text = str(search_results or "")
+        lines = search_text.split('\n')
 
         current_title = ""
         for line in lines:
@@ -1272,16 +1360,32 @@ BE GENEROUS with relevance assessment - when in doubt, mark as relevant.
         # If no URLs found, try a more aggressive search
         if not urls:
             import re
-            all_urls = re.findall(r'https?://[^\s<>"{}|\\^`\[\]]+', search_results)
+            all_urls = re.findall(r'https?://[^\s<>"{}|\\^`\[\]]+', search_text)
             for url in all_urls:
                 url = url.rstrip('.,;:!?)')
                 title = f"Web Result from {url.split('/')[2] if '/' in url else 'Unknown'}"
                 urls.append((url, title))
 
+        candidates = [{"url": url, "title": title, "snippet": "", "rank": None} for url, title in urls]
+        logger.debug(f"🔗 Candidate extraction found {len(candidates)} URLs: {[u['url'] for u in candidates[:3]]}")
+        return candidates
+
+    def _extract_urls_from_search(self, search_results: Union[str, Dict[str, Any]]) -> List[tuple]:
+        """Extract URLs and titles from search results"""
+        urls = [(item["url"], item["title"]) for item in self._extract_search_candidates(search_results)]
         logger.debug(f"🔗 URL extraction found {len(urls)} URLs: {[u[0] for u in urls[:3]]}")
         return urls
 
-    def _extract_relevant_content(self, content: str, query: str) -> str:
+    def _merge_search_snippet(self, relevant_content: Optional[str], search_snippet: str) -> Optional[str]:
+        content = str(relevant_content or "").strip()
+        snippet = " ".join(str(search_snippet or "").split()).strip()
+        if not content or not snippet:
+            return relevant_content
+        if snippet.lower() in content.lower():
+            return relevant_content
+        return f"**Search Snippet:** {snippet}\n{content}"
+
+    def _extract_relevant_content(self, content: Union[str, Dict[str, Any]], query: str) -> str:
         """Extract relevant content from fetched web page using structured parsing"""
 
         # First, try to parse the structured output from fetch_url
@@ -1294,15 +1398,36 @@ BE GENEROUS with relevance assessment - when in doubt, mark as relevant.
             # Fallback to LLM-based extraction for unstructured content
             return self._extract_with_llm(content, query)
 
-    def _parse_fetch_url_output(self, content: str) -> Optional[Dict[str, Any]]:
+    def _parse_fetch_url_output(self, content: Union[str, Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         """Parse structured output from fetch_url tool"""
         try:
+            if isinstance(content, dict):
+                structured: Dict[str, Any] = {}
+                rendered = str(content.get("rendered") or "")
+                normalized_text = str(content.get("normalized_text") or "")
+                raw_text = str(content.get("raw_text") or "")
+                if rendered:
+                    for line in rendered.split("\n"):
+                        line = line.strip()
+                        if line.startswith('📰 Title:'):
+                            structured['title'] = line.replace('📰 Title:', '').strip()
+                        elif line.startswith('📝 Description:'):
+                            structured['description'] = line.replace('📝 Description:', '').strip()
+                if normalized_text:
+                    structured['text_preview'] = preview_text(normalized_text, max_chars=self._structured_preview_limit())
+                    structured['_full_text'] = normalized_text
+                elif raw_text:
+                    structured['text_preview'] = preview_text(raw_text, max_chars=self._structured_preview_limit())
+                    structured['_full_text'] = raw_text
+                return structured if structured else None
+
+            content_str = str(content or "")
             # Look for the structured sections in fetch_url output
-            if "📄 Content Analysis:" not in content:
+            if "📄 Content Analysis:" not in content_str:
                 return None
 
             structured = {}
-            lines = content.split('\n')
+            lines = content_str.split('\n')
 
             for i, line in enumerate(lines):
                 line = line.strip()
@@ -1339,7 +1464,7 @@ BE GENEROUS with relevance assessment - when in doubt, mark as relevant.
 
             # Store raw content for full text extraction if needed
             if self.full_text_extraction:
-                structured['_raw_content'] = content
+                structured['_raw_content'] = content_str
 
             return structured if structured else None
 
@@ -1386,8 +1511,9 @@ BE GENEROUS with relevance assessment - when in doubt, mark as relevant.
                 else:
                     content_parts.append(f"**Content:** {text_preview}")
             else:
-                # Standard mode: use longer preview (up to 1000 chars)
-                preview = preview_text(text_preview, max_chars=1000)
+                # Standard mode: keep a wider slice so the agent can decide
+                # whether the fetched page is worth keeping.
+                preview = preview_text(text_preview, max_chars=self._final_content_preview_limit())
                 content_parts.append(f"**Content:** {preview}")
 
         if not content_parts:
@@ -1407,8 +1533,13 @@ BE GENEROUS with relevance assessment - when in doubt, mark as relevant.
 
         return combined_content
 
-    def _extract_full_text_from_fetch_output(self, raw_content: str) -> str:
+    def _extract_full_text_from_fetch_output(self, raw_content: Union[str, Dict[str, Any]]) -> str:
         """Extract full clean text content from fetch_url output"""
+        if isinstance(raw_content, dict):
+            direct_text = str(raw_content.get("normalized_text") or raw_content.get("raw_text") or "").strip()
+            if direct_text:
+                return direct_text
+            raw_content = str(raw_content.get("rendered") or "")
         if not raw_content or "📄 Text Content Preview:" not in raw_content:
             return ""
 
@@ -1452,7 +1583,7 @@ BE GENEROUS with relevance assessment - when in doubt, mark as relevant.
             logger.debug(f"Failed to extract full text: {e}")
             return ""
 
-    def _extract_relevant_content_full_text(self, content: str, query: str, url: str) -> str:
+    def _extract_relevant_content_full_text(self, content: Union[str, Dict[str, Any]], query: str, url: str) -> str:
         """Extract relevant content using full text mode with custom processing"""
 
         # First try structured parsing
@@ -1533,11 +1664,15 @@ If the content is not relevant to the query, respond with "NOT_RELEVANT".
             logger.debug(f"Full text extraction failed: {e}")
             return None
 
-    def _extract_with_llm(self, content: str, query: str) -> str:
+    def _extract_with_llm(self, content: Union[str, Dict[str, Any]], query: str) -> str:
         """Fallback LLM-based extraction for unstructured content"""
 
         # Limit content length for processing
-        content = preview_text(content, max_chars=8000)
+        if isinstance(content, dict):
+            content_text = str(content.get("normalized_text") or content.get("raw_text") or content.get("rendered") or "")
+        else:
+            content_text = str(content or "")
+        content = preview_text(content_text, max_chars=8000)
 
         extraction_prompt = f"""
 Extract the most relevant information from this content for the research query.

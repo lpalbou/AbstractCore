@@ -89,8 +89,46 @@ class ToolDefinition:
         sig = inspect.signature(func)
         parameters = {}
 
+        # PEP 563 / `from __future__ import annotations`: annotations may be STRINGS
+        # (e.g. "bool", "Optional[int]") rather than real types. Resolve them once via
+        # get_type_hints so type inference is truthful; without this, every tool defined in a
+        # module that uses `from __future__ import annotations` (e.g. common_tools.py) silently
+        # falls through to {"type": "string"}, which breaks schema-aware argument coercion for
+        # boolean/int flags (backlog 039).
+        try:
+            import typing
+
+            resolved_hints = typing.get_type_hints(func)
+        except Exception:
+            resolved_hints = {}
+
+        # Fallback map for bare string annotations when get_type_hints cannot resolve them.
+        _STRING_ANNOTATION_SCHEMAS = {
+            "str": {"type": "string"},
+            "int": {"type": "integer"},
+            "float": {"type": "number"},
+            "bool": {"type": "boolean"},
+        }
+
         def _schema_for_annotation(annotation: Any) -> Dict[str, Any]:
             if annotation in {inspect._empty, None}:
+                return {"type": "string"}
+
+            # Bare string annotation (PEP 563) that get_type_hints did not resolve.
+            if isinstance(annotation, str):
+                key = annotation.strip()
+                if key in _STRING_ANNOTATION_SCHEMAS:
+                    return dict(_STRING_ANNOTATION_SCHEMAS[key])
+                lowered = key.lower()
+                # Optional[T]/Union[..., None] and container spellings as text.
+                if lowered.startswith(("optional[", "list[", "dict[", "tuple[", "set[", "sequence[")):
+                    inner = key[key.find("[") + 1 : key.rfind("]")].strip()
+                    if lowered.startswith("optional["):
+                        return _schema_for_annotation(inner.split(",")[0].strip())
+                    if lowered.startswith(("dict[",)):
+                        return {"type": "object"}
+                    item = inner.split(",")[0].strip()
+                    return {"type": "array", "items": _schema_for_annotation(item)}
                 return {"type": "string"}
 
             if annotation is str:
@@ -124,9 +162,11 @@ class ToolDefinition:
         for param_name, param in sig.parameters.items():
             param_info = {"type": "string"}  # Default type
 
-            # Try to infer type from annotation
-            if param.annotation != param.empty:
-                param_info = _schema_for_annotation(param.annotation)
+            # Try to infer type from annotation. Prefer the resolved type hint (handles PEP 563
+            # stringized annotations); fall back to the raw annotation on the parameter.
+            annotation = resolved_hints.get(param_name, param.annotation)
+            if annotation != param.empty:
+                param_info = _schema_for_annotation(annotation)
 
             if param.default != param.empty:
                 param_info["default"] = param.default

@@ -224,6 +224,24 @@ class TestPDFProcessor:
         assert processor.pdf_backend == "pypdf"
         assert processor.capabilities.vision_support is False
 
+    def test_pymupdf_backend_extracts_text_when_available(self):
+        """Plain PyMuPDF backend should be a first-class explicit option."""
+        pytest.importorskip("pymupdf")
+        reportlab_canvas = pytest.importorskip("reportlab.pdfgen.canvas")
+
+        test_pdf = Path(self.temp_dir) / "pymupdf-text.pdf"
+        canvas = reportlab_canvas.Canvas(str(test_pdf))
+        canvas.drawString(72, 720, "Hello PyMuPDF backend")
+        canvas.save()
+
+        processor = PDFProcessor(pdf_backend="pymupdf")
+        result = processor.process_file(test_pdf)
+
+        assert result.success
+        assert result.media_content.metadata["pdf_backend"] == "pymupdf"
+        assert result.media_content.metadata["extraction_method"] == "pymupdf"
+        assert "Hello PyMuPDF backend" in result.media_content.content
+
     def test_non_pdf_file(self):
         """Test handling of non-PDF file."""
         fake_file = Path(self.temp_dir) / "test.txt"

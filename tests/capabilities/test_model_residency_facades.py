@@ -61,6 +61,14 @@ class _FakeResidencyBackend:
         _ = image, kwargs
         return b""
 
+    def t23d(self, prompt: str, **kwargs: Any) -> bytes:
+        _ = prompt, kwargs
+        return b""
+
+    def i23d(self, image: Any, **kwargs: Any) -> bytes:
+        _ = image, kwargs
+        return b""
+
 
 def test_residency_methods_are_exposed_on_python_capability_facades() -> None:
     owner = object()
@@ -70,18 +78,24 @@ def test_residency_methods_are_exposed_on_python_capability_facades() -> None:
     voice = _FakeResidencyBackend()
     audio = _FakeResidencyBackend()
     vision = _FakeResidencyBackend()
+    scene3d = _FakeResidencyBackend()
     registry.register_voice_backend(backend_id="fake-voice", factory=lambda _owner: voice)
     registry.register_audio_backend(backend_id="fake-audio", factory=lambda _owner: audio)
     registry.register_vision_backend(backend_id="fake-vision", factory=lambda _owner: vision)
+    registry.register_scene3d_backend(backend_id="fake-scene3d", factory=lambda _owner: scene3d)
 
     assert registry.voice.load_resident_model({"task": "tts", "provider": "cloned", "model": "omnivoice"})["state"] == "loaded"
     assert registry.audio.load_resident_model({"task": "stt", "provider": "faster-whisper", "model": "base"})["state"] == "loaded"
     assert registry.vision.load_resident_model({"task": "image_generation", "provider": "diffusers", "model": "sd15"})["state"] == "loaded"
+    assert registry.scene3d.load_resident_model({"task": "t23d", "provider": "triposr", "model": "stabilityai/TripoSR"})["state"] == "loaded"
 
     assert registry.voice.list_loaded_models({"task": "tts"})[0]["model"] == "loaded"
     assert registry.audio.list_resident_models({"task": "stt"})[0]["model"] == "resident"
     assert registry.vision.unload_resident_model({"provider": "diffusers", "model": "sd15"})["state"] == "unloaded"
+    assert registry.scene3d.list_resident_models({"task": "t23d"})[0]["model"] == "resident"
+    assert registry.scene3d.unload_resident_model({"provider": "triposr", "model": "stabilityai/TripoSR"})["state"] == "unloaded"
 
     assert voice.calls[0][0] == "load"
     assert audio.calls[0][1]["task"] == "stt"
     assert vision.calls[-1][0] == "unload"
+    assert scene3d.calls[0][1]["task"] == "t23d"

@@ -641,6 +641,105 @@ def _parse_function_call(response: str) -> List[ToolCall]:
     return tool_calls
 
 
+_XML_TOOL_NAME_PATTERN = r"[a-zA-Z_][a-zA-Z0-9_-]*"
+_XML_TOOL_RESERVED_TAGS = {"tool_call", "function_call", "function", "parameter"}
+
+
+def _strip_pretty_xml_parameter_value(raw_value: str) -> str:
+    """Remove only pretty-print wrapper newlines from an XML-ish parameter value."""
+    value = (raw_value or "").replace("\r\n", "\n")
+    if value.startswith("\n"):
+        value = value[1:]
+    if value.endswith("\n"):
+        value = value[:-1]
+    return value
+
+
+def _parse_xmlish_parameters(body: str) -> Dict[str, Any]:
+    """Parse repeated <parameter=name>value</parameter> children."""
+    arguments: Dict[str, Any] = {}
+    for param_match in re.finditer(
+        r"<parameter\s*=\s*([a-zA-Z0-9_-]+)\s*>(.*?)</parameter>",
+        body or "",
+        re.DOTALL | re.IGNORECASE,
+    ):
+        key = (param_match.group(1) or "").strip()
+        if not key:
+            continue
+        arguments[key] = _strip_pretty_xml_parameter_value(param_match.group(2) or "")
+    return arguments
+
+
+def _iter_xml_tool_call_bodies(response: str):
+    """Yield bodies after <tool_call>, accepting a missing final </tool_call>."""
+    open_re = re.compile(r"<tool_call\b[^>]*>", re.IGNORECASE)
+    close_re = re.compile(r"</tool_call\s*>", re.IGNORECASE)
+    pos = 0
+
+    while True:
+        open_match = open_re.search(response, pos)
+        if not open_match:
+            break
+
+        close_match = close_re.search(response, open_match.end())
+        if close_match:
+            yield response[open_match.end():close_match.start()]
+            pos = close_match.end()
+            continue
+
+        next_open = open_re.search(response, open_match.end())
+        body_end = next_open.start() if next_open else len(response)
+        yield response[open_match.end():body_end]
+        pos = body_end
+
+
+def _parse_xmlish_parameter_tool_calls(body: str) -> List[ToolCall]:
+    """Parse XML-ish tool calls that encode arguments as <parameter=...> tags."""
+    tool_calls: List[ToolCall] = []
+    if not isinstance(body, str) or not body.strip():
+        return tool_calls
+
+    # Canonical Nemotron-style payload:
+    #   <function=tool_name><parameter=x>...</parameter></function>
+    function_re = re.compile(
+        rf"<function\s*=\s*({_XML_TOOL_NAME_PATTERN})\s*>",
+        re.IGNORECASE,
+    )
+    for func_match in function_re.finditer(body):
+        func_name = (func_match.group(1) or "").strip()
+        if not func_name:
+            continue
+
+        close_match = re.search(r"</function\s*>", body[func_match.end():], re.IGNORECASE)
+        block_end = func_match.end() + close_match.start() if close_match else len(body)
+        arguments = _parse_xmlish_parameters(body[func_match.end():block_end])
+        tool_calls.append(ToolCall(name=func_name, arguments=arguments, call_id=None))
+
+    if tool_calls:
+        return tool_calls
+
+    # Recovery for malformed-but-observed payloads:
+    #   <web_search><parameter=query>...</parameter></function>
+    # or
+    #   <web_search><parameter=query>...</parameter></web_search>
+    direct_open_re = re.compile(rf"<({_XML_TOOL_NAME_PATTERN})\s*>", re.IGNORECASE)
+    for open_match in direct_open_re.finditer(body):
+        tool_name = (open_match.group(1) or "").strip()
+        if not tool_name or tool_name.lower() in _XML_TOOL_RESERVED_TAGS:
+            continue
+
+        close_re = re.compile(rf"</(?:{re.escape(tool_name)}|function)\s*>", re.IGNORECASE)
+        close_match = close_re.search(body, open_match.end())
+        block_end = close_match.start() if close_match else len(body)
+        arguments = _parse_xmlish_parameters(body[open_match.end():block_end])
+        if not arguments:
+            continue
+
+        tool_calls.append(ToolCall(name=tool_name, arguments=arguments, call_id=None))
+
+    return tool_calls
+
+
 def _parse_xml_wrapped(response: str) -> List[ToolCall]:
     """Parse XML-wrapped tool calls."""
     tool_calls = []
@@ -657,10 +756,7 @@ def _parse_xml_wrapped(response: str) -> List[ToolCall]:
     #        <parameter=content>...</parameter>
     #      </function>
     #    </tool_call>
-    pattern = r'<tool_call>\s*(.*?)\s*</tool_call>'
-
-    for match in re.finditer(pattern, response, re.DOTALL | re.IGNORECASE):
-        body = match.group(1)
+    for body in _iter_xml_tool_call_bodies(response):
         if not isinstance(body, str):
             continue
 
@@ -683,35 +779,8 @@ def _parse_xml_wrapped(response: str) -> List[ToolCall]:
                 logger.warning(f"Failed to parse XML tool call JSON: {body_stripped} - {e}")
                 continue
 
-        # Case 2: Nemotron XML-ish function/parameter encoding
-        func_match = re.search(r'<function\s*=\s*([a-zA-Z0-9_-]+)\s*>', body, re.IGNORECASE)
-        if not func_match:
-            continue
-        func_name = func_match.group(1).strip()
-        if not func_name:
-            continue
-
-        arguments: Dict[str, Any] = {}
-        for param_match in re.finditer(
-            r'<parameter\s*=\s*([a-zA-Z0-9_-]+)\s*>(.*?)</parameter>',
-            body,
-            re.DOTALL | re.IGNORECASE,
-        ):
-            key = (param_match.group(1) or "").strip()
-            raw_value = param_match.group(2) or ""
-            if not key:
-                continue
-
-            # Preserve content as-is, but strip the common leading/trailing newline artifacts
-            # introduced by pretty-printed tag blocks.
-            value = raw_value.replace("\r\n", "\n")
-            if value.startswith("\n"):
-                value = value[1:]
-            if value.endswith("\n"):
-                value = value[:-1]
-            arguments[key] = value
-
-        tool_calls.append(ToolCall(name=func_name, arguments=arguments, call_id=None))
+        # Case 2: XML-ish function/parameter encoding.
+        tool_calls.extend(_parse_xmlish_parameter_tool_calls(body))
 
     return tool_calls
 
@@ -1695,6 +1764,9 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
 
         # Other formats
         r'<function_call>.*?</function_call>',
+        r'<tool_call\b[^>]*>\s*<function\s*=\s*[a-zA-Z_][a-zA-Z0-9_-]*\s*>.*?</function\s*>\s*(?:</tool_call\s*>)?',
+        r'<tool_call\b[^>]*>\s*<[a-zA-Z_][a-zA-Z0-9_-]*\s*>.*?</function\s*>\s*(?:</tool_call\s*>)?',
+        r'<tool_call\b[^>]*>\s*<([a-zA-Z_][a-zA-Z0-9_-]*)\s*>.*?</\1\s*>\s*(?:</tool_call\s*>)?',
         r'<tool_call>.*?</tool_call>',
         r'```tool_code.*?```',
         r'```tool_call.*?```'

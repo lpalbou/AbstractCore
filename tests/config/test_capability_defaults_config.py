@@ -21,6 +21,7 @@ def test_capability_defaults_persist_provider_model_base_url_and_options(monkeyp
         provider="supertonic",
         model="supertonic-3",
         base_url="http://127.0.0.1:5000/v1",
+        reasoning="low",
         options={"voice": "M1"},
     )
 
@@ -30,6 +31,7 @@ def test_capability_defaults_persist_provider_model_base_url_and_options(monkeyp
     assert route["provider"] == "supertonic"
     assert route["model"] == "supertonic-3"
     assert route["base_url"] == "http://127.0.0.1:5000/v1"
+    assert route["reasoning"] == "low"
     assert route["options"] == {"voice": "M1"}
     assert route["source"] == "abstractcore.capability_defaults"
 
@@ -127,6 +129,8 @@ def test_config_subcommand_set_list_and_clear_defaults(monkeypatch, tmp_path, ca
             "qwen-local",
             "--base-url",
             "http://127.0.0.1:1234/v1",
+            "--reasoning",
+            "medium",
             "--option",
             "temperature=0.2",
         ]
@@ -139,6 +143,7 @@ def test_config_subcommand_set_list_and_clear_defaults(monkeypatch, tmp_path, ca
     assert route["provider"] == "lmstudio"
     assert route["model"] == "qwen-local"
     assert route["base_url"] == "http://127.0.0.1:1234/v1"
+    assert route["reasoning"] == "medium"
     assert route["options"] == {"temperature": 0.2}
 
     assert config_main(["config", "--config-file", str(config_file), "clear-default", "output.text"]) == 0
@@ -309,6 +314,9 @@ def test_capability_defaults_include_embedding_and_rerank_route_specs(monkeypatc
     assert by_key["input.music"]["task"] == "music_understanding"
     assert by_key["output.sound"]["task"] == "sound_generation"
     assert by_key["output.music"]["task"] == "music_generation"
+    assert by_key["output.scene3d"]["task"] == "scene3d_generation"
+    assert by_key["output.scene3d.text_to_scene3d"]["task"] == "text_to_scene3d"
+    assert by_key["output.scene3d.image_to_scene3d"]["task"] == "image_to_scene3d"
     assert by_key["rerank.text"]["kind"] == "rerank"
     assert by_key["rerank.text"]["configured"] is False
 

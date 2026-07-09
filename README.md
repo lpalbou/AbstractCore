@@ -180,6 +180,26 @@ response = llm.generate("What is the capital of France?")
 print(response.content)
 ```
 
+### Request/output form
+
+The prompt-first API remains fully supported, but the lower-level multimodal shape is now the
+keyword `request=` plus `output=` form:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+resp = llm.generate(
+    request={"text": "A red ceramic mug on a white table."},
+    output={"modality": "image", "format": "png"},
+)
+```
+
+Legacy `prompt`, `text`, `messages`, and `media` kwargs normalize into the same internal request
+contract. Manual provider/model/base URL selection remains available on output specs and provider
+construction; the new contract is additive, not a breaking API change. For debugging, responses may
+also expose a bounded `_resolved_generate_route` metadata summary.
+
 ### Conversation state (`BasicSession`)
 
 ```python

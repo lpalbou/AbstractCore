@@ -34,6 +34,11 @@ from ..core.output_specs import (
     normalize_output_specs,
     output_plugin_kwargs,
 )
+from ..core.generate_contract import (
+    GenerateRequest,
+    normalize_generate_request,
+    resolve_generate_route,
+)
 from ..capabilities.types import is_artifact_ref
 from ..events import EventType, Event
 from datetime import datetime
@@ -53,6 +58,10 @@ from ..architectures.response_postprocessing import (
     normalize_assistant_text,
     maybe_create_incremental_thinking_tag_stripper,
     strip_output_wrappers,
+)
+from ..architectures.thinking_controls import (
+    ThinkingControlSurfaces,
+    resolve_thinking_control_surfaces,
 )
 from ..tools import execute_tools
 from ..core.retry import RetryManager, RetryConfig
@@ -1120,13 +1129,36 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if caps.get("thinking_budget") is True:
             return True
 
-        # Prompt-level disable tokens (e.g., GLM /nothink, Qwen /no_think).
-        for src in (caps, arch):
-            token = src.get("thinking_control")
-            if isinstance(token, str) and token.strip():
-                return True
+        # Declared typed thinking-control surfaces (prompt tokens, template kwargs, API params, ...).
+        if self._thinking_control_surfaces().any_declared():
+            return True
 
         return False
+
+    def _thinking_control_surfaces(self) -> ThinkingControlSurfaces:
+        """Resolve the typed thinking-control surfaces declared in assets for this model.
+
+        Sources are merged per key, later overriding earlier:
+        1. the registry entry for the live ``self.architecture`` attribute (matching how
+           provider hooks historically consumed the architecture),
+        2. the instance ``self.architecture_config`` (which callers/tests may override),
+        3. model capabilities.
+        """
+        arch_sources: List[Dict[str, Any]] = []
+        arch_name = getattr(self, "architecture", None)
+        if isinstance(arch_name, str) and arch_name.strip():
+            try:
+                resolved = get_architecture_format(arch_name)
+                if isinstance(resolved, dict) and resolved:
+                    arch_sources.append(resolved)
+            except Exception:
+                pass
+        if isinstance(self.architecture_config, dict) and self.architecture_config not in arch_sources:
+            arch_sources.append(self.architecture_config)
+        return resolve_thinking_control_surfaces(
+            model_capabilities=self.model_capabilities if isinstance(self.model_capabilities, dict) else None,
+            architecture_format=arch_sources,
+        )
 
     def _is_parameter_supported(self, param: str) -> bool:
         """Check if a generation parameter is supported by this model.
@@ -1286,26 +1318,28 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # `chat_template_kwargs.enable_thinking`, Ollama `think`). This keeps requests clean and
         # avoids polluting system prompts (and provider logs) with framework-specific directives.
 
-        # Qwen3 / Qwen3.5 hard-switch (LM Studio + llama.cpp/GGUF): disable thinking without system-prompt hacks.
+        # Assistant-prefill hard-switch (LM Studio + llama.cpp/GGUF): disable thinking without system-prompt hacks.
         #
-        # Qwen's official guidance (and common Qwen chat templates) support a strict, stateless
-        # "no-thinking" mode by inserting an empty think block in the *assistant generation prompt*
-        # (i.e. right after the assistant start token) before generation:
+        # Some chat templates (notably Qwen3-family) support a strict, stateless "no-thinking"
+        # mode by inserting an empty think block in the *assistant generation prompt* (i.e. right
+        # after the assistant start token) before generation:
         #   <think>\n\n</think>\n\n
         #
+        # The marker is declared in assets as `thinking_control.assistant_prefill_disable`.
         # Some LM Studio runtimes do not reliably honor `chat_template_kwargs.enable_thinking`
         # for all model formats. As a robust fallback for `thinking="off"/"none"`, we append a
         # final assistant message containing only the empty think block and clear `prompt` so
         # OpenAI-compatible providers don't append an extra user turn after it.
+        thinking_surfaces = self._thinking_control_surfaces()
         provider_id = str(getattr(self, "provider", "") or "").strip().lower()
         is_hf_gguf = provider_id == "huggingface" and str(getattr(self, "model_type", "") or "").strip().lower() == "gguf"
         if (
             enabled is False
             and (provider_id == "lmstudio" or is_hf_gguf)
-            and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}
+            and thinking_surfaces.assistant_prefill_disable
             and not provider_handling.handled_enable_disable
         ):
-            marker = "<think>\n\n</think>\n\n"
+            marker = thinking_surfaces.assistant_prefill_disable
             new_messages: List[Dict[str, str]] = []
             if isinstance(messages, list) and messages:
                 for m in messages:
@@ -1332,26 +1366,26 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 messages = new_messages
                 handled_model_enable_disable = True
 
-        # Model-level control token for disabling thinking (e.g., GLM `/nothink`).
+        # Model-level *prompt token* for disabling thinking (e.g., GLM `/nothink`, Qwen `/no_think`).
         #
-        # Apply prompt-level control *only* when the provider did not already handle the request
-        # with a backend-native knob (e.g., vLLM/LM Studio `enable_thinking`). This avoids injecting
-        # tokens that some templates do not interpret as controls.
-        thinking_control = None
-        for src in (self.model_capabilities, self.architecture_config):
-            if not isinstance(src, dict):
-                continue
-            token = src.get("thinking_control")
-            if isinstance(token, str) and token.strip():
-                thinking_control = token.strip()
-
-        if enabled is False and thinking_control and not provider_handling.handled_enable_disable:
+        # Apply prompt-level control *only* when (a) assets declare an explicit
+        # `thinking_control.prompt_disable_token` surface and (b) no other control already handled
+        # the request. Template-variable / API-param surface names (e.g. `enable_thinking`,
+        # `reasoning_effort`) must NEVER be appended as prompt text — that was a silent no-op that
+        # polluted prompts while reporting the disable as handled.
+        prompt_disable_token = thinking_surfaces.prompt_disable_token
+        if (
+            enabled is False
+            and prompt_disable_token
+            and not provider_handling.handled_enable_disable
+            and not handled_model_enable_disable
+        ):
             handled_model_enable_disable = True
 
             def _append_control(text: str) -> str:
-                if thinking_control in text:
+                if prompt_disable_token in text:
                     return text
-                return f"{text.rstrip()}\n{thinking_control}".strip()
+                return f"{text.rstrip()}\n{prompt_disable_token}".strip()
 
             if isinstance(prompt, str) and prompt.strip():
                 prompt = _append_control(prompt)
@@ -1372,7 +1406,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 if not appended:
                     warnings.warn(
                         f"thinking='off' requested for model '{self.model}', but no user prompt was available "
-                        f"to append thinking_control='{thinking_control}'.",
+                        f"to append prompt_disable_token='{prompt_disable_token}'.",
                         RuntimeWarning,
                         stacklevel=3,
                     )
@@ -1403,10 +1437,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
             )
 
         # Warn about missing mapping only when the request is expected to take effect.
+        # Per ADR-0001 (no silent degradation): state what the effective behavior will be.
         if requesting_enable and not handled_enable_disable and not handled_level:
             warnings.warn(
                 f"thinking={thinking!r} requested but provider '{self.provider or self.__class__.__name__}' "
-                "does not implement a thinking control mapping for this model; the request may be ignored.",
+                f"does not implement a thinking control mapping for model '{self.model}'; no control was applied "
+                "and the model/server default thinking behavior remains in effect.",
                 RuntimeWarning,
                 stacklevel=3,
             )
@@ -1414,14 +1450,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if supports_reasoning_control:
                 warnings.warn(
                     f"thinking={thinking!r} requested but provider '{self.provider or self.__class__.__name__}' "
-                    "does not implement a thinking disable mapping for this model; the request may be ignored.",
+                    f"does not implement a thinking disable mapping for model '{self.model}'; no control was applied "
+                    "and the model/server default thinking behavior remains in effect (reasoning may still be generated and billed).",
                     RuntimeWarning,
                     stacklevel=3,
                 )
             else:
                 warnings.warn(
                     f"thinking={thinking!r} requested but model '{self.model}' does not advertise a thinking control "
-                    "surface in assets; the request may be ignored.",
+                    "surface in assets; no control was applied and the model default thinking behavior remains in "
+                    "effect (reasoning may still be generated and billed).",
                     RuntimeWarning,
                     stacklevel=3,
                 )
@@ -1477,10 +1515,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     if isinstance(eff, str) and eff.strip():
                         effective_level_meta = eff.strip().lower()
 
+        # Honesty contract (ADR-0001): only report the requested state as *effective* when a real
+        # control artifact was actually applied. Unhandled requests leave `thinking_effective`
+        # unset — the model/server default remains in effect, and a RuntimeWarning was emitted above.
         if effective_enabled is None:
-            if enabled is False:
+            if enabled is False and handled_enable_disable:
                 effective_enabled = False
-            elif enabled is True or effective_level is not None:
+            elif (enabled is True or effective_level is not None) and (handled_enable_disable or handled_level):
                 effective_enabled = True
 
         if effective_level_meta is None and effective_level is not None and handled_level:
@@ -1686,6 +1727,59 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if isinstance(media, Sequence):
             return list(media)
         return [media]
+
+    def _route_defaults_scope(self) -> Dict[str, Any]:
+        scoped = getattr(self, "_abstractcore_capability_defaults", None)
+        return dict(scoped) if isinstance(scoped, dict) else {}
+
+    def _build_generate_request(
+        self,
+        *,
+        prompt: Any,
+        request: Any,
+        text: Any,
+        messages: Any,
+        media: Any,
+    ) -> GenerateRequest:
+        return normalize_generate_request(
+            prompt=prompt,
+            request=request,
+            text=text,
+            messages=messages,
+            media=media,
+        )
+
+    def _resolve_generate_route(
+        self,
+        *,
+        request: GenerateRequest,
+        output: Any,
+        thinking: Any,
+        kwargs: Dict[str, Any],
+    ):
+        explicit_text_route = {
+            "provider": kwargs.get("_provider"),
+            "model": kwargs.get("_model"),
+            "base_url": kwargs.get("base_url"),
+        }
+        explicit_input_routes: Dict[str, Dict[str, Any]] = {}
+        voice_override = {
+            "provider": kwargs.get("stt_provider", kwargs.get("audio_provider")),
+            "model": kwargs.get("stt_model", kwargs.get("audio_model")),
+        }
+        if any(value is not None for value in voice_override.values()):
+            explicit_input_routes["input.voice"] = voice_override
+
+        return resolve_generate_route(
+            request=request,
+            output=output,
+            scoped_routes=self._route_defaults_scope(),
+            resolver=getattr(self, "resolve_capability_default", None),
+            config_file=getattr(self, "_abstractcore_config_file", None),
+            explicit_text_route=explicit_text_route,
+            explicit_input_routes=explicit_input_routes,
+            explicit_reasoning=thinking,
+        )
 
     @staticmethod
     def _media_role(item: Any) -> Optional[str]:
@@ -2076,6 +2170,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
             return
         if modality == "music":
             self._run_music_output(result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store)
+            return
+        if modality == "scene3d":
+            self._run_scene3d_output(result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store)
             return
         if modality == "text" and spec.get("task") == "transcription":
             self._run_transcription_output(result=result, spec=spec, media=media, artifact_store=artifact_store)
@@ -2487,6 +2584,100 @@ class BaseProvider(AbstractCoreInterface, ABC):
             metadata={"task": "transcription", "modality": "text"},
         )
 
+    def _run_scene3d_output(
+        self,
+        *,
+        result: MultimodalGenerateResponse,
+        spec: Dict[str, Any],
+        prompt: str,
+        media: Any,
+        artifact_store: Optional[Any],
+    ) -> None:
+        items = self._coerce_media_items(media)
+        images = [
+            item
+            for item in items
+            if self._media_type(item, fallback="image" if isinstance(item, (bytes, bytearray)) else None) == "image"
+        ]
+        roles = [(item, self._media_role(item)) for item in images]
+        source_items = [item for item, role in roles if role == "source"]
+        unroled = [item for item, role in roles if role is None]
+        reference_like = [item for item, role in roles if role in {"reference", "style", "context", "mask"}]
+        if reference_like:
+            raise ValueError("scene3d generation supports at most one source image and no reference/mask images in v1.")
+        if len(source_items) > 1:
+            raise ValueError("scene3d generation supports at most one source image in v1.")
+
+        task = str(spec.get("task") or "").strip().lower().replace("-", "_")
+        should_i23d = task in {"image_to_scene3d", "i23d"}
+        if task not in {"text_to_scene3d", "t23d"} and not should_i23d:
+            if source_items:
+                should_i23d = True
+            elif len(unroled) == 1:
+                should_i23d = True
+            elif len(unroled) > 1:
+                raise ValueError("Multiple image media items require explicit roles for image_to_scene3d.")
+
+        fmt = str(spec.get("format") or "glb").strip().lower() or "glb"
+        kwargs = self._output_plugin_kwargs(
+            spec,
+            exclude={"format", "content_type", "mime_type", "provider", "response_format", "count", "n", "seeds"},
+        )
+        if spec.get("provider") is not None:
+            kwargs["provider"] = spec.get("provider")
+        if artifact_store is not None:
+            kwargs["artifact_store"] = artifact_store
+        if should_i23d:
+            source = source_items[0] if source_items else (unroled[0] if unroled else None)
+            if source is None:
+                raise ValueError("image_to_scene3d requires one source image.")
+            raw = self.scene3d.i23d(
+                self._media_payload(source),
+                prompt=prompt or None,
+                format=fmt,
+                **kwargs,
+            )
+            task_name = "image_to_scene3d"
+        else:
+            raw = self.scene3d.t23d(prompt, format=fmt, **kwargs)
+            task_name = "text_to_scene3d"
+
+        data, artifact_ref, metadata = self._artifact_or_data(raw)
+        if fmt == "glb":
+            default_content_type = "model/gltf-binary"
+        elif fmt == "zip":
+            default_content_type = "application/zip"
+        else:
+            default_content_type = "model/obj"
+        content_type = str(metadata.get("content_type") or metadata.get("mime_type") or default_content_type)
+        backend_id = metadata.get("backend_id") or metadata.get("backend") or getattr(self.scene3d, "backend_id", None)
+        backend_id = str(backend_id).strip() if isinstance(backend_id, str) and str(backend_id).strip() else None
+        provider = metadata.get("provider") or metadata.get("provider_id") or backend_id or getattr(self.scene3d, "backend_id", None) or self.__class__.__name__
+        model_id = metadata.get("model") or metadata.get("model_id") or metadata.get("modelId") or spec.get("model")
+        if artifact_ref is None:
+            data, stored_ref = self._store_generated_data(
+                data,
+                artifact_store=artifact_store,
+                content_type=content_type,
+                spec=spec,
+            )
+            artifact_ref = stored_ref
+        result.add_output(
+            "scene3d",
+            GeneratedItem(
+                modality="scene3d",
+                task=task_name,
+                data=data,
+                artifact_ref=artifact_ref,
+                content_type=content_type,
+                format=fmt,
+                backend_id=backend_id,
+                provider=str(provider),
+                model=str(model_id) if model_id is not None else None,
+                metadata=metadata,
+            ),
+        )
+
     def generate_with_telemetry(self,
                                prompt: str = "",
                                messages: Optional[List[Dict[str, str]]] = None,
@@ -2521,17 +2712,34 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """
         system_prompt = self._normalize_system_prompt_alias(system_prompt, kwargs, stacklevel=4)
 
+        request_payload = kwargs.pop("request", None)
+        text_alias = kwargs.pop("text", None) if "text" in kwargs else None
+        generate_request = self._build_generate_request(
+            prompt=prompt,
+            request=request_payload,
+            text=text_alias,
+            messages=messages,
+            media=media,
+        )
+        prompt = generate_request.text
+        messages = generate_request.messages or messages
+        media = generate_request.media or media
+
         output_request = kwargs.get("output", None)
         is_acore_output = self._is_acore_output_request(output_request)
-        if (prompt is None or str(prompt) == "") and "text" in kwargs:
-            text_value = kwargs.pop("text")
-            prompt = "" if text_value is None else str(text_value)
+        route_output_request = output_request if is_acore_output else {"modality": "text", "task": "text_generation"}
+        resolved_generate_route = self._resolve_generate_route(
+            request=generate_request,
+            output=route_output_request,
+            thinking=thinking,
+            kwargs=kwargs,
+        )
+        resolved_generate_route_summary = resolved_generate_route.to_summary()
+        if thinking is None and resolved_generate_route.reasoning is not None:
+            thinking = resolved_generate_route.reasoning
 
         if is_acore_output:
-            try:
-                maybe_specs = self._normalize_output_specs(output_request)
-            except Exception:
-                maybe_specs = []
+            maybe_specs = list(resolved_generate_route.output_specs)
             if (
                 len(maybe_specs) == 1
                 and maybe_specs[0].get("modality") == "text"
@@ -2540,6 +2748,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
             ):
                 kwargs.pop("output", None)
                 is_acore_output = False
+            else:
+                kwargs["output"] = maybe_specs[0] if len(maybe_specs) == 1 else maybe_specs
 
         if is_acore_output:
             output_request = kwargs.pop("output")
@@ -2557,7 +2767,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 kwargs.pop("progress_callback", None)
             artifact_store = kwargs.pop("artifact_store", None)
             partial = bool(kwargs.pop("partial", False))
-            return self._generate_multimodal_response(
+            result = self._generate_multimodal_response(
                 prompt=str(prompt or ""),
                 output=output_request,
                 media=media,
@@ -2578,6 +2788,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     **kwargs,
                 },
             )
+            meta = result.metadata if isinstance(result.metadata, dict) else {}
+            meta["_resolved_generate_route"] = resolved_generate_route_summary
+            result.metadata = meta
+            return result
 
         # Normalize token limit naming at the provider boundary.
         #
@@ -3727,9 +3941,24 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
                         # Process stream with incremental tool detection and execution
                         ttft_ms: Optional[float] = None
+                        # With thinking effectively off, the reasoning-first "closing-only" case
+                        # cannot occur; stream visible content immediately instead of buffering.
+                        thinking_effectively_off = bool(
+                            isinstance(thinking_meta, dict) and thinking_meta.get("thinking_effective") == "off"
+                        )
+                        # LM Studio's native REST route (engaged via the `reasoning` kwarg set by
+                        # `_apply_thinking_request`) separates reasoning into typed events/items,
+                        # so streamed content never carries inline thinking tags; buffering for the
+                        # closing-only case would only delay visible content.
+                        native_separated_reasoning = bool(
+                            str(getattr(self, "provider", "") or "").strip().lower() == "lmstudio"
+                            and isinstance(kwargs.get("reasoning"), str)
+                            and str(kwargs.get("reasoning")).strip()
+                        )
                         thinking_stripper = maybe_create_incremental_thinking_tag_stripper(
                             architecture_format=self.architecture_config,
                             model_capabilities=self.model_capabilities,
+                            assume_visible_start=thinking_effectively_off or native_separated_reasoning,
                         )
                         last_chunk: Optional[GenerateResponse] = None
                         for processed_chunk in processor.process_stream(response, converted_tools):
@@ -3761,7 +3990,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             if thinking_meta and isinstance(thinking_meta, dict):
                                 meta = processed_chunk.metadata if isinstance(processed_chunk.metadata, dict) else {}
                                 meta.update(thinking_meta)
+                                meta["_resolved_generate_route"] = resolved_generate_route_summary
                                 processed_chunk.metadata = meta
+                            elif isinstance(processed_chunk.metadata, dict):
+                                processed_chunk.metadata["_resolved_generate_route"] = resolved_generate_route_summary
+                            else:
+                                processed_chunk.metadata = {"_resolved_generate_route": resolved_generate_route_summary}
                             yield processed_chunk
 
                         if thinking_stripper is not None:
@@ -3774,6 +4008,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                     meta.update(thinking_meta)
                                 if reasoning_text:
                                     meta["reasoning"] = reasoning_text
+                                meta["_resolved_generate_route"] = resolved_generate_route_summary
 
                                 yield GenerateResponse(
                                     content=tail if isinstance(tail, str) else "",
@@ -3852,6 +4087,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     if response.metadata is None or not isinstance(response.metadata, dict):
                         response.metadata = {}
                     response.metadata.update(thinking_meta)
+                if response:
+                    if response.metadata is None or not isinstance(response.metadata, dict):
+                        response.metadata = {}
+                    response.metadata["_resolved_generate_route"] = resolved_generate_route_summary
 
                 self._track_generation(prompt, response, start_time, success=True, stream=False)
                 return response
@@ -6062,18 +6301,36 @@ Please provide a structured response."""
             GenerateResponse, AsyncIterator[GenerateResponse] for streaming, or BaseModel for structured output
         """
         system_prompt = self._normalize_system_prompt_alias(system_prompt, kwargs, stacklevel=3)
+        thinking = kwargs.get("thinking")
+
+        request_payload = kwargs.pop("request", None)
+        text_alias = kwargs.pop("text", None) if "text" in kwargs else None
+        generate_request = self._build_generate_request(
+            prompt=prompt,
+            request=request_payload,
+            text=text_alias,
+            messages=messages,
+            media=media,
+        )
+        prompt = generate_request.text
+        messages = generate_request.messages or messages
+        media = generate_request.media or media
 
         output_request = kwargs.get("output", None)
         is_acore_output = self._is_acore_output_request(output_request)
-        if (prompt is None or str(prompt) == "") and "text" in kwargs:
-            text_value = kwargs.pop("text")
-            prompt = "" if text_value is None else str(text_value)
+        route_output_request = output_request if is_acore_output else {"modality": "text", "task": "text_generation"}
+        resolved_generate_route = self._resolve_generate_route(
+            request=generate_request,
+            output=route_output_request,
+            thinking=thinking,
+            kwargs=kwargs,
+        )
+        resolved_generate_route_summary = resolved_generate_route.to_summary()
+        if thinking is None and resolved_generate_route.reasoning is not None:
+            kwargs["thinking"] = resolved_generate_route.reasoning
 
         if is_acore_output:
-            try:
-                maybe_specs = self._normalize_output_specs(output_request)
-            except Exception:
-                maybe_specs = []
+            maybe_specs = list(resolved_generate_route.output_specs)
             if (
                 len(maybe_specs) == 1
                 and maybe_specs[0].get("modality") == "text"
@@ -6082,6 +6339,8 @@ Please provide a structured response."""
             ):
                 kwargs.pop("output", None)
                 is_acore_output = False
+            else:
+                kwargs["output"] = maybe_specs[0] if len(maybe_specs) == 1 else maybe_specs
 
         if is_acore_output:
             output_request = kwargs.pop("output")
@@ -6100,7 +6359,7 @@ Please provide a structured response."""
             response_model = kwargs.pop("response_model", None)
             artifact_store = kwargs.pop("artifact_store", None)
             partial = bool(kwargs.pop("partial", False))
-            return await asyncio.to_thread(
+            result = await asyncio.to_thread(
                 self._generate_multimodal_response,
                 prompt=str(prompt or ""),
                 output=output_request,
@@ -6117,6 +6376,10 @@ Please provide a structured response."""
                     **kwargs,
                 },
             )
+            meta = result.metadata if isinstance(result.metadata, dict) else {}
+            meta["_resolved_generate_route"] = resolved_generate_route_summary
+            result.metadata = meta
+            return result
 
         self._apply_default_prompt_cache_key(kwargs)
         self._apply_prompt_cache_binding_request(kwargs)
@@ -6140,6 +6403,11 @@ Please provide a structured response."""
             if not response.metadata:
                 response.metadata = {}
             response.metadata['trace_id'] = trace_id
+
+        if not stream and response and isinstance(response, GenerateResponse):
+            if response.metadata is None or not isinstance(response.metadata, dict):
+                response.metadata = {}
+            response.metadata["_resolved_generate_route"] = resolved_generate_route_summary
 
         return response
 

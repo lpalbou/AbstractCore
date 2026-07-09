@@ -20,6 +20,32 @@ def _non_empty_str(value: Any) -> bool:
     return isinstance(value, str) and value.strip() == value and bool(value.strip())
 
 
+# Typed thinking-control surface keys (see abstractcore/architectures/thinking_controls.py).
+THINKING_CONTROL_SURFACE_KEYS = {
+    "prompt_disable_token",
+    "template_kwarg",
+    "assistant_prefill_disable",
+    "budget_template_kwarg",
+    "low_effort_template_kwarg",
+    "request_param",
+}
+
+
+def _validate_thinking_control(label: str, value: Any) -> None:
+    """thinking_control must be a typed object; legacy untyped strings are forbidden in shipped assets."""
+    assert isinstance(value, dict), (
+        f"{label}.thinking_control must be a typed object declaring control surfaces "
+        f"(e.g. {{'template_kwarg': 'enable_thinking'}}); legacy string form is forbidden"
+    )
+    assert value, f"{label}.thinking_control must declare at least one control surface"
+    extra = set(value) - THINKING_CONTROL_SURFACE_KEYS
+    assert not extra, f"{label}.thinking_control contains unknown surface keys: {sorted(extra)}"
+    for key, surface in value.items():
+        assert isinstance(surface, str) and surface.strip(), (
+            f"{label}.thinking_control[{key!r}] must be a non-empty string"
+        )
+
+
 def _iter_patterns(architectures: Mapping[str, Any]) -> Iterable[Tuple[str, str]]:
     for arch_name, cfg in architectures.items():
         if not isinstance(cfg, dict):
@@ -184,10 +210,14 @@ def test_architecture_entries_conform_to_v0_template():
             assert _non_empty_str(thinking_tags[0]), f"architectures[{arch_name}].thinking_tags[0] must be non-empty"
             assert _non_empty_str(thinking_tags[1]), f"architectures[{arch_name}].thinking_tags[1] must be non-empty"
 
-        for key in ("thinking_output_field", "thinking_control", "thinking_format", "tool_calling_format"):
+        for key in ("thinking_output_field", "thinking_format", "tool_calling_format"):
             value = cfg.get(key)
             if value is not None:
                 assert _non_empty_str(value), f"architectures[{arch_name}].{key} must be a non-empty string when set"
+
+        thinking_control = cfg.get("thinking_control")
+        if thinking_control is not None:
+            _validate_thinking_control(f"architectures[{arch_name}]", thinking_control)
 
         reasoning_support = cfg.get("reasoning_support")
         if reasoning_support is not None:

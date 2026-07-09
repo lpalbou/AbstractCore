@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import types
 
+import pytest
+
 
 def test_openai_model_discovery_uses_base_url(monkeypatch) -> None:
     from abstractcore.providers.openai_provider import OpenAIProvider
@@ -53,6 +55,27 @@ def test_openai_model_discovery_includes_current_reasoning_ids(monkeypatch) -> N
 
     assert {"gpt-5.5", "o3", "o3-pro", "o4-mini", "chat-latest"} <= set(models)
     assert "text-embedding-3-small" not in models
+
+
+def test_openai_model_discovery_raises_when_requested(monkeypatch) -> None:
+    from abstractcore.providers.openai_provider import OpenAIProvider
+
+    class FakeModels:
+        def list(self):
+            raise RuntimeError("Missing or invalid bearer token")
+
+    class FakeOpenAI:
+        def __init__(self, **_kwargs):
+            self.models = FakeModels()
+
+    monkeypatch.setitem(__import__("sys").modules, "openai", types.SimpleNamespace(OpenAI=FakeOpenAI))
+
+    with pytest.raises(RuntimeError, match="Missing or invalid bearer token"):
+        OpenAIProvider.list_available_models(
+            api_key="openai-key",
+            base_url="https://openai-proxy.example/v1",
+            raise_on_error=True,
+        )
 
 
 def test_anthropic_model_discovery_uses_base_url(monkeypatch) -> None:

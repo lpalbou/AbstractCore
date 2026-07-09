@@ -39,6 +39,16 @@ def test_fetch_url_local_html_normalization_strips_tags_and_scripts() -> None:
                 self.wfile.write(body)
                 return
 
+            if self.path == "/xmlhtml":
+                body = html_doc.encode("utf-8")
+                self.send_response(200)
+                # Intentionally misleading XML content type.
+                self.send_header("Content-Type", "application/xml; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+
             self.send_response(404)
             self.end_headers()
 
@@ -70,6 +80,14 @@ def test_fetch_url_local_html_normalization_strips_tags_and_scripts() -> None:
         assert "<html" not in norm_plain.lower()
         assert "console.log" not in norm_plain
         assert "Force pod, wave cannon." in norm_plain
+
+        out_xml = fetch_url(f"{base_url}/xmlhtml", timeout=10, include_full_content=False)
+        assert out_xml.get("success") is True
+        assert "🌐 HTML Document Analysis" in str(out_xml.get("rendered") or "")
+        norm_xml = str(out_xml.get("normalized_text") or "")
+        assert "<html" not in norm_xml.lower()
+        assert "console.log" not in norm_xml
+        assert "Force pod, wave cannon." in norm_xml
     finally:
         server.shutdown()
         server.server_close()

@@ -7,6 +7,7 @@ and executing them safely.
 
 import time
 import warnings
+import json
 from typing import Dict, List, Any, Callable, Optional, Union
 from functools import wraps
 
@@ -22,19 +23,33 @@ def _error_from_output(value: Any) -> Optional[str]:
     # Allow tools to return structured outputs while still communicating failure
     # without raising exceptions. We only treat this as an error when the tool
     # explicitly marks itself as unsuccessful.
-    if isinstance(value, dict):
-        success = value.get("success")
-        ok = value.get("ok")
-        if success is False or ok is False:
-            err = value.get("error") or value.get("message") or "Tool reported failure"
+    def _from_mapping(mapping: Dict[str, Any]) -> Optional[str]:
+        success = mapping.get("success")
+        ok = mapping.get("ok")
+        status_hint = str(mapping.get("status_hint") or "").strip().lower()
+        err = mapping.get("error") or mapping.get("message")
+        if success is False or ok is False or status_hint == "error":
+            text = str(err or "Tool reported failure").strip()
+            return text or "Tool reported failure"
+        if err not in {None, ""}:
             text = str(err).strip()
             return text or "Tool reported failure"
         return None
+
+    if isinstance(value, dict):
+        return _from_mapping(value)
     if not isinstance(value, str):
         return None
     text = value.strip()
     if not text:
         return None
+    if text.startswith("{") and text.endswith("}"):
+        try:
+            parsed = json.loads(text)
+        except Exception:
+            parsed = None
+        if isinstance(parsed, dict):
+            return _from_mapping(parsed)
     if text.startswith("Error:"):
         cleaned = text[len("Error:") :].strip()
         return cleaned or text
@@ -179,8 +194,38 @@ class ToolRegistry:
 
         try:
             from .arg_canonicalizer import canonicalize_tool_arguments
+            from .arg_coercion import ArgumentCoercionError, coerce_arguments
 
             arguments = canonicalize_tool_arguments(tool_call.name, tool_call.arguments)
+
+            # Schema-aware type coercion (backlog 039): tool-call parsers preserve raw strings,
+            # so flags like `allow_dangerous="false"` are truthy without this step. Coerce every
+            # argument to its declared schema type; fail loudly on an un-coercible typed value
+            # rather than silently defaulting (ADR-0026 posture).
+            try:
+                arguments, _coercion_warnings = coerce_arguments(tool_def.parameters, arguments)
+            except ArgumentCoercionError as coercion_error:
+                duration_ms = (time.time() - start_time) * 1000
+                error_result = ToolResult(
+                    call_id=tool_call.call_id or "",
+                    output="",
+                    error=f"Invalid argument type for tool '{tool_call.name}': {coercion_error}",
+                    success=False,
+                )
+                emit_global(
+                    EventType.TOOL_COMPLETED,
+                    create_tool_event(
+                        tool_name=tool_call.name,
+                        arguments=tool_call.arguments,
+                        success=False,
+                        error=error_result.error,
+                    ),
+                    source="ToolRegistry",
+                    duration_ms=duration_ms,
+                )
+                return error_result
+            for _warning in _coercion_warnings:
+                logger.warning(f"{_warning} (tool={tool_call.name})")
 
             # Execute the function with the provided arguments
             result = tool_def.function(**arguments)
@@ -253,9 +298,42 @@ class ToolRegistry:
                 if allowed:
                     args = {k: v for k, v in args.items() if k in allowed}
 
+                # Schema-aware coercion MUST run on the retry path too (backlog 039): otherwise a
+                # stray kwarg / wrapper shape that trips the first TypeError would re-invoke with
+                # raw string flags (e.g. preview_only="false" truthy), silently resurrecting the
+                # exact bug this item fixes. Mirror the happy path. An un-coercible typed value
+                # raises and is caught below, surfacing as a clean tool error (never a bad exec).
+                from .arg_coercion import coerce_arguments as _coerce_retry_args
+
+                args, _retry_coercion_warnings = _coerce_retry_args(tool_def.parameters, args)
+                for _warning in _retry_coercion_warnings:
+                    logger.warning(f"{_warning} (tool={tool_call.name})")
+
                 if args != dict(tool_call.arguments or {}):
                     result = tool_def.function(**args)
                     duration_ms = (time.time() - start_time) * 1000
+                    implied_error = _error_from_output(result)
+                    if implied_error is not None:
+                        error_result = ToolResult(
+                            call_id=tool_call.call_id or "",
+                            output=result if not isinstance(result, str) else "",
+                            error=implied_error,
+                            success=False,
+                        )
+                        result_data = create_tool_event(
+                            tool_name=tool_call.name,
+                            arguments=args,
+                            result=result,
+                            success=False,
+                            error=implied_error,
+                        )
+                        emit_global(
+                            EventType.TOOL_COMPLETED,
+                            result_data,
+                            source="ToolRegistry",
+                            duration_ms=duration_ms,
+                        )
+                        return error_result
                     success_result = ToolResult(
                         call_id=tool_call.call_id or "",
                         output=result,

@@ -338,6 +338,54 @@ def test_lmstudio_qwen3_6_thinking_off_sets_chat_template_enable_thinking_false(
     assert payload["chat_template_kwargs"]["enable_thinking"] is False
 
 
+def test_openai_compatible_qwen3_6_thinking_does_not_emit_template_kwargs_by_default(monkeypatch) -> None:
+    monkeypatch.setattr(OpenAICompatibleProvider, "_validate_model", lambda self: None, raising=False)
+    provider = OpenAICompatibleProvider(
+        model="Qwen/Qwen3.6-27B",
+        base_url="https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+    )
+
+    captured = {}
+
+    def _capture_single_generate(payload):
+        captured["payload"] = payload
+        return GenerateResponse(content="ok", model=provider.model, finish_reason="stop")
+
+    monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
+
+    with pytest.warns(RuntimeWarning, match="cannot enforce effort scaling"):
+        provider.generate("hi", thinking="high", temperature=0)
+
+    payload = captured["payload"]
+    assert "chat_template_kwargs" not in payload
+    assert "extra_body" not in payload
+    assert "enableThinking" not in str(payload)
+    assert "enable_thinking" not in str(payload)
+
+
+def test_openai_compatible_qwen3_6_thinking_template_kwargs_require_opt_in(monkeypatch) -> None:
+    monkeypatch.setattr(OpenAICompatibleProvider, "_validate_model", lambda self: None, raising=False)
+    provider = OpenAICompatibleProvider(
+        model="Qwen/Qwen3.6-27B",
+        base_url="http://127.0.0.1:1234/v1",
+        supports_chat_template_kwargs=True,
+    )
+
+    captured = {}
+
+    def _capture_single_generate(payload):
+        captured["payload"] = payload
+        return GenerateResponse(content="ok", model=provider.model, finish_reason="stop")
+
+    monkeypatch.setattr(provider, "_single_generate", _capture_single_generate)
+
+    provider.generate("hi", thinking="high", temperature=0)
+
+    payload = captured["payload"]
+    assert payload["chat_template_kwargs"]["enable_thinking"] is True
+    assert payload["chat_template_kwargs"]["enableThinking"] is True
+
+
 def test_lmstudio_payload_uses_metadata_sampling_defaults(monkeypatch) -> None:
     monkeypatch.setattr(LMStudioProvider, "_validate_model", lambda self: None)
     provider = LMStudioProvider(model="google/gemma-4-E4B-it", base_url="http://localhost:1234/v1")

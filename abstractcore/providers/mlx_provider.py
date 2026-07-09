@@ -116,7 +116,9 @@ class MLXProvider(BaseProvider):
         generation. The actual serialization happens in `_build_prompt_fragment`.
         """
         new_kwargs = dict(kwargs or {})
-        if self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
+        # Asset-driven: MLX serializes prompts locally, so the robust disable control is the
+        # assistant-prefill marker declared as `thinking_control.assistant_prefill_disable`.
+        if self._thinking_control_surfaces().assistant_prefill_disable:
             if enabled is False:
                 new_kwargs["_acore_mlx_enable_thinking"] = False
                 return new_kwargs, ThinkingControlHandling(

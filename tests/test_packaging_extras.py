@@ -50,6 +50,7 @@ def test_server_extra_stays_vision_runtime_light() -> None:
     vision_sdcpp_block = _extract_optional_dependency_block(text, key="vision-sdcpp")
     vision_local_block = _extract_optional_dependency_block(text, key="vision-local")
     music_block = _extract_optional_dependency_block(text, key="music")
+    scene3d_block = _extract_optional_dependency_block(text, key="scene3d")
     all_apple_block = _extract_optional_dependency_block(text, key="all-apple")
     all_gpu_block = _extract_optional_dependency_block(text, key="all-gpu")
     full_dev_block = _extract_optional_dependency_block(text, key="full-dev")
@@ -64,6 +65,7 @@ def test_server_extra_stays_vision_runtime_light() -> None:
     _assert_block_has_dependency_prefix(vision_sdcpp_block, "abstractvision[sdcpp]>=")
     _assert_block_has_dependency_prefix(vision_local_block, "abstractvision[local]>=")
     assert "abstractmusic>=0.1.13" in music_block
+    assert "abstract3d>=0.1.0" in scene3d_block
     assert "abstractvoice[all-apple]>=0.10.18" in all_apple_block
     assert "omnivoice>=0.1.5" in all_apple_block
     _assert_block_has_dependency_prefix(all_apple_block, "abstractvision[all-apple]>=")
@@ -96,6 +98,7 @@ def test_light_capability_extras_do_not_pull_local_inference_engines() -> None:
         "audio": _extract_optional_dependency_block(text, key="audio"),
         "vision": _extract_optional_dependency_block(text, key="vision"),
         "music": _extract_optional_dependency_block(text, key="music"),
+        "scene3d": _extract_optional_dependency_block(text, key="scene3d"),
     }
     local_runtime_markers = (
         "omnivoice",

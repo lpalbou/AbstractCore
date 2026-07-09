@@ -1140,6 +1140,7 @@ class ConfigurationManager:
         provider: Optional[str] = None,
         model: Optional[str] = None,
         base_url: Optional[str] = None,
+        reasoning: Optional[str] = None,
         options: Optional[Dict[str, Any]] = None,
         task: Optional[str] = None,
     ) -> bool:
@@ -1156,6 +1157,7 @@ class ConfigurationManager:
                 provider=str(provider).strip() if isinstance(provider, str) and provider.strip() else None,
                 model=str(model).strip() if isinstance(model, str) and model.strip() else None,
                 base_url=str(base_url).strip() if isinstance(base_url, str) and base_url.strip() else None,
+                reasoning=str(reasoning).strip().lower() if isinstance(reasoning, str) and reasoning.strip() else None,
                 options=dict(options or {}) if isinstance(options, dict) else {},
             )
             if route.configured():

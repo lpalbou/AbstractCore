@@ -99,7 +99,7 @@ class AbstractCoreInterface(ABC):
 
     @property
     def capabilities(self):
-        """Capability registry (voice/audio/vision plugins).
+        """Capability registry (voice/audio/vision/music/scene3d plugins).
 
         Lazily created to avoid importing plugin machinery during `import abstractcore`.
         """
@@ -169,6 +169,10 @@ class AbstractCoreInterface(ABC):
     def music(self):
         return self.capabilities.music
 
+    @property
+    def scene3d(self):
+        return self.capabilities.scene3d
+
     def generate_with_outputs(
         self,
         prompt: str,
@@ -187,6 +191,8 @@ class AbstractCoreInterface(ABC):
         - {"t2i": {...}}: calls `core.vision.t2i(...)` after text generation.
           - default prompt source is the LLM response content.
         - {"t2m": {...}}: calls `core.music.t2m(...)` after text generation.
+          - default prompt source is the LLM response content.
+        - {"t23d": {...}}: calls `core.scene3d.t23d(...)` after text generation.
           - default prompt source is the LLM response content.
 
         If `artifact_store` is provided, it is passed through to capability calls.
@@ -250,6 +256,26 @@ class AbstractCoreInterface(ABC):
                     k: v
                     for k, v in t2m_cfg.items()
                     if k not in {"prompt", "lyrics", "format", "run_id", "tags", "metadata"}
+                },
+            )
+
+        if cfg.get("t23d"):
+            t23d_cfg = cfg.get("t23d")
+            t23d_cfg = t23d_cfg if isinstance(t23d_cfg, dict) else {}
+            scene_prompt = t23d_cfg.get("prompt")
+            if scene_prompt is None:
+                scene_prompt = getattr(resp, "content", "") or ""
+            out["t23d"] = self.scene3d.t23d(
+                str(scene_prompt),
+                format=str(t23d_cfg.get("format") or "glb"),
+                artifact_store=artifact_store,
+                run_id=t23d_cfg.get("run_id"),
+                tags=t23d_cfg.get("tags"),
+                metadata=t23d_cfg.get("metadata"),
+                **{
+                    k: v
+                    for k, v in t23d_cfg.items()
+                    if k not in {"prompt", "format", "run_id", "tags", "metadata"}
                 },
             )
 

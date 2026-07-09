@@ -117,6 +117,46 @@ resp = llm.generate("What is the capital of France?")
 print(resp.content)
 ```
 
+## Request plus output
+
+The simplest calls stay prompt-first, but direct Core multimodal callers can now use the lower-level
+keyword form:
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("openai", model="gpt-4o-mini")
+
+resp = llm.generate(
+    request={"text": "A red ceramic mug on a white table."},
+    output={"modality": "image", "format": "png"},
+)
+```
+
+This is equivalent in spirit to the older compatibility forms:
+
+```python
+resp = llm.generate("A red ceramic mug on a white table.", output={"modality": "image"})
+resp = llm.generate(text="Hello from AbstractCore.", output={"modality": "voice", "voice": "coral"})
+```
+
+Manual route pins are still supported when you need them:
+
+```python
+resp = llm.generate(
+    request={"text": "Slow dolly shot over a misty valley."},
+    output={
+        "modality": "video",
+        "provider": "mlx-gen",
+        "model": "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
+    },
+)
+```
+
+When you do not pin a route, capability defaults can supply provider/model/base URL and, for
+reasoning-capable text routes, a default reasoning level. See
+[Request and Output](request-output.md) and [Centralized Config](centralized-config.md).
+
 ## Sessions (multi-turn)
 
 Use a session to keep conversation state (system prompt + message history) across turns:
@@ -208,7 +248,7 @@ pip install "abstractcore[tools]"
 Then import from `abstractcore.tools.common_tools`:
 
 - `skim_websearch` vs `web_search`: compact/filtered links vs full results
-- `skim_url` vs `fetch_url`: fast URL triage (small output) vs full fetch + parsing for text-first types (HTML/JSON/text)
+- `skim_url` vs `fetch_url`: fast URL triage (small output) vs full fetch + parsing for web documents and feeds (HTML/JSON/XML/RSS/Atom/PDF when supported)
 
 See [Tool Calling](tool-calling.md) for a recommended workflow and the full built-in tool list.
 

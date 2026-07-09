@@ -249,7 +249,10 @@ class HuggingFaceProvider(BaseProvider):
     ) -> tuple[Dict[str, Any], ThinkingControlHandling]:
         new_kwargs = dict(kwargs or {})
         model_type = str(getattr(self, "model_type", "") or "").strip().lower()
-        if model_type == "transformers" and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
+        # Asset-driven: the tokenizer chat-template boolean switch (`enable_thinking`-style)
+        # is declared as `thinking_control.template_kwarg` in the registries.
+        surfaces = self._thinking_control_surfaces()
+        if model_type == "transformers" and surfaces.template_kwarg:
             if enabled is False:
                 new_kwargs["_acore_hf_transformers_enable_thinking"] = False
                 return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
@@ -266,7 +269,7 @@ class HuggingFaceProvider(BaseProvider):
         # chat handler / Jinja template renderer. Once available, map our unified `thinking=...`
         # directly to `enable_thinking` instead of relying on the `<think>\n\n</think>\n\n` marker.
         # See: `docs/backlog/planned/2026-03-30_llama-cpp-python_expose_chat_template_kwargs.md`.
-        if model_type == "gguf" and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
+        if model_type == "gguf" and surfaces.assistant_prefill_disable:
             if enabled is False:
                 new_kwargs["_acore_gguf_enable_thinking"] = False
                 return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
@@ -4158,7 +4161,9 @@ class HuggingFaceProvider(BaseProvider):
                 if messages_for_context:
                     for msg in messages_for_context:
                         role = str(msg.get("role", "user") or "").strip().lower()
-                        if role not in {"user", "assistant"}:
+                        # Include mid-stream system turns (e.g. compaction summaries or
+                        # context hints) — dropping them silently loses instructions.
+                        if role not in {"user", "assistant", "system"}:
                             continue
                         content = msg.get("content", "")
                         text = ""
@@ -4181,7 +4186,7 @@ class HuggingFaceProvider(BaseProvider):
                         text = str(text or "").strip()
                         if not text:
                             continue
-                        prefix = "USER" if role == "user" else "ASSISTANT"
+                        prefix = {"user": "USER", "assistant": "ASSISTANT", "system": "SYSTEM"}[role]
                         history_lines.append(f"{prefix}: {text}")
 
                 if history_lines:

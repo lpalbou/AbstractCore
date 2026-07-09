@@ -186,6 +186,36 @@ class _FakeAudioResidency:
         return []
 
 
+class _FakeScene3dResidency:
+    def __init__(self) -> None:
+        self.calls: List[tuple[str, Dict[str, Any]]] = []
+
+    def load_resident_model(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        self.calls.append(("load", dict(payload)))
+        return {
+            "task": "text_to_scene3d",
+            "provider": payload.get("provider"),
+            "model": payload.get("model"),
+            "state": "loaded",
+            "loaded": True,
+        }
+
+    def list_loaded_models(self, filters: Dict[str, Any] | None = None) -> List[Dict[str, Any]]:
+        self.calls.append(("list", dict(filters or {})))
+        return [{"task": "scene3d_generation", "provider": "triposr", "model": "stabilityai/TripoSR", "state": "loaded", "loaded": True}]
+
+    def unload_resident_model(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        self.calls.append(("unload", dict(payload)))
+        return {
+            "task": "scene3d_generation",
+            "provider": payload.get("provider"),
+            "model": payload.get("model"),
+            "state": "unloaded",
+            "loaded": False,
+            "unloaded": True,
+        }
+
+
 def test_acore_models_routes_tts_residency_through_shared_audio_core(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
     audio_endpoints = importlib.import_module("abstractcore.server.audio_endpoints")
@@ -259,6 +289,38 @@ def test_acore_models_tts_loaded_new_uses_event_signal_not_resident_state(monkey
     already_loaded = client.post("/acore/models/load", json={"task": "tts", "provider": "cloned", "model": "omnivoice"})
     assert already_loaded.status_code == 200
     assert already_loaded.json()["loaded_new"] is False
+
+
+def test_acore_models_routes_scene3d_residency_through_shared_core(monkeypatch) -> None:
+    server_app = importlib.import_module("abstractcore.server.app")
+    server_app._GATEWAY_LOADED_RUNTIMES.clear()
+    server_app._GATEWAY_RUNTIME_IDS.clear()
+
+    scene3d = _FakeScene3dResidency()
+    fake_core = type("_FakeCore", (), {"scene3d": scene3d})()
+    monkeypatch.setattr(server_app, "_capability_residency_core_for_request", lambda task, http_request: fake_core)
+
+    client = TestClient(server_app.app)
+    load = client.post(
+        "/acore/models/load",
+        json={"task": "t23d", "provider": "triposr", "model": "stabilityai/TripoSR"},
+    )
+    assert load.status_code == 200
+    assert load.json()["runtime"]["state"] == "loaded"
+    assert scene3d.calls[0][0] == "load"
+    assert scene3d.calls[0][1]["task"] == "text_to_scene3d"
+
+    loaded = client.get("/acore/models/loaded", params={"task": "t23d", "provider": "triposr"})
+    assert loaded.status_code == 200
+    assert loaded.json()["data"][0]["model"] == "stabilityai/TripoSR"
+
+    unload = client.post(
+        "/acore/models/unload",
+        json={"task": "t23d", "provider": "triposr", "model": "stabilityai/TripoSR"},
+    )
+    assert unload.status_code == 200
+    assert unload.json()["runtime"]["state"] == "unloaded"
+    assert scene3d.calls[-1][0] == "unload"
 
 
 def test_server_vision_residency_helpers_share_backend_cache(monkeypatch) -> None:

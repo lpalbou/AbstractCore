@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "agora": {
+      "command": "/Users/albou/.local/bin/agora-mcp",
+      "env": {
+        "AGORA_URL": "http://127.0.0.1:8765",
+        "AGORA_AGENT_ID": "core",
+        "AGORA_ABOUT": ""
+      }
+    }
+  }
+}

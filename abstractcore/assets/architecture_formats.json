@@ -212,7 +212,11 @@
       "tool_format": "special_token",
       "tool_prefix": "<|tool_call|>",
       "thinking_tags": ["<think>", "</think>"],
-      "thinking_control": "/no_think",
+      "thinking_control": {
+        "prompt_disable_token": "/no_think",
+        "template_kwarg": "enable_thinking",
+        "assistant_prefill_disable": "<think>\n\n</think>\n\n"
+      },
       "patterns": ["qwen3-0.6b", "qwen3-1.7b", "qwen3-4b", "qwen3-8b", "qwen3-14b", "qwen3-32b", "qwen3:", "qwen3-4b-thinking", "qwen3-4b-instruct"]
     },
     "qwen3_5": {
@@ -230,6 +234,10 @@
       "tool_format": "special_token",
       "tool_prefix": "<|tool_call|>",
       "thinking_tags": ["<think>", "</think>"],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking",
+        "assistant_prefill_disable": "<think>\n\n</think>\n\n"
+      },
       "reasoning_support": true,
       "patterns": [
         "qwen3.5-",
@@ -256,7 +264,10 @@
       "tool_prefix": "<tool_call>",
       "tool_calling_format": "qwen3_coder",
 	      "thinking_tags": ["<think>", "</think>"],
-	      "thinking_control": "enable_thinking",
+	      "thinking_control": {
+	        "template_kwarg": "enable_thinking",
+	        "assistant_prefill_disable": "<think>\n\n</think>\n\n"
+	      },
 	      "reasoning_support": true,
 	      "inference_parameters": {
 	        "temperature": 1.0,
@@ -501,7 +512,9 @@
 	        "tool_prefix": "<|tool_call>",
 		        "thinking_tags": ["<|channel>thought", "<channel|>"],
 		        "reasoning_support": true,
-		        "thinking_control": "enable_thinking",
+		        "thinking_control": {
+		          "template_kwarg": "enable_thinking"
+		        },
 		        "inference_parameters": {
 		          "temperature": 1.0,
 		          "top_p": 0.95,
@@ -551,7 +564,9 @@
       },
 	      "thinking_output_field": "reasoning_content",
 	      "thinking_tags": ["<think>", "</think>"],
-	      "thinking_control": "/nothink",
+	      "thinking_control": {
+	        "prompt_disable_token": "/nothink"
+	      },
 	      "inference_parameters": {
 	        "temperature": 0.8,
 	        "top_p": 0.6,
@@ -725,6 +740,9 @@
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
       "tool_format": "prompted",
+      "thinking_control": {
+        "budget_template_kwarg": "thinking_budget"
+      },
       "patterns": ["seed-oss"]
     },
     "yi": {
@@ -785,6 +803,10 @@
       "default_tool_support": "native",
       "reasoning_support": true,
       "thinking_tags": ["<think>", "</think>"],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking",
+        "low_effort_template_kwarg": "low_effort"
+      },
       "patterns": [
         "nemotron-3-nano",
         "nemotron-3-nano-omni",

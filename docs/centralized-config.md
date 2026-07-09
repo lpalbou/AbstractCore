@@ -112,7 +112,8 @@ target `output.text` are accepted for compatibility, but persist to
 Capability route defaults use `kind.modality` keys, with optional
 `kind.modality.task` keys for generated-media defaults that need finer routing.
 Each route stores a small provider target: `provider`, `model`, optional
-`base_url`, and provider/plugin `options`.
+`base_url`, optional `reasoning` for reasoning-capable text routes, and
+provider/plugin `options`.
 
 Route kinds:
 
@@ -127,7 +128,8 @@ Examples:
 abstractcore config set-default input.text \
   --provider lmstudio \
   --model qwen/qwen3.6-35b-a3b \
-  --base-url http://127.0.0.1:1234/v1
+  --base-url http://127.0.0.1:1234/v1 \
+  --reasoning medium
 
 abstractcore config set-default output.voice \
   --provider supertonic \
@@ -155,6 +157,9 @@ abstractcore config clear-default output.voice
 
 Route defaults are configuration only; they do not load a model into a provider.
 Provider residency is reported separately.
+
+`reasoning` is a route default, not part of the semantic request payload. Core applies it only when
+the resolved text route is reasoning-capable and the caller did not set `thinking=` explicitly.
 
 `input.image` is a fallback route for image understanding when the configured
 text route cannot natively accept images. If the `input.text` model is known in

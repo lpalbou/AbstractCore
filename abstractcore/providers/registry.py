@@ -646,6 +646,15 @@ class ProviderRegistry:
 
         # Merge: runtime_config < kwargs (user kwargs take precedence)
         merged_kwargs = {**runtime_config, **kwargs}
+
+        # Prompt caching at construction (agency-parity 0221): an INSTANCE-PER-SESSION
+        # convenience — sets the instance-default cache key so every generate() on this
+        # instance is cached without threading a per-call kwarg (explicit per-call
+        # `prompt_cache_key` values still win, including explicit None to disable).
+        # Deliberately NOT for pooled/shared instances (one instance serving many
+        # sessions/tenants): pooling factories must not pass it.
+        prompt_cache_key = merged_kwargs.pop("prompt_cache_key", None)
+
         constructor_kwargs = self._provider_constructor_kwargs(merged_kwargs)
 
         try:
@@ -655,6 +664,8 @@ class ProviderRegistry:
                 setattr(instance, "_abstractcore_provider_profile_id", endpoint_profile.id)
                 setattr(instance, "_abstractcore_provider_family", endpoint_profile.provider_family)
                 setattr(instance, "_abstractcore_provider_profile", endpoint_profile.public_dict())
+            if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
+                self._apply_construction_prompt_cache_key(instance, prompt_cache_key.strip())
             return instance
         except ImportError as e:
             # Re-raise import errors with helpful message
@@ -665,6 +676,41 @@ class ProviderRegistry:
                 ) from e
             else:
                 raise ImportError(f"{provider_info.display_name} provider not available") from e
+
+    @staticmethod
+    def _apply_construction_prompt_cache_key(instance: Any, key: str) -> None:
+        """Best-effort: set the instance-default prompt cache key at construction.
+
+        Uses the public `prompt_cache_set` surface when the provider supports it (local
+        control planes allocate a backend cache slot); for providers that support caching
+        but not the `set` operation, falls back to the default-key slot directly (it is
+        consumed by `_apply_default_prompt_cache_key` only when `supports_prompt_cache()`).
+        Providers with no caching support degrade with a #FALLBACK warning — construction
+        must never fail because caching is unavailable.
+        """
+        try:
+            supports = bool(instance.supports_prompt_cache())
+        except Exception:
+            supports = False
+        if not supports:
+            try:
+                if hasattr(instance, "logger"):
+                    instance.logger.warning(
+                        "#FALLBACK: prompt_cache_key was requested at construction but this "
+                        "provider/model does not support prompt caching; continuing uncached"
+                    )
+            except Exception:
+                pass
+            return
+        try:
+            instance.prompt_cache_set(key, make_default=True)
+            return
+        except Exception:
+            pass
+        try:
+            instance._default_prompt_cache_key = key
+        except Exception:
+            pass
 
 
 # Global registry instance

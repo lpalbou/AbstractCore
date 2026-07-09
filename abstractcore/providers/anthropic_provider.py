@@ -148,6 +148,116 @@ class AnthropicProvider(BaseProvider):
             self._async_client = anthropic.AsyncAnthropic(**client_kwargs)
         return self._async_client
 
+    # Explicit framing for system instructions that must be delivered inside the user
+    # turn stream (Anthropic's Messages API accepts only user/assistant roles in
+    # `messages`; `system` is a top-level parameter). XML-style tags follow Anthropic's
+    # own prompting conventions for injected context.
+    _SYSTEM_WRAP_OPEN = "<system_instruction>"
+    _SYSTEM_WRAP_CLOSE = "</system_instruction>"
+
+    def _build_anthropic_history(
+        self,
+        messages: Optional[List[Dict[str, Any]]],
+    ) -> tuple[List[Dict[str, Any]], List[str], int]:
+        """Convert AbstractCore chat history into Anthropic Messages API form.
+
+        `role:"system"` entries are converted instead of silently dropped:
+        - a LEADING contiguous run of system messages is returned as
+          ``leading_system_parts`` for the caller to merge into the top-level ``system``
+          parameter (its native surface — covers clients that send the system prompt as
+          ``messages[0]``);
+        - NON-LEADING system messages are converted in place into user messages wrapped
+          in ``<system_instruction>`` tags, preserving their position (tail-placed hints
+          stay tail-anchored). Emission is deferred past contiguous ``tool`` runs so a
+          converted message never lands between an assistant tool_use turn and its
+          tool_result (Anthropic placement rule).
+
+        Returns ``(api_messages, leading_system_parts, wrapped_count)``.
+        """
+        api_messages: List[Dict[str, Any]] = []
+        leading_system_parts: List[str] = []
+        pending_wrapped: List[Dict[str, Any]] = []
+        wrapped_count = 0
+        seen_non_system = False
+
+        def _flush_pending() -> None:
+            nonlocal pending_wrapped
+            if pending_wrapped:
+                api_messages.extend(pending_wrapped)
+                pending_wrapped = []
+
+        for msg in messages or []:
+            if not isinstance(msg, dict):
+                continue
+            role = str(msg.get("role") or "").strip()
+            if not role:
+                continue
+            content = msg.get("content")
+
+            if role == "system":
+                text = self._message_content_to_text(content).strip()
+                if not text:
+                    continue
+                if not seen_non_system:
+                    leading_system_parts.append(text)
+                else:
+                    pending_wrapped.append(
+                        {
+                            "role": "user",
+                            "content": f"{self._SYSTEM_WRAP_OPEN}\n{text}\n{self._SYSTEM_WRAP_CLOSE}",
+                        }
+                    )
+                    wrapped_count += 1
+                continue
+
+            seen_non_system = True
+
+            if role == "assistant":
+                _flush_pending()
+                api_messages.append({"role": "assistant", "content": "" if content is None else content})
+            elif role == "tool":
+                # Anthropic Messages API represents tool outputs as `tool_result` content
+                # blocks inside a USER message (there is no `role="tool"`). Tool results are
+                # emitted BEFORE any pending wrapped system message so the tool_result stays
+                # adjacent to its assistant tool_use turn.
+                meta = msg.get("metadata") if isinstance(msg.get("metadata"), dict) else {}
+                tool_use_id = meta.get("call_id") or meta.get("tool_use_id") or meta.get("id")
+                tool_text = "" if content is None else str(content)
+
+                if isinstance(tool_use_id, str) and tool_use_id.strip():
+                    api_messages.append(
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": tool_use_id.strip(),
+                                    "content": tool_text,
+                                }
+                            ],
+                        }
+                    )
+                else:
+                    # Fallback: preserve as plain user text when no tool_use_id is available.
+                    api_messages.append({"role": "user", "content": tool_text})
+            else:
+                # Anthropic accepts only user/assistant roles; other roles are delivered as
+                # user content (consecutive user turns are merged server-side).
+                _flush_pending()
+                api_messages.append({"role": "user", "content": "" if content is None else content})
+
+        _flush_pending()
+        return api_messages, leading_system_parts, wrapped_count
+
+    @staticmethod
+    def _merge_system_parts(system_prompt: Optional[str], leading_system_parts: List[str]) -> Optional[str]:
+        """Merge the explicit system_prompt with leading in-`messages` system content."""
+        parts: List[str] = []
+        if isinstance(system_prompt, str) and system_prompt:
+            parts.append(system_prompt)
+        parts.extend(p for p in leading_system_parts if p)
+        return "\n\n".join(parts) if parts else None
+
     def _generate_internal(self,
                           prompt: str,
                           messages: Optional[List[Dict[str, str]]] = None,
@@ -159,50 +269,8 @@ class AnthropicProvider(BaseProvider):
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Internal generation with Anthropic API"""
 
-        # Build messages array
-        api_messages = []
-
-        # Add conversation history
-        if messages:
-            for msg in messages:
-                # Skip system messages as they're handled separately
-                if msg.get("role") != "system":
-                    # Convert assistant role if needed
-                    role = msg["role"]
-                    if role == "assistant":
-                        api_messages.append({
-                            "role": "assistant",
-                            "content": msg["content"]
-                        })
-                    elif role == "tool":
-                        # Anthropic Messages API represents tool outputs as `tool_result`
-                        # content blocks inside a USER message (there is no `role="tool"`).
-                        meta = msg.get("metadata") if isinstance(msg.get("metadata"), dict) else {}
-                        tool_use_id = meta.get("call_id") or meta.get("tool_use_id") or meta.get("id")
-                        tool_text = msg.get("content", "")
-                        tool_text = "" if tool_text is None else str(tool_text)
-
-                        if isinstance(tool_use_id, str) and tool_use_id.strip():
-                            api_messages.append(
-                                {
-                                    "role": "user",
-                                    "content": [
-                                        {
-                                            "type": "tool_result",
-                                            "tool_use_id": tool_use_id.strip(),
-                                            "content": tool_text,
-                                        }
-                                    ],
-                                }
-                            )
-                        else:
-                            # Fallback: preserve as plain user text when no tool_use_id is available.
-                            api_messages.append({"role": "user", "content": tool_text})
-                    else:
-                        api_messages.append({
-                            "role": "user",
-                            "content": msg["content"]
-                        })
+        # Build messages array (system entries are converted, never dropped).
+        api_messages, leading_system_parts, wrapped_system_count = self._build_anthropic_history(messages)
 
         # Add current prompt as user message
         if prompt and prompt not in [msg.get("content") for msg in (messages or [])]:
@@ -280,15 +348,26 @@ class AnthropicProvider(BaseProvider):
             "stream": stream
         }
 
-        # Prompt caching (Anthropic): enable server-side caching when a cache key is provided.
-        # Anthropic does not use our cache key value; it's treated as a unified toggle.
+        # Prompt caching (Anthropic): explicit per-block breakpoints when a cache key is
+        # provided (Anthropic does not use our key value; it signals caching intent).
+        # The previous top-level `cache_control` request param marks only the LAST cacheable
+        # block — the end of the message transcript. Live-verified (2026-07-08, haiku-4.5):
+        # in the agent-loop shape (volatile trailing message) that paid the 1.25x cache-WRITE
+        # premium on the full prompt EVERY call and never produced a read (7,042/7,043-token
+        # writes, 0 reads); below the model's minimum cacheable size it was a silent no-op.
+        # The breakpoint now goes on the last system text block, caching the tools+system
+        # static head (server prompt order is tools -> system -> messages): live-verified
+        # write 6,302 on call 1 -> read 6,302 on call 2.
         prompt_cache_key = kwargs.get("prompt_cache_key")
-        if isinstance(prompt_cache_key, str) and prompt_cache_key.strip() and self.supports_prompt_cache():
-            cache_control: Dict[str, Any] = {"type": "ephemeral"}
+        cache_enabled = (
+            isinstance(prompt_cache_key, str) and prompt_cache_key.strip() and self.supports_prompt_cache()
+        )
+        cache_control: Optional[Dict[str, Any]] = None
+        if cache_enabled:
+            cache_control = {"type": "ephemeral"}
             ttl = kwargs.get("prompt_cache_ttl")
             if isinstance(ttl, str) and ttl.strip():
                 cache_control["ttl"] = ttl.strip()
-            call_params["cache_control"] = cache_control
 
         thinking_cfg = kwargs.get("thinking")
         if isinstance(thinking_cfg, dict) and thinking_cfg:
@@ -298,9 +377,12 @@ class AnthropicProvider(BaseProvider):
         if isinstance(output_config, dict) and output_config:
             call_params["output_config"] = output_config
 
-        # Add system prompt if provided
-        if system_prompt:
-            call_params["system"] = system_prompt
+        # Add system prompt if provided. Leading system messages inside `messages`
+        # (e.g. server-mediated clients sending the system prompt as messages[0])
+        # merge into the same top-level parameter — their native Anthropic surface.
+        merged_system = self._merge_system_parts(system_prompt, leading_system_parts)
+        if merged_system:
+            call_params["system"] = merged_system
 
         # Add top_p if specified
         top_p_value = generation_kwargs.get("top_p", self.top_p)
@@ -374,6 +456,10 @@ class AnthropicProvider(BaseProvider):
                 else:
                     call_params["system"] = tool_prompt
 
+        # Apply the prompt-cache breakpoint AFTER tools/system folding so the marked block
+        # is genuinely the end of the static head (tools -> system in Anthropic's prompt order).
+        self._apply_prompt_cache_breakpoints(call_params, cache_control)
+
         # Make API call with proper exception handling
         try:
             if stream:
@@ -389,6 +475,11 @@ class AnthropicProvider(BaseProvider):
                 formatted.gen_time = gen_time
                 formatted.metadata = dict(formatted.metadata or {})
                 formatted.metadata["_provider_request"] = {"call_params": call_params}
+                if wrapped_system_count:
+                    # Observability: non-leading system messages were delivered as
+                    # <system_instruction>-wrapped user turns (Anthropic has no system role
+                    # in `messages`); count the conversions instead of warning per call.
+                    formatted.metadata["system_role_user_wrapped"] = wrapped_system_count
 
                 # Handle tool execution for Anthropic responses
                 if tools and (formatted.has_tool_calls() or
@@ -421,50 +512,8 @@ class AnthropicProvider(BaseProvider):
                                    **kwargs) -> Union[GenerateResponse, AsyncIterator[GenerateResponse]]:
         """Native async implementation using AsyncAnthropic - 3-10x faster for batch operations."""
 
-        # Build messages array (same logic as sync)
-        api_messages = []
-
-        # Add conversation history
-        if messages:
-            for msg in messages:
-                # Skip system messages as they're handled separately
-                if msg.get("role") != "system":
-                    # Convert assistant role if needed
-                    role = msg["role"]
-                    if role == "assistant":
-                        api_messages.append({
-                            "role": "assistant",
-                            "content": msg["content"]
-                        })
-                    elif role == "tool":
-                        # Anthropic Messages API represents tool outputs as `tool_result`
-                        # content blocks inside a USER message (there is no `role="tool"`).
-                        meta = msg.get("metadata") if isinstance(msg.get("metadata"), dict) else {}
-                        tool_use_id = meta.get("call_id") or meta.get("tool_use_id") or meta.get("id")
-                        tool_text = msg.get("content", "")
-                        tool_text = "" if tool_text is None else str(tool_text)
-
-                        if isinstance(tool_use_id, str) and tool_use_id.strip():
-                            api_messages.append(
-                                {
-                                    "role": "user",
-                                    "content": [
-                                        {
-                                            "type": "tool_result",
-                                            "tool_use_id": tool_use_id.strip(),
-                                            "content": tool_text,
-                                        }
-                                    ],
-                                }
-                            )
-                        else:
-                            # Fallback: preserve as plain user text when no tool_use_id is available.
-                            api_messages.append({"role": "user", "content": tool_text})
-                    else:
-                        api_messages.append({
-                            "role": "user",
-                            "content": msg["content"]
-                        })
+        # Build messages array (same logic as sync; system entries converted, never dropped).
+        api_messages, leading_system_parts, wrapped_system_count = self._build_anthropic_history(messages)
 
         # Add current prompt as user message
         if prompt and prompt not in [msg.get("content") for msg in (messages or [])]:
@@ -543,12 +592,15 @@ class AnthropicProvider(BaseProvider):
         }
 
         prompt_cache_key = kwargs.get("prompt_cache_key")
-        if isinstance(prompt_cache_key, str) and prompt_cache_key.strip() and self.supports_prompt_cache():
-            cache_control: Dict[str, Any] = {"type": "ephemeral"}
+        cache_enabled = (
+            isinstance(prompt_cache_key, str) and prompt_cache_key.strip() and self.supports_prompt_cache()
+        )
+        cache_control: Optional[Dict[str, Any]] = None
+        if cache_enabled:
+            cache_control = {"type": "ephemeral"}
             ttl = kwargs.get("prompt_cache_ttl")
             if isinstance(ttl, str) and ttl.strip():
                 cache_control["ttl"] = ttl.strip()
-            call_params["cache_control"] = cache_control
 
         thinking_cfg = kwargs.get("thinking")
         if isinstance(thinking_cfg, dict) and thinking_cfg:
@@ -558,9 +610,11 @@ class AnthropicProvider(BaseProvider):
         if isinstance(output_config, dict) and output_config:
             call_params["output_config"] = output_config
 
-        # Add system prompt if provided (Anthropic-specific: separate parameter)
-        if system_prompt:
-            call_params["system"] = system_prompt
+        # Add system prompt if provided (Anthropic-specific: separate parameter).
+        # Leading system messages inside `messages` merge into the same parameter.
+        merged_system = self._merge_system_parts(system_prompt, leading_system_parts)
+        if merged_system:
+            call_params["system"] = merged_system
 
         # Add top_p if specified
         top_p_value = generation_kwargs.get("top_p", self.top_p)
@@ -628,6 +682,9 @@ class AnthropicProvider(BaseProvider):
                 else:
                     call_params["system"] = tool_prompt
 
+        # Apply the prompt-cache breakpoint AFTER tools/system folding (see sync path).
+        self._apply_prompt_cache_breakpoints(call_params, cache_control)
+
         # Make async API call
         try:
             if stream:
@@ -641,6 +698,8 @@ class AnthropicProvider(BaseProvider):
                 formatted.gen_time = gen_time
                 formatted.metadata = dict(formatted.metadata or {})
                 formatted.metadata["_provider_request"] = {"call_params": call_params}
+                if wrapped_system_count:
+                    formatted.metadata["system_role_user_wrapped"] = wrapped_system_count
 
                 if tools and (formatted.has_tool_calls() or
                              (self.tool_handler.supports_prompted and formatted.content)):
@@ -764,11 +823,7 @@ class AnthropicProvider(BaseProvider):
         # Build usage dict
         usage = None
         if hasattr(response, 'usage'):
-            usage = {
-                "prompt_tokens": response.usage.input_tokens,
-                "completion_tokens": response.usage.output_tokens,
-                "total_tokens": response.usage.input_tokens + response.usage.output_tokens
-            }
+            usage = self._build_usage_dict(response.usage)
 
         metadata: Optional[Dict[str, Any]] = None
         reasoning = "\n".join([p for p in reasoning_parts if isinstance(p, str) and p.strip()]).strip()
@@ -868,11 +923,7 @@ class AnthropicProvider(BaseProvider):
                     # Final chunk with usage info and tool execution
                     usage = None
                     if hasattr(stream, 'response') and hasattr(stream.response, 'usage'):
-                        usage = {
-                            "prompt_tokens": stream.response.usage.input_tokens,
-                            "completion_tokens": stream.response.usage.output_tokens,
-                            "total_tokens": stream.response.usage.input_tokens + stream.response.usage.output_tokens
-                        }
+                        usage = self._build_usage_dict(stream.response.usage)
 
                     # Handle tool execution if we have tools and collected calls
                     if tools and (collected_tool_calls or
@@ -910,6 +961,116 @@ class AnthropicProvider(BaseProvider):
                         finish_reason="stop",
                         usage=usage
                     )
+
+    @staticmethod
+    def _apply_prompt_cache_breakpoints(call_params: Dict[str, Any], cache_control: Optional[Dict[str, Any]]) -> None:
+        """Place an explicit `cache_control` breakpoint at the end of the STATIC head.
+
+        Anthropic caches the prompt prefix up to each marked block, in server prompt order
+        tools -> system -> messages. Marking the LAST system block therefore caches
+        tools + system — the byte-stable head of agent-loop requests — and costs one slot
+        of the 4-breakpoint budget. Messages are deliberately NOT marked in v1: the
+        agent-loop transcript ends in volatile per-call content, and a breakpoint there
+        pays the 1.25x write premium for a block the next call cannot re-read.
+
+        (The previous implementation passed a top-level `cache_control` request param,
+        which marks only the last cacheable block = the volatile transcript tail.
+        Live-verified 2026-07-08: full-prompt cache WRITE every call, zero reads — an
+        active cost increase, not a no-op, whenever the prompt exceeded the model's
+        minimum cacheable size. Explicit block placement is the correct surface.)
+        """
+        if not cache_control:
+            return
+
+        # Respect caller-placed breakpoints: Anthropic allows at most 4 explicit
+        # cache_control blocks per request (a 5th is an API 400). If the caller already
+        # marked ANY block (system, messages, or tools), they own the placement — adding
+        # ours could exceed the budget or override their TTL choice.
+        def _has_marker(blocks_like: Any) -> bool:
+            if not isinstance(blocks_like, list):
+                return False
+            for item in blocks_like:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("cache_control"):
+                    return True
+                if _has_marker(item.get("content")):
+                    return True
+            return False
+
+        if (
+            _has_marker(call_params.get("system"))
+            or _has_marker(call_params.get("messages"))
+            or _has_marker(call_params.get("tools"))
+        ):
+            return
+
+        system = call_params.get("system")
+        blocks: list
+        if isinstance(system, str) and system.strip():
+            blocks = [{"type": "text", "text": system}]
+        elif isinstance(system, list) and system:
+            blocks = [dict(b) if isinstance(b, dict) else b for b in system]
+        else:
+            return  # no stable head to cache; skip rather than mark volatile content
+
+        for i in range(len(blocks) - 1, -1, -1):
+            b = blocks[i]
+            if isinstance(b, dict) and b.get("type") == "text":
+                b = dict(b)
+                b["cache_control"] = dict(cache_control)
+                blocks[i] = b
+                call_params["system"] = blocks
+                return
+
+    @staticmethod
+    def _build_usage_dict(usage: Any) -> Optional[Dict[str, Any]]:
+        """Normalize Anthropic usage, including prompt-cache accounting.
+
+        Anthropic reports cache traffic OUTSIDE `input_tokens`: the prompt actually
+        processed is input_tokens + cache_read_input_tokens + cache_creation_input_tokens
+        (billed at 1x / 0.1x / 1.25x respectively). Reporting the raw `input_tokens` as
+        prompt size undercounts input whenever caching engages, so we report the INCLUSIVE
+        sum (matching OpenAI semantics, where prompt_tokens includes cached tokens) and
+        surface the split via normalized keys:
+        - `cached_input_tokens`: input served from cache (read)
+        - `cache_write_tokens`: input written to cache (creation premium)
+        Absent != 0 is contractual: the keys appear only when the API reported the fields,
+        so "cannot report" is distinguishable from "measured zero".
+        """
+        if usage is None:
+            return None
+
+        def _field(name: str) -> Optional[int]:
+            value = getattr(usage, name, None)
+            if value is None and isinstance(usage, dict):
+                value = usage.get(name)
+            if value is None:
+                return None
+            try:
+                return int(value)
+            except Exception:
+                return None
+
+        base_in = _field("input_tokens") or 0
+        out_toks = _field("output_tokens") or 0
+        cache_read = _field("cache_read_input_tokens")
+        cache_write = _field("cache_creation_input_tokens")
+        total_in = base_in + (cache_read or 0) + (cache_write or 0)
+
+        out: Dict[str, Any] = {
+            "input_tokens": total_in,
+            "output_tokens": out_toks,
+            "total_tokens": total_in + out_toks,
+            # Legacy keys for backward compatibility
+            "prompt_tokens": total_in,
+            "completion_tokens": out_toks,
+        }
+        if cache_read is not None:
+            out["cached_input_tokens"] = cache_read
+        if cache_write is not None:
+            out["cache_write_tokens"] = cache_write
+        return out
 
     def get_capabilities(self) -> List[str]:
         """Get list of capabilities supported by this provider"""

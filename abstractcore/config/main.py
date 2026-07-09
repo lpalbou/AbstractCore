@@ -1491,6 +1491,7 @@ def _handle_config_set_default(args) -> int:
         provider=getattr(args, "provider", None),
         model=getattr(args, "model", None),
         base_url=getattr(args, "base_url", None),
+        reasoning=getattr(args, "reasoning", None),
         options=options,
     )
     if not ok:
@@ -1679,6 +1680,11 @@ def _handle_config_subcommand(argv: List[str]) -> int:
     set_default.add_argument("--provider", default=None, help="Provider/backend id")
     set_default.add_argument("--model", default=None, help="Model id")
     set_default.add_argument("--base-url", default=None, help="Optional provider base URL")
+    set_default.add_argument(
+        "--reasoning",
+        default=None,
+        help="Optional default reasoning level for reasoning-capable text routes",
+    )
     set_default.add_argument("--option", action="append", default=[], metavar="KEY=VALUE", help="Optional JSON-capable parameter; repeatable")
     set_default.set_defaults(func=_handle_config_set_default)
 

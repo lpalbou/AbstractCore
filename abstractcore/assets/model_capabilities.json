@@ -1409,7 +1409,7 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "thinking_control": "/no_think",
+      "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "Qwen3 base model with thinking capabilities",
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-0.6b",
@@ -1435,7 +1435,7 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "thinking_control": "/no_think",
+      "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "Qwen3 1.7B model with thinking capabilities",
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-1.7b",
@@ -1461,7 +1461,7 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "thinking_control": "/no_think",
+      "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "Qwen3 4B model with extended context via YaRN scaling",
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-4b",
@@ -1542,7 +1542,7 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "thinking_control": "/no_think",
+      "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "Qwen3 32B model with advanced thinking capabilities",
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-32b",
@@ -1568,7 +1568,7 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "thinking_control": "/no_think",
+      "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "AllenAI SERA-32B coding agent model (Qwen3-32B-based). 32K max sequence length; tool calls are emitted in <tool_call>...</tool_call> blocks.",
       "source": "SERA paper (sera.pdf) and AllenAI model card (huggingface.co/allenai/SERA-32B)",
       "canonical_name": "sera-32b",
@@ -1599,7 +1599,7 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "thinking_control": "/no_think",
+      "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "AllenAI SERA-32B-GA coding agent model (Qwen3-32B-based). 32K max sequence length; tool calls are emitted in <tool_call>...</tool_call> blocks.",
       "source": "SERA paper (sera.pdf) and AllenAI model card (huggingface.co/allenai/SERA-32B-GA)",
       "canonical_name": "sera-32b-ga",
@@ -1630,7 +1630,7 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "thinking_control": "/no_think",
+      "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "AllenAI SERA-8B coding agent model (Qwen3-8B-based). 32K max sequence length; tool calls are emitted in <tool_call>...</tool_call> blocks.",
       "source": "SERA paper (sera.pdf) and AllenAI model card (huggingface.co/allenai/SERA-8B)",
       "canonical_name": "sera-8b",
@@ -1661,7 +1661,7 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "thinking_control": "/no_think",
+      "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "AllenAI SERA-8B-GA coding agent model (Qwen3-8B-based). 32K max sequence length; tool calls are emitted in <tool_call>...</tool_call> blocks.",
       "source": "SERA paper (sera.pdf) and AllenAI model card (huggingface.co/allenai/SERA-8B-GA)",
       "canonical_name": "sera-8b-ga",
@@ -1692,7 +1692,7 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "thinking_control": "/no_think",
+      "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "Qwen3 MoE model with 4-bit precision, 30B total/3B active parameters",
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-30b-a3b",
@@ -2482,7 +2482,7 @@
       "audio_support": false,
       "video_support": false,
       "thinking_support": true,
-      "thinking_control": "reasoning_effort",
+      "thinking_control": { "request_param": "reasoning_effort" },
       "reasoning_levels": [
         "none",
         "high"
@@ -3546,7 +3546,7 @@
       "video_support": false,
       "thinking_support": true,
       "thinking_output_field": "reasoning",
-      "thinking_control": "thinking",
+      "thinking_control": { "request_param": "thinking" },
       "architecture": "kimi_k2",
       "total_parameters": "1T",
       "active_parameters": "32B",
@@ -3575,6 +3575,43 @@
           "text",
           "image",
           "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "grok-4": {
+      "max_output_tokens": null,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "reasoning_output": false,
+      "unsupported_parameters": [
+        "presence_penalty",
+        "frequency_penalty",
+        "stop"
+      ],
+      "notes": "xAI Grok 4 reasoning model. Reasoning is always on: it cannot be disabled, reasoning_effort is rejected with an API error, and no reasoning text is returned via Chat Completions (no reasoning_content field) — hence reasoning_output=false. Reasoning tokens are billed as output tokens and reported only in usage.completion_tokens_details.reasoning_tokens; encrypted reasoning is available solely via the xAI Responses API include=[\"reasoning.encrypted_content\"]. OpenRouter route x-ai/grok-4 mirrors this (reasoning not exposed, not disableable, effort not specifiable). presence_penalty/frequency_penalty/stop are rejected by the API. No hard completion cap is published, so max_output_tokens is null per registry rules; pricing tier increases past 128K total tokens per request. reasoning_levels is deliberately absent so providers never send reasoning_effort to this model.",
+      "source": "xAI docs (docs.x.ai reasoning + grok-4 model page, accessed 2026-07-07); OpenRouter x-ai/grok-4 model page (accessed 2026-07-07); Google Cloud Grok partner-model reasoning docs (accessed 2026-07-07)",
+      "canonical_name": "grok-4",
+      "aliases": [
+        "x-ai/grok-4",
+        "xai/grok-4",
+        "grok-4-0709"
+      ],
+      "max_tokens": 256000,
+      "release_date": "2025-07",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
         ],
         "output": [
           "text"
@@ -3909,7 +3946,7 @@
         ]
       },
       "thinking_support": true,
-      "thinking_control": "enable_thinking",
+      "thinking_control": { "template_kwarg": "enable_thinking" },
       "thinking_tags": [
         "<think>",
         "</think>"
@@ -3941,7 +3978,7 @@
       "audio_support": false,
       "video_support": true,
       "thinking_support": true,
-      "thinking_control": "enable_thinking",
+      "thinking_control": { "template_kwarg": "enable_thinking" },
       "thinking_tags": [
         "<think>",
         "</think>"
@@ -3985,7 +4022,7 @@
       "audio_support": false,
       "video_support": false,
       "thinking_support": true,
-      "thinking_control": "enable_thinking",
+      "thinking_control": { "template_kwarg": "enable_thinking" },
       "thinking_tags": [
         "<think>",
         "</think>"
@@ -4033,7 +4070,7 @@
         ]
       },
       "thinking_support": true,
-      "thinking_control": "enable_thinking",
+      "thinking_control": { "template_kwarg": "enable_thinking" },
       "thinking_tags": [
         "<think>",
         "</think>"
@@ -4070,7 +4107,7 @@
       "audio_support": false,
       "video_support": true,
       "thinking_support": true,
-      "thinking_control": "enable_thinking",
+      "thinking_control": { "template_kwarg": "enable_thinking" },
       "thinking_tags": [
         "<think>",
         "</think>"
@@ -4119,7 +4156,7 @@
       "audio_support": false,
       "video_support": false,
       "thinking_support": true,
-      "thinking_control": "enable_thinking",
+      "thinking_control": { "template_kwarg": "enable_thinking" },
       "thinking_tags": [
         "<think>",
         "</think>"
@@ -4248,7 +4285,7 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "thinking_control": "/no_think",
+      "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "Qwen3 14B model with thinking capabilities",
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-14b",
@@ -5131,7 +5168,7 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "thinking_control": "/no_think",
+      "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "Qwen3 8B model with thinking capabilities",
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-8b",
@@ -5157,7 +5194,7 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "thinking_control": "/no_think",
+      "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "Qwen3 MoE model with 4-bit precision, 235B total/22B active parameters",
       "source": "Alibaba Qwen3 technical report",
       "canonical_name": "qwen3-235b-a22b",
@@ -7075,7 +7112,7 @@
         "start": "<|begin_of_box|>",
         "end": "<|end_of_box|>"
       },
-      "thinking_control": "/nothink",
+      "thinking_control": { "prompt_disable_token": "/nothink" },
       "thinking_tags": [
         "<think>",
         "</think>"
@@ -7134,7 +7171,7 @@
         "start": "<|begin_of_box|>",
         "end": "<|end_of_box|>"
       },
-      "thinking_control": "/nothink",
+      "thinking_control": { "prompt_disable_token": "/nothink" },
       "thinking_tags": [
         "<think>",
         "</think>"
@@ -8170,7 +8207,7 @@
       "video_support": true,
       "thinking_support": true,
       "thinking_budget": true,
-      "thinking_control": "enable_thinking",
+      "thinking_control": { "template_kwarg": "enable_thinking" },
       "thinking_tags": [
         "<think>",
         "</think>"
@@ -8282,6 +8319,50 @@
       },
       "max_tools": -1,
       "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "nemotron-3-nano-4b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "video_input_mode": "none",
+      "thinking_support": true,
+      "architecture": "nemotron_hybrid_moe",
+      "total_parameters": "4B",
+      "attention_layers": 4,
+      "tensor_type": "BF16",
+      "reasoning_paradigm": "unified_reasoning_response",
+      "reasoning_configurable": true,
+      "function_calling": true,
+      "tool_calling_format": "xml",
+      "languages": [
+        "English"
+      ],
+      "notes": "NVIDIA Nemotron 3 Nano 4B edge SLM (3.97B params). DENSE hybrid Mamba-2/MLP architecture with only four attention layers, compressed from Nemotron-Nano-9B-v2 via Nemotron Elastic. Unlike the 30B/120B siblings it is NOT mixture-of-experts; it shares the nemotron_hybrid_moe registry architecture only for chat-format/thinking-control purposes (im_start_end, XML <tool_call>, <think></think> tags). Reasoning is enabled by default via the enable_thinking chat-template kwarg (template default True; truncate_history_thinking also supported); when disabled the generation prompt pre-fills an empty <think></think>. Thinking-on generation prompts open an unclosed <think>, so decoded output may contain reasoning terminated only by </think> (closing-only capture) or no tags at all depending on the serving template. LM Studio (2026-07-07) returned no separate reasoning field and no think tags, and enable_thinking:false showed no measurable suppression on that endpoint. Model card recommends temperature 1.0/top_p 0.95 for reasoning and 0.6/0.95 for tool calling; vLLM serving uses tool parser qwen3_coder and the nano_v3 reasoning parser plugin with max-model-len up to 262144. No hard completion cap published; 8192 mirrors the sibling nemotron-3-nano-30b-a3b registry convention.",
+      "source": "Hugging Face model card, config and chat template (nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16, accessed 2026-07-07); NVIDIA NIM reasoning-model docs (enable_thinking chat_template_kwargs, accessed 2026-07-07); live LM Studio probe 2026-07-07",
+      "canonical_name": "nemotron-3-nano-4b",
+      "aliases": [
+        "nvidia/NVIDIA-Nemotron-3-Nano-4B-BF16",
+        "NVIDIA-Nemotron-3-Nano-4B-BF16",
+        "nvidia/NVIDIA-Nemotron-3-Nano-4B-FP8",
+        "nvidia/NVIDIA-Nemotron-3-Nano-4B-GGUF",
+        "nvidia/nemotron-3-nano-4b"
+      ],
+      "max_tokens": 262144,
+      "release_date": "2026-03",
+      "license": "nvidia-open-model-license",
       "capability_routes": {
         "input": [
           "text"

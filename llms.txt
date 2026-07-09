@@ -82,6 +82,6 @@ Quick start:
 - [Practical recipes](docs/examples.md): copy/paste code snippets (provider-agnostic)
 - [Troubleshooting](docs/troubleshooting.md): common errors and fixes
 - [Embeddings](docs/embeddings.md): EmbeddingManager for local and remote text embeddings; endpoint-backed providers can use embedding-only `/v1/embeddings` routes
-- [Capabilities](docs/capabilities.md): `llm.voice` / `llm.audio` / `llm.vision` / `llm.music` plugin model, shared discovery contract, and boundary between `/v1/models` route metadata and generated-media plugin catalogs
+- [Capabilities](docs/capabilities.md): `llm.voice` / `llm.audio` / `llm.vision` / `llm.music` plugin model, optional `llm.voice.tts_stream(...)`, shared discovery contract, and boundary between `/v1/models` route metadata and generated-media plugin catalogs
 - [MCP](docs/mcp.md): MCP tool servers (HTTP/stdio)
 - [llms-full](llms-full.txt): self-contained agent handbook (this repo)

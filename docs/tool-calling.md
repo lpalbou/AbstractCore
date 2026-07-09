@@ -151,9 +151,10 @@ from abstractcore.tools.common_tools import skim_url, fetch_url, search_files, r
 # Quick URL preview (fast, small)
 preview = skim_url("https://example.com/article")
 
-# Full web content fetching and parsing (HTML→Markdown, JSON/XML/text)
+# Full web content fetching and parsing (HTML→Markdown, JSON/XML/text, feeds, PDFs)
 result = fetch_url("https://api.github.com/repos/python/cpython")
-# For PDFs/images/other binaries, fetch_url returns metadata (and optional previews), not full extraction.
+# PDF routing is provenance-aware and follows native_llm > pymupdf > pypdf
+# when a native OpenAI-compatible client is configured. There is no separate enable flag.
 
 # File system operations  
 files = search_files("def.*fetch", ".", file_pattern="*.py")
@@ -162,16 +163,39 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 ```
 
 **Available Built-in Tools:**
-- `skim_url` - Fast URL skim (title/description/headings + short preview)
-- `fetch_url` - Fetch + parse common text-first types (HTML→Markdown, JSON/XML/text); binaries return metadata + optional previews
+- `skim_url` - Fast URL skim (title/description/headings + short preview, plus feed/XML and PDF summaries when detectable)
+- `fetch_url` - Fetch + parse HTML/JSON/XML/text plus feed summaries and PDF extraction with explicit backend provenance (`pdf_text_backend`, `pdf_summary_backend`, `pdf_backend_attempts`, `pdf_native_transport`); non-text binaries still return metadata + optional previews
 - `search_files` - Search for text patterns inside files using regex
 - `list_files` - Find and list files by names/paths using glob patterns
 - `read_file` - Read file contents with optional line range selection
 - `write_file` - Write content to files with directory creation
 - `edit_file` - Edit files using pattern matching and replacement
-- `web_search` - Search the web using DuckDuckGo
-- `skim_websearch` - Smaller/filtered web search (compact result list)
+- `web_search` - Search the web using DuckDuckGo; numeric `num_results` is normalized from JSON-style strings when needed, while invalid values fail explicitly
+- `skim_websearch` - Smaller/filtered web search (compact result list); accepts string-like numeric `num_results` and surfaces its compact result cap
 - `execute_command` - Execute shell commands safely with security controls
+
+`edit_file` preserves each file's line-ending style: CRLF files stay CRLF and LF files stay
+LF (a mixed-endings file is normalized to its dominant style, with a note in the tool
+output). Unified-diff mode handles deletion of lines whose content starts with `-- `
+(SQL/Lua comments) and still rejects multi-file patches.
+
+**Persistent shell sessions (opt-in):**
+
+`abstractcore.tools.shell_tools` provides `shell_exec`, `shell_write_stdin`, and
+`shell_close` — a persistent PTY-backed shell whose working directory, environment, and
+activated venvs survive across calls (`session_id` selects the session). Use them for
+multi-step workflows such as creating a venv in one call and installing into it in the
+next, feeding input to a REPL or prompt, or starting a background process and inspecting
+it later.
+
+Two properties are stated in the tool schemas and matter operationally:
+
+- A session is **not a sandbox**: it carries the same trust level as `execute_command`.
+  In AbstractRuntime hosts these tools require approval by default and are excluded from
+  the default toolsets; set `ABSTRACT_ENABLE_SHELL_TOOLS=1` to enable them.
+- A session is **not durable**: it never survives a host restart. Every fresh session
+  announces itself with a "new shell session" notice in the output so callers never
+  assume state carried over.
 
 **Suggested web workflow (agent-friendly):**
 1. `skim_websearch(...)` → get a small set of candidate URLs

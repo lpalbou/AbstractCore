@@ -93,9 +93,9 @@ class PDFProcessor(BaseMediaHandler):
     """
     PDF processor for LLM-oriented document processing.
 
-    The default backend is pypdf. It provides permissive text and metadata
-    extraction. The optional PyMuPDF4LLM backend can be requested explicitly for
-    higher-fidelity Markdown/layout extraction after license approval.
+        The default backend is pypdf. It provides permissive text and metadata
+        extraction. Optional PyMuPDF-family backends can be requested explicitly
+        after license approval for higher-fidelity extraction.
     """
 
     def __init__(self, **kwargs):
@@ -109,7 +109,7 @@ class PDFProcessor(BaseMediaHandler):
                 - markdown_output: Whether to output as markdown
                 - page_range: Tuple of (start_page, end_page) or None for all pages
                 - extract_metadata: Whether to extract PDF metadata
-                - pdf_backend: 'pypdf' (default) or explicit 'pymupdf4llm'
+                - pdf_backend: 'pypdf' (default), 'pymupdf', or explicit 'pymupdf4llm'
         """
         super().__init__(**kwargs)
 
@@ -126,9 +126,9 @@ class PDFProcessor(BaseMediaHandler):
         # Set capabilities for PDF processing
         from ..types import MediaCapabilities
         # The permissive pypdf backend extracts text/metadata only. Do not report
-        # image/vision support unless the explicit high-fidelity backend is selected.
+        # image/vision support unless an explicit PyMuPDF-family backend is selected.
         self.capabilities = MediaCapabilities(
-            vision_support=self.extract_images and self.pdf_backend == 'pymupdf4llm',
+            vision_support=self.extract_images and self.pdf_backend in {'pymupdf', 'pymupdf4llm'},
             audio_support=False,
             video_support=False,
             document_support=True,
@@ -147,10 +147,12 @@ class PDFProcessor(BaseMediaHandler):
         raw = str(value or 'pypdf').strip().lower().replace('_', '-')
         if raw in {'pypdf', 'default', 'permissive', 'basic'}:
             return 'pypdf'
-        if raw in {'pymupdf', 'pymupdf4llm', 'commercial', 'high-fidelity', 'layout'}:
+        if raw in {'pymupdf', 'fitz'}:
+            return 'pymupdf'
+        if raw in {'pymupdf4llm', 'commercial', 'high-fidelity', 'layout'}:
             return 'pymupdf4llm'
         raise MediaProcessingError(
-            f"Unsupported PDF backend '{value}'. Use 'pypdf' or explicit 'pymupdf4llm'."
+            f"Unsupported PDF backend '{value}'. Use 'pypdf', 'pymupdf', or explicit 'pymupdf4llm'."
         )
 
     def _process_internal(self, file_path: Path, media_type: MediaType, **kwargs) -> MediaContent:
@@ -231,6 +233,10 @@ class PDFProcessor(BaseMediaHandler):
                 content, metadata = self._extract_with_pymupdf4llm(
                     file_path, page_range, extract_images, output_format, dpi
                 )
+            elif self.pdf_backend == 'pymupdf':
+                content, metadata = self._extract_with_pymupdf(
+                    file_path, page_range, extract_images, output_format
+                )
             else:
                 content, metadata = self._extract_with_pypdf(file_path, page_range, output_format)
 
@@ -239,7 +245,7 @@ class PDFProcessor(BaseMediaHandler):
                 'pdf_backend': self.pdf_backend,
                 'output_format': output_format,
                 'page_range': page_range,
-                'images_extracted': bool(extract_images and self.pdf_backend == 'pymupdf4llm'),
+                'images_extracted': bool(extract_images and self.pdf_backend in {'pymupdf', 'pymupdf4llm'}),
                 'content_length': len(content)
             })
 
@@ -348,7 +354,7 @@ class PDFProcessor(BaseMediaHandler):
         return content, metadata
 
     def _extract_with_pymupdf(self, file_path: Path, page_range: Optional[Tuple[int, int]],
-                            extract_images: bool) -> Tuple[str, Dict[str, Any]]:
+                            extract_images: bool, output_format: str) -> Tuple[str, Dict[str, Any]]:
         """
         Extract content using regular PyMuPDF for the explicit optional backend.
 
@@ -362,8 +368,9 @@ class PDFProcessor(BaseMediaHandler):
         """
         fitz = _load_pymupdf()
         doc = fitz.open(str(file_path))
-        content_parts = []
-        images = []
+        content_parts: List[str] = []
+        images: List[Dict[str, Any]] = []
+        pages: List[Dict[str, Any]] = []
 
         try:
             # Determine page range
@@ -375,23 +382,40 @@ class PDFProcessor(BaseMediaHandler):
                 page = doc[page_num]
 
                 # Extract text
-                page_text = page.get_text()
+                page_text = page.get_text() or ""
+                pages.append({"page": page_num + 1, "text": page_text})
                 if page_text.strip():
-                    content_parts.append(f"# Page {page_num + 1}\n\n{page_text}\n")
+                    if output_format == 'markdown':
+                        content_parts.append(f"# Page {page_num + 1}\n\n{page_text}\n")
+                    else:
+                        content_parts.append(page_text)
 
                 # Extract images if requested
                 if extract_images:
                     page_images = self._extract_page_images(page, page_num, fitz)
                     images.extend(page_images)
 
-            content = "\n".join(content_parts)
+            if output_format == 'structured':
+                content = json.dumps(
+                    {
+                        "pages": pages,
+                        "page_count": doc.page_count,
+                        "processed_pages": end_page - start_page + 1,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            else:
+                content = "\n".join(content_parts).strip()
 
-            metadata = {
+            metadata = self._extract_pdf_metadata(file_path)
+            metadata.update({
                 'page_count': doc.page_count,
                 'processed_pages': end_page - start_page + 1,
                 'images_found': len(images),
-                'extraction_method': 'pymupdf'
-            }
+                'extraction_method': 'pymupdf',
+                'tables_preserved': False,
+            })
 
             if images:
                 metadata['images'] = images
@@ -611,6 +635,7 @@ class PDFProcessor(BaseMediaHandler):
                 'page_range_support': True,
                 'metadata_extraction': self.extract_metadata,
                 'pymupdf4llm_integration': self.pdf_backend == 'pymupdf4llm',
+                'pymupdf_integration': self.pdf_backend == 'pymupdf',
                 'text_extraction': True,
                 'structure_preservation': self.pdf_backend == 'pymupdf4llm',
                 'permissive_default_backend': self.pdf_backend == 'pypdf',

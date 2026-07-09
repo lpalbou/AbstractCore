@@ -442,6 +442,16 @@ class IncrementalToolDetector:
 
         cleaned = json_content.strip()
 
+        if "<parameter" in cleaned.lower():
+            try:
+                from ..tools.parser import _parse_xmlish_parameter_tool_calls
+
+                xmlish_calls = _parse_xmlish_parameter_tool_calls(cleaned)
+            except Exception:
+                xmlish_calls = []
+            if xmlish_calls:
+                return xmlish_calls[0]
+
         # Gemma4-style tool-call payloads:
         #   call:tool_name{...json args...}
         call_match = re.search(r'(?is)\bcall\s*:\s*(?P<name>\w+)\s*(?P<arguments>\{.*\})', cleaned)
@@ -519,10 +529,22 @@ class IncrementalToolDetector:
         if self.state == ToolDetectionState.IN_TOOL_CALL:
             # Try to parse any remaining content as incomplete tool
             if self.current_tool_content:
+                if "<parameter" in self.current_tool_content.lower():
+                    try:
+                        from ..tools.parser import _parse_xmlish_parameter_tool_calls
+
+                        completed_tools.extend(_parse_xmlish_parameter_tool_calls(self.current_tool_content))
+                    except Exception:
+                        pass
+                    if completed_tools:
+                        self.accumulated_content = ""
+                        return completed_tools
+
                 # Try to parse incomplete JSON by looking for valid JSON objects
                 tool_call = self._try_parse_incomplete_json(self.current_tool_content)
                 if tool_call:
                     completed_tools.append(tool_call)
+                    self.accumulated_content = ""
 
         return completed_tools
 

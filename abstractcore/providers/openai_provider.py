@@ -179,14 +179,18 @@ class OpenAIProvider(BaseProvider):
             api_messages.append({"role": "system", "content": system_prompt})
 
         # Add conversation history
+        #
+        # NOTE: `role:"system"` messages inside `messages` are passed through VERBATIM at
+        # their original position. The Chat Completions API accepts system/developer
+        # messages at arbitrary positions (reasoning models auto-treat `system` as
+        # `developer`), and callers place mid-stream system messages deliberately (e.g.
+        # tail-positioned context hints). They were previously dropped here, which silently
+        # deleted system prompts arriving via `messages` (notably server-mediated clients).
         if messages:
             for msg in messages:
-                # Skip system messages as they're handled separately
                 if not isinstance(msg, dict):
                     continue
                 role = msg.get("role")
-                if role == "system":
-                    continue
                 if not isinstance(role, str) or not role.strip():
                     continue
                 content = msg.get("content")
@@ -427,15 +431,14 @@ class OpenAIProvider(BaseProvider):
         if system_prompt:
             api_messages.append({"role": "system", "content": system_prompt})
 
-        # Add conversation history
+        # Add conversation history.
+        # `role:"system"` messages are passed through verbatim at their original position
+        # (see the sync builder note; previously they were silently dropped).
         if messages:
             for msg in messages:
-                # Skip system messages as they're handled separately
                 if not isinstance(msg, dict):
                     continue
                 role = msg.get("role")
-                if role == "system":
-                    continue
                 if not isinstance(role, str) or not role.strip():
                     continue
                 content = msg.get("content")
@@ -801,6 +804,9 @@ class OpenAIProvider(BaseProvider):
                     "cached_tokens": getattr(prompt_details, 'cached_tokens', 0),
                     "audio_tokens": getattr(prompt_details, 'audio_tokens', 0)
                 }
+                # Normalized cross-provider cache key (OpenAI prompt_tokens INCLUDE cached
+                # tokens; this surfaces the cached share under the framework-wide name).
+                usage["cached_input_tokens"] = int(getattr(prompt_details, 'cached_tokens', 0) or 0)
 
         return GenerateResponse(
             content=message.content,
@@ -1190,6 +1196,8 @@ class OpenAIProvider(BaseProvider):
             return chat_models
 
         except Exception:
+            if bool(kwargs.get("raise_on_error", False)):
+                raise
             return []
 
     # ------------------------------------------------------------------

@@ -2714,11 +2714,19 @@ def convert_to_openai_responses_response(
         prompt_tokens = int(usage_in.get("prompt_tokens", 0) or 0)
         completion_tokens = int(usage_in.get("completion_tokens", 0) or 0)
         total_tokens = int(usage_in.get("total_tokens", prompt_tokens + completion_tokens) or 0)
+
+        # Preserve real token detail breakdowns when the provider reported them
+        # (e.g. reasoning_tokens for invisible-reasoning models) instead of zeroing them.
+        completion_details = usage_in.get("completion_tokens_details")
+        completion_details = completion_details if isinstance(completion_details, dict) else {}
+        prompt_details = usage_in.get("prompt_tokens_details")
+        prompt_details = prompt_details if isinstance(prompt_details, dict) else {}
+
         usage_out = {
             "input_tokens": prompt_tokens,
-            "input_tokens_details": {"cached_tokens": 0},
+            "input_tokens_details": {"cached_tokens": int(prompt_details.get("cached_tokens", 0) or 0)},
             "output_tokens": completion_tokens,
-            "output_tokens_details": {"reasoning_tokens": 0},
+            "output_tokens_details": {"reasoning_tokens": int(completion_details.get("reasoning_tokens", 0) or 0)},
             "total_tokens": total_tokens,
         }
 
@@ -4365,6 +4373,12 @@ def _normalize_model_residency_task(task: Optional[str]) -> str:
         "music_generation": "music_generation",
         "text_to_music": "music_generation",
         "t2m": "music_generation",
+        "scene3d": "scene3d_generation",
+        "scene3d_generation": "scene3d_generation",
+        "text_to_scene3d": "text_to_scene3d",
+        "t23d": "text_to_scene3d",
+        "image_to_scene3d": "image_to_scene3d",
+        "i23d": "image_to_scene3d",
     }
     if raw not in aliases:
         raise HTTPException(
@@ -4381,6 +4395,12 @@ _VISION_RESIDENCY_TASKS = {
     "video_generation",
     "text_to_video",
     "image_to_video",
+}
+
+_SCENE3D_RESIDENCY_TASKS = {
+    "scene3d_generation",
+    "text_to_scene3d",
+    "image_to_scene3d",
 }
 
 
@@ -4510,6 +4530,28 @@ def _capability_residency_load(task: str, payload: Dict[str, Any], http_request:
             "affected_models": [runtime_out],
         }
 
+    if task in _SCENE3D_RESIDENCY_TASKS:
+        core = _capability_residency_core_for_request(task, http_request)
+        target = core.scene3d
+        method = getattr(target, "load_resident_model", None)
+        if not callable(method):
+            raise HTTPException(
+                status_code=501,
+                detail={"error": {"message": f"{task} capability does not expose load_resident_model.", "type": "not_implemented"}},
+            )
+        try:
+            runtime = method(payload)
+        except Exception as e:
+            raise _capability_residency_error(e, task=task) from e
+        runtime_out = _normalize_model_residency_loaded_fields(dict(runtime))
+        return {
+            "ok": True,
+            "success": True,
+            "loaded_new": _model_residency_loaded_new(runtime_out),
+            "runtime": runtime_out,
+            "affected_models": [runtime_out],
+        }
+
     raise HTTPException(
         status_code=501,
         detail={"error": {"message": f"Model residency task {task!r} is not implemented yet.", "type": "not_implemented"}},
@@ -4548,6 +4590,23 @@ def _capability_residency_loaded(task: Optional[str], filters: Dict[str, Any], h
                     )
             except Exception:
                 continue
+            continue
+        if item_task in _SCENE3D_RESIDENCY_TASKS:
+            try:
+                core = _capability_residency_core_for_request(item_task, http_request)
+                method = getattr(core.scene3d, "list_loaded_models", None)
+                if not callable(method):
+                    method = getattr(core.scene3d, "list_resident_models", None)
+                if callable(method):
+                    records.extend(
+                        [
+                            _normalize_model_residency_loaded_fields(dict(entry))
+                            for entry in list(method(filters) or [])
+                            if isinstance(entry, dict)
+                        ]
+                    )
+            except Exception:
+                continue
     return records
 
 
@@ -4572,6 +4631,27 @@ def _capability_residency_unload(task: str, payload: Dict[str, Any], http_reques
         core = _capability_residency_core_for_request(task, http_request)
         target = core.voice if task == "tts" else core.audio
         method = getattr(target, "unload_resident_model", None)
+        if not callable(method):
+            raise HTTPException(
+                status_code=501,
+                detail={"error": {"message": f"{task} capability does not expose unload_resident_model.", "type": "not_implemented"}},
+            )
+        try:
+            runtime = method(payload)
+        except Exception as e:
+            raise _capability_residency_error(e, task=task) from e
+        runtime_out = _normalize_model_residency_loaded_fields(dict(runtime))
+        return {
+            "ok": True,
+            "success": True,
+            "runtime": runtime_out,
+            "unloaded": bool(runtime_out.get("unloaded", True)),
+            "affected_models": [runtime_out],
+        }
+
+    if task in _SCENE3D_RESIDENCY_TASKS:
+        core = _capability_residency_core_for_request(task, http_request)
+        method = getattr(core.scene3d, "unload_resident_model", None)
         if not callable(method):
             raise HTTPException(
                 status_code=501,
@@ -8733,6 +8813,14 @@ def convert_to_openai_response(
             "total_tokens": getattr(response, 'usage', {}).get('total_tokens', 0) if hasattr(response, 'usage') else 0
         }
     }
+
+    # Preserve token detail breakdowns (e.g. reasoning_tokens for invisible-reasoning models).
+    provider_usage = getattr(response, "usage", None)
+    if isinstance(provider_usage, dict):
+        for detail_key in ("completion_tokens_details", "prompt_tokens_details"):
+            details = provider_usage.get(detail_key)
+            if isinstance(details, dict) and details:
+                response_dict["usage"][detail_key] = dict(details)
 
     # Add tool calls if present
     if tool_calls:

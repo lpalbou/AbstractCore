@@ -14,6 +14,7 @@ from .types import (
     CapabilityOperationInfo,
     CapabilityProviderInfo,
     MusicCapability,
+    Scene3dCapability,
     VisionCapability,
     VoiceCapability,
 )
@@ -82,6 +83,7 @@ class CapabilityRegistry:
         self.audio = _AudioFacade(self)
         self.vision = _VisionFacade(self)
         self.music = _MusicFacade(self)
+        self.scene3d = _Scene3dFacade(self)
         self._host_context: Optional[CapabilityHostContext] = None
 
     @property
@@ -259,6 +261,26 @@ class CapabilityRegistry:
             config_hint=config_hint,
         )
 
+    def register_scene3d_backend(
+        self,
+        *,
+        backend_id: str,
+        factory: Callable[[Any], Scene3dCapability],
+        priority: int = 0,
+        description: Optional[str] = None,
+        install_hint: Optional[str] = None,
+        config_hint: Optional[str] = None,
+    ) -> None:
+        self.register_backend(
+            capability="scene3d",
+            backend_id=backend_id,
+            factory=factory,
+            priority=priority,
+            description=description,
+            install_hint=install_hint,
+            config_hint=config_hint,
+        )
+
     def _default_install_hint(self, capability: str) -> Optional[str]:
         cap = str(capability or "").strip().lower()
         if cap == "voice" or cap == "audio":
@@ -267,6 +289,8 @@ class CapabilityRegistry:
             return 'pip install "abstractcore[vision]"'
         if cap == "music":
             return 'pip install "abstractcore[music]"'
+        if cap in {"scene3d", "3d"}:
+            return 'pip install "abstractcore[scene3d]"'
         return None
 
     def _select_backend_id(self, capability: str) -> str:
@@ -377,6 +401,10 @@ class CapabilityRegistry:
         out = self._get_instance("music")
         return out  # type: ignore[return-value]
 
+    def get_scene3d(self) -> Scene3dCapability:
+        out = self._get_instance("scene3d")
+        return out  # type: ignore[return-value]
+
     def list_backend_infos(self, capability: Optional[str] = None) -> List[CapabilityBackendInfo]:
         """Return registered backend metadata without instantiating backend factories."""
         self._ensure_plugins_loaded()
@@ -470,7 +498,7 @@ class CapabilityRegistry:
             "capabilities": {},
         }
 
-        for cap in ["voice", "audio", "vision", "music"]:
+        for cap in ["voice", "audio", "vision", "music", "scene3d"]:
             regs = self._registrations.get(cap) or {}
             backends = sorted(
                 [
@@ -818,6 +846,18 @@ class _VoiceFacade:
 
     def tts(self, text: str, **kwargs: Any) -> Any:
         return self._registry.get_voice().tts(text, **kwargs)
+
+    def tts_stream(self, text: str, **kwargs: Any) -> Any:
+        backend = self._registry.get_voice()
+        method = getattr(backend, "tts_stream", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="voice",
+                reason="The selected voice backend does not expose streaming TTS.",
+                install_hint=self._registry._default_install_hint("voice"),
+                details={"backend_id": str(getattr(backend, "backend_id", "") or "")},
+            )
+        return method(text, **kwargs)
 
     def stt(self, audio: Any, **kwargs: Any) -> Any:
         return self._registry.get_voice().stt(audio, **kwargs)
@@ -1424,4 +1464,174 @@ class _MusicFacade:
                 out.setdefault("backend_id", requested_backend_id)
             else:
                 out = {"data": out, "backend_id": requested_backend_id}
+        return out
+
+
+class _Scene3dFacade:
+    def __init__(self, registry: CapabilityRegistry) -> None:
+        self._registry = registry
+
+    @property
+    def backend_id(self) -> Optional[str]:
+        try:
+            return str(getattr(self._registry.get_scene3d(), "backend_id"))
+        except Exception:
+            return None
+
+    def available_providers(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self._registry.available_providers("scene3d", task=task)
+
+    def list_models(
+        self,
+        *,
+        task: Optional[str] = None,
+        provider: Optional[str] = None,
+        provider_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        return self._registry.list_models("scene3d", task=task, provider=provider, provider_id=provider_id)
+
+    def list_provider_models(
+        self,
+        *,
+        task: Optional[str] = None,
+        provider: Optional[str] = None,
+        provider_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        return self.list_models(task=task, provider=provider, provider_id=provider_id)
+
+    def list_operations(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self._registry.list_operations("scene3d", task=task)
+
+    def capability_catalog(self, *, task: Optional[str] = None) -> Dict[str, Any]:
+        return {
+            "capability": "scene3d",
+            "backend_id": self.backend_id,
+            "task": task,
+            "providers": self.available_providers(task=task),
+            "models": self.list_models(task=task),
+            "operations": self.list_operations(task=task),
+        }
+
+    def load_resident_model(self, request: Mapping[str, Any]) -> Dict[str, Any]:
+        return _call_residency_mapping_method(
+            self._registry.get_scene3d(),
+            "scene3d",
+            ("load_resident_model", "load_model"),
+            request,
+            install_hint=self._registry._default_install_hint("scene3d"),
+        )
+
+    def list_loaded_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Dict[str, Any]]:
+        return _call_residency_list_method(
+            self._registry.get_scene3d(),
+            "scene3d",
+            ("list_loaded_models", "list_resident_models"),
+            filters,
+            install_hint=self._registry._default_install_hint("scene3d"),
+        )
+
+    def list_resident_models(self, filters: Optional[Mapping[str, Any]] = None) -> List[Dict[str, Any]]:
+        return _call_residency_list_method(
+            self._registry.get_scene3d(),
+            "scene3d",
+            ("list_resident_models",),
+            filters,
+            install_hint=self._registry._default_install_hint("scene3d"),
+        )
+
+    def unload_resident_model(self, request: Mapping[str, Any]) -> Dict[str, Any]:
+        return _call_residency_mapping_method(
+            self._registry.get_scene3d(),
+            "scene3d",
+            ("unload_resident_model", "unload_model"),
+            request,
+            install_hint=self._registry._default_install_hint("scene3d"),
+        )
+
+    def t23d(self, prompt: str, **kwargs: Any) -> Any:
+        return self.generate(prompt, task="text_to_scene3d", **kwargs)
+
+    def i23d(self, image: Any, *, prompt: Optional[str] = None, **kwargs: Any) -> Any:
+        call_kwargs = dict(kwargs)
+        call_kwargs["image"] = image
+        return self.generate(str(prompt or ""), task="image_to_scene3d", **call_kwargs)
+
+    def generate(self, prompt: str = "", *, task: Optional[str] = None, **kwargs: Any) -> Any:
+        normalized_task = str(task or kwargs.pop("operation", "") or "text_to_scene3d").strip().lower()
+        normalized_task = normalized_task.replace("-", "_")
+        if normalized_task in {"", "scene3d", "t23d", "text2scene3d"}:
+            normalized_task = "text_to_scene3d"
+        if normalized_task in {"i23d", "image2scene3d", "image_to_3d", "image_to_scene"}:
+            normalized_task = "image_to_scene3d"
+        if normalized_task not in {"text_to_scene3d", "image_to_scene3d", "scene3d_generation"}:
+            raise CapabilityUnavailableError(
+                capability="scene3d",
+                reason=f"Unsupported scene3d generation task: {normalized_task!r}.",
+                install_hint=self._registry._default_install_hint("scene3d"),
+                details={"backend_id": self.backend_id, "task": normalized_task},
+            )
+
+        from .scene3d_selectors import resolve_scene3d_backend_id
+
+        provider_selector = kwargs.get("provider")
+        requested_backend_id: Optional[str] = None
+        consumed_provider_selector = False
+
+        raw_backend = kwargs.get("backend")
+        raw_scene3d_backend = kwargs.get("scene3d_backend")
+        if raw_backend not in (None, "") or raw_scene3d_backend not in (None, ""):
+            raise CapabilityUnavailableError(
+                capability="scene3d",
+                reason="Scene3D request routing uses `provider` as the backend selector; `backend` and `scene3d_backend` are not supported.",
+                install_hint=self._registry._default_install_hint("scene3d"),
+                details={"provider": provider_selector, "backend": raw_backend, "scene3d_backend": raw_scene3d_backend},
+            )
+
+        raw_provider = str(provider_selector).strip() if isinstance(provider_selector, str) else ""
+        if raw_provider:
+            resolved = resolve_scene3d_backend_id(raw_provider, allow_unknown=True)
+            if not resolved or not self._registry._is_backend_registered("scene3d", resolved):
+                raise CapabilityUnavailableError(
+                    capability="scene3d",
+                    reason=f"Unknown scene3d backend selector: {raw_provider!r}.",
+                    install_hint=self._registry._default_install_hint("scene3d"),
+                    details={"provider": raw_provider},
+                )
+            requested_backend_id = resolved
+            consumed_provider_selector = True
+
+        if requested_backend_id is not None:
+            backend = self._registry._get_instance_for_backend_id("scene3d", requested_backend_id)
+        else:
+            backend = self._registry.get_scene3d()
+
+        call_kwargs = dict(kwargs)
+        call_kwargs.pop("backend", None)
+        call_kwargs.pop("scene3d_backend", None)
+        if consumed_provider_selector:
+            call_kwargs.pop("provider", None)
+
+        method = getattr(backend, "generate", None)
+        if callable(method):
+            out = method(prompt, task=normalized_task, **call_kwargs)
+        elif normalized_task == "image_to_scene3d":
+            image = call_kwargs.pop("image", None)
+            if image is None:
+                raise CapabilityUnavailableError(
+                    capability="scene3d",
+                    reason="image_to_scene3d requires an `image` argument.",
+                    install_hint=self._registry._default_install_hint("scene3d"),
+                    details={"backend_id": self.backend_id},
+                )
+            out = backend.i23d(image, prompt=prompt or None, **call_kwargs)
+        else:
+            out = backend.t23d(prompt, **call_kwargs)
+
+        if requested_backend_id is not None:
+            if isinstance(out, dict):
+                out = dict(out)
+                out.setdefault("backend_id", requested_backend_id)
+                out.setdefault("provider", requested_backend_id)
+            else:
+                out = {"data": out, "backend_id": requested_backend_id, "provider": requested_backend_id}
         return out

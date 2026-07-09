@@ -87,9 +87,47 @@ Optional (used by tool parsing and response cleanup; only include when needed):
 - `output_wrappers`: `{ "start": "...", "end": "..." }`
 - `thinking_tags`: `["<think>", "</think>"]`
 - `thinking_output_field` (string)
-- `thinking_control` (string)
+- `thinking_control` (typed object; see below — legacy untyped strings are forbidden in shipped assets)
 - `reasoning_support` (boolean)
 - `reasoning_levels` (list; typically `["low","medium","high"]`, but may include `"none"`, `"minimal"`, and/or `"xhigh"` when a model supports those effort levels)
+
+##### `thinking_control` (typed control surfaces)
+
+Declares *which control surfaces a model's template or API exposes* for the unified
+`thinking=` parameter. All keys are optional; a model may declare several surfaces
+(Qwen3 legitimately has three). Providers own the transport (how a surface is sent on a
+given stack); assets own the model knowledge (which surfaces exist). Model entries in
+`model_capabilities.json` may also declare this field; per-key, model entries override
+the architecture entry.
+
+```json
+"thinking_control": {
+  "prompt_disable_token": "/nothink",
+  "template_kwarg": "enable_thinking",
+  "assistant_prefill_disable": "<think>\n\n</think>\n\n",
+  "budget_template_kwarg": "thinking_budget",
+  "low_effort_template_kwarg": "low_effort",
+  "request_param": "reasoning_effort"
+}
+```
+
+- `prompt_disable_token` — literal token appended to the user prompt to disable thinking
+  (GLM `/nothink`, Qwen3 `/no_think`). The ONLY kind the generic prompt fallback may append.
+- `template_kwarg` — boolean chat-template variable (e.g. `enable_thinking`) sent via
+  `chat_template_kwargs` / tokenizer render kwargs by providers that support it.
+- `assistant_prefill_disable` — assistant-generation-prompt prefill that disables thinking
+  (Qwen empty think block `<think>\n\n</think>\n\n`).
+- `budget_template_kwarg` — integer chat-template variable controlling a thinking budget
+  (Seed-OSS `thinking_budget`).
+- `low_effort_template_kwarg` — boolean chat-template variable reducing reasoning effort
+  while keeping thinking enabled (Nemotron `low_effort`).
+- `request_param` — provider-native request parameter name (declares the surface exists;
+  informational until a provider consumes it).
+
+History: this field was previously an untyped string, which conflated prompt tokens with
+template-variable names — the generic disable fallback then appended values like
+`enable_thinking` as literal prompt text while reporting the control as handled. The
+typed object makes that class of silent no-op structurally impossible.
 
 **Usage**:
 ```python
@@ -232,6 +270,11 @@ imply “the framework can always make it work” via optional enrichment plugin
 - `short_side_resize_target` - Target for short side resizing
 - `detail_levels` - Available detail levels (["low", "high", "auto"])
 - `low_detail_tokens` - Token cost for low detail
+
+#### Reasoning / Thinking
+- `thinking_support` - Model can produce reasoning traces (boolean; output capability, orthogonal to parameter restrictions).
+- `reasoning_output` - Whether reasoning *text* is returned to API callers (boolean; default true when absent). Set `false` for models like grok-4 that always reason and bill reasoning tokens (`usage.completion_tokens_details.reasoning_tokens`) but never return the reasoning text over Chat Completions. Keep `thinking_support: true` for such models so thinking-off requests still warn honestly instead of silently no-oping.
+- `thinking_control` - Typed control-surface object (same schema as the architecture-level field above; per-key, the model entry overrides the architecture entry).
 
 #### Generation Parameter Support
 - `unsupported_parameters` - List of generation parameter names (strings) that this model's API rejects (e.g. `["temperature", "top_p", "frequency_penalty", "presence_penalty"]`). Used by providers to silently strip unsupported params before API calls. Absent field means all standard parameters are supported (backward-compatible default for all models that predate this field).

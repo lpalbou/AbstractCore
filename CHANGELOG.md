@@ -7,6 +7,141 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Harmony generation artifacts are classified transient, not invalid-request**
+  (maintainer directive 2026-07-09: "maybe it's something our parser in
+  abstractcore could self-correct"): gpt-oss models on vLLM sometimes emit
+  output that violates their own Harmony template (e.g. an unclosed
+  `to=...` recipient header, primed by tool-ish prompt content); the
+  server's strict `openai-harmony` parser rejects the MODEL'S OWN OUTPUT
+  and surfaces it as HTTP 400 `unexpected tokens remaining in message
+  header` on a perfectly valid request (vllm#23567, openai/harmony#38/#80;
+  upstream lenient-parser fix vllm#28303 not yet on all deployments —
+  OVH included). The OpenAI-compatible provider now maps this signature to
+  `ProviderAPIError` (retryable — the RetryManager resamples) instead of
+  `InvalidRequestError` (never retried), turning a sampling race that
+  killed ~21 unattended entity-loop ticks in one night into a transparent
+  retry. Request payloads were verified clean; identical payloads pass on
+  resample.
+
+### Added
+- **Persistent shell sessions** (`tools/shell_session.py`, agency-parity 0215): a PTY-backed
+  `ShellSession`/`ShellSessionRegistry` whose working directory and environment persist across
+  commands (unlike one-shot `execute_command`), with `write_stdin` for interactive input and
+  exit-code capture. Hardened + adversarially verified: bounded O(n) sentinel scan with capped
+  memory on huge output (a finished multi-MB command returns its real exit code, not a false
+  timeout), deterministic post-timeout resync (Ctrl-C + discard-until-sync-sentinel, no stale
+  bleed), fd-leak-free reopen, and process-group teardown (background children reaped). Handles the
+  cases a pipe transport could not: stdin-consuming commands (`cat`), `set -x`, binary output, and
+  command-echo suppression. Host-owned primitive; NOT yet exposed as an agent tool (see 0215).
+- **Agent-callable persistent shell tools** (`tools/shell_tools.py`, agency-parity 0220):
+  `shell_exec` / `shell_write_stdin` / `shell_close` expose the shell-session engine to models —
+  cwd/env/venv persist across calls per `session_id`. Deliberately opt-in and honestly labeled:
+  schemas state "NOT a sandbox" (execute_command-level trust) and "NOT durable" (a fresh session
+  always announces "new shell session" so state loss after a host restart is never silent). The
+  session registry namespace is a hidden trust-boundary argument stamped by the host; per-call
+  timeout capped at 600s; `read_output` added to the engine (bounded quiet-gap drain, pairs with
+  `write_stdin`); `close_namespace`/`namespaced_session_id` + atexit reaping added to the registry.
+  Live-verified on OVH `gpt-oss-120b`: venv create → pip install → run inside the venv across
+  separate calls (the one-shot `execute_command` arm of the same task silently installed into the
+  WRONG environment while claiming success — the exact failure class this closes).
+- **Centralized schema-aware tool-argument coercion** (`tools/arg_coercion.py`, backlog 039):
+  arguments are coerced to their declared JSON-schema type at dispatch in both the registry and the
+  runtime executor, so string flags from prompted/XML tool formats (`allow_dangerous="false"`,
+  `use_regex="false"`, `preview_only="false"`) become real booleans instead of truthy strings.
+  Un-coercible typed values fail loudly as a tool error; containers are never stringified.
+
+### Added
+- **`create_llm(..., prompt_cache_key=...)` construction convenience** (agency-parity 0221,
+  maintainer-directed; audited + design-attacked by two adversarial reviews): sets the provider
+  instance's default prompt-cache key at construction so instance-per-session callers (entity
+  drivers, one-shot ingest) are cached without threading a per-call kwarg. The registry consumes
+  the param (never reaches provider `__init__`); explicit per-call keys always win (including
+  explicit `None` to disable); unsupported providers/models degrade with a `#FALLBACK` warning,
+  never an error. Pooled clients are guarded runtime-side: `MultiLocalAbstractCoreLLMClient`
+  strips the param from pooled kwargs (one instance serves all sessions; the LLM_CALL handler
+  injects session-scoped keys per call instead). 5 tests.
+
+### Fixed
+- **PRODUCTION INCIDENT (2026-07-09): strict OpenAI-compatible servers reject non-leading system
+  messages** — a gateway assistant's FIRST message failed on OVH (vLLM-based) with HTTP 400
+  "System message must be at the beginning." The trigger was the runtime's tail-appended
+  attachment-index message keeping `role: "system"` (the 0212 relocation was validated against
+  native OpenAI and Anthropic — which accept/wrap it — but never against the OpenAI-compatible
+  family production actually runs on). Fix at the transport boundary, mirroring the shipped
+  Anthropic behavior: `OpenAICompatibleProvider` now merges a leading system run into one first
+  message and converts every non-leading system message into a `<system_instruction>`-wrapped
+  user message, deferred past tool-result runs so tool-call adjacency holds (sync + async paths).
+  This also covers in-stream `BasicSession` compaction summaries, which would have hit the same
+  400. Reproduced pre-fix and verified post-fix live on the exact production model
+  (OVH `Qwen3.5-397B-A17B`); 9 unit tests pin the contract (incl. one driving real generate() to the HTTP boundary — the wire path, not just the helper)
+  (`test_openai_compatible_strict_system_messages.py`). Serving processes must be restarted to
+  pick up the fix. Adversarial-audit hardening (2026-07-09, critic wave): structured
+  content-part lists are text-extracted instead of stringified to Python reprs; an all-empty
+  leading system run no longer emits an empty system message; and the async generation path
+  gained the sync path's "no user message" fallback (some templates fail system-only requests
+  with "No user query found").
+- **Anthropic prompt caching was an active cost increase** (agency-parity 0221, live-falsified
+  2026-07-08): the provider sent a TOP-LEVEL `cache_control` request param, which marks only the
+  last cacheable block — the volatile transcript tail in agent-loop requests. Live result: the
+  full-prompt 1.25x cache-WRITE premium on every call with zero reads (7,042/7,043-token writes,
+  0 reads on consecutive calls); below the model's minimum cacheable size, a silent no-op. Now an
+  explicit `cache_control` breakpoint is placed on the last `system` text block (after tools/system
+  folding, sync + async), caching the byte-stable tools+system head: live-verified write 6,302 on
+  call 1 → read 6,302 on call 2, and through the full ReAct loop (write 5,022 once → read 5,022 on
+  every subsequent call; net +7,784 token-equivalents saved on a 3-call run). Messages are
+  deliberately unmarked (a volatile tail cannot be re-read). Caller-placed `cache_control` blocks
+  are respected (the provider defers instead of risking the 4-breakpoint API 400). Doc-verified:
+  the official docs describe this exact trap ("place the breakpoint at the end of the static
+  prefix, not on the varying block") and the per-model minimums (4,096 tokens for Haiku 4.5 —
+  below it, marking is a silent no-op with zero extra cost). 7 unit tests pin the contract.
+- **Anthropic cache usage was dropped and input undercounted**: `cache_read_input_tokens` /
+  `cache_creation_input_tokens` were discarded, and since Anthropic's raw `input_tokens` EXCLUDES
+  cache traffic, dashboards undercounted prompt size whenever caching engaged. `_build_usage_dict`
+  now reports inclusive `input_tokens` and normalized cross-provider keys: `cached_input_tokens`
+  (read) + `cache_write_tokens` (write premium) — also surfaced by the OpenAI and OpenAI-compatible
+  providers when the server reports cache details. Contract: absent = "mechanism cannot report",
+  0 = "measured zero" (regression tooling must not conflate them).
+- **`edit_file` CRLF preservation** (agency-parity 0216 follow-up): files were read with universal
+  newlines, so every edit silently rewrote CRLF files to LF (whole-file corruption for CRLF
+  codebases; the existing preservation branches were dead code). Reads now keep the real line
+  endings, all matching runs on LF-normalized text, and the file's dominant style is restored at
+  the write boundary (`newline=""` on write, so Windows never double-translates). Mixed-endings
+  files normalize to the dominant style with an explicit note in the tool output. CRLF patterns
+  from models match CRLF files; preview mode never writes.
+- **`edit_file` unified-diff deletion of `-- `-prefixed lines** (agency-parity 0216 follow-up):
+  deleting a line whose content starts with `-- ` (SQL/Lua comments) produces a diff line
+  `--- <text>`, which the parser misread as a new file header and refused. The hunk-body collector
+  now counts old-side lines against the header-declared length and only treats `--- ` as a header
+  once the old side is consumed — the fix arbitrates exactly this prefix collision; header counts
+  remain hints elsewhere, and genuine multi-file diffs are still refused.
+- **`prompt_cache_key` hard-rejection fallback**: some OpenAI-compatible servers (e.g. OVH AI
+  Endpoints) 400-reject the best-effort `prompt_cache_key` field instead of ignoring it, which
+  failed every generation once runtime prompt caching defaulted on. All four request paths
+  (sync/async × single/stream) now detect that specific rejection, drop the key, retry once, and
+  stop sending it for the provider instance's lifetime (`#FALLBACK` logged). Unrelated 400s are
+  never blindly retried.
+- **Tool schema type inference under `from __future__ import annotations`** (backlog 039):
+  `ToolDefinition.from_function` now resolves stringized (PEP 563) annotations via
+  `typing.get_type_hints` (with a bare-string fallback map), so `bool`/`int`/`Optional[int]`/
+  `List[str]` parameters in modules like `common_tools.py` declare the correct JSON-schema type
+  instead of silently defaulting to `"string"` — which had made schema-aware coercion a no-op for
+  every flag on `edit_file`/`execute_command`.
+- **Typed thinking-control surfaces**: `thinking_control` in the asset registries is now a typed object (`prompt_disable_token`, `template_kwarg`, `assistant_prefill_disable`, `budget_template_kwarg`, `low_effort_template_kwarg`, `request_param`) resolved by `abstractcore.architectures.thinking_controls`. Provider hooks (OpenAI-compatible, HuggingFace, MLX) read the declared surfaces instead of hardcoded architecture sets, so new model families get thinking controls by registry update alone.
+- **LM Studio native reasoning control**: `thinking=` now maps to LM Studio's documented native REST `reasoning` field (`/api/v1/chat`) for reasoning-capable models whose only declared surface is a chat-template kwarg (e.g. Gemma 4) — reasoning traces are captured into `metadata["reasoning"]` and undeclared effort levels are clamped to `on`/`off` to avoid HTTP 400s.
+- **LM Studio native streaming + image input**: the native route now serves `stream=True` via typed SSE events (`reasoning.delta` → per-chunk `metadata["reasoning"]`, `message.delta` → content, `chat.end` → usage incl. `completion_tokens_details.reasoning_tokens`) and vision requests via `{"type": "image", "data_url": ...}` input parts. Only what `/api/v1/chat` genuinely rejects falls back to the OpenAI-compatible endpoint — custom tools, assistant-history messages, `response_format`, and non-image media (verified live: HTTP 400 `unrecognized_keys`/`invalid_union`; matches the official endpoint feature table) — with an ADR-0001 warning naming the blocker and the effective behavior.
+- **Model registry entries**: added `nemotron-3-nano-4b` (dense hybrid edge SLM; previously fell back to generic defaults with a 16K context) and `grok-4` (always-on invisible reasoning; new `reasoning_output: false` capability field records that reasoning is billed but never returned).
+- **Invisible-reasoning billing evidence**: the OpenAI-compatible provider now preserves `usage.completion_tokens_details` (incl. `reasoning_tokens`) and `prompt_tokens_details`; the server's `/v1/responses` and chat shims forward real token detail breakdowns instead of hardcoding zeros.
+
+### Fixed
+- **Silent system-message drop in native OpenAI/Anthropic providers**: `role:"system"` messages inside `messages` were deleted (sync and async paths). This silently discarded system prompts arriving via `messages` — most severely for AbstractCore Server clients, whose leading system message (personas/guardrails) never reached `openai/...` or `anthropic/...` backends while `ollama/`/`lmstudio/` backends worked. Now: OpenAI passes system messages through verbatim at their original position (the Chat Completions API accepts them anywhere); Anthropic merges a leading system run into its top-level `system` parameter and converts non-leading system messages in place into `<system_instruction>`-wrapped user turns (position preserved; never inserted between a tool_use and its tool_result; conversions counted in `metadata["system_role_user_wrapped"]`). The Anthropic history builder is also defensive against messages missing `role`/`content` keys (previously `KeyError`).
+- **BasicSession compaction summary never reached the model**: the session boundary filtered ALL system messages before every provider call, including the `[CONVERSATION HISTORY]` summary that `compact()` stores as a system message. The session now excludes only its own `system_prompt` duplicate and delivers other system messages (e.g. compaction summaries) in-stream.
+- **HF native-video history collapse dropped system turns**: the text-only history block for HuggingFace native-video models now includes `SYSTEM:` lines instead of silently omitting mid-stream system messages.
+- **Prompt pollution on thinking-off**: template-variable control names (e.g. Gemma 4 / Qwen 3.6 `enable_thinking`) were appended to the user prompt as literal text by the generic disable fallback while reporting the control as handled. The fallback now appends only declared `prompt_disable_token` surfaces (GLM `/nothink`, Qwen `/no_think`).
+- **Honest thinking metadata (ADR-0001)**: `thinking_effective` is only reported when a real control artifact was applied; unhandled requests now emit a RuntimeWarning stating that the model/server default thinking behavior remains in effect (reasoning may still be generated and billed) instead of silently claiming `off`.
+- **Truncated reasoning leak**: unterminated thinking blocks (e.g. `finish_reason=length` before the closing tag) are auto-closed and captured into `metadata["reasoning"]` with a `(...)` truncation marker (#TRUNCATION logged) instead of leaking raw reasoning and tag markup into visible content — in both non-streaming and streaming paths.
+- **Streaming latency with thinking off**: architectures with `thinking_tags` no longer buffer the whole stream waiting for a possible reasoning-first block when thinking is effectively disabled; visible content now streams incrementally.
+
 ## [2.13.38] - 2026-06-14
 
 ### Added

@@ -9,26 +9,35 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 13
-- Proposed: 11
-- Completed: 19
+- Planned: 15
+- Proposed: 12
+- Completed: 21
 - Deprecated: 3
 - Recurrent: 0
 
 ## Next recommended work
 
-1. `planned/789_server-auth-rate-limits.md`
+1. `planned/0810_resolved_generate_route_object_and_temporary_override_contract.md`
+   The first route-object implementation is landed. The next step is the second-wave parity pass:
+   direct Core, Runtime, and server entrypoints must all consume the same resolved-route semantics
+   and denial behavior before more topology-specific routing code grows back.
+2. `planned/0809_generate_request_object_and_output_contract.md`
+   The first `request=` implementation is landed. The next step is to extend docs/examples and
+   finish broader parity coverage without breaking prompt-first compatibility.
+3. `planned/789_server-auth-rate-limits.md`
    The server now sits on real credentials (remote providers, media endpoints). Tightening inbound
    auth and limiting is the next practical safety boundary for shared or public deployments.
-2. `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md`
+4. `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md`
    Optional, opt-in response caching is now the highest-leverage server performance/cost feature,
    but it must be done with strict keying and tenant/auth namespace rules.
-3. `planned/2026-05-18_mlx-provider-continuous-batching.md`
+5. `planned/2026-05-18_mlx-provider-continuous-batching.md`
    Improve local text throughput and latency via continuous batching/scheduler safety for MLX.
 ## Planned ledger
 
 | Item | Notes |
 | --- | --- |
+| `planned/0810_resolved_generate_route_object_and_temporary_override_contract.md` | In progress: Core now has `ResolvedGenerateRoute`; remaining work is cross-topology/server parity and stricter denial semantics. |
+| `planned/0809_generate_request_object_and_output_contract.md` | In progress: `request=` now normalizes into the shared Core route substrate without breaking prompt-first callers; broader parity/docs follow-ups remain. |
 | `planned/2026-03-30_llama-cpp-python_expose_chat_template_kwargs.md` | Upstream GGUF thinking-toggle prerequisite for clean Qwen reasoning control. |
 | `planned/2026-03-30_qwen3-5_lfm2_nemotron_capabilities_and_thinking_controls.md` | Model-capability and reasoning-control coverage for newer model families. |
 | `planned/2026-05-04_unified-lora-adapter-serving.md` | First-class text adapter lifecycle and hot-switch routing across providers. |
@@ -58,6 +67,9 @@ Use this file as the entry point for planning status, recommended next work, and
 | `proposed/0800_openai_compatible_web_search_tool_transport.md` | Promote only if Codex or another client needs AbstractCore `/v1/responses` to preserve native Responses `tools`; the current Codex Chat-route fix belongs in Codex. |
 | `proposed/0802_generate_concurrency_and_async_streaming.md` | Promote once a minimal repro/test shows fallback async streaming blocks the event loop (or other concurrency bugs), or when new stateless compute surfaces would depend on the same concurrency guarantees. |
 | `proposed/0804_huggingface_embedding_provider_boundary.md` | Promote when HuggingFace embedding routing, rerank CrossEncoder backend identity, residency, catalog truth, or image/multimodal embedding work needs a settled boundary between `EmbeddingManager`'s SentenceTransformers path and `HuggingFaceProvider`. |
+| `proposed/0811_optional_trafilatura_html_extractor_for_web_tools.md` | Promote when a live benchmark shows better HTML/article extraction quality or lower token footprint than the current extractor, without making `trafilatura` a required default dependency. |
+| `proposed/0814_reasoning_control_capture_followups.md` | Promote per item: async `thinking=` no-op and async normalization bypass are HIGH (promote when async providers are actively used with reasoning models); OpenRouter `reasoning` object mapping when hosted-route thinking control is needed; streaming default + vLLM gating need an asset/decision pass first. |
+| `proposed/0815_system_message_handling_followups.md` | Promote per item: Opus 4.8 native mid-stream `system` when registry-gated placement validation is worth it; developer-role position awareness only with parity tests (current hoist is load-bearing); CachedSession replay verification opportunistically. |
 
 ## Completed ledger
 
@@ -68,6 +80,8 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/2026-05-07_task-only-text-generation-output-normalization.md` | `completed/2026-05-07_task-only-text-generation-output-normalization.md` | 2026-05-07 | Done | Task-only text-generation selectors normalized correctly. | Item records targeted pytest, compile, lint, and package checks. |
 | `planned/2026-05-08_capability_plugin_catalog_discovery_routes.md` | `completed/2026-05-08_capability_plugin_catalog_discovery_routes.md` | 2026-05-08 | Done | Capability plugin catalog routes added. | Completion report in item. |
 | `planned/2026-05-08_core_install_profiles_and_gateway_config_boundary.md` | `completed/2026-05-08_core_install_profiles_and_gateway_config_boundary.md` | 2026-05-08 | Done | Install-profile and gateway-config boundaries clarified. | Completion report in item. |
+| `completed/0812_fetch_url_pdf_router_and_native_fallback_contract.md` | `completed/0812_fetch_url_pdf_router_and_native_fallback_contract.md` | 2026-06-21 | Done | Web-tool PDF handling now routes through a shared media seam with explicit native fallback provenance. | Focused pytest plus live `fetch_url` proof artifacts recorded in item. |
+| `completed/0813_web_search_ddgs_num_results_boundary.md` | `completed/0813_web_search_ddgs_num_results_boundary.md` | 2026-06-21 | Done | `web_search` now normalizes stringified numeric counts before calling `ddgs`, preventing false fallback degradation. | Focused pytest plus live `web_search(..., num_results=\"5\")` proof recorded in item. |
 | `planned/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md` | `completed/2026-05-18_memory-bloc-mlx-kv-compiler-loader.md` | 2026-05-19 | Done | MLX exact bloc artifact compiler/loader is the completed baseline for provider parity work. | `tests/test_bloc_kv.py`, endpoint tests, and loaded-runtime bloc/cache tests. |
 | `planned/2026-05-19_generalize_acore_models_residency.md` | `completed/2026-05-19_generalize_acore_models_residency.md` | 2026-05-19 | Done | Task-aware `/acore/models/*` residency control plane landed. | Item records targeted residency test suites and docs updates. |
 | `planned/2026-05-20_public_local_vision_cache_catalog_helper.md` | `completed/2026-05-20_public_local_vision_cache_catalog_helper.md` | 2026-05-20 | Done | Public non-server local vision cache catalog helper landed. | Item records focused Core/Runtime pytest and compile validation. |

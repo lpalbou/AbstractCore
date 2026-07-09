@@ -2,6 +2,7 @@ import importlib.metadata
 
 import pytest
 
+from abstractcore.config import manager as capability_config_manager
 from abstractcore.core.multimodal_generation import MultimodalGenerateResponse
 from abstractcore.core.types import GenerateResponse
 from abstractcore.media.types import MediaContent, MediaType
@@ -203,6 +204,24 @@ def _make_plugin_ep():
                 self.owner.plugin_calls.append(("t2m", prompt, lyrics, format, kwargs))
                 return b"music-bytes"
 
+        class _Scene3d:
+            backend_id = "fake-scene3d"
+
+            def __init__(self, owner):
+                self.owner = owner
+
+            def t23d(self, prompt: str, *, format="glb", **kwargs):
+                self.owner.plugin_calls.append(("t23d", prompt, kwargs))
+                payload = b"glb-bytes" if str(format).lower() == "glb" else b"obj-bytes"
+                mime = "model/gltf-binary" if str(format).lower() == "glb" else "model/obj"
+                return {"data": payload, "content_type": mime, "format": format, "backend_id": self.backend_id}
+
+            def i23d(self, image, *, prompt=None, format="glb", **kwargs):
+                self.owner.plugin_calls.append(("i23d", image, prompt, kwargs))
+                payload = b"glb-bytes" if str(format).lower() == "glb" else b"obj-bytes"
+                mime = "model/gltf-binary" if str(format).lower() == "glb" else "model/obj"
+                return {"data": payload, "content_type": mime, "format": format, "backend_id": self.backend_id}
+
         registry.register_voice_backend(
             backend_id="fake-voice", factory=lambda owner: _Voice(owner)
         )
@@ -214,6 +233,9 @@ def _make_plugin_ep():
         )
         registry.register_music_backend(
             backend_id="fake-music", factory=lambda owner: _Music(owner)
+        )
+        registry.register_scene3d_backend(
+            backend_id="fake-scene3d", factory=lambda owner: _Scene3d(owner)
         )
 
     return _FakeEntryPoint(register)
@@ -256,10 +278,68 @@ def _make_multi_music_plugin_ep():
     return _FakeEntryPoint(register)
 
 
+def _make_multi_scene3d_plugin_ep():
+    def register(registry):
+        class _Scene3d:
+            def __init__(self, owner, backend_id: str):
+                self.owner = owner
+                self.backend_id = backend_id
+
+            def t23d(self, prompt: str, *, format="glb", **kwargs):
+                self.owner.plugin_calls.append(("t23d", self.backend_id, prompt, format, dict(kwargs)))
+                return {
+                    "data": self.backend_id.encode(),
+                    "content_type": "model/gltf-binary",
+                    "format": format,
+                    "model_id": kwargs.get("model"),
+                }
+
+            def i23d(self, image, *, prompt=None, format="glb", **kwargs):
+                self.owner.plugin_calls.append(("i23d", self.backend_id, image, prompt, format, dict(kwargs)))
+                return {
+                    "data": self.backend_id.encode(),
+                    "content_type": "model/gltf-binary" if str(format).lower() == "glb" else "model/obj",
+                    "format": format,
+                    "model_id": kwargs.get("model"),
+                }
+
+        registry.register_scene3d_backend(
+            backend_id="abstract3d:triposr",
+            factory=lambda owner: _Scene3d(owner, "abstract3d:triposr"),
+            priority=50,
+        )
+        registry.register_scene3d_backend(
+            backend_id="abstract3d:step1x-local",
+            factory=lambda owner: _Scene3d(owner, "abstract3d:step1x-local"),
+            priority=20,
+        )
+        registry.register_scene3d_backend(
+            backend_id="abstract3d:trellis2-local",
+            factory=lambda owner: _Scene3d(owner, "abstract3d:trellis2-local"),
+            priority=10,
+        )
+
+    return _FakeEntryPoint(register)
+
+
 @pytest.fixture()
 def fake_plugins(monkeypatch):
     monkeypatch.setattr(
         importlib.metadata, "entry_points", lambda: _EntryPoints([_make_plugin_ep()])
+    )
+
+
+@pytest.fixture(autouse=True)
+def isolate_capability_defaults(monkeypatch):
+    class _EmptyCapabilityConfigManager:
+        def get_capability_default(self, *args, **kwargs):
+            _ = args, kwargs
+            return {"source": "not_configured"}
+
+    monkeypatch.setattr(
+        capability_config_manager,
+        "get_config_manager",
+        lambda: _EmptyCapabilityConfigManager(),
     )
 
 
@@ -679,6 +759,98 @@ def test_output_sound_uses_text_to_audio_task(fake_plugins):
         None,
         "wav",
     )
+
+
+@pytest.mark.basic
+def test_output_scene3d_without_media_calls_t23d(fake_plugins):
+    llm = _FakeProvider()
+
+    response = llm.generate(
+        text="A glossy red cube.",
+        output={"modality": "scene3d", "format": "glb", "mc_resolution": 96},
+    )
+
+    assert response.outputs["scene3d"][0].task == "text_to_scene3d"
+    assert response.outputs["scene3d"][0].data == b"glb-bytes"
+    assert response.outputs["scene3d"][0].content_type == "model/gltf-binary"
+    assert llm.provider_calls == []
+    assert llm.plugin_calls[0][0:2] == ("t23d", "A glossy red cube.")
+    assert llm.plugin_calls[0][2]["mc_resolution"] == 96
+
+
+@pytest.mark.basic
+def test_output_scene3d_with_source_image_calls_i23d(fake_plugins):
+    llm = _FakeProvider()
+
+    response = llm.generate(
+        text="Turn this into an OBJ mesh.",
+        media={"type": "image", "path": "source.png", "role": "source"},
+        output={"modality": "scene3d", "task": "image_to_scene3d", "format": "obj"},
+    )
+
+    assert response.outputs["scene3d"][0].task == "image_to_scene3d"
+    assert response.outputs["scene3d"][0].data == b"obj-bytes"
+    assert response.outputs["scene3d"][0].content_type == "model/obj"
+    assert llm.provider_calls == []
+    assert llm.plugin_calls[0] == ("i23d", "source.png", "Turn this into an OBJ mesh.", {})
+
+
+@pytest.mark.basic
+def test_output_scene3d_provider_field_selects_backend(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_scene3d_plugin_ep()]))
+
+    llm = _FakeProvider()
+    resp = llm.generate(
+        text="brass desk lamp",
+        output={
+            "modality": "scene3d",
+            "provider": "trellis2",
+            "model": "microsoft/TRELLIS.2-4B",
+            "format": "glb",
+        },
+    )
+
+    item = resp.outputs["scene3d"][0]
+    assert item.backend_id == "abstract3d:trellis2-local"
+    assert item.provider == "abstract3d:trellis2-local"
+    assert item.model == "microsoft/TRELLIS.2-4B"
+    assert llm.plugin_calls[0][0] == "t23d"
+    assert llm.plugin_calls[0][1] == "abstract3d:trellis2-local"
+
+
+@pytest.mark.basic
+def test_output_scene3d_provider_field_selects_step1x_backend(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_scene3d_plugin_ep()]))
+
+    llm = _FakeProvider()
+    resp = llm.generate(
+        text="red teapot",
+        output={
+            "modality": "scene3d",
+            "provider": "step1x",
+            "model": "stepfun-ai/Step1X-3D",
+            "format": "glb",
+        },
+    )
+
+    item = resp.outputs["scene3d"][0]
+    assert item.backend_id == "abstract3d:step1x-local"
+    assert item.provider == "abstract3d:step1x-local"
+    assert item.model == "stepfun-ai/Step1X-3D"
+    assert llm.plugin_calls[0][0] == "t23d"
+    assert llm.plugin_calls[0][1] == "abstract3d:step1x-local"
+
+
+@pytest.mark.basic
+def test_output_scene3d_unknown_backend_does_not_silently_fall_back(monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_multi_scene3d_plugin_ep()]))
+
+    llm = _FakeProvider()
+    with pytest.raises(Exception, match="Unknown scene3d backend selector"):
+        llm.generate(
+            text="brass desk lamp",
+            output={"modality": "scene3d", "provider": "definitely-not-a-backend", "format": "glb"},
+        )
 
 
 @pytest.mark.basic

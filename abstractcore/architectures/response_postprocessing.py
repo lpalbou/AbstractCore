@@ -10,6 +10,14 @@ from __future__ import annotations
 import re
 from typing import Any, Mapping, Optional, Tuple
 
+from ..utils.structured_logging import get_logger
+
+_logger = get_logger(__name__)
+
+# Marker appended to reasoning captured from an unterminated thinking block
+# (e.g. the stream/response was truncated before the closing tag arrived).
+TRUNCATED_REASONING_MARKER = " (...)"
+
 
 def _coerce_str(value: Any) -> Optional[str]:
     if not isinstance(value, str):
@@ -122,6 +130,19 @@ def strip_thinking_tags(
             cleaned = after
             cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
             return cleaned, reasoning_only
+        if start_tag in text and end_tag not in text:
+            # Unterminated thinking block (e.g. finish_reason=length truncated the response
+            # before the closing tag): auto-close it and capture the block as reasoning
+            # instead of leaking it into visible content.
+            before, after = text.split(start_tag, 1)
+            truncated = after.strip()
+            cleaned = re.sub(r"\n{3,}", "\n\n", before).strip()
+            if truncated:
+                _logger.warning(
+                    f"#TRUNCATION: unterminated thinking block auto-closed; captured {len(truncated)} chars as reasoning"
+                )
+                return cleaned, truncated + TRUNCATED_REASONING_MARKER
+            return cleaned, None
         return text, None
 
     extracted: list[str] = []
@@ -131,6 +152,18 @@ def strip_thinking_tags(
             extracted.append(chunk)
 
     cleaned = pattern.sub("", text)
+
+    # A trailing unterminated block can follow complete pairs; auto-close it as well.
+    if start_tag in cleaned and end_tag not in cleaned.split(start_tag, 1)[1]:
+        before, after = cleaned.split(start_tag, 1)
+        truncated = after.strip()
+        cleaned = before
+        if truncated:
+            _logger.warning(
+                f"#TRUNCATION: unterminated thinking block auto-closed; captured {len(truncated)} chars as reasoning"
+            )
+            extracted.append(truncated + TRUNCATED_REASONING_MARKER)
+
     # Tidy up: collapse multiple blank lines created by removal.
     cleaned = re.sub(r"\n{3,}", "\n\n", cleaned).strip()
 
@@ -148,13 +181,16 @@ class IncrementalThinkingTagStripper:
     - Only strips when a complete start/end pair is observed.
     - Also supports the "closing-only" case (end tag appears, start tag absent) by
       treating everything before the first end tag as reasoning (the start tag may
-      have been injected by the chat template).
+      have been injected by the chat template). This requires buffering until a tag
+      is seen; when `assume_visible_start=True` (e.g. thinking was effectively
+      disabled for the request), the stripper starts in the "visible" state and
+      streams content immediately instead of withholding it for closing-only capture.
     - If a start tag is observed but the end tag never appears (truncated stream),
-      we roll back and emit the captured content verbatim (including the start tag),
-      matching `strip_thinking_tags()` behavior (no stripping without a closing tag).
+      the block is auto-closed and captured as reasoning with a truncation marker,
+      matching `strip_thinking_tags()` behavior (#TRUNCATION labeled).
     """
 
-    def __init__(self, *, start_tag: str, end_tag: str) -> None:
+    def __init__(self, *, start_tag: str, end_tag: str, assume_visible_start: bool = False) -> None:
         if not isinstance(start_tag, str) or not start_tag:
             raise ValueError("start_tag must be a non-empty string")
         if not isinstance(end_tag, str) or not end_tag:
@@ -164,7 +200,7 @@ class IncrementalThinkingTagStripper:
         self._end_tag = end_tag
 
         self._buffer = ""
-        self._state: str = "searching"  # searching|visible|thinking
+        self._state: str = "visible" if assume_visible_start else "searching"  # searching|visible|thinking
         self._current_reasoning_parts: list[str] = []
         self._reasoning_blocks: list[str] = []
 
@@ -277,10 +313,16 @@ class IncrementalThinkingTagStripper:
         visible_tail = ""
 
         if self._state == "thinking":
-            # Truncated: roll back (do not strip) to match `strip_thinking_tags()`.
-            visible_tail = self._start_tag + "".join(self._current_reasoning_parts) + self._buffer
+            # Unterminated thinking block (stream ended before the closing tag): auto-close
+            # and capture the block as reasoning instead of leaking it into visible content.
+            truncated = ("".join(self._current_reasoning_parts) + self._buffer).strip()
             self._current_reasoning_parts = []
             self._buffer = ""
+            if truncated:
+                _logger.warning(
+                    f"#TRUNCATION: unterminated thinking block auto-closed; captured {len(truncated)} chars as reasoning"
+                )
+                self._reasoning_blocks.append(truncated + TRUNCATED_REASONING_MARKER)
         else:
             # searching/visible: emit any remaining buffered visible content.
             visible_tail = self._buffer
@@ -346,8 +388,14 @@ def maybe_create_incremental_thinking_tag_stripper(
     *,
     architecture_format: Optional[Mapping[str, Any]] = None,
     model_capabilities: Optional[Mapping[str, Any]] = None,
+    assume_visible_start: bool = False,
 ) -> Optional[IncrementalThinkingTagStripper]:
-    """Return an incremental thinking-tag stripper when configured via assets."""
+    """Return an incremental thinking-tag stripper when configured via assets.
+
+    Set ``assume_visible_start=True`` when thinking is effectively disabled for the
+    request: the stripper then streams visible content immediately instead of buffering
+    for the "closing-only" reasoning-first case (which cannot occur with thinking off).
+    """
     tags = _get_thinking_tags(
         architecture_format=architecture_format,
         model_capabilities=model_capabilities,
@@ -356,7 +404,11 @@ def maybe_create_incremental_thinking_tag_stripper(
         return None
     start_tag, end_tag = tags
     try:
-        return IncrementalThinkingTagStripper(start_tag=start_tag, end_tag=end_tag)
+        return IncrementalThinkingTagStripper(
+            start_tag=start_tag,
+            end_tag=end_tag,
+            assume_visible_start=assume_visible_start,
+        )
     except Exception:
         return None
 

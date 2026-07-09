@@ -19,10 +19,11 @@ import json
 import os
 import threading
 import urllib.parse
+import base64
 from typing import Any, Dict, Optional, Union
 
 from fastapi import APIRouter, Body, File, Form, HTTPException, Path as FastAPIPath, Query, Request, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field
 
 from ..capabilities.errors import CapabilityUnavailableError
@@ -947,6 +948,26 @@ def _audio_response(content: bytes, *, media_type: str, filename_stem: str = "ab
     )
 
 
+def _tts_stream_jsonl(event: Dict[str, Any]) -> bytes:
+    payload = dict(event)
+    audio = payload.pop("audio", None)
+    if isinstance(audio, (bytes, bytearray)):
+        payload["audio_b64"] = base64.b64encode(bytes(audio)).decode("ascii")
+        payload.setdefault("size_bytes", len(audio))
+    elif audio is not None:
+        payload["audio"] = audio
+    return (json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+
+
+def _close_stream_iterator(stream: Any) -> None:
+    close = getattr(stream, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            pass
+
+
 def _audio_dedupe_strings(values: list[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -1816,6 +1837,148 @@ async def _audio_speech_impl(
     return _audio_response(bytes(audio), media_type=str(content_type or f"audio/{fmt}"))
 
 
+_AUDIO_SPEECH_STREAM_RESPONSES = {
+    200: {
+        "description": "Generated audio stream events (JSON Lines).",
+        "content": {
+            "application/x-ndjson": {
+                "schema": {"type": "string"},
+                "examples": {
+                    "start": {
+                        "summary": "Start event",
+                        "value": '{"type":"start","content_type":"audio/wav","chunk_format":"wav-segment"}\n',
+                    }
+                },
+            }
+        },
+    }
+}
+
+
+async def _audio_speech_stream_impl(
+    request: Request,
+    payload: AudioSpeechRequest,
+    *,
+    path_tts_engine: Optional[str] = None,
+):
+    data = _model_payload(payload)
+    path_provider = _request_provider_value(path_tts_engine)
+
+    input_text = data.get("input")
+    if input_text is None:
+        input_text = data.get("text")
+    if not isinstance(input_text, str) or not input_text.strip():
+        raise HTTPException(status_code=422, detail="Missing required field: input (string)")
+
+    voice = data.get("voice")
+    voice = str(voice).strip() if isinstance(voice, str) and voice.strip() else None
+
+    fmt = data.get("format")
+    if fmt is None:
+        fmt = data.get("response_format")
+    fmt = str(fmt).strip().lower() if isinstance(fmt, str) and fmt.strip() else "wav"
+    if fmt == "wave":
+        fmt = "wav"
+    if fmt != "wav":
+        raise HTTPException(
+            status_code=422,
+            detail="Streaming TTS currently supports response_format=format=wav only. Use /v1/audio/speech for other formats.",
+        )
+
+    request_provider = path_provider or _request_provider_value(data.get("provider"))
+    local_model = None
+    model = _optional_text(data.get("model"))
+    if path_provider and model and "/" in model:
+        _model_provider, model_tail = model.split("/", 1)
+        model = model_tail.strip() or None
+    if model and _is_local_audio_model(model):
+        model = None
+    if path_provider and path_provider in _REMOTE_AUDIO_PROVIDER_ALIASES and model and "/" not in model:
+        model = f"{path_provider}/{model}"
+    elif request_provider and request_provider not in _REMOTE_AUDIO_PROVIDER_ALIASES:
+        local_model = model
+        model = None
+    elif request_provider in {"openai", "openai-compatible"} and model and "/" not in model:
+        model = f"{request_provider}/{model}"
+    if model:
+        provider, _model_name = _parse_model_string(model)
+        _guard_unauthenticated_server_provider_key_use(
+            provider,
+            explicit_provider_key=bool(_provider_api_key_from_request(request)),
+            request=request,
+        )
+        raise HTTPException(
+            status_code=501,
+            detail="Streaming TTS is not available for remote audio providers yet. Use /v1/audio/speech.",
+        )
+
+    core = _get_capability_core()
+    cancel_event = threading.Event()
+    try:
+        stream = core.voice.tts_stream(
+            str(input_text),
+            voice=voice,
+            format=fmt,
+            speed=_optional_float(data.get("speed"), field="speed"),
+            quality_preset=_optional_text(data.get("quality_preset") or data.get("quality")),
+            instructions=_optional_text(data.get("instructions")),
+            profile=_optional_text(data.get("profile")),
+            provider=request_provider,
+            model=local_model,
+            cancel_event=cancel_event,
+        )
+    except CapabilityUnavailableError as e:
+        raise HTTPException(status_code=501, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=_plugin_exception_status(e), detail=f"Audio stream setup failed: {e}") from e
+
+    def _iter_jsonl():
+        yield _tts_stream_jsonl(
+            {
+                "type": "start",
+                "schema": "abstractcore.tts_stream.start.v1",
+                "ok": True,
+                "content_type": "audio/wav",
+                "format": "wav",
+                "chunk_format": "wav-segment",
+                "transport": "jsonl",
+                "provider": request_provider,
+                "model": local_model,
+            }
+        )
+        try:
+            for event in stream:
+                if cancel_event.is_set():
+                    break
+                if isinstance(event, dict):
+                    yield _tts_stream_jsonl(event)
+                else:
+                    yield _tts_stream_jsonl({"type": "event", "value": str(event)})
+        except GeneratorExit:
+            cancel_event.set()
+            _close_stream_iterator(stream)
+            raise
+        except Exception as e:
+            yield _tts_stream_jsonl(
+                {
+                    "type": "error",
+                    "schema": "abstractcore.tts_stream.error.v1",
+                    "ok": False,
+                    "error": str(e),
+                }
+            )
+        finally:
+            _close_stream_iterator(stream)
+
+    return StreamingResponse(
+        _iter_jsonl(),
+        media_type="application/x-ndjson",
+        headers={"X-Content-Type-Options": "nosniff"},
+    )
+
+
 @router.post(
     "/audio/speech",
     response_class=Response,
@@ -1824,6 +1987,16 @@ async def _audio_speech_impl(
 async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)):
     """OpenAI-compatible TTS endpoint (json with input text)."""
     return await _audio_speech_impl(request, payload)
+
+
+@router.post(
+    "/audio/speech/stream",
+    response_class=StreamingResponse,
+    responses=_AUDIO_SPEECH_STREAM_RESPONSES,
+)
+async def audio_speech_stream(request: Request, payload: AudioSpeechRequest = Body(...)):
+    """Text-to-speech stream endpoint (JSON Lines of audio/progress events)."""
+    return await _audio_speech_stream_impl(request, payload)
 
 
 @provider_router.post(
@@ -1841,6 +2014,23 @@ async def provider_audio_speech(
 ):
     """Provider-scoped TTS endpoint. The route engine takes precedence over body routing fields."""
     return await _audio_speech_impl(request, payload, path_tts_engine=provider)
+
+
+@provider_router.post(
+    "/{provider}/v1/audio/speech/stream",
+    response_class=StreamingResponse,
+    responses=_AUDIO_SPEECH_STREAM_RESPONSES,
+)
+async def provider_audio_speech_stream(
+    request: Request,
+    payload: AudioSpeechRequest = Body(...),
+    provider: str = FastAPIPath(
+        ...,
+        description="TTS engine/provider route prefix, e.g. `piper`, `supertonic`, `openai`, or `openai-compatible`.",
+    ),
+):
+    """Provider-scoped streaming TTS endpoint. The route engine takes precedence over body routing fields."""
+    return await _audio_speech_stream_impl(request, payload, path_tts_engine=provider)
 
 
 @router.post("/voice/clone")
@@ -1944,36 +2134,26 @@ async def voice_clone(
 
     core = _get_capability_core()
     try:
-        result = core.generate(
-            text=_optional_text(reference_text) or "",
-            media={
-                "type": "audio",
-                "content": bytes(audio_bytes),
-                "mime_type": content_type,
-                "filename": filename,
-                "role": "clone_sample",
-            },
-            output={
-                "modality": "voice",
-                "task": "voice_clone",
-                "name": _optional_text(name),
-                "reference_text": _optional_text(reference_text),
-                "consent": _optional_text(consent),
-                "validate": validate,
-                "provider": request_provider,
-                "model": local_model,
-                "tts_model": local_model,
-                "cloning_engine": request_provider or os.getenv("ABSTRACTVOICE_CLONING_ENGINE") or None,
-            },
+        out = core.voice.clone(
+            bytes(audio_bytes),
+            name=_optional_text(name),
+            reference_text=_optional_text(reference_text),
+            consent=_optional_text(consent),
+            validate=validate,
+            provider=request_provider,
+            model=local_model,
+            tts_model=local_model,
+            cloning_engine=request_provider or os.getenv("ABSTRACTVOICE_CLONING_ENGINE") or None,
         )
-        voice_resources = getattr(result, "resources", {}).get("voice", [])
-        resource = voice_resources[0] if voice_resources else None
-        voice_id = getattr(resource, "resource_id", None)
+        if isinstance(out, dict):
+            out.setdefault("ok", True)
+            return out
+        voice_id = str(getattr(out, "resource_id", "") or getattr(out, "voice_id", "") or "").strip()
         if not voice_id:
             raise RuntimeError("Voice clone backend did not return a usable voice id.")
-        metadata = getattr(resource, "metadata", None)
+        metadata = getattr(out, "metadata", None)
         info = dict(metadata or {}) if isinstance(metadata, dict) else {}
-        return {"ok": True, "id": str(voice_id), "voice_id": str(voice_id), "voice": info}
+        return {"ok": True, "id": voice_id, "voice_id": voice_id, "voice": info}
     except CapabilityUnavailableError as e:
         raise HTTPException(status_code=501, detail=str(e)) from e
     except Exception as e:

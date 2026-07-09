@@ -443,6 +443,14 @@ music = [
     "abstractmusic>=0.1.13",
 ]
 
+scene3d = [
+    "abstract3d>=0.1.0",
+]
+
+3d = [
+    "abstract3d>=0.1.0",
+]
+
 # Testing dependencies
 test = [
     "pytest>=7.0.0",

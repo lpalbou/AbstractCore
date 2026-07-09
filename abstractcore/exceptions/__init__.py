@@ -9,8 +9,16 @@ class AbstractCoreError(Exception):
 
 
 class ProviderError(AbstractCoreError):
-    """Base exception for provider-related errors"""
-    pass
+    """Base exception for provider-related errors.
+
+    `status_code` carries the HTTP status when the raise site knows it — the one unambiguous
+    retryability fact an HTTP error has. Retry classifiers must prefer it over message prose
+    (English words in provider JSON bodies are not a contract).
+    """
+
+    def __init__(self, message: str = "", *args, status_code=None, **kwargs):
+        super().__init__(message, *args)
+        self.status_code = status_code if isinstance(status_code, int) else None
 
 
 class ProviderAPIError(ProviderError):

@@ -410,23 +410,32 @@ class BasicSession:
         if collected_content:
             self.add_message('assistant', collected_content)
 
+    def _provider_message_dicts(self, source_messages: List['Message']) -> List[Dict[str, str]]:
+        """Format session messages for the provider API.
+
+        The session's own system prompt is delivered via the ``system_prompt`` parameter on
+        every provider call, so its stored history copy is excluded here to avoid sending it
+        twice. Any OTHER system message (e.g. the ``[CONVERSATION HISTORY]`` compaction
+        summary added by :meth:`compact`) is conversation state and is delivered in-stream —
+        previously ALL system messages were filtered, which meant compaction summaries never
+        reached the model on any provider.
+        """
+        out: List[Dict[str, str]] = []
+        for m in source_messages:
+            if m.role == 'system' and isinstance(self.system_prompt, str) and m.content == self.system_prompt:
+                continue  # delivered separately as system_prompt
+            out.append({"role": m.role, "content": m.content})
+        return out
+
     def _format_messages_for_provider(self) -> List[Dict[str, str]]:
         """Format messages for provider API"""
-        return [
-            {"role": m.role, "content": m.content}
-            for m in self.messages
-            if m.role != 'system'  # System handled separately
-        ]
+        return self._provider_message_dicts(self.messages)
 
     def _format_messages_for_provider_excluding_current(self) -> List[Dict[str, str]]:
         """Format messages for provider API, excluding the most recent user message"""
         # Exclude the last message if it's a user message (the current prompt)
         messages_to_send = self.messages[:-1] if self.messages and self.messages[-1].role == 'user' else self.messages
-        return [
-            {"role": m.role, "content": m.content}
-            for m in messages_to_send
-            if m.role != 'system'  # System handled separately
-        ]
+        return self._provider_message_dicts(messages_to_send)
 
     def save(self, filepath: Union[str, Path]):
         """

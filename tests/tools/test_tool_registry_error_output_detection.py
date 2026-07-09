@@ -29,3 +29,16 @@ def test_tool_registry_marks_cross_mark_outputs_as_failure() -> None:
     assert result.output == ""
     assert result.error == "Permission denied: Cannot write"
 
+
+def test_tool_registry_marks_json_error_outputs_as_failure() -> None:
+    reg = ToolRegistry()
+
+    def tool_returns_json_error() -> str:
+        return '{"success":false,"status_hint":"error","error":"requests is not installed","results":[]}'
+
+    reg.register(tool_returns_json_error)
+    result = reg.execute_tool(ToolCall(name="tool_returns_json_error", arguments={}, call_id="c1"))
+
+    assert result.success is False
+    assert result.output == ""
+    assert result.error == "requests is not installed"

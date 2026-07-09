@@ -850,7 +850,7 @@ curl -X POST http://localhost:8000/v1/chat/completions \\
 ### Optional images/audio endpoints
 
 - Images/video: `POST /v1/images/generations`, `POST /v1/images/edits`, `POST /v1/images/upscale`, `POST /v1/videos/generations`, `POST /v1/videos/edits`, `GET /v1/vision/adapters`, and async `/v1/vision/jobs/images/*` / `/v1/vision/jobs/videos/*` (requires `abstractvision` for local backends; global routes accept `model`, optional `provider`, and optional `base_url`; image edits accept repeatable multipart `reference_images`; image/video generation and edit routes accept batch `n` / `seeds`, typed `lora_adapters` or multipart `lora_adapters_json`, and video `guidance_2` / `flow_shift`; exact MLX-Gen ids such as `mlx-gen/AbstractFramework/qwen-image-2512-4bit`, `mlx-gen/AbstractFramework/seedvr2-3b-8bit`, `mlx-gen/AbstractFramework/seedvr2-7b-8bit`, `mlx-gen/AbstractFramework/wan2.2-t2v-a14b-diffusers-8bit`, and `mlx-gen/AbstractFramework/wan2.2-i2v-a14b-diffusers-8bit` are valid when cached; SeedVR2 upscale routes default to `resolution=2x` and `softness=0.25`, accept `scale` or `resolution`, and support optional runtime `quantize`)
-- Audio: `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`, `POST /v1/voice/clone` (requires an audio/voice plugin; commonly `abstractvoice`; global routes accept `model`, optional `provider`, and optional `base_url`)
+- Audio: `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`, `POST /v1/audio/speech/stream`, `POST /v1/voice/clone` (requires an audio/voice plugin; commonly `abstractvoice`; global routes accept `model`, optional `provider`, and optional `base_url`; the stream route emits JSON Lines WAV segment events for compatible local/plugin TTS backends)
 
 If a required plugin/backend is missing, the server returns `501` with actionable messaging.
 
@@ -1175,7 +1175,7 @@ pip install "abstractcore[tools]"
 Then import from `abstractcore.tools.common_tools`:
 
 - `skim_websearch` vs `web_search`: compact/filtered links vs full results
-- `skim_url` vs `fetch_url`: fast URL triage (small output) vs full fetch + parsing for text-first types (HTML/JSON/text)
+- `skim_url` vs `fetch_url`: fast URL triage (small output) vs full fetch + parsing for web documents and feeds (HTML/JSON/XML/RSS/Atom/PDF when supported)
 
 See [Tool Calling](tool-calling.md) for a recommended workflow and the full built-in tool list.
 
@@ -3399,9 +3399,9 @@ from abstractcore.tools.common_tools import skim_url, fetch_url, search_files, r
 # Quick URL preview (fast, small)
 preview = skim_url("https://example.com/article")
 
-# Full web content fetching and parsing (HTML→Markdown, JSON/XML/text)
+# Full web content fetching and parsing (HTML→Markdown, JSON/XML/text, feeds, PDFs)
 result = fetch_url("https://api.github.com/repos/python/cpython")
-# For PDFs/images/other binaries, fetch_url returns metadata (and optional previews), not full extraction.
+# PDF text extraction uses pypdf when installed via `abstractcore[media]`.
 
 # File system operations  
 files = search_files("def.*fetch", ".", file_pattern="*.py")
@@ -3410,15 +3410,15 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 ```
 
 **Available Built-in Tools:**
-- `skim_url` - Fast URL skim (title/description/headings + short preview)
-- `fetch_url` - Fetch + parse common text-first types (HTML→Markdown, JSON/XML/text); binaries return metadata + optional previews
+- `skim_url` - Fast URL skim (title/description/headings + short preview, plus feed/XML and short PDF summaries when detectable)
+- `fetch_url` - Fetch + parse HTML/JSON/XML/text plus feed summaries and PDF text extraction when `pypdf` is available; non-text binaries still return metadata + optional previews
 - `search_files` - Search for text patterns inside files using regex
 - `list_files` - Find and list files by names/paths using glob patterns
 - `read_file` - Read file contents with optional line range selection
 - `write_file` - Write content to files with directory creation
 - `edit_file` - Edit files using pattern matching and replacement
-- `web_search` - Search the web using DuckDuckGo
-- `skim_websearch` - Smaller/filtered web search (compact result list)
+- `web_search` - Search the web using DuckDuckGo; numeric `num_results` is normalized from JSON-style strings when needed, while invalid values fail explicitly
+- `skim_websearch` - Smaller/filtered web search (compact result list); accepts string-like numeric `num_results` and surfaces its compact result cap
 - `execute_command` - Execute shell commands safely with security controls
 
 **Suggested web workflow (agent-friendly):**
@@ -9924,10 +9924,10 @@ These built-in web tools live in `abstractcore.tools.common_tools` and require:
 pip install "abstractcore[tools]"
 ```
 
-- `web_search`: fuller DuckDuckGo result set (good when you want breadth or more options).
-- `skim_websearch`: compact/filtered search results (good default for agents to keep prompts smaller). Defaults to 5 results and truncates long snippets.
-- `skim_url`: fast URL triage (fetches only a prefix and extracts lightweight metadata + a short preview). Defaults: `max_bytes=200_000`, `max_preview_chars=1200`, `max_headings=8`.
-- `fetch_url`: full fetch + parsing for text-first types (HTML→Markdown, JSON/XML/text). For PDFs/images/other binaries it returns metadata and optional previews; it does **not** do full PDF text extraction. It downloads up to 10MB by default; use `include_full_content=False` for smaller outputs.
+- `web_search`: fuller DuckDuckGo result set (good when you want breadth or more options). It normalizes JSON-style numeric `num_results` values such as `"5"` before calling `ddgs`, and invalid values fail explicitly instead of silently changing the request.
+- `skim_websearch`: compact/filtered search results (good default for agents to keep prompts smaller). Defaults to 5 results, truncates long snippets, accepts string-like numeric `num_results`, and surfaces its compact cap when a caller asks for more than 15 results.
+- `skim_url`: fast URL triage (fetches only a prefix and extracts lightweight metadata + a short preview). It can also summarize RSS/Atom/XML feeds and PDF content when those assets are detectable from headers or content bytes. Defaults: `max_bytes=200_000`, `max_preview_chars=1200`, `max_headings=8`.
+- `fetch_url`: full fetch + parsing for HTML, JSON, XML/RSS/Atom, plain text, and PDFs. PDF routing now follows `native_llm > pymupdf > pypdf` whenever a native OpenAI-compatible client is configured; otherwise it falls back to `pymupdf` and then `pypdf`. There is no separate enable flag. Native PDF calls try `file_id` first and then `data_url` when an OpenAI-compatible endpoint rejects uploaded PDF files. Results expose PDF backend provenance, including native transport. It downloads up to 10MB by default; use `include_full_content=False` for smaller outputs.
 
 Recommended workflow: `skim_websearch` → `skim_url` → `fetch_url` (use `include_full_content=False` when you want a smaller `fetch_url` output).
 

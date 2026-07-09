@@ -99,8 +99,8 @@ print(caps.to_dict())
 ## Provider status (May 2026)
 
 - **OpenAI** (`OpenAIProvider`): forwards `prompt_cache_key` (server-managed) and `prompt_cache_retention` (best-effort; some models support `"24h"`).
-- **Anthropic** (`AnthropicProvider`): enables Claude prompt caching via `cache_control` when `prompt_cache_key` is provided (server-managed; default ~5-minute TTL).
-- **OpenAI-compatible** (`OpenAICompatibleProvider`, `LMStudioProvider`, `VLLMProvider`, …): forwards `prompt_cache_key` when provided (server-managed if the backend implements it).
+- **Anthropic** (`AnthropicProvider`): places an explicit `cache_control` breakpoint on the last system block when `prompt_cache_key` is provided (caches the tools+system head; server-managed; default ~5-minute TTL). Cache reads/writes surface as `usage.cached_input_tokens` / `usage.cache_write_tokens`.
+- **OpenAI-compatible** (`OpenAICompatibleProvider`, `LMStudioProvider`, `VLLMProvider`, …): forwards `prompt_cache_key` when provided (server-managed if the backend implements it). Servers that reject the field with HTTP 400 (e.g. OVH AI Endpoints) are handled automatically: the key is dropped, the request retried once, and the field suppressed for that provider instance; server-side automatic prefix caching (vLLM APC, LM Studio/llama.cpp slot reuse) still applies because it needs no request field — only a byte-stable prompt prefix.
 - **MLX** (`MLXProvider`): supports in-process KV caches via `prompt_cache_key` and AbstractCore’s cache control plane.
   - CLI persistence: `abstractcore-chat` supports `/cache save|load` (writes/reads a `.safetensors` cache; model-locked).
   - Durable memory blocs: supports exact bloc artifacts through `ensure_bloc_kv_artifact(...)` /
@@ -195,9 +195,11 @@ You can observe cache hits via `usage.prompt_tokens_details.cached_tokens` in Op
 
 ## Anthropic notes
 
-Anthropic prompt caching is enabled by sending `cache_control: {"type":"ephemeral"}` in the Messages API request body. Caching applies to the full prompt prefix (`tools`, `system`, then `messages`) up to the last cacheable block, and Anthropic also supports up to 4 explicit cache breakpoints for finer-grained invalidation. Default TTL is ~5 minutes, with an optional 1-hour TTL (`{"ttl":"1h"}`) at higher input-token cost.
+Anthropic prompt caching uses explicit `cache_control: {"type":"ephemeral"}` breakpoints on content blocks. Caching applies to the prompt prefix (`tools`, `system`, then `messages`) up to each marked block; up to 4 breakpoints are supported. Default TTL is ~5 minutes, refreshed on hit, with an optional 1-hour TTL (`{"ttl":"1h"}`) at higher cache-write cost. Cache writes bill at 1.25x input (2x for 1h) and cache reads at 0.1x.
 
-In AbstractCore, `AnthropicProvider` enables automatic caching when `prompt_cache_key` is provided (the key itself is not sent to Anthropic; it’s treated as a unified toggle). Optionally set `prompt_cache_ttl="1h"` to request Anthropic’s 1-hour TTL.
+In AbstractCore, `AnthropicProvider` places a breakpoint on the last `system` text block when `prompt_cache_key` is provided (the key itself is not sent to Anthropic; it signals caching intent). This caches the tools + system static head — the byte-stable part of agent-loop requests — while the growing message transcript stays unmarked, so the write premium is only ever paid on content later calls can actually re-read. Optionally set `prompt_cache_ttl="1h"` for the 1-hour tier.
+
+Cache traffic is reported in normalized usage keys: `usage.cached_input_tokens` (read) and `usage.cache_write_tokens` (creation). Anthropic's raw `input_tokens` excludes cache traffic; AbstractCore reports the inclusive prompt size in `input_tokens` so totals stay comparable across providers. When these keys are absent the provider did not report cache fields (absent is distinct from a measured zero).
 
 ## CLI: saving/loading MLX caches
 

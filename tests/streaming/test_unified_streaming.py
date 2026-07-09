@@ -368,6 +368,44 @@ class TestIncrementalToolDetector:
         assert tools[0].name == "pending"
         assert tools[0].arguments == {"x": 1, "ok": True}
 
+    def test_xmlish_direct_tool_tag_streaming_is_parsed(self):
+        """Streaming parser should recover direct tool-name XML-ish parameter blocks."""
+        detector = IncrementalToolDetector("nvidia/nemotron-3-nano")
+
+        _, tools = detector.process_chunk(
+            "<tool_call>"
+            "<web_search>"
+            "<parameter=query>Coolizi arnaque scam avis 2025 2026</parameter>"
+            "<parameter=num_results>10</parameter>"
+            "</function>"
+            "</tool_call>"
+        )
+
+        assert len(tools) == 1
+        assert tools[0].name == "web_search"
+        assert tools[0].arguments == {
+            "query": "Coolizi arnaque scam avis 2025 2026",
+            "num_results": "10",
+        }
+
+    def test_finalize_xmlish_direct_tool_tag_without_outer_close_does_not_leak_markup(self):
+        """Recovered incomplete XML-ish tool calls must clear the buffered raw markup."""
+        detector = IncrementalToolDetector("nvidia/nemotron-3-nano")
+
+        streamable, _ = detector.process_chunk(
+            "Before <tool_call>"
+            "<web_search>"
+            "<parameter=query>Coolizi arnaque scam avis</parameter>"
+            "<parameter=num_results>10</parameter>"
+            "</function>"
+        )
+        tools = detector.finalize()
+
+        assert streamable == "Before "
+        assert len(tools) == 1
+        assert tools[0].name == "web_search"
+        assert detector.accumulated_content == ""
+
 
 # ============================================================================
 # LAYER 2: INTEGRATION TESTS - UnifiedStreamProcessor
@@ -426,6 +464,35 @@ class TestUnifiedStreamProcessor:
         tool_chunks = [r for r in results if isinstance(getattr(r, "tool_calls", None), list) and r.tool_calls]
         assert len(tool_chunks) == 1
         assert tool_chunks[0].tool_calls == tool_calls
+
+    def test_process_stream_xmlish_direct_tool_tag_yields_tool_call_without_raw_markup(self):
+        processor = UnifiedStreamProcessor("nvidia/nemotron-3-nano", execute_tools=False)
+
+        chunks = [
+            "Before ",
+            "<tool_call>",
+            "<web_search>",
+            "<parameter=query>Coolizi arnaque scam avis 2025 2026</parameter>",
+            "<parameter=num_results>10</parameter>",
+            "</function>",
+            "</tool_call>",
+        ]
+        results = list(processor.process_stream(self.create_test_stream(chunks)))
+
+        visible = "".join(result.content or "" for result in results)
+        all_tool_calls = []
+        for result in results:
+            if isinstance(getattr(result, "tool_calls", None), list):
+                all_tool_calls.extend(result.tool_calls)
+
+        assert visible == "Before "
+        assert all_tool_calls == [
+            {
+                "name": "web_search",
+                "arguments": {"query": "Coolizi arnaque scam avis 2025 2026", "num_results": "10"},
+                "call_id": None,
+            }
+        ]
 
     def test_streaming_with_tool_detection(self):
         """Test streaming with tool call detection"""

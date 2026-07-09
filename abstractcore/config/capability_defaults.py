@@ -22,6 +22,8 @@ CAPABILITY_ROUTE_TASKS = (
     "image_upscale",
     "text_to_video",
     "image_to_video",
+    "text_to_scene3d",
+    "image_to_scene3d",
 )
 
 _KIND_ALIASES = {
@@ -75,6 +77,13 @@ _TASK_ALIASES = {
     "i2v": "image_to_video",
     "video_from_image": "image_to_video",
     "image_video": "image_to_video",
+    "t23d": "text_to_scene3d",
+    "text2scene3d": "text_to_scene3d",
+    "text_to_3d": "text_to_scene3d",
+    "i23d": "image_to_scene3d",
+    "image2scene3d": "image_to_scene3d",
+    "image_to_3d": "image_to_scene3d",
+    "image_to_scene": "image_to_scene3d",
 }
 
 
@@ -112,10 +121,11 @@ class CapabilityRouteDefault:
     provider: Optional[str] = None
     model: Optional[str] = None
     base_url: Optional[str] = None
+    reasoning: Optional[str] = None
     options: Dict[str, Any] = field(default_factory=dict)
 
     def configured(self) -> bool:
-        return bool(self.provider or self.model or self.base_url or self.options)
+        return bool(self.provider or self.model or self.base_url or self.reasoning or self.options)
 
     def to_dict(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
@@ -125,6 +135,8 @@ class CapabilityRouteDefault:
             out["model"] = self.model
         if self.base_url:
             out["base_url"] = self.base_url
+        if self.reasoning:
+            out["reasoning"] = self.reasoning
         if self.options:
             out["options"] = dict(self.options)
         return out
@@ -177,7 +189,8 @@ def normalize_task(value: Any) -> str:
     if raw not in CAPABILITY_ROUTE_TASKS:
         raise ValueError(
             f"Unknown capability route task: {value!r}. "
-            "Expected text_to_image, image_to_image, image_upscale, text_to_video, or image_to_video."
+            "Expected text_to_image, image_to_image, image_upscale, text_to_video, image_to_video, "
+            "text_to_scene3d, or image_to_scene3d."
         )
     return raw
 
@@ -237,18 +250,41 @@ def clean_capability_route_default(value: Any) -> CapabilityRouteDefault:
     provider = _clean_optional_string(data.get("provider") or data.get("provider_id"))
     model = _clean_optional_string(data.get("model") or data.get("model_id"))
     base_url = _clean_optional_string(data.get("base_url"))
+    reasoning = _clean_optional_string(data.get("reasoning"))
     options_raw = data.get("options")
     options = dict(options_raw) if isinstance(options_raw, Mapping) else {}
 
     # Backward-compatible convenience: unknown scalar fields become options so
     # plugin-specific defaults such as voice/profile are not lost.
     for key, raw in data.items():
-        if key in {"provider", "provider_id", "model", "model_id", "base_url", "options"}:
+        if key in {
+            "provider",
+            "provider_id",
+            "model",
+            "model_id",
+            "base_url",
+            "reasoning",
+            "options",
+            "key",
+            "source",
+            "kind",
+            "modality",
+            "task",
+            "label",
+            "package_hint",
+            "option_examples",
+        }:
             continue
         if isinstance(key, str) and key.strip():
             options.setdefault(key.strip(), raw)
 
-    return CapabilityRouteDefault(provider=provider, model=model, base_url=base_url, options=options)
+    return CapabilityRouteDefault(
+        provider=provider,
+        model=model,
+        base_url=base_url,
+        reasoning=reasoning,
+        options=options,
+    )
 
 
 def capability_defaults_from_dict(value: Any) -> CapabilityDefaultsConfig:
@@ -295,6 +331,8 @@ def iter_capability_default_specs() -> Iterable[CapabilityDefaultSpec]:
         ("output", "sound", "Sound Effects Output", "sound_generation", "abstractsound or abstractmusic", {}),
         ("output", "music", "Music Output", "music_generation", "abstractmusic", {}),
         ("output", "scene3d", "3D Scene Output", "scene3d_generation", "abstract3d", {}),
+        ("output", "scene3d.text_to_scene3d", "Text To 3D", "text_to_scene3d", "abstract3d", {}),
+        ("output", "scene3d.image_to_scene3d", "Image To 3D", "image_to_scene3d", "abstract3d", {}),
         ("embedding", "text", "Text Embeddings", "text_embedding", "abstractcore.embeddings", {}),
         ("embedding", "image", "Image Embeddings", "image_embedding", "abstractcore.embeddings or abstractvision", {}),
         ("rerank", "text", "Text Rerank", "text_rerank", "future reranker manager", {}),
