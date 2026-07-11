@@ -1,0 +1,117 @@
+{
+  "_README": "Gold-reference fact/junk anchors for the fetch_url extraction harness. Curated by 4 fable5 adversaries (2026-07-11) from raw-byte fetches of each page, NOT from the tool's own output. 'facts' = distinctive substrings that MUST appear in extracted content (whitespace/case-normalized). 'junk' = boilerplate substrings that MUST NOT appear (nav/sidebar/author-box/consent). 'title_contains' = expected title substring. Scoring: fact_recall = matched_facts / total_facts; junk_ratio = matched_junk / total_junk. Bar: recall >= 0.90 and junk == 0.",
+  "techxplore": {
+    "url": "https://techxplore.com/news/2026-07-recursive-selfimprovement-dawning-ai-superintelligence.html",
+    "fixture": "techxplore.html",
+    "title_contains": "recursive self",
+    "facts": [
+      "recursive self-improvement is not inevitable",
+      "Irving John Good",
+      "Bletchley Park",
+      "the last invention man need ever make",
+      "Eliezer Yudkowsky",
+      "seed AI",
+      "University of Galway",
+      "AtlanTec",
+      "80% of all code added to the company's production code base in May 2026",
+      "less than 5%",
+      "tripling over the past decade",
+      "answered only four of the 10 questions",
+      "Yoshua Bengio",
+      "Stuart Russell",
+      "destroy a rogue datacenter by airstrike",
+      "Pope Leo XIV",
+      "Pausing works only if everyone pauses",
+      "EU's AI Act does not mention this issue",
+      "James McDermott",
+      "Rinn network"
+    ],
+    "junk": [
+      "Science X editorial",
+      "Your feedback is important to us",
+      "Get weekly and/or daily updates",
+      "E-mail newsletter",
+      "Explore further",
+      "This site uses cookies to assist with navigation"
+    ]
+  },
+  "budgyapp": {
+    "url": "https://budgyapp.com/anthropic-claude-writes-own-code-global-ai-pause/",
+    "fixture": "budgyapp.html",
+    "title_contains": "Claude",
+    "facts": [
+      "80% of its production code",
+      "verifiable global pause",
+      "recursive self-improvement",
+      "Henry Fox",
+      "task horizon",
+      "no coordination mechanism yet supports"
+    ],
+    "junk": [
+      "LATEST",
+      "POPULAR",
+      "Trending",
+      "Leave a Reply",
+      "Related Posts",
+      "Brian is a"
+    ]
+  },
+  "newsletter": {
+    "url": "https://newsletter.theconsciouschurch.co.uk/p/anthropic-s-bombshell-claude-is-now-writing-its-own-code",
+    "fixture": "newsletter.html",
+    "title_contains": "Claude Is Now Writing",
+    "facts": [
+      "this week in AI is a lot",
+      "80% of its own code",
+      "8x more code per quarter",
+      "task horizon is doubling every ~4 months",
+      "52x speedup",
+      "coordinated global pause",
+      "Martin Scorsese",
+      "Black Forest Labs",
+      "FLUX",
+      "storyboard",
+      "MicroAGI",
+      "magic hats",
+      "$20/hour",
+      "make real things, the honest way",
+      "Stay human"
+    ],
+    "junk": [
+      "This website uses cookies",
+      "Terms of use for more information",
+      "Powered by beehiiv",
+      "Read our"
+    ]
+  },
+  "nextbigfuture": {
+    "url": "https://www.nextbigfuture.com/2026/03/recursively-self-improving-ai-will-have-unlimited-space-based-solar-power.html",
+    "fixture": "nextbigfuture.html",
+    "title_contains": "Recursively Self Improving AI",
+    "facts": [
+      "Eric Schmidt",
+      "recursive self-improvement",
+      "red line for AGI",
+      "92 GW",
+      "space based",
+      "Andrej Karpathy",
+      "AutoResearch",
+      "Karpathy Loop",
+      "700 experiments in 2 days",
+      "11% training speedup",
+      "Terafab",
+      "Evan Hubinger",
+      "70-90% of code",
+      "fully automated AI research",
+      "AGI (smarter than the smartest human in every domain) in 3"
+    ],
+    "junk": [
+      "Brian Wang is a Futurist Thought Leader",
+      "Recent Posts",
+      "Leave a Comment",
+      "2 thoughts on",
+      "Home \u00bb Artificial intelligence",
+      "Next Big Future"
+    ]
+  }
+}

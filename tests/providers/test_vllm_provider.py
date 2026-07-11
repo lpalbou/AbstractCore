@@ -19,13 +19,21 @@ from abstractcore.providers import VLLMProvider
 
 
 def vllm_available():
-    """Check if vLLM server is accessible."""
+    """Check if a REAL vLLM (OpenAI-compatible) server is accessible.
+
+    A bare status==200 check is not enough: port 8000 is a popular default, and an
+    unrelated web app answering every path with 200+HTML makes these live tests run
+    against a non-LLM server (observed 2026-07-10: a dev SPA on :8000 turned the
+    whole class into failures). Require the OpenAI models-list SHAPE, not just 200.
+    """
     try:
         base_url = os.getenv("VLLM_BASE_URL", "http://localhost:8000/v1")
-        # Try to connect to /models endpoint
         response = httpx.get(f"{base_url}/models", timeout=5.0)
-        return response.status_code == 200
-    except:
+        if response.status_code != 200:
+            return False
+        payload = response.json()
+        return isinstance(payload, dict) and isinstance(payload.get("data"), list)
+    except Exception:
         return False
 
 

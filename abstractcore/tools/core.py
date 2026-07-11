@@ -57,6 +57,18 @@ class ToolDefinition:
     when_to_use: Optional[str] = None
     examples: List[Dict[str, Any]] = field(default_factory=list)
 
+    # Host-side POLICY attribute (entity-topology item 7, G1): an act-only tool's
+    # durable record carries only the ACT-FRAME (id + reason + gist), never the
+    # returned words — hosts key their observe/ledger/result channels on this flag.
+    # First-class bool (not a tag) so the dataclass default IS the policy:
+    # undeclared = normal durable tool. MAINTAINER-CONFIRMED DEFAULT (2026-07-10):
+    # False — by default EVERYTHING is recorded (ledger-transparency principle);
+    # act-only is a narrow, explicitly-declared exception for diary-class tools,
+    # never a category default. Deliberately NEVER serialized into native provider
+    # payloads (strict servers reject unknown fields; enforcement is host-side
+    # anyway) — if the model should know, say it in `description`.
+    act_only: bool = False
+
     def __post_init__(self) -> None:
         # Normalize to a single line for prompt-friendly catalogs.
         self.name = str(self.name or "").strip()
@@ -64,6 +76,7 @@ class ToolDefinition:
         self.when_to_use = _normalize_one_line(self.when_to_use) if self.when_to_use else None
         self.tags = list(self.tags) if isinstance(self.tags, list) else []
         self.examples = list(self.examples) if isinstance(self.examples, list) else []
+        self.act_only = bool(self.act_only)
         _validate_tool_metadata(
             name=self.name,
             description=self.description,
@@ -214,6 +227,12 @@ class ToolDefinition:
         if self.examples:
             result["examples"] = self.examples
 
+        # Host-side policy attribute: additive — emitted only when set, so normal
+        # tools serialize exactly as before. Never copied into native provider
+        # payloads (see UniversalToolHandler.prepare_tools_for_native).
+        if self.act_only:
+            result["act_only"] = True
+
         return result
 
 
@@ -255,6 +274,7 @@ def tool(
     when_to_use: Optional[str] = None,
     examples: Optional[List[Dict[str, Any]]] = None,
     hide_args: Optional[List[str]] = None,
+    act_only: bool = False,
 ):
     """
     Enhanced decorator to convert a function into a tool with rich metadata.
@@ -298,6 +318,7 @@ def tool(
         tool_def.tags = tags or []
         tool_def.when_to_use = _normalize_one_line(when_to_use) if when_to_use else None
         tool_def.examples = list(examples) if isinstance(examples, list) else []
+        tool_def.act_only = bool(act_only)
 
         # Optionally hide parameters from the exported schema (LLM-facing), while
         # keeping them accepted by the underlying Python callable for backwards

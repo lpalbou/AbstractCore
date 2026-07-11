@@ -465,6 +465,41 @@ class OpenAICompatibleProvider(BaseProvider):
 
         return None
 
+    @staticmethod
+    def _extract_retry_after_s(response: Optional[httpx.Response]) -> Optional[float]:
+        """Parse the `Retry-After` header (seconds or HTTP-date) into seconds, if present.
+
+        The server's own requested wait is the one delay signal better than our jitter
+        guess (C3 Retry-After honoring); the retry layer still caps it at its max_delay.
+        """
+        try:
+            headers = getattr(response, "headers", None)
+            if headers is None:
+                return None
+            raw = headers.get("retry-after") or headers.get("Retry-After")
+            if raw is None:
+                return None
+            raw = str(raw).strip()
+            if not raw:
+                return None
+            try:
+                seconds = float(raw)
+                return seconds if seconds >= 0 else None
+            except ValueError:
+                pass
+            # HTTP-date form (RFC 7231): compute the delta from now.
+            from email.utils import parsedate_to_datetime
+            from datetime import datetime, timezone
+
+            dt = parsedate_to_datetime(raw)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            delta = (dt - datetime.now(timezone.utc)).total_seconds()
+            return max(delta, 0.0)
+        except Exception:
+            # Best-effort only: a malformed header must never mask the real error.
+            return None
+
     def _raise_for_status(self, response: httpx.Response, *, request_url: Optional[str] = None) -> None:
         """Raise rich provider exceptions on HTTP errors."""
         status_code = getattr(response, "status_code", None)
@@ -487,7 +522,8 @@ class OpenAICompatibleProvider(BaseProvider):
         if status in (401, 403):
             raise AuthenticationError(msg, status_code=status)
         if status == 429:
-            raise RateLimitError(msg, status_code=status)
+            raise RateLimitError(msg, status_code=status,
+                                 retry_after_s=self._extract_retry_after_s(response))
         if status == 400:
             # Many OpenAI-compatible servers use 400 for schema/model errors.
             if detail and ("model" in detail.lower()) and ("not found" in detail.lower()):
@@ -515,7 +551,10 @@ class OpenAICompatibleProvider(BaseProvider):
                 self._raise_model_not_found()
             raise ProviderAPIError(msg if request_url is None else f"{msg} [{request_url}]", status_code=status)
 
-        raise ProviderAPIError(msg if request_url is None else f"{msg} [{request_url}]", status_code=status)
+        # 5xx (incl. 503 with a server-named wait): transient server-side class.
+        raise ProviderAPIError(msg if request_url is None else f"{msg} [{request_url}]",
+                               status_code=status,
+                               retry_after_s=self._extract_retry_after_s(response))
 
     def _raise_model_not_found(self) -> None:
         """Raise ModelNotFoundError with a best-effort available-model list."""

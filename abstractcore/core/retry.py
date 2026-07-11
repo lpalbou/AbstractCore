@@ -8,6 +8,7 @@ and production LLM system requirements.
 
 import time
 import random
+import threading
 from typing import Type, Optional, Set, Dict, Any
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -15,6 +16,24 @@ from enum import Enum
 from ..utils.structured_logging import get_logger
 
 logger = get_logger(__name__)
+
+# Cancellable backoff waits in bounded slices so a host's cancel/stop signal is
+# observed within ~1s even mid-backoff (the interruptible-sleep discipline).
+_BACKOFF_SLICE_S = 1.0
+
+
+class RetryCancelledError(Exception):
+    """Raised when a host cancels a retry sequence mid-backoff.
+
+    Carries the underlying provider error as `last_error` so callers still see
+    WHY retries were running. Deliberately not a ProviderError subclass: a
+    cancel is a host decision, not a provider failure class, and it must never
+    be re-classified as retryable by an outer retry layer.
+    """
+
+    def __init__(self, message: str, last_error: Optional[Exception] = None):
+        super().__init__(message)
+        self.last_error = last_error
 
 
 class RetryableErrorType(Enum):
@@ -76,6 +95,21 @@ class RetryConfig:
             return random.uniform(0, capped_delay)
         else:
             return capped_delay
+
+    @classmethod
+    def single_attempt(cls, **overrides) -> "RetryConfig":
+        """Preset for hosts whose OUTER retry layer owns attempts (double-stack collapse).
+
+        `create_llm(..., retry_config=RetryConfig.single_attempt())` makes the provider
+        perform exactly ONE attempt per call — no inner resamples, no backoff sleeps —
+        while the circuit breaker stays active (fleet failure state is still tracked).
+        The consuming host's own retry policy (e.g. a runtime EffectPolicy) then owns
+        attempt counts and backoff in one place. Entity-topology plan item 12 (C3),
+        consumer-confirmed shape (runtime factory).
+        """
+        params: Dict[str, Any] = {"max_attempts": 1}
+        params.update(overrides)
+        return cls(**params)
 
 
 class CircuitBreaker:
@@ -170,6 +204,10 @@ class RetryManager:
         """Initialize retry manager with configuration."""
         self.config = config or RetryConfig()
         self.circuit_breakers: Dict[str, CircuitBreaker] = {}
+        # Optional per-endpoint damping domain (core/endpoint_damping.py, opt-in):
+        # when set, its SHARED breaker replaces the per-instance one and backoff
+        # waits require a retry slot from its budget (fail fast when exhausted).
+        self.damping_domain = None
 
         # Define retryable vs non-retryable error types
         self.retryable_errors = {
@@ -253,13 +291,20 @@ class RetryManager:
         else:
             return False  # No retry for unknown/non-retryable errors
 
-    def execute_with_retry(self, func, *args, provider_key: str = "default", **kwargs):
+    def execute_with_retry(self, func, *args, provider_key: str = "default",
+                           cancel_event: Optional[threading.Event] = None, **kwargs):
         """
         Execute function with retry logic and circuit breaker protection.
 
         Args:
             func: Function to execute
             provider_key: Key for circuit breaker (e.g., "openai:gpt-4")
+            cancel_event: Optional host cancel signal. Backoff waits are sliced
+                (~1s) and check it; when set mid-backoff the sequence raises
+                RetryCancelledError immediately (labeled, never a silent absorb).
+                Default None preserves historical uninterruptible behavior... in
+                semantics only: the wait itself is now sliced either way, which is
+                behavior-identical for callers without a cancel signal.
             *args, **kwargs: Arguments for function
 
         Returns:
@@ -267,15 +312,21 @@ class RetryManager:
 
         Raises:
             CircuitBreakerOpenError: If circuit breaker is open
+            RetryCancelledError: If cancel_event is set during backoff
             Last exception: If all retries fail
         """
-        circuit_breaker = self.get_circuit_breaker(provider_key)
+        damping = self.damping_domain
+        # With damping on, the ENDPOINT's shared breaker is the failure state —
+        # the first instance to trip it stops every other instance on the same
+        # endpoint (per-instance breakers are the herd mechanism this replaces).
+        circuit_breaker = damping.breaker if damping is not None else self.get_circuit_breaker(provider_key)
         last_error = None
 
         # Check circuit breaker before starting
         if not circuit_breaker.can_execute():
             from ..exceptions import ProviderAPIError
-            raise ProviderAPIError(f"Circuit breaker open for {provider_key}")
+            scope = f"endpoint {damping.label}" if damping is not None else provider_key
+            raise ProviderAPIError(f"Circuit breaker open for {scope}")
 
         # Handle edge case of zero max attempts
         if self.config.max_attempts <= 0:
@@ -283,6 +334,14 @@ class RetryManager:
             raise ProviderAPIError(f"Max attempts is {self.config.max_attempts}, cannot execute")
 
         for attempt in range(1, self.config.max_attempts + 1):
+            # A cancel observed between attempts (e.g. set while the previous attempt
+            # was in flight) stops the sequence before burning another call.
+            if cancel_event is not None and cancel_event.is_set() and attempt > 1:
+                raise RetryCancelledError(
+                    f"[retry cancelled by host] {provider_key}: retry sequence cancelled "
+                    f"before attempt {attempt}; last error: {last_error}",
+                    last_error=last_error,
+                )
             try:
                 # Execute function
                 result = func(*args, **kwargs)
@@ -335,6 +394,13 @@ class RetryManager:
                 # Calculate delay and emit retry event (minimal - only when we're actually retrying)
                 delay = self.config.get_delay(attempt)
 
+                # Retry-After honoring: when the server named its own wait (429/503),
+                # that signal beats our jitter guess — capped by OUR max_delay so a
+                # hostile/buggy header can never park a worker for hours.
+                retry_after = getattr(e, "retry_after_s", None)
+                if isinstance(retry_after, (int, float)) and retry_after >= 0:
+                    delay = min(max(float(retry_after), delay), self.config.max_delay)
+
                 logger.info(f"Retrying {provider_key} after {error_type.value} error (attempt {attempt}/{self.config.max_attempts}). "
                            f"Waiting {delay:.2f}s...")
 
@@ -348,11 +414,70 @@ class RetryManager:
                     "circuit_breaker_state": circuit_breaker.get_state_info()
                 })
 
-                # Wait before retry
-                time.sleep(delay)
+                # Retry budget (damping only): a slot is required to WAIT for this
+                # endpoint. Exhausted budget = fail fast with the labeled last error —
+                # never queue (queueing would hide the pressure admission should see).
+                if damping is not None:
+                    if not damping.try_acquire_retry_slot():
+                        raise self._label_budget_exhausted(e, damping)
+                    try:
+                        self._wait_cancellable(delay, cancel_event)
+                    finally:
+                        damping.release_retry_slot()
+                else:
+                    # Wait before retry — in bounded slices so a host cancel signal is
+                    # observed within ~1s instead of after the full (up to max_delay) sleep.
+                    self._wait_cancellable(delay, cancel_event)
+                if cancel_event is not None and cancel_event.is_set():
+                    raise RetryCancelledError(
+                        f"[retry cancelled by host] {provider_key}: retry sequence cancelled "
+                        f"during backoff after attempt {attempt}; last error: {e}",
+                        last_error=e,
+                    )
 
         # All retries exhausted, raise the last error
         raise last_error
+
+    @staticmethod
+    def _label_budget_exhausted(error: Exception, damping) -> Exception:
+        """Return the fail-fast error for an exhausted endpoint retry budget.
+
+        Keeps the error's TYPE (so status-code-first classifiers see the same class)
+        and carries status_code/retry_after_s through for ProviderError subclasses;
+        anything unexpected falls back to the original error with a logged label.
+        """
+        from ..exceptions import ProviderError
+
+        label = f"[retry budget exhausted for endpoint {damping.label}]"
+        if isinstance(error, ProviderError):
+            try:
+                return type(error)(
+                    f"{error} {label}",
+                    status_code=getattr(error, "status_code", None),
+                    retry_after_s=getattr(error, "retry_after_s", None),
+                )
+            except Exception:
+                pass
+        logger.warning("endpoint damping: %s (original error type %s)", label, type(error).__name__)
+        return error
+
+    @staticmethod
+    def _wait_cancellable(delay: float, cancel_event: Optional[threading.Event]) -> None:
+        """Backoff wait: ≤1s cancellable slices with a cancel signal; one plain
+        sleep without (byte-identical legacy behavior for non-opting callers)."""
+        if delay <= 0:
+            return
+        if cancel_event is None:
+            time.sleep(delay)
+            return
+        deadline = time.monotonic() + delay
+        while not cancel_event.is_set():
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return
+            # Event.wait returns True the moment the event is set — no oversleep.
+            if cancel_event.wait(timeout=min(_BACKOFF_SLICE_S, remaining)):
+                return
 
     def _emit_retry_event(self, event_type: str, data: Dict[str, Any]):
         """Emit retry-related events for observability."""

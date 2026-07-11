@@ -4469,6 +4469,154 @@ def skim_url(
         )
 
 
+# Honest bot identification (adversary A, 2026-07-11): sites that hard-block
+# bare `python-requests` whitelist a properly-identified fetcher, and this UA
+# stays robots.txt-compliant where browser-impersonation would not. The
+# `(+url)` contact convention is what well-behaved crawlers use and what the
+# blocking sites explicitly invite. Coherent honest identity beat every
+# browser-spoof profile in live testing (a browser UA on a non-browser TLS
+# stack is the incoherent fingerprint that actually drew challenges).
+_FETCH_URL_DEFAULT_USER_AGENT = (
+    "AbstractCore-FetchTool/1.0 (+https://github.com/lpalbou/abstractcore)"
+)
+# HTTP statuses that warrant a bounded same-profile retry: transient bot
+# challenges (403 probabilistic Cloudflare Turnstile), rate limits (429), and
+# gateway/edge hiccups (5xx). A retry with the SAME honest identity clears the
+# probabilistic challenge class (verified live: identical retries passed 3/3);
+# we never escalate to browser spoofing.
+_FETCH_URL_RETRY_STATUSES = frozenset({403, 429, 500, 502, 503, 504})
+_FETCH_URL_MAX_RETRIES = 2  # total attempts = 1 + this
+_FETCH_URL_RETRY_BASE_DELAY_S = 0.6
+
+
+# Signatures of a page that returned HTTP 200 but carries NO real article —
+# a JS/anti-bot challenge shell or a JavaScript-only app. When extraction finds
+# essentially no text AND one of these dominates, we return an ACTIONABLE error
+# instead of a silent empty success (maintainer: "never fail like that").
+_UNRENDERABLE_SIGNATURES = (
+    "client challenge",           # DataDome
+    "just a moment",              # Cloudflare interstitial
+    "checking your browser",      # Cloudflare / DDoS-Guard
+    "enable javascript",
+    "please enable js",
+    "javascript is required",
+    "cf-browser-verification",
+    "captcha-delivery",           # DataDome captcha
+    "px-captcha",                 # PerimeterX
+    "verifying you are human",
+    "attention required",         # Cloudflare 1020 block page
+    "please turn on javascript",
+)
+# Below this many chars of extracted body text, an HTML 200 is "no real
+# content" (a legitimate article always exceeds this; a challenge/JS shell
+# does not).
+_MIN_REAL_CONTENT_CHARS = 200
+
+
+def _detect_unrenderable_html(raw_html: str, extracted: str) -> Optional[tuple[str, list[str]]]:
+    """If an HTML 200 yielded no usable content AND looks like a challenge / JS
+    shell, return (error_class, suggestions); else None.
+
+    Deliberately conservative: fires ONLY when the extracted body is below the
+    real-content floor, so a genuinely short-but-valid page is never rejected.
+    """
+    body = str(extracted or "").strip()
+    if len(body) >= _MIN_REAL_CONTENT_CHARS:
+        return None
+    low = str(raw_html or "").lower()
+    for sig in _UNRENDERABLE_SIGNATURES:
+        if sig in low:
+            if any(k in sig for k in ("challenge", "captcha", "browser", "human", "attention", "cf-")):
+                return "bot_challenge", [
+                    "the page returned an anti-bot/JS challenge instead of content",
+                    "retry after a short delay — some challenges clear",
+                    "if it persists, this URL needs a JavaScript-capable fetch; this tool does not execute JS and never solves CAPTCHAs",
+                    "try an AMP/print variant or the site's RSS/API if available",
+                ]
+            return "js_required", [
+                "the page requires JavaScript to render its main content (only chrome was recoverable)",
+                "this tool does not execute JavaScript",
+                "try an AMP/print variant, the site's RSS feed, or a JavaScript-capable fetch",
+            ]
+    # No explicit signature: only conclude "SPA shell" when the body is
+    # essentially empty AND the page shipped a LOT of markup (a real SPA sends
+    # tens of KB of JS/scaffolding with no article text). A genuinely short but
+    # valid page (small HTML, a sentence or two) is NOT rejected — it is real
+    # content, however brief.
+    if len(body) < 25 and len(str(raw_html or "")) > 20000:
+        return "empty_content", [
+            "the server returned a large HTML shell with no extractable article text",
+            "the page is most likely JavaScript-rendered (a client-side app)",
+            "try the site's RSS/API, an AMP/print variant, or a JavaScript-capable fetch",
+        ]
+    return None
+
+
+def _classify_fetch_http_error(status: int, headers: Dict[str, Any]) -> tuple[str, list[str]]:
+    """Map a persistent HTTP failure to (error_class, actionable suggestions).
+
+    The class is a coarse, branchable label an AGENT can act on; the
+    suggestions are concrete next steps. `error_class` values:
+    bot_challenge | rate_limited | auth_required | not_found | gone |
+    server_error | client_error.
+    """
+    server = str(headers.get("server") or "").lower()
+    via_cf = "cloudflare" in server or bool(headers.get("cf-ray"))
+    if status == 429:
+        return "rate_limited", [
+            "the server rate-limited this client; wait and retry more slowly",
+            "honor the Retry-After header if present",
+        ]
+    if status == 403:
+        base = [
+            "the server refused this request (bot protection or geo/policy block)",
+            "retry after a short delay — probabilistic challenges often clear",
+        ]
+        if via_cf:
+            base.append("Cloudflare challenge detected; a JavaScript-capable fetch may be required if retries fail")
+        base.append("do NOT impersonate a browser UA; keep the honest identified fetcher (many sites whitelist it)")
+        return "bot_challenge", base
+    if status == 401:
+        return "auth_required", [
+            "the resource requires authentication; supply credentials via headers if you have them",
+        ]
+    if status == 404:
+        return "not_found", [
+            "the URL does not exist; verify the path or search for the current URL",
+        ]
+    if status == 410:
+        return "gone", ["the resource was permanently removed; look for an archived copy"]
+    if 500 <= status < 600:
+        return "server_error", [
+            "the server had an internal error; retry after a short delay",
+        ]
+    return "client_error", [
+        f"the server rejected the request with status {status}; check the URL and method",
+    ]
+
+
+def _fetch_url_retry_after_seconds(retry_after: Optional[str], *, cap_s: float = 10.0) -> Optional[float]:
+    """Parse a Retry-After header (delta-seconds or HTTP-date) to a bounded
+    wait. Returns None when absent/unparseable. Capped so a hostile header
+    cannot stall a fetch for minutes."""
+    raw = str(retry_after or "").strip()
+    if not raw:
+        return None
+    try:
+        secs = float(raw)
+        return max(0.0, min(secs, cap_s))
+    except (TypeError, ValueError):
+        pass
+    try:
+        when = parsedate_to_datetime(raw)
+        if when is not None:
+            delta = (when - datetime.now(when.tzinfo)).total_seconds()
+            return max(0.0, min(delta, cap_s))
+    except (TypeError, ValueError, OverflowError):
+        return None
+    return None
+
+
 @tool(
     description="Fetch a URL and parse common content types (HTML/JSON/text); supports previews and basic metadata.",
     when_to_use="Use to retrieve and analyze a URL after you know it is worth opening. Prefer skim_url first for a faster, smaller preview. For shorter outputs, set include_full_content=False or keep_links=False.",
@@ -4503,7 +4651,7 @@ def fetch_url(
     timeout: int = 45,
     include_binary_preview: bool = False,
     keep_links: bool = True,
-    user_agent: str = "AbstractCore-FetchTool/1.0",
+    user_agent: str = _FETCH_URL_DEFAULT_USER_AGENT,
     include_full_content: bool = True,
 ) -> Dict[str, Any]:
     """
@@ -4636,33 +4784,85 @@ def fetch_url(
         # Make the request with session for connection reuse and keep it open while streaming
         with requests.Session() as session:
             session.headers.update(request_headers)
-            with session.request(
-                method=method.upper(),
-                url=url,
-                timeout=timeout_s,
-                allow_redirects=True,
-                stream=True,
-                json=request_json,
-                data=request_data,
-            ) as response:
+            # Bounded same-profile retry ladder for transient bot-challenge /
+            # rate-limit / edge-hiccup statuses (adversary A). GET only — a
+            # retried POST/PUT could double a side effect. The honest identity
+            # is unchanged across attempts; probabilistic challenges clear.
+            attempt = 0
+            retryable_method = method.upper() == "GET"
+            while True:
+                response_cm = session.request(
+                    method=method.upper(),
+                    url=url,
+                    timeout=timeout_s,
+                    allow_redirects=True,
+                    stream=True,
+                    json=request_json,
+                    data=request_data,
+                )
+                response = response_cm.__enter__()
+                status = int(response.status_code)
+                if (
+                    not response.ok
+                    and retryable_method
+                    and status in _FETCH_URL_RETRY_STATUSES
+                    and attempt < _FETCH_URL_MAX_RETRIES
+                ):
+                    wait_s = _fetch_url_retry_after_seconds(response.headers.get("retry-after"))
+                    if wait_s is None:
+                        wait_s = _FETCH_URL_RETRY_BASE_DELAY_S * (2 ** attempt)
+                    response_cm.__exit__(None, None, None)
+                    attempt += 1
+                    if wait_s > 0:
+                        time.sleep(wait_s)
+                    continue
+                break
 
-                # Check response status
+            with response_cm:
+
+                # Check response status — a persistent error returns an ACTIONABLE
+                # report: a failure CLASS the agent can branch on, a `retryable`
+                # flag, and concrete suggestions (adversary A: the old error dumped
+                # raw headers and discarded the body, which often held the remedy).
                 if not response.ok:
-                    rendered = (
-                        f"❌ HTTP Error {response.status_code}: {response.reason}\n"
-                        f"URL: {url}\n"
-                        f"Timestamp: {fetch_timestamp}\n"
-                        f"Response headers: {dict(response.headers)}"
+                    status = int(response.status_code)
+                    error_class, suggestions = _classify_fetch_http_error(
+                        status, dict(response.headers)
                     )
+                    body_excerpt = ""
+                    try:
+                        body_excerpt = preview_text(
+                            _normalize_extracted_text(
+                                re.sub(r"<[^>]+>", " ", response.text or "")
+                            ),
+                            max_chars=400,
+                        )
+                    except Exception:
+                        body_excerpt = ""
+                    rendered_lines = [
+                        f"❌ HTTP Error {status}: {response.reason} ({error_class})",
+                        f"URL: {url}",
+                        f"Attempts: {attempt + 1}",
+                        f"Timestamp: {fetch_timestamp}",
+                    ]
+                    if suggestions:
+                        rendered_lines.append("Suggested actions:")
+                        rendered_lines.extend([f"  - {s}" for s in suggestions])
+                    if body_excerpt:
+                        rendered_lines.append(f"Server said: {body_excerpt}")
                     return {
                         "success": False,
-                        "error": f"HTTP Error {int(response.status_code)}: {str(response.reason)}",
+                        "error": f"HTTP Error {status}: {str(response.reason)}",
+                        "error_class": error_class,
+                        "retryable": error_class in {"bot_challenge", "rate_limited", "server_error"},
+                        "suggestions": suggestions,
+                        "attempts": attempt + 1,
                         "url": url,
                         "timestamp": fetch_timestamp,
-                        "status_code": int(response.status_code),
+                        "status_code": status,
                         "reason": str(response.reason),
                         "content_type": str(response.headers.get("content-type", "") or ""),
-                        "rendered": rendered,
+                        "rendered": "\n".join(rendered_lines),
                     }
 
                 # Get content info
@@ -4853,6 +5053,15 @@ def fetch_url(
 
                 raw_text: Optional[str] = None
                 normalized_text: Optional[str] = None
+                # Primary, obvious content fields (maintainer ask 2026-07-11): a
+                # clean top-level `content` (structure-preserving markdown) + `title`
+                # so ANY consumer gets rich content by the intuitive key. Absent
+                # before this: consumers reaching for `content`/`text` got nothing
+                # while the article sat in `normalized_text`/`rendered` ("found no
+                # readable text" on every clean HTML fetch).
+                content_text: Optional[str] = None
+                page_title: Optional[str] = None
+                page_description: Optional[str] = None
                 try:
                     if sniffed_kind in {"html", "json", "xml", "text"}:
                         raw_text = str(sniffed_text_content or "")
@@ -4861,12 +5070,66 @@ def fetch_url(
                             content_type_header=content_type,
                             url=str(response.url),
                         )
+                        if sniffed_kind == "html":
+                            main = _extract_main_content(
+                                raw_text, str(response.url), keep_links=bool(keep_links_norm)
+                            )
+                            page_title = str(main.get("title") or "") or None
+                            page_description = str(main.get("description") or "") or None
+                            content_text = str(main.get("content") or "") or None
+                            # Never-empty contract (maintainer: "never fail like
+                            # that"): an HTML 200 that yielded no real content and
+                            # looks like a JS/anti-bot challenge shell returns an
+                            # ACTIONABLE error, not a silent empty success. Title/
+                            # description (server-reachable metadata) ride the error
+                            # so the agent still has something to act on.
+                            unrenderable = _detect_unrenderable_html(
+                                raw_text, str(main.get("content") or "")
+                            )
+                            if unrenderable is not None:
+                                err_class, suggestions = unrenderable
+                                meta_bits = []
+                                if page_title:
+                                    meta_bits.append(f"title={page_title!r}")
+                                if page_description:
+                                    meta_bits.append(f"description={page_description[:160]!r}")
+                                rendered_lines = [
+                                    f"⚠️ No readable content extracted ({err_class})",
+                                    f"URL: {str(response.url)}",
+                                    f"Status: {int(response.status_code)} {response.reason}",
+                                ]
+                                if meta_bits:
+                                    rendered_lines.append("Server-reachable metadata: " + ", ".join(meta_bits))
+                                rendered_lines.append("Suggested actions:")
+                                rendered_lines.extend([f"  - {s}" for s in suggestions])
+                                return {
+                                    "success": False,
+                                    "error": f"No readable content extracted ({err_class})",
+                                    "error_class": err_class,
+                                    "retryable": err_class == "bot_challenge",
+                                    "suggestions": suggestions,
+                                    "url": str(url),
+                                    "final_url": str(response.url),
+                                    "timestamp": str(fetch_timestamp),
+                                    "status_code": int(response.status_code),
+                                    "content_type": str(content_type or ""),
+                                    "detected_as": "html",
+                                    "title": page_title,
+                                    "description": page_description,
+                                    "rendered": "\n".join(rendered_lines),
+                                }
+                        else:
+                            # JSON/XML/text: the normalized evidence IS the content.
+                            content_text = normalized_text or None
                     elif sniffed_kind == "pdf" and pdf_route is not None:
                         raw_text = str(pdf_route.get("raw_text") or "") or None
                         normalized_text = str(pdf_route.get("normalized_text") or "") or raw_text
+                        content_text = normalized_text
+                        page_title = str(pdf_route.get("title") or "") or None
                 except Exception:
                     raw_text = None
                     normalized_text = None
+                    content_text = None
 
                 result: Dict[str, Any] = {
                     "success": True,
@@ -4875,11 +5138,18 @@ def fetch_url(
                     "final_url": str(response.url),
                     "timestamp": str(fetch_timestamp),
                     "status_code": int(response.status_code),
+                    "attempts": attempt + 1,
                     "reason": str(response.reason),
                     "content_type": str(content_type or ""),
                     "detected_as": str(sniffed_kind or ""),
-                    "text_available": bool(raw_text and str(raw_text).strip()),
+                    "text_available": bool(content_text and str(content_text).strip()),
                     "size_bytes": int(actual_size),
+                    # PRIMARY content fields — the obvious keys a consumer reaches for.
+                    # `content` is structure-preserving markdown (headings/lists/links
+                    # kept); `title`/`description` are first-class, not buried in text.
+                    "title": page_title,
+                    "description": page_description,
+                    "content": content_text,
                     # Evidence-only fields (large). Higher layers should persist these as artifacts and drop them from
                     # tool outputs to keep run state/prompt size bounded.
                     "raw_text": raw_text,
@@ -5558,6 +5828,84 @@ def _prune_html_soup_for_text(soup: BeautifulSoup) -> None:
         if any(k in combined for k in boilerplate_keywords):
             element.decompose()
 
+    # Consent/cookie interstitials by TEXT SIGNATURE, not class name (adversary
+    # C): modern CMP overlays (beehiiv, OneTrust, Cookiebot) use utility-class
+    # names that evade the id/class keyword scan, yet their text is a stable
+    # signature. We never accept consent — we REMOVE the banner so the article
+    # underneath survives (GDPR-refusal by construction: no cookie is set).
+    _strip_consent_banners(soup)
+
+
+# Consent-banner text signatures (lowercase). A short block containing one of
+# these PLUS a consent action word is a cookie/CMP interstitial, regardless of
+# its class names.
+_CONSENT_SIGNATURE_PHRASES = (
+    "uses cookies",
+    "use cookies",
+    "we value your privacy",
+    "your privacy choices",
+    "cookie policy",
+    "cookie consent",
+    "consent to the use of cookies",
+    "we and our partners",
+    "store and/or access information on a device",
+)
+_CONSENT_ACTION_WORDS = (
+    "accept",
+    "decline",
+    "reject",
+    "agree",
+    "consent",
+    "manage",
+    "preferences",
+    "got it",
+    "allow all",
+    "customize",
+    "customise",
+)
+# A banner is a SMALL block — an article that merely discusses cookies is far
+# longer than this, so the cap prevents nuking real content.
+_CONSENT_MAX_BLOCK_CHARS = 800
+
+
+def _strip_consent_banners(soup: BeautifulSoup) -> None:
+    """Remove cookie/consent interstitials identified by TEXT SIGNATURE.
+
+    General-purpose: matches the consent-notice text + an action word inside a
+    SMALL block (<= _CONSENT_MAX_BLOCK_CHARS), so it catches utility-class CMP
+    overlays that the class-name scan misses, without touching an article that
+    happens to mention cookies (those blocks are far larger than the cap)."""
+    try:
+        candidates = soup.find_all(["div", "section", "aside", "dialog"], limit=3000)
+    except Exception:
+        return
+    for element in list(candidates):
+        if getattr(element, "attrs", None) is None:
+            continue
+        try:
+            text = element.get_text(" ", strip=True)
+        except Exception:
+            continue
+        low = text.lower()
+        if not low or len(text) > _CONSENT_MAX_BLOCK_CHARS:
+            continue
+        has_signature = any(p in low for p in _CONSENT_SIGNATURE_PHRASES)
+        if not has_signature:
+            continue
+        has_action = any(w in low for w in _CONSENT_ACTION_WORDS)
+        # A privacy/cookie-policy link also confirms a consent block.
+        has_policy_link = False
+        try:
+            for a in element.find_all("a", href=True):
+                href = str(a.get("href") or "").lower()
+                if "cookie" in href or "privacy" in href or "/tou" in href or "terms" in href:
+                    has_policy_link = True
+                    break
+        except Exception:
+            has_policy_link = False
+        if has_action or has_policy_link:
+            element.decompose()
+
 
 def _score_html_container(container: Any) -> float:
     """Score a candidate HTML container for main content selection."""
@@ -5662,8 +6010,67 @@ def _select_html_main_container(soup: BeautifulSoup, url: str) -> Any:
         if best is not None and score >= 0:
             return best
 
-    # Fallback: body if available, else the whole soup.
+    # Readability-style fallback (adversary B/C): no content selector matched
+    # (e.g. beehiiv/Substack utility-class pages) — instead of returning the
+    # whole <body> (which drags in nav/footer/branding), find the densest
+    # paragraph cluster. Scan every div/section, score by _score_html_container
+    # (text length rewarded, link density penalized), and prefer the
+    # HIGHEST-SCORING one whose text is a large share of body text. This picks
+    # the article container over the page shell without any per-site selector.
+    dense = _select_densest_container(soup)
+    if dense is not None:
+        return dense
+
+    # Last resort: body if available, else the whole soup.
     return soup.body or soup
+
+
+def _select_densest_container(soup: BeautifulSoup) -> Any:
+    """Readability fallback: the highest-scoring div/section paragraph cluster.
+
+    Selection-list misses fall here. We score all block containers and take the
+    best, then walk DOWN into a single dominant child when that child holds
+    nearly all the text at higher purity (drops an outer shell that only wraps
+    the article plus a branding footer). Returns None if nothing scores."""
+    root = soup.body or soup
+    if root is None:
+        return None
+    try:
+        blocks = root.find_all(["div", "section", "article", "main"], limit=4000)
+    except Exception:
+        return None
+
+    best: Any = None
+    best_score = -1.0
+    for el in blocks:
+        if getattr(el, "attrs", None) is None:
+            continue
+        score = _score_html_container(el)
+        if score > best_score:
+            best_score = score
+            best = el
+    if best is None or best_score < 0:
+        return None
+
+    # Descend: if a single child holds >=85% of the best container's text with
+    # equal-or-better score, prefer it (tighter = less shell boilerplate).
+    try:
+        best_text_len = len(best.get_text(" ", strip=True))
+        for _ in range(4):
+            improved = None
+            for child in best.find_all(["div", "section", "article", "main"], recursive=False):
+                child_len = len(child.get_text(" ", strip=True))
+                if child_len >= 0.85 * max(1, best_text_len) and _score_html_container(child) >= best_score * 0.98:
+                    improved = child
+                    break
+            if improved is None:
+                break
+            best = improved
+            best_score = _score_html_container(best)
+            best_text_len = len(best.get_text(" ", strip=True))
+    except Exception:
+        pass
+    return best
 
 
 def _extract_clean_text_from_html(html_content: str, url: str) -> tuple[str, str, str]:
@@ -5712,6 +6119,63 @@ def _extract_clean_text_from_html(html_content: str, url: str) -> tuple[str, str
 
     extracted = _normalize_extracted_text(extracted_raw)
     return title, description, extracted
+
+
+def _extract_main_content(html_content: str, url: str, *, keep_links: bool = True) -> Dict[str, Any]:
+    """Extract the page's primary readable content as clean markdown + metadata.
+
+    This is the ANSWER to the maintainer's ask (2026-07-11): fetch_url must
+    return information-rich content by an obvious key. It reuses the same
+    container selection + boilerplate pruning as the human-facing render, but
+    serializes through the STRUCTURE-PRESERVING markdown renderer
+    (`_html_to_markdown`) rather than the flat `get_text("\n")` path — so
+    headings, lists, and links survive, and inline tags never split a
+    sentence. Returns a dict: {title, description, content, text} where
+    `content` is markdown (preferred) and `text` is the plain-text fallback.
+    Never raises — a parse failure degrades to a tag-stripped best-effort.
+    """
+    out: Dict[str, Any] = {"title": "", "description": "", "content": "", "text": ""}
+    if not html_content:
+        return out
+
+    title, description, flat = _extract_clean_text_from_html(html_content, url)
+    out["title"] = title
+    out["description"] = description
+    out["text"] = flat
+
+    if not _ensure_bs4():
+        # No bs4: the flat tag-strip is the best we can do; it is still content.
+        out["content"] = flat
+        return out
+
+    try:
+        parser = _get_appropriate_parser(html_content)
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+            soup = BeautifulSoup(html_content, parser)
+        _prune_html_soup_for_text(soup)
+        container = _select_html_main_container(soup, url)
+        try:
+            _prune_html_container_for_readability(container)
+        except Exception:
+            pass
+        markdown = _html_to_markdown(container, base_url=url, keep_links=keep_links)
+        # Drop a leading line that merely repeats the <title> (dedupe noise).
+        if title and markdown:
+            md_lines = markdown.splitlines()
+            while md_lines and not md_lines[0].strip():
+                md_lines.pop(0)
+            if md_lines and md_lines[0].strip() == title.strip():
+                md_lines.pop(0)
+                markdown = "\n".join(md_lines).strip()
+        out["content"] = markdown or flat
+    except Exception:
+        # Structure-preserving path failed: the flat extraction still carries
+        # the facts, so content is never empty when text was recoverable.
+        out["content"] = flat
+    return out
 
 
 _TRACKING_QUERY_PARAMS: set[str] = {
@@ -5786,6 +6250,11 @@ def _prune_html_container_for_readability(container: Any) -> None:
         return
 
     try:
+        # NOTE: deliberately NOT removing <header> — many themes place the
+        # article title, byline, AND lede/excerpt inside an article-level
+        # <header> (e.g. WordPress `mvp-post-head`); blanket removal drops the
+        # opening paragraphs. Site/nav headers are handled by the soup-level
+        # prune (role=banner + keyword scan) before container selection.
         for element in container.find_all(["nav", "aside", "footer"], limit=2500):
             element.decompose()
     except Exception:
@@ -5818,6 +6287,29 @@ def _prune_html_container_for_readability(container: Any) -> None:
         "comments",
         "comment",
         "tags",
+        # Author-bio boxes leak ~author blurbs into the article tail (adversary
+        # D: WordPress `saboxplugin-wrap`, generic author-box/about-author).
+        "author-box",
+        "author-bio",
+        "authorbio",
+        "about-author",
+        "sabox",
+        "postbio",
+        "bio-box",
+        # In-content widgets / "more from" / trending / popular rails that some
+        # themes nest INSIDE the article wrapper (adversary B: mvp-widget,
+        # mvp-post-more, trending/popular feature lists).
+        "widget",
+        "trending",
+        "popular",
+        "most-read",
+        "more-wrap",
+        "morefrom",
+        "read-more",
+        "you-may",
+        "youmight",
+        "up-next",
+        "next-up",
     }
 
     try:

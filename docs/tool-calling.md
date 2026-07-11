@@ -164,7 +164,7 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 
 **Available Built-in Tools:**
 - `skim_url` - Fast URL skim (title/description/headings + short preview, plus feed/XML and PDF summaries when detectable)
-- `fetch_url` - Fetch + parse HTML/JSON/XML/text plus feed summaries and PDF extraction with explicit backend provenance (`pdf_text_backend`, `pdf_summary_backend`, `pdf_backend_attempts`, `pdf_native_transport`); non-text binaries still return metadata + optional previews
+- `fetch_url` - Fetch + parse HTML/JSON/XML/text plus feed summaries and PDF extraction. HTML results expose first-class `content` (structure-preserving markdown — headings/lists/links kept), `title`, and `description` alongside `normalized_text`/`raw_text`/`rendered`; read `content` for the article. Transient bot-challenge / rate-limit / 5xx statuses get a bounded same-profile retry (honest identified User-Agent, `Retry-After` honored — never browser impersonation). Persistent failures and unrenderable JS/anti-bot shells return an actionable `error_class` (`bot_challenge`/`rate_limited`/`auth_required`/`not_found`/`gone`/`server_error`/`js_required`/`empty_content`) with a `retryable` flag and concrete `suggestions` — never a silent empty success. Cookie/consent overlays are removed (never accepted) so the article underneath survives. PDF extraction carries explicit backend provenance (`pdf_text_backend`, `pdf_summary_backend`, `pdf_backend_attempts`, `pdf_native_transport`); non-text binaries still return metadata + optional previews
 - `search_files` - Search for text patterns inside files using regex
 - `list_files` - Find and list files by names/paths using glob patterns
 - `read_file` - Read file contents with optional line range selection
@@ -375,6 +375,22 @@ tool_def = ToolDefinition(
     function=get_weather_function
 )
 ```
+
+### Accepted `tools=` Shapes and Wire Normalization
+
+`generate(tools=...)` accepts these input shapes interchangeably:
+
+- Plain callables (introspected automatically),
+- `ToolDefinition` objects,
+- Flat spec dicts: `{"name", "description", "parameters": {...JSON Schema...}}`,
+- Pre-wrapped OpenAI-native dicts (`{"type": "function", "function": {...}}`) — tolerated for compatibility.
+
+The flat dict is the canonical caller shape: AbstractCore builds the provider
+wire envelope itself (for OpenAI-compatible endpoints:
+`{"type": "function", "function": {...}}`), so callers never need to pre-wrap.
+Note for anyone replaying a request at raw HTTP (outside `generate()`): the
+flat spec must be wrapped into the provider envelope by hand — the
+normalization lives inside AbstractCore, not on the wire.
 
 ### Parameter Types
 

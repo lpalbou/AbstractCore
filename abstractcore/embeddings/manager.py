@@ -281,6 +281,19 @@ class EmbeddingManager:
         self.normalized_cache_file = self.cache_dir / f"{cache_name}_normalized_cache.pkl"
         self._normalized_cache = self._load_normalized_cache()
 
+        # Served-model label truth (rogue-embedder-label defense, incident
+        # 2026-07-11): the OpenAI-compatible /v1/embeddings response carries a
+        # `model` field naming what the server ACTUALLY served — the only
+        # server-side label truth in the stack. We record the last-seen served
+        # label and cross-check it against the requested model_id, warning ONCE
+        # per distinct mismatch. Warn-only by design: this is the SIGNAL layer
+        # beneath the store's embedding_pin, which stays THE authority (a home
+        # refuses on pin mismatch); a served-label difference is often just
+        # formatting variance, so it never refuses on its own. HuggingFace-local
+        # has no server label, so this only engages on the served route.
+        self.served_model: Optional[str] = None
+        self._served_model_mismatch_warned: set = set()
+
         # Register cleanup functions to save cache before Python shutdown
         # Use atexit instead of __del__ for reliable cleanup
         atexit.register(self._safe_save_persistent_cache)
@@ -632,6 +645,47 @@ class EmbeddingManager:
             except Exception as e:
                 logger.debug(f"Event emission failed: {e}")
 
+    def _record_served_model(self, result: Any) -> None:
+        """Record the server-reported model label from an OpenAI-compatible
+        embeddings response and warn (once per distinct mismatch) when it does
+        not match the requested model_id.
+
+        Warn-only wire hygiene (the SIGNAL layer): a mismatch here is logged,
+        never raised — the store's embedding_pin is the enforcement authority.
+        Comparison is case/whitespace-insensitive and tolerant of the common
+        `provider/model`, `mlx-community/model`, and `:tag` decorations so we
+        only warn on a GENUINE model divergence, not label formatting."""
+        try:
+            served = result.get("model") if isinstance(result, dict) else None
+        except Exception:
+            served = None
+        served = str(served or "").strip()
+        if not served:
+            return
+        self.served_model = served
+        requested = str(self.model_id or "").strip()
+        if not requested:
+            return
+
+        def _norm_label(label: str) -> str:
+            s = label.strip().lower()
+            s = s.rsplit("/", 1)[-1]      # drop org/ or provider/ prefix
+            s = s.split(":", 1)[0]        # drop :tag / :quant suffix
+            return s
+
+        if _norm_label(served) == _norm_label(requested):
+            return
+        key = (requested, served)
+        if key in self._served_model_mismatch_warned:
+            return
+        self._served_model_mismatch_warned.add(key)
+        logger.warning(
+            f"#FALLBACK embedding served-model mismatch: requested {requested!r} "
+            f"but the server reported serving {served!r}. The vectors were "
+            f"produced by the SERVED model; verify the embedding pin/config. "
+            f"(warn-only — the store's embedding_pin is the authority)"
+        )
+
     def embed_normalized(self, text: str) -> List[float]:
         """Get normalized embedding for text with dedicated caching.
 
@@ -733,6 +787,7 @@ class EmbeddingManager:
                 if self.output_dims:
                     provider_kwargs["dimensions"] = self.output_dims
                 result = self._provider_instance.embed(input_text=text, **provider_kwargs)
+                self._record_served_model(result)
 
                 # Extract embedding from OpenAI-compatible response
                 if "data" in result and len(result["data"]) > 0:
@@ -835,6 +890,7 @@ class EmbeddingManager:
                     if self.output_dims:
                         provider_kwargs["dimensions"] = self.output_dims
                     result = self._provider_instance.embed(input_text=uncached_texts, **provider_kwargs)
+                    self._record_served_model(result)
 
                     # Extract embeddings from OpenAI-compatible response
                     if "data" in result:
@@ -1339,6 +1395,11 @@ class EmbeddingManager:
             "memory_cache_info": self.embed.cache_info()._asdict(),
             "embedding_dimension": self.get_dimension(),
             "model_id": self.model_id,
+            # Server-reported served-model label (served route only; None until
+            # the first served embed, and on the HuggingFace-local path). The
+            # door's creation probe can record this in the pin's provenance
+            # trail so a rogue label is one lookup, not an evening of forensics.
+            "served_model": self.served_model,
             "backend": self.backend.value if self.backend else self.provider,
             "cache_file": str(self.cache_file),
             "normalized_cache_file": str(self.normalized_cache_file),

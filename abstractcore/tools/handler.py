@@ -201,7 +201,8 @@ class UniversalToolHandler:
                             parameters=properties,
                             tags=tool.get("tags", []),
                             when_to_use=tool.get("when_to_use"),
-                            examples=tool.get("examples", [])
+                            examples=tool.get("examples", []),
+                            act_only=bool(tool.get("act_only", False))
                         ))
                     elif "function" in tool:
                         # OpenAI native format

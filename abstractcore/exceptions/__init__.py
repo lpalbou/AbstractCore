@@ -14,11 +14,19 @@ class ProviderError(AbstractCoreError):
     `status_code` carries the HTTP status when the raise site knows it — the one unambiguous
     retryability fact an HTTP error has. Retry classifiers must prefer it over message prose
     (English words in provider JSON bodies are not a contract).
+
+    `retry_after_s` carries the server's own requested wait (the `Retry-After` header on
+    429/503) when the raise site saw one. The retry layer honors it over its computed jitter
+    (capped at its own max_delay); absent means "no server signal", never 0.
     """
 
-    def __init__(self, message: str = "", *args, status_code=None, **kwargs):
+    def __init__(self, message: str = "", *args, status_code=None, retry_after_s=None, **kwargs):
         super().__init__(message, *args)
         self.status_code = status_code if isinstance(status_code, int) else None
+        try:
+            self.retry_after_s = float(retry_after_s) if retry_after_s is not None and float(retry_after_s) >= 0 else None
+        except (TypeError, ValueError):
+            self.retry_after_s = None
 
 
 class ProviderAPIError(ProviderError):

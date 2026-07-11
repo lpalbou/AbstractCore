@@ -597,6 +597,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
             retry_config = RetryConfig()
         self.retry_manager = RetryManager(retry_config)
 
+        # Per-endpoint retry damping (C3, opt-in): resolved LAZILY at first generate
+        # because base_url is set by subclass __init__ AFTER this runs. Default off —
+        # single-instance behavior is unchanged unless the host opts the fleet in.
+        self._endpoint_damping_requested = bool(kwargs.get('endpoint_damping', False))
+
         # Create provider key for circuit breaker tracking
         self.provider_key = f"{self.__class__.__name__}:{self.model}"
 
@@ -942,14 +947,56 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         error_str = str(error).lower()
 
+        # C3 piece 2b: preserve the HTTP status (and any server-named wait) when the
+        # wrapped SDK/transport exception carries it — with inner retries collapsed,
+        # the OUTER classifier's status-code-first rule is the only 4xx gate, and a
+        # wrap site that stringifies the status away starves it.
+        wrapped_status = self._status_code_from_exception(error)
+        wrapped_retry_after = self._retry_after_from_exception(error)
+
         if "rate" in error_str and "limit" in error_str:
-            return RateLimitError(f"Rate limit exceeded: {error}")
+            return RateLimitError(f"Rate limit exceeded: {error}",
+                                  status_code=wrapped_status, retry_after_s=wrapped_retry_after)
         elif "auth" in error_str or "api key" in error_str or "unauthorized" in error_str:
-            return AuthenticationError(f"Authentication failed: {error}")
+            return AuthenticationError(f"Authentication failed: {error}", status_code=wrapped_status)
         elif "invalid" in error_str or "bad request" in error_str:
-            return InvalidRequestError(f"Invalid request: {error}")
+            return InvalidRequestError(f"Invalid request: {error}", status_code=wrapped_status)
         else:
-            return ProviderAPIError(f"API error: {error}")
+            return ProviderAPIError(f"API error: {error}",
+                                    status_code=wrapped_status, retry_after_s=wrapped_retry_after)
+
+    @staticmethod
+    def _status_code_from_exception(error: Exception) -> Optional[int]:
+        """Best-effort HTTP status from wrapped SDK/transport exceptions.
+
+        Covers the shapes production actually throws: OpenAI/Anthropic SDK
+        `APIStatusError.status_code`, httpx `HTTPStatusError.response.status_code`,
+        and generic `.status`/`.code` ints on remote-client errors.
+        """
+        for attr_chain in (("status_code",), ("response", "status_code"), ("status",), ("code",)):
+            obj: Any = error
+            for attr in attr_chain:
+                obj = getattr(obj, attr, None)
+                if obj is None:
+                    break
+            if isinstance(obj, int) and 100 <= obj <= 599:
+                return obj
+        return None
+
+    @staticmethod
+    def _retry_after_from_exception(error: Exception) -> Optional[float]:
+        """Best-effort Retry-After seconds from a wrapped exception's response headers."""
+        try:
+            headers = getattr(getattr(error, "response", None), "headers", None)
+            if headers is None:
+                return None
+            raw = headers.get("retry-after") or headers.get("Retry-After")
+            if raw is None:
+                return None
+            seconds = float(str(raw).strip())
+            return seconds if seconds >= 0 else None
+        except Exception:
+            return None
 
     @staticmethod
     def _normalize_thinking_request(thinking: Optional[Union[bool, str]]) -> Tuple[Optional[bool], Optional[str]]:
@@ -3915,11 +3962,28 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 custom_error = self._handle_api_error(e)
                 raise custom_error
 
-        # Execute with retry
+        # Execute with retry. Hosts may pass cancel_event= (threading.Event) to make
+        # backoff waits cancellable (C3: a cancelled run must not park a worker for a
+        # full backoff); the kwarg is consumed here and never reaches provider payloads.
+        cancel_event = kwargs.pop("cancel_event", None)
+        if self._endpoint_damping_requested and self.retry_manager.damping_domain is None:
+            try:
+                from ..core.endpoint_damping import get_endpoint_damping_registry
+                self.retry_manager.damping_domain = get_endpoint_damping_registry().domain_for(
+                    base_url=str(getattr(self, "base_url", "") or self.__class__.__name__),
+                    model=str(self.model),
+                    config=self.retry_manager.config,
+                )
+            except Exception as damping_err:
+                # Damping is a fleet optimization; its failure must never block a call.
+                self.logger.warning(f"#FALLBACK: endpoint damping unavailable ({damping_err}); "
+                                    "continuing with per-instance retry state")
+                self._endpoint_damping_requested = False
         try:
             response, start_time, start_perf = self.retry_manager.execute_with_retry(
                 _execute_generation,
-                provider_key=self.provider_key
+                provider_key=self.provider_key,
+                cancel_event=cancel_event if isinstance(cancel_event, threading.Event) else None
             )
 
             # Handle streaming with unified processor
@@ -4865,7 +4929,19 @@ class BaseProvider(AbstractCoreInterface, ABC):
             )
         if binding is None:
             return None
-        if isinstance(binding, str):
+        # A bare string is accepted as binding_id shorthand ONLY when a
+        # prompt_cache_key rides alongside (the binding_id is then verified
+        # against that key's loaded meta). Without a key it used to fall
+        # through to validate_binding and fail 100% of the time with a
+        # message that never named the fix — a trap for hosts that confuse
+        # this param with per-session cache identity (which is
+        # `prompt_cache_key`, best-effort). Vocabulary collision found live
+        # 2026-07-11 (entity visit lane): refuse EARLY, naming both params
+        # and their semantics. Never silently downgrade the strict param to
+        # the best-effort one — that would break the verification guarantee
+        # without a sound.
+        bare_string_binding = isinstance(binding, str)
+        if bare_string_binding:
             binding = {"binding_id": binding.strip()}
         if not isinstance(binding, dict):
             provider, model = self._prompt_cache_error_context()
@@ -4879,6 +4955,20 @@ class BaseProvider(AbstractCoreInterface, ABC):
             )
         binding_key = binding.get("key")
         current_key = kwargs.get("prompt_cache_key")
+        if bare_string_binding and not (isinstance(current_key, str) and current_key.strip()):
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                "prompt_cache_binding was given a bare string with no prompt_cache_key. "
+                "prompt_cache_binding is the STRICT durable-bloc artifact verification "
+                "(pass the binding object returned by a bloc load, optionally with "
+                "prompt_cache_key); for best-effort per-session cache identity use "
+                "prompt_cache_key instead.",
+                operation="binding",
+                provider=provider,
+                model=model,
+                code="prompt_cache_binding_bare_string",
+                capabilities=self.get_prompt_cache_capabilities(),
+            )
         if isinstance(binding_key, str) and binding_key.strip():
             binding_key_s = binding_key.strip()
             if isinstance(current_key, str) and current_key.strip() and current_key.strip() != binding_key_s:

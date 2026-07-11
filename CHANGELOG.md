@@ -7,6 +7,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Embedding served-model cross-check (rogue-label defense, incident 2026-07-11)**: the OpenAI-compatible `/v1/embeddings` response carries a `model` field naming what the server ACTUALLY served — the only server-side label truth in the stack, previously discarded. `EmbeddingManager` now records it (`served_model`, surfaced in `get_cache_stats()`) and cross-checks it against the requested `model_id`, emitting a loud one-time `#FALLBACK` warning on a genuine mismatch (case/prefix/tag-tolerant, so label formatting variance does not warn). Warn-only by design and served-route-scoped (the HuggingFace-local path has no server label): it is the SIGNAL layer BENEATH the memory store's `embedding_pin`, which stays the enforcement authority — a mismatch here surfaces a lying config/server at the wire (turning a silent rogue label into a logged disagreement) but never refuses on its own. Requested + endorsed by the memory seat under the incident's resolution order. Pinned in `tests/embeddings/test_served_model_cross_check.py`.
+
+### Fixed
+- **`fetch_url` hardening — robust fetch + information-rich extraction (maintainer directive, 2026-07-11)**: a summoned entity got "found no readable text" on four perfectly-readable pages (techxplore, budgyapp, a beehiiv newsletter, nextbigfuture). A deep-focus investigation with 4 adversarial subagents (each curating a raw-byte gold reference + attacking the failing code path) found and fixed a layered failure, verified against a mechanical fact-recall harness (committed fixtures: `tests/tools/fetch_url_fixtures/`, all 4 at 100% fact recall / 0 boilerplate junk):
+  1. **Primary content contract (the P0):** `fetch_url` returned `raw_text`/`normalized_text`/`rendered` but no obvious `content`/`title` key, so every clean HTML fetch looked empty to a consumer reading `result["content"]`. The result now exposes first-class `content` (structure-preserving markdown via the existing `_html_to_markdown` renderer — headings/lists/links kept, no sentence-splitting), `title`, and `description`. `_extract_main_content()` is the new shared extractor.
+  2. **403 bot-challenge resilience:** a bounded same-profile retry ladder on transient statuses (403/429/5xx) that honors `Retry-After` (capped). The default UA is now honest+identified (`AbstractCore-FetchTool/1.0 (+url)`) — live testing showed the honest UA is whitelisted where browser-impersonation profiles drew challenges (incoherent browser-UA-on-bot-TLS fingerprint), so we never escalate to spoofing.
+  3. **Actionable error contract:** persistent HTTP failures return `error_class` (bot_challenge/rate_limited/auth_required/not_found/gone/server_error/client_error), a `retryable` flag, and concrete `suggestions` — instead of dumping raw headers and discarding the response body.
+  4. **Extraction quality:** text-signature consent-banner removal (`_strip_consent_banners` — catches utility-class CMP overlays the class-name scan misses; GDPR-refusal by construction, no cookie ever accepted); author-box/in-content-widget pruning; and a readability densest-container fallback (`_select_densest_container`) so pages without semantic selectors (beehiiv/Substack) no longer select the whole `<body>` and drag in nav/footer.
+  5. **Never-empty contract:** an HTML 200 that yields no real content and matches a JS/anti-bot challenge signature returns an actionable `bot_challenge`/`js_required`/`empty_content` error (with server-reachable title/description), not a silent empty success. Live-verified across a 10-URL roster spanning encyclopedia (EN + non-English), framework/MDN docs, JSON API, arXiv, aggregator, independent blog, and news (`tests/tools/test_fetch_url_roster_live.py`, env-gated).
+- **Bare-string `prompt_cache_binding` trap defused (entity visit lane incident, 2026-07-11)**: a bare string passed as `prompt_cache_binding` with no `prompt_cache_key` coerced to `{"binding_id": s}` and then failed binding validation 100% of the time with a message that never named the fix ("Prompt cache binding validation requires a non-empty prompt cache key"). This was a vocabulary collision: hosts meaning *per-session cache identity* (which is `prompt_cache_key`, best-effort) reached the *strict durable-bloc artifact verification* param. The provider boundary now refuses EARLY with `code="prompt_cache_binding_bare_string"`, naming BOTH params and their semantics. Deliberately NOT sugar: silently downgrading the strict param to the best-effort one would break the verification guarantee without a sound. The legitimate shorthand (bare-string `binding_id` WITH a `prompt_cache_key`, verified against loaded meta) is unchanged. Pinned in `tests/test_bloc_kv.py`.
+
+### Added
+- **Retry collapse (entity-topology plan item 12 / core C3)** — four pieces, all opt-in or
+  default-preserving (design: `docs/backlog/proposed/0816...md`, both reviewer asks
+  discharged; built on laurent's c398 approval):
+  1. `RetryConfig.single_attempt()` construction preset — the readable core half of
+     collapsing the double retry stack (provider makes exactly ONE attempt; the host's
+     outer RetryPolicy owns attempts/backoff; circuit breaker stays active). The Harmony
+     400 carve-out survives the collapse (test-pinned: single-attempt inner + outer
+     resample still absorbs the race).
+  2. Cancellable backoff: `generate(..., cancel_event=threading.Event())` threads into
+     `RetryManager.execute_with_retry`; backoff waits become ≤1s cancellable slices and
+     raise `RetryCancelledError` (`[retry cancelled by host]`, carries `last_error`;
+     classifies non-retryable) within ~1s of the signal. Without a cancel event the wait
+     is one plain sleep — byte-identical legacy behavior.
+  3. Retry-After honoring: `ProviderError` gains `retry_after_s`; the OpenAI-compatible
+     `_raise_for_status` extracts the `Retry-After` header (seconds or HTTP-date) on
+     429/5xx; the retry layer uses `min(max(server_wait, jitter), max_delay)` — the
+     server's own signal beats the jitter guess, capped by our max so a hostile header
+     can never park a worker.
+  4. Per-endpoint damping (`core/endpoint_damping.py`, opt-in
+     `create_llm(..., endpoint_damping=True)`): provider instances targeting one endpoint
+     share a circuit breaker (first trip stops the other N−1 — herd demo test: 8 instances,
+     3 real probes instead of 8) and a bounded retry-waiter budget; budget exhaustion
+     FAILS FAST with the last typed error labeled `[retry budget exhausted for endpoint …]`
+     (status_code preserved) — never a queue. Keyed `(base_url, model)`; per-process by
+     design (cross-process fairness is item 11's admission lane — boundary pin).
+  Piece 2b rider: `_handle_api_error` wrap sites now preserve `status_code` (and
+  Retry-After) from wrapped SDK/httpx exceptions (`_status_code_from_exception`) — with
+  inner retries collapsed, the outer status-code-first classifier is the only 4xx gate
+  and must never be starved by stringified errors. 16 tests
+  (`tests/core/test_retry_collapse_c3.py`).
+- **`ToolDefinition.act_only` host-side policy attribute** (entity-topology plan item 7 /
+  G1 pre-condition "diary words never rest outside the book"; spelling ruled on a2a thread
+  0013): tools like an entity's `diary_read` are declared ACT-ONLY on the tool contract —
+  hosts (runtime effect handlers, agent observe nodes, ledger writers) key their durable
+  channels on the flag, persisting only the act-frame (id + reason + gist), never the
+  returned words. First-class typed bool, NOT a `tags` entry, so the dataclass default IS
+  the fail-closed policy (undeclared = normal durable tool; a typo'd tag would fail open —
+  the wrong direction for a privacy attribute). Additive serialization (`to_dict()` emits
+  the key only when true), dict round-trip preserved in the handler, `@tool(act_only=True)`
+  decorator support, and deliberately NEVER copied into native provider payloads (strict
+  servers reject unknown fields; enforcement is host-side — model-facing guidance belongs
+  in the tool description). Core carries the declaration only; enforcement is the
+  runtime/agent lane. 8 tests (`tests/tools/test_tool_definition_act_only.py`).
+- **gpt-oss-120b/OVH regression harness** (entity-topology consensus plan, core C2): the
+  native-tool-call probe is demoted to a permanent regression harness pinning both behaviors
+  on the path summoned entities ride. Offline
+  (`tests/providers/test_harmony_transient_artifact_regression.py`, 10 tests): the Harmony
+  400 signature (`unexpected tokens remaining in message header` + sibling shapes) maps to
+  retryable `ProviderAPIError` while plain 400s keep `InvalidRequestError` (no blanket 400
+  retry); the RetryManager chain resamples the transient class exactly once; a full
+  `generate()` absorbs one artifact 400 into a successful resample at the wire path; the
+  operator-declared fallback pair (LMStudio `qwen/qwen3.6-35b-a3b`, laurent c157) stays
+  registry-READY (native tools, 262K context). Live
+  (`tests/providers/test_gpt_oss_120b_ovh_live_regression.py`, env-gated behind
+  `ABSTRACTCORE_RUN_LIVE_API_TESTS=1`): the two-leg native tool-call round-trip
+  (structured `tool_calls` out, `role:"tool"` result back in) on `endpoint:ovh-provider` /
+  `gpt-oss-120b` — verified passing live 2026-07-10. The live test deliberately never
+  auto-falls-back to another endpoint (a harness that switches endpoints hides the
+  regression it exists to catch).
+
 ### Fixed
 - **Harmony generation artifacts are classified transient, not invalid-request**
   (maintainer directive 2026-07-09: "maybe it's something our parser in

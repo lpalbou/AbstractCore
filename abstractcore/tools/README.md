@@ -98,6 +98,13 @@ class ToolDefinition:
     when_to_use: Optional[str] = None
     examples: List[Dict[str, Any]] = field(default_factory=list)
 
+    # Host-side policy attribute: an act-only tool's durable record carries only
+    # the act-frame (id + reason + gist), never the returned words. Hosts key
+    # their observe/ledger/result channels on this flag; it is additive in
+    # to_dict() (emitted only when true) and NEVER reaches native provider
+    # payloads. Enforcement is host-side; core carries the declaration.
+    act_only: bool = False
+
     @classmethod
     def from_function(cls, func: Callable) -> 'ToolDefinition':
         """Auto-generate tool definition from function signature"""

@@ -395,6 +395,32 @@ def test_bloc_kv_prompt_cache_binding_guards_generation(tmp_path: Path) -> None:
         provider.generate(prompt="question", prompt_cache_key="work", prompt_cache_binding=loaded.prompt_cache_binding)
 
 
+def test_bare_string_prompt_cache_binding_without_key_refuses_naming_both_params(tmp_path: Path) -> None:
+    """A bare-string prompt_cache_binding with no prompt_cache_key is the
+    vocabulary-collision trap found live on the entity visit lane
+    (2026-07-11): hosts meaning "per-session cache identity" reached the
+    strict durable-bloc verification and failed 100% of the time with a
+    message that never named the fix. The refusal must name BOTH params
+    and their semantics, and must NOT silently downgrade to best-effort."""
+    provider = _StubPersistentMLXProvider(model="qwen3-test")
+
+    with pytest.raises(PromptCacheOperationError, match="prompt_cache_key instead") as exc_info:
+        provider.generate(prompt="question", prompt_cache_binding="entity:voyager|visit-abc")
+    assert exc_info.value.code == "prompt_cache_binding_bare_string"
+
+    # The legitimate shorthand survives: bare-string binding_id WITH a key
+    # verifies against that key's loaded meta (existing durable-bloc flow).
+    store = FileBlocStore(root_dir=tmp_path)
+    record = _upsert_record(store, tmp_path, sha="6" * 64, path_name="doc.txt", content="hello world\n")
+    loaded = load_bloc_kv_artifact(provider=provider, store=store, record=record, key="work")
+    provider.generate(
+        prompt="question",
+        prompt_cache_key="work",
+        prompt_cache_binding=loaded.prompt_cache_binding["binding_id"],
+    )
+    assert provider.last_kwargs["prompt_cache_key"] == "work"
+
+
 def test_bloc_kv_delete_blocks_live_binding_then_clears_and_deletes(tmp_path: Path) -> None:
     store = FileBlocStore(root_dir=tmp_path)
     record = _upsert_record(store, tmp_path, sha="a1" * 32, path_name="doc.txt", content="hello world\n")
