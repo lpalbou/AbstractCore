@@ -6,6 +6,7 @@ import json
 import time
 import uuid
 import inspect
+import threading
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Union, Iterator, Type, TYPE_CHECKING
 
@@ -57,6 +58,17 @@ class MLXProvider(BaseProvider):
         self.llm = None
         self.tokenizer = None
         self._resolved_model_id: Optional[str] = None
+        # Delta-feed bookkeeping (see _prepare_cache_delta_feed): keys that
+        # already warned about unknown-composition warm caches, and the last
+        # fragment fed by _prompt_cache_backend_append (consumed by
+        # prompt_cache_update to extend the fed-token-id record).
+        self._delta_feed_warned_keys: set = set()
+        self._pending_append_fragment: Optional[str] = None
+        self._pending_append_precount: int = 0
+        # The stash is instance-level shared state: without the lock, two
+        # threads updating DIFFERENT keys could cross-pollinate their
+        # fed-token-id records (adversarial find P2-9).
+        self._append_stash_lock = threading.RLock()
         self._load_model()
 
     def supports_prompt_cache(self) -> bool:
@@ -221,6 +233,19 @@ class MLXProvider(BaseProvider):
         return _clone_layer(cache_value)
 
     def _prompt_cache_backend_token_count(self, cache_value: Any) -> Optional[int]:
+        """Token count of a live cache, or None when it cannot be known.
+
+        Empty vs UNCOUNTABLE matters (adversarial find P1-2): pure-SSM
+        architectures (mamba/mamba2/rwkv7 → all-ArraysCache) expose neither
+        `size()` nor `offset`, so a WARM cache used to read as 0 —
+        indistinguishable from cold, silently reviving the double-prefill for
+        them. When no layer yields a count, `empty()` is consulted: all-empty
+        → genuinely 0; any non-empty (or unknowable) → None, which callers
+        must treat as "warm, composition unknowable". (CacheList wrappers —
+        falcon-h1, longcat-flash, deepseek-v3.2 — DO expose `size()` in
+        mlx_lm ≥0.31 and are countable; their trimmability is decided per
+        child layer by `can_trim_prompt_cache`.)
+        """
         if cache_value is None:
             return 0
         try:
@@ -241,10 +266,286 @@ class MLXProvider(BaseProvider):
                             off = 0
                         if off > 0:
                             counts.append(off)
-                return max(counts) if counts else 0
+                if counts:
+                    return max(counts)
+                for layer in cache_value:
+                    try:
+                        if not bool(layer.empty()):
+                            return None  # warm but uncountable
+                    except Exception:
+                        return None      # unknowable — never report cold
+                return 0
         except Exception:
             pass
         return None
+
+    # ------------------------------------------------------------------
+    # Delta generation over warm KV caches (adversarial find B2, 2026-07-12)
+    #
+    # mlx_lm has NO common-prefix dedup: feeding the full rendered prompt on
+    # top of a warm cache prefills the transcript AGAIN on top of its own KV —
+    # caching ON cost ~2x caching OFF and duplicated the transcript
+    # in-context. This is the HuggingFace provider's delta pattern ported to
+    # the token level: track the token ids each cache was fed, LCP the new
+    # prompt against them, trim the cache to the shared prefix, feed ONLY the
+    # suffix. Warm caches of unknown composition (loaded artifacts, caches
+    # born before this fix) keep the legacy full feed with a one-time
+    # #FALLBACK warning — never a silent behavior change under a durable-bloc
+    # flow, and never a misdescribed cache.
+    # ------------------------------------------------------------------
+
+    _FED_TOKEN_IDS_META = "fed_token_ids"
+
+    def _encode_prompt_token_ids(self, text: str) -> Optional[List[int]]:
+        """Tokenize exactly as mlx_lm's str path would.
+
+        mlx_lm (generate.py) infers `add_special_tokens` from whether the
+        prompt STARTS WITH the BOS literal (templates like gemma-turn render
+        it into the text; adding it again would double it). The record must
+        replicate that inference byte-for-byte or it runs one token long for
+        exactly those architectures — an off-by-one that silently skews every
+        trim (adversarial find P0-1). Suffix feeds are token lists and bypass
+        tokenization entirely, so only this record path needs the mirror.
+        """
+        text = str(text or "")
+        try:
+            add_special: Optional[bool] = None
+            bos = getattr(self.tokenizer, "bos_token", None)
+            if isinstance(bos, str) and bos:
+                add_special = not text.startswith(bos)
+            if add_special is None:
+                ids = self.tokenizer.encode(text)
+            else:
+                try:
+                    ids = self.tokenizer.encode(text, add_special_tokens=add_special)
+                except TypeError:
+                    # Tokenizer without the kwarg (plain callables in tests,
+                    # exotic wrappers): plain encode is then also what
+                    # mlx_lm's mx.array(tokenizer.encode(...)) path does.
+                    ids = self.tokenizer.encode(text)
+        except Exception:
+            return None
+        if ids is None:
+            return None
+        try:
+            return [int(t) for t in ids]
+        except Exception:
+            return None
+
+    @staticmethod
+    def _token_lcp_len(a: List[int], b: List[int]) -> int:
+        n = min(len(a), len(b))
+        i = 0
+        while i < n and a[i] == b[i]:
+            i += 1
+        return i
+
+    def _trim_prompt_cache_tokens(self, cache_value: Any, num_tokens: int) -> bool:
+        """Trim `num_tokens` from the END of a live cache (best-effort)."""
+        if num_tokens <= 0:
+            return True
+        try:
+            from mlx_lm.models.cache import trim_prompt_cache
+
+            try:
+                from mlx_lm.models.cache import can_trim_prompt_cache
+            except Exception:
+                can_trim_prompt_cache = None
+            if callable(can_trim_prompt_cache) and not bool(can_trim_prompt_cache(cache_value)):
+                return False
+            trimmed = trim_prompt_cache(cache_value, int(num_tokens))
+            # mlx_lm returns the count actually trimmed; a partial trim would
+            # silently corrupt the delta arithmetic, so treat it as failure
+            # (callers fall back to a fresh cache).
+            if isinstance(trimmed, int) and trimmed < int(num_tokens):
+                return False
+            return True
+        except Exception:
+            return False
+
+    def _fed_token_ids_for_key(self, key: str) -> Optional[List[int]]:
+        meta = self.prompt_cache_key_meta(key) or {}
+        raw = meta.get(self._FED_TOKEN_IDS_META)
+        if not isinstance(raw, list) or not raw:
+            return None
+        try:
+            return [int(t) for t in raw]
+        except Exception:
+            return None
+
+    def _record_fed_token_ids(self, key: str, ids: Optional[List[int]]) -> None:
+        if not ids:
+            return
+        try:
+            self.prompt_cache_update_key_meta(key, **{self._FED_TOKEN_IDS_META: [int(t) for t in ids]})
+        except Exception:
+            pass
+
+    def _prepare_cache_delta_feed(
+        self, key: str, cache_value: Any, full_prompt: str, *, full_context: bool
+    ) -> tuple[Any, Any, Optional[List[int]]]:
+        """Decide what to feed mlx_lm over a (possibly warm) cache.
+
+        `full_context` is the CALLER-SHAPE discriminator and is load-bearing:
+
+        - full_context=True (the caller passed `messages`, i.e. it re-sends
+          the WHOLE logical context every call — the runtime transcript lane,
+          the population B2's double-prefill actually bites): delta
+          discipline. LCP heuristics alone are UNSAFE here-below because a
+          delta-style fragment legitimately shares a few chat-template header
+          tokens with the recorded head; only the caller shape disambiguates.
+        - full_context=False (prompt-only callers: CachedSession KV mode
+          sends ONLY the new fragment while history lives in the cache by
+          contract; direct `generate(prompt=..., prompt_cache_key=...)`
+          callers historically accumulate turns in the cache): APPEND
+          semantics — feed as-is on top of the warm cache (that IS the
+          correct behavior there), extend the id record, never trim. Running
+          LCP arithmetic here would see a tiny shared prefix and trim away
+          the whole session context.
+
+        Returns (cache_to_use, prompt_to_feed, ids_to_record_after_feed).
+        Full-context lattice: cold → legacy feed + start tracking; warm +
+        pure extension → trim generated drift, feed ONLY the suffix ids;
+        identical → keep one token; divergence or unknown composition →
+        FRESH cache + full feed (one cold prefill is correct for a caller
+        that re-sends everything — and never a double one); trim/tokenize
+        failure → fresh or bypass.
+        """
+        if cache_value is None:
+            return cache_value, full_prompt, None
+
+        # None = warm-but-uncountable (pure-SSM/CacheList architectures) or
+        # unknowable — NEVER coerced to 0: reading warm as cold is exactly
+        # the double-prefill revival (adversarial find P1-2).
+        try:
+            raw_count = self._prompt_cache_backend_token_count(cache_value)
+        except Exception:
+            raw_count = None
+        cache_len: Optional[int] = raw_count if isinstance(raw_count, int) and raw_count >= 0 else None
+
+        new_ids = self._encode_prompt_token_ids(full_prompt)
+        if not new_ids:
+            if full_context and (cache_len is None or cache_len > 0):
+                # Cannot tokenize deterministically: never risk the double prefill.
+                return None, full_prompt, None
+            return cache_value, full_prompt, None
+
+        fed_ids = self._fed_token_ids_for_key(key)
+
+        if not full_context:
+            # APPEND semantics (KV-source-of-truth sessions, prompt-only
+            # accumulators): the warm cache IS the context; the prompt is the
+            # next fragment — exactly the legacy behavior, untouched. LCP
+            # arithmetic here would see a tiny shared prefix and trim away
+            # the whole session; only the caller SHAPE (messages= present)
+            # may select delta discipline, never a content heuristic. The
+            # record may only extend while it stays a TRUE token-prefix of
+            # the cache — once generated tokens sit between fragments
+            # (cache_len > record), an extended record would misdescribe the
+            # cache; the old record stays (still a true prefix). Uncountable
+            # caches (cache_len None) can never verify prefix-truth: feed
+            # legacy, record nothing.
+            record = None
+            if cache_len is not None:
+                if cache_len <= 0:
+                    record = new_ids
+                elif fed_ids is not None and cache_len == len(fed_ids):
+                    record = fed_ids + new_ids
+            return cache_value, full_prompt, record
+
+        if cache_len is not None and cache_len <= 0:
+            return cache_value, full_prompt, new_ids
+
+        def _fresh_full_feed() -> tuple[Any, Any, Optional[List[int]]]:
+            # Preserve the entry's own meta (minus the now-stale id record)
+            # and TTL: the fresh cache is the same LOGICAL key — wiping
+            # binding/provenance fields here broke durable-bloc validation
+            # (adversarial find P1-5).
+            prior_meta = dict(self.prompt_cache_key_meta(key) or {})
+            prior_meta.pop(self._FED_TOKEN_IDS_META, None)
+            prior_meta.setdefault("backend", "mlx")
+            try:
+                prior_ttl = self._prompt_cache_store.ttl_s(key)
+            except Exception:
+                prior_ttl = None
+            fresh = self._prompt_cache_backend_create()
+            if fresh is not None:
+                try:
+                    self._prompt_cache_store.set(key, fresh, meta=prior_meta, ttl_s=prior_ttl)
+                except Exception:
+                    pass
+                return fresh, full_prompt, new_ids
+            return None, full_prompt, None
+
+        def _is_artifact_backed() -> bool:
+            meta = self.prompt_cache_key_meta(key) or {}
+            return bool(meta.get("loaded_from") or meta.get("binding_id") or meta.get("artifact_sha256"))
+
+        if fed_ids is None:
+            # Warm cache of unknown composition under a full-context caller.
+            # LOADED ARTIFACTS are excluded from replacement: destroying a
+            # verified durable-bloc cache to save a prefill inverts the
+            # feature's whole point — bypass the cache for this call instead
+            # (P1-5). Other unknown-composition caches rebuild fresh: correct
+            # for a caller that re-sends everything, and it kills the double
+            # prefill for pre-fix caches too.
+            if _is_artifact_backed():
+                if key not in self._delta_feed_warned_keys:
+                    self._delta_feed_warned_keys.add(key)
+                    self.logger.warning(
+                        f"#FALLBACK MLX prompt cache '{key}' is a loaded artifact without a fed-token "
+                        f"record; full-context calls bypass it (no prefill savings) rather than "
+                        f"destroy the verified artifact. Use prompt-only/KV-session flows for "
+                        f"artifact caches."
+                    )
+                return None, full_prompt, None
+            if key not in self._delta_feed_warned_keys:
+                self._delta_feed_warned_keys.add(key)
+                self.logger.warning(
+                    f"#FALLBACK MLX prompt cache '{key}' was warm with unknown token composition "
+                    f"under a full-context call; rebuilt fresh (one cold prefill) and now "
+                    f"delta-tracked."
+                )
+            return _fresh_full_feed()
+
+        if cache_len is None:
+            # Known record but uncountable cache (recurrent-state layers):
+            # trim arithmetic is impossible. Same lattice as trim refusal.
+            if _is_artifact_backed():
+                return None, full_prompt, None
+            if key not in self._delta_feed_warned_keys:
+                self._delta_feed_warned_keys.add(key)
+                self.logger.warning(
+                    f"#FALLBACK MLX prompt cache '{key}': cache state is not countable for this "
+                    f"architecture (recurrent/array layers); rebuilding fresh per full-context "
+                    f"call — no prefill savings."
+                )
+            return _fresh_full_feed()
+
+        lcp = self._token_lcp_len(fed_ids, new_ids)
+        effective_prefix = min(lcp, cache_len)
+        if effective_prefix >= len(new_ids):
+            # Identical (or fully-contained) prompt: keep one token to step generation.
+            effective_prefix = len(new_ids) - 1
+
+        trim_needed = cache_len - effective_prefix
+        if trim_needed > 0 and not self._trim_prompt_cache_tokens(cache_value, trim_needed):
+            # Untrimmable cache type (hybrid ArraysCache layers; sliding
+            # windows past their fill point) or partial trim: one honest
+            # cold prefill on a fresh cache — loudly, once per key (P1-6).
+            if _is_artifact_backed():
+                return None, full_prompt, None
+            if key not in self._delta_feed_warned_keys:
+                self._delta_feed_warned_keys.add(key)
+                self.logger.warning(
+                    f"#FALLBACK MLX prompt cache '{key}': cache type is not trimmable for this "
+                    f"architecture; rebuilt fresh (one cold prefill) — no prefill savings on "
+                    f"warm calls for this key."
+                )
+            return _fresh_full_feed()
+
+        suffix = new_ids[effective_prefix:]
+        return cache_value, suffix, new_ids
 
     def _build_prompt_fragment(
         self,
@@ -399,6 +700,11 @@ class MLXProvider(BaseProvider):
             enable_thinking=kwargs.get("_acore_mlx_enable_thinking"),
             include_bos=not (isinstance(existing_tokens, int) and int(existing_tokens) > 0),
         )
+        # Stash for prompt_cache_update's fed-token-id bookkeeping (delta feed,
+        # B2): the base method that calls us knows the KEY; we know the exact
+        # fragment bytes that were fed.
+        self._pending_append_fragment = fragment or None
+        self._pending_append_precount = int(existing_tokens or 0)
         if not fragment:
             return True
 
@@ -443,6 +749,79 @@ class MLXProvider(BaseProvider):
 
         return True
 
+    def _prompt_cache_append_record_meta(
+        self, prior_meta: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """Keep module-chain caches (prepare_modules) delta-capable.
+
+        The backend append just stashed the exact fragment it fed and the
+        pre-append token count. When the chain's prior record exactly
+        describes the pre-append cache, the new module cache's record is
+        `prior + fragment_ids` — so the FINAL prefix key (the one sessions
+        fork from) carries a true fed-token-id record and the generate-side
+        delta feed can engage instead of falling to fresh-rebuild
+        (unknown-composition lane). Any uncertainty → no record (honest
+        unknown), never a guess.
+        """
+        fragment = self._pending_append_fragment
+        precount = int(self._pending_append_precount or 0)
+        self._pending_append_fragment = None
+        self._pending_append_precount = 0
+
+        prior_ids_raw = (prior_meta or {}).get(self._FED_TOKEN_IDS_META)
+        prior_ids: Optional[List[int]] = None
+        if isinstance(prior_ids_raw, list) and prior_ids_raw:
+            try:
+                prior_ids = [int(t) for t in prior_ids_raw]
+            except Exception:
+                prior_ids = None
+
+        if precount > 0 and (prior_ids is None or len(prior_ids) != precount):
+            return None  # unknown or stale head: refuse to describe it
+        if not fragment:
+            return {self._FED_TOKEN_IDS_META: list(prior_ids)} if prior_ids else None
+        fragment_ids = self._encode_prompt_token_ids(fragment) or []
+        if not fragment_ids:
+            return None
+        return {self._FED_TOKEN_IDS_META: (prior_ids or []) + fragment_ids}
+
+    def prompt_cache_update(self, key: str, **kwargs) -> bool:
+        """Append context into a cache key + keep the fed-token-id record true.
+
+        The delta-feed path (B2) can only trust a warm cache whose fed token
+        ids are known. The backend append stashes the exact fragment it fed;
+        here (where the KEY is known) the record extends. Caches whose head
+        predates tracking stay unrecorded — the generate path then keeps
+        legacy behavior for them rather than trusting a partial record.
+        """
+        with self._append_stash_lock:
+            self._pending_append_fragment = None
+            self._pending_append_precount = 0
+            ok = super().prompt_cache_update(key, **kwargs)
+            fragment = self._pending_append_fragment
+            precount = int(self._pending_append_precount or 0)
+            self._pending_append_fragment = None
+            self._pending_append_precount = 0
+        if not ok or not fragment:
+            return ok
+        normalized = self._normalize_prompt_cache_key(key)
+        if normalized is None:
+            return ok
+        prior_ids = self._fed_token_ids_for_key(normalized)
+        if precount > 0 and prior_ids is None:
+            # Unknown head: appending a known tail cannot make the record whole.
+            return ok
+        if prior_ids is not None and precount != len(prior_ids):
+            # Generated tokens (or anything else) sit between the record and
+            # this fragment: `prior + fragment` would misdescribe a cache that
+            # actually holds `prior + gap + fragment` (adversarial find P1-3).
+            # The old record stands — still a true prefix, still trimmable-to.
+            return ok
+        fragment_ids = self._encode_prompt_token_ids(fragment) or []
+        if fragment_ids:
+            self._record_fed_token_ids(normalized, (prior_ids or []) + fragment_ids)
+        return ok
+
     def prompt_cache_set(
         self,
         key: str,
@@ -468,6 +847,7 @@ class MLXProvider(BaseProvider):
         cache_obj = make_prompt_cache(self.llm)
 
         # Best-effort warm: MLX-LM always generates at least 1 token, so we trim it back.
+        warmed_ids: Optional[List[int]] = None
         if isinstance(warm_prompt, str) and warm_prompt.strip():
             try:
                 gen = self.stream_generate_fn(
@@ -483,11 +863,17 @@ class MLXProvider(BaseProvider):
                     trim_prompt_cache(cache_obj, 1)
                 except Exception:
                     pass
+                warmed_ids = self._encode_prompt_token_ids(warm_prompt)
             except Exception:
                 pass
 
         try:
-            self._prompt_cache_store.set(normalized, cache_obj, ttl_s=ttl_s, meta={"backend": "mlx"})
+            meta: Dict[str, Any] = {"backend": "mlx"}
+            if warmed_ids:
+                # Fed-token-id record from birth (delta feed, B2) — a fresh
+                # empty cache needs no record; the generate path starts one.
+                meta[self._FED_TOKEN_IDS_META] = warmed_ids
+            self._prompt_cache_store.set(normalized, cache_obj, ttl_s=ttl_s, meta=meta)
         except Exception:
             return False
         return True
@@ -1079,17 +1465,36 @@ class MLXProvider(BaseProvider):
         top_k = generation_kwargs.get("top_k")
         seed_value = generation_kwargs.get("seed")
         prompt_cache = None
+        prompt_to_feed: Any = full_prompt
+        fed_ids_to_record: Optional[List[int]] = None
         prompt_cache_key = kwargs.get("prompt_cache_key")
         if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
-            prompt_cache = self._prompt_cache_store.get(prompt_cache_key.strip())
+            cache_key = prompt_cache_key.strip()
+            prompt_cache = self._prompt_cache_store.get(cache_key)
             if prompt_cache is None:
-                self.prompt_cache_set(prompt_cache_key.strip(), make_default=False)
-                prompt_cache = self._prompt_cache_store.get(prompt_cache_key.strip())
+                self.prompt_cache_set(cache_key, make_default=False)
+                prompt_cache = self._prompt_cache_store.get(cache_key)
+            # Delta feed over warm caches (B2): trim to the shared token
+            # prefix and feed only the suffix — never re-prefill the whole
+            # transcript on top of its own KV. Callers that pass `messages`
+            # re-send the whole logical context (delta discipline applies);
+            # prompt-only callers (CachedSession KV mode) append by contract.
+            # `messages=[]` IS full-context ("empty so far" — key-mode turn
+            # one); only `messages=None` means prompt-only (P2-8).
+            prompt_cache, prompt_to_feed, fed_ids_to_record = self._prepare_cache_delta_feed(
+                cache_key, prompt_cache, full_prompt,
+                full_context=messages is not None,
+            )
 
         try:
             if stream:
+                if fed_ids_to_record and isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
+                    # Recorded eagerly: the stream feeds lazily, but the ids are
+                    # deterministic and a mid-stream failure self-heals at the
+                    # next call through the min(lcp, cache_len) guard.
+                    self._record_fed_token_ids(prompt_cache_key.strip(), fed_ids_to_record)
                 return self._stream_generate_with_tools(
-                    full_prompt,
+                    prompt_to_feed,
                     max_tokens,
                     temperature,
                     top_p,
@@ -1101,8 +1506,19 @@ class MLXProvider(BaseProvider):
                 )
             else:
                 response = self._single_generate(
-                    full_prompt, max_tokens, temperature, top_p, top_k, seed_value, prompt_cache
+                    prompt_to_feed, max_tokens, temperature, top_p, top_k, seed_value, prompt_cache,
+                    usage_prompt=full_prompt,
                 )
+                if fed_ids_to_record and isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
+                    if response.finish_reason != "error":
+                        # Deliberate: the record holds FED ids only, not the
+                        # reply the model just generated — re-tokenized reply
+                        # text is not guaranteed token-identical to the
+                        # sampled ids, so the next call trims the generated
+                        # tokens and re-prefills the reply as suffix (small,
+                        # bounded cost; never a correctness risk). Do not
+                        # "optimize" by extending the record from reply text.
+                        self._record_fed_token_ids(prompt_cache_key.strip(), fed_ids_to_record)
                 if media_enrichment:
                     from ..media.enrichment import merge_enrichment_metadata
 
@@ -1168,15 +1584,22 @@ class MLXProvider(BaseProvider):
 
     def _single_generate(
         self,
-        prompt: str,
+        prompt: Any,
         max_tokens: int,
         temperature: float,
         top_p: float,
         top_k: Optional[int] = None,
         seed: Optional[int] = None,
         prompt_cache: Optional[Any] = None,
+        usage_prompt: Optional[str] = None,
     ) -> GenerateResponse:
-        """Generate single response"""
+        """Generate single response.
+
+        `prompt` may be a rendered string OR a token-id list (the delta-feed
+        suffix over a warm cache — mlx_lm accepts both). `usage_prompt` is the
+        full logical prompt for usage accounting, so a suffix feed does not
+        under-report prompt tokens.
+        """
 
         # Handle seed parameter (MLX supports seed via mx.random.seed)
         if seed is not None:
@@ -1211,18 +1634,19 @@ class MLXProvider(BaseProvider):
                 )
             except:
                 # Fallback to basic response
-                response_text = prompt + " I am an AI assistant powered by MLX on Apple Silicon."
+                response_text = str(usage_prompt or prompt) + " I am an AI assistant powered by MLX on Apple Silicon."
 
         gen_time = round((time.time() - start_time) * 1000, 1)
 
         generated, reasoning = self._postprocess_generated_text(response_text.strip())
         metadata = {"reasoning": reasoning} if reasoning else None
 
+        usage_text = usage_prompt if isinstance(usage_prompt, str) else (prompt if isinstance(prompt, str) else "")
         return GenerateResponse(
             content=generated,
             model=self.model,
             finish_reason="stop",
-            usage=self._calculate_usage(prompt, generated),
+            usage=self._calculate_usage(usage_text, generated),
             gen_time=gen_time,
             metadata=metadata,
         )
@@ -1246,7 +1670,7 @@ class MLXProvider(BaseProvider):
 
     def _stream_generate(
         self,
-        prompt: str,
+        prompt: Any,  # rendered string OR delta-feed token ids
         max_tokens: int,
         temperature: float,
         top_p: float,
@@ -1341,7 +1765,7 @@ class MLXProvider(BaseProvider):
 
     def _stream_generate_with_tools(
         self,
-        full_prompt: str,
+        full_prompt: Any,  # rendered string OR delta-feed token ids
         max_tokens: int,
         temperature: float,
         top_p: float,

@@ -296,16 +296,24 @@ class PortkeyProvider(OpenAICompatibleProvider):
             if param in payload and param not in explicit:
                 del payload[param]
 
-        # max_tokens → max_completion_tokens (driven by model_capabilities.json).
-        if "max_tokens" in payload:
-            explicit_token_limit = bool(
-                explicit.intersection({"max_tokens", "max_output_tokens", "max_completion_tokens"})
-            )
-            if explicit_token_limit:
-                if "max_completion_tokens" in explicit or self._get_token_param_name() == "max_completion_tokens":
-                    payload["max_completion_tokens"] = payload.pop("max_tokens")
-            else:
-                del payload["max_tokens"]
+        # Token-limit handling. The base provider's registry filter
+        # (_apply_model_parameter_constraints) may have ALREADY renamed
+        # max_tokens to the registry's token_param_name before this hook runs,
+        # so the unsolicited-strip must recognize both spellings — otherwise a
+        # registry-renamed unsolicited cap (default 2048) would slip through to
+        # the backend, where for reasoning models it also budgets reasoning
+        # tokens and can silently truncate output.
+        explicit_token_limit = bool(
+            explicit.intersection({"max_tokens", "max_output_tokens", "max_completion_tokens"})
+        )
+        if not explicit_token_limit:
+            payload.pop("max_tokens", None)
+            payload.pop("max_completion_tokens", None)
+        elif "max_tokens" in payload:
+            # Explicit cap not yet renamed by the base filter: rename when the
+            # registry or the caller asks for the max_completion_tokens spelling.
+            if "max_completion_tokens" in explicit or self._get_token_param_name() == "max_completion_tokens":
+                payload["max_completion_tokens"] = payload.pop("max_tokens")
 
         return payload
 

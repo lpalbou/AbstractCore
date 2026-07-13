@@ -615,3 +615,47 @@ def test_tool_support_level_registries_match_enums():
     assert set(structured_levels) == {"native", "prompted", "none"}, (
         "structured_output_levels must define native/prompted/none"
     )
+
+
+@pytest.mark.basic
+def test_parameter_constraint_fields_are_well_formed():
+    """Registry lint for the wire-contract fields (parameter filtering).
+
+    Providers enforce these on live payloads, so malformed shapes become live
+    request bugs:
+    - `unsupported_parameters` must be a list of non-empty strings (a comma-joined
+      STRING would turn membership checks into substring matching).
+    - `token_param_name` must be one of the two known API spellings.
+    - A model declaring `max_tokens` in unsupported_parameters MUST declare a
+      different token_param_name — the payload filter renames the cap (never
+      drops it), so without the rename the declared-rejected key would still be
+      sent and 400 on every call.
+    """
+    data = _load_model_capabilities()
+    models = data.get("models", {})
+
+    for model_key, entry in models.items():
+        if not isinstance(entry, dict):
+            continue
+        blocked = entry.get("unsupported_parameters")
+        if blocked is not None:
+            assert isinstance(blocked, list), (
+                f"{model_key}: unsupported_parameters must be a LIST, got {type(blocked).__name__}"
+            )
+            for item in blocked:
+                assert isinstance(item, str) and item.strip(), (
+                    f"{model_key}: unsupported_parameters entries must be non-empty strings: {item!r}"
+                )
+
+        token_param = entry.get("token_param_name")
+        if token_param is not None:
+            assert token_param in {"max_tokens", "max_completion_tokens"}, (
+                f"{model_key}: token_param_name must be max_tokens or max_completion_tokens, got {token_param!r}"
+            )
+
+        if isinstance(blocked, list) and "max_tokens" in blocked:
+            assert token_param == "max_completion_tokens", (
+                f"{model_key}: declares max_tokens unsupported but no alternate token_param_name — "
+                f"the payload filter renames the cap (never drops it), so this shape would still "
+                f"send the rejected key"
+            )

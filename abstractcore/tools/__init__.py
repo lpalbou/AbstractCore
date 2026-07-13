@@ -96,6 +96,14 @@ from .registry import (
     clear_registry
 )
 
+# Builtin-tool inventory (authoritative enumeration; derive-never-copy source)
+from .inventory import (
+    BuiltinToolDescriptor,
+    list_builtin_tool_inventory,
+    list_builtin_tool_names,
+    builtin_tool_inventory_as_dicts,
+)
+
 __all__ = [
     # Core types
     "ToolDefinition",
@@ -120,4 +128,10 @@ __all__ = [
     "execute_tool",
     "execute_tools",
     "clear_registry",
+
+    # Inventory
+    "BuiltinToolDescriptor",
+    "list_builtin_tool_inventory",
+    "list_builtin_tool_names",
+    "builtin_tool_inventory_as_dicts",
 ]

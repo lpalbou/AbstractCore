@@ -253,6 +253,33 @@ def get_architecture_format(architecture: str) -> Dict[str, Any]:
     return _architecture_formats["architectures"].get(architecture, {})
 
 
+# Capability fields that are API-rejection FACTS (wire contract), not style/family
+# inference. These must never be inherited through a low-confidence fuzzy match —
+# see the partial-match guard in get_model_capabilities().
+_WIRE_CONTRACT_CAPABILITY_FIELDS = ("unsupported_parameters", "token_param_name")
+
+# Separator characters that mark a token boundary in model names
+# ("gpt-5-2025-08-07", "o1-preview", "qwen3-next-80b-a3b", "name:tag").
+_MODEL_NAME_BOUNDARY_CHARS = frozenset("-.:_/@ ")
+
+
+def _partial_match_is_prefix_aligned(name_lower: str, key_lower: str) -> bool:
+    """True when a partial capability match is a PREFIX at a token boundary.
+
+    Prefix-aligned matches ("gpt-5-2025-08-07" vs key "gpt-5"; "qwen3-next-80b"
+    vs key "qwen3-next-80b-a3b") mean the name IS the registry family plus/minus
+    a suffix — high enough confidence to carry wire-contract fields. A midfix
+    hit ("Skywork-o1-Open-Llama-3.1-8B" catching key "o1") is family inference
+    only and must not.
+    """
+    shorter, longer = (name_lower, key_lower) if len(name_lower) <= len(key_lower) else (key_lower, name_lower)
+    if not shorter or not longer.startswith(shorter):
+        return False
+    if len(longer) == len(shorter):
+        return True
+    return longer[len(shorter)] in _MODEL_NAME_BOUNDARY_CHARS
+
+
 def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     """
     Resolve a model name to its canonical name by checking aliases.
@@ -502,6 +529,26 @@ def get_model_capabilities(model_name: str) -> Dict[str, Any]:
             result.pop("aliases", None)
             if "architecture" not in result:
                 result["architecture"] = detect_architecture(model_name)
+            # WIRE-CONTRACT fields must not ride low-confidence fuzzy inheritance.
+            # `unsupported_parameters` / `token_param_name` are API-rejection FACTS:
+            # applied to the wrong model they actively break requests (dropped
+            # temperature, max_tokens renamed to a key a local server ignores ->
+            # uncapped generation). A midfix substring hit like local model
+            # "Skywork-o1-Open-Llama-3.1-8B" catching registry key "o1" is family
+            # STYLE inference (fine for soft capabilities: vision, context,
+            # tool_support) but not identity. Only PREFIX-ALIGNED partial matches
+            # (dated snapshots "gpt-5-2025-08-07" -> "gpt-5"; truncations
+            # "qwen3-next-80b" -> "qwen3-next-80b-a3b") keep wire-contract fields —
+            # there the name IS the registry family at a token boundary.
+            if not _partial_match_is_prefix_aligned(canonical_lower, best_key.lower()):
+                for wire_field in _WIRE_CONTRACT_CAPABILITY_FIELDS:
+                    if wire_field in result:
+                        result.pop(wire_field, None)
+                        logger.debug(
+                            f"Dropping wire-contract field '{wire_field}' inherited from "
+                            f"'{best_key}' for '{model_name}': midfix partial match is "
+                            f"family inference, not identity"
+                        )
             logger.debug(f"Using capabilities from '{best_key}' for '{model_name}' (partial match: {best_mode})")
             return result
 

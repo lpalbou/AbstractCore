@@ -182,6 +182,14 @@ class PromptCacheStore:
                 return None
             return dict(entry.meta or {})
 
+    def ttl_s(self, key: str) -> Optional[float]:
+        """The entry's OWN ttl override (None = store default applies)."""
+        if not isinstance(key, str) or not key.strip():
+            return None
+        with self._lock:
+            entry = self._entries.get(key.strip())
+            return entry.ttl_s if entry is not None else None
+
 
 @dataclass(frozen=True)
 class ThinkingControlHandling:
@@ -259,17 +267,17 @@ class PromptCacheModule:
                     except Exception:
                         pass
             tools = out_tools or None
-            if tools:
-                def _tool_sort_key(tool: Dict[str, Any]) -> str:
-                    func = tool.get("function") if isinstance(tool.get("function"), dict) else None
-                    name = ""
-                    if func:
-                        name = str(func.get("name") or "").strip()
-                    if not name:
-                        name = str(tool.get("name") or "").strip()
-                    return name.lower()
-
-                tools.sort(key=_tool_sort_key)
+            # Deliberately NOT sorted: the normalized module is BOTH the
+            # fingerprint input and the content actually rendered into the
+            # cache. Sorting here made the module lane render tools in a
+            # different order than `generate` renders the same list, so the
+            # byte-prefix equality that in-process delta feeds rely on broke
+            # at the second tool — every warm call re-prefilled the whole
+            # tools section and everything after it. Sorting also created a
+            # FALSE cache identity: two callers passing different orders
+            # shared one key while `generate` produced different bytes for
+            # each. Caller order is the identity; unstable callers get
+            # distinct keys, which is what distinct bytes deserve.
         add_generation_prompt = bool(self.add_generation_prompt)
         scope = str(self.scope or "private").strip().lower() or "private"
         if scope not in {"private", "shared"}:
@@ -1212,10 +1220,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         Uses unsupported_parameters from model_capabilities.json.
         Absent field means all standard parameters are supported (backward-compatible default).
+        A malformed field (e.g. a comma-joined string instead of a list) is treated as
+        absent rather than membership-tested — `param in "temperature, top_p"` would be
+        SUBSTRING matching and silently block partial names.
         """
         caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
         blocked = caps.get("unsupported_parameters")
-        if blocked is None:
+        if not isinstance(blocked, (list, tuple, set)):
             return True
         return param not in blocked
 
@@ -1223,10 +1234,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """Return the API parameter name for output token limit.
 
         Uses token_param_name from model_capabilities.json.
-        Default when absent: 'max_tokens'.
+        Default when absent: 'max_tokens'. A null/empty/non-string registry value
+        normalizes to the default — returning it verbatim would let a payload
+        rename write `payload[None]`, silently losing the output cap.
         """
         caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
-        return caps.get("token_param_name", "max_tokens")
+        raw = caps.get("token_param_name", "max_tokens")
+        name = str(raw).strip() if isinstance(raw, str) else ""
+        return name or "max_tokens"
 
     def _model_supports_thinking_control(self) -> bool:
         # Backward-compatible alias. Prefer `_model_supports_reasoning_control()` / `_model_supports_reasoning_output()`.
@@ -5061,7 +5076,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 for k in keys:
                     meta = self._prompt_cache_store.meta(k)
                     if isinstance(meta, dict) and meta:
-                        meta_by_key[str(k)] = dict(meta)
+                        row = dict(meta)
+                        # Private bookkeeping stays off the stats surface: the
+                        # fed-token-id record decodes back to the FULL prompt
+                        # text (system prompts included) with the model's own
+                        # tokenizer, and HTTP servers return these stats
+                        # verbatim. Expose the count, never the ids.
+                        fed_ids = row.pop("fed_token_ids", None)
+                        if isinstance(fed_ids, list):
+                            row["fed_token_count"] = len(fed_ids)
+                        meta_by_key[str(k)] = row
                 if meta_by_key:
                     stats["meta_by_key"] = meta_by_key
         except Exception:
@@ -5423,7 +5447,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     capabilities=caps,
                 )
 
-        # Build missing caches.
+        # Build missing caches. `prior_meta` threads provider bookkeeping
+        # (e.g. MLX fed-token-id records) through the module chain so the
+        # FINAL prefix cache — the one sessions fork from — has a known
+        # composition and downstream delta feeds can engage.
+        prior_meta: Optional[Dict[str, Any]] = None
+        if start_idx >= 0:
+            prior_meta = self._prompt_cache_store.meta(keys[start_idx])
         for j in range(start_idx + 1, len(keys)):
             mod = normalized_modules[j]
             ok = self._prompt_cache_backend_append(
@@ -5468,7 +5498,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if isinstance(tok, int) and tok >= 0:
                 meta["token_count"] = tok
 
+            try:
+                extras = self._prompt_cache_append_record_meta(prior_meta)
+            except Exception:
+                extras = None
+            if isinstance(extras, dict) and extras:
+                meta.update(extras)
+
             self._prompt_cache_store.set(keys[j], snapshot, ttl_s=ttl_s, meta=meta)
+            prior_meta = meta
 
         if make_default:
             self._default_prompt_cache_key = keys[-1]
@@ -5481,6 +5519,21 @@ class BaseProvider(AbstractCoreInterface, ABC):
             "modules": derived,
             "final_cache_key": keys[-1],
         }
+
+    def _prompt_cache_append_record_meta(
+        self, prior_meta: Optional[Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
+        """Provider hook: extra meta describing the cache content after a
+        backend append (called by `prompt_cache_prepare_modules` per module).
+
+        Providers that track exact fed content (e.g. MLX fed-token-id records)
+        override this to keep module-chain caches "known composition" so
+        sessions forked from them can take delta-feed paths. `prior_meta` is
+        the previous module's stored meta (None for a chain starting empty).
+        Default: no extra meta.
+        """
+        _ = prior_meta
+        return None
 
     def prompt_cache_clear(self, key: Optional[str] = None) -> bool:
         """Clear prompt caches for this provider instance (best-effort)."""

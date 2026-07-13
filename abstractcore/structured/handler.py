@@ -727,36 +727,90 @@ class StructuredOutputHandler:
 
     def _create_example_from_schema(self, schema: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Create a simple example from JSON schema.
+        Create a schema-faithful example from a JSON schema.
+
+        The example must have the same SHAPE the schema demands — small models
+        copy it nearly verbatim, so a flat placeholder in a structured slot
+        becomes the model's answer (live incident 2026-07-12: an
+        array-of-objects field exampled as ["example_item"] was echoed as the
+        literal string and failed pydantic validation). Arrays example one
+        element built from their `items` schema, nested objects recurse
+        through `properties`, local `$ref`s resolve against `$defs`, and
+        `anyOf`/`oneOf` (Optional fields) example their first non-null
+        variant. Enums example their first member.
 
         Args:
-            schema: JSON schema dictionary
+            schema: JSON schema dictionary (pydantic `model_json_schema()` shape)
 
         Returns:
             Example data structure
         """
-        properties = schema.get("properties", {})
-        example = {}
+        defs = schema.get("$defs") or schema.get("definitions") or {}
+        value = self._example_value_for_schema(schema, defs, depth=0)
+        return value if isinstance(value, dict) else {}
 
-        for field, field_schema in properties.items():
-            field_type = field_schema.get("type")
+    def _example_value_for_schema(self, field_schema: Any, defs: Dict[str, Any], depth: int) -> Any:
+        """One example value for one schema node (recursive, depth-guarded)."""
+        if not isinstance(field_schema, dict) or depth > 6:
+            return None
 
-            if field_type == "string":
-                example[field] = "example_string"
-            elif field_type == "integer":
-                example[field] = 42
-            elif field_type == "number":
-                example[field] = 3.14
-            elif field_type == "boolean":
-                example[field] = True
-            elif field_type == "array":
-                example[field] = ["example_item"]
-            elif field_type == "object":
-                example[field] = {"key": "value"}
-            else:
-                example[field] = None
+        # Resolve local references (pydantic nests models via $defs + $ref).
+        ref = field_schema.get("$ref")
+        if isinstance(ref, str):
+            name = ref.split("/")[-1]
+            resolved = defs.get(name)
+            if isinstance(resolved, dict):
+                merged = {k: v for k, v in field_schema.items() if k != "$ref"}
+                return self._example_value_for_schema({**resolved, **merged}, defs, depth + 1)
+            return None
 
-        return example
+        # Optional[...] / unions: first variant that isn't the null arm.
+        for union_key in ("anyOf", "oneOf"):
+            variants = field_schema.get(union_key)
+            if isinstance(variants, list) and variants:
+                for variant in variants:
+                    if isinstance(variant, dict) and variant.get("type") != "null":
+                        return self._example_value_for_schema(variant, defs, depth + 1)
+                return None
+
+        # Schema-provided hints beat synthetic placeholders.
+        if "examples" in field_schema and isinstance(field_schema["examples"], list) and field_schema["examples"]:
+            return field_schema["examples"][0]
+        if "default" in field_schema and field_schema["default"] is not None:
+            return field_schema["default"]
+        enum_values = field_schema.get("enum")
+        if isinstance(enum_values, list) and enum_values:
+            return enum_values[0]
+        const_value = field_schema.get("const")
+        if const_value is not None:
+            return const_value
+
+        field_type = field_schema.get("type")
+        if isinstance(field_type, list):
+            non_null = [t for t in field_type if t != "null"]
+            field_type = non_null[0] if non_null else None
+
+        if field_type == "string":
+            return "example_string"
+        if field_type == "integer":
+            return 42
+        if field_type == "number":
+            return 3.14
+        if field_type == "boolean":
+            return True
+        if field_type == "array":
+            item_schema = field_schema.get("items")
+            item = self._example_value_for_schema(item_schema, defs, depth + 1)
+            return [item] if item is not None else ["example_item"]
+        if field_type == "object" or "properties" in field_schema:
+            properties = field_schema.get("properties")
+            if isinstance(properties, dict) and properties:
+                return {
+                    name: self._example_value_for_schema(sub, defs, depth + 1)
+                    for name, sub in properties.items()
+                }
+            return {"key": "value"}
+        return None
 
     def _extract_json(self, content: str) -> str:
         """

@@ -29,6 +29,19 @@ from .token_utils import (
 )
 from .message_preprocessor import MessagePreprocessor, parse_files, has_files
 from .trace_export import export_traces, summarize_traces
+from .data_registry import (
+    DATA_HOME_KINDS,
+    DataHome,
+    DataRegistryError,
+    data_home_size,
+    get_data_home,
+    list_data_homes,
+    purge_data_home,
+    register_core_data_homes,
+    register_data_home,
+    registry_path,
+    unregister_data_home,
+)
 
 __all__ = [
     'configure_logging',
@@ -56,5 +69,16 @@ __all__ = [
     'parse_files',
     'has_files',
     'export_traces',
-    'summarize_traces'
+    'summarize_traces',
+    'DATA_HOME_KINDS',
+    'DataHome',
+    'DataRegistryError',
+    'data_home_size',
+    'get_data_home',
+    'list_data_homes',
+    'purge_data_home',
+    'register_core_data_homes',
+    'register_data_home',
+    'registry_path',
+    'unregister_data_home',
 ]

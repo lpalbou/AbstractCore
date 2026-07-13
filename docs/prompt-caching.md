@@ -128,6 +128,135 @@ print(caps.to_dict())
     - If PyTorch/transformers is imported *before* AbstractCore can pre-import `llama_cpp` (for example your app imports `torch` first), AbstractCore disables GGUF Metal offload for safety. Override with `ABSTRACTCORE_GGUF_METAL_UNSAFE=1` (unsafe).
 - **Ollama** (`OllamaProvider`): no prompt-cache integration currently (Ollama manages context internally per request).
 
+## Measured performance (July 2026)
+
+Measured 2026-07-12 on Apple Silicon (M-series Max, 128 GB unified memory). Two complementary
+setups (development-workspace harnesses; raw logs retained with the benchmark report):
+
+- **Prefill probe**: the same bytes sent warm vs cold (8–16k-token prefixes), isolating pure
+  prefill cost, with a content-correctness gate (at temperature 0 the warm answer must
+  byte-match a fresh-key cold run — speed without correct context is a failure).
+- **Agent-loop bench**: a ReAct tool task where every call re-sends the growing transcript,
+  run once with a byte-stable prefix (cache ON) and once with the prefix deliberately broken
+  every cycle (cache OFF: a fresh nonce line prepended to the system prompt).
+
+### Prefill probe (the cache's true effect, content-gated)
+
+| Backend | Model | Prefix | Cold prefill | Warm prefill | Speedup |
+|---|---|---|---|---|---|
+| MLX in-process | Llama-3.2-1B-Instruct 4-bit | 12.7k tk | 2.7 s | 0.31 s | ×8.5 |
+| MLX in-process | Qwen3-4B-Instruct-2507 4-bit | 8.5k tk | ~8 s (full feed) | ~0.5 s (238-token suffix feed) | ×15+ |
+| GGUF / llama.cpp in-process | Llama-3.2-1B Q8_0 | 12.7k tk | 7.0 s | 0.31 s | ×23 |
+| HuggingFace transformers in-process | Qwen3.5-4B bf16 | 16.4k tk | 38.9 s (same-bytes fresh key) | 3.3 s | **×12** |
+
+The probe verdicts are content-gated: each warm answer byte-matched a same-bytes cold run at
+temperature 0. Absolute seconds vary run to run under machine load (the transformers cold call
+varies ±30% on identical work); ratios are the stable quantity.
+
+### Agent loop, cache ON vs OFF (ReAct task, per-cycle view)
+
+All lanes ran the Qwen3.5-4B family except the MLX rows (see the architecture note); different
+quantizations per lane — **compare within a row, never across rows.** The broken-prefix arm
+receives a different prompt by construction, so trajectories can diverge; rows below state the
+comparable quantity per lane.
+
+| Lane | Cache ON | Cache OFF (broken prefix) | The comparable quantity |
+|---|---|---|---|
+| LM Studio server (4-bit) | ~6.9 s/cycle, 3 cycles, 20.7 s total (10.9 s/cycle at ~10k-tk transcripts) | ~9.4 s/cycle, 3 cycles, 28.4 s total (19.0 s/cycle at ~10k tk) | per-call re-prefill ≈0.7–1.3 s at 3–4k tk, ~15 s at 10k tk; savings grow with transcript size |
+| MLX in-process, pure attention (Qwen3-4B-2507 4-bit) | warm generate feeds ~240 tokens instead of ~8,200 | full re-prefill every cycle | the fed-token delta; end-to-end parity additionally requires the host to keep its per-turn cache maintenance incremental (see note ‡) |
+| MLX in-process, hybrid (Qwen3.5-4B 4-bit) | rebuild per call † | rebuild per call | none — both arms rebuild by construction; this row documents the fallback, not the cache |
+| GGUF / llama.cpp in-process (Q4_K_M) | warm prefill flat as the transcript grows | re-prefill grows with prompt size (~0.9→2.9 s over 2.3k→3.5k tk) | the slope: flat vs growing. Per-cycle wall delta ≈+0.5–0.8 s at these sizes |
+| HuggingFace transformers in-process (bf16) | warm prefill ≤~2 s | re-prefill ≈7–12 s per call at 1.5–3.2k tk | per-cycle prefill delta ≈6–10 s; end-to-end totals are decode-dominated at bf16 (~8 tok/s) and NOT a cache measurement |
+
+† **Hybrid-architecture note (Qwen3.5-class on MLX):** Qwen3.5/Qwen3-Next mix attention layers
+(trimmable `KVCache`) with linear-attention layers (untrimmable `ArraysCache`), so
+`can_trim_prompt_cache` refuses and the MLX delta-feed path rebuilds state per call — output
+stays correct, the fallback is reported with a one-time `#FALLBACK` warning, and warm calls cost
+roughly the same as cache-off in BOTH arms (the rebuild still avoids feeding the transcript on
+top of its own KV, so it is never *worse* than cache-off). Pick a pure-attention model for MLX
+warm-loop savings (see the compatibility table below).
+
+‡ **Host composition note:** the in-process delta engages when the host re-sends the full
+context per call (`messages=` present) over a stable key. Hosts that additionally maintain the
+cache through the control plane (`prompt_cache_update` per turn) must keep those updates
+incremental — clearing and re-appending the whole transcript each turn re-introduces the full
+prefill on the maintenance path even though `generate` itself deltas correctly.
+
+Guidance:
+
+- **What makes caches hit**: a byte-stable prefix — stable system prompt, stable tool schema
+  (tool ORDER included), append-only transcript. Any change to the first bytes (even one line)
+  forces a full re-prefill everywhere. Agent loops that only append satisfy this by construction.
+- **Shared server for many short-lived clients**: an LM Studio-style server cache persists across
+  client restarts and needs no request field — CLI tools and restarting processes get warm
+  prefills for free. In-process caches die with the process.
+- **Long-lived single process with a large context**: in-process caches (MLX, GGUF, transformers)
+  give the largest ratios (×8–×23 measured) because nothing leaves the process — provided the
+  model architecture supports the delta path (see the compatibility table below).
+- **Prefill-vs-decode reality check**: caching removes prefill only. At small prompts (2–4k
+  tokens) with slow decode, end-to-end gains look modest even when the cache works perfectly;
+  the ratio becomes dramatic at long prefixes (10k+ tokens).
+- Client-side prefix-reuse percentages (as printed by instrumented harnesses) measure whether the
+  *precondition* held, not server hits; where a backend reports no cached-token usage fields,
+  latency is the only hit evidence. Per-call "prefill estimate" columns derived from wall time
+  minus decode are lower bounds (the decode-rate calibration is itself prefill-contaminated),
+  and the rate-setting call always reads as zero — treat single-call estimates as indicative,
+  slopes and matched-position deltas as evidence.
+
+## Cache-compatible models per lane
+
+Whether the full in-process cache path engages depends on the model's cache architecture.
+AbstractCore never returns wrong context: unsupported shapes degrade to a correct rebuild with
+a `#FALLBACK` warning. What degrades is the SAVINGS, not the answers.
+
+### MLX (`MLXProvider`)
+
+The delta path needs a trimmable cache (`mlx_lm can_trim_prompt_cache`).
+
+| Model family (mlx_lm architecture) | Cache | Warm-call behavior |
+|---|---|---|
+| Llama 3.x (non-sliding), Qwen3 dense (`Qwen3-*-Instruct-2507`), Qwen3-MoE, Qwen2.x, Mistral-class, SmolLM — any model without a custom `make_cache` | pure `KVCache` | **Full delta**: trim drift, feed only the suffix |
+| Falcon-H1, LongCat-Flash, DeepSeek-V3.2 | `CacheList` of `KVCache` | Full delta (countable and trimmable) |
+| Gemma-3/3n/4, GPT-OSS, Cohere2, Ministral3, sliding-window Llama variants | mix `KVCache` + `RotatingKVCache` | Full delta only while the transcript is under the smallest sliding window (GPT-OSS: 128 tokens; Gemma: 512–1024) — then rebuild-per-call with `#FALLBACK` |
+| Llama-4 (Scout/Maverick) | `ChunkedKVCache` (8k chunks) | Delta within the live chunk; partial trims refuse → rebuild |
+| Qwen3.5, Qwen3-Next, Nemotron-H, Jamba, LFM2/2.5, Granite-hybrid, Plamo2, Baichuan-M1 | hybrid with untrimmable `ArraysCache` layers | Rebuild-per-warm-call, `#FALLBACK` warned (correct, no savings) |
+| Mamba/Mamba2, RWKV-7 (pure SSM) | all `ArraysCache` | Rebuild-per-warm-call (state not countable), `#FALLBACK` warned |
+
+Check your model: the first warm full-context call logs `#FALLBACK … not trimmable` /
+`… not countable` if the model cannot delta; no warning means the delta path engaged.
+`get_prompt_cache_stats()` exposes per-key `token_count` to watch reuse across calls.
+
+### GGUF / llama.cpp (`HuggingFaceProvider`)
+
+The full control plane (`mode=local_control_plane`: delta-only updates, prefill-snapshot
+generation) requires an exact chat renderer; other formats stay `mode=keyed`, where llama.cpp's
+own in-process prefix reuse still applies (real savings, less control).
+
+| GGUF family | Renderer | Mode |
+|---|---|---|
+| Qwen (any "qwen"-named GGUF), ChatML-template models | ChatML (`chatml` / `chatml-function-calling`) | `local_control_plane` |
+| Llama-3.x (when the embedded template matches llama.cpp's llama-3 template) | `llama-3` | `local_control_plane` |
+| Gemma-4 | GGUF-embedded chat template | `local_control_plane` |
+| Mistral, Phi, DeepSeek, Granite, everything else | — | `keyed` (llama.cpp-native prefix reuse only) |
+
+Check your model: `get_prompt_cache_capabilities()` reports the honest per-model `mode` and the
+active renderer in `notes`.
+
+### HuggingFace transformers (`HuggingFaceProvider` with `model_type="transformers"`)
+
+The full-context delta path crops the cache back to the shared prefix (`Cache.crop`).
+
+| Architecture | Warm-call behavior |
+|---|---|
+| Pure-attention decoders (Llama-class, SmolLM2, Qwen3 dense) | **Full delta, byte-exact** |
+| Hybrids with linear-attention layers (Qwen3.5, Qwen3-Next, Jamba, LFM2) | Delta with exact attention-KV reuse; the linear layers' recurrent state cannot be rolled back and remains an approximation after multi-turn reuse (labeled with a one-time `#FALLBACK`; output quality typically holds — measured ×12 on Qwen3.5-4B with content-gate pass) |
+| Sliding-window models past their window (Gemma-4 class, window 512) | Crop refuses → rebuild-per-warm-call with `#FALLBACK` |
+| Hybrids whose crop is a no-op on attention KV too (Zamba class) | Detected by a post-crop length verify → rebuild (never wrong context) |
+
+Check your model: `model.config.layer_types` — all `full_attention` means byte-exact delta; any
+`linear_attention`/`mamba` means fast-but-approximate; `sliding_attention` means window-bounded.
+Empirically, compare a warm call's wall time against a fresh-key cold call of the same bytes.
+
 ## Durable memory bloc artifacts
 
 For local providers with a full control plane, AbstractCore can derive one durable prompt-cache

@@ -455,7 +455,20 @@ class ConfigurationManager:
             pass
 
     def _load_config(self) -> AbstractCoreConfig:
-        """Load configuration from file or create default."""
+        """Load configuration from file or create default.
+
+        CRITICAL DATA-SAFETY INVARIANT (incident 2026-07-11): an existing config
+        file that fails to parse must NEVER be silently replaced by all-defaults.
+        The old behavior returned `AbstractCoreConfig.default()` on any read
+        error, and the next `_save_config()` then OVERWROTE the (recoverable)
+        file with defaults — silently discarding the operator's settings,
+        including capability routes like the entity embedding model. That was a
+        reassertion vector for the stale embedding default: a partial/corrupt
+        read → defaults → the framework's old `all-minilm-l6-v2` reappears with
+        no warning. We now BACK UP the unreadable file (timestamped, once) and
+        log LOUDLY before falling back, so nothing is lost and the operator sees
+        it. Happy-path behavior is unchanged.
+        """
         if self.config_file.exists():
             try:
                 with open(self.config_file, 'r') as f:
@@ -469,11 +482,50 @@ class ConfigurationManager:
                         if isinstance(nested, dict) and "strategy_explicit" in nested:
                             self._audio_strategy_explicit = bool(nested.get("strategy_explicit"))
                 return self._dict_to_config(data)
-            except Exception:
-                # If loading fails, return default config
+            except Exception as e:
+                # Never silently destroy a config we could not parse: preserve
+                # it so the operator can recover the lost settings, and make the
+                # degradation loud instead of a silent defaults regeneration.
+                self._backup_unreadable_config(e)
                 return AbstractCoreConfig.default()
         else:
             return AbstractCoreConfig.default()
+
+    def _backup_unreadable_config(self, error: Exception) -> None:
+        """Copy an unparseable config aside (timestamped) and warn loudly.
+
+        Best-effort and never raises — a backup failure must not block startup,
+        but the WARNING always fires so a silent regeneration can never happen
+        unnoticed again."""
+        backup_path: Optional[Path] = None
+        try:
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            backup_path = self.config_file.with_suffix(
+                self.config_file.suffix + f".corrupt-{stamp}.bak"
+            )
+            # Copy raw bytes (not the parsed form) so nothing is lost/normalized.
+            backup_path.write_bytes(self.config_file.read_bytes())
+            try:
+                os.chmod(backup_path, 0o600)
+            except Exception:
+                pass
+        except Exception:
+            backup_path = None
+        try:
+            import logging
+
+            logging.getLogger(__name__).warning(
+                "#FALLBACK abstractcore config at %s could not be parsed (%s); "
+                "falling back to DEFAULTS for this session. The unreadable file "
+                "was backed up to %s — recover your settings (provider/model, "
+                "embedding model, capability routes) from it; a save will "
+                "otherwise overwrite it with defaults.",
+                str(self.config_file),
+                error,
+                str(backup_path) if backup_path else "(backup failed)",
+            )
+        except Exception:
+            pass
 
     def _dict_to_config(self, data: Dict[str, Any]) -> AbstractCoreConfig:
         """Convert dictionary to config object."""

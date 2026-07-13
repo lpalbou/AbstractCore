@@ -341,6 +341,11 @@ class HuggingFaceProvider(BaseProvider):
     def _gguf_prompt_cache_control_plane_chat_format(self) -> str:
         chat_format = self._gguf_prompt_cache_chat_format()
         aliases = {
+            # Plain "chatml" is llama-cpp-python's byte-exact template guess
+            # for ChatML GGUFs; the exact renderer (and its dedicated
+            # tokenization branch) serves it identically to the
+            # function-calling variant.
+            "chatml": "chatml",
             "chatml-function-calling": "chatml-function-calling",
             "llama-3": "llama-3",
             "llama3": "llama-3",
@@ -1544,6 +1549,69 @@ class HuggingFaceProvider(BaseProvider):
                 if not out or out[0] != bos_i:
                     out.insert(0, bos_i)
         return out
+
+    def _transformers_crop_cache(self, state: _TransformersPromptCacheValue, keep_tokens: int) -> bool:
+        """Crop the live KV cache back to its first `keep_tokens` tokens (best-effort).
+
+        "Crop didn't raise" is NOT "crop was exact" (adversarial find,
+        2026-07-12): transformers deliberately no-ops `crop` on
+        linear-attention/mamba layers, and some hybrid layer classes (zamba)
+        inherit the no-op over their ATTENTION half too — silently keeping the
+        cropped tokens' KV. The post-crop VERIFY below catches the
+        wrong-context class (reported length still past `keep_tokens` →
+        refuse, callers rebuild fresh). Hybrids whose attention layers crop
+        exactly while linear layers keep O(1) recurrent state pass the verify:
+        the long attention prefix is reused exactly and the residual linear
+        state is an APPROXIMATION — accepted, but labeled once per provider
+        (never silent).
+        """
+        cache = getattr(state, "cache", None)
+        if cache is None:
+            return False
+        crop = getattr(cache, "crop", None)
+        if not callable(crop):
+            return False
+        try:
+            crop(int(keep_tokens))
+        except Exception:
+            return False
+
+        # Post-crop verify: a no-op crop on attention layers leaves the
+        # reported sequence length past the crop point — wrong context, refuse.
+        try:
+            get_len = getattr(cache, "get_seq_length", None)
+            if callable(get_len):
+                seq_len = int(get_len())
+                if seq_len > int(keep_tokens):
+                    return False
+        except Exception:
+            pass  # unverifiable: keep legacy accept (raise-only contract)
+
+        if self._transformers_cache_has_linear_layers(cache) and not getattr(
+            self, "_transformers_linear_crop_warned", False
+        ):
+            self._transformers_linear_crop_warned = True
+            self.logger.warning(
+                "#FALLBACK transformers cache crop: this model mixes linear-attention/mamba "
+                "layers whose recurrent state cannot be rolled back — attention KV is reused "
+                "exactly, linear state is approximate after context edits/multi-turn reuse. "
+                "Output quality typically holds (state decay), but this is not byte-exact "
+                "cold-prefill equivalence."
+            )
+        return True
+
+    @staticmethod
+    def _transformers_cache_has_linear_layers(cache: Any) -> bool:
+        """True when any cache layer is a linear-attention/mamba-style layer
+        (crop is a documented no-op for those in transformers)."""
+        layers = getattr(cache, "layers", None)
+        if not isinstance(layers, (list, tuple)):
+            return False
+        for layer in layers:
+            name = type(layer).__name__.lower()
+            if "linear" in name or "mamba" in name or "conv" in name:
+                return True
+        return False
 
     def _transformers_prefill_cache(self, state: _TransformersPromptCacheValue, token_ids: List[int]) -> bool:
         if not token_ids:
@@ -4739,13 +4807,17 @@ class HuggingFaceProvider(BaseProvider):
                     "arguments": tc['function']['arguments']
                 })
 
-        # Extract usage
+        # Extract usage (normalized + legacy key spellings, cross-provider parity)
         usage = None
         if 'usage' in response:
+            _pt = response['usage'].get('prompt_tokens', 0)
+            _ct = response['usage'].get('completion_tokens', 0)
             usage = {
-                "prompt_tokens": response['usage'].get('prompt_tokens', 0),
-                "completion_tokens": response['usage'].get('completion_tokens', 0),
-                "total_tokens": response['usage'].get('total_tokens', 0)
+                "input_tokens": _pt,
+                "output_tokens": _ct,
+                "total_tokens": response['usage'].get('total_tokens', 0),
+                "prompt_tokens": _pt,
+                "completion_tokens": _ct,
             }
 
         # Fix HTML escaping in llama-cpp-python responses
@@ -4963,9 +5035,11 @@ class HuggingFaceProvider(BaseProvider):
             completion_tokens = int(max_output_tokens)
 
         usage = {
+            "input_tokens": int(len(prompt_tokens)),
+            "output_tokens": completion_tokens,
+            "total_tokens": int(len(prompt_tokens) + completion_tokens),
             "prompt_tokens": int(len(prompt_tokens)),
             "completion_tokens": completion_tokens,
-            "total_tokens": int(len(prompt_tokens) + completion_tokens),
         }
 
         yield GenerateResponse(
@@ -5188,20 +5262,15 @@ class HuggingFaceProvider(BaseProvider):
         if state is None:
             raise RuntimeError("prompt cache key does not reference a transformers cache state")
 
-        # Best-effort first-call prefill when callers pass system/tools/messages alongside the key.
-        if not state.prompt_tokens and (system_prompt is not None or messages or tools):
-            tools_for_cache = None
-            if isinstance(tools, list) and tools and all(isinstance(t, dict) for t in tools):
-                tools_for_cache = tools  # type: ignore[assignment]
-            self.prompt_cache_update(
-                key,
-                system_prompt=system_prompt,
-                tools=tools_for_cache,  # type: ignore[arg-type]
-                messages=messages,  # type: ignore[arg-type]
-                add_generation_prompt=False,
-            )
-            cache_value = self._prompt_cache_store.get(key)
-            state = self._transformers_prompt_cache_state(cache_value) or state
+        # Caller-shape discriminator (parity with the MLX delta lane):
+        # `messages is not None` = FULL-CONTEXT caller re-sending the whole
+        # logical transcript every call (the runtime/ReAct shape). Warm calls
+        # must LCP against the recorded tokens, crop the cache to the shared
+        # prefix, and feed ONLY the suffix — the pre-fix behavior ignored
+        # `messages` on warm calls entirely, so the model answered LAST
+        # call's question over a stale context (wrong content, no savings).
+        # Prompt-only callers keep the append lane below, unchanged.
+        full_context = messages is not None
 
         # Seed for determinism (best-effort).
         if seed is not None:
@@ -5214,23 +5283,104 @@ class HuggingFaceProvider(BaseProvider):
 
         start_time = time.time()
 
-        # Delta-only fragment: user message + assistant generation prefix.
-        delta_text = self._transformers_build_prompt_fragment(
-            prompt=str(prompt or ""),
-            messages=None,
-            system_prompt=None,
-            tools=None,
-            add_generation_prompt=True,
-            prefilled_modules=prefilled_modules,
-            enable_thinking=enable_thinking,
-        )
-        delta_ids = self._transformers_tokenize_fragment(delta_text, add_bos_if_empty=not bool(state.prompt_tokens))
+        if full_context:
+            full_text = self._transformers_build_prompt_fragment(
+                prompt=str(prompt or ""),
+                messages=messages,
+                system_prompt=system_prompt,
+                tools=tools if isinstance(tools, list) else None,
+                add_generation_prompt=True,
+                prefilled_modules=prefilled_modules,
+                enable_thinking=enable_thinking,
+            )
+            new_ids = self._transformers_tokenize_fragment(full_text, add_bos_if_empty=True)
+            if not new_ids:
+                raise RuntimeError("Transformers cached generation could not tokenize the prompt")
+
+            def _lcp(a, b) -> int:
+                n = min(len(a), len(b))
+                i = 0
+                while i < n and a[i] == b[i]:
+                    i += 1
+                return i
+
+            prefix = _lcp(state.prompt_tokens, new_ids)
+            if prefix >= len(new_ids):
+                # Identical resend: keep one token to step generation.
+                prefix = len(new_ids) - 1
+            if prefix < len(state.prompt_tokens):
+                # Divergence or stale generated tokens: crop back to the LCP;
+                # hybrid caches without crop support rebuild fresh (one cold
+                # prefill — never a stale-context answer, never a double one).
+                if prefix > 0 and self._transformers_crop_cache(state, prefix):
+                    state.prompt_tokens = tuple(state.prompt_tokens[:prefix])
+                else:
+                    # Crop refused (sliding-window past fill, no-op-crop
+                    # hybrids caught by the verify, or prefix 0): one honest
+                    # cold prefill — loudly, once per key (labeled-degradation
+                    # policy; the MLX lane's analogous branches already warn).
+                    warned = getattr(self, "_transformers_rebuild_warned_keys", None)
+                    if warned is None:
+                        warned = set()
+                        self._transformers_rebuild_warned_keys = warned
+                    if key not in warned:
+                        warned.add(key)
+                        self.logger.warning(
+                            f"#FALLBACK transformers prompt cache '{key}': cache cannot be cropped "
+                            f"for this architecture (sliding-window past fill, or non-croppable "
+                            f"layers); rebuilding fresh per warm call — no prefill savings."
+                        )
+                    state.cache = self._transformers_empty_native_cache()
+                    state.prompt_tokens = ()
+                    prefix = 0
+            delta_ids = list(new_ids[prefix:])
+
+            # Keep the update-lane bookkeeping coherent for mixed callers.
+            state.system_prompt_parts = [str(system_prompt)] if isinstance(system_prompt, str) and system_prompt.strip() else []
+            state.messages = [copy.deepcopy(m) for m in messages if isinstance(m, dict)]
+            if isinstance(prompt, str) and prompt:
+                state.messages.append({"role": "user", "content": prompt})
+            state.add_generation_prompt = True
+        else:
+            # Best-effort first-call prefill when callers pass system/tools alongside the key.
+            if not state.prompt_tokens and (system_prompt is not None or tools):
+                tools_for_cache = None
+                if isinstance(tools, list) and tools and all(isinstance(t, dict) for t in tools):
+                    tools_for_cache = tools  # type: ignore[assignment]
+                self.prompt_cache_update(
+                    key,
+                    system_prompt=system_prompt,
+                    tools=tools_for_cache,  # type: ignore[arg-type]
+                    messages=None,
+                    add_generation_prompt=False,
+                )
+                cache_value = self._prompt_cache_store.get(key)
+                state = self._transformers_prompt_cache_state(cache_value) or state
+
+            # Delta-only fragment: user message + assistant generation prefix.
+            delta_text = self._transformers_build_prompt_fragment(
+                prompt=str(prompt or ""),
+                messages=None,
+                system_prompt=None,
+                tools=None,
+                add_generation_prompt=True,
+                prefilled_modules=prefilled_modules,
+                enable_thinking=enable_thinking,
+            )
+            delta_ids = self._transformers_tokenize_fragment(delta_text, add_bos_if_empty=not bool(state.prompt_tokens))
+
         if not delta_ids:
             return GenerateResponse(
                 content="",
                 model=self.model,
                 finish_reason="stop",
-                usage={"prompt_tokens": len(state.prompt_tokens), "completion_tokens": 0, "total_tokens": len(state.prompt_tokens)},
+                usage={
+                    "input_tokens": len(state.prompt_tokens),
+                    "output_tokens": 0,
+                    "total_tokens": len(state.prompt_tokens),
+                    "prompt_tokens": len(state.prompt_tokens),
+                    "completion_tokens": 0,
+                },
                 gen_time=round((time.time() - start_time) * 1000, 1),
             )
 

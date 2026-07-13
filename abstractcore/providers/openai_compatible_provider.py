@@ -213,6 +213,56 @@ class OpenAICompatibleProvider(BaseProvider):
             headers["Authorization"] = f"Bearer {api_key}"
         return headers
 
+    # Sampling parameters subject to registry-driven filtering. `max_tokens` is
+    # deliberately NOT here — every request needs an output cap, so the token
+    # param is handled by RENAME (token_param_name), never by dropping.
+    _REGISTRY_FILTERED_SAMPLING_PARAMS = (
+        "temperature",
+        "top_p",
+        "top_k",
+        "frequency_penalty",
+        "presence_penalty",
+        "repetition_penalty",
+        "seed",
+    )
+
+    def _apply_model_parameter_constraints(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Enforce model_capabilities.json parameter constraints on the wire payload.
+
+        Two registry-driven constraints (both honored by the OpenAI provider since
+        the capability-filtering wave; this provider built payloads unconditionally,
+        so a restricted model served through an OpenAI-compatible endpoint — a
+        LiteLLM/proxy route to an o-series/GPT-5-class API, or a strict vLLM
+        deployment — received parameters its API rejects and failed with a 400):
+
+        1. `unsupported_parameters`: sampling params the model's API rejects are
+           DROPPED silently (the registry list is the authoritative enforcement;
+           upstream callers always pass temperature/top_p as defaults, so warning
+           per call is noise — same convention as the OpenAI provider).
+        2. `token_param_name`: the output-cap key is RENAMED (`max_tokens` ->
+           `max_completion_tokens`) when the registry declares it; the cap itself
+           is never dropped.
+
+        Absent fields mean no restrictions — payloads are byte-identical for every
+        model without declarations (all local/self-hosted models today).
+        Runs BEFORE `_mutate_payload` so subclass hooks see the filtered payload.
+        """
+        for param in self._REGISTRY_FILTERED_SAMPLING_PARAMS:
+            if param in payload and not self._is_parameter_supported(param):
+                dropped = payload.pop(param, None)
+                # Debug-level by convention (no per-call noise), but present so an
+                # explicitly-passed value that vanishes is forensically traceable.
+                self.logger.debug(
+                    f"Dropped generation parameter '{param}'={dropped!r} for model "
+                    f"'{self.model}': declared in unsupported_parameters"
+                )
+
+        token_param = self._get_token_param_name()
+        if token_param != "max_tokens" and "max_tokens" in payload:
+            payload[token_param] = payload.pop("max_tokens")
+
+        return payload
+
     def _mutate_payload(self, payload: Dict[str, Any], **kwargs) -> Dict[str, Any]:
         """Provider-specific payload hook.
 
@@ -590,6 +640,34 @@ class OpenAICompatibleProvider(BaseProvider):
                 "(prompt caching disabled for this provider instance)"
             )
 
+    def _is_stream_options_rejection(self, response: Optional[httpx.Response], payload: Dict[str, Any]) -> bool:
+        """True when the server 400-rejected the request BECAUSE of `stream_options`.
+
+        `stream_options: {"include_usage": true}` is the standard OpenAI mechanism for
+        usage accounting on streamed responses (a final chunk with empty `choices` and a
+        `usage` object). Most servers (vLLM, LM Studio, llama.cpp) support it; strict
+        servers that reject unknown fields get the same drop-and-retry treatment as
+        `prompt_cache_key` so streaming itself never breaks over an accounting extra.
+        """
+        if "stream_options" not in payload:
+            return False
+        status = getattr(response, "status_code", None)
+        try:
+            if status is None or int(status) != 400:
+                return False
+        except Exception:
+            return False
+        detail = self._extract_error_detail(response) or ""
+        return "stream_options" in detail
+
+    def _mark_stream_options_unsupported(self) -> None:
+        self._stream_options_unsupported = True
+        if hasattr(self, "logger"):
+            self.logger.warning(
+                "#FALLBACK: server rejected 'stream_options'; retrying without it "
+                "(streamed usage accounting unavailable for this provider instance)"
+            )
+
     def _validate_model(self):
         """Validate that the model exists on the server (best-effort)."""
         # Skip validation for "default" placeholder (used by registry for model listing)
@@ -778,6 +856,11 @@ class OpenAICompatibleProvider(BaseProvider):
         if top_k_value is not None and str(getattr(self, "provider", "") or "").strip().lower() == "lmstudio":
             payload["top_k"] = top_k_value
 
+        # Streamed usage accounting: without this the final usage chunk is never
+        # emitted and every streamed call reports usage=None (accounting goes dark).
+        if stream and not getattr(self, "_stream_options_unsupported", False):
+            payload["stream_options"] = {"include_usage": True}
+
         # Prompt caching (best-effort): pass through `prompt_cache_key` when provided.
         # Some OpenAI-compatible servers (e.g. OVH AI Endpoints) hard-reject unknown request
         # fields with a 400 instead of ignoring them; once a server rejects the key we stop
@@ -822,6 +905,9 @@ class OpenAICompatibleProvider(BaseProvider):
                     "schema": json_schema
                 }
             }
+
+        # Registry-driven parameter constraints (unsupported_parameters / token_param_name)
+        payload = self._apply_model_parameter_constraints(payload)
 
         # Provider-specific request extensions (vLLM extra_body, OpenRouter headers, etc.)
         payload = self._mutate_payload(payload, **kwargs)
@@ -1027,6 +1113,11 @@ class OpenAICompatibleProvider(BaseProvider):
                     retry_payload = {k: v for k, v in payload.items() if k != "prompt_cache_key"}
                     yield from self._stream_generate(retry_payload)
                     return
+                if self._is_stream_options_rejection(response, payload):
+                    self._mark_stream_options_unsupported()
+                    retry_payload = {k: v for k, v in payload.items() if k != "stream_options"}
+                    yield from self._stream_generate(retry_payload)
+                    return
             self._raise_for_status(response, request_url=request_url)
 
             for line in response.iter_lines():
@@ -1044,6 +1135,16 @@ class OpenAICompatibleProvider(BaseProvider):
 
                         try:
                             chunk = json.loads(data)
+
+                            # Usage may ride the last content chunk (LM Studio style)
+                            # or a final chunk with EMPTY choices (OpenAI
+                            # stream_options style) — capture both.
+                            chunk_usage = chunk.get("usage")
+                            usage_dict = (
+                                self._build_usage_dict(chunk_usage)
+                                if isinstance(chunk_usage, dict) and chunk_usage
+                                else None
+                            )
 
                             if "choices" in chunk and len(chunk["choices"]) > 0:
                                 choice = chunk["choices"][0]
@@ -1069,6 +1170,17 @@ class OpenAICompatibleProvider(BaseProvider):
                                     finish_reason=finish_reason,
                                     tool_calls=tool_calls if isinstance(tool_calls, list) else None,
                                     metadata=metadata or None,
+                                    usage=usage_dict,
+                                    raw_response=chunk
+                                )
+                            elif usage_dict:
+                                # Usage-only final chunk: no content, but the
+                                # accounting must reach the consumer.
+                                yield GenerateResponse(
+                                    content="",
+                                    model=self.model,
+                                    finish_reason=None,
+                                    usage=usage_dict,
                                     raw_response=chunk
                                 )
 
@@ -1176,6 +1288,21 @@ class OpenAICompatibleProvider(BaseProvider):
         if top_k_value is not None and str(getattr(self, "provider", "") or "").strip().lower() == "lmstudio":
             payload["top_k"] = top_k_value
 
+        # Streamed usage accounting (sync-path parity).
+        if stream and not getattr(self, "_stream_options_unsupported", False):
+            payload["stream_options"] = {"include_usage": True}
+
+        # Prompt caching (best-effort) — sync-path parity (adversarial-review find:
+        # the async builder silently dropped `prompt_cache_key`, so async callers
+        # lost session cache identity). Same rejection-latch semantics as sync.
+        prompt_cache_key = kwargs.get("prompt_cache_key")
+        if (
+            isinstance(prompt_cache_key, str)
+            and prompt_cache_key.strip()
+            and not getattr(self, "_prompt_cache_key_unsupported", False)
+        ):
+            payload["prompt_cache_key"] = prompt_cache_key.strip()
+
         # Native tools (OpenAI-compatible): send structured tools/tool_choice when supported.
         if tools and self.tool_handler.supports_native:
             payload["tools"] = self.tool_handler.prepare_tools_for_native(tools)
@@ -1206,6 +1333,9 @@ class OpenAICompatibleProvider(BaseProvider):
                     "schema": json_schema
                 }
             }
+
+        # Registry-driven parameter constraints (unsupported_parameters / token_param_name)
+        payload = self._apply_model_parameter_constraints(payload)
 
         # Provider-specific request extensions (vLLM extra_body, OpenRouter headers, etc.)
         payload = self._mutate_payload(payload, **kwargs)
@@ -1317,6 +1447,12 @@ class OpenAICompatibleProvider(BaseProvider):
                     async for chunk in self._async_stream_generate(retry_payload):
                         yield chunk
                     return
+                if self._is_stream_options_rejection(response, payload):
+                    self._mark_stream_options_unsupported()
+                    retry_payload = {k: v for k, v in payload.items() if k != "stream_options"}
+                    async for chunk in self._async_stream_generate(retry_payload):
+                        yield chunk
+                    return
             self._raise_for_status(response, request_url=request_url)
 
             async for line in response.aiter_lines():
@@ -1331,6 +1467,15 @@ class OpenAICompatibleProvider(BaseProvider):
 
                         try:
                             chunk = json.loads(data)
+
+                            # Usage on the last content chunk OR a final
+                            # empty-choices chunk (stream_options) — sync parity.
+                            chunk_usage = chunk.get("usage")
+                            usage_dict = (
+                                self._build_usage_dict(chunk_usage)
+                                if isinstance(chunk_usage, dict) and chunk_usage
+                                else None
+                            )
 
                             if "choices" in chunk and len(chunk["choices"]) > 0:
                                 choice = chunk["choices"][0]
@@ -1356,6 +1501,15 @@ class OpenAICompatibleProvider(BaseProvider):
                                     finish_reason=finish_reason,
                                     tool_calls=tool_calls if isinstance(tool_calls, list) else None,
                                     metadata=metadata or None,
+                                    usage=usage_dict,
+                                    raw_response=chunk
+                                )
+                            elif usage_dict:
+                                yield GenerateResponse(
+                                    content="",
+                                    model=self.model,
+                                    finish_reason=None,
+                                    usage=usage_dict,
                                     raw_response=chunk
                                 )
 

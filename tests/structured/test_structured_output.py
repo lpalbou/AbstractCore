@@ -179,6 +179,61 @@ class TestStructuredOutputHandler:
         assert isinstance(example["age"], int)
         assert isinstance(example["name"], str)
 
+    def test_create_example_arrays_of_objects_example_objects(self):
+        """Small models echo the example nearly verbatim, so the example must
+        have the schema's SHAPE. Live incident (2026-07-12): an
+        array-of-objects field exampled as ["example_item"] was echoed as the
+        literal string and failed pydantic validation (the ReActVerifier
+        next_tool_calls incident). Nested models ride $defs/$ref in pydantic
+        schemas; Optional fields are anyOf-with-null."""
+        from typing import List, Optional
+        from pydantic import BaseModel
+
+        class ToolCall(BaseModel):
+            name: str
+            arguments: dict
+
+        class Verifier(BaseModel):
+            verdict: str
+            next_tool_calls: List[ToolCall]
+            notes: Optional[str] = None
+
+        handler = StructuredOutputHandler()
+        example = handler._create_example_from_schema(Verifier.model_json_schema())
+
+        calls = example["next_tool_calls"]
+        assert isinstance(calls, list) and len(calls) == 1
+        assert isinstance(calls[0], dict), "array-of-objects must example an OBJECT, never a placeholder string"
+        assert calls[0]["name"] == "example_string"
+        assert isinstance(calls[0]["arguments"], dict)
+        # Optional[...] resolves to its non-null variant, not None.
+        assert example["notes"] == "example_string"
+        # The example VALIDATES against the model it teaches (the real bar).
+        Verifier.model_validate(example)
+
+    def test_create_example_enum_and_scalar_arrays(self):
+        """Enums example a real member; scalar arrays stay scalar."""
+        from enum import Enum
+        from typing import List
+        from pydantic import BaseModel
+
+        class Mood(str, Enum):
+            happy = "happy"
+            sad = "sad"
+
+        class Poll(BaseModel):
+            mood: Mood
+            tags: List[str]
+            counts: List[int]
+
+        handler = StructuredOutputHandler()
+        example = handler._create_example_from_schema(Poll.model_json_schema())
+
+        assert example["mood"] == "happy"
+        assert example["tags"] == ["example_string"]
+        assert example["counts"] == [42]
+        Poll.model_validate(example)
+
     def test_extract_json_simple(self):
         """Test JSON extraction from simple response."""
         handler = StructuredOutputHandler()
