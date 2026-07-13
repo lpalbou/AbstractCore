@@ -42,15 +42,28 @@ from typing import Any, Dict, List, Optional
 
 from ..exceptions import ConfigurationError
 
-# The ruled, closed kind set (widenings go through the semantics registry).
-DATA_HOME_KINDS = ("model-cache", "prompt-cache", "runs", "sessions", "logs")
+# The ruled, closed kind set. Governance: it widens only by owning-seat
+# proposal + semantics spelling ruling + a note here (rule-4b path).
+# - The original five: cache-management vote v-gtytw8 + operator sign-off.
+# - "entity-home": semantics pre-ruling 2026-07-13 (commons c1297) — an entity
+#   home is a LIFE (memory + book + spark + artifacts + runtime), none of the
+#   five; it registers safe_to_purge=False by construction (never-purge rule
+#   made registry-visible). Consumers render unknown kinds labeled-unknown,
+#   never coerced.
+# - "artifacts": semantics ruling 2026-07-13 (commons c1302) — content-addressed
+#   artifact stores with rebuildable catalogs; purge semantics are PER-STORE
+#   (prunable run-media vs load-bearing stores are separate rows, never one row
+#   with a footnote). An entity home's artifacts/ stays INSIDE its entity-home
+#   row — a life's verbatims are part of the life, never a separate artifacts row.
+DATA_HOME_KINDS = (
+    "model-cache", "prompt-cache", "runs", "sessions", "logs", "entity-home", "artifacts",
+)
 
 REGISTRY_SCHEMA_VERSION = 1
 
 _REGISTRY_ENV = "ABSTRACTFRAMEWORK_DATA_REGISTRY"
 _LOCK_SUFFIX = ".lock"
 _LOCK_TIMEOUT_S = 10.0
-_LOCK_STALE_S = 60.0
 
 
 class DataRegistryError(ConfigurationError):
@@ -84,46 +97,79 @@ def registry_path() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# Cross-process advisory lock (portable: O_CREAT|O_EXCL lock file + stale sweep)
+# Cross-process advisory lock.
+#
+# POSIX: fcntl.flock on a persistent lock file — kernel-released on process
+# death, so there is no stale-lock state and no sweep race (two processes
+# "sweeping" a stale O_EXCL lock file can BOTH acquire — adversarial find).
+# Windows (no fcntl): msvcrt.locking on the same file.
 # ---------------------------------------------------------------------------
 
 class _RegistryLock:
     def __init__(self, target: Path):
         self._lock_file = target.with_name(target.name + _LOCK_SUFFIX)
+        self._fd: Optional[int] = None
 
     def __enter__(self) -> "_RegistryLock":
-        deadline = time.time() + _LOCK_TIMEOUT_S
         self._lock_file.parent.mkdir(parents=True, exist_ok=True)
-        while True:
-            try:
-                fd = os.open(str(self._lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        fd = os.open(str(self._lock_file), os.O_CREAT | os.O_RDWR)
+        try:
+            self._acquire(fd)
+        except BaseException:
+            os.close(fd)
+            raise
+        self._fd = fd
+        return self
+
+    def _acquire(self, fd: int) -> None:
+        deadline = time.time() + _LOCK_TIMEOUT_S
+        try:
+            import fcntl
+
+            while True:
                 try:
-                    os.write(fd, str(os.getpid()).encode("ascii"))
-                finally:
-                    os.close(fd)
-                return self
-            except FileExistsError:
-                # Stale-lock sweep: a crashed process must not wedge the registry.
-                try:
-                    age = time.time() - self._lock_file.stat().st_mtime
-                    if age > _LOCK_STALE_S:
-                        self._lock_file.unlink(missing_ok=True)
-                        continue
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    return
                 except OSError:
-                    pass
-                if time.time() > deadline:
-                    raise DataRegistryError(
-                        f"Data registry is locked (lock file: {self._lock_file}). "
-                        f"Another process held it for >{_LOCK_TIMEOUT_S}s; if no process is "
-                        f"running, delete the lock file."
-                    )
-                time.sleep(0.05)
+                    if time.time() > deadline:
+                        raise DataRegistryError(
+                            f"Data registry is locked (lock file: {self._lock_file}) — "
+                            f"another process held it for >{_LOCK_TIMEOUT_S}s."
+                        )
+                    time.sleep(0.05)
+        except ImportError:
+            import msvcrt
+
+            while True:
+                try:
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                    return
+                except OSError:
+                    if time.time() > deadline:
+                        raise DataRegistryError(
+                            f"Data registry is locked (lock file: {self._lock_file}) — "
+                            f"another process held it for >{_LOCK_TIMEOUT_S}s."
+                        )
+                    time.sleep(0.05)
 
     def __exit__(self, *exc: Any) -> None:
+        if self._fd is None:
+            return
         try:
-            self._lock_file.unlink(missing_ok=True)
-        except OSError:
-            pass
+            try:
+                import fcntl
+
+                fcntl.flock(self._fd, fcntl.LOCK_UN)
+            except ImportError:
+                import msvcrt
+
+                try:
+                    msvcrt.locking(self._fd, msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    pass
+        finally:
+            os.close(self._fd)
+            self._fd = None
 
 
 # ---------------------------------------------------------------------------
@@ -212,16 +258,40 @@ def register_data_home(
         raise DataRegistryError("Data home registration requires a real directory path.")
     resolved = resolved.resolve(strict=False)
     home_dir = Path.home().resolve(strict=False)
-    if resolved == home_dir or resolved == resolved.anchor or str(resolved) == str(Path(resolved.anchor)):
+    if resolved == home_dir or str(resolved) == resolved.anchor:
         raise DataRegistryError(
             f"Refusing to register '{resolved}' — a data home must be a dedicated directory, "
             f"never the user home or a filesystem root."
         )
 
     reg_file = registry_path()
+    reg_resolved = reg_file.resolve(strict=False)
+    if resolved == reg_resolved.parent or resolved in reg_resolved.parents:
+        raise DataRegistryError(
+            f"Refusing to register '{resolved}' — it contains the data registry itself "
+            f"({reg_resolved}); purging it would destroy the registry."
+        )
+
     with _RegistryLock(reg_file):
         data = _load_raw(reg_file)
         homes: Dict[str, Any] = data["homes"]
+        # Nesting guard (P0): one home purged as "safe" must never be able to
+        # eat another home's data — an ancestor row bypasses the child row's
+        # owner-declared safe_to_purge (entity-home amputation class). Refuse
+        # ancestor/descendant overlap with any OTHER registered home.
+        for other_name, other_raw in homes.items():
+            if other_name == clean_name or not isinstance(other_raw, dict):
+                continue
+            other_path = Path(str(other_raw.get("path") or ""))
+            if not str(other_path):
+                continue
+            if resolved == other_path or resolved in other_path.parents or other_path in resolved.parents:
+                raise DataRegistryError(
+                    f"Refusing to register '{clean_name}' at '{resolved}': it overlaps the "
+                    f"registered home '{other_name}' at '{other_path}' (ancestor/descendant). "
+                    f"Nested homes would let a purge of one bypass the other's "
+                    f"safe_to_purge declaration."
+                )
         prior = homes.get(clean_name) if isinstance(homes.get(clean_name), dict) else None
         row = DataHome(
             name=clean_name,
@@ -322,11 +392,49 @@ def purge_data_home(name: str, *, dry_run: bool = False) -> Dict[str, Any]:
         "dry_run": bool(dry_run),
         "files_deleted": 0,
         "dirs_deleted": 0,
+        "symlinks_removed": 0,
         "bytes_freed": 0,
         "errors": [],
+        "skipped_protected": [],
     }
     if not root.is_dir():
         return accounting
+
+    # Symlink-swap refusal (TOCTOU class): the path was resolved at REGISTER
+    # time; if any component has since been replaced by a symlink, os.walk
+    # would follow it into foreign territory (walk always scandirs `top`,
+    # followlinks=False notwithstanding). Refuse loudly instead of deleting
+    # through the swap.
+    if root.is_symlink() or os.path.realpath(root) != home.path:
+        raise DataRegistryError(
+            f"Refusing to purge '{home.name}': its path '{root}' no longer resolves to the "
+            f"registered location '{home.path}' (now: '{os.path.realpath(root)}'). The path "
+            f"was replaced after registration — re-register the home to purge it."
+        )
+
+    # Purge-time belt for hand-edited registries: never delete another
+    # registered home's subtree, and never the registry file/lock themselves.
+    protected: List[Path] = [registry_path().resolve(strict=False)]
+    protected.append(protected[0].with_name(protected[0].name + _LOCK_SUFFIX))
+    for other in list_data_homes():
+        if other["name"] != home.name:
+            protected.append(Path(other["path"]))
+
+    def _under_protected(candidate: Path) -> bool:
+        """Candidate IS a protected path or lives inside one — never delete."""
+        for p in protected:
+            if candidate == p or p in candidate.parents:
+                return True
+        return False
+
+    def _contains_protected(candidate: Path) -> bool:
+        """Candidate is an ANCESTOR of a protected path — its own files may go,
+        but the directory itself must survive (rmdir would require deleting
+        the protected subtree first)."""
+        for p in protected:
+            if candidate in p.parents:
+                return True
+        return False
 
     root_resolved = root.resolve(strict=False)
     for dirpath, dirnames, filenames in os.walk(root, topdown=False, followlinks=False):
@@ -339,23 +447,36 @@ def purge_data_home(name: str, *, dry_run: bool = False) -> Dict[str, Any]:
                 continue
         except OSError:
             continue
+        if _under_protected(base):
+            accounting["skipped_protected"].append(str(base))
+            continue
         for fname in filenames:
             fpath = base / fname
+            if _under_protected(fpath):
+                accounting["skipped_protected"].append(str(fpath))
+                continue
             try:
+                is_link = fpath.is_symlink()
                 size = fpath.lstat().st_size
                 if not dry_run:
                     fpath.unlink()
-                accounting["files_deleted"] += 1
+                if is_link:
+                    accounting["symlinks_removed"] += 1
+                else:
+                    accounting["files_deleted"] += 1
                 accounting["bytes_freed"] += int(size)
             except OSError as e:
                 accounting["errors"].append(f"{fpath}: {e}")
         for dname in dirnames:
             dpath = base / dname
+            if _under_protected(dpath) or _contains_protected(dpath):
+                accounting["skipped_protected"].append(str(dpath))
+                continue
             try:
                 if dpath.is_symlink():
                     if not dry_run:
                         dpath.unlink()
-                    accounting["files_deleted"] += 1
+                    accounting["symlinks_removed"] += 1
                     continue
                 if not dry_run:
                     dpath.rmdir()
@@ -366,6 +487,11 @@ def purge_data_home(name: str, *, dry_run: bool = False) -> Dict[str, Any]:
 
 
 def _tree_size(root: Path) -> int:
+    """Recursive apparent size (sum of lstat sizes; symlinks not followed).
+
+    Hardlinked files count once per NAME (no inode dedup) — an estimate for a
+    management view, not `du` disk-usage accounting.
+    """
     total = 0
     for dirpath, _dirnames, filenames in os.walk(root, followlinks=False):
         base = Path(dirpath)
@@ -385,10 +511,19 @@ def register_core_data_homes() -> List[DataHome]:
     - LM Studio model directory when present: REPORT-ONLY (safe_to_purge=False)
       — that directory belongs to LM Studio, never touched (agreed guardrail).
     """
+    from .structured_logging import get_logger
+
+    logger = get_logger("abstractcore.data_registry")
     rows: List[DataHome] = []
     try:
-        hf_home = os.environ.get("HF_HOME")
-        hub = Path(hf_home) / "hub" if hf_home else Path.home() / ".cache" / "huggingface" / "hub"
+        # huggingface_hub precedence: HF_HUB_CACHE > HUGGINGFACE_HUB_CACHE
+        # (legacy) > $HF_HOME/hub > ~/.cache/huggingface/hub.
+        hub_env = os.environ.get("HF_HUB_CACHE") or os.environ.get("HUGGINGFACE_HUB_CACHE")
+        if hub_env:
+            hub = Path(hub_env).expanduser()
+        else:
+            hf_home = os.environ.get("HF_HOME")
+            hub = Path(hf_home).expanduser() / "hub" if hf_home else Path.home() / ".cache" / "huggingface" / "hub"
         if hub.is_dir():
             rows.append(register_data_home(
                 "huggingface-hub-cache",
@@ -403,8 +538,8 @@ def register_core_data_homes() -> List[DataHome]:
             ))
     except DataRegistryError:
         raise
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"#FALLBACK: could not probe/register the Hugging Face hub cache: {e}")
     try:
         lms = Path.home() / ".lmstudio" / "models"
         if not lms.is_dir():
@@ -424,6 +559,6 @@ def register_core_data_homes() -> List[DataHome]:
             ))
     except DataRegistryError:
         raise
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"#FALLBACK: could not probe/register the LM Studio model dir: {e}")
     return rows

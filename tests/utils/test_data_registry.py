@@ -86,6 +86,43 @@ class TestRegistration:
         assert "not be silently overwritten" in str(e.value)
         assert registry_env.read_text() == "{not json"
 
+    def test_nested_homes_refused_both_directions(self, registry_env, tmp_path):
+        """P0 (adversarial find): an ancestor home purged as 'safe' would eat a
+        nested home's data, bypassing the child's owner-declared safe_to_purge —
+        the entity-home amputation class. Overlap is refused at registration."""
+        parent = _make_home(tmp_path, "data")
+        child = parent / "entities" / "castor"
+        child.mkdir(parents=True)
+
+        register_data_home("castor-home", path=str(child), kind="sessions",
+                           owner="abstractgateway", safe_to_purge=False)
+        with pytest.raises(DataRegistryError) as e:
+            register_data_home("all-data", path=str(parent), kind="runs",
+                               owner="abstractgateway", safe_to_purge=True)
+        assert "overlaps" in str(e.value)
+        assert "castor-home" in str(e.value)
+
+        # Descendant direction refused too.
+        deeper = child / "artifacts"
+        deeper.mkdir()
+        with pytest.raises(DataRegistryError):
+            register_data_home("castor-artifacts", path=str(deeper), kind="logs",
+                               owner="abstractgateway", safe_to_purge=True)
+
+    def test_registry_container_dir_refused(self, registry_env, tmp_path):
+        """P0 (adversarial find): registering the directory holding the registry
+        file itself as safe-to-purge would let a purge destroy the registry."""
+        with pytest.raises(DataRegistryError) as e:
+            register_data_home("meta", path=str(registry_env.parent), kind="logs",
+                               owner="x", safe_to_purge=True)
+        assert "registry itself" in str(e.value)
+
+    def test_reregister_same_name_same_path_is_not_overlap(self, registry_env, tmp_path):
+        home = _make_home(tmp_path)
+        register_data_home("h", path=str(home), kind="logs", owner="a", safe_to_purge=True)
+        row = register_data_home("h", path=str(home), kind="logs", owner="a", safe_to_purge=True)
+        assert row.name == "h"
+
 
 class TestEnumeration:
     def test_list_rows_sorted_and_json_ready(self, registry_env, tmp_path):
@@ -180,11 +217,57 @@ class TestPurge:
         (home / "link-file").symlink_to(precious)
         register_data_home("h", path=str(home), kind="prompt-cache", owner="core", safe_to_purge=True)
 
-        purge_data_home("h")
+        result = purge_data_home("h")
         assert precious.exists(), "purge must never follow symlinks out of the home"
         assert precious.read_text() == "keep me"
         assert not (home / "link-dir").exists()
         assert not (home / "link-file").exists()
+        assert result["symlinks_removed"] == 2, "symlinks are accounted as symlinks, not files"
+
+    def test_root_swapped_for_symlink_after_registration_refused(self, registry_env, tmp_path):
+        """P1 (adversarial find, TOCTOU class): os.walk always scandirs `top`,
+        so a home path replaced by a symlink AFTER registration would be
+        followed into foreign territory. Purge must refuse the swap loudly."""
+        home = _make_home(tmp_path, "real-home")
+        register_data_home("h", path=str(home), kind="prompt-cache", owner="core", safe_to_purge=True)
+
+        victim = tmp_path / "victim"
+        victim.mkdir()
+        (victim / "v.txt").write_text("do not delete")
+
+        import shutil
+        shutil.rmtree(home)
+        home.symlink_to(victim, target_is_directory=True)
+
+        with pytest.raises(DataRegistryError) as e:
+            purge_data_home("h")
+        assert "no longer resolves" in str(e.value)
+        assert (victim / "v.txt").exists()
+
+    def test_hand_edited_nested_home_is_skipped_at_purge(self, registry_env, tmp_path):
+        """Belt for registries edited outside the API: a nested protected home
+        inside a purgeable one is SKIPPED (with accounting), never deleted."""
+        parent = _make_home(tmp_path, "data")
+        child = parent / "entities" / "castor"
+        child.mkdir(parents=True)
+        (child / "life.sqlite3").write_bytes(b"life")
+        (parent / "junk.tmp").write_bytes(b"x" * 10)
+
+        register_data_home("all-data", path=str(parent), kind="runs",
+                           owner="abstractgateway", safe_to_purge=True)
+        # Simulate a hand-edited registry that bypassed the nesting guard.
+        reg = json.loads(registry_env.read_text())
+        reg["homes"]["castor-home"] = {
+            "name": "castor-home", "path": str(child), "kind": "sessions",
+            "owner": "abstractgateway", "safe_to_purge": False,
+            "description": "", "registered_at": "x", "updated_at": "x", "meta": {},
+        }
+        registry_env.write_text(json.dumps(reg))
+
+        result = purge_data_home("all-data")
+        assert (child / "life.sqlite3").exists(), "nested protected home must survive"
+        assert not (parent / "junk.tmp").exists()
+        assert any("castor" in s for s in result["skipped_protected"])
 
     def test_unregister_removes_row_never_disk(self, registry_env, tmp_path):
         home = _make_home(tmp_path)
@@ -248,3 +331,25 @@ class TestPackageSurface:
 
     def test_registry_path_env_override(self, registry_env):
         assert registry_path() == registry_env
+
+    def test_kind_set_carries_the_semantics_ruled_entries(self, registry_env, tmp_path):
+        """The ruled five + entity-home (semantics pre-ruling c1297) + artifacts
+        (semantics ruling c1302), 2026-07-13. Widenings go through the semantics
+        registry — this pin makes an ad-hoc widening a conscious act."""
+        assert DATA_HOME_KINDS == (
+            "model-cache", "prompt-cache", "runs", "sessions", "logs", "entity-home", "artifacts",
+        )
+        home = tmp_path / "castor"
+        home.mkdir()
+        row = register_data_home(
+            "castor-home", path=str(home), kind="entity-home",
+            owner="abstractgateway", safe_to_purge=False,
+        )
+        assert row.kind == "entity-home"
+        store = tmp_path / "artifact-store"
+        store.mkdir()
+        row = register_data_home(
+            "run-media-artifacts", path=str(store), kind="artifacts",
+            owner="abstractgateway", safe_to_purge=True,
+        )
+        assert row.kind == "artifacts"
