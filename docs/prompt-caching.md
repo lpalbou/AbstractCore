@@ -165,20 +165,23 @@ comparable quantity per lane.
 |---|---|---|---|
 | LM Studio server (4-bit) | ~6.9 s/cycle, 3 cycles, 20.7 s total (10.9 s/cycle at ~10k-tk transcripts) | ~9.4 s/cycle, 3 cycles, 28.4 s total (19.0 s/cycle at ~10k tk) | per-call re-prefill ≈0.7–1.3 s at 3–4k tk, ~15 s at 10k tk; savings grow with transcript size |
 | MLX in-process, pure attention (Qwen3-4B-2507 4-bit) | warm generate feeds ~240 tokens instead of ~8,200 | full re-prefill every cycle | the fed-token delta; end-to-end parity additionally requires the host to keep its per-turn cache maintenance incremental (see note ‡) |
-| MLX in-process, hybrid (Qwen3.5-4B 4-bit) | rebuild per call † | rebuild per call | none — both arms rebuild by construction; this row documents the fallback, not the cache |
+| MLX in-process, hybrid (Qwen3.5-4B 4-bit) | snapshot/restore: warm turns feed the suffix only † | full re-prefill every cycle | the fed-token delta — `hit_restore` on warm turns after the cold turn 1 |
 | GGUF / llama.cpp in-process (Q4_K_M) | warm prefill flat as the transcript grows | re-prefill grows with prompt size (~0.9→2.9 s over 2.3k→3.5k tk) | the slope: flat vs growing. Per-cycle wall delta ≈+0.5–0.8 s at these sizes |
 | HuggingFace transformers in-process (bf16) | warm prefill ≤~2 s | re-prefill ≈7–12 s per call at 1.5–3.2k tk | per-cycle prefill delta ≈6–10 s; end-to-end totals are decode-dominated at bf16 (~8 tok/s) and NOT a cache measurement |
 
 † **Hybrid-architecture note (Qwen3.5-class on MLX — covers Qwen3.5, Qwen3.6, and Ornith 1.0):**
-Qwen3.6 is the SAME `qwen3_5`/`qwen3_5_moe` architecture as Qwen3.5 (a 3:1 Gated DeltaNet + full
-attention stack, verified: HF loads both with the same classes), and Ornith 1.0 (9B/35B/397B) is a
+Qwen3.6 is the same `qwen3_5`/`qwen3_5_moe` architecture as Qwen3.5 (a 3:1 Gated DeltaNet + full
+attention stack; Hugging Face loads both with the same classes), and Ornith 1.0 (9B/35B/397B) is a
 Qwen3.5 post-train — so all three mix attention layers (trimmable `KVCache`) with linear-attention
-layers (untrimmable `ArraysCache`); `can_trim_prompt_cache` refuses and the MLX delta-feed path
-rebuilds state per call — output
-stays correct, the fallback is reported with a one-time `#FALLBACK` warning, and warm calls cost
-roughly the same as cache-off in BOTH arms (the rebuild still avoids feeding the transcript on
-top of its own KV, so it is never *worse* than cache-off). Pick a pure-attention model for MLX
-warm-loop savings (see the compatibility table below).
+layers whose recurrent state (`ArraysCache`) is not trimmable. A recurrent state cannot be rewound,
+so the trim-based delta path does not apply. MLX instead uses a **snapshot/restore lane** for these
+models: it keeps one copied cache boundary per `prompt_cache_key` and, when the next full-context
+prompt extends it, restores the copy and feeds only the new suffix (forward-only reuse; a one-time
+`#FALLBACK` line records that the snapshot lane, not the trim lane, is active). A growing-prefix
+agent loop therefore reuses its prefix on warm turns just as a pure-attention model does. Measured
+on `Qwen3.5-4B-MLX-4bit` (6.6k-token transcript, one key): turn 1 does a full prefill; turns 2–3
+report `outcome=hit_restore` and feed ~24 of 6.6k tokens, with fact recall correct throughout. The
+first turn always pays a full prefill; divergent prompts (a changed prefix) rebuild and re-snapshot.
 
 ‡ **Host composition note:** the in-process delta engages when the host re-sends the full
 context per call (`messages=` present) over a stable key. Hosts that additionally maintain the
@@ -223,8 +226,8 @@ The delta path needs a trimmable cache (`mlx_lm can_trim_prompt_cache`).
 | Falcon-H1, LongCat-Flash, DeepSeek-V3.2 | `CacheList` of `KVCache` | Full delta (countable and trimmable) | prior |
 | Gemma-3/3n/4, GPT-OSS, Cohere2, Ministral3, sliding-window Llama variants | mix `KVCache` + `RotatingKVCache` | Full delta only while the transcript is under the smallest sliding window (GPT-OSS: 128 tokens; Gemma: 512–1024) — then rebuild-per-call with `#FALLBACK` | ✅ 2026-07-14: `gemma-4-31b-mxfp4` (RotatingKVCache local + KVCache global) → `hit_extend` at ~450-tk transcript (under window), fact-recall correct |
 | Llama-4 (Scout/Maverick) | `ChunkedKVCache` (8k chunks) | Delta within the live chunk; partial trims refuse → rebuild | prior |
-| Qwen3.5, **Qwen3.6** (same `qwen3_5`/`qwen3_5_moe` hybrid, 3:1 Gated DeltaNet), **Ornith 1.0** (9B/35B/397B — Qwen3.5 post-trains), Qwen3-Next, Nemotron-H, Jamba, LFM2/2.5, Granite-hybrid, Plamo2, Baichuan-M1 | hybrid with untrimmable `ArraysCache` (Gated DeltaNet) layers | Rebuild-per-warm-call, `#FALLBACK` warned (correct, no in-process delta savings). NOTE: growing-prefix reuse still helps on the SERVER lane (LM Studio/vLLM) when the deployed `mlx_lm`/`llama.cpp` has the hybrid-checkpoint prefix cache (upstream mlx-lm #1006: ~2.9x measured on Qwen3.5-9B agentic prompts) — that path is checkpoint-based, not trim-based, so it is outside AbstractCore's in-process delta lane. | ✅ 2026-07-14: `Qwen3.5-4B-MLX-4bit`, `Qwen3.6-27B-4bit`, `Qwen3.6-35B-A3B-4bit`, `Ornith-1.0-9B-4bit` all → `outcome=rebuilt` + `#FALLBACK … not trimmable`, `cached_tokens=0`, warm ≈ cold, fact-recall correct. Cache census on the 4B: exactly 24×`ArraysCache` + 8×`KVCache` (3:1), `can_trim_prompt_cache=False` |
-| Mamba/Mamba2, RWKV-7 (pure SSM) | all `ArraysCache` | Rebuild-per-warm-call (state not countable), `#FALLBACK` warned | prior |
+| Qwen3.5, **Qwen3.6** (same `qwen3_5`/`qwen3_5_moe` hybrid, 3:1 Gated DeltaNet), **Ornith 1.0** (9B/35B/397B — Qwen3.5 post-trains), Qwen3-Next, Nemotron-H, Jamba, LFM2/2.5, Granite-hybrid, Plamo2, Baichuan-M1 | hybrid with untrimmable `ArraysCache` (Gated DeltaNet) layers | **Snapshot/restore delta** (`outcome=hit_restore`): the recurrent state can't be trimmed but it can be copied, so a per-key boundary snapshot is restored and only the suffix is fed on warm growing-prefix turns. Turn 1 pays a full prefill; a divergent prefix rebuilds and re-snapshots. Server lane (LM Studio/vLLM) additionally benefits from the deployed engine's hybrid-checkpoint prefix cache. | ✅ 2026-07-15: `Qwen3.5-4B-MLX-4bit` → turns 2–3 `outcome=hit_restore`, fed ~24 of 6.6k tokens, fact-recall correct; `Qwen3.6-27B/35B-A3B`, `Ornith-1.0-9B` share the arch (census on the 4B: 24×`ArraysCache` + 8×`KVCache`, 3:1, `can_trim_prompt_cache=False`) |
+| Mamba/Mamba2, RWKV-7 (pure SSM) | all `ArraysCache` | Snapshot/restore delta (`hit_restore`): state not trimmable but copyable — same lane as the hybrids | ✅ 2026-07-15 (lane shared with the Gated-DeltaNet hybrids) |
 
 Check your model: the first warm full-context call logs `#FALLBACK … not trimmable` /
 `… not countable` if the model cannot delta; no warning means the delta path engaged.

@@ -2,6 +2,7 @@
 MLX provider implementation for Apple Silicon.
 """
 
+import copy
 import json
 import time
 import uuid
@@ -69,6 +70,17 @@ class MLXProvider(BaseProvider):
         self._delta_feed_warned_keys: set = set()
         self._pending_append_fragment: Optional[str] = None
         self._pending_append_precount: int = 0
+        # Snapshot/restore lane for UNTRIMMABLE architectures (Gated-DeltaNet
+        # hybrids: Qwen3.5/3.6/Ornith, and pure-SSM). A recurrent state cannot
+        # be rewound (trim), but it CAN be copied: we keep one deepcopy snapshot
+        # per key at the last prefill+reply boundary, keyed by the exact token
+        # ids it holds, and restore it when the next full-context prompt extends
+        # it — the same forward-only discipline llama.cpp's GGUF lane and
+        # mlx_lm's own server (LRUPromptCache) use. Bounded to one snapshot per
+        # key (the growing snapshot replaces its predecessor). Guarded because
+        # capture stores a live cache object shared with no one else.
+        self._hybrid_snapshots: Dict[str, Dict[str, Any]] = {}
+        self._hybrid_snapshot_lock = threading.RLock()
         # The stash is instance-level shared state: without the lock, two
         # threads updating DIFFERENT keys could cross-pollinate their
         # fed-token-id records (adversarial find P2-9).
@@ -172,9 +184,39 @@ class MLXProvider(BaseProvider):
             return None
 
     def _prompt_cache_backend_clone(self, cache_value: Any) -> Optional[Any]:
-        """Best-effort deep clone of an MLX prompt cache."""
+        """Deep clone of an MLX prompt cache.
+
+        `copy.deepcopy` FIRST (correctness): `ArraysCache.from_state` returns the
+        live per-layer array LIST and `from_state` re-assigns it, so a
+        `from_state`-based clone ALIASES the parent's mutable recurrent slots —
+        a later live step-write (`cache[i] = …` during generation on a
+        Gated-DeltaNet hybrid) then silently corrupts the "clone" (and vice
+        versa). This is a latent defect for hybrid module-cache forks
+        (`prompt_cache_prepare_modules`) independent of the snapshot lane, found
+        by two fable5 adversaries (2026-07-15) and reproduced. `deepcopy` copies
+        the arrays (measured 0.2–3 ms on a 4B hybrid; mlx arrays deep-copy
+        correctly) and is the same discipline mlx_lm's own `fetch_nearest_cache`
+        uses. The `from_state` path stays as a fallback ONLY if deepcopy fails
+        (never expected for a real cache).
+        """
         if cache_value is None:
             return None
+
+        try:
+            # Materialize the source's lazy state FIRST so the deepcopy captures
+            # concrete arrays (an independent copy of a lazy graph could still
+            # share upstream nodes until evaluated).
+            try:
+                import mlx.core as mx
+
+                layers = cache_value if isinstance(cache_value, (list, tuple)) else [cache_value]
+                states = [getattr(layer, "state", None) for layer in layers]
+                mx.eval([s for s in states if s is not None])
+            except Exception:
+                pass
+            return copy.deepcopy(cache_value)
+        except Exception:
+            pass  # fall through to the legacy from_state clone below
 
         def _clone_layer(layer: Any) -> Any:
             from_state = getattr(layer.__class__, "from_state", None)
@@ -247,6 +289,100 @@ class MLXProvider(BaseProvider):
 
         # Fallback: single cache object.
         return _clone_layer(cache_value)
+
+    # ---- Snapshot/restore lane for untrimmable (recurrent) architectures ----
+
+    def _prefill_tokens_into_cache(self, cache_value: Any, token_ids: List[int]) -> bool:
+        """Run the model forward over token_ids into cache_value with NO decode.
+
+        Uses mlx_lm's `generate_step(max_tokens=0)`, which executes exactly the
+        prefill loop (chunked, cache-mutating) and stops before yielding any
+        sampled token — so the cache lands on the EXACT token boundary with no
+        reply pollution. This is the clean boundary a recurrent state needs for
+        a reusable snapshot (it cannot be reached by trimming after the fact).
+        """
+        if cache_value is None or not token_ids:
+            return False
+        try:
+            import mlx.core as mx
+            from mlx_lm.generate import generate_step
+        except Exception:
+            return False
+        try:
+            for _ in generate_step(
+                mx.array(token_ids), self.llm, max_tokens=0, prompt_cache=cache_value
+            ):
+                pass  # max_tokens=0 yields nothing; prefill is the side effect
+            try:
+                mx.eval([getattr(layer, "state", None) for layer in cache_value])
+            except Exception:
+                pass
+            return True
+        except Exception as exc:
+            self.logger.debug(f"MLX snapshot prefill failed: {exc}")
+            return False
+
+    def prompt_cache_clear(self, key: Optional[str] = None) -> bool:
+        """Clear prompt caches AND their hybrid snapshots (avoid stale/leaked
+        snapshot state outliving the key it mirrors)."""
+        result = super().prompt_cache_clear(key)
+        with self._hybrid_snapshot_lock:
+            if key is None:
+                self._hybrid_snapshots.clear()
+            else:
+                norm = self._normalize_prompt_cache_key(key)
+                self._hybrid_snapshots.pop(norm, None)
+        return result
+
+    def _ensure_hybrid_snapshot_state(self) -> None:
+        """Lazily materialize the snapshot store/lock.
+
+        The delta feed must not assume `__init__` ran — provider instances are
+        sometimes built via `__new__` (e.g. unit tests that exercise the pure
+        cache logic with fakes). Real instances always have `__init__`, so the
+        first-caller race is single-threaded in practice.
+        """
+        if not hasattr(self, "_hybrid_snapshot_lock"):
+            self._hybrid_snapshot_lock = threading.RLock()
+        if not hasattr(self, "_hybrid_snapshots"):
+            self._hybrid_snapshots = {}
+
+    def _get_hybrid_snapshot(self, key: str) -> Optional[Dict[str, Any]]:
+        self._ensure_hybrid_snapshot_state()
+        with self._hybrid_snapshot_lock:
+            return self._hybrid_snapshots.get(key)
+
+    def _store_hybrid_snapshot(self, key: str, cache_value: Any, token_ids: List[int]) -> None:
+        """Keep one snapshot per key (the growing one evicts its predecessor)."""
+        self._ensure_hybrid_snapshot_state()
+        with self._hybrid_snapshot_lock:
+            self._hybrid_snapshots[key] = {"cache": cache_value, "ids": list(token_ids)}
+
+    def _drop_hybrid_snapshot(self, key: str) -> None:
+        self._ensure_hybrid_snapshot_state()
+        with self._hybrid_snapshot_lock:
+            self._hybrid_snapshots.pop(key, None)
+
+    def _capture_hybrid_snapshot(self, key: str, new_ids: List[int]) -> None:
+        """Prefill new_ids into a FRESH cache and store it as this key's
+        snapshot boundary, so the NEXT full-context call that extends new_ids
+        restores it and feeds only the suffix.
+
+        A fresh dedicated prefill (rather than reusing the just-generated cache)
+        is what gives a clean, reply-free boundary — the generated cache holds
+        new_ids + the sampled reply, and an untrimmable recurrent state cannot
+        be rewound to drop the reply. The prefill costs one prompt pass, but it
+        is amortized across every subsequent warm turn in the loop; without it
+        the architecture pays that pass EVERY turn.
+        """
+        if not new_ids:
+            return
+        fresh = self._prompt_cache_backend_create()
+        if fresh is None:
+            return
+        if not self._prefill_tokens_into_cache(fresh, new_ids):
+            return
+        self._store_hybrid_snapshot(key, fresh, new_ids)
 
     def _prompt_cache_backend_token_count(self, cache_value: Any) -> Optional[int]:
         """Token count of a live cache, or None when it cannot be known.
@@ -355,6 +491,21 @@ class MLXProvider(BaseProvider):
         while i < n and a[i] == b[i]:
             i += 1
         return i
+
+    def _cache_is_trimmable(self, cache_value: Any) -> bool:
+        """True if mlx_lm can trim this cache (architecture-determined, not
+        fill-determined — an EMPTY hybrid cache already reports False). Used to
+        route cold untrimmable caches through the snapshot lane from turn 1, so
+        the first turn leaves a reusable boundary. Absent predicate → assume
+        trimmable (the delta path's own trim attempt is the real gate)."""
+        try:
+            from mlx_lm.models.cache import can_trim_prompt_cache
+        except Exception:
+            return True
+        try:
+            return bool(can_trim_prompt_cache(cache_value))
+        except Exception:
+            return True
 
     def _trim_prompt_cache_tokens(self, cache_value: Any, num_tokens: int) -> bool:
         """Trim `num_tokens` from the END of a live cache (best-effort)."""
@@ -529,9 +680,7 @@ class MLXProvider(BaseProvider):
             _note("append", cached=cache_len, fed=len(new_ids))
             return cache_value, full_prompt, record
 
-        if cache_len is not None and cache_len <= 0:
-            _note("cold", cached=0, fed=len(new_ids))
-            return cache_value, full_prompt, new_ids
+        cold_empty = cache_len is not None and cache_len <= 0
 
         def _fresh_full_feed() -> tuple[Any, Any, Optional[List[int]]]:
             # Preserve the entry's own meta (minus the now-stale id record)
@@ -558,6 +707,90 @@ class MLXProvider(BaseProvider):
         def _is_artifact_backed() -> bool:
             meta = self.prompt_cache_key_meta(key) or {}
             return bool(meta.get("loaded_from") or meta.get("binding_id") or meta.get("artifact_sha256"))
+
+        def _hybrid_snapshot_feed() -> tuple[Any, Any, Optional[List[int]]]:
+            """Snapshot/restore feed for UNTRIMMABLE architectures.
+
+            A recurrent state cannot be trimmed, but it can be COPIED: restore
+            the per-key snapshot when its recorded ids are a true prefix of the
+            new prompt (forward-only, no rewind — the discipline llama.cpp's
+            GGUF lane and mlx_lm's own server use), prefill only the suffix onto
+            the restored copy, and re-snapshot the new boundary for the next
+            turn. On a cold/divergent turn there is no usable snapshot, so this
+            does one full prefill (same cost as the old rebuild-fresh) BUT
+            leaves a snapshot behind, so the loop's subsequent warm turns are
+            cheap. The boundary is new_ids[:-1] so a single trailing token seeds
+            decoding without re-prefilling (generation needs a non-empty seed).
+            """
+            snap = self._get_hybrid_snapshot(key)
+            working: Any = None
+            prefix_len = 0
+            if snap is not None:
+                snap_ids = list(snap.get("ids") or [])
+                lcp_snap = self._token_lcp_len(snap_ids, new_ids)
+                # A true prefix that still leaves a suffix to feed.
+                if snap_ids and lcp_snap == len(snap_ids) and lcp_snap < len(new_ids):
+                    restored = self._prompt_cache_backend_clone(snap.get("cache"))
+                    if restored is not None:
+                        working = restored
+                        prefix_len = lcp_snap
+            if working is None:
+                working = self._prompt_cache_backend_create()
+                prefix_len = 0
+            if working is None:
+                _note("bypassed", reason="fresh cache creation failed; generated without a cache")
+                return None, full_prompt, None
+
+            boundary_end = max(len(new_ids) - 1, 0)  # keep ≥1 token to seed decode
+            to_prefill = new_ids[prefix_len:boundary_end]
+            if to_prefill and not self._prefill_tokens_into_cache(working, to_prefill):
+                # Prefill failed: drop the (now-suspect) snapshot and take the
+                # plain fresh full feed — correct, just without snapshot savings.
+                self._drop_hybrid_snapshot(key)
+                return _fresh_full_feed()
+
+            # Snapshot the clean boundary (deepcopy) BEFORE generation mutates
+            # `working` with the seed token + reply. One snapshot per key.
+            boundary_ids = new_ids[:boundary_end]
+            snap_copy = self._prompt_cache_backend_clone(working)
+            if snap_copy is not None and boundary_ids:
+                self._store_hybrid_snapshot(key, snap_copy, boundary_ids)
+            else:
+                self._drop_hybrid_snapshot(key)
+
+            # Persist `working` as the live key cache (meta/TTL preserved).
+            prior_meta = dict(self.prompt_cache_key_meta(key) or {})
+            prior_meta.pop(self._FED_TOKEN_IDS_META, None)
+            prior_meta.setdefault("backend", "mlx")
+            try:
+                prior_ttl = self._prompt_cache_store.ttl_s(key)
+            except Exception:
+                prior_ttl = None
+            try:
+                self._prompt_cache_store.set(key, working, meta=prior_meta, ttl_s=prior_ttl)
+            except Exception:
+                pass
+
+            seed = new_ids[boundary_end:] or new_ids  # trailing token(s) to decode from
+            # fed = the tokens actually processed THIS turn (suffix prefilled +
+            # the decode seed), mirroring the trim path's suffix accounting;
+            # cached = the tokens served from the restored snapshot.
+            fed_this_turn = len(to_prefill) + len(seed)
+            if prefix_len > 0:
+                _note("hit_restore", cached=prefix_len, fed=fed_this_turn)
+            else:
+                _note("rebuilt", cached=0, fed=fed_this_turn)
+            return working, seed, new_ids
+
+        # Cold EMPTY cache: if the architecture is untrimmable (hybrid/SSM —
+        # empty already reports not-trimmable), take the snapshot lane NOW so
+        # turn 1 leaves a reusable boundary for turn 2. Trimmable models keep
+        # the plain cold feed (their delta path handles warm reuse by trimming).
+        if cold_empty:
+            if not _is_artifact_backed() and not self._cache_is_trimmable(cache_value):
+                return _hybrid_snapshot_feed()
+            _note("cold", cached=0, fed=len(new_ids))
+            return cache_value, full_prompt, new_ids
 
         if fed_ids is None:
             # Warm cache of unknown composition under a full-context caller.
@@ -607,14 +840,10 @@ class MLXProvider(BaseProvider):
                 self._delta_feed_warned_keys.add(key)
                 self.logger.warning(
                     f"#FALLBACK MLX prompt cache '{key}': cache state is not countable for this "
-                    f"architecture (recurrent/array layers); rebuilding fresh per full-context "
-                    f"call — no prefill savings."
+                    f"architecture (recurrent/array layers); using the snapshot/restore lane "
+                    f"(warm turns reuse a copied boundary, no trim)."
                 )
-            _note(
-                "rebuilt", cached=0, fed=len(new_ids),
-                reason="cache state not countable for this architecture; rebuilt fresh",
-            )
-            return _fresh_full_feed()
+            return _hybrid_snapshot_feed()
 
         lcp = self._token_lcp_len(fed_ids, new_ids)
 
@@ -658,14 +887,10 @@ class MLXProvider(BaseProvider):
                 self._delta_feed_warned_keys.add(key)
                 self.logger.warning(
                     f"#FALLBACK MLX prompt cache '{key}': cache type is not trimmable for this "
-                    f"architecture; rebuilt fresh (one cold prefill) — no prefill savings on "
-                    f"warm calls for this key."
+                    f"architecture (recurrent/hybrid layers); using the snapshot/restore lane "
+                    f"(warm turns reuse a copied boundary, no trim)."
                 )
-            _note(
-                "rebuilt", cached=0, fed=len(new_ids),
-                reason="cache type not trimmable for this architecture; rebuilt fresh",
-            )
-            return _fresh_full_feed()
+            return _hybrid_snapshot_feed()
 
         suffix = new_ids[effective_prefix:]
         _note("hit_full" if identical else "hit_extend", cached=effective_prefix, fed=len(suffix))
