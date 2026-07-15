@@ -223,7 +223,18 @@ def test_gguf_prompt_cache_prepare_modules_fork_and_update_reuse_prefix(chat_for
     eval_lengths = [len(call) for call in provider.llm.eval_calls]
     assert len(eval_lengths) == 2
     assert eval_lengths[0] > 0
-    assert 0 < eval_lengths[1] < len(prefix_state.prompt_tokens)
+    # Single-system-turn fix (2026-07-15): tools now MERGE into the system
+    # message instead of opening a second consecutive system block, so the
+    # system-only module render is no longer a token-prefix of system+tools
+    # (the closing tag precedes the tool text). The tools-module append is a
+    # one-time full re-prefill of the merged prompt; session-time reuse
+    # (fork + message appends, asserted below) is what must stay incremental.
+    assert eval_lengths[1] == len(prefix_state.prompt_tokens)
+    final_messages = provider._gguf_build_chat_messages(
+        system_prompt="You are helpful.",
+        tools=[{"type": "function", "function": {"name": "shell"}}],
+    )
+    assert [m["role"] for m in final_messages] == ["system"]
 
     assert provider.prompt_cache_fork(prefix_key, "sess", make_default=False) is True
 
@@ -414,6 +425,92 @@ def test_generate_gguf_control_plane_receives_thinking_flag() -> None:
 
     assert isinstance(response, GenerateResponse)
     assert captured["enable_thinking"] is False
+
+
+@pytest.mark.parametrize("chat_format", ["chatml-function-calling", "llama-3"])
+def test_gguf_system_plus_tools_render_one_system_message(chat_format: str) -> None:
+    """Regression pin (2026-07-15): system_prompt + tools must produce ONE
+    system message containing both, never two consecutive system blocks.
+
+    Chat templates (ChatML/Qwen, Gemma, Llama-3) are trained on exactly one
+    system turn; the control-plane lane used to insert the tool prompt as a
+    SECOND system message, which is out-of-distribution and degrades
+    tool-calling (live find on Ornith-1.0-35B GGUF through a ReAct loop).
+    """
+    provider = _new_provider(chat_format=chat_format)
+    tools = [
+        {"type": "function", "function": {"name": "read_file"}},
+        {"type": "function", "function": {"name": "list_files"}},
+    ]
+
+    msgs = provider._gguf_build_chat_messages(
+        system_prompt="You are a ReAct agent.",
+        tools=tools,
+        user_message_content="hi",
+    )
+
+    assert [m["role"] for m in msgs] == ["system", "user"]
+    assert "You are a ReAct agent." in msgs[0]["content"]
+    assert "## Tools (session)" in msgs[0]["content"]
+    assert "read_file" in msgs[0]["content"]
+
+    prompt_text, _ = provider._gguf_render_prompt_tokens(messages=msgs, add_generation_prompt=True)
+    if chat_format == "llama-3":
+        assert prompt_text.count("<|start_header_id|>system<|end_header_id|>") == 1
+    else:
+        assert prompt_text.count("<|im_start|>system") == 1
+
+    # Tools-only (no user system prompt): still exactly one system message.
+    tools_only = provider._gguf_build_chat_messages(tools=tools, user_message_content="hi")
+    assert [m["role"] for m in tools_only] == ["system", "user"]
+    assert "## Tools (session)" in tools_only[0]["content"]
+
+    # System-only (no tools): unchanged.
+    sys_only = provider._gguf_build_chat_messages(system_prompt="SYS", user_message_content="hi")
+    assert [m["role"] for m in sys_only] == ["system", "user"]
+    assert sys_only[0]["content"] == "SYS"
+
+
+def test_gguf_system_plus_tools_bytes_identical_across_build_paths() -> None:
+    """Cache byte-prefix consistency: the control-plane rebuild
+    (_prompt_cache_backend_append via prompt_cache_update) and the direct
+    build (_gguf_build_chat_messages, what _generate_gguf renders) must
+    produce IDENTICAL bytes for the same logical (system_prompt, tools,
+    messages) — a cache prepared one way must not miss when generated the
+    other way (the PromptCacheModule.normalized() tool-sorting incident is
+    the precedent for this exact failure class).
+    """
+    provider = _new_provider(chat_format="chatml-function-calling")
+    tools = [{"type": "function", "function": {"name": "shell"}}]
+    messages = [{"role": "user", "content": "FILEBOX"}]
+
+    # Control-plane path: set + one update carrying system+tools+messages.
+    assert provider.prompt_cache_set("sess", make_default=False) is True
+    assert provider.prompt_cache_update(
+        "sess",
+        system_prompt="You are helpful.",
+        tools=tools,
+        messages=messages,
+        add_generation_prompt=False,
+    ) is True
+    state = provider._prompt_cache_store.get("sess")
+    assert isinstance(state, _GGUFPromptCacheValue)
+
+    # Direct path: the same logical inputs through the single-shot builder.
+    direct_messages = provider._gguf_build_chat_messages(
+        system_prompt="You are helpful.",
+        tools=tools,
+        messages=messages,
+        user_message_content=None,
+    )
+    direct_text, direct_tokens = provider._gguf_render_prompt_tokens(
+        messages=direct_messages,
+        add_generation_prompt=False,
+    )
+
+    assert state.prompt_text == direct_text
+    assert state.prompt_tokens == tuple(direct_tokens)
+    assert direct_text.count("<|im_start|>system") == 1
 
 
 def test_gguf_prompt_cache_update_uses_unified_thinking_control() -> None:

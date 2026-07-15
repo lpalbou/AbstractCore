@@ -825,11 +825,18 @@ class HuggingFaceProvider(BaseProvider):
             include_tool_list = "## Tools (session)" not in str(system_text)
             tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
             if tool_prompt:
-                if self._gguf_prompt_cache_supports_local_control_plane():
-                    # Keep tools in a stable prefix position so prefix/KV caches remain effective.
-                    insert_at = 1 if chat_messages and chat_messages[0].get("role") == "system" else 0
-                    chat_messages.insert(insert_at, {"role": "system", "content": tool_prompt})
-                elif chat_messages and chat_messages[0].get("role") == "system":
+                # ONE system turn, always: chat templates (ChatML/Qwen, Gemma,
+                # Llama-3) are trained on a single system block, so a second
+                # consecutive system message is out-of-distribution and degrades
+                # tool-calling (live find on Ornith-1.0-35B GGUF, 2026-07-15).
+                # The control-plane lane used to INSERT tools as a separate
+                # system message "for stable prefix position"; the merge keeps
+                # tools in the same stable prefix position (before every
+                # conversation turn), so message-append KV reuse is unchanged.
+                # The only reuse lost is the system-only -> system+tools module
+                # boundary (the closing tag now precedes the tool text), which
+                # the control-plane rebuild covers with a one-time re-prefill.
+                if chat_messages and chat_messages[0].get("role") == "system":
                     chat_messages[0]["content"] = f"{chat_messages[0].get('content', '')}\n\n{tool_prompt}"
                 else:
                     chat_messages.insert(0, {"role": "system", "content": tool_prompt})
@@ -1566,9 +1573,7 @@ class HuggingFaceProvider(BaseProvider):
         parts: List[str] = []
 
         base_system_prompt = str(system_prompt or "").strip() if system_prompt is not None else ""
-        if base_system_prompt and "system" not in prefilled:
-            parts.append(self._transformers_render_message("system", base_system_prompt, close=True))
-
+        tool_prompt = ""
         if tools is not None and getattr(self, "tool_handler", None) is not None:
             if getattr(self.tool_handler, "supports_prompted", False) and "tools" not in prefilled:
                 include_tool_list = True
@@ -1579,8 +1584,25 @@ class HuggingFaceProvider(BaseProvider):
                 except Exception:
                     tool_prompt = ""
                 tool_prompt = str(tool_prompt or "").strip()
-                if tool_prompt:
-                    parts.append(self._transformers_render_message("system", tool_prompt, close=True))
+
+        if base_system_prompt and "system" not in prefilled:
+            # ONE system turn (parity with _gguf_build_chat_messages and the
+            # uncached _build_input_text_transformers, which already merged):
+            # tools join the user's system message instead of opening a second
+            # consecutive system block — chat templates are trained on exactly
+            # one system turn. When the system module is already prefilled in
+            # the KV cache its block is closed and cannot be reopened, so the
+            # tool prompt below still enters as its own block (module-chain
+            # appends carry system and tools in separate calls; their rendered
+            # bytes are unchanged by this merge).
+            system_block = base_system_prompt
+            if tool_prompt:
+                system_block = f"{base_system_prompt}\n\n{tool_prompt}"
+                tool_prompt = ""
+            parts.append(self._transformers_render_message("system", system_block, close=True))
+
+        if tool_prompt:
+            parts.append(self._transformers_render_message("system", tool_prompt, close=True))
 
         if messages:
             for msg in messages:

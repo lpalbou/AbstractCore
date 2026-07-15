@@ -930,6 +930,20 @@ class MLXProvider(BaseProvider):
             if tool_prompt:
                 tool_system_prompt = tool_prompt
 
+        # ONE system turn (parity with the GGUF/transformers builders): when
+        # this fragment renders BOTH the user system prompt and the tool
+        # instructions, they share a single system block — chat templates are
+        # trained on exactly one system turn, and a second consecutive block
+        # is out-of-distribution (degraded tool-calling, live find on
+        # Ornith-1.0-35B, 2026-07-15). When the system module is already
+        # prefilled in the KV cache, its block is closed and cannot be
+        # reopened, so the tool prompt still enters as its own block below —
+        # module-chain appends carry system and tools in separate calls, so
+        # their rendered bytes are unchanged by this merge.
+        if base_system_prompt and "system" not in prefilled and tool_system_prompt:
+            base_system_prompt = f"{base_system_prompt}\n\n{tool_system_prompt}"
+            tool_system_prompt = None
+
         def _as_text(val: Any) -> str:
             if val is None:
                 return ""

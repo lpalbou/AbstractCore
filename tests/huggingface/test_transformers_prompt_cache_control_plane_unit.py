@@ -300,6 +300,52 @@ def test_transformers_dynamic_cache_load_preserves_configured_layer_types(tmp_pa
     assert torch.equal(loaded_state.cache.layers[1].values, torch.full((1, 1, 4, 1), 2.0))
 
 
+def test_transformers_system_plus_tools_render_one_system_message() -> None:
+    """Regression pin (2026-07-15): system_prompt + tools must render ONE
+    system message (merged), never two consecutive system blocks — parity with
+    _gguf_build_chat_messages and with the uncached
+    _build_input_text_transformers path, which already merged (the cached
+    fragment lane used to diverge from it byte-wise for the same inputs).
+    """
+    provider = _new_provider()
+    provider.architecture_config = {
+        "system_prefix": "<|im_start|>system\n",
+        "system_suffix": "<|im_end|>\n",
+        "user_prefix": "<|im_start|>user\n",
+        "user_suffix": "<|im_end|>\n",
+        "assistant_prefix": "<|im_start|>assistant\n",
+        "assistant_suffix": "<|im_end|>\n",
+    }
+    tools = [{"type": "function", "function": {"name": "shell"}}]
+
+    fragment = provider._transformers_build_prompt_fragment(
+        prompt="hi",
+        system_prompt="You are helpful.",
+        tools=tools,
+        add_generation_prompt=True,
+    )
+
+    assert fragment.count("<|im_start|>system") == 1
+    start = fragment.index("<|im_start|>system")
+    end = fragment.index("<|im_end|>", start)
+    system_block = fragment[start:end]
+    assert "You are helpful." in system_block
+    assert "## Tools (session)" in system_block
+
+    # tools-only: one system block; system prefilled: standalone tool block.
+    tools_only = provider._transformers_build_prompt_fragment(prompt="hi", tools=tools)
+    assert tools_only.count("<|im_start|>system") == 1
+    prefilled = provider._transformers_build_prompt_fragment(
+        prompt="hi",
+        system_prompt="SYS",
+        tools=tools,
+        prefilled_modules=["system"],
+    )
+    assert "SYS" not in prefilled
+    assert prefilled.count("<|im_start|>system") == 1
+    assert "## Tools (session)" in prefilled
+
+
 def test_transformers_prompt_cache_update_uses_unified_thinking_control() -> None:
     provider = _new_provider()
     provider.model = "Qwen/Qwen3.5-4B"
