@@ -956,7 +956,14 @@ class MLXProvider(BaseProvider):
 
         arch_cfg = getattr(self, "architecture_config", None) if isinstance(getattr(self, "architecture_config", None), dict) else {}
         msg_fmt = str((arch_cfg or {}).get("message_format") or "").strip().lower()
-        is_qwen = "qwen" in self.model.lower()
+        # ChatML (`<|im_start|>…<|im_end|>`) is driven by the REGISTRY's
+        # message_format ("im_start_end"), NOT a model-name substring. The old
+        # `"qwen" in model_name` heuristic mis-rendered every ChatML model whose
+        # name lacks "qwen" — notably Ornith (arch qwen3_5_agentic, message_format
+        # im_start_end) fell through to the plain `role: content` fallback with
+        # ZERO ChatML markers on the live generate path. The name substring is
+        # kept only as a fallback for a model whose arch config is missing.
+        is_chatml = (msg_fmt == "im_start_end") or ("qwen" in self.model.lower())
         is_gemma_turn = msg_fmt == "gemma_turn"
         parts: List[str] = []
 
@@ -966,7 +973,7 @@ class MLXProvider(BaseProvider):
                 parts.append(bos)
 
         if base_system_prompt and "system" not in prefilled:
-            if is_qwen:
+            if is_chatml:
                 parts.append(f"<|im_start|>system\n{base_system_prompt}<|im_end|>\n")
             elif is_gemma_turn:
                 parts.append(f"<|turn>system\n{base_system_prompt.strip()}<turn|>\n")
@@ -974,7 +981,7 @@ class MLXProvider(BaseProvider):
                 parts.append(f"{base_system_prompt.strip()}\n\n")
 
         if tool_system_prompt:
-            if is_qwen:
+            if is_chatml:
                 parts.append(f"<|im_start|>system\n{tool_system_prompt}<|im_end|>\n")
             elif is_gemma_turn:
                 parts.append(f"<|turn>system\n{tool_system_prompt.strip()}<turn|>\n")
@@ -987,7 +994,7 @@ class MLXProvider(BaseProvider):
                     continue
                 role = str(msg.get("role") or "user")
                 content = _as_text(msg.get("content"))
-                if is_qwen:
+                if is_chatml:
                     parts.append(f"<|im_start|>{role}\n{content}<|im_end|>\n")
                 elif is_gemma_turn:
                     role_name = "model" if role.strip().lower() == "assistant" else role.strip().lower()
@@ -997,7 +1004,7 @@ class MLXProvider(BaseProvider):
                     parts.append(f"{role}: {content}\n")
 
         if isinstance(prompt, str) and prompt:
-            if is_qwen:
+            if is_chatml:
                 parts.append(f"<|im_start|>user\n{prompt}<|im_end|>\n")
             elif is_gemma_turn:
                 parts.append(f"<|turn>user\n{prompt.strip()}<turn|>\n")
@@ -1005,7 +1012,7 @@ class MLXProvider(BaseProvider):
                 parts.append(f"user: {prompt}\n")
 
         if add_generation_prompt:
-            if is_qwen:
+            if is_chatml:
                 parts.append("<|im_start|>assistant\n")
                 if enable_thinking is False:
                     parts.append("<think>\n\n</think>\n\n")

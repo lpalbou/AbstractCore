@@ -4089,6 +4089,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                 processed_chunk.metadata["_resolved_generate_route"] = resolved_generate_route_summary
                             else:
                                 processed_chunk.metadata = {"_resolved_generate_route": resolved_generate_route_summary}
+                            # Streamed truncation must not be silent either (ADR 0001):
+                            # the terminal chunk carries finish_reason, so annotate +
+                            # warn on a length stop BEFORE it reaches the consumer. The
+                            # helper no-ops on non-length finish reasons and is
+                            # idempotent, so calling it per chunk is safe.
+                            self._annotate_output_truncation(processed_chunk)
                             yield processed_chunk
 
                         if thinking_stripper is not None:
@@ -4190,6 +4196,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     if response.metadata is None or not isinstance(response.metadata, dict):
                         response.metadata = {}
                     response.metadata["_resolved_generate_route"] = resolved_generate_route_summary
+
+                # No silent lossy truncation (ADR 0001): when the model stopped
+                # because it hit the output-token cap, the content is clipped.
+                # Make it observable — warn + annotate metadata — instead of
+                # returning a silently incomplete result.
+                self._annotate_output_truncation(response)
 
                 self._track_generation(prompt, response, start_time, success=True, stream=False)
                 return response
@@ -4343,8 +4355,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if self.max_tokens is None:
             self.max_tokens = self._get_default_context_window()
 
-        # Set default max_output_tokens if not provided
-        if self.max_output_tokens == 2048:  # Only if still default value
+        # Set default max_output_tokens if not provided. This is the model's
+        # TRUE output ceiling from the registry — used as the value to send
+        # ONLY when a caller did NOT specify a cap AND the provider's API
+        # requires a bound (see _requires_output_cap). When the caller
+        # explicitly set the cap, honor it verbatim (never overwrite with the
+        # registry default, even if they happened to pass 2048).
+        if not getattr(self, "_max_output_tokens_explicit", False) and self.max_output_tokens == 2048:
             default_max_output = self._get_default_max_output_tokens()
             if default_max_output != 2048:  # If we found a different default
                 self.max_output_tokens = default_max_output
@@ -4472,28 +4489,35 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # Get effective token limits
         max_tokens, max_output_tokens, max_input_tokens = self._calculate_effective_token_limits()
 
-        # Override max_output_tokens if provided in kwargs
-        effective_max_output = kwargs.get("max_output_tokens", max_output_tokens)
-        # Safety clamp: never exceed the provider/model's configured max_output_tokens.
-        #
-        # Upstream callers (runtimes/agents) may request large output budgets based on
-        # stale capabilities or user configuration. Providers should not forward values
-        # that violate the model's hard limits (Anthropic returns 400 for this).
-        try:
-            if effective_max_output is None:
-                effective_max_output_i = int(max_output_tokens)
-            else:
-                effective_max_output_i = int(effective_max_output)
-        except Exception:
-            effective_max_output_i = int(max_output_tokens)
-        if effective_max_output_i <= 0:
-            effective_max_output_i = int(max_output_tokens)
-        if effective_max_output_i > int(max_output_tokens):
-            effective_max_output_i = int(max_output_tokens)
-
-        # Return base kwargs with unified parameter
         result_kwargs = kwargs.copy()
-        result_kwargs["max_output_tokens"] = effective_max_output_i
+
+        # Only carry an output cap forward when the CALLER actually chose one
+        # (per-call kwarg or an explicit constructor value). When they did not,
+        # DO NOT fabricate the registry default here — leaving the key absent
+        # lets the provider resolver (_resolve_output_token_cap) decide
+        # omit-vs-registry-max per its API (no silent budget; ADR 0001).
+        caller_specified = (
+            ("max_output_tokens" in kwargs and kwargs.get("max_output_tokens") is not None)
+            or getattr(self, "_max_output_tokens_explicit", False)
+        )
+        if caller_specified:
+            # Safety clamp: never exceed the provider/model's configured
+            # max_output_tokens. Upstream callers may request large budgets from
+            # stale capabilities; providers must not forward values that violate
+            # the model's hard limits (Anthropic returns 400 for this).
+            requested = kwargs.get("max_output_tokens", self.max_output_tokens)
+            try:
+                effective_max_output_i = int(requested)
+            except Exception:
+                effective_max_output_i = int(max_output_tokens)
+            if effective_max_output_i <= 0:
+                effective_max_output_i = int(max_output_tokens)
+            if effective_max_output_i > int(max_output_tokens):
+                effective_max_output_i = int(max_output_tokens)
+            result_kwargs["max_output_tokens"] = effective_max_output_i
+        else:
+            # No caller cap: drop any inherited key so the resolver sees "unset".
+            result_kwargs.pop("max_output_tokens", None)
 
         # Add unified generation parameters with fallback hierarchy:
         # kwargs -> constructor/model metadata -> legacy defaults.
@@ -4569,19 +4593,96 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         return params
 
-    def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
+    def _annotate_output_truncation(self, response: Any) -> None:
+        """Mark + warn when a response was cut off by the output-token cap.
+
+        finish_reason == 'length' means the model reached max_output_tokens
+        before finishing. Per ADR 0001 this must never be silent: annotate
+        metadata (`output_truncated`) and emit one RuntimeWarning so callers
+        can detect the clip. Best-effort; never raises."""
+        try:
+            if response is None:
+                return
+            fr = str(getattr(response, "finish_reason", "") or "").strip().lower()
+            if fr not in ("length", "max_tokens", "max_output_tokens"):
+                return
+            meta = getattr(response, "metadata", None)
+            if not isinstance(meta, dict):
+                meta = {}
+                try:
+                    response.metadata = meta
+                except Exception:
+                    return
+            if meta.get("output_truncated"):
+                return  # already annotated (e.g. structured retry re-entry)
+            meta["output_truncated"] = True
+            usage = getattr(response, "usage", None)
+            produced = usage.get("output_tokens") if isinstance(usage, dict) else None
+            import warnings as _warnings
+
+            _warnings.warn(
+                f"Output truncated for model '{getattr(self, 'model', '?')}': the response hit the "
+                f"output-token limit (finish_reason={fr!r}"
+                + (f", output_tokens={produced}" if produced is not None else "")
+                + "). Content is incomplete; raise/omit max_output_tokens to allow a longer response.",
+                RuntimeWarning,
+                stacklevel=3,
+            )
+        except Exception:
+            # Observability annotation must never break generation.
+            pass
+
+    def _requires_output_cap(self) -> bool:
+        """Whether this provider's API REQUIRES an output-token bound.
+
+        Default False: when the caller specified no cap we omit the parameter
+        so the model uses its full output capability (ADR 0001 / use-full-
+        capability). Providers whose API mandates a bound (Anthropic Messages)
+        or whose backend default would truncate/run away (Ollama num_predict,
+        local generators) override this to True and then send the model's true
+        registry max as the bound. Overriding subclasses that keep their own
+        `_get_provider_max_tokens_param` are unaffected.
+
+        INSTANCE OVERRIDE (F5, 2026-07-15): a per-instance
+        `requires_output_cap=True` (constructor kwarg or endpoint-profile field)
+        forces the bound WITHOUT subclassing. This is the guard for arbitrary
+        `base_url` OpenAI-compatible servers whose omit-default TRUNCATES — the
+        confirmed case is Text-Generation-Inference (TGI), which defaults to
+        ~100 output tokens when `max_tokens` is absent (a regression from the
+        pre-fix registry send). Such deployments set `requires_output_cap: true`
+        in their endpoint profile / at construction; no new subclass needed.
+        """
+        flag = getattr(self, "_requires_output_cap_override", None)
+        if isinstance(flag, bool):
+            return flag
+        return False
+
+    def _resolve_output_token_cap(self, kwargs: Dict[str, Any]) -> Optional[int]:
+        """Shared resolution honoring caller intent.
+
+        Returns the explicit cap when the caller set one (per-call kwarg or
+        constructor); otherwise None ("omit — use full capability") unless the
+        provider requires a bound, in which case the model's true registry max.
+        """
+        per_call = kwargs.get("max_output_tokens")
+        if per_call is not None:
+            return per_call
+        if getattr(self, "_max_output_tokens_explicit", False):
+            return self.max_output_tokens
+        if self._requires_output_cap():
+            return self.max_output_tokens
+        return None
+
+    def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> Optional[int]:
         """
         Extract the appropriate max tokens parameter for this provider.
-        This should be overridden by subclasses to return the provider-specific
-        parameter name and value.
+        Subclasses may override for provider-specific naming, but should defer
+        to `_resolve_output_token_cap` for the explicit-vs-default policy.
 
-        Args:
-            kwargs: Generation parameters
-
-        Returns:
-            Max output tokens for the provider's API
+        Returns the output-token cap, or None meaning "omit the parameter"
+        (use the model's full capability).
         """
-        return kwargs.get("max_output_tokens", self.max_output_tokens)
+        return self._resolve_output_token_cap(kwargs)
 
     def _handle_prompted_tool_execution(self, response: GenerateResponse, tools: List[Dict[str, Any]], execute_tools_param: bool = None) -> GenerateResponse:
         """Handle tool execution for prompted responses (shared implementation)"""
@@ -6651,8 +6752,32 @@ Please provide a structured response."""
             if response.metadata is None or not isinstance(response.metadata, dict):
                 response.metadata = {}
             response.metadata["_resolved_generate_route"] = resolved_generate_route_summary
+            # No silent truncation on the async lane either (ADR 0001 / F1,
+            # 2026-07-15): the async path returned without annotating a
+            # finish_reason=length stop — a fully-empty truncated result on a
+            # reasoning model came back with zero signal. Mirror the sync lane.
+            self._annotate_output_truncation(response)
+
+        if stream and hasattr(response, "__aiter__"):
+            # Wrap the async stream so a terminal finish_reason=length chunk is
+            # annotated + warned before it reaches the consumer (mirror of the
+            # sync unified_stream per-chunk annotation).
+            return self._annotate_async_stream(response)
 
         return response
+
+    async def _annotate_async_stream(self, source: "AsyncIterator[GenerateResponse]") -> "AsyncIterator[GenerateResponse]":
+        """Annotate output truncation on each chunk of an async stream (F1).
+
+        `_annotate_output_truncation` no-ops on non-length finish reasons and is
+        idempotent, so per-chunk calls are safe."""
+        async for chunk in source:
+            try:
+                if isinstance(chunk, GenerateResponse):
+                    self._annotate_output_truncation(chunk)
+            except Exception:
+                pass
+            yield chunk
 
     async def _agenerate_internal(self,
                                    prompt: str,

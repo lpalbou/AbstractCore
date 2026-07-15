@@ -353,6 +353,12 @@ class ConfigurationManager:
             self._apply_api_keys_to_env()
             self._apply_server_config_to_env()
         self._provider_config: Dict[str, Dict[str, Any]] = {}  # Runtime config (not persisted)
+        # Process-lifetime provider profiles injected by hosts (e.g. a client
+        # materializing gateway-registered endpoint profiles). Deliberately a
+        # SEPARATE dict from config.provider_profiles: if injected rows lived
+        # in the persisted mapping, any unrelated _save_config() would silently
+        # write host-derived profiles into the local config file.
+        self._runtime_provider_profiles: Dict[str, ProviderProfile] = {}
 
     def _filter_dataclass_kwargs(self, cls, data: Any) -> Dict[str, Any]:
         if not isinstance(data, dict):
@@ -936,12 +942,21 @@ class ConfigurationManager:
             return False
 
     def list_provider_profiles(self, *, include_disabled: bool = True) -> list[Dict[str, Any]]:
-        """Return redacted local provider endpoint profiles."""
+        """Return redacted local provider endpoint profiles (runtime-injected included)."""
         rows: list[Dict[str, Any]] = []
         for profile in sorted(self.config.provider_profiles.profiles.values(), key=lambda p: p.id.lower()):
             if not include_disabled and not profile.enabled:
                 continue
             rows.append(profile.public_dict())
+        seen = {str(r.get("id") or "").lower() for r in rows}
+        for pid, profile in sorted(self._runtime_provider_profiles.items()):
+            if pid in seen:
+                continue  # persisted profiles win on id collision
+            if not include_disabled and not profile.enabled:
+                continue
+            row = profile.public_dict()
+            row["source"] = "runtime"
+            rows.append(row)
         return rows
 
     def get_provider_profile(self, profile_id: str) -> Optional[ProviderProfile]:
@@ -950,7 +965,10 @@ class ConfigurationManager:
             pid = normalize_profile_id(profile_id)
         except Exception:
             return None
-        return self.config.provider_profiles.profiles.get(pid.lower())
+        found = self.config.provider_profiles.profiles.get(pid.lower())
+        if found is not None:
+            return found
+        return self._runtime_provider_profiles.get(pid.lower())
 
     def resolve_provider_profile(self, provider: str, *, require_enabled: bool = True) -> Optional[ProviderProfile]:
         """Resolve ``endpoint:<id>`` or a plain profile id to a provider profile."""
@@ -959,12 +977,41 @@ class ConfigurationManager:
             pid = profile_id_from_virtual_provider(raw) or normalize_profile_id(raw)
             profile = self.config.provider_profiles.profiles.get(pid.lower())
             if profile is None:
+                profile = self._runtime_provider_profiles.get(pid.lower())
+            if profile is None:
                 return None
             if require_enabled and not profile.enabled:
                 return None
             return profile
         except Exception:
             return None
+
+    def register_runtime_provider_profile(self, profile: Union[Dict[str, Any], ProviderProfile]) -> ProviderProfile:
+        """Register a PROCESS-LIFETIME provider endpoint profile (never persisted).
+
+        Hosts use this to materialize externally-defined endpoint providers
+        (e.g. profiles registered on an AbstractGateway) so `create_llm`
+        resolves them like local `endpoint:<id>` profiles. The profile lives
+        only in this process: it is stored outside `config.provider_profiles`
+        so `_save_config()` can never leak it to disk, and persisted profiles
+        always win on id collision. Validation errors raise (unsupported
+        provider_family must fail loudly, never at first generate)."""
+        if isinstance(profile, ProviderProfile):
+            candidate = profile
+        else:
+            data = dict(profile or {})
+            allowed = {f.name for f in fields(ProviderProfile)}
+            candidate = ProviderProfile(**{k: v for k, v in data.items() if k in allowed})
+        pid = normalize_profile_id(candidate.id)
+        normalize_provider_family(candidate.provider_family)
+        normalize_base_url(candidate.base_url)
+        normalize_string_list(candidate.allowed_models)
+        self._runtime_provider_profiles[pid.lower()] = candidate
+        return candidate
+
+    def clear_runtime_provider_profiles(self) -> None:
+        """Drop all process-lifetime injected profiles."""
+        self._runtime_provider_profiles.clear()
 
     def set_provider_profile(
         self,

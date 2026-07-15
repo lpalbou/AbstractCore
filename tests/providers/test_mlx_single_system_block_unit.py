@@ -174,3 +174,50 @@ def test_mlx_module_chain_fragments_unchanged_by_merge() -> None:
     assert tools_fragment == (
         "<|im_start|>system\n## Tools (session)\n- read_file\n- list_files<|im_end|>\n"
     )
+
+
+# --- ChatML rendering is registry-driven, not a model-name substring ---------
+# Regression pin (2026-07-15): `_build_prompt_fragment` decided ChatML by
+# `"qwen" in model_name`, so any ChatML model whose NAME lacks "qwen" — notably
+# Ornith (arch qwen3_5_agentic, message_format "im_start_end") — rendered on the
+# LIVE generate path as plain `role: content` text with ZERO ChatML markers.
+# The decision now reads the registry's message_format.
+
+def _ornith_like_provider() -> MLXProvider:
+    """Name has no 'qwen'; registry arch is ChatML (im_start_end)."""
+    provider = MLXProvider.__new__(MLXProvider)
+    provider.model = "mlx-community/Ornith-1.0-9B-4bit"
+    provider.architecture_config = {"message_format": "im_start_end"}
+    provider.tool_handler = _FakeToolHandler()
+    return provider
+
+
+def test_mlx_chatml_by_message_format_not_name_substring() -> None:
+    provider = _ornith_like_provider()
+
+    fragment = provider._build_prompt_fragment(
+        prompt="hello",
+        system_prompt="You are precise.",
+        add_generation_prompt=True,
+    )
+
+    # Renders ChatML from the registry arch, NOT the plain `user: hello` fallback.
+    assert "<|im_start|>system\nYou are precise.<|im_end|>\n" in fragment
+    assert "<|im_start|>user\nhello<|im_end|>\n" in fragment
+    assert fragment.endswith("<|im_start|>assistant\n")
+    assert "user: hello" not in fragment
+
+
+def test_mlx_unknown_arch_still_uses_plain_fallback() -> None:
+    """A genuinely unknown, non-ChatML arch keeps the existing plain fallback —
+    the fix widens ChatML to registry-declared models, it does not force ChatML
+    onto everything."""
+    provider = MLXProvider.__new__(MLXProvider)
+    provider.model = "some-vendor/mystery-model"
+    provider.architecture_config = {"message_format": "basic"}
+    provider.tool_handler = _FakeToolHandler()
+
+    fragment = provider._build_prompt_fragment(prompt="hi", system_prompt="S")
+
+    assert "<|im_start|>" not in fragment
+    assert "user: hi" in fragment

@@ -51,7 +51,7 @@ except ImportError:
 from .base import BaseProvider, PromptCacheCapabilities, PromptCacheRenderedFragment, ThinkingControlHandling
 from ..core.types import GenerateResponse
 from ..exceptions import ModelNotFoundError, format_model_error
-from ..tools import UniversalToolHandler, execute_tools
+from ..tools import UniversalToolHandler, execute_tools, merge_tools_into_system
 from ..events import EventType
 
 if TYPE_CHECKING:
@@ -813,33 +813,19 @@ class HuggingFaceProvider(BaseProvider):
     ) -> List[Dict[str, Any]]:
         chat_messages: List[Dict[str, Any]] = []
 
-        if isinstance(system_prompt, str) and system_prompt:
-            chat_messages.append({"role": "system", "content": system_prompt})
-
-        if tools and self.tool_handler.supports_prompted:
-            system_text = (
-                chat_messages[0].get("content", "")
-                if chat_messages and chat_messages[0].get("role") == "system"
-                else ""
-            )
-            include_tool_list = "## Tools (session)" not in str(system_text)
-            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
-            if tool_prompt:
-                # ONE system turn, always: chat templates (ChatML/Qwen, Gemma,
-                # Llama-3) are trained on a single system block, so a second
-                # consecutive system message is out-of-distribution and degrades
-                # tool-calling (live find on Ornith-1.0-35B GGUF, 2026-07-15).
-                # The control-plane lane used to INSERT tools as a separate
-                # system message "for stable prefix position"; the merge keeps
-                # tools in the same stable prefix position (before every
-                # conversation turn), so message-append KV reuse is unchanged.
-                # The only reuse lost is the system-only -> system+tools module
-                # boundary (the closing tag now precedes the tool text), which
-                # the control-plane rebuild covers with a one-time re-prefill.
-                if chat_messages and chat_messages[0].get("role") == "system":
-                    chat_messages[0]["content"] = f"{chat_messages[0].get('content', '')}\n\n{tool_prompt}"
-                else:
-                    chat_messages.insert(0, {"role": "system", "content": tool_prompt})
+        # ONE system turn, always (shared placement policy): chat templates
+        # (ChatML/Qwen, Gemma, Llama-3) are trained on a single system block, so
+        # a second consecutive system message is out-of-distribution and degrades
+        # tool-calling (live find on Ornith-1.0-35B GGUF, 2026-07-15). The merged
+        # system stays in the same stable prefix position before every turn, so
+        # message-append KV reuse is unchanged; only the system-only ->
+        # system+tools module boundary loses reuse (one-time re-prefill).
+        base_system = system_prompt if isinstance(system_prompt, str) else None
+        merged_system = (
+            merge_tools_into_system(self.tool_handler, base_system, tools) if tools else base_system
+        )
+        if isinstance(merged_system, str) and merged_system:
+            chat_messages.append({"role": "system", "content": merged_system})
 
         if isinstance(messages, list) and messages:
             chat_messages.extend(copy.deepcopy(messages))
@@ -5814,17 +5800,8 @@ class HuggingFaceProvider(BaseProvider):
     ) -> str:
         """Build input text for transformers model with tool support"""
 
-        # Add tools to system prompt if provided
-        final_system_prompt = system_prompt
-        if tools and self.tool_handler.supports_prompted:
-            include_tool_list = True
-            if final_system_prompt and "## Tools (session)" in final_system_prompt:
-                include_tool_list = False
-            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
-            if final_system_prompt:
-                final_system_prompt += f"\n\n{tool_prompt}"
-            else:
-                final_system_prompt = tool_prompt
+        # Add tools to system prompt if provided (one shared placement policy).
+        final_system_prompt = merge_tools_into_system(self.tool_handler, system_prompt, tools)
 
         # Check if model has chat template
         if hasattr(self.tokenizer, 'chat_template') and self.tokenizer.chat_template:
@@ -5853,11 +5830,14 @@ class HuggingFaceProvider(BaseProvider):
                 # Fallback if chat template fails
                 pass
 
-        # Build simple conversational format
+        # Build simple conversational format. Use `final_system_prompt` (with
+        # the tool block merged in) — the prior fallback used the raw
+        # `system_prompt` and SILENTLY DROPPED the tool declaration on any
+        # template-less model (S4 find, 2026-07-15).
         text_parts = []
 
-        if system_prompt:
-            text_parts.append(f"System: {system_prompt}\n")
+        if final_system_prompt:
+            text_parts.append(f"System: {final_system_prompt}\n")
 
         if messages:
             for msg in messages:

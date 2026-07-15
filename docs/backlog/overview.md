@@ -9,9 +9,9 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 16
-- Proposed: 17
-- Completed: 22
+- Planned: 15
+- Proposed: 18
+- Completed: 23
 - Deprecated: 3
 - Recurrent: 0
 
@@ -19,6 +19,13 @@ Use this file as the entry point for planning status, recommended next work, and
 — the Ornith-GGUF-→-keyed optimization gap found during the live prompt-cache
 verification; the plain-generate GGUF snapshot-reuse defect found in the same
 pass was fixed in-tree, not filed.)
+
+(2026-07-15: `0822_output_token_cap_no_silent_budget` implemented and moved to
+completed/ (no-silent-budget: omit the output cap when the caller sets none,
+warn on truncation). Added `proposed/0823_native_tool_declaration_for_capable_models.md`
+— the native-first tool-declaration hybrid (Tier 2), gated on a live A/B; the
+Tier-1 tool-placement + MLX-rendering fixes that resolved the reported
+abstractcode issue landed in-tree, see CHANGELOG.)
 
 (Count repair 2026-07-13: proposed/ held 15 files while the overview said 12 —
 `0816` was also missing from the proposed ledger. Corrected during the 0817/0818

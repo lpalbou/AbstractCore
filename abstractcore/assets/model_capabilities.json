@@ -7792,7 +7792,7 @@
       }
     },
     "gpt-oss-20b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 128000,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -7840,7 +7840,7 @@
       }
     },
     "gpt-oss-120b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 128000,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,

@@ -76,7 +76,8 @@ from .core import (
 # Handler
 from .handler import (
     UniversalToolHandler,
-    create_handler
+    create_handler,
+    merge_tools_into_system,
 )
 
 # Parser functions
@@ -115,6 +116,7 @@ __all__ = [
     # Handler
     "UniversalToolHandler",
     "create_handler",
+    "merge_tools_into_system",
 
     # Parser
     "detect_tool_calls",

@@ -11,6 +11,8 @@ from enum import Enum
 from pydantic import BaseModel, ValidationError
 
 from .retry import FeedbackRetry
+from .schema_compat import is_schema_rejection_error, schema_rejection_registry
+from ..architectures.response_postprocessing import normalize_assistant_text
 from ..utils.structured_logging import get_logger
 from ..utils.self_fixes import fix_json
 from ..events import EventType, emit_global, create_structured_output_event
@@ -158,10 +160,50 @@ class StructuredOutputHandler:
 
             # Strategy 1: Use native support if available
             if self._has_native_support(provider):
-                self.logger.debug("Using native structured output support",
-                                provider=provider_name)
-                result = self._generate_native(provider, prompt, response_model, **kwargs)
-                strategy = "native"
+                prior_rejection = schema_rejection_registry.rejection_reason(provider, response_model)
+                if prior_rejection is not None:
+                    # This (provider, model, schema) already had its schema refused by the
+                    # backend's validator this session — the refusal is deterministic, so
+                    # skip the doomed native attempt instead of re-hitting the 4xx.
+                    self.logger.warning(
+                        "#FALLBACK: backend previously rejected this JSON schema for native "
+                        "structured output; using prompted structured output",
+                        provider=provider_name,
+                        model=model_name,
+                        response_model=response_model.__name__,
+                        rejection=prior_rejection,
+                    )
+                    result = self._generate_prompted(provider, prompt, response_model, **kwargs)
+                    strategy = "prompted_schema_fallback"
+                else:
+                    self.logger.debug("Using native structured output support",
+                                    provider=provider_name)
+                    try:
+                        result = self._generate_native(provider, prompt, response_model, **kwargs)
+                        strategy = "native"
+                    except Exception as native_error:
+                        # Schema-rejection 4xx (strict validators: OpenAI strict mode and
+                        # relays in front of it). The refusal is about the SCHEMA, not the
+                        # request content — deterministic on every retry — but the same
+                        # schema is still satisfiable through the prompted lane. Anything
+                        # that is not a schema rejection (auth, context length, rate
+                        # limits, 5xx) keeps its existing semantics and re-raises.
+                        if not is_schema_rejection_error(native_error):
+                            raise
+                        schema_rejection_registry.mark_rejected(
+                            provider, response_model, str(native_error)
+                        )
+                        self.logger.warning(
+                            "#FALLBACK: backend rejected the JSON schema for native structured "
+                            "output; retrying through prompted structured output "
+                            "(decision cached for this provider/model/schema)",
+                            provider=provider_name,
+                            model=model_name,
+                            response_model=response_model.__name__,
+                            error=str(native_error),
+                        )
+                        result = self._generate_prompted(provider, prompt, response_model, **kwargs)
+                        strategy = "prompted_schema_fallback"
             else:
                 self.logger.debug("Using prompted structured output with retry",
                                 provider=provider_name)
@@ -812,6 +854,30 @@ class StructuredOutputHandler:
             return {"key": "value"}
         return None
 
+    def _strip_reasoning_noise(self, content: str) -> str:
+        """Remove model reasoning noise (think tags, Harmony markup, wrappers).
+
+        The prompted lane calls `provider._generate_internal` directly, which
+        returns RAW content — reasoning models can wrap output in
+        `<think>...</think>` blocks whose braces defeat the JSON extraction
+        regexes below. `normalize_assistant_text` is the shared, capability-
+        gated helper (no-op for models without configured thinking tags).
+        """
+        provider = getattr(self, "current_provider", None)
+        if provider is None or not isinstance(content, str) or not content:
+            return content
+        try:
+            cleaned, _reasoning = normalize_assistant_text(
+                content,
+                architecture_format=getattr(provider, "architecture_config", None),
+                model_capabilities=getattr(provider, "model_capabilities", None),
+            )
+        except Exception:
+            return content
+        # An all-reasoning response (empty after stripping) keeps the original
+        # text so extraction can still scavenge JSON from inside the block.
+        return cleaned if isinstance(cleaned, str) and cleaned.strip() else content
+
     def _extract_json(self, content: str) -> str:
         """
         Extract JSON from response content that might contain additional text.
@@ -835,6 +901,18 @@ class StructuredOutputHandler:
         # validated a one-item list and items 2..N were silently dropped).
         if content.startswith('[') and content.endswith(']'):
             return content
+
+        # Reasoning noise (think blocks / Harmony markup) defeats the regexes
+        # below — braces inside a <think> block win the first-object match.
+        # Strip only AFTER the fast paths so pure-JSON content that merely
+        # CONTAINS literal tag text inside a string value is never mutated.
+        stripped = self._strip_reasoning_noise(content).strip()
+        if stripped and stripped != content:
+            content = stripped
+            if content.startswith('{') and content.endswith('}'):
+                return content
+            if content.startswith('[') and content.endswith(']'):
+                return content
 
         # Look for JSON within code blocks (object or array)
         json_pattern = r'```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```'

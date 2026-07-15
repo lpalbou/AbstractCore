@@ -16,6 +16,44 @@ from ..utils.structured_logging import get_logger
 logger = get_logger(__name__)
 
 
+def merge_tools_into_system(
+    handler: Any,
+    system_prompt: Optional[str],
+    tools: Optional[List[Any]],
+    *,
+    include_tool_list_override: Optional[bool] = None,
+) -> Optional[str]:
+    """Merge the prompted tool block into ONE system turn (prompted lane).
+
+    Single source of truth for tool PLACEMENT — the policy that was copy-pasted
+    across every provider (the ``supports_prompted`` gate, the
+    ``"## Tools (session)"`` dedup sentinel, and the one-system-turn ``\\n\\n``
+    merge). The tool TEXT itself lives in ``handler.format_tools_prompt``; this
+    owns only WHERE it goes. Returns ``system_prompt`` unchanged when there are
+    no prompted tools to add (native-only handlers included).
+
+    A free function (not a handler method) so it composes with any object
+    exposing ``supports_prompted`` + ``format_tools_prompt`` — the real
+    ``UniversalToolHandler`` and every provider's test double alike.
+
+    Byte-contract: the merged form is exactly ``f"{system}\\n\\n{tools}"`` (or
+    the tool block alone when there is no system prompt) — identical to what the
+    sites produced before, so prompt-cache byte-parity holds.
+    """
+    if not tools or not getattr(handler, "supports_prompted", False):
+        return system_prompt
+    if include_tool_list_override is None:
+        include_tool_list = not (system_prompt and "## Tools (session)" in system_prompt)
+    else:
+        include_tool_list = bool(include_tool_list_override)
+    tool_prompt = handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
+    if not tool_prompt:
+        return system_prompt
+    if system_prompt:
+        return f"{system_prompt}\n\n{tool_prompt}"
+    return tool_prompt
+
+
 class UniversalToolHandler:
     """
     Universal tool handler that works with all models.

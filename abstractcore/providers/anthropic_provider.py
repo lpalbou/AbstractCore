@@ -17,7 +17,7 @@ except ImportError:
 from .base import BaseProvider, ThinkingControlHandling
 from ..core.types import GenerateResponse
 from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error, format_auth_error
-from ..tools import UniversalToolHandler, execute_tools
+from ..tools import UniversalToolHandler, execute_tools, merge_tools_into_system
 from ..events import EventType
 
 if TYPE_CHECKING:
@@ -447,14 +447,11 @@ class AnthropicProvider(BaseProvider):
                 elif kwargs.get("tool_choice"):
                     call_params["tool_choice"] = {"type": kwargs.get("tool_choice", "auto")}
             else:
-                # Add tools as system prompt for prompted models
+                # Add tools as system prompt for prompted models (shared policy).
                 system_text = call_params.get("system") if isinstance(call_params.get("system"), str) else ""
-                include_tool_list = "## Tools (session)" not in system_text
-                tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
-                if call_params.get("system"):
-                    call_params["system"] += f"\n\n{tool_prompt}"
-                else:
-                    call_params["system"] = tool_prompt
+                merged = merge_tools_into_system(self.tool_handler, system_text, tools)
+                if merged:
+                    call_params["system"] = merged
 
         # Apply the prompt-cache breakpoint AFTER tools/system folding so the marked block
         # is genuinely the end of the static head (tools -> system in Anthropic's prompt order).
@@ -675,12 +672,9 @@ class AnthropicProvider(BaseProvider):
                     call_params["tool_choice"] = {"type": kwargs.get("tool_choice", "auto")}
             else:
                 system_text = call_params.get("system") if isinstance(call_params.get("system"), str) else ""
-                include_tool_list = "## Tools (session)" not in system_text
-                tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
-                if call_params.get("system"):
-                    call_params["system"] += f"\n\n{tool_prompt}"
-                else:
-                    call_params["system"] = tool_prompt
+                merged = merge_tools_into_system(self.tool_handler, system_text, tools)
+                if merged:
+                    call_params["system"] = merged
 
         # Apply the prompt-cache breakpoint AFTER tools/system folding (see sync path).
         self._apply_prompt_cache_breakpoints(call_params, cache_control)

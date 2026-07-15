@@ -18,7 +18,7 @@ except ImportError:
 from .base import BaseProvider, ThinkingControlHandling
 from ..core.types import GenerateResponse
 from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error, format_provider_error
-from ..tools import UniversalToolHandler, ToolDefinition, execute_tools
+from ..tools import UniversalToolHandler, ToolDefinition, execute_tools, merge_tools_into_system
 from ..events import EventType
 
 if TYPE_CHECKING:
@@ -47,6 +47,22 @@ class OllamaProvider(BaseProvider):
 
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
+
+    @staticmethod
+    def _ollama_finish_reason(result: Dict[str, Any]) -> str:
+        """Map Ollama's `done_reason` to a normalized finish_reason.
+
+        Ollama reports why generation stopped in `done_reason` ("stop",
+        "length", "load", …). We used to hardcode "stop", which made the
+        output-truncation guarantee (ADR 0001) a no-op on Ollama — a
+        `num_predict`-capped run reported "stop" and clipped silently. `length`
+        is normalized to the framework's `length` so `_annotate_output_truncation`
+        fires; anything else (or absent) stays "stop"."""
+        try:
+            reason = str((result or {}).get("done_reason") or "").strip().lower()
+        except Exception:
+            reason = ""
+        return "length" if reason == "length" else "stop"
 
     def _effective_num_ctx(self, call_kwargs: Dict[str, Any]) -> Optional[int]:
         """Resolve the requested Ollama context window (`num_ctx`).
@@ -360,17 +376,8 @@ class OllamaProvider(BaseProvider):
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Internal generation with Ollama"""
 
-        # Handle tools for prompted models
-        final_system_prompt = system_prompt
-        if tools and self.tool_handler.supports_prompted:
-            include_tool_list = True
-            if final_system_prompt and "## Tools (session)" in final_system_prompt:
-                include_tool_list = False
-            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
-            if final_system_prompt:
-                final_system_prompt = f"{final_system_prompt}\n\n{tool_prompt}"
-            else:
-                final_system_prompt = tool_prompt
+        # Handle tools for prompted models (one shared placement policy).
+        final_system_prompt = merge_tools_into_system(self.tool_handler, system_prompt, tools)
 
         # Build request payload using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
@@ -562,7 +569,7 @@ class OllamaProvider(BaseProvider):
             generate_response = GenerateResponse(
                 content=content,
                 model=self.model,
-                finish_reason="stop",
+                finish_reason=self._ollama_finish_reason(result),
                 raw_response=result,
                 usage={
                     "input_tokens": result.get("prompt_eval_count", 0),
@@ -735,17 +742,8 @@ class OllamaProvider(BaseProvider):
                                    stream: bool,
                                    **kwargs):
         """Native async implementation using httpx.AsyncClient - 3-10x faster for batch operations."""
-        # Handle tools for prompted models
-        final_system_prompt = system_prompt
-        if tools and self.tool_handler.supports_prompted:
-            include_tool_list = True
-            if final_system_prompt and "## Tools (session)" in final_system_prompt:
-                include_tool_list = False
-            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
-            if final_system_prompt:
-                final_system_prompt = f"{final_system_prompt}\n\n{tool_prompt}"
-            else:
-                final_system_prompt = tool_prompt
+        # Handle tools for prompted models (one shared placement policy).
+        final_system_prompt = merge_tools_into_system(self.tool_handler, system_prompt, tools)
 
         # Build request payload (same logic as sync)
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
@@ -848,7 +846,7 @@ class OllamaProvider(BaseProvider):
             generate_response = GenerateResponse(
                 content=content,
                 model=self.model,
-                finish_reason="stop",
+                finish_reason=self._ollama_finish_reason(result),
                 raw_response=result,
                 usage={
                     "input_tokens": result.get("prompt_eval_count", 0),

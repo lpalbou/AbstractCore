@@ -9,6 +9,14 @@ from .types import GenerateResponse, Message
 if TYPE_CHECKING:
     from ..media.types import MediaContent
 
+# Sentinel: the caller did NOT specify an output-token cap. Distinguishing
+# "unspecified" from the historical 2048 default lets providers use the model's
+# FULL output capability by default instead of silently imposing the registry
+# cap (ADR 0001 no-silent-degradation + use-full-capability). We keep the
+# public attribute an int for backward compatibility; only the explicitness is
+# tracked separately.
+_MAX_OUTPUT_TOKENS_UNSET = object()
+
 
 class AbstractCoreInterface(ABC):
     """
@@ -72,7 +80,7 @@ class AbstractCoreInterface(ABC):
     def __init__(self, model: str,
                  max_tokens: Optional[int] = None,
                  max_input_tokens: Optional[int] = None,
-                 max_output_tokens: int = 2048,
+                 max_output_tokens: Any = _MAX_OUTPUT_TOKENS_UNSET,
                  temperature: float = 0.7,
                  seed: Optional[int] = -1,
                  debug: bool = False,
@@ -81,10 +89,20 @@ class AbstractCoreInterface(ABC):
         self.config = kwargs
         self._capability_registry = None
 
-        # Unified token parameters
+        # Unified token parameters.
+        # `_max_output_tokens_explicit` records whether the CALLER chose the
+        # output cap. When they didn't, providers whose API allows it use the
+        # model's full output capability rather than the 2048/registry default
+        # (no silent budget). The public attribute stays an int (2048 default)
+        # so existing readers are unaffected.
         self.max_tokens = max_tokens
         self.max_input_tokens = max_input_tokens
-        self.max_output_tokens = max_output_tokens
+        if max_output_tokens is _MAX_OUTPUT_TOKENS_UNSET or max_output_tokens is None:
+            self.max_output_tokens = 2048
+            self._max_output_tokens_explicit = False
+        else:
+            self.max_output_tokens = max_output_tokens
+            self._max_output_tokens_explicit = True
 
         # Unified generation parameters
         self.temperature = temperature
@@ -93,6 +111,14 @@ class AbstractCoreInterface(ABC):
         self.seed = -1 if seed is None else seed
 
         self.debug = debug
+
+        # F5 (2026-07-15): opt-in "this endpoint REQUIRES an output-token bound"
+        # for arbitrary base_url OpenAI-compatible servers whose omit-default
+        # truncates (TGI defaults to ~100 tokens on absent max_tokens). Consumed
+        # by `_requires_output_cap()`. Accepted as a constructor kwarg or an
+        # endpoint-profile field; anything non-bool leaves the provider default.
+        rc = kwargs.get("requires_output_cap")
+        self._requires_output_cap_override = rc if isinstance(rc, bool) else None
 
         # Validate token parameters
         self._validate_token_parameters()

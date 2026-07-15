@@ -22,6 +22,128 @@ from ..core.types import GenerateResponse
 from ..exceptions import ProviderAPIError
 
 
+def _stringified_tool_argument_value(value: Any) -> Any:
+    """JSON-stringify a single tool-call argument VALUE (strings pass through).
+
+    The stringified text is exactly the template's own non-string rendering
+    (`args_value | tojson` with the HF-transformers tojson convention:
+    ``json.dumps(value, ensure_ascii=False)``, insertion order, default
+    separators), so routing the template through its STRING branch instead
+    produces a byte-identical rendered prompt.
+    """
+    if isinstance(value, str):
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
+
+def stringify_tool_call_history_argument_values(
+    messages: Optional[List[Dict[str, Any]]],
+) -> Optional[List[Dict[str, Any]]]:
+    """Stringify non-string argument VALUES in assistant tool-call HISTORY messages.
+
+    Why (live find, Ornith-1.0-35B GGUF via LM Studio, 2026-07-15): GGUF chat
+    templates of the Qwen3-Coder XML convention render replayed assistant
+    tool-call arguments per-entry as::
+
+        {%- set args_value = args_value | string if args_value is string
+                             else args_value | tojson | safe %}
+
+    LM Studio's template engine (minja-class) does not implement the ``safe``
+    filter, so the FIRST request whose conversation carries a tool call with
+    any non-string argument value (e.g. ``{"query": "news", "num_results": 10}``)
+    fails template rendering with HTTP 400
+    (``Unknown StringValue filter: safe``) — cycle 2 of every ReAct loop.
+
+    Fix: JSON-stringify each non-string argument VALUE before the wire
+    (``10 -> "10"``, ``{"a": 1} -> '{"a": 1}'``; keys stay; strings untouched).
+    LM Studio json-parses the wire ``arguments`` string before template render,
+    so every value then takes the template's ``| string`` branch — which renders
+    the exact bytes ``| tojson`` would have produced (see
+    ``_stringified_tool_argument_value``). This is convention-general: it fixes
+    every model whose template applies ``tojson | safe`` to argument values,
+    with no model-name checks.
+
+    Scope and safety:
+    - Only ``role == "assistant"`` HISTORY messages are touched (their
+      ``tool_calls`` list and legacy ``function_call``); user/tool/system
+      messages and the live RESPONSE parsing path are untouched.
+    - ``arguments`` may be the OpenAI wire JSON string (re-dumped after value
+      stringification) or a dict (values transformed, container type kept).
+      Non-JSON strings and non-object payloads pass through unchanged.
+    - Copy-on-write: caller-owned message/history objects are NEVER mutated
+      (the payload builder extends the caller's session history by reference).
+    """
+    if not isinstance(messages, list):
+        return messages
+
+    def _transformed_arguments(raw: Any) -> Any:
+        """Return the transformed arguments payload, or `raw` when unchanged."""
+        if isinstance(raw, dict):
+            if all(isinstance(v, str) for v in raw.values()):
+                return raw
+            return {k: _stringified_tool_argument_value(v) for k, v in raw.items()}
+        if isinstance(raw, str) and raw.strip():
+            try:
+                parsed = json.loads(raw)
+            except Exception:
+                return raw  # not JSON — leave the string as-is
+            if not isinstance(parsed, dict):
+                return raw  # only object payloads carry named parameters
+            if all(isinstance(v, str) for v in parsed.values()):
+                return raw
+            transformed = {k: _stringified_tool_argument_value(v) for k, v in parsed.items()}
+            return json.dumps(transformed, ensure_ascii=False)
+        return raw
+
+    def _transformed_call(call: Any) -> Any:
+        """Return a transformed copy of one tool-call entry, or `call` when unchanged."""
+        if not isinstance(call, dict):
+            return call
+        function = call.get("function") if isinstance(call.get("function"), dict) else None
+        container = function if function is not None else call
+        raw = container.get("arguments")
+        new_args = _transformed_arguments(raw)
+        if new_args is raw:
+            return call
+        new_container = dict(container)
+        new_container["arguments"] = new_args
+        if function is not None:
+            new_call = dict(call)
+            new_call["function"] = new_container
+            return new_call
+        return new_container
+
+    out: List[Dict[str, Any]] = []
+    changed_any = False
+    for message in messages:
+        if not (isinstance(message, dict) and message.get("role") == "assistant"):
+            out.append(message)
+            continue
+
+        new_message = message
+        tool_calls = message.get("tool_calls")
+        if isinstance(tool_calls, list) and tool_calls:
+            new_calls = [_transformed_call(tc) for tc in tool_calls]
+            if any(new is not old for new, old in zip(new_calls, tool_calls)):
+                new_message = dict(message)
+                new_message["tool_calls"] = new_calls
+
+        function_call = message.get("function_call")
+        if isinstance(function_call, dict):
+            new_fc = _transformed_call({"function": function_call})
+            new_fc_function = new_fc.get("function") if isinstance(new_fc, dict) else None
+            if isinstance(new_fc_function, dict) and new_fc_function is not function_call:
+                if new_message is message:
+                    new_message = dict(message)
+                new_message["function_call"] = new_fc_function
+
+        if new_message is not message:
+            changed_any = True
+        out.append(new_message)
+
+    return out if changed_any else messages
+
+
 class LMStudioProvider(OpenAICompatibleProvider):
     """LM Studio provider using OpenAI-compatible API."""
 
@@ -31,6 +153,33 @@ class LMStudioProvider(OpenAICompatibleProvider):
     BASE_URL_ENV_VAR = "LMSTUDIO_BASE_URL"
     API_KEY_ENV_VAR = None
     DEFAULT_BASE_URL = "http://localhost:1234/v1"
+
+    def _requires_output_cap(self) -> bool:
+        # LM Studio's native `/api/v1/chat` REST payload sets max_output_tokens
+        # unconditionally (and int()s it); a local llama.cpp backend can also
+        # run away without a bound. Always send the model's true max when the
+        # caller specified none — never omit here. (Explicit caller caps still
+        # win via _resolve_output_token_cap.)
+        return True
+
+    def _mutate_payload(self, payload: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
+        """LM Studio payload hook: minja-safe tool-call HISTORY serialization.
+
+        LM Studio renders GGUF chat templates with a minja-class engine that
+        lacks the ``safe`` filter; templates of the Qwen3-Coder XML convention
+        apply ``tojson | safe`` to every NON-STRING replayed tool-call argument
+        value, so such conversations 400 at render time (live: Ornith-1.0-35B,
+        'Unknown StringValue filter: safe'). Stringifying the values routes the
+        template through its string branch with byte-identical rendered output
+        (see `stringify_tool_call_history_argument_values`). LM Studio-only by
+        construction: OpenAI/vLLM servers render with real Jinja2 (has ``safe``)
+        and keep the untouched shared wire.
+        """
+        payload = super()._mutate_payload(payload, **kwargs)
+        messages = payload.get("messages")
+        if isinstance(messages, list) and messages:
+            payload["messages"] = stringify_tool_call_history_argument_values(messages)
+        return payload
 
     _TIMEOUT_UNSET = object()
 

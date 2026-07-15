@@ -352,8 +352,11 @@ class OpenAIProvider(BaseProvider):
         if reasoning_effort_s:
             call_params["reasoning_effort"] = reasoning_effort_s
 
-        # Output token parameter name (driven by model_capabilities.json)
-        call_params[self._get_token_param_name()] = max_output_tokens
+        # Output token parameter name (driven by model_capabilities.json). When
+        # the resolver returns None the caller imposed no cap — OMIT the param
+        # so the model uses its full output capability (no silent budget).
+        if max_output_tokens is not None:
+            call_params[self._get_token_param_name()] = max_output_tokens
 
         # Add tools if provided (convert to native format)
         if tools:
@@ -589,8 +592,11 @@ class OpenAIProvider(BaseProvider):
         if reasoning_effort_s:
             call_params["reasoning_effort"] = reasoning_effort_s
 
-        # Output token parameter name (driven by model_capabilities.json)
-        call_params[self._get_token_param_name()] = max_output_tokens
+        # Output token parameter name (driven by model_capabilities.json). When
+        # the resolver returns None the caller imposed no cap — OMIT the param
+        # so the model uses its full output capability (no silent budget).
+        if max_output_tokens is not None:
+            call_params[self._get_token_param_name()] = max_output_tokens
 
         # Add tools if provided (convert to native format)
         if tools:
@@ -1011,10 +1017,15 @@ class OpenAIProvider(BaseProvider):
 
     # Removed overrides - using BaseProvider methods with JSON capabilities
 
-    def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
-        """Get max tokens parameter for OpenAI API"""
-        # For OpenAI, max_tokens in the API is the max output tokens
-        return kwargs.get("max_output_tokens", self.max_output_tokens)
+    def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> Optional[int]:
+        """Get max tokens parameter for OpenAI API.
+
+        Returns None when the caller imposed no cap so the call OMITS the
+        token param and uses the model's full output capability (modern OpenAI
+        and OpenAI-compatible servers treat an absent cap as the model max).
+        Explicit caller caps are honored verbatim.
+        """
+        return self._resolve_output_token_cap(kwargs)
 
     def _supports_structured_output(self) -> bool:
         """Return True when the registry says this model supports native structured outputs."""

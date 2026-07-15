@@ -64,8 +64,30 @@ def test_unsupported_temperature_and_top_p_dropped(monkeypatch):
     payload = captured["payload"]
     assert "temperature" not in payload
     assert "top_p" not in payload
-    # The output cap always survives (rename-only handling, never dropped).
-    assert "max_tokens" in payload
+    # No caller cap here: the output-token param is OMITTED so the model uses
+    # its full output capability (ADR 0001 no-silent-budget). It is NOT sent
+    # with a silent registry default. (When a caller DOES set a cap, the
+    # rename-only handling still applies — see the two tests below.)
+    assert "max_tokens" not in payload
+    assert "max_completion_tokens" not in payload
+
+
+def test_unspecified_output_cap_is_omitted(monkeypatch):
+    """No caller cap => omit the output-token param (use full capability)."""
+    provider = _provider()
+    captured = _capture_sync(provider, monkeypatch)
+    provider.generate("hi")
+    payload = captured["payload"]
+    assert "max_tokens" not in payload
+    assert "max_completion_tokens" not in payload
+
+
+def test_explicit_output_cap_is_sent(monkeypatch):
+    """An explicit caller cap is honored verbatim on the wire."""
+    provider = _provider()
+    captured = _capture_sync(provider, monkeypatch)
+    provider.generate("hi", max_output_tokens=256)
+    assert captured["payload"]["max_tokens"] == 256
 
 
 def test_token_param_renamed_to_max_completion_tokens(monkeypatch):

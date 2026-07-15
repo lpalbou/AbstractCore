@@ -7,9 +7,17 @@ with automatic validation and retry mechanisms.
 
 from .retry import Retry, FeedbackRetry
 from .handler import StructuredOutputHandler
+from .schema_compat import (
+    SchemaRejectionRegistry,
+    is_schema_rejection_error,
+    schema_rejection_registry,
+)
 
 __all__ = [
     "Retry",
     "FeedbackRetry",
-    "StructuredOutputHandler"
+    "StructuredOutputHandler",
+    "SchemaRejectionRegistry",
+    "is_schema_rejection_error",
+    "schema_rejection_registry",
 ]

@@ -28,6 +28,18 @@ _HARMONY_GENERATION_ARTIFACT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# A server-side chat-template render failure: the model's embedded Jinja chat
+# template uses a filter/test the SERVER'S template engine does not implement.
+# The classic case is LM Studio's bundled (older) @huggingface/jinja engine
+# rejecting the `safe` filter used by the Qwen3-Coder XML tool convention
+# (Qwen3-Coder, Ornith, Step-3.5): "Unknown StringValue filter: safe". It is a
+# SERVER + MODEL-TEMPLATE incompatibility, not a malformed request — surfacing
+# it as a bare HTTP 400 makes it look like an AbstractCore bug. We can only warn.
+_TEMPLATE_RENDER_ERROR_RE = re.compile(
+    r"error rendering prompt with jinja template|unknown \w+ filter|unknown (?:filter|test)\b",
+    re.IGNORECASE,
+)
+
 try:
     from pydantic import BaseModel
     PYDANTIC_AVAILABLE = True
@@ -100,7 +112,7 @@ from ..exceptions import (
     InvalidRequestError,
     format_model_error,
 )
-from ..tools import UniversalToolHandler
+from ..tools import UniversalToolHandler, merge_tools_into_system
 from ..utils.truncation import preview_text
 
 
@@ -594,6 +606,23 @@ class OpenAICompatibleProvider(BaseProvider):
                     "output violated its template; a retry resamples]",
                     status_code=status,
                 )
+            # Server-side chat-template render failure (e.g. LM Studio's engine
+            # cannot render a filter used by the model's own chat template).
+            # WARN loudly so this stops looking like a mystery request bug — the
+            # request is well-formed; the incompatibility is between the SERVER's
+            # template engine and the MODEL's embedded template. We do NOT
+            # mutate the request or switch models/providers — surfacing the cause
+            # is all AbstractCore should do here.
+            if detail and _TEMPLATE_RENDER_ERROR_RE.search(detail):
+                self.logger.warning(
+                    f"#FALLBACK {self.PROVIDER_DISPLAY_NAME} rejected the request (400) while "
+                    f"RENDERING the model's chat template server-side: {detail}. This is a "
+                    f"server/template-engine incompatibility, not a malformed request — the "
+                    f"model '{self.model}' ships a chat template using a Jinja construct this "
+                    f"server's engine does not implement. Resolve it at the template: remove the "
+                    f"unsupported filter from the model's chat template on the server. "
+                    f"AbstractCore sent a well-formed request and did not alter it."
+                )
             raise InvalidRequestError(msg, status_code=status)
         if status == 404:
             # Could be endpoint misconfiguration (missing /v1) or an unknown model.
@@ -742,19 +771,13 @@ class OpenAICompatibleProvider(BaseProvider):
         # Build messages for chat completions with tool support
         chat_messages = []
 
-        # Add tools to system prompt if provided
-        final_system_prompt = system_prompt
-        # Prefer native tools when the model supports them. Only inject a prompted tool list
-        # when native tool calling is not available.
-        if tools and self.tool_handler.supports_prompted and not self.tool_handler.supports_native:
-            include_tool_list = True
-            if final_system_prompt and "## Tools (session)" in final_system_prompt:
-                include_tool_list = False
-            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
-            if final_system_prompt:
-                final_system_prompt += f"\n\n{tool_prompt}"
-            else:
-                final_system_prompt = tool_prompt
+        # Add tools to system prompt if provided. Prefer NATIVE tools when the
+        # model supports them (sent as the `tools=` payload below); only inject
+        # a prompted tool list when native tool calling is not available.
+        if self.tool_handler.supports_native:
+            final_system_prompt = system_prompt
+        else:
+            final_system_prompt = merge_tools_into_system(self.tool_handler, system_prompt, tools)
 
         # Add system message if provided
         if final_system_prompt:
@@ -849,9 +872,12 @@ class OpenAICompatibleProvider(BaseProvider):
             "messages": chat_messages,
             "stream": stream,
             "temperature": generation_kwargs.get("temperature", self.temperature),
-            "max_tokens": max_output_tokens,
             "top_p": generation_kwargs.get("top_p", 0.9),
         }
+        # Only send the output cap when there is one — omitting it lets the
+        # server use the model's full output capability (no silent budget).
+        if max_output_tokens is not None:
+            payload["max_tokens"] = max_output_tokens
         top_k_value = generation_kwargs.get("top_k")
         if top_k_value is not None and str(getattr(self, "provider", "") or "").strip().lower() == "lmstudio":
             payload["top_k"] = top_k_value
@@ -1233,18 +1259,12 @@ class OpenAICompatibleProvider(BaseProvider):
         # Build messages for chat completions with tool support (same logic as sync)
         chat_messages = []
 
-        # Add tools to system prompt if provided
-        final_system_prompt = system_prompt
-        # Prefer native tools when available; only inject prompted tool syntax as fallback.
-        if tools and self.tool_handler.supports_prompted and not self.tool_handler.supports_native:
-            include_tool_list = True
-            if final_system_prompt and "## Tools (session)" in final_system_prompt:
-                include_tool_list = False
-            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
-            if final_system_prompt:
-                final_system_prompt += f"\n\n{tool_prompt}"
-            else:
-                final_system_prompt = tool_prompt
+        # Add tools to system prompt if provided. Prefer native tools when
+        # available; only inject prompted tool syntax as fallback.
+        if self.tool_handler.supports_native:
+            final_system_prompt = system_prompt
+        else:
+            final_system_prompt = merge_tools_into_system(self.tool_handler, system_prompt, tools)
 
         # Add system message if provided
         if final_system_prompt:
@@ -1311,9 +1331,12 @@ class OpenAICompatibleProvider(BaseProvider):
             "messages": chat_messages,
             "stream": stream,
             "temperature": generation_kwargs.get("temperature", self.temperature),
-            "max_tokens": max_output_tokens,
             "top_p": generation_kwargs.get("top_p", 0.9),
         }
+        # Only send the output cap when there is one — omitting it lets the
+        # server use the model's full output capability (no silent budget).
+        if max_output_tokens is not None:
+            payload["max_tokens"] = max_output_tokens
         top_k_value = generation_kwargs.get("top_k")
         if top_k_value is not None and str(getattr(self, "provider", "") or "").strip().lower() == "lmstudio":
             payload["top_k"] = top_k_value
@@ -1565,10 +1588,15 @@ class OpenAICompatibleProvider(BaseProvider):
         except:
             return False
 
-    def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> int:
-        """Get max tokens parameter for OpenAI-compatible API"""
-        # For OpenAI-compatible servers, max_tokens is the max output tokens
-        return kwargs.get("max_output_tokens", self.max_output_tokens)
+    def _get_provider_max_tokens_param(self, kwargs: Dict[str, Any]) -> Optional[int]:
+        """Get max tokens parameter for OpenAI-compatible API.
+
+        Returns None when the caller imposed no cap so the request OMITS
+        max_tokens and the server uses the model's full output budget
+        (verified on OVH/vLLM: an absent max_tokens completes normally with
+        finish_reason=stop, no tiny default). Explicit caps are honored.
+        """
+        return self._resolve_output_token_cap(kwargs)
 
     def _update_http_client_timeout(self) -> None:
         """Update HTTP client timeout when timeout is changed."""
