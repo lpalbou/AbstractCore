@@ -31,8 +31,17 @@ def _error_from_output(value: Any) -> Optional[str]:
         if success is False or ok is False or status_hint == "error":
             text = str(err or "Tool reported failure").strip()
             return text or "Tool reported failure"
-        if err not in {None, ""}:
-            text = str(err).strip()
+        # An explicitly-successful output is never a failure — adversarial find
+        # (2026-07-13): {"success": True, "message": "Created 3 rows"} was
+        # reported to the model as a FAILED call because the fallback branch
+        # treated any non-empty `message` as an error signal.
+        if success is True or ok is True or status_hint in {"ok", "success"}:
+            return None
+        # Without an explicit success/failure marker, only the `error` key is
+        # an error signal; `message` alone is a normal payload field.
+        err_only = mapping.get("error")
+        if err_only not in {None, ""}:
+            text = str(err_only).strip()
             return text or "Tool reported failure"
         return None
 

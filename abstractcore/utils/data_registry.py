@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 import time
 from dataclasses import dataclass, asdict, field
 from pathlib import Path
@@ -503,6 +504,109 @@ def _tree_size(root: Path) -> int:
     return int(total)
 
 
+# ---------------------------------------------------------------------------
+# Best-effort register-at-first-write lane (for hot data-writing code paths)
+# ---------------------------------------------------------------------------
+
+_ENSURE_DISABLE_ENV = "ABSTRACTFRAMEWORK_DATA_REGISTRY_DISABLE"
+_ensure_lock = threading.Lock()
+_ensured_names: set = set()
+_ensure_warned: set = set()
+_core_homes_done = False
+
+
+def _ensure_disabled() -> bool:
+    return str(os.environ.get(_ENSURE_DISABLE_ENV, "")).strip().lower() in {"1", "true", "yes"}
+
+
+def _reset_ensure_state() -> None:
+    """Test hook: forget per-process ensure dedup state."""
+    global _core_homes_done
+    with _ensure_lock:
+        _ensured_names.clear()
+        _ensure_warned.clear()
+        _core_homes_done = False
+
+
+def ensure_data_home_registered(
+    name: str,
+    *,
+    path: str,
+    kind: str,
+    owner: str,
+    safe_to_purge: bool,
+    description: str = "",
+    meta: Optional[Dict[str, Any]] = None,
+) -> Optional[DataHome]:
+    """Best-effort `register_data_home` for hot paths — never raises.
+
+    The strict verb refuses loudly (right for the management surface); THIS is
+    what data-writing code paths call at their first write: it dedupes per
+    process (one lock-file touch per name, cheap on every later call), degrades
+    to a one-time `#FALLBACK` warning when the registry refuses or the disk
+    write fails (a broken registry must never break embeddings, logging, or
+    generation), and honors the ``ABSTRACTFRAMEWORK_DATA_REGISTRY_DISABLE``
+    kill switch. A failed registration retries silently on the next call (a
+    transient lock timeout heals); only the warning is deduplicated.
+
+    Returns the registered row when THIS call registered it, else None.
+    """
+    if _ensure_disabled():
+        return None
+    key = str(name or "").strip()
+    if not key:
+        return None
+    with _ensure_lock:
+        if key in _ensured_names:
+            return None
+    try:
+        row = register_data_home(
+            key, path=path, kind=kind, owner=owner,
+            safe_to_purge=safe_to_purge, description=description, meta=meta,
+        )
+        with _ensure_lock:
+            _ensured_names.add(key)
+        return row
+    except Exception as e:
+        warn = False
+        with _ensure_lock:
+            if key not in _ensure_warned:
+                _ensure_warned.add(key)
+                warn = True
+        if warn:
+            from .structured_logging import get_logger
+
+            get_logger("abstractcore.data_registry").warning(
+                f"#FALLBACK: data-home registration for '{key}' skipped: {e}"
+            )
+        return None
+
+
+def ensure_core_data_homes() -> None:
+    """Best-effort, once-per-process `register_core_data_homes()`.
+
+    Providers and the embedding manager call this at construction (the moment
+    model downloads/cache writes become imminent); the once-guard makes every
+    later call free. One shot per process even on failure — a broken probe
+    warns once instead of re-warning on every model load.
+    """
+    global _core_homes_done
+    if _core_homes_done or _ensure_disabled():
+        return
+    with _ensure_lock:
+        if _core_homes_done:
+            return
+        _core_homes_done = True
+    try:
+        register_core_data_homes()
+    except Exception as e:
+        from .structured_logging import get_logger
+
+        get_logger("abstractcore.data_registry").warning(
+            f"#FALLBACK: core data-home registration skipped: {e}"
+        )
+
+
 def register_core_data_homes() -> List[DataHome]:
     """Register the data homes CORE knows about on this machine (idempotent).
 
@@ -561,4 +665,54 @@ def register_core_data_homes() -> List[DataHome]:
         raise
     except Exception as e:
         logger.warning(f"#FALLBACK: could not probe/register the LM Studio model dir: {e}")
+    try:
+        # The file-bloc store (extracted-text snapshots + per-model KV artifacts)
+        # is by far the largest core-owned data home on long-lived machines.
+        # FileBlocStore.upsert registers its actual root at first write; this
+        # probe additionally covers machines where the store already exists
+        # but the current process only reads it.
+        blocs = Path.home() / ".abstractcore" / "blocs"
+        if blocs.is_dir():
+            rows.append(register_data_home(
+                "abstractcore-blocs",
+                path=str(blocs),
+                kind="prompt-cache",
+                owner="abstractcore",
+                safe_to_purge=True,
+                description=(
+                    "File-bloc store: extracted file-text snapshots plus per-(provider, model) "
+                    "KV prompt-cache artifacts (the KV artifacts are the bulk). Safe to purge: "
+                    "content re-extracts and KV recompiles on demand, but strict durable-bloc "
+                    "bindings go cold until recompiled — expect one-time recompute cost."
+                ),
+            ))
+    except DataRegistryError:
+        raise
+    except Exception as e:
+        logger.warning(f"#FALLBACK: could not probe/register the file-bloc store: {e}")
+    try:
+        # Saved sessions from the RETIRED save feature of the prompt-cache REPL
+        # demo (examples/prompt_caching/prompt_cache_repl_demo.py; the current
+        # demo no longer writes here). The JSON transcripts are user-elected
+        # saves (not re-derivable), so the row is report-only: visibility with
+        # a manual-cleanup pointer, never a bulk purge of someone's transcripts.
+        repl_sessions = Path.home() / ".abstractcore" / "prompt_cache_repl_sessions"
+        if repl_sessions.is_dir():
+            rows.append(register_data_home(
+                "abstractcore-prompt-cache-repl-sessions",
+                path=str(repl_sessions),
+                kind="sessions",
+                owner="abstractcore",
+                safe_to_purge=False,
+                description=(
+                    "Saved prompt-cache REPL demo sessions (retired save feature; no current "
+                    "writer). The *.artifacts KV safetensors are re-derivable bulk, but the "
+                    "JSON transcripts are user-elected saves — review and delete manually "
+                    "(the .artifacts directories are safe to remove by hand)."
+                ),
+            ))
+    except DataRegistryError:
+        raise
+    except Exception as e:
+        logger.warning(f"#FALLBACK: could not probe/register the REPL saved-sessions dir: {e}")
     return rows

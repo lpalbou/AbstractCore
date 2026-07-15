@@ -3004,7 +3004,9 @@
       "canonical_name": "gemma-4-12b-it",
       "aliases": [
         "google/gemma-4-12B-it",
-        "gemma-4-12B-it"
+        "gemma-4-12B-it",
+        "yuxinlu1/gemma-4-12B-agentic-fable5-composer2.5-v2-3.5x-tau2-GGUF",
+        "yuxinlu1/gemma-4-12B-coder-fable5-composer2.5-v1-GGUF"
       ],
       "max_tokens": 262144,
       "max_tools": -1,
@@ -3464,13 +3466,15 @@
       "shared_experts": 1,
       "attention_mechanism": "hybrid compressed sparse attention",
       "quantization_method": "FP4+FP8 mixed",
-      "notes": "DeepSeek-V4-Pro preview MoE language model with 1.6T total/49B activated parameters, one-million-token context, hybrid compressed sparse attention, and non-thinking/high/max reasoning modes. The model card documents DSML-style prompted tool use and reasoning summaries in <think>...</think> blocks.",
+      "notes": "DeepSeek-V4-Pro preview MoE language model with 1.6T total/49B activated parameters, one-million-token context, hybrid compressed sparse attention, and non-thinking/high/max reasoning modes. The model card documents DSML-style prompted tool use and reasoning summaries in <think>...</think> blocks. DeepSeek-V4-Pro-DSpark (June 2026) is the SAME checkpoint with a bolt-on DSpark speculative-decoding draft module (57-78% faster per-user decoding, identical outputs) — aliased here, not a separate entry.",
       "source": "Hugging Face model card and config (deepseek-ai/DeepSeek-V4-Pro, accessed 2026-05-03)",
       "canonical_name": "deepseek-v4-pro",
       "aliases": [
         "deepseek-ai/DeepSeek-V4-Pro",
         "DeepSeek-V4-Pro",
-        "deepseek-v4-pro-max"
+        "deepseek-v4-pro-max",
+        "deepseek-ai/DeepSeek-V4-Pro-DSpark",
+        "DeepSeek-V4-Pro-DSpark"
       ],
       "max_tokens": 1048576,
       "release_date": "2026-04",
@@ -3520,7 +3524,9 @@
       "aliases": [
         "deepseek-ai/DeepSeek-V4-Flash",
         "DeepSeek-V4-Flash",
-        "deepseek-v4-flash-max"
+        "deepseek-v4-flash-max",
+        "deepseek-ai/DeepSeek-V4-Flash-DSpark",
+        "DeepSeek-V4-Flash-DSpark"
       ],
       "max_tokens": 1048576,
       "release_date": "2026-04",
@@ -3962,7 +3968,9 @@
       "canonical_name": "qwen3.6-27b",
       "aliases": [
         "Qwen/Qwen3.6-27B",
-        "qwen3.6:27b"
+        "qwen3.6:27b",
+        "bottlecapai/ThinkingCap-Qwen3.6-27B",
+        "bottlecapai/ThinkingCap-Qwen3.6-27B-GGUF"
       ],
       "max_tokens": 262144,
       "license": "Apache-2.0",
@@ -5593,10 +5601,10 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
-      "total_parameters": "355B",
-      "active_parameters": "32B",
-      "notes": "GLM-5 MoE model with 355B total parameters, 32B active parameters, 128,000-token context, and 96,000 output tokens. Official docs state tool invocation is supported, but native function calling is not. Structured outputs are supported via prompting.",
-      "source": "Hugging Face model card (zai-org/GLM-5, accessed 2026-03-11)",
+      "total_parameters": "744B",
+      "active_parameters": "40B",
+      "notes": "GLM-5 MoE model with 744B total parameters, 40B active parameters, 128,000-token context, and 96,000 output tokens (official card: 'Compared to GLM-4.5, GLM-5 scales from 355B parameters (32B active) to 744B parameters (40B active)' — this entry previously carried GLM-4.5's numbers, corrected 2026-07-13). Official docs state tool invocation is supported, but native function calling is not. Structured outputs are supported via prompting.",
+      "source": "Hugging Face model card (zai-org/GLM-5, accessed 2026-07-13)",
       "canonical_name": "glm-5",
       "aliases": [
         "zai-org/glm-5",
@@ -8530,6 +8538,806 @@
           "text"
         ]
       }
+    },
+    "ornith-1.0-9b": {
+      "max_output_tokens": 81920,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "qwen3_5_agentic",
+      "base_model": "Qwen/Qwen3.5-9B",
+      "total_parameters": "9B",
+      "license": "MIT",
+      "release_date": "2026-06",
+      "notes": "Ornith-1.0-9B dense agentic-coding model post-trained on Qwen3.5-9B (self-improving RL over scaffold+solution rollouts; strong Terminal-Bench 2.1/SWE-Bench results for its size). Keeps the Qwen3.5 262,144-token context and vision input. Tool calls use the Qwen3-Coder <tool_call><function=...> XML convention.",
+      "source": "Hugging Face model card, config and chat template (deepreinforce-ai/Ornith-1.0-9B, accessed 2026-07-13)",
+      "canonical_name": "ornith-1.0-9b",
+      "aliases": [
+        "deepreinforce-ai/Ornith-1.0-9B",
+        "deepreinforce-ai/Ornith-1.0-9B-GGUF",
+        "bartowski/deepreinforce-ai_Ornith-1.0-9B-GGUF"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "ornith-1.0-35b": {
+      "max_output_tokens": 81920,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "qwen3_5_agentic",
+      "base_model": "Qwen/Qwen3.5-35B-A3B",
+      "total_parameters": "35B",
+      "active_parameters": "3B",
+      "experts": 256,
+      "shared_experts": 1,
+      "experts_activated": 8,
+      "license": "MIT",
+      "release_date": "2026-06",
+      "notes": "Ornith-1.0-35B MoE agentic-coding model post-trained on Qwen3.5-35B-A3B (256 routed + 1 shared experts, 8 activated; 262,144-token context). Self-improving RL jointly optimizes scaffold and solution rollouts; state-of-the-art coding-agent results among open models of comparable size. Tool calls use the Qwen3-Coder <tool_call><function=...> XML convention.",
+      "source": "Hugging Face model card, config and chat template (deepreinforce-ai/Ornith-1.0-35B, accessed 2026-07-13)",
+      "canonical_name": "ornith-1.0-35b",
+      "aliases": [
+        "deepreinforce-ai/Ornith-1.0-35B",
+        "deepreinforce-ai/Ornith-1.0-35B-FP8",
+        "deepreinforce-ai/Ornith-1.0-35B-GGUF",
+        "bartowski/deepreinforce-ai_Ornith-1.0-35B-GGUF",
+        "mlx-community/Ornith-1.0-35B-4bit"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "ornith-1.0-397b": {
+      "max_output_tokens": 81920,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "qwen3_5_agentic",
+      "base_model": "Qwen/Qwen3.5-397B-A17B",
+      "total_parameters": "397B",
+      "active_parameters": "17B",
+      "experts": 512,
+      "shared_experts": 1,
+      "experts_activated": 10,
+      "license": "MIT",
+      "release_date": "2026-06",
+      "notes": "Ornith-1.0-397B flagship MoE agentic-coding model post-trained on Qwen3.5-397B-A17B (512 routed + 1 shared experts, 10 activated; 262,144-token context). Tool calls use the Qwen3-Coder <tool_call><function=...> XML convention.",
+      "source": "Hugging Face model card, config and chat template (deepreinforce-ai/Ornith-1.0-397B, accessed 2026-07-13)",
+      "canonical_name": "ornith-1.0-397b",
+      "aliases": [
+        "deepreinforce-ai/Ornith-1.0-397B",
+        "deepreinforce-ai/Ornith-1.0-397B-FP8",
+        "bartowski/deepreinforce-ai_Ornith-1.0-397B-GGUF"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "qwen-agentworld-35b-a3b": {
+      "max_output_tokens": 81920,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "qwen3_5_agentic",
+      "base_model": "Qwen/Qwen3.5-35B-A3B",
+      "total_parameters": "35B",
+      "active_parameters": "3B",
+      "experts": 256,
+      "shared_experts": 1,
+      "experts_activated": 8,
+      "notes": "Qwen-AgentWorld-35B-A3B agentic post-train of Qwen3.5-35B-A3B (262,144-token context, 256 routed + 1 shared experts, 8 activated). Chat template switches to the Qwen3-Coder <tool_call><function=...> XML tool convention (unlike base Qwen3.5's JSON tool calls).",
+      "source": "Hugging Face config and chat template (Qwen/Qwen-AgentWorld-35B-A3B, accessed 2026-07-13)",
+      "canonical_name": "qwen-agentworld-35b-a3b",
+      "aliases": [
+        "Qwen/Qwen-AgentWorld-35B-A3B"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "agents-a1": {
+      "max_output_tokens": 81920,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "qwen3_5_agentic",
+      "base_model": "Qwen/Qwen3.5-35B-A3B",
+      "total_parameters": "35B",
+      "active_parameters": "3B",
+      "experts": 256,
+      "shared_experts": 1,
+      "experts_activated": 8,
+      "notes": "InternScience Agents-A1 agent model built on the Qwen3.5-35B-A3B MoE (262,144-token context, 256 routed + 1 shared experts, 8 activated). Uses the Qwen3-Coder <tool_call><function=...> XML tool convention.",
+      "source": "Hugging Face config and chat template (InternScience/Agents-A1, accessed 2026-07-13)",
+      "canonical_name": "agents-a1",
+      "aliases": [
+        "InternScience/Agents-A1"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "glm-5.1": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_output_field": "reasoning_content",
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "architecture": "glm5_dsa",
+      "total_parameters": "754B",
+      "active_parameters": "40B",
+      "experts": 256,
+      "shared_experts": 1,
+      "experts_activated": 8,
+      "license": "MIT",
+      "release_date": "2026-04-07",
+      "notes": "GLM-5.1 agentic-engineering flagship (GlmMoeDsa: MLA + DeepSeek-style sparse attention + MTP head; 78 layers, 256 routed + 1 shared experts, 8 activated). Config max_position_embeddings 202,752 (~200K context); up to 128K output tokens. Function calling and structured outputs are exposed by the Z.ai API and vLLM/SGLang parsers; thinking enabled by default. Total parameters reported 744B (GLM-5 card wording) to 754B (GLM-5.1 card).",
+      "source": "Hugging Face config (zai-org/GLM-5.1, accessed 2026-07-13); Z.ai GLM-5.1 docs; llmreference.com GLM-5.1 spec sheet",
+      "canonical_name": "glm-5.1",
+      "aliases": [
+        "zai-org/GLM-5.1",
+        "z-ai/glm-5.1"
+      ],
+      "max_tokens": 202752,
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "glm-5.2": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_output_field": "reasoning_content",
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "reasoning_levels": [
+        "none",
+        "high",
+        "xhigh"
+      ],
+      "max_effort_supported": true,
+      "architecture": "glm5_dsa",
+      "total_parameters": "753B",
+      "active_parameters": "40B",
+      "experts": 256,
+      "shared_experts": 1,
+      "experts_activated": 8,
+      "license": "MIT",
+      "release_date": "2026-06-16",
+      "notes": "GLM-5.2 long-horizon flagship with a solid 1M-token context (config max_position_embeddings 1,048,576) and up to 128K output tokens. GlmMoeDsa architecture plus IndexShare (one indexer shared across every 4 sparse-attention layers, ~2.9x indexer FLOPs reduction at 1M) and an improved MTP layer for speculative decoding. Thinking effort levels: non-thinking / High / Max (Max mapped to xhigh). Function calling and structured outputs exposed by the Z.ai API and vLLM/SGLang parsers. Total parameters 753B per NVIDIA NIM docs (744B is the FP8 VRAM figure commonly misquoted).",
+      "source": "Hugging Face model card and config (zai-org/GLM-5.2, accessed 2026-07-13); z.ai/blog/glm-5.2; NVIDIA NIM model reference",
+      "canonical_name": "glm-5.2",
+      "aliases": [
+        "zai-org/GLM-5.2",
+        "z-ai/glm-5.2",
+        "unsloth/GLM-5.2-GGUF"
+      ],
+      "max_tokens": 1048576,
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "hy3": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<think:opensource>",
+        "</think:opensource>"
+      ],
+      "architecture": "hunyuan3",
+      "total_parameters": "295B",
+      "active_parameters": "21B",
+      "experts": 192,
+      "experts_activated": 8,
+      "license": "Apache-2.0",
+      "release_date": "2026-07-02",
+      "notes": "Tencent Hy3 MoE (295B total / 21B activated + 3.8B MTP layer; 192 experts, 8 activated; 80 layers, GQA 64 heads / 8 KV). 262,144-token context per config. Chat template ships dedicated ':opensource'-suffixed special tokens for thinking and <tool_calls:opensource> tool blocks; serving stacks with a Hunyuan-aware parser can expose native function calling. No separate output cap documented — 8,192 is a conservative default, raise per deployment. Template reasoning_effort defaults to no_think.",
+      "source": "Hugging Face model card, config and chat template (tencent/Hy3, accessed 2026-07-13)",
+      "canonical_name": "hy3",
+      "aliases": [
+        "tencent/Hy3",
+        "tencent/Hy3-FP8"
+      ],
+      "max_tokens": 262144,
+      "inference_parameters": {
+        "temperature": 0.9,
+        "top_p": 1.0
+      },
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "minimax-m3": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<mm:think>",
+        "</mm:think>"
+      ],
+      "architecture": "minimax_m3",
+      "total_parameters": "428B",
+      "active_parameters": "23B",
+      "experts": 128,
+      "notes": "MiniMax-M3 multimodal MoE (~428B total / ~23B activated; 128 experts) with MiniMax Sparse Attention and a 1,048,576-token context per config (per-token attention compute reported at ~1/20 of dense at 1M). Vision-language input; interleaved thinking wrapped in <mm:think> tags; namespaced ']<]minimax[>[' special-token chat format (serve via an OpenAI-compatible stack rather than local prompt rendering). No separate output cap documented — 8,192 is a conservative default, raise per deployment.",
+      "source": "Hugging Face model card, config and chat template (MiniMaxAI/MiniMax-M3, accessed 2026-07-13)",
+      "canonical_name": "minimax-m3",
+      "aliases": [
+        "MiniMaxAI/MiniMax-M3",
+        "minimax/minimax-m3",
+        "nvidia/MiniMax-M3-NVFP4",
+        "unsloth/MiniMax-M3-GGUF"
+      ],
+      "max_tokens": 1048576,
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95
+      },
+      "max_tools": -1,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "minicpm5-1b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "architecture": "minicpm5",
+      "total_parameters": "1B",
+      "notes": "OpenBMB MiniCPM5-1B compact reasoning model (Llama-architecture weights with a ChatML <|im_start|> template; 131,072-token context via rope_theta 5e6). Thinking in <think> blocks; Hermes-style <tools> declarations with <tool_call> JSON emission (prompted tool use). No separate output cap documented — 8,192 is a conservative default. Popular small-footprint base for community distills.",
+      "source": "Hugging Face model card, config and chat template (openbmb/MiniCPM5-1B, accessed 2026-07-13)",
+      "canonical_name": "minicpm5-1b",
+      "aliases": [
+        "openbmb/MiniCPM5-1B",
+        "openbmb/MiniCPM5-1B-GGUF",
+        "openbmb/MiniCPM5-1B-MLX",
+        "GnLOLot/MiniCPM5-1B-Claude-Opus-Fable5-Thinking-GGUF",
+        "ewinregirgojr/MiniCPM5-1B-Agentic-Tooluse-GGUF"
+      ],
+      "max_tokens": 131072,
+      "inference_parameters": {
+        "temperature": 0.9,
+        "top_p": 0.95
+      },
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "longcat-2.0": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<longcat_think>",
+        "</longcat_think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "architecture": "longcat",
+      "total_parameters": "1.6T",
+      "active_parameters": "48B",
+      "experts": 768,
+      "license": "MIT",
+      "release_date": "2026-07-05",
+      "notes": "Meituan LongCat-2.0 large-scale MoE (1.6T total / ~48B activated per token; 768 routed experts) trained entirely on AI ASIC superpods over 35T+ tokens. LongCat Sparse Attention with hundreds of billions of 1M-context training tokens; config max_position_embeddings 262,144 (registry uses the config value). Dedicated <longcat_*> role/thinking/tool special tokens (tool args in <longcat_arg_key>/<longcat_arg_value> pairs) — prompted tool use unless served behind a LongCat-aware parser. No separate output cap documented — 8,192 is a conservative default.",
+      "source": "Hugging Face model card, config and chat template (meituan-longcat/LongCat-2.0, accessed 2026-07-13)",
+      "canonical_name": "longcat-2.0",
+      "aliases": [
+        "meituan-longcat/LongCat-2.0"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "nemotron-labs-3-puzzle-75b-a9b": {
+      "max_output_tokens": 8192,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "nemotron_hybrid_moe",
+      "total_parameters": "75B",
+      "active_parameters": "9B",
+      "notes": "NVIDIA Nemotron-Labs-3-Puzzle-75B-A9B (NemotronHPuzzle hybrid Mamba/attention MoE, NAS-compressed 'Puzzle' derivative of the Nemotron 3 family). 262,144-token context per config; ChatML template with <think> reasoning_content handling and the <tool_call><function=...> XML tool convention (parser-served stacks expose native function calling). BF16 and NVFP4 checkpoints published.",
+      "source": "Hugging Face config and chat template (nvidia/NVIDIA-Nemotron-Labs-3-Puzzle-75B-A9B-BF16, accessed 2026-07-13)",
+      "canonical_name": "nemotron-labs-3-puzzle-75b-a9b",
+      "aliases": [
+        "nvidia/NVIDIA-Nemotron-Labs-3-Puzzle-75B-A9B-BF16",
+        "nvidia/NVIDIA-Nemotron-Labs-3-Puzzle-75B-A9B-NVFP4",
+        "NVIDIA-Nemotron-Labs-3-Puzzle-75B-A9B-BF16"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "nemotron-labs-audex-30b-a3b": {
+      "max_output_tokens": 8192,
+      "tool_support": "prompted",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": true,
+      "audio_input_capabilities": [
+        "speech",
+        "sound"
+      ],
+      "video_support": false,
+      "thinking_support": true,
+      "architecture": "nemotron_hybrid_moe",
+      "base_model": "nvidia/Nemotron-Cascade-2-30B-A3B",
+      "total_parameters": "30B",
+      "active_parameters": "3B",
+      "notes": "NVIDIA Nemotron-Labs-Audex-30B-A3B unified audio-text LLM built on Nemotron-Cascade-2-30B-A3B (30B MoE, 3B activated). Adds an audio encoder for speech and general audio inputs and extends the vocabulary with discrete audio tokens for speech/general audio OUTPUT — one of the first open audio-in/audio-out LLMs in this class. Context and tool behavior inherit the Cascade-2 base (262,144-token context; prompted tool use). A 2B sibling (nvidia/Nemotron-Labs-Audex-2B) exists as a separate model.",
+      "source": "Hugging Face model card (nvidia/Nemotron-Labs-Audex-30B-A3B, accessed 2026-07-13); arXiv 2607.05196",
+      "canonical_name": "nemotron-labs-audex-30b-a3b",
+      "aliases": [
+        "nvidia/Nemotron-Labs-Audex-30B-A3B"
+      ],
+      "max_tokens": 262144,
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "voice",
+          "sound"
+        ],
+        "output": [
+          "text",
+          "voice"
+        ]
+      }
+    },
+    "unlimited-ocr": {
+      "max_output_tokens": 8192,
+      "tool_support": "none",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": false,
+      "image_resolutions": [
+        "variable"
+      ],
+      "license": "MIT",
+      "notes": "Baidu Unlimited-OCR document/OCR vision-language model (UnlimitedOCRForCausalLM; 32,768-token context per config). Image-to-text extraction with prompted structured output (markdown/JSON); no tool calling. Very widely downloaded OCR checkpoint on Hugging Face.",
+      "source": "Hugging Face model card and config (baidu/Unlimited-OCR, accessed 2026-07-13)",
+      "canonical_name": "unlimited-ocr",
+      "aliases": [
+        "baidu/Unlimited-OCR"
+      ],
+      "max_tokens": 32768,
+      "max_tools": 0,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "bge-m3": {
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "embedding": [
+          "text"
+        ]
+      },
+      "model_type": "embedding",
+      "embedding_support": true,
+      "embedding_dimension": 1024,
+      "total_parameters": "568M",
+      "notes": "BAAI BGE-M3 multilingual embedding model (dense/sparse/multi-vector retrieval in one checkpoint; 8,192-token inputs, 1024-dim dense vectors). Not a text-generative model.",
+      "source": "Hugging Face model card (BAAI/bge-m3, accessed 2026-07-13)",
+      "canonical_name": "bge-m3",
+      "aliases": [
+        "BAAI/bge-m3",
+        "text-embedding-bge-m3"
+      ],
+      "max_tokens": 8192,
+      "max_tools": 0,
+      "video_input_mode": "none"
+    },
+    "bge-large-en-v1.5": {
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "embedding": [
+          "text"
+        ]
+      },
+      "model_type": "embedding",
+      "embedding_support": true,
+      "embedding_dimension": 1024,
+      "total_parameters": "335M",
+      "notes": "BAAI BGE large English embedding model v1.5 (512-token inputs, 1024-dim vectors). Not a text-generative model.",
+      "source": "Hugging Face model card (BAAI/bge-large-en-v1.5, accessed 2026-07-13)",
+      "canonical_name": "bge-large-en-v1.5",
+      "aliases": [
+        "BAAI/bge-large-en-v1.5",
+        "text-embedding-bge-large-en-v1.5"
+      ],
+      "max_tokens": 512,
+      "max_tools": 0,
+      "video_input_mode": "none"
+    },
+    "multilingual-e5-large": {
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "embedding": [
+          "text"
+        ]
+      },
+      "model_type": "embedding",
+      "embedding_support": true,
+      "embedding_dimension": 1024,
+      "total_parameters": "560M",
+      "notes": "intfloat multilingual E5 large embedding model (512-token inputs, 1024-dim vectors; 'query:'/'passage:' prefixes recommended). The -instruct variant shares the shape. Not a text-generative model.",
+      "source": "Hugging Face model card (intfloat/multilingual-e5-large, accessed 2026-07-13)",
+      "canonical_name": "multilingual-e5-large",
+      "aliases": [
+        "intfloat/multilingual-e5-large",
+        "text-embedding-multilingual-e5-large",
+        "multilingual-e5-large-instruct",
+        "intfloat/multilingual-e5-large-instruct"
+      ],
+      "max_tokens": 512,
+      "max_tools": 0,
+      "video_input_mode": "none"
+    },
+    "gte-large-en-v1.5": {
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "embedding": [
+          "text"
+        ]
+      },
+      "model_type": "embedding",
+      "embedding_support": true,
+      "embedding_dimension": 1024,
+      "total_parameters": "434M",
+      "notes": "Alibaba GTE large English embedding model v1.5 (8,192-token inputs, 1024-dim vectors). Not a text-generative model.",
+      "source": "Hugging Face model card (Alibaba-NLP/gte-large-en-v1.5, accessed 2026-07-13)",
+      "canonical_name": "gte-large-en-v1.5",
+      "aliases": [
+        "Alibaba-NLP/gte-large-en-v1.5",
+        "text-embedding-gte-large-en-v1.5"
+      ],
+      "max_tokens": 8192,
+      "max_tools": 0,
+      "video_input_mode": "none"
+    },
+    "qwen3-embedding-0.6b": {
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "embedding": [
+          "text"
+        ]
+      },
+      "model_type": "embedding",
+      "embedding_support": true,
+      "embedding_dimension": 1024,
+      "total_parameters": "0.6B",
+      "notes": "Qwen3-Embedding 0.6B (32K-token inputs; 1024-dim vectors, user-controllable output dims 32-1024 via MRL; instruction-aware). Not a text-generative model.",
+      "source": "Hugging Face model card (Qwen/Qwen3-Embedding-0.6B, accessed 2026-07-13)",
+      "canonical_name": "qwen3-embedding-0.6b",
+      "aliases": [
+        "Qwen/Qwen3-Embedding-0.6B",
+        "text-embedding-qwen3-embedding-0.6b"
+      ],
+      "max_tokens": 32768,
+      "max_tools": 0,
+      "video_input_mode": "none",
+      "matryoshka_dims": [
+        1024,
+        512,
+        256,
+        128,
+        64,
+        32
+      ]
+    },
+    "qwen3-embedding-4b": {
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "embedding": [
+          "text"
+        ]
+      },
+      "model_type": "embedding",
+      "embedding_support": true,
+      "embedding_dimension": 2560,
+      "total_parameters": "4B",
+      "notes": "Qwen3-Embedding 4B (32K-token inputs; 2560-dim vectors, user-controllable output dims 32-2560 via MRL; instruction-aware). Not a text-generative model.",
+      "source": "Hugging Face model card (Qwen/Qwen3-Embedding-4B, accessed 2026-07-13)",
+      "canonical_name": "qwen3-embedding-4b",
+      "aliases": [
+        "Qwen/Qwen3-Embedding-4B",
+        "text-embedding-qwen3-embedding-4b"
+      ],
+      "max_tokens": 32768,
+      "max_tools": 0,
+      "video_input_mode": "none",
+      "matryoshka_dims": [
+        2560,
+        1024,
+        512,
+        256,
+        128,
+        64,
+        32
+      ]
+    },
+    "qwen3-embedding-8b": {
+      "max_output_tokens": 0,
+      "tool_support": "none",
+      "structured_output": "none",
+      "parallel_tools": false,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "embedding": [
+          "text"
+        ]
+      },
+      "model_type": "embedding",
+      "embedding_support": true,
+      "embedding_dimension": 4096,
+      "total_parameters": "8B",
+      "notes": "Qwen3-Embedding 8B (32K-token inputs; 4096-dim vectors, user-controllable output dims 32-4096 via MRL; instruction-aware). Not a text-generative model.",
+      "source": "Hugging Face model card (Qwen/Qwen3-Embedding-8B, accessed 2026-07-13)",
+      "canonical_name": "qwen3-embedding-8b",
+      "aliases": [
+        "Qwen/Qwen3-Embedding-8B",
+        "text-embedding-qwen3-embedding-8b"
+      ],
+      "max_tokens": 32768,
+      "max_tools": 0,
+      "video_input_mode": "none",
+      "matryoshka_dims": [
+        4096,
+        2048,
+        1024,
+        512,
+        256,
+        128,
+        64,
+        32
+      ]
     }
   },
   "tool_support_levels": {

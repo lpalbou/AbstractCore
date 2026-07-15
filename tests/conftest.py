@@ -26,6 +26,18 @@ def allow_unauthenticated_server_in_tests(monkeypatch):
     monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")
 
 
+@pytest.fixture(autouse=True)
+def isolate_data_registry(tmp_path, monkeypatch):
+    """Point register-at-first-write at a per-test registry file.
+
+    Provider/embedding construction now registers data homes as a side effect;
+    without isolation, unit tests would write the developer's real
+    ~/.abstractframework/data_registry.json. Tests that need their own registry
+    (tests/utils/test_data_registry.py) override this env with their fixture.
+    """
+    monkeypatch.setenv("ABSTRACTFRAMEWORK_DATA_REGISTRY", str(tmp_path / "test_data_registry.json"))
+
+
 @pytest.fixture(scope="session")
 def vision_examples_dir():
     """Path to vision examples directory."""

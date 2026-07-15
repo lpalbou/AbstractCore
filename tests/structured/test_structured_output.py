@@ -211,6 +211,19 @@ class TestStructuredOutputHandler:
         # The example VALIDATES against the model it teaches (the real bar).
         Verifier.model_validate(example)
 
+    def test_extract_json_preserves_bare_top_level_arrays(self):
+        """Adversarial find (2026-07-13): the object regex extracted only the
+        FIRST element of a bare array — the single-list-wrapper coercer then
+        validated a one-item list and items 2..N were silently dropped."""
+        handler = StructuredOutputHandler()
+
+        bare = '[{"a": 1}, {"a": 2}, {"a": 3}]'
+        assert handler._extract_json(bare) == bare
+
+        fenced = f"Here you go:\n```json\n{bare}\n```"
+        import json as _json
+        assert _json.loads(handler._extract_json(fenced)) == _json.loads(bare)
+
     def test_create_example_enum_and_scalar_arrays(self):
         """Enums example a real member; scalar arrays stay scalar."""
         from enum import Enum

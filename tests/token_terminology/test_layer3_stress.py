@@ -71,14 +71,16 @@ class TestAll85Models:
         models = data.get("models", {})
         out_of_range = []
 
-        MIN_TOKENS = 1000  # 1K minimum
+        MIN_TOKENS = 1000  # 1K minimum for chat/completion models
+        MIN_EMBEDDING_TOKENS = 128  # classic BERT embedders cap at 256/512
         MAX_TOKENS = 10_000_000  # 10M maximum (llama-4 has 10M)
 
         for model_name, model_data in models.items():
             max_tokens = model_data["max_tokens"]
-            if max_tokens < MIN_TOKENS or max_tokens > MAX_TOKENS:
+            floor = MIN_EMBEDDING_TOKENS if model_data.get("model_type") == "embedding" else MIN_TOKENS
+            if max_tokens < floor or max_tokens > MAX_TOKENS:
                 out_of_range.append(
-                    f"{model_name}: max_tokens={max_tokens} (valid range: {MIN_TOKENS}-{MAX_TOKENS})"
+                    f"{model_name}: max_tokens={max_tokens} (valid range: {floor}-{MAX_TOKENS})"
                 )
 
         assert len(out_of_range) == 0, \

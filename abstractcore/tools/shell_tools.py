@@ -84,6 +84,9 @@ def _render_result(result: ShellCommandResult, *, prefix_lines: Optional[list] =
         "cd and work there, start a background process (`&`) and inspect it later. A 'new shell "
         "session' notice in output means prior state is gone."
     ),
+    # Side-effect tag for consumers (abstractagent repeat-guard reads
+    # ToolDefinition.tags); mirrors tools/inventory.py — test-pinned.
+    tags=["mutating"],
     hide_args=["_registry_namespace"],
     examples=[
         {"description": "Create and use a venv across calls", "arguments": {"command": "python3 -m venv .venv && source .venv/bin/activate && pip install requests"}},
@@ -135,6 +138,7 @@ def shell_exec(
         "Only when a prior shell_exec started an interactive process now waiting for input (a REPL, "
         "a confirmation prompt). Not for running normal commands — use shell_exec for those."
     ),
+    tags=["mutating"],
     hide_args=["_registry_namespace"],
     examples=[
         {"description": "Answer a confirmation prompt", "arguments": {"input": "y"}},
@@ -173,6 +177,7 @@ def shell_write_stdin(
         "When done with a session whose processes should stop now (e.g. a dev server you "
         "started), or to recycle a session stuck on an interactive process."
     ),
+    tags=["mutating"],
     hide_args=["_registry_namespace"],
     examples=[{"description": "Close the default session", "arguments": {}}],
 )

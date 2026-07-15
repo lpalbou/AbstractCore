@@ -813,8 +813,143 @@
         "nemotron-nano",
         "nemotron-3-super",
         "nemotron-cascade-2",
+        "nemotron-labs",
         "nvidia/nemotron",
         "nvidia-nemotron"
+      ]
+    },
+    "qwen3_5_agentic": {
+      "description": "Qwen3.5-based agentic post-trains that switch tool calls to the Qwen3-Coder XML convention (Ornith 1.0, Qwen-AgentWorld, InternScience Agents-A1; June 2026)",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "output_wrappers": {
+        "end": "<|im_end|>"
+      },
+      "tool_format": "xml",
+      "tool_prefix": "<tool_call>",
+      "tool_calling_format": "qwen3_coder",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "reasoning_support": true,
+      "patterns": [
+        "ornith-1.0",
+        "deepreinforce-ai/ornith",
+        "qwen-agentworld",
+        "qwen/qwen-agentworld",
+        "agents-a1",
+        "internscience/agents-a1"
+      ]
+    },
+    "glm5_dsa": {
+      "description": "Z.ai GLM-5.1/GLM-5.2 GlmMoeDsa architecture (MLA + sparse attention + MTP; [gMASK]<sop> template with <|role|> markers; April/June 2026)",
+      "message_format": "openai_chat",
+      "tool_format": "glm_xml",
+      "default_tool_support": "native",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_output_field": "reasoning_content",
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "reasoning_support": true,
+      "patterns": [
+        "glm-5.1",
+        "glm-5.2",
+        "zai-org/glm-5.1",
+        "zai-org/glm-5.2",
+        "z-ai/glm-5.1",
+        "z-ai/glm-5.2"
+      ]
+    },
+    "minimax_m3": {
+      "description": "MiniMax M3 multimodal MoE with MiniMax Sparse Attention and interleaved <mm:think> reasoning (June 2026; namespaced ']<]minimax[>[' special-token template — serve via OpenAI-compatible stacks)",
+      "message_format": "openai_chat",
+      "tool_format": "native",
+      "default_tool_support": "native",
+      "thinking_tags": [
+        "<mm:think>",
+        "</mm:think>"
+      ],
+      "reasoning_support": true,
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95
+      },
+      "patterns": [
+        "minimax-m3",
+        "minimaxai/minimax-m3",
+        "minimax/minimax-m3"
+      ]
+    },
+    "hunyuan3": {
+      "description": "Tencent Hy3 MoE architecture (July 2026; ':opensource'-suffixed special tokens for roles, thinking and <tool_calls:opensource> blocks — serve via OpenAI-compatible stacks)",
+      "message_format": "openai_chat",
+      "tool_format": "prompted",
+      "thinking_tags": [
+        "<think:opensource>",
+        "</think:opensource>"
+      ],
+      "reasoning_support": true,
+      "inference_parameters": {
+        "temperature": 0.9,
+        "top_p": 1.0
+      },
+      "patterns": [
+        "hy3",
+        "tencent/hy3"
+      ]
+    },
+    "longcat": {
+      "description": "Meituan LongCat 2.0 large-scale MoE with LongCat Sparse Attention (July 2026; dedicated <longcat_*> role/thinking/tool special tokens — serve via OpenAI-compatible stacks)",
+      "message_format": "openai_chat",
+      "tool_format": "prompted",
+      "thinking_tags": [
+        "<longcat_think>",
+        "</longcat_think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "reasoning_support": true,
+      "patterns": [
+        "longcat",
+        "meituan-longcat/longcat"
+      ]
+    },
+    "minicpm5": {
+      "description": "OpenBMB MiniCPM5 compact reasoning family (May 2026; ChatML template with <think> reasoning and Hermes-style <tool_call> JSON emission)",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "output_wrappers": {
+        "end": "<|im_end|>"
+      },
+      "tool_format": "special_token",
+      "tool_prefix": "<tool_call>",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "reasoning_support": true,
+      "patterns": [
+        "minicpm5",
+        "openbmb/minicpm5"
       ]
     },
     "generic": {

@@ -9,28 +9,45 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 15
-- Proposed: 12
-- Completed: 21
+- Planned: 16
+- Proposed: 17
+- Completed: 22
 - Deprecated: 3
 - Recurrent: 0
 
+(2026-07-14: added `proposed/0821_gguf_control_plane_embedded_chatml_template_detection.md`
+— the Ornith-GGUF-→-keyed optimization gap found during the live prompt-cache
+verification; the plain-generate GGUF snapshot-reuse defect found in the same
+pass was fixed in-tree, not filed.)
+
+(Count repair 2026-07-13: proposed/ held 15 files while the overview said 12 —
+`0816` was also missing from the proposed ledger. Corrected during the 0817/0818
+addition pass; `0816` is IMPLEMENTED per its own status and awaits a move to
+completed/ in a hygiene pass.)
+
 ## Next recommended work
 
-1. `planned/0810_resolved_generate_route_object_and_temporary_override_contract.md`
+1. `planned/0817_kv_artifact_invalidation_key_audit.md`
+   Operator mandate (2026-07-13): enumerate the full KV-artifact validity key
+   (model/quant/engine/tokenizer-template/position/attention-arch) against what
+   save/load actually checks; close the silently-wrong-cache class (adversary
+   confirmed the gap list: tokenizer fingerprint, config hash, engine version,
+   cache dtype, position; plus has_kv_cache validity tiering and resolved-id
+   path keying). Gates the bloc-composability lane (0818).
+2. `planned/0810_resolved_generate_route_object_and_temporary_override_contract.md`
    The first route-object implementation is landed. The next step is the second-wave parity pass:
    direct Core, Runtime, and server entrypoints must all consume the same resolved-route semantics
    and denial behavior before more topology-specific routing code grows back.
-2. `planned/0809_generate_request_object_and_output_contract.md`
+3. `planned/0809_generate_request_object_and_output_contract.md`
    The first `request=` implementation is landed. The next step is to extend docs/examples and
    finish broader parity coverage without breaking prompt-first compatibility.
-3. `planned/789_server-auth-rate-limits.md`
+4. `planned/789_server-auth-rate-limits.md`
    The server now sits on real credentials (remote providers, media endpoints). Tightening inbound
    auth and limiting is the next practical safety boundary for shared or public deployments.
-4. `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md`
+5. `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md`
    Optional, opt-in response caching is now the highest-leverage server performance/cost feature,
    but it must be done with strict keying and tenant/auth namespace rules.
-5. `planned/2026-05-18_mlx-provider-continuous-batching.md`
+6. `planned/2026-05-18_mlx-provider-continuous-batching.md`
    Improve local text throughput and latency via continuous batching/scheduler safety for MLX.
 ## Planned ledger
 
@@ -48,6 +65,7 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/2026-05-18_mlx-provider-continuous-batching.md` | Shared MLX runtime and batching scheduler. |
 | `planned/789_server-auth-rate-limits.md` | Server auth and rate-limit controls. |
 | `planned/791_server-metrics-otel.md` | Server metrics and OpenTelemetry work. |
+| `planned/0817_kv_artifact_invalidation_key_audit.md` | Operator-mandated audit of the KV-artifact validity key (model/quant/engine/tokenizer-template/position/attention-arch); per-axis mismatch tests must refuse loudly; gates 0818. |
 | `planned/0801_rerank_manager.md` | First-class reranking manager (cross-encoder / hosted rerank APIs); linked to 0803/0804 for embedding/provider boundary decisions. |
 | `planned/0803_image_embedding_manager_and_multimodal_embeddings.md` | First-class image/multimodal embedding manager and server endpoint extension. |
 | `planned/0806_pdf_images_tables_and_extraction_strategy.md` | Richer PDF image/table/OCR strategy without reintroducing PyMuPDF-family packages into default profiles. |
@@ -70,7 +88,8 @@ Use this file as the entry point for planning status, recommended next work, and
 | `proposed/0811_optional_trafilatura_html_extractor_for_web_tools.md` | Promote when a live benchmark shows better HTML/article extraction quality or lower token footprint than the current extractor, without making `trafilatura` a required default dependency. |
 | `proposed/0814_reasoning_control_capture_followups.md` | Promote per item: async `thinking=` no-op and async normalization bypass are HIGH (promote when async providers are actively used with reasoning models); OpenRouter `reasoning` object mapping when hosted-route thinking control is needed; streaming default + vLLM gating need an asset/decision pass first. |
 | `proposed/0815_system_message_handling_followups.md` | Promote per item: Opus 4.8 native mid-stream `system` when registry-gated placement validation is worth it; developer-role position awareness only with parity tests (current hoist is load-bearing); CachedSession replay verification opportunistically. |
-
+| `proposed/0816_retry_collapse_cancellable_backoff_and_herd_budgets.md` | IMPLEMENTED 2026-07-10 per item status (16 tests green); move to completed/ with a completion report in the next hygiene pass. |
+| `proposed/0818_bloc_composability_framework_contract.md` | Promote when the private composability branch lands (defines the link/repair step) AND the 0817 audit closes; the designed contract lives in agora commons fs `research/cache-composability.md`. |
 ## Completed ledger
 
 | Original path | Final path | Completed | Outcome | Comment | Key validation |
@@ -96,6 +115,7 @@ Use this file as the entry point for planning status, recommended next work, and
 | `planned/0805_permissive_pdf_document_media_dependencies.md` | `completed/0805_permissive_pdf_document_media_dependencies.md` | 2026-06-05 | Done | Core PDF/media defaults now use `pypdf`; PyMuPDF-family packages are isolated under `pdf-pymupdf-commercial`. | Focused py_compile, packaging/import-safety, PDF compatibility, and media processor tests recorded in item. |
 | `planned/0807_task_specific_multimodal_default_routes.md` | `completed/0807_task_specific_multimodal_default_routes.md` | 2026-06-13 | Done | Core now supports task-specific generated-media defaults for text-to-image, image edit, image upscale, text-to-video, and image-to-video. | `tests/config/test_capability_defaults_config.py`, `tests/config/test_capability_defaults_server.py`, and focused py_compile. |
 | `planned/0808_vision_adapter_discovery_and_batch_serving.md` | `completed/0808_vision_adapter_discovery_and_batch_serving.md` | 2026-06-13 | Done | Core now exposes Vision adapter discovery, stacked LoRA fields, and multi-seed batch serving without duplicating Vision compatibility truth. | Focused AbstractVision plugin tests plus Core capability/output/server suites. |
+| `planned/0819_bloc_artifact_fed_token_record_persistence.md` | `completed/0819_bloc_artifact_fed_token_record_persistence.md` | 2026-07-14 | Done | KV artifacts persist fed-token-id records; recorded artifacts join the MLX delta lattice (divergence bypasses to protect shared blocs); `prompt_cache` telemetry struct ships on the sync key lane. | 15 new pins + 26 delta pins green; live two-process check: fresh-process load + full-context ask, cached=578 fed=32 (94.8% prefill skipped), correct answer, hit_extend telemetry. |
 
 ## Deprecated ledger
 

@@ -134,6 +134,20 @@ class DirectPDFProcessor(BaseMediaHandler):
         glyph_dir = glyph_cache_base / session_id
         glyph_dir.mkdir(parents=True, exist_ok=True)
 
+        # Register-at-first-write: glyph renders are rebuildable derived images.
+        from ...utils.data_registry import ensure_data_home_registered
+        ensure_data_home_registered(
+            "abstractcore-glyph-cache",
+            path=str(glyph_cache_base),
+            kind="artifacts",
+            owner="abstractcore",
+            safe_to_purge=True,
+            description=(
+                "Glyph-compression image cache (PNG pages rendered from PDFs). "
+                "Safe to purge: images re-render from the source documents."
+            ),
+        )
+
         # CRITICAL DEBUG LOG: Show exactly where images are being generated
         self.logger.debug(f"🎯 GENERATING GLYPH IMAGES IN CACHE DIRECTORY: {glyph_dir}")
         self.logger.info(f"DirectPDFProcessor: Creating {self.pages_per_image} pages per image in {glyph_dir}")

@@ -55,6 +55,7 @@ Quick start:
 - [Structured output](docs/structured-output.md): `response_model=...`, native vs prompted, validation/retry behavior
 - [Media handling](docs/media-handling-system.md): `media=[...]`, audio/video policies, vision fallback and plugins
 - [Centralized config](docs/centralized-config.md): `abstractcore --config`, `abstractcore config defaults|set-default|clear-default`, capability route defaults (`input.*`, `output.*`, `embedding.*`, `rerank.*`), explicit `input.voice`/`input.video` fallback routing, provider keys, HTTP server auth/hardening, logging, vision/audio/video strategies
+- [Data-home registry](docs/data-registry.md): machine-level registry (`~/.abstractframework/data_registry.json`) of framework data directories — `register_data_home` at first write, `list_data_homes(include_sizes=...)`, owner-declared `safe_to_purge` enforced by `purge_data_home` (contents-only, nesting/symlink-swap guarded); kinds: model-cache|prompt-cache|runs|sessions|logs|entity-home|artifacts
 
 ## Providers (IDs + setup)
 

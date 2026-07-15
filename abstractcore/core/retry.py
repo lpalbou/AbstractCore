@@ -358,8 +358,14 @@ class RetryManager:
                 last_error = e
                 error_type = self.classify_error(e)
 
-                # Record failure in circuit breaker
-                circuit_breaker.record_failure()
+                # Record failure in circuit breaker — TRANSIENT classes only.
+                # Non-retryable failures (auth/invalid-request = caller bugs)
+                # say nothing about endpoint health; counting them let one
+                # misconfigured caller open a SHARED breaker under endpoint
+                # damping and block every healthy instance on that endpoint
+                # (adversarial find, 2026-07-13).
+                if error_type is not RetryableErrorType.UNKNOWN:
+                    circuit_breaker.record_failure()
 
                 # Check if we should retry
                 if not self.should_retry(e, attempt):

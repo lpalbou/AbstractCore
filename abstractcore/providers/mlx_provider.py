@@ -43,6 +43,10 @@ class MLXProvider(BaseProvider):
         super().__init__(model, **kwargs)
         self.provider = "mlx"
 
+        # Register-at-first-write: MLX model loads write into the HF hub cache.
+        from ..utils.data_registry import ensure_core_data_homes
+        ensure_core_data_homes()
+
         # Handle timeout parameter for local models
         self._handle_timeout_parameter(kwargs)
 
@@ -84,6 +88,18 @@ class MLXProvider(BaseProvider):
 
     def prompt_cache_artifact_format(self) -> str:
         return "abstractcore-mlx-prompt-cache/v1"
+
+    def prompt_cache_engine_fingerprint(self) -> str:
+        """mlx_lm owns the KV cache layout — pin its version (0817). A version
+        change can alter the safetensors cache serialization, so a reused
+        artifact compiled under a different mlx_lm silently injects wrong KV."""
+        try:
+            import mlx_lm
+
+            version = str(getattr(mlx_lm, "__version__", "") or "").strip()
+        except Exception:
+            version = ""
+        return f"mlx_lm=={version}" if version else "mlx_lm==unknown"
 
     def prompt_cache_render_fragment(
         self,
@@ -381,8 +397,39 @@ class MLXProvider(BaseProvider):
         except Exception:
             pass
 
+    @staticmethod
+    def _parse_persisted_fed_token_ids(raw: Any) -> Optional[List[int]]:
+        """Parse a fed-token-id record out of artifact metadata (0819).
+
+        Safetensors metadata is string-keyed AND string-valued, so a record
+        persisted at save arrives back as a JSON string; store-native lists
+        are accepted too (round-trips through in-memory paths). Anything that
+        does not parse to a non-empty list of ints returns None — an
+        unparseable record must never be mistaken for cache truth.
+        """
+        if isinstance(raw, str):
+            text = raw.strip()
+            if not text:
+                return None
+            try:
+                raw = json.loads(text)
+            except Exception:
+                return None
+        if not isinstance(raw, list) or not raw:
+            return None
+        try:
+            return [int(t) for t in raw]
+        except Exception:
+            return None
+
     def _prepare_cache_delta_feed(
-        self, key: str, cache_value: Any, full_prompt: str, *, full_context: bool
+        self,
+        key: str,
+        cache_value: Any,
+        full_prompt: str,
+        *,
+        full_context: bool,
+        telemetry: Optional[Dict[str, Any]] = None,
     ) -> tuple[Any, Any, Optional[List[int]]]:
         """Decide what to feed mlx_lm over a (possibly warm) cache.
 
@@ -409,9 +456,35 @@ class MLXProvider(BaseProvider):
         identical → keep one token; divergence or unknown composition →
         FRESH cache + full feed (one cold prefill is correct for a caller
         that re-sends everything — and never a double one); trim/tokenize
-        failure → fresh or bypass.
+        failure → fresh or bypass. Artifact-backed caches never rebuild AND
+        never trim below their recorded prefix — divergence bypasses instead
+        (a shared stable bloc key must not be degraded by one divergent call).
+
+        `telemetry` (0819, runtime seam condition): caller-owned out-dict —
+        when provided, the decision is recorded into it (`outcome`,
+        MEASURED `cached_tokens`/`fed_tokens`, `degraded_reason`). Caller
+        ownership keeps concurrent generates race-free (no instance stash).
         """
+
+        def _note(
+            outcome: str,
+            *,
+            cached: Optional[int] = None,
+            fed: Optional[int] = None,
+            reason: Optional[str] = None,
+        ) -> None:
+            if telemetry is None:
+                return
+            telemetry["outcome"] = outcome
+            if cached is not None:
+                telemetry["cached_tokens"] = int(cached)
+            if fed is not None:
+                telemetry["fed_tokens"] = int(fed)
+            if reason:
+                telemetry["degraded_reason"] = f"#FALLBACK {reason}"
+
         if cache_value is None:
+            _note("off")
             return cache_value, full_prompt, None
 
         # None = warm-but-uncountable (pure-SSM/CacheList architectures) or
@@ -427,7 +500,9 @@ class MLXProvider(BaseProvider):
         if not new_ids:
             if full_context and (cache_len is None or cache_len > 0):
                 # Cannot tokenize deterministically: never risk the double prefill.
+                _note("bypassed", reason="prompt could not be tokenized deterministically; warm cache bypassed")
                 return None, full_prompt, None
+            _note("append" if not full_context else "cold", cached=cache_len)
             return cache_value, full_prompt, None
 
         fed_ids = self._fed_token_ids_for_key(key)
@@ -451,9 +526,11 @@ class MLXProvider(BaseProvider):
                     record = new_ids
                 elif fed_ids is not None and cache_len == len(fed_ids):
                     record = fed_ids + new_ids
+            _note("append", cached=cache_len, fed=len(new_ids))
             return cache_value, full_prompt, record
 
         if cache_len is not None and cache_len <= 0:
+            _note("cold", cached=0, fed=len(new_ids))
             return cache_value, full_prompt, new_ids
 
         def _fresh_full_feed() -> tuple[Any, Any, Optional[List[int]]]:
@@ -475,6 +552,7 @@ class MLXProvider(BaseProvider):
                 except Exception:
                     pass
                 return fresh, full_prompt, new_ids
+            _note("bypassed", reason="fresh cache creation failed; generated without a cache")
             return None, full_prompt, None
 
         def _is_artifact_backed() -> bool:
@@ -498,6 +576,10 @@ class MLXProvider(BaseProvider):
                         f"destroy the verified artifact. Use prompt-only/KV-session flows for "
                         f"artifact caches."
                     )
+                _note(
+                    "bypassed", cached=0, fed=len(new_ids),
+                    reason="loaded artifact without a fed-token record; bypassed to protect the artifact",
+                )
                 return None, full_prompt, None
             if key not in self._delta_feed_warned_keys:
                 self._delta_feed_warned_keys.add(key)
@@ -506,12 +588,20 @@ class MLXProvider(BaseProvider):
                     f"under a full-context call; rebuilt fresh (one cold prefill) and now "
                     f"delta-tracked."
                 )
+            _note(
+                "rebuilt", cached=0, fed=len(new_ids),
+                reason="warm cache of unknown token composition; rebuilt fresh",
+            )
             return _fresh_full_feed()
 
         if cache_len is None:
             # Known record but uncountable cache (recurrent-state layers):
             # trim arithmetic is impossible. Same lattice as trim refusal.
             if _is_artifact_backed():
+                _note(
+                    "bypassed", fed=len(new_ids),
+                    reason="artifact cache state is not countable for this architecture; bypassed",
+                )
                 return None, full_prompt, None
             if key not in self._delta_feed_warned_keys:
                 self._delta_feed_warned_keys.add(key)
@@ -520,11 +610,36 @@ class MLXProvider(BaseProvider):
                     f"architecture (recurrent/array layers); rebuilding fresh per full-context "
                     f"call — no prefill savings."
                 )
+            _note(
+                "rebuilt", cached=0, fed=len(new_ids),
+                reason="cache state not countable for this architecture; rebuilt fresh",
+            )
             return _fresh_full_feed()
 
         lcp = self._token_lcp_len(fed_ids, new_ids)
+
+        if lcp < len(fed_ids) and _is_artifact_backed():
+            # Divergent prompt over a verified artifact (0819): honoring it
+            # via trim would DEGRADE the shared stable-key cache down to the
+            # tiny shared prefix — the next caller of the bloc would find a
+            # stub. No savings exist here anyway (the bloc is not this
+            # prompt's head): bypass for this call, artifact stays whole.
+            if key not in self._delta_feed_warned_keys:
+                self._delta_feed_warned_keys.add(key)
+                self.logger.warning(
+                    f"#FALLBACK MLX prompt cache '{key}': full-context prompt diverges from the "
+                    f"artifact's recorded prefix (shared {lcp} of {len(fed_ids)} tokens); bypassed "
+                    f"for this call rather than trimming the shared artifact cache."
+                )
+            _note(
+                "bypassed", cached=0, fed=len(new_ids),
+                reason="prompt diverges from the artifact's recorded prefix; bypassed to protect the shared cache",
+            )
+            return None, full_prompt, None
+
         effective_prefix = min(lcp, cache_len)
-        if effective_prefix >= len(new_ids):
+        identical = effective_prefix >= len(new_ids)
+        if identical:
             # Identical (or fully-contained) prompt: keep one token to step generation.
             effective_prefix = len(new_ids) - 1
 
@@ -534,6 +649,10 @@ class MLXProvider(BaseProvider):
             # windows past their fill point) or partial trim: one honest
             # cold prefill on a fresh cache — loudly, once per key (P1-6).
             if _is_artifact_backed():
+                _note(
+                    "bypassed", fed=len(new_ids),
+                    reason="artifact cache type is not trimmable for this architecture; bypassed",
+                )
                 return None, full_prompt, None
             if key not in self._delta_feed_warned_keys:
                 self._delta_feed_warned_keys.add(key)
@@ -542,9 +661,14 @@ class MLXProvider(BaseProvider):
                     f"architecture; rebuilt fresh (one cold prefill) — no prefill savings on "
                     f"warm calls for this key."
                 )
+            _note(
+                "rebuilt", cached=0, fed=len(new_ids),
+                reason="cache type not trimmable for this architecture; rebuilt fresh",
+            )
             return _fresh_full_feed()
 
         suffix = new_ids[effective_prefix:]
+        _note("hit_full" if identical else "hit_extend", cached=effective_prefix, fed=len(suffix))
         return cache_value, suffix, new_ids
 
     def _build_prompt_fragment(
@@ -702,9 +826,13 @@ class MLXProvider(BaseProvider):
         )
         # Stash for prompt_cache_update's fed-token-id bookkeeping (delta feed,
         # B2): the base method that calls us knows the KEY; we know the exact
-        # fragment bytes that were fed.
-        self._pending_append_fragment = fragment or None
-        self._pending_append_precount = int(existing_tokens or 0)
+        # fragment bytes that were fed. Locked: prepare_modules (base loop)
+        # and prompt_cache_update can race on this instance-level stash from
+        # different threads — an unlocked write here cross-pollinates records
+        # across keys (adversarial find 2026-07-13).
+        with self._append_stash_lock:
+            self._pending_append_fragment = fragment or None
+            self._pending_append_precount = int(existing_tokens or 0)
         if not fragment:
             return True
 
@@ -763,10 +891,11 @@ class MLXProvider(BaseProvider):
         (unknown-composition lane). Any uncertainty → no record (honest
         unknown), never a guess.
         """
-        fragment = self._pending_append_fragment
-        precount = int(self._pending_append_precount or 0)
-        self._pending_append_fragment = None
-        self._pending_append_precount = 0
+        with self._append_stash_lock:
+            fragment = self._pending_append_fragment
+            precount = int(self._pending_append_precount or 0)
+            self._pending_append_fragment = None
+            self._pending_append_precount = 0
 
         prior_ids_raw = (prior_meta or {}).get(self._FED_TOKEN_IDS_META)
         prior_ids: Optional[List[int]] = None
@@ -923,6 +1052,17 @@ class MLXProvider(BaseProvider):
         except Exception:
             pass
 
+        # Persist the fed-token-id record into the artifact (0819, adversary
+        # P0-1): the record is the bookkeeping the whole delta lane rides on,
+        # and dropping it at this boundary made every artifact-backed cache
+        # "warm-unknown" — load cost + a FULL re-prefill under full-context
+        # callers (negative value). The freeze invariant guarantees the store
+        # record is a TRUE token-prefix of the cache at save time, so it can
+        # be trusted verbatim at load.
+        record_ids = self._fed_token_ids_for_key(normalized)
+        if record_ids:
+            out_meta.setdefault(self._FED_TOKEN_IDS_META, record_ids)
+
         cache_to_save = cache_obj
         if q8:
             try:
@@ -1021,12 +1161,39 @@ class MLXProvider(BaseProvider):
             "loaded_from": str(filename),
         }
         store_meta.update(meta_dict)
+        live_count: Optional[int] = None
         try:
             tok = self._prompt_cache_backend_token_count(loaded_cache)
             if isinstance(tok, int) and tok >= 0:
+                live_count = tok
                 store_meta.setdefault("token_count", tok)
         except Exception:
             pass
+
+        # Reconstruct the fed-token-id record persisted at save (0819):
+        # safetensors metadata is string-valued, so the record arrives as a
+        # JSON string and must become a real int list for the delta lane to
+        # read it (`_fed_token_ids_for_key` refuses non-lists). Admission is
+        # verified, never assumed: a record LONGER than the loaded cache
+        # cannot be a true token-prefix (misdescription — the class this
+        # whole lane exists to prevent), so it is dropped loudly and the
+        # artifact keeps the protective bypass. A record shorter than the
+        # cache is legitimate (the freeze invariant: generated tokens beyond
+        # the record stay unrecorded) and the LCP/trim arithmetic handles the
+        # tail. Uncountable caches keep the record inert — the delta lattice
+        # already bypasses artifact-backed uncountable caches.
+        parsed_record = self._parse_persisted_fed_token_ids(store_meta.get(self._FED_TOKEN_IDS_META))
+        store_meta.pop(self._FED_TOKEN_IDS_META, None)
+        if parsed_record is not None:
+            if live_count is not None and len(parsed_record) > live_count:
+                self.logger.warning(
+                    f"#FALLBACK MLX prompt cache artifact '{filename}': persisted fed-token record "
+                    f"({len(parsed_record)} ids) is longer than the loaded cache ({live_count} tokens) "
+                    f"— record dropped; full-context calls will bypass this cache rather than risk "
+                    f"a wrong generation."
+                )
+            else:
+                store_meta[self._FED_TOKEN_IDS_META] = parsed_record
 
         self._prompt_cache_store.set(normalized, loaded_cache, meta=store_meta)
         if make_default:
@@ -1387,10 +1554,21 @@ class MLXProvider(BaseProvider):
 
                     # Create constrained generator with JSON schema
                     self.logger.debug(f"Using Outlines native structured output for {response_model.__name__}")
+                    # Output cap: after the boundary rename callers pass
+                    # max_output_tokens (max_tokens here is the CONTEXT
+                    # WINDOW, never the output cap — adversarial find
+                    # 2026-07-13: structured truncation-retry bumps never
+                    # reached this lane).
+                    outlines_max_out = (
+                        kwargs.get("max_output_tokens")
+                        or kwargs.get("max_tokens")
+                        or self.max_output_tokens
+                        or 512
+                    )
                     generator = self._outlines_model(
                         full_prompt,
                         outlines.json_schema(response_model),
-                        max_tokens=kwargs.get("max_tokens", self.max_tokens or 512)
+                        max_tokens=int(outlines_max_out),
                     )
 
                     # Validate and return
@@ -1467,6 +1645,7 @@ class MLXProvider(BaseProvider):
         prompt_cache = None
         prompt_to_feed: Any = full_prompt
         fed_ids_to_record: Optional[List[int]] = None
+        cache_telemetry: Optional[Dict[str, Any]] = None
         prompt_cache_key = kwargs.get("prompt_cache_key")
         if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
             cache_key = prompt_cache_key.strip()
@@ -1474,6 +1653,11 @@ class MLXProvider(BaseProvider):
             if prompt_cache is None:
                 self.prompt_cache_set(cache_key, make_default=False)
                 prompt_cache = self._prompt_cache_store.get(cache_key)
+            # Telemetry struct (0819, runtime seam condition): the ledger
+            # must be able to explain 90s-vs-2s turns — mode/key, the
+            # decision outcome, MEASURED cached/fed token counts, binding
+            # identity when artifact-bound, degraded reason when degraded.
+            cache_telemetry = {"mode": "key", "key": cache_key}
             # Delta feed over warm caches (B2): trim to the shared token
             # prefix and feed only the suffix — never re-prefill the whole
             # transcript on top of its own KV. Callers that pass `messages`
@@ -1484,7 +1668,16 @@ class MLXProvider(BaseProvider):
             prompt_cache, prompt_to_feed, fed_ids_to_record = self._prepare_cache_delta_feed(
                 cache_key, prompt_cache, full_prompt,
                 full_context=messages is not None,
+                telemetry=cache_telemetry,
             )
+            try:
+                key_meta = self.prompt_cache_key_meta(cache_key) or {}
+                for meta_field in ("bloc_sha256", "artifact_sha256", "binding_id"):
+                    value = key_meta.get(meta_field)
+                    if isinstance(value, str) and value:
+                        cache_telemetry[meta_field] = value
+            except Exception:
+                pass
 
         try:
             if stream:
@@ -1519,6 +1712,12 @@ class MLXProvider(BaseProvider):
                         # bounded cost; never a correctness risk). Do not
                         # "optimize" by extending the record from reply text.
                         self._record_fed_token_ids(prompt_cache_key.strip(), fed_ids_to_record)
+                if cache_telemetry is not None:
+                    # Sync lane only, deliberately: the runtime's durable
+                    # llm_call lane forces stream=False, and that ledger is
+                    # the consumer this struct exists for.
+                    response.metadata = dict(response.metadata or {})
+                    response.metadata["prompt_cache"] = dict(cache_telemetry)
                 if media_enrichment:
                     from ..media.enrichment import merge_enrichment_metadata
 

@@ -108,6 +108,20 @@ def _slug_provider_model(provider_name: str, model_id: str) -> str:
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write text atomically (unique tmp + os.replace).
+
+    Plain `write_text` lets a concurrent reader observe a TORN file — and the
+    bloc compile lane hashes what it reads, so a torn `content.txt` gets a
+    self-consistent manifest of the WRONG text, undetectable after the fact
+    (runtime adversary find, 2026-07-13). Rename is atomic on POSIX: readers
+    see the old bytes or the new bytes, never a mixture.
+    """
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.{time.monotonic_ns()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 @dataclass(frozen=True)
 class FileBlocRecord:
     """A persisted, content-addressed file bloc record."""
@@ -351,7 +365,7 @@ class FileBlocStore:
                         continue
                     data["bloc_id"] = bid
                     try:
-                        mp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+                        _atomic_write_text(mp, json.dumps(data, ensure_ascii=False, indent=2))
                     except Exception:
                         continue
                     self._sha_to_bloc_id[sha] = bid
@@ -476,9 +490,46 @@ class FileBlocStore:
 
         bloc_dir = self._bloc_dir(sha)
         (bloc_dir / "kv").mkdir(parents=True, exist_ok=True)
-        self.content_path(sha).write_text(str(content or ""), encoding="utf-8")
-        self.meta_path(sha).write_text(json.dumps(record.to_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        self._ensure_registered_as_data_home()
+        _atomic_write_text(self.content_path(sha), str(content or ""))
+        _atomic_write_text(self.meta_path(sha), json.dumps(record.to_dict(), ensure_ascii=False, indent=2))
         return record
+
+    def _ensure_registered_as_data_home(self) -> None:
+        """Register-at-first-write into the machine-level data registry.
+
+        The bloc store is the largest core-owned data home on long-lived
+        machines (hundreds of GB of KV artifacts), so it must be visible in
+        the operator's Data & Caches view. Best-effort by contract — a broken
+        registry never breaks a bloc write. ONLY the machine-level default
+        root registers: a custom root lives inside its caller's data home and
+        rides that container's registry row (self-registering ephemeral or
+        container-owned roots spams rows and collides with the container's
+        registration under the nesting guard).
+        """
+        try:
+            from ..utils.data_registry import ensure_data_home_registered
+
+            root = self.root_dir.expanduser()
+            if root.resolve(strict=False) != default_blocs_root_dir().resolve(strict=False):
+                return
+            ensure_data_home_registered(
+                "abstractcore-blocs",
+                path=str(root),
+                kind="prompt-cache",
+                owner="abstractcore",
+                safe_to_purge=True,
+                description=(
+                    "File-bloc store: extracted file-text snapshots plus per-(provider, model) "
+                    "KV prompt-cache artifacts (the KV artifacts are the bulk). Safe to purge: "
+                    "content re-extracts and KV recompiles on demand, but strict durable-bloc "
+                    "bindings go cold until recompiled — expect one-time recompute cost."
+                ),
+            )
+        except Exception:
+            # ensure_data_home_registered already degrades + warns; this outer
+            # guard only covers import-time surprises in minimal installs.
+            pass
 
     def get(self, sha256: str) -> Optional[FileBlocRecord]:
         path = self.meta_path(sha256)
@@ -514,7 +565,7 @@ class FileBlocStore:
             pass
         try:
             payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
-            path.write_text(payload, encoding="utf-8")
+            _atomic_write_text(path, payload)
             return True
         except Exception:
             return False
@@ -593,9 +644,9 @@ class FileBlocStore:
             updated_at=float(now),
         )
         try:
-            self.meta_path(sha256).write_text(
+            _atomic_write_text(
+                self.meta_path(sha256),
                 json.dumps(new_rec.to_dict(), ensure_ascii=False, indent=2),
-                encoding="utf-8",
             )
         except Exception:
             return None

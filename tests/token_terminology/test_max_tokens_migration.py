@@ -288,9 +288,12 @@ class TestLayer3Stress:
         for model_name, model_data in models.items():
             max_tokens = model_data.get('max_tokens', 0)
 
-            # Reasonable range: 1K to 10M tokens
-            # (llama-4 has 10M, smallest models have ~2K)
-            if max_tokens < 1000 or max_tokens > 10000000:
+            # Reasonable range: 1K to 10M tokens for chat/completion models
+            # (llama-4 has 10M, smallest models have ~2K). Classic BERT-family
+            # embedders legitimately cap at 256/512 tokens, so their real
+            # window uses a lower, model-type-aware floor.
+            floor = 128 if model_data.get("model_type") == "embedding" else 1000
+            if max_tokens < floor or max_tokens > 10000000:
                 unreasonable_values.append((model_name, max_tokens))
 
         assert len(unreasonable_values) == 0, \

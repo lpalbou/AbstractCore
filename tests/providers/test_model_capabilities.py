@@ -127,6 +127,35 @@ class TestCapabilityRouteHelpers:
         assert model_supports_capability_route("qwen3-omni-30b-a3b-captioner", "input.music")
         assert not model_supports_capability_route("qwen3-omni-30b-a3b-captioner", "input.text")
 
+    def test_bge_e5_gte_families_classify_as_embedders_not_chat(self):
+        """Adversary find (gateway, 2026-07-13): bge/e5/gte carry no 'embed'
+        substring, so they were excluded from embedding lists AND offered as
+        chat models. Family tokens now match as BOUNDED name segments; chat
+        names containing look-alike substrings must stay chat."""
+        from abstractcore.providers.model_capabilities import (
+            ModelOutputCapability,
+            get_model_output_capabilities,
+        )
+
+        embedders = [
+            "BAAI/bge-m3",
+            "bge-large-en-v1.5@q8_0",
+            "intfloat/multilingual-e5-large",
+            "Alibaba-NLP/gte-large-en-v1.5",
+            "gte-Qwen2-1.5B-instruct",
+            "Qwen/Qwen3-Embedding-4B",
+        ]
+        for name in embedders:
+            caps = get_model_output_capabilities(name)
+            assert ModelOutputCapability.EMBEDDINGS in caps, f"{name} must list as an embedder"
+
+        # Bounded matching: 'e5'/'bge'/'gte' inside larger segments never match.
+        chat_models = ["phi-3.5-mini", "gemma3n:e4b", "qwen2.5-7b", "claude-3-5-haiku", "glm-5.2"]
+        for name in chat_models:
+            caps = get_model_output_capabilities(name)
+            assert ModelOutputCapability.EMBEDDINGS not in caps, f"{name} must stay a chat model"
+            assert ModelOutputCapability.TEXT in caps
+
 
 class TestCapabilityDetection:
     """Test capability detection functions."""

@@ -62,7 +62,8 @@ def test_fetch_url_local_html_normalization_strips_tags_and_scripts() -> None:
         pytest.skip("Environment does not permit binding a local HTTP server (PermissionError).")
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
     thread.start()
-    base_url = f"http://127.0.0.1:{server.server_address[1]}"
+    port = server.server_address[1]
+    base_url = f"http://127.0.0.1:{port}"
 
     try:
         out_html = fetch_url(f"{base_url}/html", timeout=10, include_full_content=False)

@@ -36,6 +36,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 - **[Memory Blocs](memory-blocs.md)** — persistent extracted text snapshots + per-model KV artifacts
 - **Model/architecture registries (source of truth)** — `abstractcore/assets/model_capabilities.json`, `abstractcore/assets/model_capabilities.schema.json`, and `abstractcore/assets/architecture_formats.json` (see `abstractcore/assets/README.md`)
 - **[Centralized Config](centralized-config.md)** — config file, config CLI (`abstractcore --config`), and capability route defaults (`input.*`, `output.*`, `embedding.*`, `rerank.*`)
+- **[Data-Home Registry](data-registry.md)** — machine-level registry of framework data directories (model/prompt caches, runs, sessions, logs, entity homes) with owner-declared safe-purge verbs
 - **[Events](events.md)** and **[Structured Logging](structured-logging.md)** — observability hooks
 - **[Interaction Tracing](interaction-tracing.md)** — record prompts/responses/usage for debugging
 - **[Capabilities](capabilities.md)** — what AbstractCore can and cannot do

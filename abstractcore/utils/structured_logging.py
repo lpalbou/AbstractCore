@@ -256,6 +256,16 @@ class LogConfig:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             log_dir_expanded = Path(self.log_dir).expanduser()
             log_dir_expanded.mkdir(parents=True, exist_ok=True)
+            # Register-at-first-write: file logging creates a durable log home.
+            from .data_registry import ensure_data_home_registered
+            ensure_data_home_registered(
+                "abstractcore-logs",
+                path=str(log_dir_expanded),
+                kind="logs",
+                owner="abstractcore",
+                safe_to_purge=True,
+                description="AbstractCore log files (timestamped). Safe to purge anytime.",
+            )
             log_file = log_dir_expanded / f"abstractcore_{timestamp}.log"
 
             file_handler = logging.FileHandler(log_file)

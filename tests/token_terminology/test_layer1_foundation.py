@@ -300,8 +300,13 @@ class TestAllModelsHaveMaxTokens:
             assert max_tokens > 0, \
                 f"Model {model_name} max_tokens must be positive, got {max_tokens}"
 
-            # max_tokens should be reasonable (between 1K and 10M tokens)
-            assert 1000 <= max_tokens <= 10000000, \
+            # max_tokens should be reasonable. Chat/completion models start at
+            # 1K; classic BERT-family EMBEDDERS legitimately cap at 256/512
+            # (bge-large-en-v1.5, multilingual-e5-large), so their real,
+            # registry-accurate context window must not be rejected by a
+            # chat-centric floor — the floor is model-type-aware.
+            lower_bound = 128 if model_data.get("model_type") == "embedding" else 1000
+            assert lower_bound <= max_tokens <= 10000000, \
                 f"Model {model_name} max_tokens seems unreasonable: {max_tokens}"
 
 

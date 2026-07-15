@@ -53,6 +53,11 @@ class LMStudioProvider(OpenAICompatibleProvider):
 
         super().__init__(model=model, base_url=base_url, **super_kwargs)
 
+        # Register-at-first-use: makes LM Studio's model dir (report-only row)
+        # and the HF hub cache visible in the machine-level data registry.
+        from ..utils.data_registry import ensure_core_data_homes
+        ensure_core_data_homes()
+
     def _native_rest_base_url(self) -> str:
         """Derive LM Studio native REST base URL from the OpenAI-compatible base_url."""
         base = str(getattr(self, "base_url", "") or "").strip().rstrip("/")

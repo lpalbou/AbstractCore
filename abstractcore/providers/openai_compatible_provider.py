@@ -1136,6 +1136,15 @@ class OpenAICompatibleProvider(BaseProvider):
                         try:
                             chunk = json.loads(data)
 
+                            # In-stream ERROR events must be LOUD. Servers can
+                            # fail mid-generation (live find: LM Studio evicted
+                            # the model mid-stream and sent
+                            # `data: {"error": {"message": "Model unloaded."}}`);
+                            # silently dropping the event ends the stream looking
+                            # like a normal stop — the consumer keeps a TRUNCATED
+                            # answer with no signal anything went wrong.
+                            self._raise_on_stream_error_event(chunk)
+
                             # Usage may ride the last content chunk (LM Studio style)
                             # or a final chunk with EMPTY choices (OpenAI
                             # stream_options style) — capture both.
@@ -1186,6 +1195,27 @@ class OpenAICompatibleProvider(BaseProvider):
 
                         except json.JSONDecodeError:
                             continue
+
+    def _raise_on_stream_error_event(self, chunk: Any) -> None:
+        """Raise ProviderAPIError for an SSE data event that carries an error.
+
+        Mid-stream server failures (model eviction, backend crash) arrive as
+        `{"error": ...}` events with no choices and no usage. They classify as
+        ProviderAPIError — the transient class RetryManager resamples — never
+        as a silent end-of-stream.
+        """
+        if not isinstance(chunk, dict):
+            return
+        err = chunk.get("error")
+        if not err:
+            return
+        if isinstance(err, dict):
+            message = str(err.get("message") or err.get("error") or err)
+        else:
+            message = str(err)
+        raise ProviderAPIError(
+            f"{self.__class__.__name__.replace('Provider', '')} stream failed mid-generation: {message}"
+        )
 
     async def _agenerate_internal(self,
                                    prompt: str,
@@ -1467,6 +1497,9 @@ class OpenAICompatibleProvider(BaseProvider):
 
                         try:
                             chunk = json.loads(data)
+
+                            # Mid-stream error events raise loudly (sync parity).
+                            self._raise_on_stream_error_event(chunk)
 
                             # Usage on the last content chunk OR a final
                             # empty-choices chunk (stream_options) — sync parity.

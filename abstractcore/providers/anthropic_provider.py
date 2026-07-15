@@ -782,8 +782,14 @@ class AnthropicProvider(BaseProvider):
             if required:
                 input_schema["required"] = required
 
+            # Wire-safe alias: Anthropic enforces the same strict tool-name
+            # contract as OpenAI — namespaced names (mcp::server::tool) 400
+            # the whole request. Safe names pass through byte-identical; the
+            # response normalizer maps aliases back (tools.wire_naming).
+            from ..tools.wire_naming import wire_safe_tool_name
+
             formatted_tool = {
-                "name": tool.get("name"),
+                "name": wire_safe_tool_name(str(tool.get("name") or "")),
                 "description": tool.get("description", ""),
                 "input_schema": input_schema
             }

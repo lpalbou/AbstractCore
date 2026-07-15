@@ -173,6 +173,10 @@ class HuggingFaceProvider(BaseProvider):
         self.provider = "huggingface"
         self._user_provided_max_tokens = bool(user_provided_max_tokens)
 
+        # Register-at-first-write: HF model loads write into the HF hub cache.
+        from ..utils.data_registry import ensure_core_data_homes
+        ensure_core_data_homes()
+
         # Handle timeout parameter for local models
         self._handle_timeout_parameter(kwargs)
 
@@ -408,6 +412,29 @@ class HuggingFaceProvider(BaseProvider):
         if getattr(self, "model_type", None) == "gguf":
             return "abstractcore-gguf-prompt-cache/v1"
         return f"abstractcore-{self.prompt_cache_cache_backend()}-prompt-cache/v1"
+
+    def prompt_cache_engine_fingerprint(self) -> str:
+        """Pin the KV-serialization engine version (0817). transformers owns
+        the `DynamicCache`/`past_key_values` layout; llama.cpp (via
+        llama-cpp-python) owns the GGUF cache. A version change can alter the
+        serialized layout, so a reused artifact from a different engine version
+        silently injects wrong KV."""
+        model_type = getattr(self, "model_type", None)
+        if model_type == "gguf":
+            try:
+                import llama_cpp
+
+                version = str(getattr(llama_cpp, "__version__", "") or "").strip()
+            except Exception:
+                version = ""
+            return f"llama_cpp=={version}" if version else "llama_cpp==unknown"
+        try:
+            import transformers
+
+            version = str(getattr(transformers, "__version__", "") or "").strip()
+        except Exception:
+            version = ""
+        return f"transformers=={version}" if version else "transformers==unknown"
 
     def prompt_cache_render_fragment(
         self,
@@ -831,6 +858,60 @@ class HuggingFaceProvider(BaseProvider):
         if content is None:
             return ""
         return str(content)
+
+    @staticmethod
+    def _gguf_normalize_tool_call_arguments_for_template(
+        messages: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Parse tool-call ``arguments`` from JSON string to dict for the
+        llama.cpp chat-template lane.
+
+        Impedance mismatch this bridges: the OpenAI/llama-cpp wire contract
+        carries ``tool_calls[].function.arguments`` as a JSON STRING (that is
+        exactly what ``create_chat_completion`` emits and what AbstractCore
+        returns), but embedded GGUF chat templates are written against the
+        HuggingFace ``apply_chat_template`` convention, where ``arguments`` is a
+        DICT — Qwen-Agent / Hermes / Ornith-family templates iterate it with
+        ``arguments|items`` (or ``.items()``), and Jinja's ``items`` filter
+        raises ``TypeError: Can only get item pairs from a mapping`` on a
+        string. The crash surfaces only on the SECOND turn of a tool-using
+        loop, once the assistant tool-call is replayed through the template
+        (found live on Ornith-1.0-35B GGUF, 2026-07-15).
+
+        This is a general fix for every dict-expecting template, not a
+        per-model patch: a JSON-string ``arguments`` is parsed to its object;
+        anything already a dict, or not valid JSON, or not an object, is left
+        untouched (a template that genuinely wants a string still gets one).
+        The control-plane renderer is unaffected — it uses AbstractCore's own
+        renderers, which already accept both shapes.
+        """
+        if not isinstance(messages, list):
+            return messages
+
+        def _coerce(container: Any) -> None:
+            fn = container.get("function") if isinstance(container.get("function"), dict) else None
+            target = fn if fn is not None else container
+            raw = target.get("arguments")
+            if isinstance(raw, str) and raw.strip():
+                try:
+                    parsed = json.loads(raw)
+                except Exception:
+                    return  # not JSON — leave the string as-is
+                if isinstance(parsed, dict):
+                    target["arguments"] = parsed
+
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            tool_calls = message.get("tool_calls")
+            if isinstance(tool_calls, list):
+                for tc in tool_calls:
+                    if isinstance(tc, dict):
+                        _coerce(tc)
+            fc = message.get("function_call")
+            if isinstance(fc, dict):
+                _coerce({"function": fc})
+        return messages
 
     def _gguf_prompt_cache_tool_call_text(self, tool_call: Any) -> str:
         if not isinstance(tool_call, dict):
@@ -2557,10 +2638,20 @@ class HuggingFaceProvider(BaseProvider):
         if model.endswith('.gguf'):
             return True
 
-        # Check if local file exists with .gguf extension
-        model_path = Path(model)
-        if model_path.exists() and model_path.suffix == '.gguf':
-            return True
+        # Local filesystem path (a .gguf FILE, or a DIRECTORY containing .gguf
+        # files). A user pointing --model at an on-disk model — the LM Studio
+        # layout ~/.lmstudio/models/org/Model[/ | :quant] is the common one —
+        # must be recognized as GGUF even when the name carries no "gguf" token.
+        # A trailing ":quant" selector is stripped before the path test.
+        try:
+            head = model.split(":", 1)[0] if ":" in model else model
+            p = Path(head).expanduser()
+            if p.is_file() and p.suffix.lower() == '.gguf':
+                return True
+            if p.is_dir() and any(p.glob("*.gguf")):
+                return True
+        except (OSError, ValueError):
+            pass
 
         # Check if it's a HF repo with GGUF in the name (various formats)
         model_lower = model.lower()
@@ -3185,6 +3276,32 @@ class HuggingFaceProvider(BaseProvider):
             if "/" in s:
                 return s.strip().strip("/")
             return None
+
+        # Direct filesystem path FIRST: a .gguf FILE, or a DIRECTORY containing
+        # .gguf files (LM Studio stores models at real on-disk paths, and users
+        # naturally pass that path — e.g. ~/.lmstudio/models/org/Model-GGUF).
+        # Without this, an absolute/relative path is mis-parsed as a repo id by
+        # the cache logic below and reported "not found" even though the file is
+        # right there. A trailing ":selector" (quant hint) is honored when the
+        # head is a real path (never eaten from a non-path hub id / Windows
+        # drive letter). Resolved before any cache lookup so a path always wins.
+        try:
+            path_head = key
+            if ":" in key:
+                head = key.split(":", 1)[0]
+                if head and (Path(head).expanduser().is_file() or Path(head).expanduser().is_dir()):
+                    path_head = head
+            candidate = Path(path_head).expanduser()
+            if candidate.is_file() and candidate.suffix.lower() == ".gguf":
+                return str(candidate)
+            if candidate.is_dir():
+                picked = _pick_preferred_gguf(list(candidate.glob("*.gguf")))
+                if picked:
+                    return picked
+        except (OSError, ValueError):
+            # A non-path string (NUL bytes, over-long) — fall through to cache
+            # resolution, never crash the lookup.
+            pass
 
         # Normalize model name to cache format
         # Convert "unsloth/model" or "unsloth--model" to "models--unsloth--model"
@@ -4754,6 +4871,17 @@ class HuggingFaceProvider(BaseProvider):
                     fallback_messages.append({"role": "assistant", "content": marker})
                 generation_kwargs["messages"] = fallback_messages
 
+            # Fallback lane (create_chat_completion → the model's embedded Jinja
+            # chat template): bridge the wire-string vs template-dict `arguments`
+            # convention so replayed tool-call history does not crash
+            # dict-expecting templates (`arguments|items`). The control-plane
+            # lane above already returned; this only touches the delegated path.
+            _fallback_messages = generation_kwargs.get("messages")
+            if isinstance(_fallback_messages, list):
+                generation_kwargs["messages"] = self._gguf_normalize_tool_call_arguments_for_template(
+                    _fallback_messages
+                )
+
             if stream:
                 return self._stream_generate_gguf_with_tools(generation_kwargs, tools, has_native_tools, kwargs.get('tool_call_tags'))
             else:
@@ -4926,9 +5054,24 @@ class HuggingFaceProvider(BaseProvider):
             live_prompt_tokens=prompt_tokens,
         )
 
-        # Prefill prompt KV from cache (do not persist the generation-prompt state; key mode
-        # maintains transcript-aligned caches via prompt_cache_update).
-        ok = self._gguf_prefill_prompt_cache(cache_obj, prompt_tokens, save_state=False, set_cache=False)
+        # Prefill prompt KV from cache AND persist the prefilled snapshot so the
+        # NEXT plain generate(prompt_cache_key=...) call reuses this prefix
+        # instead of re-prefilling the whole prompt. The snapshot is keyed by the
+        # (with-generation-prompt) prompt tokens; because a growing-prefix loop's
+        # turn N+1 continues exactly after this turn's generation prompt, the
+        # saved key is a TRUE token prefix of the next prompt and `_gguf_prefill_
+        # prompt_cache` loads it + evals only the suffix. Without this
+        # (`save_state=False`, the prior behavior), the control-plane lane gave
+        # ZERO in-process reuse on the plain-generate convention the runtime uses
+        # — every warm turn re-prefilled the full context and, worse, `llm.reset()`
+        # forfeited llama.cpp's own n_past reuse too (fable5 GGUF adversary,
+        # 2026-07-14). Snapshots are correctness-safe (true-prefix KV reuse only),
+        # coexist with prompt_cache_update's transcript-aligned states (longest
+        # true prefix wins), and stay RAM-bounded by LlamaRAMCache eviction (the
+        # growing snapshot evicts its smaller predecessor). set_cache stays False:
+        # the low-level `llm.generate([], reset=False)` below does not consult
+        # `llm.cache`, so attaching it would be inert.
+        ok = self._gguf_prefill_prompt_cache(cache_obj, prompt_tokens, save_state=True, set_cache=False)
         if not ok:
             yield GenerateResponse(
                 content="Error: failed to prefill GGUF prompt cache",
@@ -5466,7 +5609,11 @@ class HuggingFaceProvider(BaseProvider):
         state.prompt_tokens = tuple(int(tok) for tok in (state.prompt_tokens + tuple(delta_ids) + tuple(gen_ids)))
         state.add_generation_prompt = False
 
-        if prompt:
+        # Full-context callers already recorded the prompt into state.messages
+        # in their branch above — appending again here duplicated the user turn
+        # in the rebuild-lane bookkeeping (adversarial find 2026-07-13: a later
+        # prompt_cache_update re-rendered the cache with the question twice).
+        if prompt and not full_context:
             try:
                 state.messages.append({"role": "user", "content": str(prompt)})
             except Exception:

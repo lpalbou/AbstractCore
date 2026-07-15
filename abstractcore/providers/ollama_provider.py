@@ -48,6 +48,25 @@ class OllamaProvider(BaseProvider):
         # Initialize tool handler
         self.tool_handler = UniversalToolHandler(model)
 
+    def _effective_num_ctx(self, call_kwargs: Dict[str, Any]) -> Optional[int]:
+        """Resolve the requested Ollama context window (`num_ctx`).
+
+        Precedence: per-call kwarg > constructor kwarg (stashed in interface
+        config). None when never requested — Ollama then uses the model's
+        default and we deliberately do not second-guess it. Invalid values
+        raise loudly (a silently-dropped context request is exactly the
+        silent-truncation class this fixes).
+        """
+        value = call_kwargs.get("num_ctx", None)
+        if value is None and isinstance(getattr(self, "config", None), dict):
+            value = self.config.get("num_ctx")
+        if value is None:
+            return None
+        num_ctx = int(value)
+        if num_ctx <= 0:
+            raise ValueError(f"num_ctx must be a positive integer, got {value!r}")
+        return num_ctx
+
     @property
     def async_client(self):
         """Lazy-load async HTTP client for native async operations."""
@@ -404,6 +423,14 @@ class OllamaProvider(BaseProvider):
             if value is not None:
                 payload["options"][key] = value
 
+        # Context window (Ollama `num_ctx`): forward when explicitly requested
+        # per-call or at construction. Without this, Ollama silently truncates
+        # long prompts to the model's default context (abstractagent find,
+        # 2026-07-13: `num_ctx` landed in interface config and was never read).
+        num_ctx = self._effective_num_ctx(kwargs)
+        if num_ctx is not None:
+            payload["options"]["num_ctx"] = num_ctx
+
         # Add seed if provided (Ollama supports seed for deterministic outputs)
         seed_value = generation_kwargs.get("seed")
         if seed_value is not None:
@@ -737,6 +764,11 @@ class OllamaProvider(BaseProvider):
             value = generation_kwargs.get(key)
             if value is not None:
                 payload["options"][key] = value
+
+        # Context window parity with the sync lane (see _effective_num_ctx).
+        num_ctx = self._effective_num_ctx(kwargs)
+        if num_ctx is not None:
+            payload["options"]["num_ctx"] = num_ctx
 
         seed_value = generation_kwargs.get("seed")
         if seed_value is not None:

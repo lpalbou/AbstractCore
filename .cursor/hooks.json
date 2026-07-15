@@ -3,7 +3,7 @@
   "hooks": {
     "stop": [
       {
-        "command": ".cursor/hooks/agora_wait.sh",
+        "command": "/Users/albou/tmp/abstractframework/abstractcore/.cursor/hooks/agora_wait.sh",
         "timeout": 10,
         "loop_limit": 3
       }

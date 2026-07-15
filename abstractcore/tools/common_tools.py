@@ -3441,6 +3441,10 @@ def skim_files(
 @tool(
     description="Write full file content (create/overwrite/append). WARNING: mode='w' overwrites the entire file; for small edits, use edit_file().",
     when_to_use="Use to create new files or intentionally overwrite/append full content. For small edits, use edit_file().",
+    # Origin-aware side-effect classification for consumers (abstractagent's
+    # repeat-guard reads ToolDefinition.tags); mirrors tools/inventory.py
+    # _CLASSIFICATION_BY_NAME — a consistency test pins the mirror.
+    tags=["mutating"],
     hide_args=["create_dirs"],
     examples=[
         {
@@ -4139,6 +4143,13 @@ def skim_url(
     if not u:
         return "Error: url is required"
 
+    # Same base64 URL screen as fetch_url (skim_url is the sibling URL fetch —
+    # the encoded-secret exfil surface is identical). Params are kept; only a
+    # base64-looking run anywhere in the URL is refused.
+    _b64_block = _fetch_url_base64_block(u)
+    if _b64_block is not None:
+        return str(_b64_block["rendered"])
+
     if not _ensure_requests():
         return (
             "Error: skim_url requires `requests`, which is not installed.\n"
@@ -4489,6 +4500,162 @@ _FETCH_URL_MAX_RETRIES = 2  # total attempts = 1 + this
 _FETCH_URL_RETRY_BASE_DELAY_S = 0.6
 
 
+# --------------------------------------------------------------------------
+# fetch_url base64 screen (operator ruling, laurent 2026-07-14, final)
+#
+# fetch_url is deliberately FULLY FUNCTIONAL: it keeps URL query parameters
+# (they select the right page — stripping them breaks fetches) and passes
+# model headers through. The ONE protection the operator asked for is a
+# base64 screen: if a base64-ENCODED PAYLOAD appears ANYWHERE in the URL
+# (netloc, path, query, or fragment), refuse the fetch — that is the
+# model-authored data-exfil signature (a secret encoded into a URL the agent
+# would send). Deliberately no other protection, no config, no allowlist.
+# --------------------------------------------------------------------------
+# Base64 is a REVERSIBLE encoding, and that is what lets us refuse an encoded
+# SECRET without refusing a legitimate base64-format IDENTIFIER (a Google Drive
+# file id, a random nonce). The discriminator is DECODE-AND-INSPECT, not a
+# character-class guess:
+#   1. extract candidate tokens — maximal runs of the base64url alphabet
+#      (A-Za-z0-9-_), so URL structure (/ ? & = # . …) splits segments but a
+#      payload that embeds - or _ is NOT split (the evasion a pure-alnum
+#      tokenizer allowed);
+#   2. base64-decode each candidate (try url-safe AND standard, repair padding);
+#   3. flag ONLY when it decodes to MEANINGFUL DATA — a high printable-ASCII
+#      ratio (or valid UTF-8) over enough bytes. An exfiltrated secret is real
+#      information (keys, JSON, text, PII) → decodes printable → BLOCK. A random
+#      identifier (Drive id, git SHA, UUID) decodes to high-entropy noise → ALLOW.
+# This is why multi-segment REST paths, hyphen/underscore slugs, UUIDs, hex
+# digests, and opaque random ids are all correctly allowed while an encoded
+# secret in the path/query/fragment is refused. base64-OF-COMPRESSED-DATA
+# (gzip/xz/zip/zstd/... then base64) is also caught by decoded magic bytes.
+# Honest residual: a payload that is ENCRYPTED or headerless-raw-deflated
+# before base64 decodes to indistinguishable-from-random bytes (allowed), and
+# a secret under ~16 decoded bytes is too short to separate from an id — both
+# are deliberate-obfuscation / edge cases above the "obvious case" bar. A RAW
+# (un-encoded) high-entropy credential is information-identical to an id and is
+# not this screen's job. Best-effort, not a proof.
+# Candidate alphabet = base64URL (A-Za-z0-9-_). Standard base64's '+' and '/'
+# are EXCLUDED: '/' is the URL path separator and '+' means space in a query,
+# so a standard-base64 blob is self-mangling in a real URL — the realistic
+# in-URL exfil form is base64url (the URL-safe variant exists precisely so a
+# payload survives in a URL), and this alphabet captures it WHOLE (a payload's
+# own '-'/'_' no longer split it). The decode gate below, not this class, is
+# what rejects false positives, so the class only needs to be permissive
+# enough to grab the whole base64url run.
+_FETCH_URL_B64_CANDIDATE = re.compile(r"[A-Za-z0-9_-]{24,}")
+# 16 bytes is the false-positive-tested floor (fable5 differentiation adversary,
+# 2026-07-14: a 50k-random-id sweep showed 2 FP at 12 bytes, 0 at 16). The
+# 24-char candidate floor already implies ~18 decoded bytes, so this is belt.
+_FETCH_URL_B64_MIN_DECODED_BYTES = 16
+_FETCH_URL_B64_PRINTABLE_CUTOFF = 0.85
+# base64url → standard alphabet, so one validating decoder handles both
+# (base64.urlsafe_b64decode has no validate= parameter).
+_FETCH_URL_B64_URLSAFE_TO_STD = str.maketrans("-_", "+/")
+# Compression/archive magic numbers. A base64 candidate that decodes to bytes
+# beginning with one of these is base64-OF-COMPRESSED-DATA — the sneakier form
+# of the same exfil (compress the readable secret first, THEN encode), which
+# otherwise decodes to non-printable bytes and evades the printable-ratio test.
+# Multi-byte magics keep the random-id false-positive rate negligible (gzip's
+# deflate method byte 0x08 makes it 3 bytes ≈ 1-in-16M; the others are ≥4).
+# Bare 2-byte zlib (0x78 ..) is deliberately OMITTED — too FP-prone for a
+# "fully functional" fetch. Closes the gzip residual the adversary found.
+_FETCH_URL_COMPRESSED_MAGIC = (
+    b"\x1f\x8b\x08",       # gzip (deflate)
+    b"BZh",                # bzip2 ("BZh")
+    b"\xfd7zXZ\x00",       # xz
+    b"PK\x03\x04",         # zip / docx / jar
+    b"\x28\xb5\x2f\xfd",   # zstd
+    b"\x04\x22\x4d\x18",   # lz4 frame
+)
+
+
+def _fetch_url_b64_decode_candidate(token: str) -> Optional[bytes]:
+    """Strictly decode a base64/base64url candidate (padding repaired), else None.
+
+    Tries BOTH alphabets with `validate=True` so a non-base64 token (a plain
+    slug) is rejected rather than silently coerced. base64url is handled by
+    translating `-_` → `+/` and decoding with the standard validator —
+    `base64.urlsafe_b64decode` does NOT accept `validate=`, so a token carrying
+    `-`/`_` would otherwise never decode (found by double-check, 2026-07-14). A
+    length ≡ 1 (mod 4) is never a valid base64 length and is rejected outright.
+    """
+    pad = (-len(token)) % 4
+    if pad == 3:  # len % 4 == 1 — impossible for real base64
+        return None
+    urlsafe = token.translate(_FETCH_URL_B64_URLSAFE_TO_STD) + ("=" * pad)
+    standard = token + ("=" * pad)
+    for candidate in (urlsafe, standard):
+        try:
+            raw = base64.b64decode(candidate, validate=True)
+        except Exception:
+            continue
+        if raw:
+            return raw
+    return None
+
+
+def _fetch_url_decoded_looks_like_data(raw: Optional[bytes]) -> bool:
+    """True when decoded bytes look like MEANINGFUL data (the exfil signature),
+    False for random/binary noise (an opaque identifier)."""
+    if raw is None or len(raw) < _FETCH_URL_B64_MIN_DECODED_BYTES:
+        return False
+    # base64-of-compressed-data: the decoded bytes are a compressed container,
+    # not printable — catch it by its magic number (a random id starting with
+    # one of these is ~1-in-16M or rarer).
+    if raw.startswith(_FETCH_URL_COMPRESSED_MAGIC):
+        return True
+    printable = sum(1 for b in raw if 0x20 <= b <= 0x7E or b in (0x09, 0x0A, 0x0D))
+    ratio = printable / len(raw)
+    if ratio >= _FETCH_URL_B64_PRINTABLE_CUTOFF:
+        return True
+    # Valid UTF-8 text (accents, CJK) with a slightly lower printable-ASCII
+    # ratio is still meaningful data, not noise.
+    try:
+        raw.decode("utf-8")
+    except Exception:
+        return False
+    return ratio >= 0.75
+
+
+def _fetch_url_has_base64_run(text: str) -> bool:
+    for m in _FETCH_URL_B64_CANDIDATE.finditer(text or ""):
+        if _fetch_url_decoded_looks_like_data(_fetch_url_b64_decode_candidate(m.group(0))):
+            return True
+    return False
+
+
+def _fetch_url_base64_block(url: str) -> Optional[Dict[str, Any]]:
+    """Return an actionable error dict if the URL carries a base64-ENCODED
+    payload anywhere, else None. Params are NOT stripped — the URL is fetched
+    intact (operator ruling: keep parameters, only refuse an encoded payload).
+    Detection decodes candidates and flags only meaningful decoded content, so
+    opaque base64-format identifiers are allowed.
+
+    NETLOC is scanned too (fable5 FP/perf adversary, 2026-07-14): a readable
+    secret in userinfo (``<b64>@host``) or a subdomain label needs no
+    obfuscation and would otherwise sail through — the "anywhere in the URL"
+    contract must include the authority, not only path/query/fragment. A
+    base64-shaped basic-auth password in userinfo now blocks, which is
+    credential-bearing and defensible.
+    """
+    parsed = urlparse(str(url or ""))
+    for part in (parsed.netloc, parsed.path, parsed.query, parsed.fragment):
+        if _fetch_url_has_base64_run(part):
+            return {
+                "success": False,
+                "error": (
+                    "Blocked: the URL contains a base64-encoded payload "
+                    "(possible data exfiltration). Fetch a plain URL without "
+                    "encoded content in the host, path, query, or fragment."
+                ),
+                "error_class": "blocked_encoded_url",
+                "retryable": False,
+                "url": str(url),
+                "rendered": f"⛔ Blocked: base64-encoded content in URL\nURL: {url}",
+            }
+    return None
+
+
 # Signatures of a page that returned HTTP 200 but carries NO real article —
 # a JS/anti-bot challenge shell or a JavaScript-only app. When extraction finds
 # essentially no text AND one of these dominates, we return an ACTIONABLE error
@@ -4620,6 +4787,11 @@ def _fetch_url_retry_after_seconds(retry_after: Optional[str], *, cap_s: float =
 @tool(
     description="Fetch a URL and parse common content types (HTML/JSON/text); supports previews and basic metadata.",
     when_to_use="Use to retrieve and analyze a URL after you know it is worth opening. Prefer skim_url first for a faster, smaller preview. For shorter outputs, set include_full_content=False or keep_links=False.",
+    # NOT tagged "mutating" (local host state stays untouched), but it IS
+    # remote-write-capable: method/data are model-controlled, so it can send
+    # POST/PUT/DELETE with a body (2026-07-12 finding: never read-only-safe).
+    # "write" is the tag consumers key side-effect guards on.
+    tags=["write", "remote_write"],
     examples=[
         {
             "description": "Fetch and parse HTML webpage",
@@ -4749,6 +4921,14 @@ def fetch_url(
                 "rendered": rendered,
             }
 
+        # The ONE protection (operator ruling): refuse a URL carrying a
+        # base64-looking run anywhere (path/query/fragment) — the encoded-secret
+        # exfil signature. Parameters are KEPT (the URL is fetched intact); a
+        # clean refusal before any connection.
+        blocked = _fetch_url_base64_block(url)
+        if blocked is not None:
+            return blocked
+
         # Prepare request headers
         request_headers = {
             'User-Agent': user_agent,
@@ -4757,6 +4937,7 @@ def fetch_url(
             'Connection': 'keep-alive'
         }
 
+        # Model-supplied headers pass through untouched (fully functional fetch).
         if headers:
             request_headers.update(headers)
 
@@ -4781,7 +4962,7 @@ def fetch_url(
         fetch_timestamp = datetime.now().isoformat()
         max_content_length = int(FETCH_URL_MAX_CONTENT_LENGTH_BYTES)
 
-        # Make the request with session for connection reuse and keep it open while streaming
+        # Make the request with a session for connection reuse; keep it open while streaming.
         with requests.Session() as session:
             session.headers.update(request_headers)
             # Bounded same-profile retry ladder for transient bot-challenge /
@@ -4929,6 +5110,13 @@ def fetch_url(
                     # Resolve relative URLs
                     if not meta_refresh_url.startswith(("http://", "https://")):
                         meta_refresh_url = urljoin(str(response.url), meta_refresh_url)
+
+                    # Same base64 screen on the meta-refresh target (our own
+                    # follow of a content-declared redirect): refuse an encoded
+                    # URL rather than fetch it.
+                    meta_block = _fetch_url_base64_block(meta_refresh_url)
+                    if meta_block is not None:
+                        return meta_block
 
                     # Follow the meta-refresh redirect (recursive call with same session)
                     try:
@@ -7804,6 +7992,7 @@ _EDIT_FILE_PARSE_GUARDS: dict[str, tuple[str, Any]] = {
 @tool(
     description="Surgically edit a text file via small find/replace (literal/regex) or a single-file unified diff patch.",
     when_to_use="Use for small, precise edits. Prefer search_files → read_file → edit_file with a small unique pattern; for whole-file rewrites, use write_file().",
+    tags=["mutating"],
     hide_args=["encoding", "flexible_whitespace"],
     examples=[
         {
@@ -8568,6 +8757,7 @@ except Exception:
 @tool(
     description="Execute shell commands safely with security controls and platform detection",
     when_to_use="When you need to run system commands, shell scripts, or interact with command-line tools",
+    tags=["mutating"],
     examples=[
         {
             "description": "List current directory contents",

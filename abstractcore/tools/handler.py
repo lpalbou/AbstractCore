@@ -121,11 +121,18 @@ class UniversalToolHandler:
                 if isinstance(param, dict) and "default" not in param:
                     required_fields.append(name)
 
-            # Convert to OpenAI-style function format (most common)
+            # Convert to OpenAI-style function format (most common).
+            # Wire-safe alias: namespaced names (mcp::server::tool) violate the
+            # strict native name contract (^[a-zA-Z0-9_-]{1,64}$) and 400 the
+            # WHOLE request on OpenAI/Anthropic-strict endpoints. Safe names
+            # pass through byte-identical; the response normalizer maps the
+            # alias back to the original (see tools.wire_naming).
+            from .wire_naming import wire_safe_tool_name
+
             native_tool = {
                 "type": "function",
                 "function": {
-                    "name": tool_def.name,
+                    "name": wire_safe_tool_name(tool_def.name),
                     "description": tool_def.description,
                     "parameters": {
                         "type": "object",

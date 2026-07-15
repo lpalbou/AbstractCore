@@ -121,6 +121,20 @@ def download_vision_model(model_name: str = "blip-base-caption") -> bool:
         models_dir = Path.home() / ".abstractcore" / "models" / model_name
         models_dir.mkdir(parents=True, exist_ok=True)
 
+        # Register-at-first-write: locally downloaded vision models live here.
+        from ..utils.data_registry import ensure_data_home_registered
+        ensure_data_home_registered(
+            "abstractcore-local-models",
+            path=str(Path.home() / ".abstractcore" / "models"),
+            kind="model-cache",
+            owner="abstractcore",
+            safe_to_purge=True,
+            description=(
+                "Locally downloaded vision/caption models (abstractcore --download-vision-model). "
+                "Safe to purge: models re-download on demand."
+            ),
+        )
+
         print(f"📁 Download path: {models_dir}")
         print(f"🔄 Downloading {model_info['description']}...")
 

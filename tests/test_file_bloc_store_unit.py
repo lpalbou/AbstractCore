@@ -98,3 +98,27 @@ def test_heuristic_summary_and_keywords() -> None:
     assert summary == "Title line"
     assert isinstance(kw, list)
     assert "the" not in kw
+
+
+def test_bloc_writes_are_atomic_and_leave_no_tmp_litter(tmp_path: Path) -> None:
+    """Torn-write guard (runtime adversary find, 2026-07-13): content/meta writes
+    go through unique-tmp + os.replace, so a concurrent reader sees old or new
+    bytes, never a mixture — a torn content.txt would get hashed into a
+    self-consistent manifest of the WRONG text. Pin the mechanism: writes are
+    correct, repeated upserts converge, and no .tmp files are left behind."""
+    import hashlib
+
+    store = FileBlocStore(root_dir=tmp_path)
+    payload = "x" * 50_000
+    sha = hashlib.sha256(payload.encode()).hexdigest()
+    for content in ("first version " + payload, "second version " + payload):
+        store.upsert(
+            file_meta={"sha256": sha, "path": "/tmp/doc.txt", "size_bytes": len(content)},
+            content=content,
+        )
+        assert store.content_path(sha).read_text(encoding="utf-8") == content
+    assert store.write_jsonld(sha, {"@id": "ex:doc", "use": {"acc": 1}}) is True
+    assert store.patch_record(sha, summary="patched") is not None
+
+    litter = [p for p in tmp_path.rglob("*.tmp")]
+    assert litter == [], f"atomic writes must clean up tmp files: {litter}"

@@ -16,6 +16,7 @@ configuration.
 
 from __future__ import annotations
 
+import re
 from enum import Enum
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Union
 
@@ -76,6 +77,13 @@ _EMBEDDING_MODEL_NAME_PATTERNS = (
     "qwen3-embedding",
     "embeddinggemma",
 )
+
+# Embedder families whose SHORT names carry no "embed" substring (bge-m3,
+# multilingual-e5-large, gte-large-en-v1.5, ...). Matched as bounded name
+# segments — plain substring matching would false-positive on chat names
+# (adversary find 2026-07-13: these families were excluded from embedding
+# lists AND offered as chat models).
+_EMBEDDING_MODEL_FAMILY_REGEX = re.compile(r"(?:^|[\s/_.:@-])(?:bge|e5|gte)(?=$|[\s/_.:@-])")
 
 _ROUTE_ALIASES = {
     "embedding": "embedding.text",
@@ -227,7 +235,9 @@ def _is_embedding_model(model_name: str, capabilities: Mapping[str, Any]) -> boo
     if capabilities.get("model_type") == "embedding":
         return True
     model_lower = model_name.lower()
-    return any(pattern in model_lower for pattern in _EMBEDDING_MODEL_NAME_PATTERNS)
+    if any(pattern in model_lower for pattern in _EMBEDDING_MODEL_NAME_PATTERNS):
+        return True
+    return bool(_EMBEDDING_MODEL_FAMILY_REGEX.search(model_lower))
 
 
 def _has_output_route(routes: Iterable[str]) -> bool:

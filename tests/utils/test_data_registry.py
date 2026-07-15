@@ -317,6 +317,142 @@ def _register_in_subprocess(reg_path: str, name: str, home_path: str) -> None:
     _reg(name, path=home_path, kind="runs", owner="test", safe_to_purge=True)
 
 
+class TestEnsureLane:
+    """The best-effort register-at-first-write lane hot paths call.
+
+    Contract: never raises into the caller, dedupes per process, warns
+    #FALLBACK once per name on refusal but RETRIES the registration on the
+    next call (transient failures heal), and honors the kill switch.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _fresh_process_state(self):
+        from abstractcore.utils.data_registry import _reset_ensure_state
+
+        _reset_ensure_state()
+        yield
+        _reset_ensure_state()
+
+    def test_registers_once_then_dedupes(self, registry_env, tmp_path):
+        from abstractcore.utils.data_registry import ensure_data_home_registered
+
+        home = _make_home(tmp_path)
+        first = ensure_data_home_registered(
+            "ensure-home", path=str(home), kind="logs", owner="abstractcore", safe_to_purge=True,
+        )
+        assert first is not None and first.name == "ensure-home"
+        second = ensure_data_home_registered(
+            "ensure-home", path=str(home), kind="logs", owner="abstractcore", safe_to_purge=True,
+        )
+        assert second is None  # per-process dedup; the row still exists
+        assert get_data_home("ensure-home").path == str(home.resolve())
+
+    def test_refusal_never_raises_warns_once_and_retries(self, registry_env, tmp_path, caplog):
+        import logging
+
+        from abstractcore.utils.data_registry import ensure_data_home_registered
+
+        outer = _make_home(tmp_path, "outer")
+        register_data_home("outer", path=str(outer), kind="runs", owner="x", safe_to_purge=False)
+        nested = outer / "nested"
+        nested.mkdir()
+
+        with caplog.at_level(logging.WARNING):
+            assert ensure_data_home_registered(
+                "nested-home", path=str(nested), kind="logs", owner="abstractcore", safe_to_purge=True,
+            ) is None
+            assert ensure_data_home_registered(
+                "nested-home", path=str(nested), kind="logs", owner="abstractcore", safe_to_purge=True,
+            ) is None
+        warnings = [r for r in caplog.records if "#FALLBACK" in r.getMessage() and "nested-home" in r.getMessage()]
+        assert len(warnings) == 1, "refusal must warn exactly once per name"
+
+        # The failure was not latched as success: once the conflict clears,
+        # the same name registers on the next call.
+        unregister_data_home("outer")
+        row = ensure_data_home_registered(
+            "nested-home", path=str(nested), kind="logs", owner="abstractcore", safe_to_purge=True,
+        )
+        assert row is not None and get_data_home("nested-home") is not None
+
+    def test_kill_switch_disables_registration(self, registry_env, tmp_path, monkeypatch):
+        from abstractcore.utils.data_registry import ensure_data_home_registered
+
+        monkeypatch.setenv("ABSTRACTFRAMEWORK_DATA_REGISTRY_DISABLE", "1")
+        home = _make_home(tmp_path)
+        assert ensure_data_home_registered(
+            "killed", path=str(home), kind="logs", owner="abstractcore", safe_to_purge=True,
+        ) is None
+        assert get_data_home("killed") is None
+
+    def test_ensure_core_data_homes_runs_once_per_process(self, registry_env, monkeypatch):
+        import abstractcore.utils.data_registry as dr
+
+        calls = {"n": 0}
+
+        def _counting():
+            calls["n"] += 1
+            return []
+
+        monkeypatch.setattr(dr, "register_core_data_homes", _counting)
+        dr.ensure_core_data_homes()
+        dr.ensure_core_data_homes()
+        assert calls["n"] == 1
+
+    def test_file_logging_registers_the_log_home(self, registry_env, tmp_path):
+        """The structured-logging file handler is a real first-write site."""
+        import logging as _logging
+
+        from abstractcore.utils.structured_logging import LogConfig
+
+        log_dir = tmp_path / "logs"
+        cfg = LogConfig()
+        prior_dir = cfg.log_dir
+        prior_level = cfg.file_level
+        try:
+            cfg.configure(log_dir=str(log_dir), file_level=_logging.DEBUG)
+            row = get_data_home("abstractcore-logs")
+            assert row is not None and row.kind == "logs" and row.safe_to_purge is True
+            assert row.path == str(log_dir.resolve())
+        finally:
+            cfg.log_dir = prior_dir
+            cfg.file_level = prior_level
+            cfg._setup_structlog()
+
+    def test_bloc_store_upsert_registers_only_the_default_root(self, registry_env, tmp_path, monkeypatch):
+        """FileBlocStore.upsert is the write moment for the largest core-owned
+        data home (the 500-GB-class bloc/KV store) — first write at the
+        machine-level DEFAULT root registers. Custom roots do NOT self-register
+        (they live inside their caller's data home and ride that row; live
+        incident 2026-07-13: suite-driven custom dirs spammed 372 tmp rows)."""
+        import hashlib
+
+        import abstractcore.core.file_blocs as fb
+
+        default_root = tmp_path / "default-blocs"
+        monkeypatch.setattr(fb, "default_blocs_root_dir", lambda: default_root)
+        payload = "hello bloc"
+        sha = hashlib.sha256(payload.encode()).hexdigest()
+
+        fb.FileBlocStore(root_dir=default_root).upsert(
+            file_meta={"sha256": sha, "path": "/tmp/x.txt", "size_bytes": len(payload)}, content=payload,
+        )
+        row = get_data_home("abstractcore-blocs")
+        assert row is not None
+        assert row.kind == "prompt-cache" and row.safe_to_purge is True
+        assert row.path == str(default_root.resolve())
+
+        custom_root = tmp_path / "caller-owned" / "blocs"
+        fb.FileBlocStore(root_dir=custom_root).upsert(
+            file_meta={"sha256": sha, "path": "/tmp/x.txt", "size_bytes": len(payload)}, content=payload,
+        )
+        rows = [r["name"] for r in list_data_homes()]
+        assert rows.count("abstractcore-blocs") == 1
+        assert not any(n.startswith("abstractcore-blocs-") for n in rows), (
+            "custom bloc roots must not self-register"
+        )
+
+
 class TestPackageSurface:
     def test_public_exports(self):
         import abstractcore.utils as u
@@ -325,7 +461,8 @@ class TestPackageSurface:
             "register_data_home", "list_data_homes", "purge_data_home",
             "get_data_home", "data_home_size", "unregister_data_home",
             "DataHome", "DataRegistryError", "DATA_HOME_KINDS", "registry_path",
-            "register_core_data_homes",
+            "register_core_data_homes", "ensure_data_home_registered",
+            "ensure_core_data_homes",
         ):
             assert hasattr(u, symbol), f"abstractcore.utils must export {symbol}"
 

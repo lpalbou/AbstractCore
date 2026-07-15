@@ -261,6 +261,31 @@ class EmbeddingManager:
         # Common setup for all providers
         self.cache_dir = Path(cache_dir) if cache_dir else Path.home() / ".abstractcore" / "embeddings"
         self.cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # Register-at-first-write (machine-level data registry, best-effort).
+        # ONLY the machine-level default dir registers: a constructor-custom
+        # cache dir lives inside its CALLER's data home (e.g. the gateway's
+        # data_dir) and rides that container's registry row — self-registering
+        # it would both spam rows for ephemeral dirs (live incident 2026-07-13:
+        # 372 pytest tmp rows) and collide with the container's own
+        # registration under the nesting guard.
+        from ..utils.data_registry import ensure_data_home_registered, ensure_core_data_homes
+        _default_cache_dir = Path.home() / ".abstractcore" / "embeddings"
+        if self.cache_dir.resolve() == _default_cache_dir.resolve():
+            ensure_data_home_registered(
+                "abstractcore-embeddings-cache",
+                path=str(self.cache_dir),
+                kind="artifacts",
+                owner="abstractcore",
+                safe_to_purge=True,
+                description=(
+                    "Embedding vector cache (pickled, keyed by text hash). Safe to purge: "
+                    "vectors recompute on demand."
+                ),
+            )
+        if self.provider == "huggingface":
+            # Local embedding models download into the HF hub cache.
+            ensure_core_data_homes()
         self.cache_size = cache_size
         self.output_dims = output_dims
 

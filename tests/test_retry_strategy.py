@@ -846,3 +846,29 @@ class TestIntegrationScenarios:
 if __name__ == "__main__":
     # Run tests with pytest
     pytest.main([__file__, "-v"])
+
+
+def test_circuit_breaker_ignores_non_retryable_failures():
+    """Adversarial find (2026-07-13): non-retryable failures (auth/invalid
+    request = caller bugs) said nothing about endpoint health, but each one
+    counted toward opening the breaker — under endpoint damping one
+    misconfigured caller could block every healthy instance on the endpoint."""
+    from abstractcore.core.retry import RetryManager, RetryConfig
+    from abstractcore.exceptions import InvalidRequestError
+
+    manager = RetryManager(RetryConfig(max_attempts=1, failure_threshold=2))
+
+    def bad_request():
+        raise InvalidRequestError("caller bug: unknown parameter")
+
+    for _ in range(5):
+        try:
+            manager.execute_with_retry(bad_request, provider_key="stub-endpoint")
+        except InvalidRequestError:
+            pass
+
+    breaker = manager.get_circuit_breaker("stub-endpoint")
+    info = breaker.get_state_info()
+    assert info.get("state") != "open", (
+        f"breaker opened on non-retryable caller errors: {info}"
+    )

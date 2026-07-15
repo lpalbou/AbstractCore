@@ -121,6 +121,7 @@ print(caps.to_dict())
   - Other GGUF chat formats remain `mode=keyed` until an exact cached prompt renderer is implemented.
   - Local control plane optimization: append-only updates tokenize/render only the delta segment; tools are kept in a stable prefix position so system/tools caches remain effective as the discussion grows.
   - Local control plane generation: when `prompt_cache_key` is set and the chat format is supported, AbstractCore can prefill from cached state snapshots and generate via `llm.generate(reset=False)` (instead of `create_chat_completion()`), which avoids llama-cpp-python chat handlers that reset/re-evaluate long prompts.
+  - Plain-generate reuse (fixed 2026-07-14): a plain `generate(messages=…, prompt_cache_key="k")` growing-prefix loop — the runtime's actual calling shape, without explicit `prompt_cache_update` — now PERSISTS its prefill snapshot, so each warm turn loads the prior prefix and evaluates only the growing suffix. Live-measured on this lane: a ~10k-token system prompt drops from ~9 s/turn (full re-prefill, the prior behavior) to ~0.6 s/turn warm on Qwen3-4B-2507 and Gemma-4-E4B GGUFs, correct fact-recall throughout. Before the fix this lane gave zero in-process reuse and `llm.reset()` additionally forfeited llama.cpp's own prefix reuse.
   - Durable memory blocs: supports exact bloc artifacts only for exact-renderer chat formats.
     Unsupported chat formats remain keyed-only.
     - Disable via `ABSTRACTCORE_GGUF_CONTROL_PLANE=0` (falls back to llama-cpp-python’s chat completion API).
@@ -168,9 +169,12 @@ comparable quantity per lane.
 | GGUF / llama.cpp in-process (Q4_K_M) | warm prefill flat as the transcript grows | re-prefill grows with prompt size (~0.9→2.9 s over 2.3k→3.5k tk) | the slope: flat vs growing. Per-cycle wall delta ≈+0.5–0.8 s at these sizes |
 | HuggingFace transformers in-process (bf16) | warm prefill ≤~2 s | re-prefill ≈7–12 s per call at 1.5–3.2k tk | per-cycle prefill delta ≈6–10 s; end-to-end totals are decode-dominated at bf16 (~8 tok/s) and NOT a cache measurement |
 
-† **Hybrid-architecture note (Qwen3.5-class on MLX):** Qwen3.5/Qwen3-Next mix attention layers
-(trimmable `KVCache`) with linear-attention layers (untrimmable `ArraysCache`), so
-`can_trim_prompt_cache` refuses and the MLX delta-feed path rebuilds state per call — output
+† **Hybrid-architecture note (Qwen3.5-class on MLX — covers Qwen3.5, Qwen3.6, and Ornith 1.0):**
+Qwen3.6 is the SAME `qwen3_5`/`qwen3_5_moe` architecture as Qwen3.5 (a 3:1 Gated DeltaNet + full
+attention stack, verified: HF loads both with the same classes), and Ornith 1.0 (9B/35B/397B) is a
+Qwen3.5 post-train — so all three mix attention layers (trimmable `KVCache`) with linear-attention
+layers (untrimmable `ArraysCache`); `can_trim_prompt_cache` refuses and the MLX delta-feed path
+rebuilds state per call — output
 stays correct, the fallback is reported with a one-time `#FALLBACK` warning, and warm calls cost
 roughly the same as cache-off in BOTH arms (the rebuild still avoids feeding the transcript on
 top of its own KV, so it is never *worse* than cache-off). Pick a pure-attention model for MLX
@@ -213,18 +217,20 @@ a `#FALLBACK` warning. What degrades is the SAVINGS, not the answers.
 
 The delta path needs a trimmable cache (`mlx_lm can_trim_prompt_cache`).
 
-| Model family (mlx_lm architecture) | Cache | Warm-call behavior |
-|---|---|---|
-| Llama 3.x (non-sliding), Qwen3 dense (`Qwen3-*-Instruct-2507`), Qwen3-MoE, Qwen2.x, Mistral-class, SmolLM — any model without a custom `make_cache` | pure `KVCache` | **Full delta**: trim drift, feed only the suffix |
-| Falcon-H1, LongCat-Flash, DeepSeek-V3.2 | `CacheList` of `KVCache` | Full delta (countable and trimmable) |
-| Gemma-3/3n/4, GPT-OSS, Cohere2, Ministral3, sliding-window Llama variants | mix `KVCache` + `RotatingKVCache` | Full delta only while the transcript is under the smallest sliding window (GPT-OSS: 128 tokens; Gemma: 512–1024) — then rebuild-per-call with `#FALLBACK` |
-| Llama-4 (Scout/Maverick) | `ChunkedKVCache` (8k chunks) | Delta within the live chunk; partial trims refuse → rebuild |
-| Qwen3.5, Qwen3-Next, Nemotron-H, Jamba, LFM2/2.5, Granite-hybrid, Plamo2, Baichuan-M1 | hybrid with untrimmable `ArraysCache` layers | Rebuild-per-warm-call, `#FALLBACK` warned (correct, no savings) |
-| Mamba/Mamba2, RWKV-7 (pure SSM) | all `ArraysCache` | Rebuild-per-warm-call (state not countable), `#FALLBACK` warned |
+| Model family (mlx_lm architecture) | Cache | Warm-call behavior | Verified |
+|---|---|---|---|
+| Llama 3.x (non-sliding), Qwen3 dense (`Qwen3-*-Instruct-2507`), Qwen3-MoE, Qwen2.x, Mistral-class, SmolLM — any model without a custom `make_cache` | pure `KVCache` | **Full delta**: trim drift, feed only the suffix | ✅ 2026-07-14: `Qwen3-4B-Instruct-2507-4bit` → `outcome=hit_extend`, fed 37 of 485 tk, ×6 end-to-end at a 12.7k-tk prefix, fact-recall correct |
+| Falcon-H1, LongCat-Flash, DeepSeek-V3.2 | `CacheList` of `KVCache` | Full delta (countable and trimmable) | prior |
+| Gemma-3/3n/4, GPT-OSS, Cohere2, Ministral3, sliding-window Llama variants | mix `KVCache` + `RotatingKVCache` | Full delta only while the transcript is under the smallest sliding window (GPT-OSS: 128 tokens; Gemma: 512–1024) — then rebuild-per-call with `#FALLBACK` | ✅ 2026-07-14: `gemma-4-31b-mxfp4` (RotatingKVCache local + KVCache global) → `hit_extend` at ~450-tk transcript (under window), fact-recall correct |
+| Llama-4 (Scout/Maverick) | `ChunkedKVCache` (8k chunks) | Delta within the live chunk; partial trims refuse → rebuild | prior |
+| Qwen3.5, **Qwen3.6** (same `qwen3_5`/`qwen3_5_moe` hybrid, 3:1 Gated DeltaNet), **Ornith 1.0** (9B/35B/397B — Qwen3.5 post-trains), Qwen3-Next, Nemotron-H, Jamba, LFM2/2.5, Granite-hybrid, Plamo2, Baichuan-M1 | hybrid with untrimmable `ArraysCache` (Gated DeltaNet) layers | Rebuild-per-warm-call, `#FALLBACK` warned (correct, no in-process delta savings). NOTE: growing-prefix reuse still helps on the SERVER lane (LM Studio/vLLM) when the deployed `mlx_lm`/`llama.cpp` has the hybrid-checkpoint prefix cache (upstream mlx-lm #1006: ~2.9x measured on Qwen3.5-9B agentic prompts) — that path is checkpoint-based, not trim-based, so it is outside AbstractCore's in-process delta lane. | ✅ 2026-07-14: `Qwen3.5-4B-MLX-4bit`, `Qwen3.6-27B-4bit`, `Qwen3.6-35B-A3B-4bit`, `Ornith-1.0-9B-4bit` all → `outcome=rebuilt` + `#FALLBACK … not trimmable`, `cached_tokens=0`, warm ≈ cold, fact-recall correct. Cache census on the 4B: exactly 24×`ArraysCache` + 8×`KVCache` (3:1), `can_trim_prompt_cache=False` |
+| Mamba/Mamba2, RWKV-7 (pure SSM) | all `ArraysCache` | Rebuild-per-warm-call (state not countable), `#FALLBACK` warned | prior |
 
 Check your model: the first warm full-context call logs `#FALLBACK … not trimmable` /
 `… not countable` if the model cannot delta; no warning means the delta path engaged.
-`get_prompt_cache_stats()` exposes per-key `token_count` to watch reuse across calls.
+`get_prompt_cache_stats()` exposes per-key `token_count` to watch reuse across calls. The ✅ rows
+were verified live with `scripts/verify_prompt_cache_families.py` (JSON reports + cache-census
+probes retained with the 2026-07-14 benchmark logs).
 
 ### GGUF / llama.cpp (`HuggingFaceProvider`)
 
@@ -232,15 +238,19 @@ The full control plane (`mode=local_control_plane`: delta-only updates, prefill-
 generation) requires an exact chat renderer; other formats stay `mode=keyed`, where llama.cpp's
 own in-process prefix reuse still applies (real savings, less control).
 
-| GGUF family | Renderer | Mode |
-|---|---|---|
-| Qwen (any "qwen"-named GGUF), ChatML-template models | ChatML (`chatml` / `chatml-function-calling`) | `local_control_plane` |
-| Llama-3.x (when the embedded template matches llama.cpp's llama-3 template) | `llama-3` | `local_control_plane` |
-| Gemma-4 | GGUF-embedded chat template | `local_control_plane` |
-| Mistral, Phi, DeepSeek, Granite, everything else | — | `keyed` (llama.cpp-native prefix reuse only) |
+| GGUF family | Renderer | Mode | Verified |
+|---|---|---|---|
+| Qwen3 dense (`Qwen3-4B-Instruct-2507`), any "qwen"-named GGUF, ChatML-template models | ChatML (`chatml` / `chatml-function-calling`) | `local_control_plane` | ✅ 2026-07-14: warm ~0.6 s vs cold ~9 s at 10k-tk prefix, fact-recall correct |
+| Qwen3.5 / Qwen3.6 hybrids (`Qwen3.5-*-GGUF`, arch `qwen35`/`qwen35moe`) | ChatML | `local_control_plane` | ✅ 2026-07-14: loads under llama.cpp 0.3.23, warm ~1 s, fact-recall correct (recurrent state round-trips through the snapshot; llama.cpp's in-place trim would refuse it) |
+| Gemma-4 (`gemma-4-*-GGUF`, arch `gemma4`) | GGUF-embedded chat template (`llama-cpp-chat-template`) | `local_control_plane` | ✅ 2026-07-14: warm ~0.5 s vs cold ~9 s, fact-recall correct |
+| Llama-3.x (when the embedded template matches llama.cpp's llama-3 template) | `llama-3` | `local_control_plane` | prior |
+| **Ornith 1.0 GGUF** (`ornith-*.gguf` — a Qwen3.5 post-train shipping a `chat_template.default` ChatML Jinja template) | — | `keyed` ⚠️ | ✅ loads + correct, but MISSES the control plane: format detection recognizes built-in `chatml`/`llama-3` and the Gemma template, not an arbitrary embedded ChatML template. Keyed mode still gives llama.cpp-native prefix reuse (attention layers) + recompute (recurrent). Optimization gap tracked in backlog 0821. |
+| Mistral, Phi, DeepSeek, Granite, everything else | — | `keyed` (llama.cpp-native prefix reuse only) | prior |
 
 Check your model: `get_prompt_cache_capabilities()` reports the honest per-model `mode` and the
-active renderer in `notes`.
+active renderer in `notes`. All ✅ rows were verified live with
+`scripts/verify_prompt_cache_families.py` (growing-prefix ReAct shape, one cache key, fact-recall
+correctness gate) on the quant noted in the benchmark logs.
 
 ### HuggingFace transformers (`HuggingFaceProvider` with `model_type="transformers"`)
 

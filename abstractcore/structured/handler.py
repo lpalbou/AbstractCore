@@ -829,9 +829,15 @@ class StructuredOutputHandler:
         content = content.strip()
         if content.startswith('{') and content.endswith('}'):
             return content
+        # A bare top-level ARRAY must survive extraction whole (adversarial
+        # find 2026-07-13: the object regex below extracted only the FIRST
+        # element of [{...}, {...}] — the single-list-wrapper coercer then
+        # validated a one-item list and items 2..N were silently dropped).
+        if content.startswith('[') and content.endswith(']'):
+            return content
 
-        # Look for JSON within code blocks
-        json_pattern = r'```(?:json)?\s*(\{.*?\})\s*```'
+        # Look for JSON within code blocks (object or array)
+        json_pattern = r'```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```'
         match = re.search(json_pattern, content, re.DOTALL)
         if match:
             return match.group(1)

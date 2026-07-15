@@ -14,7 +14,10 @@ import uuid
 
 from .file_blocs import FileBlocRecord, FileBlocStore
 from .file_boxes import FileBox, render_file_box_message
+from ..utils.structured_logging import get_logger
 
+
+logger = get_logger("abstractcore.bloc_kv")
 
 _MANIFEST_VERSION = 1
 _RECIPE_ID = "attached_file_box"
@@ -36,6 +39,22 @@ def _sha256_file(path: Path) -> str:
 
 def _provider_name(provider: Any) -> str:
     return str(getattr(provider, "provider", "") or "").strip().lower()
+
+
+def _engine_fingerprint(provider: Any) -> str:
+    """The provider's inference-engine identity for KV-artifact validity (0817).
+
+    Empty when the provider does not expose one (older providers / engines that
+    cannot be version-pinned) — the validator treats empty as 'unverifiable',
+    never as 'matches'.
+    """
+    getter = getattr(provider, "prompt_cache_engine_fingerprint", None)
+    if not callable(getter):
+        return ""
+    try:
+        return str(getter() or "").strip()
+    except Exception:
+        return ""
 
 
 def _artifact_path_for(
@@ -311,6 +330,12 @@ class BlocKVArtifactManifest:
     created_at: str
     token_count: Optional[int]
     binding_id: str = ""
+    # Engine identity of the process that compiled the artifact (0817). NOT
+    # part of binding_id by design: adding it there would change every
+    # pre-0817 manifest's recomputed binding and reject the existing corpus.
+    # It is a SEPARATE reuse gate — present+mismatch refuses (recompile),
+    # absent (pre-0817) accepts with a labeled #FALLBACK.
+    engine_fingerprint: str = ""
     provider_meta: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -336,6 +361,7 @@ class BlocKVArtifactManifest:
             "created_at": self.created_at,
             "token_count": int(self.token_count) if isinstance(self.token_count, int) and self.token_count >= 0 else None,
             "binding_id": self.binding_id,
+            "engine_fingerprint": self.engine_fingerprint,
             "provider_meta": dict(self.provider_meta or {}),
         }
 
@@ -371,6 +397,7 @@ class BlocKVArtifactManifest:
             created_at=str(data.get("created_at") or ""),
             token_count=int(data.get("token_count")) if isinstance(data.get("token_count"), int) else None,
             binding_id=str(data.get("binding_id") or ""),
+            engine_fingerprint=str(data.get("engine_fingerprint") or ""),
             provider_meta=dict(provider_meta or {}) if isinstance(provider_meta, dict) else {},
         )
         if not manifest.binding_id:
@@ -945,6 +972,28 @@ def _validate_existing_manifest(
         return None
     if manifest.quantization not in {None, "", "fp"}:
         return None
+    # Engine-identity gate (0817, first axis): the KV serialization layout is
+    # engine-and-version specific. A recorded fingerprint that DIFFERS from the
+    # current engine means the artifact was compiled under a layout we can no
+    # longer trust — refuse (return None → recompile), never silently reload.
+    # An ABSENT recorded fingerprint is a pre-0817 artifact: we cannot prove
+    # the engine, so we accept it (no corpus-wide invalidation) but say so
+    # loudly (#FALLBACK) instead of pretending it is verified.
+    stored_engine = str(manifest.engine_fingerprint or "").strip()
+    current_engine = _engine_fingerprint(provider)
+    if stored_engine and current_engine and stored_engine != current_engine:
+        logger.warning(
+            f"#FALLBACK bloc KV artifact {artifact_path.name} was compiled with "
+            f"engine '{stored_engine}' but the current engine is '{current_engine}' "
+            f"— refusing the stale-layout cache and recompiling."
+        )
+        return None
+    if not stored_engine:
+        logger.warning(
+            f"#FALLBACK bloc KV artifact {artifact_path.name} carries no engine "
+            f"fingerprint (pre-0817 artifact); reusing it UNVERIFIED against the "
+            f"current engine '{current_engine or 'unknown'}'. Recompile to pin it."
+        )
     return manifest
 
 
@@ -1145,6 +1194,7 @@ def ensure_bloc_kv_artifact(
                 "renderer_version": rendered.renderer_version,
                 "serializer_version": rendered.serializer_version,
                 "quantization": "fp",
+                "engine_fingerprint": _engine_fingerprint(provider),
                 "provider_meta": dict(rendered.provider_meta or {}),
             }
             provider.prompt_cache_save(tmp_cache_key, str(artifact_tmp), meta=out_meta)
@@ -1178,6 +1228,7 @@ def ensure_bloc_kv_artifact(
                 quantization="fp",
                 created_at=datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat(),
                 token_count=token_count,
+                engine_fingerprint=_engine_fingerprint(provider),
                 provider_meta=dict(rendered.provider_meta or {}),
             )
             manifest = BlocKVArtifactManifest(

@@ -2913,6 +2913,17 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     **kwargs
                 )
 
+            # Structured output is validate-then-return; a token stream cannot
+            # be validated incrementally. The hybrid (tools) path already
+            # raises this cleanly — without the guard here the no-tools path
+            # crashed later with a bare AttributeError on a generator
+            # (adversarial find 2026-07-13).
+            if stream:
+                raise ValueError(
+                    "Streaming is not supported with response_model (structured output). "
+                    "Use stream=False, or stream first and validate afterwards."
+                )
+
             # Standard structured output (no tools)
             from ..structured import StructuredOutputHandler
             handler = StructuredOutputHandler(retry_strategy=retry_strategy)
@@ -2924,7 +2935,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 system_prompt=system_prompt,
                 tools=None,  # No tools in this path
                 media=media,
-                stream=stream,
+                stream=False,
                 **kwargs
             )
 
@@ -4040,8 +4051,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             assume_visible_start=thinking_effectively_off or native_separated_reasoning,
                         )
                         last_chunk: Optional[GenerateResponse] = None
+                        last_seen_usage: Optional[Dict[str, Any]] = None
                         for processed_chunk in processor.process_stream(response, converted_tools):
                             last_chunk = processed_chunk
+                            if isinstance(processed_chunk.usage, dict) and processed_chunk.usage:
+                                last_seen_usage = processed_chunk.usage
 
                             # TTFT: measure "time to first token" from the provider stream,
                             # independent of downstream post-processing (wrapper/thinking stripping).
@@ -4089,10 +4103,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                     meta["reasoning"] = reasoning_text
                                 meta["_resolved_generate_route"] = resolved_generate_route_summary
 
+                                # The LAST chunk of a stream is where consumers read the
+                                # accounting (OpenAI convention). This trailing finalize
+                                # chunk must re-carry the usage the provider already
+                                # reported, or the stream ends usage=None (live find:
+                                # LM Studio reported usage, the stripper's tail buried it).
                                 yield GenerateResponse(
                                     content=tail if isinstance(tail, str) else "",
                                     model=self.model,
                                     metadata=meta or None,
+                                    usage=last_seen_usage,
                                 )
 
                         # Track generation after streaming completes
@@ -4796,6 +4816,23 @@ class BaseProvider(AbstractCoreInterface, ABC):
         provider = str(getattr(self, "provider", "") or "").strip().lower()
         return provider or self.__class__.__name__.lower()
 
+    def prompt_cache_engine_fingerprint(self) -> str:
+        """Return a stable identifier of the inference ENGINE + version that
+        produced (and can validly reload) a durable KV artifact.
+
+        KV cache serialization/layout is engine-and-version specific: an
+        mlx-lm or transformers upgrade can change what a saved cache means,
+        and reloading a stale-layout artifact injects wrong KV with NO error
+        (the silently-wrong-cache class, backlog 0817). This fingerprint is
+        recorded at compile and checked at reuse: a MISMATCH refuses and
+        recompiles; an ABSENT fingerprint (pre-0817 artifact) is accepted with
+        a labeled #FALLBACK — never a silent stale-engine load.
+
+        Default is "" (engine unknown / not version-pinnable). Providers that
+        own a durable-artifact backend override this with e.g. ``mlx_lm==X.Y``.
+        """
+        return ""
+
     def prompt_cache_artifact_format(self) -> str:
         """Return a stable provider artifact format id for durable prompt-cache artifacts."""
         return f"abstractcore-{self.prompt_cache_cache_backend()}-prompt-cache/v1"
@@ -5258,7 +5295,18 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if isinstance(tok, int) and tok >= 0:
                 meta["token_count"] = tok
             if ttl_s is not None or meta:
-                self._prompt_cache_store.set(normalized, cache_value, ttl_s=ttl_s, meta=meta)
+                # When the caller gave no TTL, preserve the entry's existing
+                # override — re-setting with ttl_s=None silently reverted a
+                # per-key TTL to the store default (adversarial find 2026-07-13;
+                # MLX's _fresh_full_feed already preserved it, the base lane
+                # must match).
+                effective_ttl = ttl_s
+                if effective_ttl is None:
+                    try:
+                        effective_ttl = self._prompt_cache_store.ttl_s(normalized)
+                    except Exception:
+                        effective_ttl = None
+                self._prompt_cache_store.set(normalized, cache_value, ttl_s=effective_ttl, meta=meta)
         except Exception:
             pass
         return True
@@ -5432,6 +5480,18 @@ class BaseProvider(AbstractCoreInterface, ABC):
             existing = self._prompt_cache_store.get(keys[start_idx])
             if existing is not None:
                 current_cache = self._prompt_cache_backend_clone(existing) or None
+            if current_cache is None:
+                # Clone of the found prefix FAILED: falling through to an
+                # empty cache while the append loop still skips modules
+                # 0..start_idx would build a cache whose key/meta claim the
+                # full chain but whose content is missing the prefix — wrong
+                # generations keyed as complete (adversarial find 2026-07-13).
+                # Rebuild the whole chain from module 0 instead.
+                logger.warning(
+                    f"#FALLBACK: prompt-cache prefix clone failed for module chain at "
+                    f"'{keys[start_idx]}'; rebuilding all {len(keys)} modules from empty."
+                )
+                start_idx = -1
 
         # If we have no starting cache, start from empty backend cache.
         if current_cache is None:
@@ -6204,10 +6264,23 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if not isinstance(name, str) or not name:
                 continue
             if isinstance(allowed_tool_names, set) and allowed_tool_names and name not in allowed_tool_names:
-                mapped = _map_wrapped_name_to_allowed(name, allowed_tool_names)
-                if not isinstance(mapped, str) or not mapped:
-                    continue
-                name = mapped
+                # Wire-safe alias first: native declarations alias namespaced
+                # names (mcp::server::tool) for strict endpoints, so the model
+                # answers with the ALIAS — deterministic recomputation maps it
+                # back to the original (see tools.wire_naming).
+                try:
+                    from ..tools.wire_naming import resolve_wire_tool_name
+
+                    resolved = resolve_wire_tool_name(name, allowed_tool_names)
+                except Exception:
+                    resolved = None
+                if isinstance(resolved, str) and resolved:
+                    name = resolved
+                else:
+                    mapped = _map_wrapped_name_to_allowed(name, allowed_tool_names)
+                    if not isinstance(mapped, str) or not mapped:
+                        continue
+                    name = mapped
 
             if isinstance(arguments, str):
                 parsed = loads_dict_like(arguments)
@@ -6524,12 +6597,39 @@ Please provide a structured response."""
             result.metadata = meta
             return result
 
+        # Async boundary parity with the sync lane (adversarial find 2026-07-13:
+        # agenerate silently IGNORED max_tokens and thinking — identical
+        # arguments produced different requests than generate()).
+        if "max_output_tokens" not in kwargs and "max_tokens" in kwargs and kwargs.get("max_tokens") is not None:
+            kwargs["max_output_tokens"] = kwargs.pop("max_tokens")
+
         self._apply_default_prompt_cache_key(kwargs)
         self._apply_prompt_cache_binding_request(kwargs)
         messages, system_prompt = self._normalize_developer_messages(messages, system_prompt)
+
+        thinking_request = kwargs.pop("thinking", None)
+        prompt, messages, system_prompt, kwargs, thinking_meta = self._apply_thinking_request(
+            thinking=thinking_request,
+            prompt=prompt,
+            messages=messages,
+            system_prompt=system_prompt,
+            kwargs=kwargs,
+        )
+
         response = await self._agenerate_internal(
             prompt, messages, system_prompt, tools, media, stream, **kwargs
         )
+
+        if (
+            thinking_meta
+            and not stream
+            and response is not None
+            and isinstance(response, GenerateResponse)
+        ):
+            meta = response.metadata if isinstance(response.metadata, dict) else {}
+            for key, value in thinking_meta.items():
+                meta.setdefault(key, value)
+            response.metadata = meta
 
         # Capture interaction trace if enabled (match sync generate_with_telemetry behavior)
         # Only for non-streaming responses that are GenerateResponse objects
@@ -6612,8 +6712,11 @@ Please provide a structured response."""
         """
         # Get sync generator in thread pool
         def get_sync_stream():
+            # media MUST ride along (adversarial find 2026-07-13: it was
+            # dropped here, so async streamed calls silently answered
+            # without ever seeing the caller's images/documents).
             return self.generate(
-                prompt, messages, system_prompt, tools,
+                prompt, messages, system_prompt, tools, media,
                 stream=True, **kwargs
             )
 

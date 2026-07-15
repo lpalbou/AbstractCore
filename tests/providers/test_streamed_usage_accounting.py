@@ -129,6 +129,41 @@ def test_stream_without_usage_stays_none():
     assert all(c.usage is None for c in chunks)
 
 
+def test_mid_stream_error_event_raises_provider_api_error():
+    """Live find (2026-07-13 operator drive): LM Studio evicted the model
+    MID-STREAM and sent `data: {"error": {"message": "Model unloaded."}}` —
+    the old parser skipped it (no choices, no usage), so the stream ended
+    looking like a normal stop and the consumer kept a TRUNCATED answer with
+    no signal. Error events must raise ProviderAPIError (the retryable class),
+    never end the stream silently."""
+    from abstractcore.exceptions import ProviderAPIError
+
+    p = _provider()
+    p.client = _StreamingClient([
+        'data: {"choices": [{"delta": {"content": "half an ans"}, "finish_reason": null}]}',
+        'data: {"error": {"message": "Model unloaded."}}',
+        "data: [DONE]",
+    ])
+
+    with pytest.raises(ProviderAPIError) as e:
+        list(p._stream_generate({"model": "stub-model", "messages": [], "stream": True}))
+    assert "Model unloaded" in str(e.value)
+
+
+def test_mid_stream_error_event_string_shape_also_raises():
+    """Some servers send `{"error": "text"}` (string, not object) — same raise."""
+    from abstractcore.exceptions import ProviderAPIError
+
+    p = _provider()
+    p.client = _StreamingClient([
+        'data: {"error": "backend crashed"}',
+        "data: [DONE]",
+    ])
+
+    with pytest.raises(ProviderAPIError, match="backend crashed"):
+        list(p._stream_generate({"model": "stub-model", "messages": [], "stream": True}))
+
+
 # --- request builder: stream_options only on streamed requests --------------
 
 
