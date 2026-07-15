@@ -1,4 +1,4 @@
-"""Pin: a server-side chat-template render 400 emits an actionable WARNING.
+"""Pin: a TERMINAL server-side chat-template render 400 emits an actionable WARNING.
 
 LM Studio's bundled Jinja engine cannot render the `safe` filter that the
 Qwen3-Coder XML tool convention (Qwen3-Coder / Ornith / Step-3.5) uses in its
@@ -6,10 +6,14 @@ chat template, so a well-formed multi-turn tool request 400s server-side:
 `Error rendering prompt with jinja template: "Unknown StringValue filter: safe"`.
 That surfaced in abstractassistant as a mystery HTTP 400.
 
-AbstractCore's ONLY mitigation here is a warning (operator ruling 2026-07-15):
-name the cause; do NOT mutate the request, do NOT switch provider/model, do NOT
-suggest switching. The request is well-formed — the incompatibility is between
-the SERVER's template engine and the MODEL's embedded template.
+Division of labor (2026-07-15): the ONE repairable class (LM Studio + non-string
+tool-call history args) is retried reactively at the request sites with its own
+#FALLBACK warning (`LMStudioProvider._render_400_repaired_payload`, pinned in
+test_lmstudio_reactive_stringify_unit.py). Every render-400 that still reaches
+`_raise_for_status` is TERMINAL and gets this warning: name the cause; do NOT
+switch provider/model, do NOT suggest switching. The request is well-formed —
+the incompatibility is between the SERVER's template engine and the MODEL's
+embedded template.
 """
 from __future__ import annotations
 

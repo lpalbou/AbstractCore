@@ -13,12 +13,21 @@ argument value (e.g. ``{"query": "news", "num_results": 10}``) fails template
 rendering with HTTP 400 ``Unknown StringValue filter: safe`` — cycle 2 of every
 ReAct loop.
 
-The fix (`stringify_tool_call_history_argument_values`, applied via
-`LMStudioProvider._mutate_payload`) JSON-stringifies each non-string argument
-VALUE so the template takes its ``| string`` branch, which renders the exact
-bytes ``| tojson`` would have produced (byte-equivalence pinned below against
-the REAL Ornith template). LM Studio-only: OpenAI/vLLM-class servers render
-with real Jinja2 (which has ``safe``) and must keep the untouched shared wire.
+The fix (`stringify_tool_call_history_argument_values`) JSON-stringifies each
+non-string argument VALUE so the template takes its ``| string`` branch, which
+renders the exact bytes ``| tojson`` would have produced (byte-equivalence
+pinned below against the REAL Ornith template).
+
+Application is REACTIVE (not unconditional): many tool GGUFs render the WHOLE
+arguments dict via ``arguments | tojson`` and an unconditional stringify would
+silently quote their prior args. The first call sends the STANDARD wire; a
+template-render 400 latches the instance, warns once, and retries with the
+stringify applied (`LMStudioProvider._render_400_repaired_payload`); latched
+instances stringify proactively via `_mutate_payload`. The reactive machinery
+has its own pins in `test_lmstudio_reactive_stringify_unit.py`; this file pins
+the TRANSFORM and the wire shapes. LM Studio-only: OpenAI/vLLM-class servers
+render with real Jinja2 (which has ``safe``) and must keep the untouched
+shared wire.
 """
 from __future__ import annotations
 
@@ -257,8 +266,9 @@ def test_byte_equivalence_real_template_llama_cpp_default_env():
 
 
 # ---------------------------------------------------------------------------
-# Wire payload: LM Studio transforms; shared OpenAI-compatible wire untouched;
-# live RESPONSE tool_calls parsing untouched.
+# Wire payload: LM Studio sends the STANDARD wire until latched (reactive);
+# a latched instance stringifies proactively; shared OpenAI-compatible wire
+# untouched; live RESPONSE tool_calls parsing untouched.
 # ---------------------------------------------------------------------------
 
 
@@ -267,7 +277,8 @@ def _lmstudio(monkeypatch) -> LMStudioProvider:
     return LMStudioProvider(model="ornith-1.0-35b", base_url="http://127.0.0.1:9/v1")
 
 
-def test_lmstudio_payload_history_args_stringified_and_response_tool_calls_untouched(monkeypatch):
+def test_lmstudio_first_call_sends_standard_wire_and_response_tool_calls_untouched(monkeypatch):
+    """Unlatched instance: NO mutation — typed args ride the wire as-is."""
     provider = _lmstudio(monkeypatch)
 
     captured = {}
@@ -312,12 +323,12 @@ def test_lmstudio_payload_history_args_stringified_and_response_tool_calls_untou
         max_output_tokens=32,
     )
 
-    # Request side: history tool_call arguments carry stringified VALUES on the wire.
+    # Request side: STANDARD wire — typed argument values, byte-untouched JSON.
     wire_messages = captured["payload"]["messages"]
     wire_assistant = [m for m in wire_messages if m.get("role") == "assistant" and m.get("tool_calls")]
     assert len(wire_assistant) == 1
     wire_args = wire_assistant[0]["tool_calls"][0]["function"]["arguments"]
-    assert json.loads(wire_args) == {"query": "news", "num_results": "10"}
+    assert json.loads(wire_args) == {"query": "news", "num_results": 10}
 
     # Caller-owned history is never mutated.
     assert json.loads(history[1]["tool_calls"][0]["function"]["arguments"]) == {"query": "news", "num_results": 10}
@@ -355,22 +366,31 @@ def test_shared_openai_compatible_wire_is_not_transformed(monkeypatch):
     }
 
 
-def test_lmstudio_stream_payload_also_transformed(monkeypatch):
+def test_lmstudio_stream_payload_standard_until_latched_then_transformed(monkeypatch):
     provider = _lmstudio(monkeypatch)
 
-    captured = {}
+    captured = []
 
     def _stream(payload):
-        captured["payload"] = payload
+        captured.append(payload)
         yield GenerateResponse(content="ok", model=provider.model, finish_reason="stop")
 
     monkeypatch.setattr(provider, "_stream_generate", _stream)
 
     history = _assistant_history(json.dumps({"query": "news", "num_results": 10}))
-    chunks = provider._generate_internal(prompt="Summarize.", messages=history, stream=True)
-    list(chunks)
 
-    wire_assistant = [m for m in captured["payload"]["messages"] if m.get("role") == "assistant" and m.get("tool_calls")]
+    # Unlatched: streamed payload keeps the standard wire.
+    list(provider._generate_internal(prompt="Summarize.", messages=history, stream=True))
+    wire_assistant = [m for m in captured[0]["messages"] if m.get("role") == "assistant" and m.get("tool_calls")]
+    assert json.loads(wire_assistant[0]["tool_calls"][0]["function"]["arguments"]) == {
+        "query": "news",
+        "num_results": 10,
+    }
+
+    # Latched (server previously proved it cannot render): proactive stringify.
+    provider._lmstudio_minja_arg_stringify_needed = True
+    list(provider._generate_internal(prompt="Summarize.", messages=history, stream=True))
+    wire_assistant = [m for m in captured[1]["messages"] if m.get("role") == "assistant" and m.get("tool_calls")]
     assert json.loads(wire_assistant[0]["tool_calls"][0]["function"]["arguments"]) == {
         "query": "news",
         "num_results": "10",

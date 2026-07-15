@@ -56,8 +56,16 @@ from ..exceptions import ConfigurationError
 #   (prunable run-media vs load-bearing stores are separate rows, never one row
 #   with a footnote). An entity home's artifacts/ stays INSIDE its entity-home
 #   row — a life's verbatims are part of the life, never a separate artifacts row.
+# - "workflow-memory": semantics ruling 2026-07-15 (dm:memory--semantics#4;
+#   plans/flow-memory-nodes.md §4/§9) — flow's per-workflow memory graphs.
+#   OPERATOR data: registers safe_to_purge=True by default (purge/delete legal).
+#   An entity home or any file under one must NEVER register as workflow-memory —
+#   the purgeable kind must not become a route around the entity-home
+#   never-purge right (the nesting guard below also refuses the overlap
+#   structurally; this sentence makes the misuse a violation, not a loophole).
 DATA_HOME_KINDS = (
     "model-cache", "prompt-cache", "runs", "sessions", "logs", "entity-home", "artifacts",
+    "workflow-memory",
 )
 
 REGISTRY_SCHEMA_VERSION = 1

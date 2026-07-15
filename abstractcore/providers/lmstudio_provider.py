@@ -16,7 +16,7 @@ if TYPE_CHECKING:  # pragma: no cover
     from pydantic import BaseModel
     from ..media.types import MediaContent
 
-from .openai_compatible_provider import OpenAICompatibleProvider
+from .openai_compatible_provider import OpenAICompatibleProvider, _TEMPLATE_RENDER_ERROR_RE
 from .base import ThinkingControlHandling
 from ..core.types import GenerateResponse
 from ..exceptions import ProviderAPIError
@@ -163,7 +163,7 @@ class LMStudioProvider(OpenAICompatibleProvider):
         return True
 
     def _mutate_payload(self, payload: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
-        """LM Studio payload hook: minja-safe tool-call HISTORY serialization.
+        """LM Studio payload hook: minja-safe tool-call HISTORY serialization (LATCHED).
 
         LM Studio renders GGUF chat templates with a minja-class engine that
         lacks the ``safe`` filter; templates of the Qwen3-Coder XML convention
@@ -171,15 +171,105 @@ class LMStudioProvider(OpenAICompatibleProvider):
         value, so such conversations 400 at render time (live: Ornith-1.0-35B,
         'Unknown StringValue filter: safe'). Stringifying the values routes the
         template through its string branch with byte-identical rendered output
-        (see `stringify_tool_call_history_argument_values`). LM Studio-only by
-        construction: OpenAI/vLLM servers render with real Jinja2 (has ``safe``)
-        and keep the untouched shared wire.
+        (see `stringify_tool_call_history_argument_values`).
+
+        REACTIVE, not unconditional: most installed tool GGUFs (Llama-3.2/
+        Qwen3/Granite/Ministral conventions) render the WHOLE arguments dict via
+        ``arguments | tojson`` — for them an unconditional stringify would
+        silently QUOTE prior args in the rendered prompt (``"n": 10`` →
+        ``"n": "10"``). The transform therefore applies only once this instance
+        has PROVEN the server cannot render the standard payload: a
+        template-render 400 latches `_lmstudio_minja_arg_stringify_needed` via
+        `_render_400_repaired_payload` (one warned retry), and every later call
+        stringifies proactively here, skipping the wasted first attempt.
+        LM Studio-only by construction: OpenAI/vLLM servers render with real
+        Jinja2 (has ``safe``) and keep the untouched shared wire.
         """
         payload = super()._mutate_payload(payload, **kwargs)
-        messages = payload.get("messages")
-        if isinstance(messages, list) and messages:
-            payload["messages"] = stringify_tool_call_history_argument_values(messages)
+        if getattr(self, "_lmstudio_minja_arg_stringify_needed", False):
+            messages = payload.get("messages")
+            if isinstance(messages, list) and messages:
+                # Idempotent: already-stringified values are returned unchanged.
+                payload["messages"] = stringify_tool_call_history_argument_values(messages)
         return payload
+
+    def _render_400_repaired_payload(
+        self, response: Any, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Reactive repair for LM Studio template-render 400s (single retry).
+
+        Consulted by the four OpenAI-compatible request sites (sync/async ×
+        stream/non-stream) when a response is in hand. Returns a payload to
+        retry ONCE, or None (see `_minja_stringify_repaired_payload` for the
+        repair conditions and the boundedness argument).
+        """
+        status = getattr(response, "status_code", None)
+        try:
+            if status is None or int(status) != 400:
+                return None
+        except Exception:
+            return None
+        return self._minja_stringify_repaired_payload(self._extract_error_detail(response), payload)
+
+    def _stream_error_event_repaired_payload(
+        self, chunk: Any, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Reactive repair for render failures LM Studio reports IN-STREAM.
+
+        Live-verified (Ornith-1.0-35B, 2026-07-15): on `stream: true` LM Studio
+        answers HTTP 200 and delivers the template-render failure as the FIRST
+        SSE event (`data: {"error": "Error rendering prompt with jinja
+        template: ..."}`) — the connection-time-400 lane never sees it. The
+        stream sites consult this hook only before anything was yielded, so the
+        retry re-establishes the stream invisibly. Same latch, same warning,
+        same bounds as `_render_400_repaired_payload`.
+        """
+        return self._minja_stringify_repaired_payload(self._stream_error_event_detail(chunk), payload)
+
+    def _minja_stringify_repaired_payload(
+        self, detail: Optional[str], payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Shared repair core: latch + ONE warning + stringified-copy payload, or None.
+
+        Repairs exactly one proven class: the minja-class engine failing to
+        render non-string tool-call HISTORY argument values (Qwen3-Coder/Ornith
+        per-argument ``tojson | safe`` convention).
+
+        Bounded by construction — None in every one of these cases:
+        - latch already set: the outbound payload was already stringified by
+          `_mutate_payload`, so this render failure has a DIFFERENT cause (also
+          the stream lanes' recursion guard: the retried payload re-enters the
+          hooks with the latch set);
+        - the error detail is not a template-render failure
+          (`_TEMPLATE_RENDER_ERROR_RE`);
+        - the transform would be a no-op (no non-string history args): the
+          retry could not change the request, so burning a second call would be
+          pointless and the loud terminal error is the honest outcome.
+        """
+        if getattr(self, "_lmstudio_minja_arg_stringify_needed", False):
+            return None
+        if not detail or not _TEMPLATE_RENDER_ERROR_RE.search(detail):
+            return None
+        messages = payload.get("messages")
+        if not isinstance(messages, list) or not messages:
+            return None
+        transformed = stringify_tool_call_history_argument_values(messages)
+        if transformed is messages:
+            return None  # no-op: a retry cannot help this render failure
+
+        self._lmstudio_minja_arg_stringify_needed = True
+        if hasattr(self, "logger"):
+            self.logger.warning(
+                f"#FALLBACK: LM Studio failed to render the model's chat template ({detail}) — "
+                f"its template engine cannot render non-string tool-call HISTORY argument "
+                f"values (Qwen3-Coder/Ornith `tojson | safe` convention). Retrying ONCE with "
+                f"JSON-stringified argument values (byte-identical rendered prompt for this "
+                f"convention); this provider instance will keep stringifying tool-call "
+                f"history arguments from now on."
+            )
+        repaired = dict(payload)
+        repaired["messages"] = transformed
+        return repaired
 
     _TIMEOUT_UNSET = object()
 
@@ -199,6 +289,11 @@ class LMStudioProvider(OpenAICompatibleProvider):
         super_kwargs = dict(kwargs)
         if timeout is not self._TIMEOUT_UNSET:
             super_kwargs["timeout"] = timeout
+
+        # Per-instance latch for the reactive minja tool-argument stringify:
+        # False until this server PROVES (template-render 400) it cannot render
+        # the standard payload; then all later calls stringify proactively.
+        self._lmstudio_minja_arg_stringify_needed = False
 
         super().__init__(model=model, base_url=base_url, **super_kwargs)
 

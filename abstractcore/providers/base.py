@@ -173,6 +173,14 @@ class PromptCacheStore:
         with self._lock:
             return list(self._entries.keys())
 
+    def created_at_s(self, key: str) -> Optional[float]:
+        """Unix timestamp the entry was created at (None for unknown keys)."""
+        if not isinstance(key, str) or not key.strip():
+            return None
+        with self._lock:
+            entry = self._entries.get(key.strip())
+            return float(entry.created_at_s) if entry is not None else None
+
     def meta(self, key: str) -> Optional[Dict[str, Any]]:
         if not isinstance(key, str) or not key.strip():
             return None
@@ -5213,16 +5221,21 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 meta_by_key: Dict[str, Any] = {}
                 for k in keys:
                     meta = self._prompt_cache_store.meta(k)
-                    if isinstance(meta, dict) and meta:
-                        row = dict(meta)
-                        # Private bookkeeping stays off the stats surface: the
-                        # fed-token-id record decodes back to the FULL prompt
-                        # text (system prompts included) with the model's own
-                        # tokenizer, and HTTP servers return these stats
-                        # verbatim. Expose the count, never the ids.
-                        fed_ids = row.pop("fed_token_ids", None)
-                        if isinstance(fed_ids, list):
-                            row["fed_token_count"] = len(fed_ids)
+                    # Every key gets a row (a cache without caller meta still
+                    # has a creation time — consumers list caches by age).
+                    row = dict(meta) if isinstance(meta, dict) else {}
+                    # Private bookkeeping stays off the stats surface: the
+                    # fed-token-id record decodes back to the FULL prompt
+                    # text (system prompts included) with the model's own
+                    # tokenizer, and HTTP servers return these stats
+                    # verbatim. Expose the count, never the ids.
+                    fed_ids = row.pop("fed_token_ids", None)
+                    if isinstance(fed_ids, list):
+                        row["fed_token_count"] = len(fed_ids)
+                    created = self._prompt_cache_store.created_at_s(k)
+                    if created is not None:
+                        row["created_at_s"] = created
+                    if row:
                         meta_by_key[str(k)] = row
                 if meta_by_key:
                     stats["meta_by_key"] = meta_by_key

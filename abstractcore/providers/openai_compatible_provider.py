@@ -32,11 +32,15 @@ _HARMONY_GENERATION_ARTIFACT_RE = re.compile(
 # template uses a filter/test the SERVER'S template engine does not implement.
 # The classic case is LM Studio's bundled (older) @huggingface/jinja engine
 # rejecting the `safe` filter used by the Qwen3-Coder XML tool convention
-# (Qwen3-Coder, Ornith, Step-3.5): "Unknown StringValue filter: safe". It is a
-# SERVER + MODEL-TEMPLATE incompatibility, not a malformed request — surfacing
-# it as a bare HTTP 400 makes it look like an AbstractCore bug. We can only warn.
+# (Qwen3-Coder, Ornith, Step-3.5): "Unknown StringValue filter: safe"; sibling
+# shape "Cannot apply filter 'string' to type: NullValue". It is a SERVER +
+# MODEL-TEMPLATE incompatibility, not a malformed request — surfacing it as a
+# bare HTTP 400 makes it look like an AbstractCore bug. The LM Studio provider
+# can REPAIR one specific class reactively (tool-call history argument
+# stringification, see `LMStudioProvider._render_400_repaired_payload`); every
+# other case is terminal and gets the loud warning in `_raise_for_status`.
 _TEMPLATE_RENDER_ERROR_RE = re.compile(
-    r"error rendering prompt with jinja template|unknown \w+ filter|unknown (?:filter|test)\b",
+    r"error rendering prompt with jinja template|unknown \w+ filter|unknown (?:filter|test)\b|cannot apply filter",
     re.IGNORECASE,
 )
 
@@ -610,9 +614,11 @@ class OpenAICompatibleProvider(BaseProvider):
             # cannot render a filter used by the model's own chat template).
             # WARN loudly so this stops looking like a mystery request bug — the
             # request is well-formed; the incompatibility is between the SERVER's
-            # template engine and the MODEL's embedded template. We do NOT
-            # mutate the request or switch models/providers — surfacing the cause
-            # is all AbstractCore should do here.
+            # template engine and the MODEL's embedded template. By the time a
+            # render-400 reaches here it is TERMINAL: the one repairable class
+            # (LM Studio + non-string tool-call history args) was already tried
+            # reactively at the request sites (`_render_400_repaired_payload`);
+            # we never switch models/providers.
             if detail and _TEMPLATE_RENDER_ERROR_RE.search(detail):
                 self.logger.warning(
                     f"#FALLBACK {self.PROVIDER_DISPLAY_NAME} rejected the request (400) while "
@@ -621,7 +627,7 @@ class OpenAICompatibleProvider(BaseProvider):
                     f"model '{self.model}' ships a chat template using a Jinja construct this "
                     f"server's engine does not implement. Resolve it at the template: remove the "
                     f"unsupported filter from the model's chat template on the server. "
-                    f"AbstractCore sent a well-formed request and did not alter it."
+                    f"AbstractCore sent a well-formed request."
                 )
             raise InvalidRequestError(msg, status_code=status)
         if status == 404:
@@ -696,6 +702,44 @@ class OpenAICompatibleProvider(BaseProvider):
                 "#FALLBACK: server rejected 'stream_options'; retrying without it "
                 "(streamed usage accounting unavailable for this provider instance)"
             )
+
+    def _render_400_repaired_payload(
+        self, response: Optional[httpx.Response], payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Hook: return a repaired payload to retry ONCE after a template-render 400, or None.
+
+        Same request-site discipline as the `prompt_cache_key`/`stream_options`
+        rejection latches: the four request paths (sync/async × stream/non-stream)
+        consult this hook on an HTTP 400 and re-issue the request at most once
+        with the returned payload. The BASE implementation never repairs —
+        OpenAI/vLLM/OpenRouter/Portkey-class servers render chat templates with
+        real Jinja2 and a render-400 there is terminal (`_raise_for_status`
+        warns). Only `LMStudioProvider` overrides this (minja-class engine
+        lacking the `safe` filter; repair = tool-call history argument
+        stringification). An override MUST guarantee it returns None when
+        consulted again for the payload it produced, or the stream lanes'
+        single-retry bound would not hold.
+        """
+        _ = (response, payload)
+        return None
+
+    def _stream_error_event_repaired_payload(
+        self, chunk: Any, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """Hook: repaired payload for an in-stream error EVENT, or None.
+
+        Some servers surface request-time failures INSIDE an HTTP 200 SSE
+        stream (live-verified: LM Studio sends its template-render failure as
+        the first `data: {"error": ...}` event, not as a connection-time 400).
+        The stream lanes consult this hook only while NO chunk has been yielded
+        yet — a repair is then invisible to the consumer (re-established
+        stream); once anything was yielded the error stays a loud raise
+        (`_raise_on_stream_error_event`). Base: no repair. The same
+        single-retry bound as `_render_400_repaired_payload` applies (an
+        override must return None for the payload it produced).
+        """
+        _ = (chunk, payload)
+        return None
 
     def _validate_model(self):
         """Validate that the model exists on the server (best-effort)."""
@@ -1054,6 +1098,12 @@ class OpenAICompatibleProvider(BaseProvider):
                 self._mark_prompt_cache_key_unsupported()
                 payload = {k: v for k, v in payload.items() if k != "prompt_cache_key"}
                 response = self.client.post(request_url, json=payload, headers=self._get_headers())
+            repaired = self._render_400_repaired_payload(response, payload)
+            if repaired is not None:
+                # Reactive template-render repair (LM Studio lane): ONE retry;
+                # a second failure falls through to _raise_for_status below.
+                payload = repaired
+                response = self.client.post(request_url, json=payload, headers=self._get_headers())
             self._raise_for_status(response, request_url=request_url)
             gen_time = round((time.time() - start_time) * 1000, 1)
 
@@ -1144,8 +1194,17 @@ class OpenAICompatibleProvider(BaseProvider):
                     retry_payload = {k: v for k, v in payload.items() if k != "stream_options"}
                     yield from self._stream_generate(retry_payload)
                     return
+                repaired = self._render_400_repaired_payload(response, payload)
+                if repaired is not None:
+                    # Streamed 400s surface at connection time (before any token),
+                    # so the reactive repair re-establishes the stream. Bounded:
+                    # on the recursive call the hook returns None for its own
+                    # repaired payload and a second render-400 raises below.
+                    yield from self._stream_generate(repaired)
+                    return
             self._raise_for_status(response, request_url=request_url)
 
+            yielded_any = False
             for line in response.iter_lines():
                 if line:
                     # Decode bytes to string if necessary
@@ -1161,6 +1220,19 @@ class OpenAICompatibleProvider(BaseProvider):
 
                         try:
                             chunk = json.loads(data)
+
+                            # Request-time failures surfaced as the FIRST SSE
+                            # event on an HTTP 200 (live find: LM Studio sends
+                            # its template-render failure this way, not as a
+                            # connection-time 400): before anything was yielded
+                            # a repair is invisible to the consumer, so consult
+                            # the reactive hook (LM Studio lane; bounded by the
+                            # same latch as _render_400_repaired_payload).
+                            if not yielded_any:
+                                repaired = self._stream_error_event_repaired_payload(chunk, payload)
+                                if repaired is not None:
+                                    yield from self._stream_generate(repaired)
+                                    return
 
                             # In-stream ERROR events must be LOUD. Servers can
                             # fail mid-generation (live find: LM Studio evicted
@@ -1199,6 +1271,7 @@ class OpenAICompatibleProvider(BaseProvider):
                                 if isinstance(reasoning, str) and reasoning.strip():
                                     metadata["reasoning"] = reasoning
 
+                                yielded_any = True
                                 yield GenerateResponse(
                                     content=content,
                                     model=self.model,
@@ -1211,6 +1284,7 @@ class OpenAICompatibleProvider(BaseProvider):
                             elif usage_dict:
                                 # Usage-only final chunk: no content, but the
                                 # accounting must reach the consumer.
+                                yielded_any = True
                                 yield GenerateResponse(
                                     content="",
                                     model=self.model,
@@ -1222,6 +1296,18 @@ class OpenAICompatibleProvider(BaseProvider):
                         except json.JSONDecodeError:
                             continue
 
+    @staticmethod
+    def _stream_error_event_detail(chunk: Any) -> Optional[str]:
+        """Extract the error message from an SSE `{"error": ...}` data event, if any."""
+        if not isinstance(chunk, dict):
+            return None
+        err = chunk.get("error")
+        if not err:
+            return None
+        if isinstance(err, dict):
+            return str(err.get("message") or err.get("error") or err)
+        return str(err)
+
     def _raise_on_stream_error_event(self, chunk: Any) -> None:
         """Raise ProviderAPIError for an SSE data event that carries an error.
 
@@ -1230,15 +1316,9 @@ class OpenAICompatibleProvider(BaseProvider):
         ProviderAPIError — the transient class RetryManager resamples — never
         as a silent end-of-stream.
         """
-        if not isinstance(chunk, dict):
+        message = self._stream_error_event_detail(chunk)
+        if message is None:
             return
-        err = chunk.get("error")
-        if not err:
-            return
-        if isinstance(err, dict):
-            message = str(err.get("message") or err.get("error") or err)
-        else:
-            message = str(err)
         raise ProviderAPIError(
             f"{self.__class__.__name__.replace('Provider', '')} stream failed mid-generation: {message}"
         )
@@ -1419,6 +1499,11 @@ class OpenAICompatibleProvider(BaseProvider):
                 self._mark_prompt_cache_key_unsupported()
                 payload = {k: v for k, v in payload.items() if k != "prompt_cache_key"}
                 response = await self.async_client.post(request_url, json=payload, headers=self._get_headers())
+            repaired = self._render_400_repaired_payload(response, payload)
+            if repaired is not None:
+                # Reactive template-render repair (LM Studio lane) — sync parity.
+                payload = repaired
+                response = await self.async_client.post(request_url, json=payload, headers=self._get_headers())
             self._raise_for_status(response, request_url=request_url)
             gen_time = round((time.time() - start_time) * 1000, 1)
 
@@ -1506,8 +1591,16 @@ class OpenAICompatibleProvider(BaseProvider):
                     async for chunk in self._async_stream_generate(retry_payload):
                         yield chunk
                     return
+                repaired = self._render_400_repaired_payload(response, payload)
+                if repaired is not None:
+                    # Reactive template-render repair (LM Studio lane) — sync parity;
+                    # bounded because the hook returns None for its own repaired payload.
+                    async for chunk in self._async_stream_generate(repaired):
+                        yield chunk
+                    return
             self._raise_for_status(response, request_url=request_url)
 
+            yielded_any = False
             async for line in response.aiter_lines():
                 if line:
                     line = line.strip()
@@ -1520,6 +1613,16 @@ class OpenAICompatibleProvider(BaseProvider):
 
                         try:
                             chunk = json.loads(data)
+
+                            # Pre-yield error events may be repairable (sync parity:
+                            # LM Studio surfaces render failures as the first SSE
+                            # event on an HTTP 200).
+                            if not yielded_any:
+                                repaired = self._stream_error_event_repaired_payload(chunk, payload)
+                                if repaired is not None:
+                                    async for retry_chunk in self._async_stream_generate(repaired):
+                                        yield retry_chunk
+                                    return
 
                             # Mid-stream error events raise loudly (sync parity).
                             self._raise_on_stream_error_event(chunk)
@@ -1551,6 +1654,7 @@ class OpenAICompatibleProvider(BaseProvider):
                                 if isinstance(reasoning, str) and reasoning.strip():
                                     metadata["reasoning"] = reasoning
 
+                                yielded_any = True
                                 yield GenerateResponse(
                                     content=content,
                                     model=self.model,
@@ -1561,6 +1665,7 @@ class OpenAICompatibleProvider(BaseProvider):
                                     raw_response=chunk
                                 )
                             elif usage_dict:
+                                yielded_any = True
                                 yield GenerateResponse(
                                     content="",
                                     model=self.model,

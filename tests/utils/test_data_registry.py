@@ -471,10 +471,15 @@ class TestPackageSurface:
 
     def test_kind_set_carries_the_semantics_ruled_entries(self, registry_env, tmp_path):
         """The ruled five + entity-home (semantics pre-ruling c1297) + artifacts
-        (semantics ruling c1302), 2026-07-13. Widenings go through the semantics
-        registry — this pin makes an ad-hoc widening a conscious act."""
+        (semantics ruling c1302), 2026-07-13 + workflow-memory (semantics ruling
+        dm:memory--semantics#4, 2026-07-15 — flow's per-workflow memory graphs,
+        operator data, safe_to_purge=True default; an entity home or any file
+        under one must never register as workflow-memory). Widenings go through
+        the semantics registry — this pin makes an ad-hoc widening a conscious
+        act."""
         assert DATA_HOME_KINDS == (
             "model-cache", "prompt-cache", "runs", "sessions", "logs", "entity-home", "artifacts",
+            "workflow-memory",
         )
         home = tmp_path / "castor"
         home.mkdir()
