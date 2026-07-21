@@ -41,9 +41,10 @@ _INVENTORY_MODULES: Tuple[str, ...] = (
     "abstractcore.tools.shell_tools",
 )
 
-# Core's OWN classification of its OWN tools — TWO facts per tool, decided
-# together (adversarial-review finding: a single "mutating" bit glossed over
-# fetch_url's model-controlled method/data escape hatch — the tool defaults
+# Core's OWN classification of its OWN tools — the mutating + remote_write_capable
+# facts per tool (plus optional model_cost for tools that run a nested LLM call,
+# schema v2), decided together (adversarial-review finding: a single "mutating"
+# bit glossed over fetch_url's model-controlled method/data escape hatch — the tool defaults
 # to GET but CAN send POST/PUT/DELETE with a body, and downstream approval
 # layers are name-based, never argument-based):
 #
@@ -65,6 +66,11 @@ _INVENTORY_MODULES: Tuple[str, ...] = (
 _CLASSIFICATION_BY_NAME: Dict[str, Dict[str, bool]] = {
     # common_tools
     "analyze_code": {"mutating": False, "remote_write_capable": False},
+    # model_cost=True: runs a NESTED LLM call (the configured vision model)
+    # — read-only in effect, but hosts budgeting/approving by cost must see
+    # it distinctly (0825 ruling, agora c3977). Single-attempt by
+    # construction (no retry stacking).
+    "analyze_media": {"mutating": False, "remote_write_capable": False, "model_cost": True},
     "edit_file": {"mutating": True, "remote_write_capable": False},
     "execute_command": {"mutating": True, "remote_write_capable": False},
     "fetch_url": {"mutating": False, "remote_write_capable": True},
@@ -86,7 +92,9 @@ _CLASSIFICATION_BY_NAME: Dict[str, Dict[str, bool]] = {
 
 # Consumers reading the row shape can key evolution on this: field ADDITIONS
 # bump it; the descriptor never removes/renames fields within a version.
-INVENTORY_SCHEMA_VERSION = 1
+# v2 (2026-07-21): + model_cost — the tool runs a nested LLM call; hosts
+# budgeting/approving by cost consult it alongside mutating/remote_write.
+INVENTORY_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -106,6 +114,10 @@ class BuiltinToolDescriptor:
     remote_write_capable: bool
     act_only: bool
     description: str
+    # True when the tool runs a NESTED LLM call (schema v2): read-only in
+    # effect but real token spend — hosts budgeting/approving by cost must
+    # see it distinctly from free reads.
+    model_cost: bool = False
     parameters: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -118,6 +130,7 @@ class BuiltinToolDescriptor:
             "mutating": self.mutating,
             "remote_write_capable": self.remote_write_capable,
             "act_only": self.act_only,
+            "model_cost": self.model_cost,
             "description": self.description,
             # Deep copy: the nested per-parameter dicts must never alias the
             # live ToolDefinition schema (see list_builtin_tool_inventory).
@@ -193,6 +206,7 @@ def list_builtin_tool_inventory() -> List[BuiltinToolDescriptor]:
                     mutating=bool(classification["mutating"]),
                     remote_write_capable=bool(classification["remote_write_capable"]),
                     act_only=bool(getattr(tool_def, "act_only", False)),
+                    model_cost=bool(classification.get("model_cost", False)),
                     description=str(tool_def.description or ""),
                     # Deep copy: ToolDefinition.parameters nests per-param
                     # dicts that are the LIVE schema providers serialize for

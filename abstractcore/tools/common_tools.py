@@ -9215,6 +9215,171 @@ def _assess_command_risk(command: str) -> str:
     return "low"
 
 
+# ---------------------------------------------------------------------------
+# analyze_media — delegated sight (backlog 0825, operator-ruled GO 2026-07-21)
+# ---------------------------------------------------------------------------
+
+# Suffix pre-filter to avoid PIL-opening a multi-GB video; the AUTHORITATIVE
+# gate is the PIL decode below (asking the actual decoder "is this an image?",
+# never trusting the extension — the adversary's fabrication find: a corrupt
+# capture or a renamed non-image with an image suffix would otherwise reach
+# the model as a dropped/placeholder payload and be described from nothing).
+# Kept aligned to the media image processor's real support (jpg/jpeg/png/gif/
+# bmp/tiff/webp) plus the .tif alias; heic/ico are NOT decoded by that path
+# and are excluded rather than allowlisted into a drop/mojibake lane.
+_ANALYZE_MEDIA_IMAGE_SUFFIXES = frozenset(
+    {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".tif", ".tiff"}
+)
+# Captions are 3-4 sentences by design; the cap is a guard against a
+# misbehaving vision model flooding the caller's context, never a format.
+_ANALYZE_MEDIA_MAX_CHARS = 4000
+# Per-attempt HTTP bound for the nested vision call. The config default_timeout
+# is 2h — unusable for an interactive mid-loop tool; this bounds EACH provider
+# attempt. Honest residual (adversary finding): a configured fallback CHAIN
+# traverses primary + N entries sequentially, so worst case is (1+N) x this;
+# typical configs are primary-only.
+_ANALYZE_MEDIA_TIMEOUT_S = 120.0
+
+
+def _analyze_media_decodes_as_image(path) -> bool:
+    """True only if PIL can actually decode the file as an image.
+
+    This is the honesty gate: it asks the real decoder, so a truncated/corrupt
+    capture, an empty file, or a non-image with an image suffix is caught
+    BEFORE dispatch — the tool never describes an image the model never saw.
+    Missing PIL is treated as "cannot verify" (False) so the tool refuses with
+    an actionable install hint rather than proceeding blind.
+    """
+    try:
+        from PIL import Image  # type: ignore
+    except Exception:
+        return False
+    try:
+        with Image.open(path) as img:
+            img.verify()  # structural decode check; does not load pixels
+        return True
+    except Exception:
+        return False
+
+
+@tool(
+    description=(
+        "Answer a question about an image using the operator's CONFIGURED vision "
+        "model (delegated sight for text-only models). Returns bounded text "
+        "observations — never raw image data into your context."
+    ),
+    when_to_use=(
+        "Use to see what an image file shows when your main model cannot view it "
+        "directly; needs the operator's configured vision fallback (images only in v1)."
+    ),
+    examples=[
+        {
+            "description": "Describe a captured photo",
+            "arguments": {"file_path": "~/Pictures/abstractcamera/capture_001.jpg"},
+        },
+        {
+            "description": "Ask a targeted question about an image",
+            "arguments": {
+                "file_path": "shot.png",
+                "question": "Is there readable text in this image? Quote it.",
+            },
+        },
+    ],
+)
+def analyze_media(file_path: str, question: str = "") -> str:
+    """Delegated sight over the configured vision route (0825).
+
+    Ruled constraints (agora c3977): rides the EXISTING vision-fallback
+    config (never a second model knob); loud actionable refusal when
+    unconfigured; bounded text output; the nested LLM call runs ONE attempt
+    (no retry stacking — the 2026-07-21 wedge lesson applies doubly one
+    level down).
+    """
+    from pathlib import Path as _Path
+
+    try:
+        path = _Path(str(file_path or "")).expanduser()
+    except (TypeError, ValueError):
+        return f"Error: invalid file path {file_path!r}"
+    if not path.exists():
+        return f"Error: File '{file_path}' does not exist"
+    if not path.is_file():
+        return f"Error: '{file_path}' is not a file"
+    suffix = path.suffix.lower()
+    if suffix not in _ANALYZE_MEDIA_IMAGE_SUFFIXES:
+        return (
+            f"Error: analyze_media supports images only in v1 (got '{suffix or 'no extension'}'; "
+            f"supported: {', '.join(sorted(_ANALYZE_MEDIA_IMAGE_SUFFIXES))}). "
+            "For video, capture or extract a frame first and analyze the frame image."
+        )
+    # Honesty gate (adversary P0, 2026-07-21): verify the file ACTUALLY
+    # decodes as an image before dispatch. Without this, a corrupt/truncated
+    # capture or a renamed non-image reaches the model as a dropped/placeholder
+    # payload and gets a confident, provenance-stamped description of nothing.
+    if not _analyze_media_decodes_as_image(path):
+        return (
+            f"Error: '{file_path}' did not decode as a valid image (corrupt, truncated, "
+            "not actually an image, or Pillow unavailable — `pip install \"abstractcore[media]\"`). "
+            "Refusing rather than describing an image the model never saw."
+        )
+
+    from ..core.retry import RetryConfig
+    from ..media.vision_fallback import (
+        VisionFallbackHandler,
+        VisionGenerationError,
+        VisionNotConfiguredError,
+    )
+
+    handler = VisionFallbackHandler(
+        # One attempt + a bounded per-attempt timeout for the NESTED call: a
+        # wedged vision endpoint must fail this tool in one client timeout,
+        # never a stacked retry sequence and never the 2h config default.
+        llm_kwargs={
+            "retry_config": RetryConfig(max_attempts=1),
+            "timeout": _ANALYZE_MEDIA_TIMEOUT_S,
+        },
+    )
+    cleaned_question = str(question or "").strip()
+    try:
+        description, trace = handler.create_description_with_trace(
+            str(path), user_prompt=cleaned_question or None
+        )
+    except VisionNotConfiguredError as e:
+        return (
+            f"Error: no vision model is configured for delegated sight ({e}). "
+            "Configure the vision fallback (run `abstractcore --config`, vision "
+            "section) or use a vision-capable main model."
+        )
+    except VisionGenerationError as e:
+        # The route IS configured — surface the real runtime cause, not a
+        # misleading "configure it" (adversary P1).
+        return (
+            f"Error: the configured vision model failed to analyze this image: {e}. "
+            "The route is configured — check the vision endpoint/credentials, not the config."
+        )
+    except Exception as e:
+        return f"Error: vision analysis failed: {e}"
+
+    text = str(description or "").strip()
+    if not text:
+        return "Error: the configured vision model returned an empty observation."
+    if len(text) > _ANALYZE_MEDIA_MAX_CHARS:
+        text = (
+            text[:_ANALYZE_MEDIA_MAX_CHARS]
+            + f"\n#TRUNCATION observation capped at {_ANALYZE_MEDIA_MAX_CHARS} chars"
+        )
+
+    backend = trace.get("backend") if isinstance(trace, dict) else None
+    if isinstance(backend, dict) and backend.get("model"):
+        # Provenance for the CALLING agent (who saw this?), outside the
+        # observation text itself. Local-model backends carry a model but no
+        # provider string — render "local/<model>" rather than dropping the
+        # provenance entirely (adversary P2).
+        provider = str(backend.get("provider") or "local")
+        text += f"\n\n(observed by {provider}/{backend['model']})"
+    return text
+
+
 # Export all tools for easy importing
 __all__ = [
     'list_files',
@@ -9224,5 +9389,6 @@ __all__ = [
     'edit_file',
     'web_search',
     'fetch_url',
-    'execute_command'
+    'execute_command',
+    'analyze_media'
 ]

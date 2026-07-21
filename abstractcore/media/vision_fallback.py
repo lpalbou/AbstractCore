@@ -15,7 +15,25 @@ logger = get_logger(__name__)
 
 
 class VisionNotConfiguredError(Exception):
-    """Raised when vision fallback is requested but not configured."""
+    """Raised when vision fallback is requested but not configured.
+
+    Reserved for the two GENUINE config states — strategy disabled, or no
+    vision capability configured — so callers can render the honest
+    "configure it" remediation. A configured-but-FAILING route (endpoint
+    down, auth error, model missing) raises VisionGenerationError instead:
+    diagnosing a live failure as "not configured" sends the operator to the
+    wrong fix (adversary finding, 2026-07-21).
+    """
+    pass
+
+
+class VisionGenerationError(Exception):
+    """Raised when a CONFIGURED vision route fails at generation time.
+
+    Carries the last per-provider cause so the caller can surface the real
+    problem (timeout / auth / missing model) instead of a misleading
+    not-configured message.
+    """
     pass
 
 
@@ -30,8 +48,15 @@ class VisionFallbackHandler:
     Uses the unified AbstractCore configuration system.
     """
 
-    def __init__(self, config_manager=None):
-        """Initialize with configuration manager."""
+    def __init__(self, config_manager=None, llm_kwargs=None):
+        """Initialize with configuration manager.
+
+        ``llm_kwargs`` (optional) is forwarded verbatim to ``create_llm`` for
+        the caption model — callers with stricter execution discipline (the
+        `analyze_media` tool passes ``retry_config`` with a single attempt so
+        a nested LLM call can never retry-stack) opt in explicitly; the
+        default {} keeps the generate() fallback lane byte-identical.
+        """
         if config_manager is None:
             try:
                 from abstractcore.config import get_config_manager
@@ -42,6 +67,7 @@ class VisionFallbackHandler:
                 self.config_manager = None
         else:
             self.config_manager = config_manager
+        self._llm_kwargs = dict(llm_kwargs or {})
 
     @property
     def vision_config(self):
@@ -97,8 +123,12 @@ class VisionFallbackHandler:
             trace.setdefault("strategy", getattr(self.vision_config, "strategy", None))
             return description, trace
         except Exception as e:
-            logger.debug(f"Vision fallback failed: {e}")
-            raise VisionNotConfiguredError(f"Vision fallback generation failed: {e}")
+            # The route IS configured (we passed _has_vision_capability above)
+            # — this is a RUNTIME failure, not a config gap. Raise the
+            # distinct class carrying the cause so callers surface the real
+            # problem, not a misleading "configure it" message.
+            logger.debug(f"Vision fallback generation failed on a configured route: {e}")
+            raise VisionGenerationError(str(e))
 
     def _has_vision_capability(self) -> bool:
         """Check if any vision capability is configured."""
@@ -186,7 +216,7 @@ class VisionFallbackHandler:
             # Import here to avoid circular imports
             from abstractcore import create_llm
 
-            vision_llm = create_llm(provider, model=model)
+            vision_llm = create_llm(provider, model=model, **self._llm_kwargs)
             prompt = self._build_caption_prompt(user_prompt=user_prompt)
             response = vision_llm.generate(
                 prompt,

@@ -38,6 +38,7 @@ from abstractcore.tools.inventory import (
 # Phase 0.5 (core's authoritative count, cross-verified on the hub record).
 EXPECTED_COMMON = [
     "analyze_code",
+    "analyze_media",
     "edit_file",
     "execute_command",
     "fetch_url",
@@ -72,7 +73,7 @@ def test_member_sets_are_byte_stable():
     """The exact ruled enumeration: 13 common + 3 shell, deterministic order."""
     names = list_builtin_tool_names()
     assert names == EXPECTED_COMMON + EXPECTED_SHELL
-    assert len(names) == 16
+    assert len(names) == 17
 
 
 def test_inventory_is_derived_not_copied():
@@ -158,7 +159,7 @@ def test_descriptors_carry_only_core_owned_facts():
     rows = builtin_tool_inventory_as_dicts()
     expected_keys = {
         "name", "owner", "module", "mutating", "remote_write_capable",
-        "act_only", "description", "parameters",
+        "act_only", "model_cost", "description", "parameters",
     }
     for row in rows:
         assert set(row.keys()) == expected_keys, f"{row['name']}: field drift"
@@ -167,8 +168,9 @@ def test_descriptors_carry_only_core_owned_facts():
         assert isinstance(row["mutating"], bool)
         assert isinstance(row["remote_write_capable"], bool)
         assert isinstance(row["act_only"], bool)
+        assert isinstance(row["model_cost"], bool)
         assert row["description"].strip(), f"{row['name']}: empty description"
-    assert INVENTORY_SCHEMA_VERSION == 1
+    assert INVENTORY_SCHEMA_VERSION == 2
 
 
 def test_act_only_reflects_tool_definitions():
@@ -293,8 +295,8 @@ def test_package_level_exports():
 
     assert ExportedDescriptor is BuiltinToolDescriptor
     assert exported_names() == list_builtin_tool_names()
-    assert len(exported_inventory()) == 16
-    assert len(exported_dicts()) == 16
+    assert len(exported_inventory()) == 17
+    assert len(exported_dicts()) == 17
 
 
 def test_comms_lanes_deliberately_out_of_scope():
