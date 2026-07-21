@@ -611,6 +611,22 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if retry_config is None:
             # Use default retry configuration
             retry_config = RetryConfig()
+        # Wall-clock budget knob without requiring a full RetryConfig object
+        # (2026-07-21 wedge incident: per-attempt timeouts stack across
+        # retries — 3 × a 600s client timeout wedged an entity visit for 30
+        # minutes). Interactive lanes pass e.g.
+        # create_llm(..., retry_wall_clock_budget_s=180).
+        budget_kwarg = kwargs.get('retry_wall_clock_budget_s', None)
+        if budget_kwarg is not None:
+            try:
+                budget_value = float(budget_kwarg)
+                if budget_value > 0:
+                    retry_config.max_total_wall_clock_s = budget_value
+            except (TypeError, ValueError):
+                logger.warning(
+                    f"#FALLBACK invalid retry_wall_clock_budget_s={budget_kwarg!r} ignored "
+                    f"(expected a positive number of seconds)."
+                )
         self.retry_manager = RetryManager(retry_config)
 
         # Per-endpoint retry damping (C3, opt-in): resolved LAZILY at first generate
@@ -3008,16 +3024,27 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         def _pop_stt_route_params(route: Dict[str, Any]) -> Dict[str, Any]:
             out: Dict[str, Any] = {}
-            provider = kwargs.pop("stt_provider", None)
-            if provider is None:
-                provider = kwargs.pop("audio_provider", None)
-            if provider is None:
-                provider = route.get("provider")
-            model = kwargs.pop("stt_model", None)
-            if model is None:
-                model = kwargs.pop("audio_model", None)
-            if model is None:
-                model = route.get("model")
+            explicit_provider = kwargs.pop("stt_provider", None)
+            if explicit_provider is None:
+                explicit_provider = kwargs.pop("audio_provider", None)
+            explicit_model = kwargs.pop("stt_model", None)
+            if explicit_model is None:
+                explicit_model = kwargs.pop("audio_model", None)
+            provider = explicit_provider if explicit_provider is not None else route.get("provider")
+            model = explicit_model if explicit_model is not None else route.get("model")
+            # Same rule as the generate-route options fix: the route row is ONE
+            # backend identity. An explicit provider that CONTRADICTS the row's
+            # must not inherit the row's model (e.g. stt_provider="openai" would
+            # otherwise pair with a faster-whisper route model like "base").
+            route_provider = str(route.get("provider") or "").strip()
+            if (
+                isinstance(explicit_provider, str)
+                and explicit_provider.strip()
+                and route_provider
+                and explicit_provider.strip().casefold() != route_provider.casefold()
+                and explicit_model is None
+            ):
+                model = None
             if isinstance(provider, str) and provider.strip():
                 out["provider"] = provider.strip()
             if isinstance(model, str) and model.strip():
@@ -4939,6 +4966,63 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         Default is "" (engine unknown / not version-pinnable). Providers that
         own a durable-artifact backend override this with e.g. ``mlx_lm==X.Y``.
+        """
+        return ""
+
+    def prompt_cache_tokenizer_fingerprint(self) -> str:
+        """Return a stable identity of the TOKENIZER + chat template whose
+        token-id stream a durable KV artifact encodes (backlog 0817, axis 2).
+
+        `rendered_recipe_sha256` hashes rendered TEXT; a tokenizer.json or
+        chat-template refresh under the SAME model id changes text→ids and
+        makes a reused artifact silently wrong. This fingerprint is recorded
+        at compile and checked at reuse: a MISMATCH refuses (recompile or
+        loud error), an ABSENT recorded value (pre-axis artifact) is accepted
+        with a labeled #FALLBACK, and an unavailable CURRENT value (tokenizer
+        not loaded yet) abstains — a later gate that has the tokenizer
+        re-checks. Never a silent stale-tokenizer load.
+
+        Default is "" (tokenizer identity not observable). Providers that own
+        a loaded tokenizer override this via
+        `tokenizer_fingerprint.tokenizer_fingerprint_for(...)`.
+        """
+        return ""
+
+    def prompt_cache_model_config_fingerprint(self) -> str:
+        """Return a stable identity of the model config's KV GEOMETRY whose
+        tensors a durable KV artifact encodes (backlog 0817, axis 3).
+
+        A `config.json` edit under the SAME model id — rope_theta/rope_scaling
+        retunes, sliding-window layout changes — re-defines what the cached
+        K/V tensors MEAN while leaving no textual (axis 0) or tokenizer
+        (axis 2) trace. This fingerprint is recorded at compile and checked at
+        reuse with the shared three-way verdict: MISMATCH refuses (recompile
+        or loud error), an ABSENT recorded value (pre-axis artifact) is
+        accepted with a labeled #FALLBACK, an unavailable CURRENT value
+        (model not loaded yet) abstains for a later gate to re-check.
+
+        Default is "" (config not observable). Providers that hold a loaded
+        model config override this via
+        `model_config_fingerprint.model_config_fingerprint_for(...)`.
+        """
+        return ""
+
+    def prompt_cache_weights_fingerprint(self) -> str:
+        """Return a CHEAP identity of the WEIGHTS that computed a durable KV
+        artifact's tensors (backlog 0817, axis 4).
+
+        A checkpoint swap under the same model id (force-pushed revision,
+        re-quantized GGUF, edited shards) leaves text/tokenizer/config traces
+        all identical while the projections that produced the cached tensors
+        are gone. Recorded at compile, checked at reuse with the shared
+        three-way verdict: MISMATCH refuses (recompile or loud error), ABSENT
+        recorded value (pre-axis artifact) reuses with a labeled #FALLBACK,
+        unavailable CURRENT value abstains for a later gate. Full-content
+        hashing of multi-GB weights is deliberately out of scope (tiered
+        cheap subjects; see `weights_fingerprint`).
+
+        Default is "" (weights not observable). Providers that can see their
+        weights override this via `weights_fingerprint.*`.
         """
         return ""
 

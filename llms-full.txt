@@ -654,18 +654,21 @@ abstractcore --set-audio-strategy auto
 abstractcore --set-stt-language en
 ```
 
-### Capability plugins (voice/audio/vision/music)
+### Capability plugins (voice/audio/vision/music/scene3d/camera)
 
 AbstractCore supports optional capability plugins discovered via Python entry points:
 - install `abstractvoice` -> enables `llm.voice` and `llm.audio` (TTS/STT)
 - install `abstractvision` -> enables `llm.vision` (generative images/video through OpenAI-compatible endpoints or local backends such as MLX-Gen)
 - install `abstractcore[music]` -> enables `llm.music` and music output routing for text-to-music through `abstractmusic`
+- install `abstractcore[scene3d]` -> enables `llm.scene3d` (text->3D and image->3D through `abstract3d`; backends triposr/step1x/hunyuan3d21/trellis2, returns model bytes such as GLB)
+- install `abstractcamera` -> enables `llm.camera` (real-camera piloting: non-invasive discovery, open/close, photo, bounded video, detection, event log; capture bytes ride as base64 or artifact refs, never raw frames in the JSON body)
 - current plugin floors in this source: `abstractvoice>=0.10.18`, `abstractvision>=0.3.26`, `abstractmusic>=0.1.13`; `llm.vision` exposes `t2i`, `i2i`, `upscale_image`, `t2v`, and `i2v`, supports `llm.vision.list_provider_adapters(...)`, first-class batch `count` / `seeds` delegation, SeedVR2 image upscaling, typed Wan A14B `guidance_2`, typed Wan TI2V `flow_shift`, and `generate(..., output=...)` forwards progress callbacks for generated image/video outputs
 - SeedVR2 upscaling can be called directly with `llm.vision.upscale_image("input.png", provider="mlx-gen", model="AbstractFramework/seedvr2-3b-8bit", resolution="2x", softness=0.25, on_progress=on_progress)` or through the unified output route with `llm.generate(media={"type": "image", "path": "input.png", "role": "source"}, output={"task": "image_upscale", "provider": "mlx-gen", "model": "AbstractFramework/seedvr2-3b-8bit", "resolution": "2x", "softness": 0.25})`; canonical q8/q4 SeedVR2 package ids do not need runtime `quantize`, official/source weights can use SeedVR2 runtime `quantize`, and prepared local folders can be passed as the model value when available.
 
 Server note:
 - the server can optionally expose `/v1/images/*`, `/v1/videos/*`, and `/v1/vision/*` model/control surfaces (requires `abstractvision` for local backends; remote OpenAI-compatible proxy paths can run through the server)
 - the server can optionally expose `/v1/audio/*` (requires an audio/voice/music plugin; commonly `abstractvoice` or `abstractmusic`)
+- the server can optionally expose the extension endpoints `/v1/scene3d/generations` (requires `abstract3d`) and `/v1/camera/*` (requires `abstractcamera`); both return `501` with an install hint when the plugin is absent, and long-running generation runs in the server threadpool so it never stalls other requests
 
 ### Glyph visual-text compression (optional, experimental)
 
@@ -10127,7 +10130,7 @@ If you're new to AbstractCore and want to start building quickly, read:
 Related docs (user-facing):
 - Media inputs (images/audio/video + documents): `docs/media-handling-system.md`
 - Vision input + fallback: `docs/vision-capabilities.md`
-- Capability plugins (voice/audio/vision/music): `docs/capabilities.md`
+- Capability plugins (voice/audio/vision/music/scene3d/camera): `docs/capabilities.md`
 - OpenAI-compatible gateway server: `docs/server.md`
 - Single-model OpenAI-compatible endpoint: `docs/endpoint.md`
 - Tool calling semantics (passthrough vs execution): `docs/tool-calling.md`

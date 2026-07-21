@@ -1,9 +1,62 @@
-# Proposed: GGUF control-plane detection for models with an embedded ChatML template
+# Completed: GGUF control-plane detection for models with an embedded ChatML template
 
 ## Metadata
 - Created: 2026-07-14
-- Status: Proposed
-- Completed: N/A
+- Status: Completed (operator-directed 2026-07-19: "make it 100% functional, one adversarial subagent")
+- Completed: 2026-07-19
+
+## Completion report
+Shipped the recommended option with option-2's renderer: when `chat_format`
+startswith `chat_template`, an embedded template that carries BOTH ChatML
+turn markers AND passes a cached probe render (`_gguf_embedded_template_probe_renders`,
+ChatML-SHAPED verdict via `_gguf_probe_render_is_chatml_shaped`: the last user
+turn's content must sit inside an `<|im_start|>…<|im_end|>` pair with a
+generation prompt after it) routes to the existing `llama-cpp-chat-template`
+lane — the model's OWN template renders (fidelity: Ornith's `<think>` opening
+is preserved), and the control plane owns both render and generate so
+byte-consistency is internal. Detection is by template CONTENT, never model
+name or llama.cpp's guessed id. Probe failure → `keyed` (pre-0821 behavior,
+fail-safe).
+
+LIVE PROOF (real `ornith-1.0-35b-Q4_K_M.gguf`, twice — before and after the
+adversary folds): `mode=llama-cpp-chat-template`, warm/cold 0.352 → 0.338,
+fact recall correct, zero warnings (`scripts/verify_prompt_cache_families.py`).
+
+ADVERSARIAL REVIEW (fable5, operator-requested; verdict HOLDS-WITH-GAPS, all
+gaps folded same-day):
+- F1 (P1, reproduced — the silently-wrong-cache class, PRE-EXISTING and wider
+  than 0821): the prefix-state reader trusted the snapshot MAP KEY length;
+  fallback-lane writers (llama.cpp's own save after `create_chat_completion`)
+  key states by prompt+completion whose last sampled token was never eval'd
+  (state holds len(key)−1) — the reader skipped eval'ing that token: one
+  mid-prompt token missing from KV, all later positions shifted, wrong output,
+  zero errors. FIX: `_gguf_state_held_tokens` — reuse exactly what the state
+  HOLDS (its own `n_tokens`/`input_ids`), eval the remainder; a state whose
+  held tokens disagree with its key is refused entirely.
+- F2 (P2): the probe's four independent substring checks admitted
+  marker-MENTIONING non-ChatML templates. FIX: the ChatML-SHAPED verdict above.
+- F3 (P2): a template refusing a conversation shape (Ornith raises on a
+  mid-history system message) escaped as a raw ValueError at the consumer's
+  first `next()` on the STREAM lane. FIX: render inside the generator body
+  degrades to a `finish_reason="error"` chunk, mirroring non-stream.
+- F4 (P2, pre-existing, NOT fixed here): no lock covers the control-plane
+  prefill→sample window — two concurrent keyed generates on one provider
+  instance can interleave on the shared `llm`. Recorded as a follow-up below.
+- F5 verified-safe: growing-prefix property + `enable_thinking` interplay are
+  lost-reuse-at-worst under the Ornith template (past assistant messages
+  re-render canonically; `enable_thinking` touches only the generation tail).
+
+Pins: 24 in `tests/huggingface/test_gguf_prompt_cache_control_plane.py`
+(detection, probe false positives, F1 held-vs-key + foreign-state refusal,
+F3 stream degrade, growing prefix on the real fixture template, probe cache).
+Full suite 2190 green.
+
+## Follow-ups
+- F4: serialize the control-plane prefill→sample window against concurrent
+  keyed generates / updates on one provider instance (pre-existing class,
+  widened population as more models reach the control plane).
+- The probe caches a False verdict per template identity for the provider
+  instance lifetime; harmless while the render is pure Jinja.
 
 ## ADR status
 - Governing ADRs: None

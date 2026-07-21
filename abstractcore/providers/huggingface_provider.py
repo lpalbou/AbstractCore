@@ -356,12 +356,93 @@ class HuggingFaceProvider(BaseProvider):
         }
         if chat_format in aliases:
             return aliases[chat_format]
-        if chat_format.startswith("chat_template") and self._gguf_architecture_message_format() == "gemma_turn":
+        if chat_format.startswith("chat_template"):
             metadata = getattr(getattr(self, "llm", None), "metadata", {})
             template = str(metadata.get("tokenizer.chat_template") or "") if isinstance(metadata, dict) else ""
-            if template:
+            if not template:
+                return ""
+            if self._gguf_architecture_message_format() == "gemma_turn":
                 return "llama-cpp-chat-template"
+            # 0821: a GGUF whose embedded Jinja template IS ChatML (both turn
+            # markers present) is served by the SAME embedded-template lane the
+            # Gemma-4 branch proved live — the model's OWN template renders the
+            # prompt (fidelity to its training format incl. think-block
+            # handling that the plain-ChatML renderer would drop), and the
+            # control plane owns both render and generate so byte-consistency
+            # is by construction. Detection is by template CONTENT, never by
+            # model name or llama.cpp's guessed format id (the gap: Ornith 1.0
+            # GGUFs are Qwen3.5 post-trains whose name lacks "qwen" and whose
+            # chat_format reports the generic "chat_template.default").
+            # Renderability is PROVEN by a cached probe render, not assumed —
+            # a template the formatter cannot render falls back to "keyed",
+            # exactly the pre-0821 behavior (fail-safe, never a wrong cache).
+            if "<|im_start|>" in template and "<|im_end|>" in template:
+                if self._gguf_embedded_template_probe_renders(template):
+                    return "llama-cpp-chat-template"
         return ""
+
+    def _gguf_embedded_template_probe_renders(self, template: str) -> bool:
+        """True when the embedded Jinja template renders a minimal ChatML
+        conversation through the control-plane renderer (0821 guard).
+
+        Jinja templates can refuse at render time (raise_exception branches,
+        required variables); claiming the control plane for one of those would
+        crash every cached turn. The probe renders once per template identity
+        per provider instance and requires the output to carry the user
+        content inside ChatML turn markers.
+        """
+        probe_cache = getattr(self, "_gguf_embedded_template_probe_cache", None)
+        if probe_cache is None:
+            probe_cache = {}
+            self._gguf_embedded_template_probe_cache = probe_cache
+        key = hashlib.sha256(template.encode("utf-8", errors="replace")).hexdigest()[:16]
+        cached = probe_cache.get(key)
+        if cached is not None:
+            return bool(cached)
+        ok = False
+        try:
+            rendered = self._gguf_render_llama_cpp_chat_template_prompt(
+                messages=[
+                    {"role": "system", "content": "PROBE-SYSTEM"},
+                    {"role": "user", "content": "PROBE-USER"},
+                    {"role": "assistant", "content": "PROBE-ASSISTANT"},
+                    {"role": "user", "content": "PROBE-FOLLOWUP"},
+                ],
+                add_generation_prompt=True,
+            )
+            ok = self._gguf_probe_render_is_chatml_shaped(rendered)
+        except Exception:
+            ok = False
+        probe_cache[key] = ok
+        return ok
+
+    @staticmethod
+    def _gguf_probe_render_is_chatml_shaped(rendered: str) -> bool:
+        """True when the probe render is genuinely ChatML-SHAPED, not merely
+        marker-mentioning (adversary F2, 2026-07-19: a llama-2-wire template
+        whose preamble MENTIONS the markers, or one that ChatML-wraps only the
+        system turn, must not be admitted). Requirements: the last USER turn's
+        content sits directly inside an <|im_start|>...<|im_end|> pair, and a
+        ChatML generation prompt (<|im_start|>assistant) follows it. A false
+        negative falls back to "keyed" — the safe direction.
+        """
+        text = str(rendered or "")
+        if not text or "PROBE-USER" not in text:
+            return False
+        followup = text.rfind("PROBE-FOLLOWUP")
+        if followup < 0:
+            return False
+        open_before = text.rfind("<|im_start|>", 0, followup)
+        if open_before < 0:
+            return False
+        # The nearest structural marker before the content must be its OPEN
+        # (no close between open and content = content is inside the turn).
+        if text.rfind("<|im_end|>", open_before, followup) >= 0:
+            return False
+        close_after = text.find("<|im_end|>", followup)
+        if close_after < 0:
+            return False
+        return text.find("<|im_start|>assistant", close_after) >= 0
 
     def _gguf_prompt_cache_supports_local_control_plane(self) -> bool:
         if getattr(self, "model_type", None) != "gguf":
@@ -435,6 +516,86 @@ class HuggingFaceProvider(BaseProvider):
         except Exception:
             version = ""
         return f"transformers=={version}" if version else "transformers==unknown"
+
+    def prompt_cache_tokenizer_fingerprint(self) -> str:
+        """Identity of the LOADED tokenizer's text→ids mapping (0817 axis 2).
+
+        GGUF deliberately returns "": its tokenizer travels INSIDE the model
+        file, so a tokenizer refresh cannot happen without the weights file
+        changing — the weights-identity axis owns that signal. transformers
+        models fingerprint the loaded AutoTokenizer; "" while unloaded (the
+        gates abstain on "" and re-check when the tokenizer exists).
+        """
+        if getattr(self, "model_type", None) == "gguf":
+            return ""
+        tokenizer = getattr(self, "tokenizer", None)
+        if tokenizer is None:
+            return ""
+        from .tokenizer_fingerprint import tokenizer_fingerprint_for
+
+        return tokenizer_fingerprint_for(tokenizer)
+
+    def prompt_cache_model_config_fingerprint(self) -> str:
+        """Identity of the LOADED model's KV geometry (0817 axis 3).
+
+        GGUF deliberately returns "": its config travels INSIDE the model
+        file, so a geometry edit cannot happen without the weights file
+        changing — the weights-identity axis owns that signal. transformers
+        models fingerprint the loaded model's `config` (PretrainedConfig);
+        "" while unloaded (the gates abstain on "" and re-check when the
+        model exists).
+        """
+        if getattr(self, "model_type", None) == "gguf":
+            return ""
+        model_obj = getattr(self, "model_instance", None)
+        config = getattr(model_obj, "config", None) if model_obj is not None else None
+        if config is None:
+            return ""
+        from .model_config_fingerprint import model_config_fingerprint_for
+
+        return model_config_fingerprint_for(config)
+
+    def prompt_cache_weights_fingerprint(self) -> str:
+        """Cheap identity of the LOADED weights (0817 axis 4).
+
+        GGUF does NOT abstain here — this is exactly the axis the tokenizer
+        and config axes deferred to (their state travels INSIDE the weights
+        file): the loaded file's size + header-slice digest moves on any
+        re-quant/re-pack. transformers models prefer the hub commit sha the
+        loaded config carries (`_commit_hash`, tier 1), else the resolved
+        local snapshot/model directory (tier 1/2). "" while unloaded — gates
+        abstain and re-check at load time.
+        """
+        from .weights_fingerprint import (
+            weights_fingerprint_for_dir,
+            weights_fingerprint_for_file,
+            weights_fingerprint_for_revision,
+        )
+
+        if getattr(self, "model_type", None) == "gguf":
+            llama_obj = getattr(self, "llm", None)
+            model_path = getattr(llama_obj, "model_path", None) if llama_obj is not None else None
+            if not model_path:
+                return ""
+            return weights_fingerprint_for_file(model_path)
+
+        model_obj = getattr(self, "model_instance", None)
+        config = getattr(model_obj, "config", None) if model_obj is not None else None
+        if config is not None:
+            revision = weights_fingerprint_for_revision(getattr(config, "_commit_hash", None))
+            if revision:
+                return revision
+            name_or_path = str(getattr(config, "_name_or_path", "") or "").strip()
+            if name_or_path:
+                from_dir = weights_fingerprint_for_dir(name_or_path)
+                if from_dir:
+                    return from_dir
+        if model_obj is None:
+            return ""
+        local = _get_local_model_path(str(getattr(self, "model", "") or ""))
+        if local:
+            return weights_fingerprint_for_dir(local)
+        return ""
 
     def prompt_cache_render_fragment(
         self,
@@ -1194,6 +1355,37 @@ class HuggingFaceProvider(BaseProvider):
         )
         return composed_prompt_text, composed_tokens, meta
 
+    @staticmethod
+    def _gguf_state_held_tokens(key_tokens: tuple[int, ...], state: Any) -> tuple[int, ...]:
+        """The tokens a saved llama state actually HOLDS (reader ground truth).
+
+        The map KEY is an index hint, never the truth: fallback-lane writers
+        (llama.cpp's own cache save after ``create_chat_completion``) save
+        states keyed by prompt+completion whose last sampled token was never
+        eval'd, so the state holds ``len(key) - 1`` tokens. A reader that
+        trusts the key length skips eval'ing that token and serves a KV with
+        one mid-prompt token missing — every later position shifted, wrong
+        output, zero errors (the silently-wrong-cache class; adversary F1,
+        2026-07-19, reproduced). The state's own ``n_tokens``/``input_ids``
+        are the truth; a state whose held tokens disagree with its key prefix
+        is foreign/corrupt and is refused entirely.
+        """
+        n_tokens = getattr(state, "n_tokens", None)
+        if not isinstance(n_tokens, int) or n_tokens < 0:
+            return tuple(key_tokens)
+        n_tokens = min(n_tokens, len(key_tokens))
+        input_ids = getattr(state, "input_ids", None)
+        if input_ids is not None:
+            try:
+                raw = input_ids[:n_tokens]
+                held = tuple(int(tok) for tok in (raw.tolist() if hasattr(raw, "tolist") else list(raw)))
+                if held != tuple(key_tokens[:n_tokens]):
+                    return ()
+                return held
+            except Exception:
+                pass
+        return tuple(key_tokens[:n_tokens])
+
     def _gguf_prompt_cache_prefix_state(self, cache_obj: Any, prompt_tokens: tuple[int, ...]) -> tuple[int, Optional[Any]]:
         state_map = getattr(cache_obj, "cache_state", None)
         if not hasattr(state_map, "items") or not prompt_tokens:
@@ -1218,14 +1410,19 @@ class HuggingFaceProvider(BaseProvider):
                 normalized = tuple(int(tok) for tok in key)
             except Exception:
                 continue
+            # Reuse exactly what the STATE holds, never what the key claims
+            # (see _gguf_state_held_tokens — the F1 off-by-one class).
+            held = self._gguf_state_held_tokens(normalized, state)
+            if not held:
+                continue
             try:
-                prefix_len = int(longest_prefix_fn(normalized, prompt_tokens)) if callable(longest_prefix_fn) else 0
+                prefix_len = int(longest_prefix_fn(held, prompt_tokens)) if callable(longest_prefix_fn) else 0
             except Exception:
                 prefix_len = 0
-            if prefix_len != len(normalized):
+            if prefix_len != len(held):
                 continue
-            if len(normalized) > best_len:
-                best_len = len(normalized)
+            if len(held) > best_len:
+                best_len = len(held)
                 best_state = state
         return best_len, best_state
 
@@ -5051,11 +5248,25 @@ class HuggingFaceProvider(BaseProvider):
         stop_strs = [s for s in (self._gguf_control_plane_stop_strings() or []) if isinstance(s, str) and s]
         flush_threshold = 160
 
-        prompt_text, prompt_tokens = self._gguf_render_prompt_tokens(
-            messages=chat_messages,
-            add_generation_prompt=True,
-            enable_thinking=enable_thinking,
-        )
+        # Render inside the generator body must DEGRADE, not raise: a template
+        # that refuses a conversation shape (e.g. the Ornith template's
+        # raise_exception on a mid-history system message) used to surface as
+        # a raw ValueError at the consumer's first next() on the streaming
+        # lane, while the fallback lane degraded gracefully (adversary F3,
+        # 2026-07-19). Mirror the non-stream error shape.
+        try:
+            prompt_text, prompt_tokens = self._gguf_render_prompt_tokens(
+                messages=chat_messages,
+                add_generation_prompt=True,
+                enable_thinking=enable_thinking,
+            )
+        except Exception as e:
+            yield GenerateResponse(
+                content=f"Error: {e}",
+                model=self.model,
+                finish_reason="error",
+            )
+            return
         prompt_text, prompt_tokens, prompt_cache_meta = self._gguf_compose_cached_prompt_tokens(
             cache_state=cache_state,
             live_prompt_text=prompt_text,

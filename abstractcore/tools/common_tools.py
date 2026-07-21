@@ -2793,12 +2793,12 @@ def search_files(
 
 
 @tool(
-    description="Read a text file (line-numbered). Prefer analyze_code for code, then read_file(start_line/end_line); full reads may be refused if too large.",
-    when_to_use="Use to inspect exact file contents. For code, prefer analyze_code first. Prefer bounded reads; if line numbers are unknown, use search_files() first.",
+    description="Read a text file (line-numbered). Oversized reads return a labeled PARTIAL chunk plus the exact continuation call (start_char).",
+    when_to_use="Use to inspect exact file contents. For code, prefer analyze_code first. Prefer bounded reads; if line numbers are unknown, use search_files() first. For huge/minified files, follow the #TRUNCATION notice's start_char continuation.",
     hide_args=["should_read_entire_file"],
     examples=[
         {
-            "description": "Read entire file (only when it's small; large files are refused)",
+            "description": "Read entire file (small files; oversized returns a labeled partial chunk)",
             "arguments": {
                 "file_path": "README.md"
             }
@@ -2812,10 +2812,10 @@ def search_files(
             }
         },
         {
-            "description": "Read first 50 lines",
+            "description": "Continue a truncated read from a character offset (minified/huge files)",
             "arguments": {
-                "file_path": "large_file.txt",
-                "end_line": 50
+                "file_path": "dist/bundle.min.js",
+                "start_char": 120000
             }
         }
     ]
@@ -2825,14 +2825,18 @@ def read_file(
     should_read_entire_file: Optional[bool] = None,
     start_line: int = 1,
     end_line: Optional[int] = None,
+    start_char: Optional[int] = None,
 ) -> str:
     """
-    Read the contents of a file with optional line range.
+    Read the contents of a file with optional line range or char-offset window.
 
     Args:
         file_path: required; Path to the file to read
         start_line: Starting line number (1-indexed, default: 1)
         end_line: Ending line number (1-indexed, inclusive, optional)
+        start_char: Character offset (0-indexed) to read from. Use this to
+            continue after a #TRUNCATION notice (huge/minified files where
+            line ranges cannot bound the size).
         should_read_entire_file: Legacy/compatibility flag. If provided, overrides inference:
             - True  => attempt full read (or refuse if too large)
             - False => range mode (bounded by start_line/end_line)
@@ -2841,7 +2845,10 @@ def read_file(
             - start_line and/or end_line provided => range read
 
     Returns:
-        File contents or error message
+        File contents or error message. Oversized reads return the first
+        MAX_CHARS_PER_CALL characters with a loud #TRUNCATION header AND
+        footer naming the exact continuation call (start_char=<offset>) —
+        truncation is never silent (ADR: label truncation, always).
     """
     try:
         # Expand home directory shortcuts like ~
@@ -2868,6 +2875,53 @@ def read_file(
         # - large enough to avoid constant "Refused" loops for typical source files
         # - still bounded to keep tool outputs manageable for remote hosts and models
         MAX_LINES_PER_CALL = 2000
+        # Line-count guards alone miss MINIFIED files: a 2.7MB single-file web
+        # artifact can be 69 lines, sail through the 2000-line cap, and poison
+        # the conversation — every later LLM call carries megabytes, some
+        # relays answer 200 + content:null, and the agent loop burns its
+        # remaining iterations on empty cycles (live incident 2026-07-21,
+        # memgraph V2 wave: react spun 57 empty cycles after one such read).
+        # Character cap = the missing second axis. Operator-ruled contract
+        # (2026-07-21): oversized reads are NEVER silent and NEVER a bare
+        # refusal — deliver the first chunk WITH a loud #TRUNCATION header and
+        # footer that name the exact continuation call (start_char=<offset>).
+        MAX_CHARS_PER_CALL = 120_000
+
+        def _partial_chunk(offset: int) -> str:
+            """Char-window read: [offset, offset+cap), with loud truncation
+            notices on BOTH ends (models attend to beginnings and endings)."""
+            total = path.stat().st_size
+            with open(path, 'r', encoding='utf-8', errors='replace') as fh:
+                fh.seek(max(0, offset))
+                chunk = fh.read(MAX_CHARS_PER_CALL)
+                at_eof = fh.read(1) == ""
+            end = offset + len(chunk)
+            if at_eof:
+                header = (
+                    f"File: {display_path} — FINAL PART "
+                    f"(chars {offset:,}-{end:,} of ~{total:,}; end of file)"
+                )
+                return header + "\n\n" + chunk + "\n\n[END OF FILE]"
+            pct = 100.0 * end / max(1, total)
+            notice = (
+                f"#TRUNCATION: this is a PARTIAL read — chars {offset:,}-{end:,} "
+                f"of ~{total:,} (~{pct:.1f}% shown). The file continues.\n"
+                f"NEXT PART: read_file(file_path=\"{file_path}\", start_char={end})"
+            )
+            return (
+                f"File: {display_path}\n{notice}\n\n"
+                + chunk
+                + f"\n\n{notice}"
+            )
+
+        # Char-offset mode: the continuation surface for oversized/minified
+        # files (the #TRUNCATION notice names this exact call shape).
+        if start_char is not None:
+            try:
+                offset = max(0, int(start_char))
+            except Exception:
+                return f"Error: start_char must be an integer (got {start_char})"
+            return _partial_chunk(offset)
 
         # Mode selection:
         # - Explicit legacy flag wins (for backwards compatibility).
@@ -2885,8 +2939,10 @@ def read_file(
 
         with open(path, 'r', encoding='utf-8') as f:
             if read_entire:
-                # Read entire file (bounded by MAX_LINES_PER_CALL). No truncation: either full content or refusal.
+                # Read entire file (bounded by MAX_LINES_PER_CALL and
+                # MAX_CHARS_PER_CALL). No truncation: either full content or refusal.
                 raw_lines: list[str] = []
+                total_chars = 0
                 for idx, line in enumerate(f, 1):
                     if idx > MAX_LINES_PER_CALL:
                         preview_limit = 60
@@ -2900,6 +2956,12 @@ def read_file(
                             "then call read_file with start_line/end_line for a smaller range."
                             + ("\n\nPreview (first 60 lines):\n\n" + preview if preview_lines else "")
                         )
+                    total_chars += len(line)
+                    if total_chars > MAX_CHARS_PER_CALL:
+                        # Oversized (e.g. minified single-file artifact):
+                        # deliver the first chunk with loud continuation
+                        # notices instead of refusing or silently clipping.
+                        return _partial_chunk(0)
                     raw_lines.append(line.rstrip("\r\n"))
 
                 line_count = len(raw_lines)
@@ -2941,12 +3003,27 @@ def read_file(
                 # Stream the file; collect only the requested lines.
                 selected_lines: list[tuple[int, str]] = []
                 last_line_seen = 0
+                range_chars = 0
                 for line_no, line in enumerate(f, 1):
                     last_line_seen = line_no
                     if line_no < start_line:
                         continue
                     if end_line_value is not None and line_no > end_line_value:
                         break
+                    range_chars += len(line)
+                    if range_chars > MAX_CHARS_PER_CALL:
+                        # Range reads need the char cap too: one minified line
+                        # can carry megabytes, and line arithmetic cannot see
+                        # it. Deliver the requested range's beginning as a
+                        # labeled partial chunk (char-offset of the range
+                        # start), never silently clip and never bare-refuse.
+                        range_start_offset = 0
+                        with open(path, 'r', encoding='utf-8', errors='replace') as fh2:
+                            for n2, l2 in enumerate(fh2, 1):
+                                if n2 >= start_line:
+                                    break
+                                range_start_offset += len(l2)
+                        return _partial_chunk(range_start_offset)
                     selected_lines.append((line_no, line.rstrip("\r\n")))
                     if len(selected_lines) > MAX_LINES_PER_CALL:
                         return (

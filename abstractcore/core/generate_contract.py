@@ -384,21 +384,68 @@ def resolve_capability_default_route(
     return None
 
 
-def _field_sources(route_key: str, explicit: Mapping[str, Any], default_row: Optional[Mapping[str, Any]]) -> dict[str, str]:
+def _identity_conflict(explicit: Mapping[str, Any], default_row: Mapping[str, Any], key: str) -> bool:
+    explicit_value = _clean_optional_text(explicit.get(key))
+    default_value = _clean_optional_text(default_row.get(key))
+    return bool(explicit_value and default_value and explicit_value.casefold() != default_value.casefold())
+
+
+def _route_row_contribution(explicit: Mapping[str, Any], default_row: Mapping[str, Any]) -> str:
+    """How much of a capability default row may ride along with an explicit spec.
+
+    A default row is ONE coherent backend identity: provider, model, base_url,
+    and ``options`` (e.g. a voice id that only exists on that TTS backend) were
+    configured together. The PROVIDER is the identity anchor; model/base_url
+    refine it; options are the most backend-specific facts of all. Tiers:
+
+    - "none": the explicit spec redirects the backend itself — it names a
+      provider that contradicts the row's, or names a provider while the row is
+      anchored only by a server (base_url without provider). A foreign row
+      contributes nothing: filling its model/base_url/options onto another
+      provider mints pairings the operator never configured (live incident:
+      provider=piper inheriting the supertonic route's voice M1 / model).
+    - "no_options": the backend matches but the explicit spec moves WITHIN it
+      (a different model on the configured provider, or the same provider on a
+      different base_url — the moved-server/proxy pattern). Identity fields
+      still fill in; options are dropped because they were configured for the
+      row's exact (provider, model, server) and voices/ids are backend-side
+      facts (all comparisons case-insensitive; an alias spelling of the same
+      server drops options too, which fails safe).
+    - "full": nothing contradicts — the row's backend is the one used.
+    """
+    if _identity_conflict(explicit, default_row, "provider"):
+        return "none"
+    explicit_provider = _clean_optional_text(explicit.get("provider"))
+    row_provider = _clean_optional_text(default_row.get("provider"))
+    row_base_url = _clean_optional_text(default_row.get("base_url"))
+    if explicit_provider and not row_provider and row_base_url:
+        return "none"
+    if _identity_conflict(explicit, default_row, "model") or _identity_conflict(explicit, default_row, "base_url"):
+        return "no_options"
+    return "full"
+
+
+def _field_sources(
+    route_key: str,
+    explicit: Mapping[str, Any],
+    default_row: Optional[Mapping[str, Any]],
+    *,
+    contribution: str = "full",
+) -> dict[str, str]:
     sources: dict[str, str] = {}
     default_source = str(default_row.get("source") or "default").strip() if isinstance(default_row, Mapping) else "default"
     for key in ("provider", "model", "base_url", "reasoning"):
         value = explicit.get(key)
         if isinstance(value, str) and value.strip():
             sources[key] = "explicit"
-        elif isinstance(default_row, Mapping):
+        elif isinstance(default_row, Mapping) and contribution != "none":
             default_value = default_row.get(key)
             if isinstance(default_value, str) and default_value.strip():
                 sources[key] = default_source
     if isinstance(default_row, Mapping):
         options = default_row.get("options")
         if isinstance(options, Mapping) and options:
-            sources["options"] = default_source
+            sources["options"] = default_source if contribution == "full" else "dropped:explicit_route_override"
     if not sources:
         sources["route"] = "not_configured"
     sources.setdefault("route", default_source if default_row else "not_configured")
@@ -413,14 +460,18 @@ def _route_entry(
 ) -> ResolvedGenerateRouteEntry:
     explicit_row = dict(explicit or {})
     default_dict = dict(default_row or {})
-    sources = _field_sources(route_key, explicit_row, default_dict)
-    options = dict(default_dict.get("options") or {}) if isinstance(default_dict.get("options"), Mapping) else {}
+    contribution = _route_row_contribution(explicit_row, default_dict) if default_dict else "full"
+    contributing = default_dict if contribution != "none" else {}
+    options: dict[str, Any] = {}
+    if contribution == "full" and isinstance(default_dict.get("options"), Mapping):
+        options = dict(default_dict.get("options") or {})
+    sources = _field_sources(route_key, explicit_row, default_dict, contribution=contribution)
     return ResolvedGenerateRouteEntry(
         route_key=route_key,
-        provider=_clean_optional_text(explicit_row.get("provider")) or _clean_optional_text(default_dict.get("provider")),
-        model=_clean_optional_text(explicit_row.get("model")) or _clean_optional_text(default_dict.get("model")),
-        base_url=_clean_optional_text(explicit_row.get("base_url")) or _clean_optional_text(default_dict.get("base_url")),
-        reasoning=_clean_reasoning(explicit_row.get("reasoning")) or _clean_reasoning(default_dict.get("reasoning")),
+        provider=_clean_optional_text(explicit_row.get("provider")) or _clean_optional_text(contributing.get("provider")),
+        model=_clean_optional_text(explicit_row.get("model")) or _clean_optional_text(contributing.get("model")),
+        base_url=_clean_optional_text(explicit_row.get("base_url")) or _clean_optional_text(contributing.get("base_url")),
+        reasoning=_clean_reasoning(explicit_row.get("reasoning")) or _clean_reasoning(contributing.get("reasoning")),
         options=options,
         source=sources.get("route", "not_configured"),
         field_sources=sources,

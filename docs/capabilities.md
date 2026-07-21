@@ -19,12 +19,22 @@ AbstractCore stays dependency-light by default. Deterministic modality APIs (STT
 - Install `abstractcore[voice]` → `llm.voice` / `llm.audio` via `abstractvoice` (TTS/STT)
 - Install `abstractcore[vision]` → `llm.vision` via `abstractvision` (text→image, image→image, image upscaling, text→video, image→video, provider model discovery, and provider adapter discovery)
 - Install `abstractcore[music]` → `llm.music` for text→music through `abstractmusic`
+- Install `abstractcore[scene3d]` → `llm.scene3d` for text→3D and image→3D through `abstract3d`
+- Install `abstractcamera` → `llm.camera` for real-camera piloting (webcams and tethered bodies)
 
 ```bash
 pip install "abstractcore[voice]"
 pip install "abstractcore[vision]"
 pip install "abstractcore[music]"
+pip install "abstractcore[scene3d]"
+pip install "abstractcamera"
 ```
+
+`abstract3d` and `abstractcamera` register through the same
+`abstractcore.capabilities_plugins` entry point group as the voice/vision/music
+plugins, so `llm.capabilities.status()` reports their availability and selected
+backend id, and a missing plugin fails with an actionable install hint rather
+than a silent stub.
 
 `abstractvoice` 0.10.18+ can install its base AbstractCore plugin path on
 Python 3.9 without OmniVoice, torch, or torchaudio. Python 3.10+ is
@@ -96,6 +106,23 @@ wav_music = llm.music.generate(
     duration_s=8,
     format="wav",
 )
+
+# 3D via abstract3d when installed. Text-to-3D or image-to-3D; returns model
+# bytes (GLB by default). Backends: triposr (image→3D), step1x, hunyuan3d21,
+# trellis2 (license/hardware vary — see each backend's install hint).
+glb_bytes = llm.scene3d.i23d(
+    media=[{"type": "image", "path": "photo.jpg", "role": "source"}],
+    provider="triposr",
+    format="glb",
+)
+
+# Camera piloting via abstractcamera when installed. Discovery is
+# non-invasive; capture opens the device. Bytes ride as JSON-safe base64 or
+# artifact refs, never raw frames in the JSON body.
+cameras = llm.camera.list_cameras()
+opened = llm.camera.open()                      # default device (built-in webcam)
+shot = llm.camera.capture_photo()               # writes a file; returns its path
+llm.camera.close_all()
 
 # Remote OpenAI-compatible path:
 # export ABSTRACTVISION_BACKEND=openai

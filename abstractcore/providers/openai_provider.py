@@ -782,9 +782,15 @@ class OpenAIProvider(BaseProvider):
                     "arguments": tc.function.arguments
                 })
 
-        # Build usage dict with consistent terminology
+        # Build usage dict with consistent terminology.
+        # `usage` can be an explicit null on OpenAI-compatible relays (observed
+        # live on airelays 8317 under load/parallel tool streams): hasattr()
+        # passes but the attribute is None, and dereferencing prompt_tokens
+        # crashed the whole call AFTER a successful generation ("'NoneType'
+        # object has no attribute 'prompt_tokens'"). Missing usage must degrade
+        # to usage=None, never fail a completed response.
         usage = None
-        if hasattr(response, 'usage'):
+        if getattr(response, 'usage', None) is not None:
             usage = {
                 "input_tokens": response.usage.prompt_tokens,
                 "output_tokens": response.usage.completion_tokens,

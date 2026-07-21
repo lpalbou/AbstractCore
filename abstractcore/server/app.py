@@ -1428,6 +1428,31 @@ try:
 except Exception as e:
     logger.debug(f"Audio endpoints not loaded: {e}")
 
+# Optional: Scene3D (3D object) generation endpoints (/v1/scene3d/*).
+# Extension endpoints (no OpenAI equivalent; /v1/audio/music precedent) that
+# delegate to scene3d capability plugins (e.g. abstract3d) and return 501 when unavailable.
+try:
+    from .scene3d_endpoints import provider_router as _provider_scene3d_router
+    from .scene3d_endpoints import router as _scene3d_router
+
+    app.include_router(_scene3d_router, prefix="/v1")
+    app.include_router(_provider_scene3d_router)
+    logger.info("🧊 Scene3D endpoints enabled at /v1/scene3d/*")
+except Exception as e:
+    logger.debug(f"Scene3D endpoints not loaded: {e}")
+
+# Optional: camera control endpoints (/v1/camera/*).
+# Extension endpoints (no OpenAI equivalent; /v1/audio/music precedent) that
+# delegate to the camera capability plugin (abstractcamera) and return 501
+# when unavailable. (Drafted by seat: camera; owner review: core — c3168.)
+try:
+    from .camera_endpoints import router as _camera_router
+
+    app.include_router(_camera_router, prefix="/v1")
+    logger.info("📷 Camera endpoints enabled at /v1/camera/*")
+except Exception as e:
+    logger.debug(f"Camera endpoints not loaded: {e}")
+
 # ============================================================================
 # Enhanced Error Handling and Logging Middleware
 # ============================================================================
@@ -5181,6 +5206,10 @@ class BlocKVEnsureProxyRequest(BlocProxyBase):
     artifact_path: Optional[str] = Field(default=None, description="Optional explicit artifact path override.")
     force_rebuild: bool = Field(default=False, description="Force artifact rebuild even if a valid one already exists.")
     debug: bool = Field(default=False, description="Return verbose bloc KV verification metadata.")
+    quantization: str = Field(
+        default="fp",
+        description="Cache dtype for the artifact: 'fp' (provider-native float, default) or 'q8' (8-bit-quantized KV, provider support required — MLX). A dtype mismatch against an existing artifact recompiles at the requested dtype.",
+    )
 
     class Config:
         json_schema_extra = {
@@ -5207,6 +5236,10 @@ class BlocKVLoadProxyRequest(BlocProxyBase):
     make_default: bool = Field(default=False, description="Whether the loaded or forked key should become the upstream default.")
     force_rebuild: bool = Field(default=False, description="Force artifact rebuild before loading.")
     debug: bool = Field(default=False, description="Return verbose bloc KV verification metadata.")
+    quantization: str = Field(
+        default="fp",
+        description="Cache dtype for the artifact: 'fp' (default) or 'q8' (provider support required — MLX). A dtype mismatch against the existing artifact recompiles at the requested dtype before loading.",
+    )
 
     class Config:
         json_schema_extra = {
@@ -6209,6 +6242,7 @@ def acore_bloc_kv_ensure(req: BlocKVEnsureProxyRequest, http_request: Request):
                     artifact_path=req.artifact_path,
                     force_rebuild=bool(req.force_rebuild),
                     debug=bool(req.debug),
+                    quantization=str(req.quantization or "fp"),
                 ),
             )
             artifact = {
@@ -6276,6 +6310,7 @@ def acore_bloc_kv_load(req: BlocKVLoadProxyRequest, http_request: Request):
                     make_default=bool(req.make_default),
                     force_rebuild=bool(req.force_rebuild),
                     debug=bool(req.debug),
+                    quantization=str(req.quantization or "fp"),
                 ),
             )
             artifact = {

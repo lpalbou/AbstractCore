@@ -199,6 +199,11 @@ class AbstractCoreInterface(ABC):
     def scene3d(self):
         return self.capabilities.scene3d
 
+    @property
+    def camera(self):
+        # camera (seat: camera; owner review: core — commons c3168)
+        return self.capabilities.camera
+
     def generate_with_outputs(
         self,
         prompt: str,

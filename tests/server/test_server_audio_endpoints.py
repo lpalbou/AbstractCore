@@ -741,3 +741,37 @@ def test_plugin_backed_audio_routes_return_503_for_missing_plugin_credentials(cl
     clone = client.post("/v1/voice/clone", files={"file": ("reference.wav", b"abc", "audio/wav")})
     assert clone.status_code == 503
     assert "OPENAI_API_KEY" in clone.json()["error"]["message"]
+
+
+def test_blocking_audio_handlers_are_sync_def():
+    """Structural pin (2026-07-21, adopted from camera's router-iterating
+    shape): the music + speech handlers call BLOCKING synthesis/generation
+    and must stay sync-def (threadpool) — as `async def` they ran ON the
+    event loop and serialized the whole server behind one call (the
+    2026-07-19 conversion). The upload lanes (transcriptions, voice clone)
+    legitimately await `file.read()` and stay async; this pin covers exactly
+    the blocking-generation set so a future "modernization" fails loudly."""
+    import inspect
+
+    from abstractcore.server import audio_endpoints
+
+    must_be_sync = {
+        "audio_music",
+        "provider_audio_music",
+        "audio_speech",
+        "audio_speech_stream",
+        "provider_audio_speech",
+        "provider_audio_speech_stream",
+    }
+    seen = set()
+    for router in (audio_endpoints.router, audio_endpoints.provider_router):
+        for route in router.routes:
+            endpoint = getattr(route, "endpoint", None)
+            name = getattr(endpoint, "__name__", "")
+            if name in must_be_sync:
+                seen.add(name)
+                assert not inspect.iscoroutinefunction(endpoint), (
+                    f"{name} must stay sync-def: it calls blocking synthesis and "
+                    "would wedge the event loop as async"
+                )
+    assert seen == must_be_sync, f"pin drift: expected handlers missing from routers: {must_be_sync - seen}"

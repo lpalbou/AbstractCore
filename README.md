@@ -41,7 +41,7 @@ First-class support for:
 - unified generation parameters, capability detection, and provider quirks
 - session memory, prompt caching, durable memory bloc cache artifacts, events, tracing, and retry-aware reliability hooks
 - media input (images/audio/video + documents) with explicit, policy-driven fallbacks (*)
-- optional capability plugins (`core.voice/core.audio/core.vision/core.music`) for deterministic TTS/STT, generative vision, and music backends (via packages such as `abstractvoice`, `abstractvision`, and `abstractmusic`)
+- optional capability plugins (`core.voice/core.audio/core.vision/core.music/core.scene3d/core.camera`) for deterministic TTS/STT, generative vision, music, 3D generation, and real-camera piloting (via packages such as `abstractvoice`, `abstractvision`, `abstractmusic`, `abstract3d`, and `abstractcamera`)
 - glyph visual-text compression for long documents (**)
 - optional OpenAI-compatible `/v1` gateway server (multi-provider) and single-model endpoint
 
@@ -138,6 +138,8 @@ pip install "abstractcore[media]"       # images, PDFs, Office docs
 pip install "abstractcore[voice]"       # abstractvoice plugin (remote-light TTS/STT capability)
 pip install "abstractcore[vision]"      # abstractvision plugin (generative vision capability)
 pip install "abstractcore[music]"       # abstractmusic plugin (text-to-music capability)
+pip install "abstractcore[scene3d]"     # abstract3d plugin (text->3D / image->3D capability)
+pip install "abstractcamera"            # abstractcamera plugin (real-camera piloting capability)
 pip install "abstractcore[compression]" # glyph visual-text compression (Pillow-only)
 pip install "abstractcore[embeddings]"  # EmbeddingManager + local embedding models
 pip install "abstractcore[tokens]"      # precise token counting (tiktoken)

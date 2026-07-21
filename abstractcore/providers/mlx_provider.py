@@ -113,6 +113,68 @@ class MLXProvider(BaseProvider):
             version = ""
         return f"mlx_lm=={version}" if version else "mlx_lm==unknown"
 
+    def prompt_cache_tokenizer_fingerprint(self) -> str:
+        """Identity of the LOADED tokenizer's text→ids mapping (0817 axis 2).
+
+        "" while no model is loaded — validation gates abstain on "" and the
+        load-time gate re-checks once the tokenizer exists. Never loads the
+        model just to fingerprint it.
+        """
+        tokenizer = getattr(self, "tokenizer", None)
+        if tokenizer is None:
+            return ""
+        from .tokenizer_fingerprint import tokenizer_fingerprint_for
+
+        return tokenizer_fingerprint_for(tokenizer)
+
+    def prompt_cache_model_config_fingerprint(self) -> str:
+        """Identity of the LOADED model's KV geometry (0817 axis 3).
+
+        Source, strongest first: the loaded model's `args` (mlx_lm ModelArgs —
+        built FROM config.json, carries rope/window/position keys), else the
+        resolved model directory's config.json. "" while no model is loaded —
+        gates abstain on "" and the load-time gate re-checks. Never loads the
+        model just to fingerprint it.
+        """
+        from .model_config_fingerprint import model_config_fingerprint_for
+
+        model_obj = getattr(self, "llm", None)
+        if model_obj is not None:
+            args = getattr(model_obj, "args", None)
+            fingerprint = model_config_fingerprint_for(args)
+            if fingerprint:
+                return fingerprint
+        resolved = str(getattr(self, "_resolved_model_id", "") or "").strip()
+        if resolved:
+            try:
+                from pathlib import Path
+
+                cfg_path = Path(resolved) / "config.json"
+                if cfg_path.is_file():
+                    raw = cfg_path.read_text(encoding="utf-8", errors="ignore")
+                    data = json.loads(raw) if raw.strip() else None
+                    if isinstance(data, dict):
+                        return model_config_fingerprint_for(data)
+            except Exception:
+                pass
+        return ""
+
+    def prompt_cache_weights_fingerprint(self) -> str:
+        """Cheap identity of the LOADED weights (0817 axis 4).
+
+        The resolved model directory names the identity: an HF-cache snapshot
+        dir yields the hub commit sha (tier 1, content-addressed upstream);
+        any other local dir yields the weight-file-set fingerprint (tier 2).
+        "" while unresolved/unloaded — gates abstain and the load-time gate
+        re-checks. Never touches full weight bytes.
+        """
+        resolved = str(getattr(self, "_resolved_model_id", "") or "").strip()
+        if not resolved:
+            return ""
+        from .weights_fingerprint import weights_fingerprint_for_dir
+
+        return weights_fingerprint_for_dir(resolved)
+
     def prompt_cache_render_fragment(
         self,
         *,
@@ -1290,6 +1352,22 @@ class MLXProvider(BaseProvider):
         if resolved_model_id:
             out_meta.setdefault("model_resolved_id", resolved_model_id)
         out_meta.setdefault("saved_at", datetime.now().isoformat())
+        # 0817 axis 2: record the tokenizer identity whose token-id stream this
+        # cache encodes, for EVERY saved artifact (bloc lane passes it in meta;
+        # plain keyed saves get it here) — the load gate checks it.
+        tokenizer_fp = self.prompt_cache_tokenizer_fingerprint()
+        if tokenizer_fp:
+            out_meta.setdefault("tokenizer_fingerprint", tokenizer_fp)
+        # 0817 axis 3: record the KV-geometry identity (rope/window/position
+        # config keys) the cached tensors were computed under.
+        model_config_fp = self.prompt_cache_model_config_fingerprint()
+        if model_config_fp:
+            out_meta.setdefault("model_config_fingerprint", model_config_fp)
+        # 0817 axis 4: record the cheap weights identity that computed the
+        # cached tensors (checkpoint swaps under the same id must refuse).
+        weights_fp = self.prompt_cache_weights_fingerprint()
+        if weights_fp:
+            out_meta.setdefault("weights_fingerprint", weights_fp)
 
         try:
             tok = self._prompt_cache_backend_token_count(cache_obj)
@@ -1311,12 +1389,23 @@ class MLXProvider(BaseProvider):
 
         cache_to_save = cache_obj
         if q8:
+            # No silent fp fallback (0817 axis 5): a caller that asked for q8
+            # gets q8 or a loud error — falling back quietly stores fp bytes
+            # under metadata/manifests claiming q8 (the silent-wrong-label
+            # class). Hybrid/recurrent architectures carry per-layer cache
+            # objects (e.g. mlx_lm ArraysCache for state-space layers) that
+            # expose no to_quantized; those stacks cannot store q8.
             try:
                 cache_to_save = [layer.to_quantized(group_size=64, bits=8) for layer in cache_obj]
-                out_meta["quantized"] = "q8"
-            except Exception:
-                # Best-effort: fall back to full precision.
-                cache_to_save = cache_obj
+            except AttributeError as e:
+                unsupported = sorted({type(layer).__name__ for layer in cache_obj if not callable(getattr(layer, "to_quantized", None))})
+                raise ValueError(
+                    "q8 prompt-cache storage is not supported for this model's cache stack: "
+                    f"layer cache type(s) {unsupported or ['unknown']} expose no to_quantized "
+                    "(hybrid/recurrent architectures store per-layer state, not quantizable KV). "
+                    "Save with q8=False (fp) for this model."
+                ) from e
+            out_meta["quantized"] = "q8"
 
         # mlx_lm saves KV caches via safetensors metadata, which requires string keys + values.
         def _meta_value(value: Any) -> str:
@@ -1396,6 +1485,94 @@ class MLXProvider(BaseProvider):
                         )
             except Exception:
                 pass
+
+        # Tokenizer-identity gate (0817, axis 2): this is the gate that runs
+        # WITH the tokenizer available (ensure-time validation abstains when
+        # the model is not loaded). The artifact encodes one tokenizer's
+        # token-id stream; a tokenizer/chat-template refresh under the same
+        # model id makes it silently wrong — refuse loudly, never reload.
+        from .tokenizer_fingerprint import check_tokenizer_fingerprint
+
+        stored_tokenizer = str(meta_dict.get("tokenizer_fingerprint") or "").strip()
+        current_tokenizer = self.prompt_cache_tokenizer_fingerprint()
+        verdict = check_tokenizer_fingerprint(stored_tokenizer, current_tokenizer)
+        if verdict == "mismatch":
+            raise ValueError(
+                "Prompt cache tokenizer mismatch: the artifact encodes the token stream of "
+                f"tokenizer '{stored_tokenizer}', but the current tokenizer is '{current_tokenizer}' "
+                "(tokenizer.json or chat template changed under the same model id). Reloading it "
+                "would inject misaligned KV — recompile the artifact (force_rebuild=True) instead."
+            )
+        if verdict == "unverified_stored" and current_tokenizer:
+            self.logger.warning(
+                f"#FALLBACK MLX prompt cache artifact '{filename}' carries no tokenizer "
+                f"fingerprint (pre-axis artifact); loading it UNVERIFIED against the current "
+                f"tokenizer '{current_tokenizer}'. Re-save to pin it."
+            )
+        elif verdict == "unverified_current" and stored_tokenizer:
+            self.logger.warning(
+                f"#FALLBACK MLX prompt cache artifact '{filename}' pins tokenizer "
+                f"'{stored_tokenizer}' but the current tokenizer state is unavailable "
+                f"(model not loaded); loading UNVERIFIED."
+            )
+
+        # Model-config geometry gate (0817, axis 3): the artifact's K/V were
+        # computed under one rope/window/position geometry; a config.json edit
+        # under the same model id re-defines what they mean. Refuse loudly,
+        # never reload.
+        from .model_config_fingerprint import check_model_config_fingerprint
+
+        stored_config = str(meta_dict.get("model_config_fingerprint") or "").strip()
+        current_config = self.prompt_cache_model_config_fingerprint()
+        config_verdict = check_model_config_fingerprint(stored_config, current_config)
+        if config_verdict == "mismatch":
+            raise ValueError(
+                "Prompt cache model-config mismatch: the artifact's KV tensors were computed "
+                f"under config geometry '{stored_config}', but the current model config is "
+                f"'{current_config}' (rope/window/position keys changed under the same model id). "
+                "Reloading it would inject positionally-wrong KV — recompile the artifact "
+                "(force_rebuild=True) instead."
+            )
+        if config_verdict == "unverified_stored" and current_config:
+            self.logger.warning(
+                f"#FALLBACK MLX prompt cache artifact '{filename}' carries no model-config "
+                f"fingerprint (pre-axis artifact); loading it UNVERIFIED against the current "
+                f"config '{current_config}'. Re-save to pin it."
+            )
+        elif config_verdict == "unverified_current" and stored_config:
+            self.logger.warning(
+                f"#FALLBACK MLX prompt cache artifact '{filename}' pins model-config "
+                f"'{stored_config}' but the current config is unavailable "
+                f"(model not loaded); loading UNVERIFIED."
+            )
+
+        # Weights-identity gate (0817, axis 4): the artifact's tensors were
+        # computed BY one set of weights; a checkpoint swap under the same
+        # model id leaves every other axis identical. Refuse loudly.
+        from .weights_fingerprint import check_weights_fingerprint
+
+        stored_weights = str(meta_dict.get("weights_fingerprint") or "").strip()
+        current_weights = self.prompt_cache_weights_fingerprint()
+        weights_verdict = check_weights_fingerprint(stored_weights, current_weights)
+        if weights_verdict == "mismatch":
+            raise ValueError(
+                "Prompt cache weights mismatch: the artifact's KV tensors were computed by "
+                f"weights '{stored_weights}', but the current weights are '{current_weights}' "
+                "(checkpoint swapped under the same model id). Reloading it would inject KV "
+                "from weights that are gone — recompile the artifact (force_rebuild=True) instead."
+            )
+        if weights_verdict == "unverified_stored" and current_weights:
+            self.logger.warning(
+                f"#FALLBACK MLX prompt cache artifact '{filename}' carries no weights "
+                f"fingerprint (pre-axis artifact); loading it UNVERIFIED against the current "
+                f"weights '{current_weights}'. Re-save to pin it."
+            )
+        elif weights_verdict == "unverified_current" and stored_weights:
+            self.logger.warning(
+                f"#FALLBACK MLX prompt cache artifact '{filename}' pins weights "
+                f"'{stored_weights}' but the current weights are unavailable "
+                f"(model not loaded); loading UNVERIFIED."
+            )
 
         new_key = key
         normalized = self._normalize_prompt_cache_key(new_key) if new_key is not None else None

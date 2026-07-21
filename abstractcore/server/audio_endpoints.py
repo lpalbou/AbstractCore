@@ -1738,7 +1738,7 @@ _AUDIO_SPEECH_RESPONSES = {
 }
 
 
-async def _audio_speech_impl(
+def _audio_speech_impl(
     request: Request,
     payload: AudioSpeechRequest,
     *,
@@ -1855,7 +1855,7 @@ _AUDIO_SPEECH_STREAM_RESPONSES = {
 }
 
 
-async def _audio_speech_stream_impl(
+def _audio_speech_stream_impl(
     request: Request,
     payload: AudioSpeechRequest,
     *,
@@ -1984,9 +1984,15 @@ async def _audio_speech_stream_impl(
     response_class=Response,
     responses=_AUDIO_SPEECH_RESPONSES,
 )
-async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)):
-    """OpenAI-compatible TTS endpoint (json with input text)."""
-    return await _audio_speech_impl(request, payload)
+def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)):
+    """OpenAI-compatible TTS endpoint (json with input text).
+
+    Sync-def BY DESIGN (2026-07-19): awaits nothing and calls blocking
+    synthesis — as async def it ran ON the event loop and serialized the
+    whole server behind one TTS call (head-of-line wedge class). Sync
+    handlers run in FastAPI's threadpool.
+    """
+    return _audio_speech_impl(request, payload)
 
 
 @router.post(
@@ -1994,9 +2000,9 @@ async def audio_speech(request: Request, payload: AudioSpeechRequest = Body(...)
     response_class=StreamingResponse,
     responses=_AUDIO_SPEECH_STREAM_RESPONSES,
 )
-async def audio_speech_stream(request: Request, payload: AudioSpeechRequest = Body(...)):
+def audio_speech_stream(request: Request, payload: AudioSpeechRequest = Body(...)):
     """Text-to-speech stream endpoint (JSON Lines of audio/progress events)."""
-    return await _audio_speech_stream_impl(request, payload)
+    return _audio_speech_stream_impl(request, payload)
 
 
 @provider_router.post(
@@ -2004,7 +2010,7 @@ async def audio_speech_stream(request: Request, payload: AudioSpeechRequest = Bo
     response_class=Response,
     responses=_AUDIO_SPEECH_RESPONSES,
 )
-async def provider_audio_speech(
+def provider_audio_speech(
     request: Request,
     payload: AudioSpeechRequest = Body(...),
     provider: str = FastAPIPath(
@@ -2013,7 +2019,7 @@ async def provider_audio_speech(
     ),
 ):
     """Provider-scoped TTS endpoint. The route engine takes precedence over body routing fields."""
-    return await _audio_speech_impl(request, payload, path_tts_engine=provider)
+    return _audio_speech_impl(request, payload, path_tts_engine=provider)
 
 
 @provider_router.post(
@@ -2021,7 +2027,7 @@ async def provider_audio_speech(
     response_class=StreamingResponse,
     responses=_AUDIO_SPEECH_STREAM_RESPONSES,
 )
-async def provider_audio_speech_stream(
+def provider_audio_speech_stream(
     request: Request,
     payload: AudioSpeechRequest = Body(...),
     provider: str = FastAPIPath(
@@ -2030,7 +2036,7 @@ async def provider_audio_speech_stream(
     ),
 ):
     """Provider-scoped streaming TTS endpoint. The route engine takes precedence over body routing fields."""
-    return await _audio_speech_stream_impl(request, payload, path_tts_engine=provider)
+    return _audio_speech_stream_impl(request, payload, path_tts_engine=provider)
 
 
 @router.post("/voice/clone")
@@ -2237,11 +2243,18 @@ _AUDIO_MUSIC_RESPONSES = {
 }
 
 
-async def _audio_music_impl(payload: AudioMusicRequest, *, path_provider: Optional[str] = None):
+def _audio_music_impl(payload: AudioMusicRequest, *, path_provider: Optional[str] = None):
     """Text-to-music endpoint (extension; no official OpenAI equivalent).
 
     Delegates to the `music` capability plugin (typically `abstractmusic`).
     Returns raw audio bytes.
+
+    Sync-def BY DESIGN (2026-07-19, abstract3d's adversary on the scene3d
+    twin): this handler awaits nothing and calls BLOCKING generation — as
+    `async def` it ran ON the event loop, serializing every server request
+    behind one generation for minutes. Sync handlers run in FastAPI's
+    threadpool; do not "modernize" back to async without adding a real
+    off-loop dispatch.
     """
 
     data = _model_payload(payload)
@@ -2326,8 +2339,8 @@ async def _audio_music_impl(payload: AudioMusicRequest, *, path_provider: Option
     response_class=Response,
     responses=_AUDIO_MUSIC_RESPONSES,
 )
-async def audio_music(payload: AudioMusicRequest = Body(...)):
-    return await _audio_music_impl(payload)
+def audio_music(payload: AudioMusicRequest = Body(...)):
+    return _audio_music_impl(payload)
 
 
 @provider_router.post(
@@ -2335,11 +2348,11 @@ async def audio_music(payload: AudioMusicRequest = Body(...)):
     response_class=Response,
     responses=_AUDIO_MUSIC_RESPONSES,
 )
-async def provider_audio_music(
+def provider_audio_music(
     payload: AudioMusicRequest = Body(...),
     provider: str = FastAPIPath(
         ...,
         description="Music backend route prefix, e.g. `acemusic`, `acestep`, `stable-audio`, or `diffusers`.",
     ),
 ):
-    return await _audio_music_impl(payload, path_provider=provider)
+    return _audio_music_impl(payload, path_provider=provider)

@@ -179,6 +179,231 @@ def test_gguf_prompt_cache_capabilities_downshift_for_unsupported_chat_format() 
         )
 
 
+def _ornith_template() -> str:
+    from pathlib import Path
+
+    return (Path(__file__).resolve().parent.parent / "fixtures" / "ornith_chat_template.jinja").read_text(
+        encoding="utf-8"
+    )
+
+
+def test_gguf_embedded_chatml_template_reaches_local_control_plane() -> None:
+    """0821: an embedded ChatML Jinja template (Ornith 1.0 — a Qwen3.5
+    post-train whose NAME lacks 'qwen' and whose chat_format reports the
+    generic 'chat_template.default') must reach the control plane by template
+    CONTENT, rendered through the model's OWN template."""
+    provider = _new_provider(chat_format="chat_template.default")
+    provider.model = "deepreinforce-ai/Ornith-1.0-35B-GGUF"
+    provider.architecture = "qwen3_5"
+    provider.architecture_config = {"message_format": "im_start_end"}
+    provider.llm.metadata["tokenizer.chat_template"] = _ornith_template()
+
+    assert provider._gguf_prompt_cache_control_plane_chat_format() == "llama-cpp-chat-template"
+    caps = provider.get_prompt_cache_capabilities()
+    assert caps.supported is True
+    assert caps.mode == "local_control_plane"
+
+    prompt_text, prompt_tokens = provider._gguf_render_prompt_tokens(
+        messages=[
+            {"role": "system", "content": "SYS-FACT"},
+            {"role": "user", "content": "USER-TURN"},
+        ],
+        add_generation_prompt=True,
+    )
+    assert "<|im_start|>system" in prompt_text and "SYS-FACT" in prompt_text
+    assert "<|im_start|>user" in prompt_text and "USER-TURN" in prompt_text
+    # The model's OWN template appends its think-opening after the assistant
+    # header — the fidelity detail the plain-ChatML renderer would have
+    # dropped, and why the embedded-template renderer is the right lane.
+    assert "<|im_start|>assistant" in prompt_text
+    assert prompt_text.rstrip().endswith(("<|im_start|>assistant", "<think>"))
+    assert prompt_tokens, "control-plane tokenization must produce tokens"
+
+    # Growing-prefix property: the two-turn render extends the one-turn render
+    # byte-for-byte (what the snapshot lane rides on).
+    longer_text, _ = provider._gguf_render_prompt_tokens(
+        messages=[
+            {"role": "system", "content": "SYS-FACT"},
+            {"role": "user", "content": "USER-TURN"},
+            {"role": "assistant", "content": "ANSWER-ONE"},
+            {"role": "user", "content": "USER-TWO"},
+        ],
+        add_generation_prompt=True,
+    )
+    shared = prompt_text[: prompt_text.rfind("<|im_start|>assistant")]
+    assert longer_text.startswith(shared)
+
+
+def test_gguf_embedded_non_chatml_template_stays_keyed() -> None:
+    """A generic embedded template WITHOUT ChatML markers keeps the honest
+    keyed fallback (never claim a renderer we cannot serve)."""
+    provider = _new_provider(chat_format="chat_template.default")
+    provider.architecture = "some_arch"
+    provider.architecture_config = {"message_format": "im_start_end"}
+    provider.llm.metadata["tokenizer.chat_template"] = (
+        "{% for m in messages %}[{{ m['role'] }}]: {{ m['content'] }}\n{% endfor %}"
+    )
+
+    assert provider._gguf_prompt_cache_control_plane_chat_format() == ""
+    assert provider.get_prompt_cache_capabilities().mode == "keyed"
+
+
+def test_gguf_embedded_chatml_template_that_cannot_render_stays_keyed() -> None:
+    """ChatML markers present but the template REFUSES to render (Jinja
+    raise_exception on plain string content): the probe must catch it and
+    keep keyed — claiming the control plane would crash every cached turn."""
+    provider = _new_provider(chat_format="chat_template.default")
+    provider.architecture = "qwen3_5"
+    provider.architecture_config = {"message_format": "im_start_end"}
+    provider.llm.metadata["tokenizer.chat_template"] = (
+        "{{ raise_exception('nope') }}<|im_start|>{{ messages }}<|im_end|>"
+    )
+
+    assert provider._gguf_prompt_cache_control_plane_chat_format() == ""
+    assert provider.get_prompt_cache_capabilities().mode == "keyed"
+
+
+def test_gguf_embedded_template_probe_is_cached_per_template() -> None:
+    provider = _new_provider(chat_format="chat_template.default")
+    provider.architecture = "qwen3_5"
+    provider.architecture_config = {"message_format": "im_start_end"}
+    provider.llm.metadata["tokenizer.chat_template"] = _ornith_template()
+
+    calls = {"n": 0}
+    original = provider._gguf_render_llama_cpp_chat_template_prompt
+
+    def _counting(**kwargs):
+        calls["n"] += 1
+        return original(**kwargs)
+
+    provider._gguf_render_llama_cpp_chat_template_prompt = _counting  # type: ignore[method-assign]
+    assert provider._gguf_prompt_cache_control_plane_chat_format() == "llama-cpp-chat-template"
+    assert provider._gguf_prompt_cache_control_plane_chat_format() == "llama-cpp-chat-template"
+    assert calls["n"] == 1, "probe render must run once per template identity"
+
+
+def test_gguf_probe_rejects_marker_mentioning_non_chatml_templates() -> None:
+    """Adversary F2 (2026-07-19): templates that MENTION the ChatML markers
+    without being ChatML-shaped must not be admitted. Two reproduced shapes:
+    a llama-2-wire template whose preamble mentions the markers, and one that
+    ChatML-wraps only the SYSTEM turn."""
+    provider = _new_provider(chat_format="chat_template.default")
+    provider.architecture = "some_arch"
+    provider.architecture_config = {"message_format": "other"}
+
+    mentioning = (
+        "{{ 'This model does not use <|im_start|> or <|im_end|> markers.\\n' }}"
+        "{% for m in messages %}[INST] {{ m['content'] }} [/INST]{% endfor %}"
+    )
+    provider.llm.metadata["tokenizer.chat_template"] = mentioning
+    assert provider._gguf_prompt_cache_control_plane_chat_format() == ""
+
+    system_only = (
+        "{% for m in messages %}{% if m['role'] == 'system' %}"
+        "<|im_start|>system\n{{ m['content'] }}<|im_end|>\n"
+        "{% else %}[{{ m['role'] }}] {{ m['content'] }}\n{% endif %}{% endfor %}"
+    )
+    provider.llm.metadata["tokenizer.chat_template"] = system_only
+    provider._gguf_embedded_template_probe_cache = {}
+    assert provider._gguf_prompt_cache_control_plane_chat_format() == ""
+
+
+def test_gguf_prefix_state_reuses_what_the_state_holds_never_the_key() -> None:
+    """Adversary F1 (2026-07-19, the silently-wrong-cache class, reproduced):
+    fallback-lane writers (llama.cpp's own save after create_chat_completion)
+    key states by prompt+completion while the last sampled token was never
+    eval'd — the state HOLDS len(key)-1 tokens. A reader trusting the key
+    skipped eval'ing that token: one mid-prompt token missing from KV, every
+    later position shifted, wrong output, zero errors. The reader must reuse
+    exactly what the state holds and eval the remainder."""
+    provider = _new_provider(chat_format="chatml-function-calling")
+    assert provider.prompt_cache_set("sess", make_default=False) is True
+    cache_value = provider._prompt_cache_store.get("sess")
+    cache_obj = cache_value.cache
+
+    prompt_tokens = tuple(range(100, 120))
+    # Simulate the fallback-lane writer: state holds one token FEWER than its key.
+    provider.llm.reset()
+    provider.llm.eval(list(prompt_tokens[:-1]))
+    short_state = provider.llm.save_state()
+    cache_obj[prompt_tokens] = short_state
+
+    prefix_len, prefix_state = provider._gguf_prompt_cache_prefix_state(cache_obj, prompt_tokens)
+    assert prefix_len == len(prompt_tokens) - 1, "reuse must stop at what the state HOLDS"
+    assert prefix_state is short_state
+
+    provider.llm.reset()
+    provider.llm.eval_calls.clear()
+    assert provider._gguf_prefill_prompt_cache(cache_obj, prompt_tokens, save_state=False, set_cache=False)
+    # The missing token MUST be eval'd — this is the token the old reader dropped.
+    assert provider.llm.eval_calls, "the held/key gap must be eval'd"
+    assert provider.llm.eval_calls[-1] == [prompt_tokens[-1]]
+    assert provider.llm.n_tokens == len(prompt_tokens)
+
+
+def test_gguf_prefix_state_refuses_state_disagreeing_with_its_key() -> None:
+    """A state whose held tokens DISAGREE with its map key is foreign/corrupt:
+    refuse it entirely (never splice mismatched KV)."""
+    provider = _new_provider(chat_format="chatml-function-calling")
+    assert provider.prompt_cache_set("sess", make_default=False) is True
+    cache_obj = provider._prompt_cache_store.get("sess").cache
+
+    prompt_tokens = tuple(range(200, 210))
+    provider.llm.reset()
+    provider.llm.eval([999] * (len(prompt_tokens) - 1))  # different tokens than the key claims
+    foreign_state = provider.llm.save_state()
+    cache_obj[prompt_tokens] = foreign_state
+
+    prefix_len, prefix_state = provider._gguf_prompt_cache_prefix_state(cache_obj, prompt_tokens)
+    assert prefix_len == 0
+    assert prefix_state is None
+
+
+def test_gguf_control_plane_stream_render_failure_degrades_not_raises() -> None:
+    """Adversary F3 (2026-07-19): a template that REFUSES a conversation shape
+    (Ornith raises on a mid-history system message) used to escape as a raw
+    ValueError at the consumer's first next() on the streaming lane. It must
+    degrade to a finish_reason='error' chunk like the non-stream path."""
+    provider = _new_provider(chat_format="chat_template.default")
+    provider.model = "deepreinforce-ai/Ornith-1.0-35B-GGUF"
+    provider.architecture = "qwen3_5"
+    provider.architecture_config = {"message_format": "im_start_end"}
+    provider.llm.metadata["tokenizer.chat_template"] = _ornith_template()
+    assert provider._gguf_prompt_cache_control_plane_chat_format() == "llama-cpp-chat-template"
+
+    assert provider.prompt_cache_set("sess", make_default=False) is True
+    cache_value = provider._prompt_cache_store.get("sess")
+
+    stream = provider._gguf_control_plane_stream_generate(
+        chat_messages=[
+            {"role": "user", "content": "hello"},
+            {"role": "system", "content": "MID-HISTORY SYSTEM"},  # the template refuses this
+            {"role": "user", "content": "again"},
+        ],
+        cache_obj=cache_value.cache,
+        max_output_tokens=16,
+        temperature=0.2,
+        top_p=0.95,
+        top_k=40,
+        min_p=0.05,
+        typical_p=1.0,
+        repeat_penalty=1.1,
+        presence_penalty=0.0,
+        frequency_penalty=0.0,
+        tfs_z=1.0,
+        mirostat_mode=0,
+        mirostat_tau=5.0,
+        mirostat_eta=0.1,
+        seed=None,
+        enable_thinking=None,
+        cache_state=cache_value,
+    )
+    first = next(stream)
+    assert isinstance(first, GenerateResponse)
+    assert first.finish_reason == "error"
+    assert "System message must be at the beginning" in str(first.content)
+
+
 def test_gguf_prompt_cache_capabilities_are_local_control_plane_for_gemma4_template() -> None:
     provider = _new_provider(chat_format="chat_template.default")
     provider.architecture = "gemma4"

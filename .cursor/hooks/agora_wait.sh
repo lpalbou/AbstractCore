@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
-# agora-hook v3
-# agora stop-hook: INSTANT inbox check (never long-polls). Prompts when
-# something NEW landed; re-prompts standing unread on exponential backoff.
-# The attempt ledger only THROTTLES prompts — it never means "handled":
+# agora-hook v4
+# Turn-end backstop for agora reception. Obligation-gated (owed debts +
+# open/blocked unread; fyi never prompts), one global prompt floor across
+# ALL branches, harness payload guards (completed turns only, loop_count
+# cap), two-observation dead-listener nag. The ledger only THROTTLES —
 # the server-side ack cursor (ack_inbox) is the only truth.
-import json, os, sys, time, urllib.request
+import hashlib, json, os, sys, time, urllib.request
 URL = 'http://127.0.0.1:8765'
 AGENT = 'core'
 NOOP = "{}"
-BACKOFF_BASE, BACKOFF_CAP = 120, 1800
+CLIENT = '0.12.5'
+FLOOR = 600
+BACKOFF_BASE, BACKOFF_CAP = 600, 3600
 
 def noop():
     if NOOP:
@@ -24,6 +27,24 @@ try:
     payload = json.load(sys.stdin)
 except Exception:
     payload = {}
+if not isinstance(payload, dict):
+    payload = {}
+# Claude re-entry guard: a turn the hook itself started must not chain.
+if payload.get("stop_hook_active"):
+    noop()
+# Cursor guards, enforced only when the field exists (Claude/Codex
+# payloads lack both). An aborted/errored turn must not breed a
+# follow-up: the human just cancelled, or the provider just failed —
+# either way another full-context turn is the wrong reflex.
+status = payload.get("status")
+if status is not None and str(status) != "completed":
+    noop()
+try:
+    lc = payload.get("loop_count")
+    if lc is not None and int(lc) >= 2:
+        noop()  # script-side chain cap; hooks.json loop_limit backstops
+except Exception:
+    pass
 home = os.environ.get("AGORA_HOME", os.path.expanduser("~/.agora"))
 def listener_dead():
     pidfile = os.path.join(home, f"listen-{AGENT}.pid")
@@ -38,98 +59,126 @@ try:
 except Exception:
     keys = {}
 key = keys.get(f"{URL}::{AGENT}", "") if isinstance(keys, dict) else ""
-if not key or payload.get("stop_hook_active"):
+if not key:
     noop()
+
+ledger_path = os.path.join(home, f"hook-attempts-{AGENT}.json")
+def _fresh_ledger():
+    return {"v": 4, "last_prompt": 0.0, "sig": "", "attempts": 0,
+            "dead_streak": 0}
 try:
-    req = urllib.request.Request(f"{URL}/inbox",
-                                 headers={"Authorization": f"Bearer {key}"})
+    led = json.load(open(ledger_path))
+    if not (isinstance(led, dict) and led.get("v") == 4):
+        led = _fresh_ledger()  # v3 per-channel ledgers restart clean
+except Exception:
+    led = _fresh_ledger()
+def _save():
+    try:
+        with open(ledger_path, "w") as f:
+            json.dump(led, f)
+    except Exception:
+        pass  # best-effort throttle: prompting matters more than state
+
+now = time.time()
+last = led.get("last_prompt", 0.0)
+try:
+    last = float(last)
+except Exception:
+    last = 0.0
+if not 0 <= last <= now + 60:
+    last = 0.0  # NaN/negative/future timestamp: recover, not freeze
+floor_open = (now - last) >= FLOOR
+
+# Two-observation dead-listener rule: the pidfile is absent ~5s of
+# every ~246s listen cycle, so a single dead read is noise.
+if listener_dead():
+    led["dead_streak"] = min(int(led.get("dead_streak", 0) or 0) + 1, 64)
+else:
+    led["dead_streak"] = 0
+arm_due = led["dead_streak"] >= 2
+
+def _get(path):
+    req = urllib.request.Request(
+        f"{URL}{path}", headers={"Authorization": f"Bearer {key}",
+                                 "X-Agora-Client": CLIENT})
     with urllib.request.urlopen(req, timeout=5) as r:
-        unread = json.load(r)
+        return json.load(r)
+
+try:
+    owed = _get("/owed")
+except Exception:
+    owed = {}
+if not isinstance(owed, dict):
+    owed = {}
+to_answer = [m for m in owed.get("to_answer", []) if isinstance(m, dict)]
+to_consume = [m for m in owed.get("to_consume", []) if isinstance(m, dict)]
+try:
+    unread = _get("/inbox")
 except Exception:
     unread = []
 if not isinstance(unread, list):
     unread = []
-if listener_dead() and not payload.get("stop_hook_active"):
-    msg = ("Your agora BACKGROUND RECEPTION is not armed: this session "
-           "is deaf to hub messages until you re-arm it. Do it NOW, "
-           "exactly as your agora rule says: check_inbox, triage, then "
-           "start ONE background shell running "
-           "`while true; do agora listen --once --as core --important-only --max-wait 240; sleep 5; done` "
-           "monitored on the ANCHORED pattern ^AGORA_WAKE (debounce "
-           ">= 15000 ms), then keep your foreground on real work. "
-           "Never pgrep/kill agora processes (other seats look "
-           "identical by name)."
-           + (f" Also: {len(unread)} unread message(s) await triage."
-              if unread else ""))
-    print(json.dumps({'followup_message': msg}))
-    sys.exit(0)
-if not unread:
-    noop()  # empty inbox: nothing to say; ledger untouched
-
-ledger_path = os.path.join(home, f"hook-attempts-{AGENT}.json")
-try:
-    ledger = json.load(open(ledger_path))
-except Exception:
-    ledger = {}  # missing/corrupt ledger: everything counts as fresh
-if not isinstance(ledger, dict):
-    ledger = {}
-
-def entry(channel):
-    e = ledger.get(channel)
-    try:
-        return {"seq": int(e.get("seq", 0) or 0),
-                "attempts": min(int(e.get("attempts", 0) or 0), 64),
-                "last": float(e.get("last", 0) or 0.0)}
-    except Exception:
-        return {"seq": 0, "attempts": 0, "last": 0.0}
-
-now = time.time()
-tops, fresh_count = {}, 0
+# Obligation-shaped unread only: open/blocked status, or flags that
+# mark a debt (an answer to YOUR ask, critical, escalated). Bare
+# to-you fyi — including the hub's synthetic notices, which ride
+# fyi+to-you — waits for an organic turn; fyi never costs one.
+IMPORTANT = {"reply-to-me", "critical", "escalated"}
+oblig_unread = []
 for e in unread:
-    if not isinstance(e, dict):
+    if not isinstance(e, dict) or str(e.get("from", "")) == AGENT:
         continue
-    c = str(e.get("channel", ""))
-    try:
-        s = int(e.get("seq", 0) or 0)
-    except Exception:
-        s = 0
-    tops[c] = max(tops.get(c, 0), s)
-    if s > entry(c)["seq"]:
-        fresh_count += 1
-due = False
-for c, s in tops.items():
-    ent = entry(c)
-    if s > ent["seq"]:
-        continue  # fresh channel: prompts regardless of backoff
-    last = ent["last"]
-    if not 0 <= last <= now + 60:
-        last = 0.0  # NaN/negative/future timestamp: recover, not freeze
-    if now - last >= backoff(ent["attempts"]):
-        due = True
-if not fresh_count and not due:
-    noop()  # standing unread, every backoff window still open
-# One prompt covers the whole inbox, so every unread channel's window
-# restarts now (fresh channels reset the decay, stale ones escalate
-# it); channels with nothing unread left are pruned — acked history
-# needs no state. Never marks anything handled: ack_inbox is truth.
-new_ledger = {}
-for c, s in tops.items():
-    ent = entry(c)
-    if s > ent["seq"]:
-        new_ledger[c] = {"seq": s, "attempts": 1, "last": now}
-    else:
-        new_ledger[c] = {"seq": ent["seq"],
-                         "attempts": max(ent["attempts"], 0) + 1,
-                         "last": now}
+    flags = {t for t in str(e.get("flags", "")).split(",") if t}
+    if str(e.get("status", "")) in ("open", "blocked") or flags & IMPORTANT:
+        oblig_unread.append(e)
+
+def _mid(m):
+    return str(m.get("id") or f"{m.get('channel')}:{m.get('seq')}")
+oblig_ids = sorted({_mid(m) for m in to_answer} | {_mid(m) for m in to_consume}
+                   | {_mid(e) for e in oblig_unread})
+have_debt = bool(oblig_ids)
+sig = hashlib.sha256("\n".join(oblig_ids).encode()).hexdigest()[:16] if have_debt else ""
+changed = have_debt and sig != str(led.get("sig", ""))
 try:
-    with open(ledger_path, "w") as f:
-        json.dump(new_ledger, f)
+    attempts = min(int(led.get("attempts", 0) or 0), 64)
 except Exception:
-    pass  # best-effort throttle: prompting matters more than the ledger
-msg = (f"You have {len(unread)} unread agora message(s) across "
-       f"{len(tops)} channel(s) ({fresh_count} new). check_inbox "
-       "and settle what you OWE first: DO or claim work assigned to "
-       "you; use answers to your own asks; reply where owed; then "
-       "ack (ack = seen, not done). Verify your listener is armed; "
-       "re-arm if dead.")
+    attempts = 0
+due = (have_debt and not changed
+       and (now - last) >= backoff(max(attempts, 1)))
+if not have_debt:
+    led["sig"], led["attempts"] = "", 0  # cleared debt ends the episode
+if not floor_open or not (arm_due or changed or due):
+    _save()  # persist dead_streak/sig evolution even when silent
+    noop()
+
+parts = []
+if arm_due:
+    parts.append(
+        "Your agora BACKGROUND RECEPTION is not armed: this session "
+        "is deaf to hub messages until you re-arm it. Do it NOW, "
+        "exactly as your agora rule says: check_inbox, triage, then "
+        "start ONE background shell running "
+        "`while true; do agora listen --once --as core --important-only --max-wait 240; sleep 5; done` "
+        "monitored on the ANCHORED pattern ^AGORA_WAKE (debounce "
+        ">= 15000 ms), then keep your foreground on real work. "
+        "FIRST check the listener is not already running (read your "
+        "background shells); never arm a second loop, and never "
+        "pgrep/kill agora processes (other seats look identical by "
+        "name).")
+if have_debt:
+    parts.append(
+        f"You OWE work on {len(oblig_ids)} obligation(s): "
+        f"{len(to_answer)} unanswered ask(s) naming you, "
+        f"{len(to_consume)} answer(s) to your own asks awaiting use, "
+        f"{len(oblig_unread)} open/blocked unread. check_inbox and "
+        "settle what you OWE first: DO or claim work assigned to "
+        "you; use answers to your own asks; reply where owed; then "
+        "ack (ack = seen, not done).")
+msg = " ".join(parts)
+led["last_prompt"] = now
+if have_debt:
+    led["sig"] = sig
+    led["attempts"] = 1 if changed else attempts + 1
+else:
+    led["sig"], led["attempts"] = "", 0
+_save()
 print(json.dumps({'followup_message': msg}))

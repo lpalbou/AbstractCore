@@ -1,0 +1,189 @@
+"""0817 axis 2: KV-artifact tokenizer-identity gate (bloc lane).
+
+A KV artifact encodes the token-id stream ONE tokenizer + chat template
+produced. `rendered_recipe_sha256` hashes TEXT, so a tokenizer.json or
+chat-template refresh under the same model id was accepted with wrong
+positions — the audit's #1-danger missing axis. These pins hold the gate:
+
+- The compiled manifest RECORDS the tokenizer fingerprint.
+- Re-ensuring under a DIFFERENT fingerprint REFUSES and recompiles.
+- Re-ensuring under the SAME fingerprint reuses (no false invalidation).
+- A pre-axis artifact (empty recorded value) is reused UNVERIFIED with a
+  #FALLBACK when the current tokenizer is known.
+- An unavailable CURRENT state (model not loaded at ensure time) abstains —
+  reuse without noise; the provider load-time gate re-checks.
+- The fingerprint is NOT part of binding_id (backfill safety).
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+from abstractcore.core.bloc_kv import (
+    BlocKVArtifactManifest,
+    _compute_binding_id,
+    ensure_bloc_kv_artifact,
+    read_bloc_kv_manifest,
+)
+from abstractcore.core.file_blocs import FileBlocStore
+
+from tests.test_bloc_kv import _StubPersistentMLXProvider, _upsert_record
+
+
+class _TokenizerStub(_StubPersistentMLXProvider):
+    """Stub whose tokenizer fingerprint is settable, to drive the axis-2 gate."""
+
+    def __init__(self, *args, tokenizer_fp: str = "tokenizer-full:sha256:aaaa", **kwargs):
+        super().__init__(*args, **kwargs)
+        self._tokenizer_fp = tokenizer_fp
+
+    def prompt_cache_tokenizer_fingerprint(self) -> str:
+        return self._tokenizer_fp
+
+
+def test_manifest_records_tokenizer_fingerprint(tmp_path: Path) -> None:
+    store = FileBlocStore(root_dir=tmp_path)
+    record = _upsert_record(store, tmp_path, sha="1" * 64, path_name="doc.txt", content="hello world\n")
+    provider = _TokenizerStub(model="qwen3-test", tokenizer_fp="tokenizer-full:sha256:v1")
+
+    result = ensure_bloc_kv_artifact(provider=provider, store=store, record=record)
+    assert result.manifest.tokenizer_fingerprint == "tokenizer-full:sha256:v1"
+
+    reread = read_bloc_kv_manifest(store=store, record=record, provider=provider, model="qwen3-test")
+    assert reread is not None
+    assert reread.tokenizer_fingerprint == "tokenizer-full:sha256:v1"
+
+
+def test_same_tokenizer_reuses_artifact(tmp_path: Path) -> None:
+    store = FileBlocStore(root_dir=tmp_path)
+    record = _upsert_record(store, tmp_path, sha="2" * 64, path_name="doc.txt", content="hello world\n")
+    provider = _TokenizerStub(model="qwen3-test", tokenizer_fp="tokenizer-full:sha256:v1")
+
+    first = ensure_bloc_kv_artifact(provider=provider, store=store, record=record)
+    assert first.compiled is True
+    second = ensure_bloc_kv_artifact(provider=provider, store=store, record=record)
+    assert second.compiled is False
+    assert second.manifest.tokenizer_fingerprint == "tokenizer-full:sha256:v1"
+
+
+def test_tokenizer_mismatch_refuses_and_recompiles(tmp_path: Path, caplog) -> None:
+    store = FileBlocStore(root_dir=tmp_path)
+    record = _upsert_record(store, tmp_path, sha="3" * 64, path_name="doc.txt", content="hello world\n")
+
+    old = _TokenizerStub(model="qwen3-test", tokenizer_fp="tokenizer-full:sha256:v1")
+    first = ensure_bloc_kv_artifact(provider=old, store=store, record=record)
+    assert first.compiled is True
+
+    # A tokenizer.json / chat-template refresh under the same model id.
+    new = _TokenizerStub(model="qwen3-test", tokenizer_fp="tokenizer-full:sha256:v2")
+    with caplog.at_level(logging.WARNING):
+        second = ensure_bloc_kv_artifact(provider=new, store=store, record=record)
+    assert second.compiled is True, "stale-tokenizer artifact must be REFUSED and recompiled"
+    assert second.manifest.tokenizer_fingerprint == "tokenizer-full:sha256:v2"
+    assert any(
+        "#FALLBACK" in r.getMessage() and "tokenizer" in r.getMessage() and "recompiling" in r.getMessage()
+        for r in caplog.records
+    )
+
+    third = ensure_bloc_kv_artifact(provider=new, store=store, record=record)
+    assert third.compiled is False
+
+
+def test_pre_axis_artifact_reused_unverified_with_fallback(tmp_path: Path, caplog) -> None:
+    store = FileBlocStore(root_dir=tmp_path)
+    record = _upsert_record(store, tmp_path, sha="4" * 64, path_name="doc.txt", content="hello world\n")
+
+    legacy = _TokenizerStub(model="qwen3-test", tokenizer_fp="")
+    first = ensure_bloc_kv_artifact(provider=legacy, store=store, record=record)
+    assert first.compiled is True
+    assert first.manifest.tokenizer_fingerprint == ""
+
+    current = _TokenizerStub(model="qwen3-test", tokenizer_fp="tokenizer-full:sha256:v9")
+    with caplog.at_level(logging.WARNING):
+        second = ensure_bloc_kv_artifact(provider=current, store=store, record=record)
+    assert second.compiled is False, "pre-axis artifact must be REUSED, not refused"
+    assert any(
+        "#FALLBACK" in r.getMessage() and "no tokenizer fingerprint" in r.getMessage() for r in caplog.records
+    )
+
+
+def test_unloaded_tokenizer_abstains_without_noise(tmp_path: Path, caplog) -> None:
+    """Current state unavailable (model not loaded at ensure time): reuse
+    silently — the provider's load-time gate re-checks with the tokenizer
+    live; warning every pre-load ensure would be noise."""
+    store = FileBlocStore(root_dir=tmp_path)
+    record = _upsert_record(store, tmp_path, sha="5" * 64, path_name="doc.txt", content="hello world\n")
+
+    pinned = _TokenizerStub(model="qwen3-test", tokenizer_fp="tokenizer-full:sha256:v1")
+    first = ensure_bloc_kv_artifact(provider=pinned, store=store, record=record)
+    assert first.compiled is True
+
+    unloaded = _TokenizerStub(model="qwen3-test", tokenizer_fp="")
+    with caplog.at_level(logging.WARNING):
+        second = ensure_bloc_kv_artifact(provider=unloaded, store=store, record=record)
+    assert second.compiled is False
+    assert not any("tokenizer" in r.getMessage().lower() for r in caplog.records)
+
+
+def test_tokenizer_fingerprint_is_not_part_of_binding_id() -> None:
+    base = {
+        "version": 1,
+        "provider": "mlx",
+        "model": "qwen3-test",
+        "model_resolved_id": "/resolved/qwen3-test",
+        "cache_backend": "mlx",
+        "artifact_format": "abstractcore-mlx-prompt-cache/v1",
+        "bloc_sha256": "a" * 64,
+        "bloc_id": None,
+        "content_sha256": "b" * 64,
+        "path_in_prompt": "/x/doc.txt",
+        "recipe_id": "attached_file_box",
+        "recipe_version": 1,
+        "rendered_recipe_sha256": "c" * 64,
+        "renderer_version": 1,
+        "serializer_version": "mlx-prompt-fragment/v1:qwen-chatml",
+        "artifact_filename": "abc.safetensors",
+        "artifact_sha256": "d" * 64,
+        "quantization": "fp",
+    }
+    without = _compute_binding_id(dict(base), include_binding=False)
+    with_tokenizer = _compute_binding_id(
+        {**base, "tokenizer_fingerprint": "tokenizer-full:sha256:v1"}, include_binding=False
+    )
+    assert without == with_tokenizer
+
+
+def test_from_dict_defaults_missing_tokenizer_to_empty() -> None:
+    data = {
+        "version": 1,
+        "provider": "mlx",
+        "model": "qwen3-test",
+        "model_resolved_id": "/resolved/qwen3-test",
+        "cache_backend": "mlx",
+        "artifact_format": "abstractcore-mlx-prompt-cache/v1",
+        "bloc_sha256": "a" * 64,
+        "content_sha256": "b" * 64,
+        "path_in_prompt": "/x/doc.txt",
+        "recipe_id": "attached_file_box",
+        "recipe_version": 1,
+        "rendered_recipe_sha256": "c" * 64,
+        "renderer_version": 1,
+        "serializer_version": "mlx-prompt-fragment/v1:qwen-chatml",
+        "artifact_filename": "abc.safetensors",
+        "artifact_sha256": "d" * 64,
+        "quantization": "fp",
+        "created_at": "2026-07-01T00:00:00+00:00",
+        "token_count": 10,
+        "binding_id": "unused-in-this-test",
+    }
+    manifest = BlocKVArtifactManifest.from_dict(data)
+    assert manifest.tokenizer_fingerprint == ""
+    assert manifest.to_dict()["tokenizer_fingerprint"] == ""
+
+
+def test_default_provider_tokenizer_fingerprint_is_empty() -> None:
+    from abstractcore.providers.base import BaseProvider
+
+    stub = _StubPersistentMLXProvider(model="qwen3-test")
+    assert BaseProvider.prompt_cache_tokenizer_fingerprint(stub) == ""

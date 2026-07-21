@@ -613,6 +613,102 @@ class Scene3dCapability(Protocol):
     ) -> BytesOrArtifactRef: ...
 
 
+# --- camera (drafted by seat: camera; owner review: core — commons c3168) ---
+class CameraCapability(Protocol):
+    """Real-camera piloting capability (abstractcamera plugin).
+
+    Minimal-required by ruling (commons c3168): backend_id plus the
+    operations below; discovery methods (available_providers/list_models/
+    list_operations) stay optional-by-duck-typing — the facade tolerates
+    their absence. Operations return JSON-SAFE dicts (results may land in
+    runtime ledgers); capture content rides base64 (`data_b64`) or
+    `{"$artifact": ...}` refs, never raw bytes. `preview_frame` returns
+    JPEG bytes as the RETURN VALUE (the documented exception, mirroring
+    the vision-plugin convention for image payloads) or an artifact ref.
+
+    Addressing: `camera_id` is a DISCOVERY id (list_cameras), accepted only
+    by open(); `camera` is the DEVICE UID of a live camera (open/status),
+    None meaning the active one. Failures raise with user-actionable text.
+    """
+
+    backend_id: str
+
+    def list_cameras(self) -> List[Dict[str, Any]]: ...
+
+    def open(self, camera_id: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]: ...
+
+    def close(self, camera: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]: ...
+
+    def close_all(self) -> Dict[str, Any]: ...
+
+    def status(self, camera: Optional[str] = None) -> Dict[str, Any]: ...
+
+    def capture_photo(
+        self,
+        camera: Optional[str] = None,
+        *,
+        timeout_s: Optional[float] = None,
+        artifact_store: Optional[ArtifactStoreLike] = None,
+        run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        include_bytes: bool = False,
+        **kwargs: Any,
+    ) -> Dict[str, Any]: ...
+
+    def capture_video(
+        self,
+        duration_s: float,
+        camera: Optional[str] = None,
+        *,
+        timeout_s: Optional[float] = None,
+        artifact_store: Optional[ArtifactStoreLike] = None,
+        run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        include_bytes: bool = False,
+        **kwargs: Any,
+    ) -> Dict[str, Any]: ...
+
+    def stop_recording(
+        self,
+        camera: Optional[str] = None,
+        *,
+        timeout_s: Optional[float] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]: ...
+
+    def preview_frame(
+        self,
+        camera: Optional[str] = None,
+        *,
+        artifact_store: Optional[ArtifactStoreLike] = None,
+        run_id: Optional[str] = None,
+        tags: Optional[Dict[str, str]] = None,
+        **kwargs: Any,
+    ) -> Union[bytes, ArtifactRef]: ...
+
+    def start_detection(
+        self,
+        camera: Optional[str] = None,
+        *,
+        target: str = "motion",
+        action: str = "photo",
+        sensitivity: Optional[float] = None,
+        **kwargs: Any,
+    ) -> Dict[str, Any]: ...
+
+    def stop_detection(self, camera: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]: ...
+
+    def detection_events(
+        self,
+        camera: Optional[str] = None,
+        *,
+        since_id: int = 0,
+        kinds: Optional[List[str]] = None,
+        limit: int = 100,
+        include_thumbnails: bool = False,
+    ) -> Dict[str, Any]: ...
+
+
 @dataclass(frozen=True)
 class GenerateWithOutputsResult:
     response: "GenerateResponse"

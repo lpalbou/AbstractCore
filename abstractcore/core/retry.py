@@ -71,6 +71,17 @@ class RetryConfig:
     recovery_timeout: float = 60.0  # seconds before trying half-open
     half_open_max_calls: int = 3  # calls to test in half-open state
 
+    # Total wall-clock budget across the WHOLE retry sequence (seconds).
+    # None (default) preserves historical behavior: attempts × per-attempt
+    # timeout can stack (3 × a 600s config default = 30 minutes on a wedged
+    # endpoint — the 2026-07-21 entity-visit incident). When set, no RETRY
+    # starts once the elapsed wall clock exceeds the budget: the first
+    # attempt always runs (the budget bounds retries, never legitimate long
+    # generations), and exhaustion raises the last error loudly with the
+    # budget named. Interactive lanes (entity visits, UIs) should set this
+    # to their user-facing patience window.
+    max_total_wall_clock_s: Optional[float] = None
+
     def get_delay(self, attempt: int) -> float:
         """
         Calculate delay for given attempt with exponential backoff and full jitter.
@@ -333,7 +344,37 @@ class RetryManager:
             from ..exceptions import ProviderAPIError
             raise ProviderAPIError(f"Max attempts is {self.config.max_attempts}, cannot execute")
 
+        sequence_started = time.monotonic()
+
         for attempt in range(1, self.config.max_attempts + 1):
+            # Wall-clock budget (0817-adjacent, 2026-07-21 wedge incident):
+            # per-attempt timeouts STACK across retries — 3 attempts against a
+            # wedged endpoint at a 600s client timeout is 30 minutes of wall
+            # clock with the caller stuck on "Thinking…". When a budget is
+            # configured, retries stop the moment it is exceeded; the first
+            # attempt is never budget-gated (legitimate long generations are
+            # not retries).
+            budget = self.config.max_total_wall_clock_s
+            if (
+                budget is not None
+                and attempt > 1
+                and (time.monotonic() - sequence_started) >= float(budget)
+            ):
+                logger.warning(
+                    f"#FALLBACK retry wall-clock budget exhausted for {provider_key}: "
+                    f"{time.monotonic() - sequence_started:.1f}s elapsed >= {float(budget):.1f}s "
+                    f"budget before attempt {attempt}; raising last error instead of retrying."
+                )
+                self._emit_retry_event("RETRY_EXHAUSTED", {
+                    "provider_key": provider_key,
+                    "attempt": attempt - 1,
+                    "error_type": self.classify_error(last_error).value if last_error is not None else "unknown",
+                    "error": str(last_error),
+                    "reason": "wall_clock_budget_exhausted",
+                    "budget_seconds": float(budget),
+                    "circuit_breaker_state": circuit_breaker.get_state_info(),
+                })
+                break
             # A cancel observed between attempts (e.g. set while the previous attempt
             # was in flight) stops the sequence before burning another call.
             if cancel_event is not None and cancel_event.is_set() and attempt > 1:

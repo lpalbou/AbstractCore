@@ -9,6 +9,7 @@ from .errors import CapabilityUnavailableError
 from .host import DefaultCapabilityHostContext
 from .types import (
     AudioCapability,
+    CameraCapability,
     CapabilityHostContext,
     CapabilityModelInfo,
     CapabilityOperationInfo,
@@ -84,6 +85,7 @@ class CapabilityRegistry:
         self.vision = _VisionFacade(self)
         self.music = _MusicFacade(self)
         self.scene3d = _Scene3dFacade(self)
+        self.camera = _CameraFacade(self)
         self._host_context: Optional[CapabilityHostContext] = None
 
     @property
@@ -281,6 +283,27 @@ class CapabilityRegistry:
             config_hint=config_hint,
         )
 
+    # --- camera (drafted by seat: camera; owner review: core — commons c3168) ---
+    def register_camera_backend(
+        self,
+        *,
+        backend_id: str,
+        factory: Callable[[Any], CameraCapability],
+        priority: int = 0,
+        description: Optional[str] = None,
+        install_hint: Optional[str] = None,
+        config_hint: Optional[str] = None,
+    ) -> None:
+        self.register_backend(
+            capability="camera",
+            backend_id=backend_id,
+            factory=factory,
+            priority=priority,
+            description=description,
+            install_hint=install_hint,
+            config_hint=config_hint,
+        )
+
     def _default_install_hint(self, capability: str) -> Optional[str]:
         cap = str(capability or "").strip().lower()
         if cap == "voice" or cap == "audio":
@@ -291,6 +314,10 @@ class CapabilityRegistry:
             return 'pip install "abstractcore[music]"'
         if cap in {"scene3d", "3d"}:
             return 'pip install "abstractcore[scene3d]"'
+        if cap == "camera":
+            # camera (seat: camera): no abstractcore extra exists yet — the
+            # plugin package is the install unit.
+            return 'pip install "abstractcamera"'
         return None
 
     def _select_backend_id(self, capability: str) -> str:
@@ -405,6 +432,11 @@ class CapabilityRegistry:
         out = self._get_instance("scene3d")
         return out  # type: ignore[return-value]
 
+    def get_camera(self) -> CameraCapability:
+        # camera (seat: camera; owner review: core)
+        out = self._get_instance("camera")
+        return out  # type: ignore[return-value]
+
     def list_backend_infos(self, capability: Optional[str] = None) -> List[CapabilityBackendInfo]:
         """Return registered backend metadata without instantiating backend factories."""
         self._ensure_plugins_loaded()
@@ -498,7 +530,7 @@ class CapabilityRegistry:
             "capabilities": {},
         }
 
-        for cap in ["voice", "audio", "vision", "music", "scene3d"]:
+        for cap in ["voice", "audio", "vision", "music", "scene3d", "camera"]:
             regs = self._registrations.get(cap) or {}
             backends = sorted(
                 [
@@ -1635,3 +1667,111 @@ class _Scene3dFacade:
             else:
                 out = {"data": out, "backend_id": requested_backend_id, "provider": requested_backend_id}
         return out
+
+
+# --- camera (drafted by seat: camera; owner review: core — commons c3168) ---
+class _CameraFacade:
+    """Facade for the `camera` capability (real-camera piloting).
+
+    Thin delegation to the selected camera backend: the backend already
+    returns JSON-safe dicts and raises with user-actionable text, so the
+    facade adds selection + honest absence errors only. Discovery methods
+    ride the registry's generic normalizing routes (optional-by-duck-typing
+    on the backend, per the c3168 minimal-required ruling).
+    """
+
+    _REQUIRED_OP_HINT = (
+        "The selected camera capability backend does not expose {op}(...). "
+        "abstractcamera >= 0.2 implements the full camera op set."
+    )
+
+    def __init__(self, registry: CapabilityRegistry) -> None:
+        self._registry = registry
+
+    @property
+    def backend_id(self) -> Optional[str]:
+        try:
+            return str(getattr(self._registry.get_camera(), "backend_id"))
+        except Exception:
+            return None
+
+    def _call(self, op: str, *args: Any, **kwargs: Any) -> Any:
+        backend = self._registry.get_camera()
+        method = getattr(backend, op, None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="camera",
+                reason=self._REQUIRED_OP_HINT.format(op=op),
+                install_hint=self._registry._default_install_hint("camera"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        return method(*args, **kwargs)
+
+    # -- discovery / lifecycle -------------------------------------------
+
+    def list_cameras(self) -> List[Dict[str, Any]]:
+        return list(self._call("list_cameras") or [])
+
+    def open(self, camera_id: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+        return self._call("open", camera_id, **kwargs)
+
+    def close(self, camera: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+        return self._call("close", camera, **kwargs)
+
+    def close_all(self) -> Dict[str, Any]:
+        return self._call("close_all")
+
+    def status(self, camera: Optional[str] = None) -> Dict[str, Any]:
+        return self._call("status", camera)
+
+    # -- capture -----------------------------------------------------------
+
+    def capture_photo(self, camera: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+        return self._call("capture_photo", camera, **kwargs)
+
+    def capture_video(self, duration_s: float, camera: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+        return self._call("capture_video", duration_s, camera, **kwargs)
+
+    def stop_recording(self, camera: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+        return self._call("stop_recording", camera, **kwargs)
+
+    def preview_frame(self, camera: Optional[str] = None, **kwargs: Any) -> Any:
+        return self._call("preview_frame", camera, **kwargs)
+
+    # -- detection -----------------------------------------------------------
+
+    def start_detection(self, camera: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+        return self._call("start_detection", camera, **kwargs)
+
+    def stop_detection(self, camera: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+        return self._call("stop_detection", camera, **kwargs)
+
+    def detection_events(self, camera: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+        return self._call("detection_events", camera, **kwargs)
+
+    # -- catalog (generic normalizing routes) --------------------------------
+
+    def available_providers(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self._registry.available_providers("camera", task=task)
+
+    def list_models(
+        self,
+        *,
+        task: Optional[str] = None,
+        provider: Optional[str] = None,
+        provider_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        return self._registry.list_models("camera", task=task, provider=provider, provider_id=provider_id)
+
+    def list_operations(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]:
+        return self._registry.list_operations("camera", task=task)
+
+    def capability_catalog(self, *, task: Optional[str] = None) -> Dict[str, Any]:
+        return {
+            "capability": "camera",
+            "backend_id": self.backend_id,
+            "task": task,
+            "providers": self.available_providers(task=task),
+            "models": self.list_models(task=task),
+            "operations": self.list_operations(task=task),
+        }

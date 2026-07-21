@@ -136,6 +136,21 @@ def coerce_arguments(
         if not schema_type:
             continue
 
+        # An explicit null for a typed field means "not provided": callers
+        # (models, flow-composed tool calls) routinely emit e.g.
+        # {"head_limit": null} for optional parameters. JSON Schema treats
+        # null as a distinct type, so coercing it to int/bool would be
+        # invention and raising turns a well-formed optional into a hard
+        # failure (live case: coding-agent's gate listing sent
+        # head_limit=None and every run died at dispatch). Drop the key so
+        # the tool's own default applies — same outcome as omission.
+        if value is None and schema_type != "string":
+            out.pop(key)
+            warnings.append(
+                f"#FALLBACK: dropped argument '{key}' (explicit null for {schema_type}; tool default applies)"
+            )
+            continue
+
         try:
             if schema_type == "boolean":
                 if isinstance(value, bool):

@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -49,6 +50,87 @@ def _engine_fingerprint(provider: Any) -> str:
     never as 'matches'.
     """
     getter = getattr(provider, "prompt_cache_engine_fingerprint", None)
+    if not callable(getter):
+        return ""
+    try:
+        return str(getter() or "").strip()
+    except Exception:
+        return ""
+
+
+def _tokenizer_fingerprint(provider: Any) -> str:
+    """The provider's tokenizer/chat-template identity (0817, axis 2).
+
+    Empty when the tokenizer is not observable RIGHT NOW (provider without the
+    hook, or model not loaded yet) — validators must treat empty as 'cannot
+    verify' and abstain, never as 'matches'; the load-time gate re-checks once
+    the tokenizer exists.
+    """
+    getter = getattr(provider, "prompt_cache_tokenizer_fingerprint", None)
+    if not callable(getter):
+        return ""
+    try:
+        return str(getter() or "").strip()
+    except Exception:
+        return ""
+
+
+def _model_config_fingerprint(provider: Any) -> str:
+    """The provider's model-config KV-geometry identity (0817, axis 3).
+
+    Empty when the config is not observable RIGHT NOW (provider without the
+    hook, or model not loaded yet) — validators must treat empty as 'cannot
+    verify' and abstain, never as 'matches'; the load-time gate re-checks once
+    the model exists.
+    """
+    getter = getattr(provider, "prompt_cache_model_config_fingerprint", None)
+    if not callable(getter):
+        return ""
+    try:
+        return str(getter() or "").strip()
+    except Exception:
+        return ""
+
+
+# Cache dtypes this build can WRITE and READ (0817, axis 5). "fp" is the
+# provider-native float layout every pre-axis artifact used; "q8" is the
+# 8-bit-quantized KV layout (MLX `to_quantized`, group 64 / 8 bits) — the
+# storage win the dtype axis unlocks. A manifest recording anything else was
+# written by a different build: refuse, never guess a tensor layout.
+_KNOWN_QUANTIZATIONS = frozenset({"fp", "q8"})
+
+
+def _normalized_quantization(value: Any) -> str:
+    text = str(value or "fp").strip().lower() or "fp"
+    if text not in _KNOWN_QUANTIZATIONS:
+        raise ValueError(
+            f"Unknown bloc KV cache dtype {text!r}. Supported: {sorted(_KNOWN_QUANTIZATIONS)}."
+        )
+    return text
+
+
+def _provider_supports_q8_save(provider: Any) -> bool:
+    """True when the provider's `prompt_cache_save` declares an explicit `q8`
+    parameter (MLX does). A bare `**kwargs` does NOT count: passing q8 into a
+    writer that silently ignores it would store fp under a manifest claiming
+    q8 — the exact silent-wrong-label class this axis exists to kill."""
+    save = getattr(provider, "prompt_cache_save", None)
+    if not callable(save):
+        return False
+    try:
+        return "q8" in inspect.signature(save).parameters
+    except (TypeError, ValueError):
+        return False
+
+
+def _weights_fingerprint(provider: Any) -> str:
+    """The provider's cheap weights identity (0817, axis 4).
+
+    Empty when the weights are not observable RIGHT NOW — validators must
+    treat empty as 'cannot verify' and abstain, never as 'matches'; the
+    load-time gate re-checks once the model exists.
+    """
+    getter = getattr(provider, "prompt_cache_weights_fingerprint", None)
     if not callable(getter):
         return ""
     try:
@@ -336,6 +418,26 @@ class BlocKVArtifactManifest:
     # It is a SEPARATE reuse gate — present+mismatch refuses (recompile),
     # absent (pre-0817) accepts with a labeled #FALLBACK.
     engine_fingerprint: str = ""
+    # Tokenizer + chat-template identity whose token-id stream the artifact
+    # encodes (0817, axis 2). Same backfill rules as engine_fingerprint:
+    # never part of binding_id; present+mismatch refuses (recompile), absent
+    # (pre-axis artifact) accepts with a labeled #FALLBACK, unavailable
+    # CURRENT state abstains (the load-time gate re-checks).
+    tokenizer_fingerprint: str = ""
+    # Model-config KV-geometry identity (0817, axis 3): rope/window/position
+    # keys whose edit re-defines what the cached tensors MEAN under the same
+    # model id. Same backfill rules as the other fingerprints: never part of
+    # binding_id; present+mismatch refuses (recompile), absent (pre-axis
+    # artifact) accepts with a labeled #FALLBACK, unavailable CURRENT state
+    # abstains (the load-time gate re-checks).
+    model_config_fingerprint: str = ""
+    # Cheap weights identity (0817, axis 4): the tensors in the artifact were
+    # COMPUTED BY one set of weights; a checkpoint swap under the same id
+    # leaves text/tokenizer/config identical while the projections are gone.
+    # Same backfill rules: never part of binding_id; present+mismatch refuses
+    # (recompile), absent (pre-axis artifact) accepts with a labeled
+    # #FALLBACK, unavailable CURRENT state abstains (load-time gate re-checks).
+    weights_fingerprint: str = ""
     provider_meta: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -362,6 +464,9 @@ class BlocKVArtifactManifest:
             "token_count": int(self.token_count) if isinstance(self.token_count, int) and self.token_count >= 0 else None,
             "binding_id": self.binding_id,
             "engine_fingerprint": self.engine_fingerprint,
+            "tokenizer_fingerprint": self.tokenizer_fingerprint,
+            "model_config_fingerprint": self.model_config_fingerprint,
+            "weights_fingerprint": self.weights_fingerprint,
             "provider_meta": dict(self.provider_meta or {}),
         }
 
@@ -398,6 +503,9 @@ class BlocKVArtifactManifest:
             token_count=int(data.get("token_count")) if isinstance(data.get("token_count"), int) else None,
             binding_id=str(data.get("binding_id") or ""),
             engine_fingerprint=str(data.get("engine_fingerprint") or ""),
+            tokenizer_fingerprint=str(data.get("tokenizer_fingerprint") or ""),
+            model_config_fingerprint=str(data.get("model_config_fingerprint") or ""),
+            weights_fingerprint=str(data.get("weights_fingerprint") or ""),
             provider_meta=dict(provider_meta or {}) if isinstance(provider_meta, dict) else {},
         )
         if not manifest.binding_id:
@@ -917,6 +1025,7 @@ def _validate_existing_manifest(
     model: str,
     artifact_path: Path,
     manifest_path: Path,
+    quantization: str = "fp",
 ) -> Optional[BlocKVArtifactManifest]:
     try:
         if not manifest_path.exists() or not artifact_path.exists():
@@ -970,7 +1079,30 @@ def _validate_existing_manifest(
         return None
     if manifest.binding_id != _compute_binding_id(manifest.to_dict(), include_binding=False):
         return None
-    if manifest.quantization not in {None, "", "fp"}:
+    # Cache-dtype gate (0817, axis 5): the artifact's tensors are stored in
+    # ONE dtype family and the requester names the dtype it wants. A manifest
+    # whose recorded dtype is UNKNOWN to this build is refused (a newer/older
+    # writer — never guess a tensor layout); a recorded dtype that differs
+    # from the REQUEST recompiles (the request is authoritative — this is
+    # what unlocks q8 storage: request "q8" once, the artifact recompiles
+    # quantized and then reuses under q8 requests). Pre-axis manifests
+    # (None/"") read as "fp" — the only dtype ever written before the axis —
+    # so the existing corpus stays valid under default requests.
+    stored_quant = str(manifest.quantization or "fp").strip().lower() or "fp"
+    if stored_quant not in _KNOWN_QUANTIZATIONS:
+        logger.warning(
+            f"#FALLBACK bloc KV artifact {artifact_path.name} records unknown cache "
+            f"dtype '{stored_quant}' (this build knows {sorted(_KNOWN_QUANTIZATIONS)}) — "
+            f"refusing the unreadable layout and recompiling."
+        )
+        return None
+    requested_quant = str(quantization or "fp").strip().lower() or "fp"
+    if stored_quant != requested_quant:
+        logger.warning(
+            f"#FALLBACK bloc KV artifact {artifact_path.name} is stored as "
+            f"'{stored_quant}' but the request asks for '{requested_quant}' — "
+            f"recompiling at the requested cache dtype."
+        )
         return None
     # Engine-identity gate (0817, first axis): the KV serialization layout is
     # engine-and-version specific. A recorded fingerprint that DIFFERS from the
@@ -993,6 +1125,88 @@ def _validate_existing_manifest(
             f"#FALLBACK bloc KV artifact {artifact_path.name} carries no engine "
             f"fingerprint (pre-0817 artifact); reusing it UNVERIFIED against the "
             f"current engine '{current_engine or 'unknown'}'. Recompile to pin it."
+        )
+    # Tokenizer-identity gate (0817, axis 2): the artifact encodes the token-id
+    # stream ONE tokenizer + chat template produced; a tokenizer.json/template
+    # refresh under the same model id silently changes text→ids, which the
+    # TEXT-level rendered_recipe_sha256 cannot see. Mismatch → refuse (return
+    # None → recompile). Absent recorded value (pre-axis artifact) → reuse with
+    # a labeled #FALLBACK, but only when we COULD have verified (current known).
+    # Unavailable current value (tokenizer not loaded at ensure time) →
+    # abstain; the provider's load-time gate re-checks with the tokenizer live.
+    from ..providers.tokenizer_fingerprint import check_tokenizer_fingerprint
+
+    stored_tokenizer = str(manifest.tokenizer_fingerprint or "").strip()
+    current_tokenizer = _tokenizer_fingerprint(provider)
+    verdict = check_tokenizer_fingerprint(stored_tokenizer, current_tokenizer)
+    if verdict == "mismatch":
+        logger.warning(
+            f"#FALLBACK bloc KV artifact {artifact_path.name} was compiled under "
+            f"tokenizer '{stored_tokenizer}' but the current tokenizer is "
+            f"'{current_tokenizer}' — the encoded token stream can no longer be "
+            f"trusted; refusing the stale cache and recompiling."
+        )
+        return None
+    if verdict == "unverified_stored" and current_tokenizer:
+        logger.warning(
+            f"#FALLBACK bloc KV artifact {artifact_path.name} carries no tokenizer "
+            f"fingerprint (pre-axis artifact); reusing it UNVERIFIED against the "
+            f"current tokenizer '{current_tokenizer}'. Recompile to pin it."
+        )
+    # Model-config geometry gate (0817, axis 3): the artifact's K/V tensors
+    # were computed under one rope/window/position geometry; a config.json
+    # edit under the same model id (rope_theta retune, longrope block, window
+    # change) re-defines what they mean with no textual or tokenizer trace.
+    # Mismatch → refuse (return None → recompile). Absent recorded value
+    # (pre-axis artifact) → reuse with a labeled #FALLBACK when we COULD have
+    # verified. Unavailable current value (model not loaded at ensure time)
+    # → abstain; the provider's load-time gate re-checks with the model live.
+    from ..providers.model_config_fingerprint import check_model_config_fingerprint
+
+    stored_config = str(manifest.model_config_fingerprint or "").strip()
+    current_config = _model_config_fingerprint(provider)
+    config_verdict = check_model_config_fingerprint(stored_config, current_config)
+    if config_verdict == "mismatch":
+        logger.warning(
+            f"#FALLBACK bloc KV artifact {artifact_path.name} was compiled under "
+            f"model-config geometry '{stored_config}' but the current config is "
+            f"'{current_config}' (rope/window/position keys changed under the same "
+            f"model id) — the cached tensors' meaning moved; refusing the stale "
+            f"cache and recompiling."
+        )
+        return None
+    if config_verdict == "unverified_stored" and current_config:
+        logger.warning(
+            f"#FALLBACK bloc KV artifact {artifact_path.name} carries no model-config "
+            f"fingerprint (pre-axis artifact); reusing it UNVERIFIED against the "
+            f"current config '{current_config}'. Recompile to pin it."
+        )
+    # Weights-identity gate (0817, axis 4): the artifact's tensors were
+    # computed BY one set of weights; a checkpoint swap under the same model
+    # id (force-pushed revision, re-quantized GGUF, edited shards) leaves
+    # every other axis identical while the projections are gone. Mismatch →
+    # refuse (return None → recompile). Absent recorded value (pre-axis
+    # artifact) → reuse with a labeled #FALLBACK when we COULD have verified.
+    # Unavailable current value → abstain; the load-time gate re-checks.
+    from ..providers.weights_fingerprint import check_weights_fingerprint
+
+    stored_weights = str(manifest.weights_fingerprint or "").strip()
+    current_weights = _weights_fingerprint(provider)
+    weights_verdict = check_weights_fingerprint(stored_weights, current_weights)
+    if weights_verdict == "mismatch":
+        logger.warning(
+            f"#FALLBACK bloc KV artifact {artifact_path.name} was compiled by "
+            f"weights '{stored_weights}' but the current weights are "
+            f"'{current_weights}' (checkpoint swapped under the same model id) — "
+            f"the cached tensors were computed by weights that are gone; refusing "
+            f"the stale cache and recompiling."
+        )
+        return None
+    if weights_verdict == "unverified_stored" and current_weights:
+        logger.warning(
+            f"#FALLBACK bloc KV artifact {artifact_path.name} carries no weights "
+            f"fingerprint (pre-axis artifact); reusing it UNVERIFIED against the "
+            f"current weights '{current_weights}'. Recompile to pin it."
         )
     return manifest
 
@@ -1109,11 +1323,22 @@ def ensure_bloc_kv_artifact(
     artifact_path: Optional[Union[str, Path]] = None,
     force_rebuild: bool = False,
     debug: bool = False,
+    quantization: str = "fp",
 ) -> BlocKVCompileResult:
     _require_operations(provider, ["set", "update", "save"], context="compilation")
     model_id = str(model or getattr(provider, "model", "") or "").strip()
     if not model_id:
         raise ValueError("Bloc KV compilation requires a non-empty model id.")
+    # Cache-dtype request (0817, axis 5): validated against the KNOWN set up
+    # front, and against the WRITER before compiling — a provider whose save
+    # does not declare `q8` would silently store fp under a q8 label.
+    quant = _normalized_quantization(quantization)
+    if quant == "q8" and not _provider_supports_q8_save(provider):
+        raise ValueError(
+            "This provider's prompt_cache_save does not support q8-quantized KV "
+            "artifacts (no `q8` parameter); compile with quantization='fp' or use "
+            "a provider with quantized cache support (MLX)."
+        )
     record = _resolve_record(store=store, record=record, sha256=sha256, bloc_id=bloc_id)
     final_artifact_path = _artifact_path_for(
         store=store,
@@ -1139,6 +1364,7 @@ def ensure_bloc_kv_artifact(
             model=model_id,
             artifact_path=final_artifact_path,
             manifest_path=final_manifest_path,
+            quantization=quant,
         )
         if existing is not None:
             return BlocKVCompileResult(
@@ -1193,11 +1419,17 @@ def ensure_bloc_kv_artifact(
                 "rendered_recipe_sha256": rendered.rendered_recipe_sha256,
                 "renderer_version": rendered.renderer_version,
                 "serializer_version": rendered.serializer_version,
-                "quantization": "fp",
+                "quantization": quant,
                 "engine_fingerprint": _engine_fingerprint(provider),
+                "tokenizer_fingerprint": _tokenizer_fingerprint(provider),
+                "model_config_fingerprint": _model_config_fingerprint(provider),
+                "weights_fingerprint": _weights_fingerprint(provider),
                 "provider_meta": dict(rendered.provider_meta or {}),
             }
-            provider.prompt_cache_save(tmp_cache_key, str(artifact_tmp), meta=out_meta)
+            if quant == "q8":
+                provider.prompt_cache_save(tmp_cache_key, str(artifact_tmp), q8=True, meta=out_meta)
+            else:
+                provider.prompt_cache_save(tmp_cache_key, str(artifact_tmp), meta=out_meta)
             artifact_sha256 = _sha256_file(artifact_tmp)
             token_count = None
             token_counter = getattr(provider, "prompt_cache_token_count", None)
@@ -1225,10 +1457,13 @@ def ensure_bloc_kv_artifact(
                 serializer_version=rendered.serializer_version,
                 artifact_filename=final_artifact_path.name,
                 artifact_sha256=artifact_sha256,
-                quantization="fp",
+                quantization=quant,
                 created_at=datetime.now(tz=timezone.utc).replace(microsecond=0).isoformat(),
                 token_count=token_count,
                 engine_fingerprint=_engine_fingerprint(provider),
+                tokenizer_fingerprint=_tokenizer_fingerprint(provider),
+                model_config_fingerprint=_model_config_fingerprint(provider),
+                weights_fingerprint=_weights_fingerprint(provider),
                 provider_meta=dict(rendered.provider_meta or {}),
             )
             manifest = BlocKVArtifactManifest(
@@ -1293,6 +1528,7 @@ def load_bloc_kv_artifact(
     make_default: bool = False,
     force_rebuild: bool = False,
     debug: bool = False,
+    quantization: str = "fp",
 ) -> BlocKVLoadResult:
     _require_operations(provider, ["load"], context="loading")
     record = _resolve_record(store=store, record=record, sha256=sha256, bloc_id=bloc_id)
@@ -1305,6 +1541,7 @@ def load_bloc_kv_artifact(
         artifact_path=artifact_path,
         force_rebuild=force_rebuild,
         debug=debug,
+        quantization=quantization,
     )
 
     target_key = str(key or stable_cache_key or f"cache:bloc:{uuid.uuid4().hex[:12]}").strip()

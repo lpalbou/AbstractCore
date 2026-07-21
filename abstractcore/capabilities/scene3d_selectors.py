@@ -13,6 +13,7 @@ from typing import Any, Optional
 SCENE3D_BACKEND_IDS = {
     "abstract3d:triposr",
     "abstract3d:step1x-local",
+    "abstract3d:hunyuan3d21-local",
     "abstract3d:trellis2-local",
 }
 
@@ -20,6 +21,12 @@ SCENE3D_BACKEND_ALIASES = {
     "triposr": "abstract3d:triposr",
     "step1x": "abstract3d:step1x-local",
     "step1x-local": "abstract3d:step1x-local",
+    # License-gated backend: selectable by alias, but abstract3d refuses to
+    # download or run it without the explicit Tencent license acknowledgment
+    # (ABSTRACT3D_HUNYUAN_ACCEPT_LICENSE=1 / scene3d_hunyuan_license_accepted).
+    "hunyuan3d21": "abstract3d:hunyuan3d21-local",
+    "hunyuan3d": "abstract3d:hunyuan3d21-local",
+    "hunyuan3d21-local": "abstract3d:hunyuan3d21-local",
     "trellis2": "abstract3d:trellis2-local",
     "trellis2-local": "abstract3d:trellis2-local",
 }

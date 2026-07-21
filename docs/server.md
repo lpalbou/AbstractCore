@@ -234,6 +234,19 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Audio | POST | `/v1/audio/translations` | Reserved OpenAI-compatible translation route | `file`, `model`; returns `501` in this version |
 | Audio | POST | `/v1/audio/music` | Extension endpoint for text-to-music plugins | `prompt`/`input`/`text`, optional `provider`, `model`, `lyrics`, `duration_s`, `seed`, `num_inference_steps`, `guidance_scale`, `format`; requires a music capability plugin |
 | Audio | POST | `/{provider}/v1/audio/music` | Backend-scoped text-to-music route | path `provider`, music body fields |
+| Scene3D | POST | `/v1/scene3d/generations` | Extension endpoint for 3D generation plugins | `prompt` (text→3D) or `image_b64` (image→3D), optional `provider`, `model`, `task` (`t23d`/`i23d`), `format` (`glb` default), backend options (`seed`, `mc_resolution`, …); returns raw model bytes; requires a scene3d capability plugin |
+| Scene3D | POST | `/{provider}/v1/scene3d/generations` | Backend-scoped 3D generation route | path `provider` (e.g. `triposr`, `step1x`, `hunyuan3d21`, `trellis2`), scene3d body fields |
+| Camera | GET | `/v1/camera/devices` | List cameras (non-invasive discovery) | none; requires a camera capability plugin |
+| Camera | POST | `/v1/camera/open` | Claim a camera and start its session | optional `camera` |
+| Camera | POST | `/v1/camera/close` | Release a camera | optional `camera` |
+| Camera | GET | `/v1/camera/status` | Camera status (one or all) | optional `camera` |
+| Camera | GET | `/v1/camera/preview` | Latest live-view frame (JPEG) | optional `camera` |
+| Camera | POST | `/v1/camera/photo` | Capture a photo | optional `camera`, `timeout_s` |
+| Camera | POST | `/v1/camera/video` | Record a bounded video clip | `duration_s`, optional `camera`, `timeout_s` |
+| Camera | POST | `/v1/camera/recording/stop` | Stop a running recording | optional `camera` |
+| Camera | POST | `/v1/camera/detection` | Arm detection (motion/lightning/meteor) | detection fields; optional `camera` |
+| Camera | POST | `/v1/camera/detection/stop` | Disarm detection | optional `camera` |
+| Camera | GET | `/v1/camera/events` | Camera event log (cursor-paginated) | optional `camera`, cursor params |
 | Runtime | POST | `/acore/models/load` | Load and keep warm a task-specific model runtime | optional `task` (`text_generation` default, `image_generation`, `video_generation`, `text_to_video`, `image_to_video`, `tts`, `stt`), `provider`, `model`, `options`, `pin`, `base_url`, `timeout_s` |
 | Runtime | GET | `/acore/models/loaded` | List task-aware loaded runtimes | optional `task`, `provider`, `model` |
 | Runtime | POST | `/acore/models/unload` | Unload a task-specific runtime | `runtime_id` or `provider` + `model`, optional `task`, `base_url`, `options` |
@@ -474,11 +487,31 @@ curl -X POST http://localhost:8000/openai/v1/chat/completions \
 
 ### Media generation endpoints (optional)
 
-AbstractCore Server can optionally expose OpenAI-compatible **image/video generation** and **audio** endpoints.
+AbstractCore Server can optionally expose OpenAI-compatible **image/video generation** and **audio** endpoints, plus **extension** endpoints for **3D generation** (`/v1/scene3d/generations`) and **camera piloting** (`/v1/camera/*`). OpenAI has no 3D or camera API, so these follow the same shape as `/v1/audio/music`: raw bytes back, `501` with an install hint when the plugin is absent.
 
 Important notes:
 - These are **interoperability-first** endpoints (return `b64_json` or raw bytes), not an artifact-first durability contract.
 - If the required plugin/backend is not available, the server returns `501` with actionable messaging.
+- Long-running generation handlers (music, speech, 3D) run in the server threadpool, so one synchronous generation does not stall other requests.
+
+3D example (image→3D through the `abstract3d` plugin):
+
+```bash
+# image_b64 is the base64 of a source image; returns raw GLB bytes.
+curl -sS -X POST "$BASE/v1/scene3d/generations" \
+  -H "Content-Type: application/json" \
+  -d "{\"image_b64\":\"$(base64 -i photo.jpg)\",\"task\":\"i23d\",\"provider\":\"triposr\",\"format\":\"glb\"}" \
+  -o reconstruction.glb
+```
+
+Camera example (capture one photo through the `abstractcamera` plugin):
+
+```bash
+curl -sS "$BASE/v1/camera/devices"                 # non-invasive discovery
+curl -sS -X POST "$BASE/v1/camera/open"            # claim the default device
+curl -sS -X POST "$BASE/v1/camera/photo" -o shot.jpg
+curl -sS -X POST "$BASE/v1/camera/close"
+```
 
 #### Capability catalogs
 
