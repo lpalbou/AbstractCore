@@ -28,6 +28,9 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..capabilities.errors import CapabilityUnavailableError
 from ..exceptions import AuthenticationError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
+from ..utils.structured_logging import get_logger
+
+logger = get_logger(__name__)
 
 
 router = APIRouter(tags=["audio"])
@@ -35,6 +38,9 @@ provider_router = APIRouter(tags=["audio"])
 
 _CORE_LOCK = threading.Lock()
 _CORE: Optional[Any] = None
+# Warn-once memo for the config/env precedence warnings (the config builders
+# run per-request; unguarded warnings spam every poll during migration).
+_CAPABILITY_WARNED: set = set()
 _PROVIDER_API_KEY_HEADERS = (
     "x-abstractcore-provider-api-key",
     "x-provider-api-key",
@@ -253,35 +259,163 @@ def _bool_env(name: str, *, default: bool) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
+# Behavior config for the voice/music capabilities. `abstractcore --config`
+# (the capability_defaults route defaults) is the AUTHORITATIVE source; env is
+# a labeled #FALLBACK only, retained for compatibility. Operator ruling
+# 2026-07-21 (dm#177): "which engine/model/voice" is BEHAVIOR — it must live
+# in config, never be silently flipped by an exported shell var (the
+# ABSTRACTVOICE_TTS_ENGINE incident). This env map is the DEPRECATED path.
+_CAPABILITY_ENV_MAP = {
+    "ABSTRACTVOICE_LANGUAGE": "voice_language",
+    "ABSTRACTVOICE_TTS_ENGINE": "voice_tts_engine",
+    "ABSTRACTVOICE_STT_ENGINE": "voice_stt_engine",
+    "ABSTRACTVOICE_WHISPER_MODEL": "voice_whisper_model",
+    "ABSTRACTVOICE_TTS_MODEL": "voice_tts_model",
+    "ABSTRACTVOICE_STT_MODEL": "voice_stt_model",
+    "ABSTRACTVOICE_CLONING_ENGINE": "voice_cloning_engine",
+    "ABSTRACTVOICE_REMOTE_TIMEOUT_S": "voice_remote_timeout_s",
+    "ABSTRACTVOICE_TTS_DELIVERY_MODE": "voice_tts_delivery_mode",
+    "ABSTRACTMUSIC_BACKEND": "music_backend",
+    "ABSTRACTMUSIC_MODEL_ID": "music_model_id",
+    "ABSTRACTMUSIC_DEVICE": "music_device",
+    "ABSTRACTMUSIC_TORCH_DTYPE": "music_torch_dtype",
+    "ABSTRACTMUSIC_PIPELINE_CLASS": "music_pipeline_class",
+    "ABSTRACTMUSIC_NUM_INFERENCE_STEPS": "music_num_inference_steps",
+    "ABSTRACTMUSIC_DURATION_S": "music_duration_s",
+    "ABSTRACTMUSIC_GUIDANCE_SCALE": "music_guidance_scale",
+    "ABSTRACTMUSIC_TEXT_PLANNER": "music_text_planner_mode",
+    "ABSTRACTMUSIC_REVISION": "music_revision",
+}
+
+
+# Route-option name → plugin config key, per modality. The capability-defaults
+# schema names options in operator vocabulary (`voice`, `language`); the
+# plugin reads different keys. Anything not here that isn't already a
+# voice_*/music_* key is passed through with a warning (adversary finding).
+_ROUTE_OPTION_TRANSLATIONS = {
+    ("voice", "language"): "voice_language",
+    ("voice", "voice"): "voice_default_voice_id",
+    ("voice", "delivery_mode"): "voice_tts_delivery_mode",
+    ("music", "duration_s"): "music_duration_s",
+    ("music", "guidance_scale"): "music_guidance_scale",
+}
+# Reverse map for operator-facing warnings (name the ENV VAR, not the kwarg).
+_KWARG_TO_ENV = None  # built lazily below from _CAPABILITY_ENV_MAP
+
+
+def _capability_config_from_config_defaults() -> Dict[str, Any]:
+    """Behavior config for voice/music from the centralized config —
+    `abstractcore --config`'s capability_defaults route defaults, the
+    AUTHORITATIVE source (operator ruling dm#177).
+
+    Maps route provider/model/base_url/options onto the plugin's `voice_*` /
+    `music_*` kwargs: the route is the config home the wizard writes and the
+    gateway reads, so core's own server now reads the SAME truth instead of a
+    parallel env surface. Returns {} when nothing is configured (env #FALLBACK
+    then applies).
+
+    Route-option translation (adversary findings 2026-07-21): route options
+    are NOT verbatim plugin kwargs — the schema's canonical option names
+    (`voice`, `language`) differ from the plugin's config keys, and passing
+    them raw makes them inert. Known options are translated to the plugin's
+    vocabulary via `_ROUTE_OPTION_TRANSLATIONS`; unknown option keys are
+    passed through but warned (never silently dropped or silently no-op'd);
+    options NEVER clobber the route's own mapped identity keys.
+    """
+    out: Dict[str, Any] = {}
+    try:
+        from ..config.manager import get_config_manager
+
+        manager = get_config_manager()
+    except Exception as e:
+        logger.warning(f"#FALLBACK voice/music config unreadable ({e}); falling back to env behavior config.")
+        return out
+
+    unknown_option_keys: list = []
+
+    def _apply(
+        kind: str,
+        modality: str,
+        provider_key: str,
+        model_key: str,
+        base_url_key: Optional[str] = None,
+        extra_model_keys: tuple = (),
+    ) -> None:
+        try:
+            route = manager.get_capability_default(kind, modality)
+        except Exception:
+            return
+        if not isinstance(route, dict):
+            return
+        # An explicitly not-configured route carries no identity — skip it
+        # (mirrors providers/base.py's source==not_configured early-return).
+        if str(route.get("source") or "") == "not_configured":
+            return
+        provider = route.get("provider")
+        model = route.get("model")
+        base_url = route.get("base_url")
+        options = route.get("options")
+        identity_keys = {provider_key, model_key, *extra_model_keys}
+        if base_url_key:
+            identity_keys.add(base_url_key)
+        if isinstance(provider, str) and provider.strip():
+            out[provider_key] = provider.strip()
+        if isinstance(model, str) and model.strip():
+            out[model_key] = model.strip()
+            # Fan the configured model to every plugin key that consumes it
+            # (local whisper reads `voice_whisper_model`, remote STT reads
+            # `voice_stt_model` — the plugin's own override path sets both).
+            for extra in extra_model_keys:
+                out[extra] = model.strip()
+        if base_url_key and isinstance(base_url, str) and base_url.strip():
+            out[base_url_key] = base_url.strip()
+        if isinstance(options, dict):
+            for raw_key, v in options.items():
+                if v is None:
+                    continue
+                plugin_key = _ROUTE_OPTION_TRANSLATIONS.get((modality, str(raw_key)), str(raw_key))
+                # Options never overwrite the route's own identity mapping.
+                if plugin_key in identity_keys:
+                    continue
+                if (modality, str(raw_key)) not in _ROUTE_OPTION_TRANSLATIONS and not str(raw_key).startswith(
+                    ("voice_", "music_")
+                ):
+                    unknown_option_keys.append(f"{kind}.{modality}:{raw_key}")
+                out[plugin_key] = v
+
+    _apply("output", "voice", "voice_tts_engine", "voice_tts_model", "voice_remote_base_url")
+    # input.voice base_url shares the plugin's single voice_remote_base_url.
+    _apply("input", "voice", "voice_stt_engine", "voice_stt_model", "voice_remote_base_url",
+           extra_model_keys=("voice_whisper_model",))
+    # Music base_url is per-backend (no generic plugin key) — deliberately not mapped.
+    _apply("output", "music", "music_backend", "music_model_id")
+    if unknown_option_keys:
+        logger.warning(
+            f"#FALLBACK voice/music route options not in the plugin vocabulary, passed through unverified: "
+            f"{sorted(set(unknown_option_keys))}. Confirm they are real plugin config keys."
+        )
+    return out
+
+
 def _capability_config_from_env() -> Dict[str, Any]:
-    """Map server env to AbstractCore capability-plugin config keys."""
+    """DEPRECATED env source for voice/music behavior config (compat only).
+
+    Kept so existing deployments that set ABSTRACTVOICE_*/ABSTRACTMUSIC_* env
+    still work, but it is now a #FALLBACK BELOW config — `_capability_config`
+    overrides any of these keys that the centralized config supplies, and
+    warns when an env var is being consulted as a fallback so operators
+    migrate to `abstractcore --config`.
+    """
     config: Dict[str, Any] = {}
-    env_map = {
-        "ABSTRACTVOICE_LANGUAGE": "voice_language",
-        "ABSTRACTVOICE_TTS_ENGINE": "voice_tts_engine",
-        "ABSTRACTVOICE_STT_ENGINE": "voice_stt_engine",
-        "ABSTRACTVOICE_WHISPER_MODEL": "voice_whisper_model",
-        "ABSTRACTVOICE_TTS_MODEL": "voice_tts_model",
-        "ABSTRACTVOICE_STT_MODEL": "voice_stt_model",
-        "ABSTRACTVOICE_CLONING_ENGINE": "voice_cloning_engine",
-        "OPENAI_BASE_URL": "voice_remote_base_url",
-        "ABSTRACTVOICE_REMOTE_TIMEOUT_S": "voice_remote_timeout_s",
-        "ABSTRACTVOICE_TTS_DELIVERY_MODE": "voice_tts_delivery_mode",
-        "ABSTRACTMUSIC_BACKEND": "music_backend",
-        "ABSTRACTMUSIC_MODEL_ID": "music_model_id",
-        "ABSTRACTMUSIC_DEVICE": "music_device",
-        "ABSTRACTMUSIC_TORCH_DTYPE": "music_torch_dtype",
-        "ABSTRACTMUSIC_PIPELINE_CLASS": "music_pipeline_class",
-        "ABSTRACTMUSIC_NUM_INFERENCE_STEPS": "music_num_inference_steps",
-        "ABSTRACTMUSIC_DURATION_S": "music_duration_s",
-        "ABSTRACTMUSIC_GUIDANCE_SCALE": "music_guidance_scale",
-        "ABSTRACTMUSIC_TEXT_PLANNER": "music_text_planner_mode",
-        "ABSTRACTMUSIC_REVISION": "music_revision",
-    }
-    for env_name, config_name in env_map.items():
+    for env_name, config_name in _CAPABILITY_ENV_MAP.items():
         value = os.getenv(env_name)
         if isinstance(value, str) and value.strip():
             config[config_name] = value.strip()
+    # OPENAI_BASE_URL stays a deployment endpoint (not in the deprecated
+    # behavior map) but still seeds the voice remote base when present.
+    openai_base = os.getenv("OPENAI_BASE_URL")
+    if isinstance(openai_base, str) and openai_base.strip():
+        config.setdefault("voice_remote_base_url", openai_base.strip())
     if os.getenv("ABSTRACTVOICE_ALLOW_DOWNLOADS") is not None:
         config["voice_allow_downloads"] = _bool_env("ABSTRACTVOICE_ALLOW_DOWNLOADS", default=True)
     if os.getenv("ABSTRACTVOICE_CLONED_TTS_STREAMING") is not None:
@@ -289,6 +423,55 @@ def _capability_config_from_env() -> Dict[str, Any]:
     if os.getenv("ABSTRACTVOICE_DEBUG") is not None:
         config["voice_debug_mode"] = _bool_env("ABSTRACTVOICE_DEBUG", default=False)
     return config
+
+
+def _capability_config() -> Dict[str, Any]:
+    """Effective voice/music behavior config: CONFIG WINS, env is #FALLBACK.
+
+    Operator ruling dm#177: behavior config lives in `abstractcore --config`;
+    an exported env var must never silently flip a configured default (the
+    ABSTRACTVOICE_TTS_ENGINE incident). Precedence: centralized config route
+    defaults override env for any overlapping key; env-only keys survive as a
+    labeled deprecation so nothing breaks mid-migration.
+    """
+    env_config = _capability_config_from_env()
+    config_defaults = _capability_config_from_config_defaults()
+
+    def _env_names(kwargs) -> list:
+        # Operator-facing: name the ENV VAR to unset, not the plugin kwarg.
+        rev = {v: k for k, v in _CAPABILITY_ENV_MAP.items()}
+        return sorted(rev.get(k, k) for k in kwargs)
+
+    def _norm(v):
+        # Type-insensitive compare so "30" (env str) == 30 (config num) is not
+        # reported as an override.
+        return str(v).strip()
+
+    # Keys env supplies that config ALSO supplies → config wins.
+    overridden = sorted(k for k in env_config if k in config_defaults and _norm(env_config[k]) != _norm(config_defaults[k]))
+    env_only = sorted(k for k in env_config if k not in config_defaults)
+
+    # Warn ONCE per distinct (overridden, env_only) state — these functions are
+    # called per-request by the catalog/music builders, so an unguarded warn
+    # spams every poll during the migration window (adversary finding).
+    warn_state = (tuple(overridden), tuple(env_only) if config_defaults else ())
+    if warn_state != (tuple(), tuple()) and warn_state not in _CAPABILITY_WARNED:
+        _CAPABILITY_WARNED.add(warn_state)
+        if overridden:
+            logger.warning(
+                "#FALLBACK voice/music behavior: centralized config (abstractcore --config) "
+                f"overrides these env vars, whose exported values are IGNORED: {_env_names(overridden)}. "
+                "Unset them and configure via `abstractcore --config`."
+            )
+        if env_only and config_defaults:
+            logger.warning(
+                f"#FALLBACK voice/music behavior still sourced from env (no config equivalent set): "
+                f"{_env_names(env_only)}. Configure via `abstractcore --config`; env is deprecated."
+            )
+
+    merged = dict(env_config)
+    merged.update(config_defaults)  # config wins
+    return merged
 
 
 def _get_capability_core() -> Any:
@@ -300,7 +483,7 @@ def _get_capability_core() -> Any:
 
         from .capability_generation import create_capability_generation_core
 
-        _CORE = create_capability_generation_core(**_capability_config_from_env())
+        _CORE = create_capability_generation_core(**_capability_config())
         return _CORE
 
 
@@ -656,7 +839,7 @@ def _music_capability_core_for_request(data: Dict[str, Any], *, path_provider: O
 
     from .capability_generation import create_capability_generation_core
 
-    config = _capability_config_from_env()
+    config = _capability_config()
     config.update(overrides)
     return create_capability_generation_core(**config)
 
@@ -725,7 +908,7 @@ def _audio_catalog_core(request: Request, *, base_url: Optional[str], api_key: O
     provider_api_key = explicit_key or _provider_api_key_from_request(request)
     base_url_s = _validate_request_base_url(base_url)
     _guard_audio_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
-    config = _capability_config_from_env()
+    config = _capability_config()
     if base_url_s:
         config["voice_remote_base_url"] = base_url_s
     if provider_api_key:
@@ -2149,7 +2332,10 @@ async def voice_clone(
             provider=request_provider,
             model=local_model,
             tts_model=local_model,
-            cloning_engine=request_provider or os.getenv("ABSTRACTVOICE_CLONING_ENGINE") or None,
+            # Request wins; then the config-first behavior config (route
+            # options / env #FALLBACK) — a direct os.getenv here bypassed the
+            # dm#177 repair and kept the clone engine incident-class.
+            cloning_engine=request_provider or _capability_config().get("voice_cloning_engine") or None,
         )
         if isinstance(out, dict):
             out.setdefault("ok", True)

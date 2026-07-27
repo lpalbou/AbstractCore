@@ -31,10 +31,12 @@ def _definition_tags_by_name():
     import importlib
 
     out = {}
-    for module_path in (
-        "abstractcore.tools.common_tools",
-        "abstractcore.tools.shell_tools",
-    ):
+    # Scan every module the inventory scans (schema v3 added comms/telegram),
+    # so the cross-surface tag↔fact guard covers the full inventory rather
+    # than KeyError-ing on a tool the inventory now carries.
+    from abstractcore.tools.inventory import _INVENTORY_MODULES
+
+    for module_path in _INVENTORY_MODULES:
         module = importlib.import_module(module_path)
         for attr_name in dir(module):
             tool_def = getattr(getattr(module, attr_name, None), "_tool_definition", None)

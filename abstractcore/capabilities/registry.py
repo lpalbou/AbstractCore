@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import importlib
 import inspect
+import threading
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, TypeVar
 
 from .errors import CapabilityUnavailableError
@@ -72,6 +73,15 @@ class CapabilityRegistry:
             self._preferred_backends = {str(k): str(v) for k, v in preferred_backends.items() if str(k) and str(v)}
 
         self._plugins_loaded = False
+        # Serializes the one-time entry-point load (adversary P1-1, seat:
+        # camera): without it, a reader racing the first load returned []
+        # for an INSTALLED capability — a silent normal-looking answer that
+        # poisoned per-run tool maps for their lifetime. RLock + the
+        # in-progress flag let a plugin's register() call back into registry
+        # accessors on the SAME thread (reentrancy returns the partial
+        # view); other THREADS block until the load completes.
+        self._plugins_load_lock = threading.RLock()
+        self._plugins_load_in_progress = False
         self._plugin_errors: List[Dict[str, Any]] = []
         self._plugins_seen: List[Dict[str, Any]] = []
 
@@ -79,6 +89,27 @@ class CapabilityRegistry:
         self._registrations: Dict[str, Dict[str, _BackendRegistration]] = {}
         # (capability, backend_id) -> backend instance
         self._instances: Dict[Tuple[str, str], Any] = {}
+        # capability -> [ToolDefinition]: tools a plugin contributes for its
+        # capability (0817-adjacent layering fix, laurent dm#16 / commons
+        # c4210). ONLY abstractcore imports capability plugins; upper packages
+        # (runtime/gateway) consume the plugin's tools THROUGH this surface
+        # instead of importing e.g. abstractcamera directly.
+        self._capability_tools: Dict[str, List[Any]] = {}
+        # capability -> {"auto_approve": [...], "require_approval": [...]}:
+        # the approval partition a plugin derives from its own classification
+        # (plugin = authority, core = carrier; hosts fail closed on absence).
+        self._capability_tool_policies: Dict[str, Dict[str, List[str]]] = {}
+        # capability -> {tool_name -> {fact_name: bool}} (tool-tiers build):
+        # plugins declare RISK FACTS; risk is derived, never hand-assigned.
+        self._capability_tool_facts: Dict[str, Dict[str, Dict[str, bool]]] = {}
+        # capability -> {"default_disabled": [tool names]} (default-off wave,
+        # runtime ruling c4886 / gateway c4892): a plugin declares which of its
+        # tools are the PRIVACY/DEFAULT-OFF class (e.g. environment-capturing
+        # capture verbs). A host SEEDS those disabled; the operator's console
+        # edit supersedes forever after (dm#194 — seed-only-when-unset, the
+        # host owns that precedence). Derive-over-hardcode: default-off follows
+        # the plugin's declaration, never a maintainer-remembered name list.
+        self._capability_tool_defaults: Dict[str, Dict[str, List[str]]] = {}
 
         self.voice = _VoiceFacade(self)
         self.audio = _AudioFacade(self)
@@ -102,9 +133,35 @@ class CapabilityRegistry:
         self._preferred_backends[cap] = bid
 
     def _ensure_plugins_loaded(self) -> None:
+        # Fast path without the lock (bool read; after the first load every
+        # accessor call lands here). `_plugins_loaded` means the load
+        # COMPLETED — it is set only after contributions landed, so a
+        # thread that reads True never sees a partial registry. A thread
+        # that reads False blocks on the lock until the loading thread
+        # finishes (adversary P1-1: the old early-set flag let a racing
+        # reader take the fast path mid-load and answer [] for an
+        # installed capability).
         if self._plugins_loaded:
             return
-        self._plugins_loaded = True
+        with self._plugins_load_lock:
+            if self._plugins_loaded or self._plugins_load_in_progress:
+                # loaded: another thread finished while we waited on the
+                # lock. in_progress: same-THREAD reentrancy — a plugin's
+                # register() calling back into an accessor (RLock re-entry)
+                # gets the partial view instead of recursing into a second
+                # load.
+                return
+            self._plugins_load_in_progress = True
+            try:
+                self._load_plugins()
+            finally:
+                # Error paths mark loaded too — a failed load is recorded
+                # in _plugin_errors and never retried (unchanged semantics
+                # from the early-set design).
+                self._plugins_load_in_progress = False
+                self._plugins_loaded = True
+
+    def _load_plugins(self) -> None:
 
         try:
             from importlib.metadata import entry_points
@@ -182,6 +239,285 @@ class CapabilityRegistry:
             config_hint=str(config_hint).strip() if isinstance(config_hint, str) and config_hint.strip() else None,
         )
         self._registrations.setdefault(cap, {})[bid] = _BackendRegistration(info=info, factory=factory)
+
+    def register_capability_tools(self, capability: str, tools: Any) -> None:
+        """Let a capability plugin contribute its agent TOOLS through core.
+
+        General by design (laurent dm#16 / commons c4210): ANY capability
+        plugin (camera today, a future audio-tool plugin) surfaces its
+        `@tool` functions the same way, and core never hardcodes a capability
+        name. ONLY abstractcore imports capability plugins, so this is how
+        runtime/gateway consume a plugin's tools WITHOUT importing the plugin
+        package directly (the layering rule: upper packages reach camera
+        THROUGH core, never past it).
+
+        Honors the explicit-tools rule (c3168): core STORES and SURFACES the
+        tools; the host still chooses whether to compose them — this is not a
+        global auto-registration. Idempotent per capability: a re-register
+        replaces (a plugin re-run must not duplicate its tool list). `tools`
+        is any iterable of ToolDefinition-like objects; `None` or an empty
+        iterable CLEARS the capability's tools; a non-iterable (including a
+        bare string) is refused loudly.
+
+        Trust note (adversary P2): the `capability` label is not bound to the
+        contributing plugin — any installed plugin can register under any
+        label, consistent with the backend trust model (installing a plugin
+        is the trust decision). Tools remain the ruled security surface:
+        hosts stay fail-closed on approval policy absence.
+        """
+        cap = str(capability or "").strip()
+        if not cap:
+            raise ValueError("capability must be a non-empty string")
+        if isinstance(tools, (str, bytes)):
+            # A str IS iterable — list("abc") would silently store 3 bogus
+            # entries (adversary P2).
+            raise ValueError("tools must be an iterable of tool definitions, not a string")
+        try:
+            tool_list = list(tools) if tools is not None else []
+        except TypeError:
+            raise ValueError("tools must be an iterable of tool definitions")
+        # De-dupe: the SAME object exported twice is a harmless re-export;
+        # two DIFFERENT definitions claiming one name is a bug the plugin
+        # must see, not a coin-flip (mirrors tools/inventory.py discipline).
+        # Nameless entries are refused — no consumer can address them.
+        by_name: Dict[str, Any] = {}
+        ordered: List[Any] = []
+        for t in tool_list:
+            name = str(getattr(t, "name", "") or "").strip()
+            if not name:
+                raise ValueError("every capability tool must carry a non-empty .name")
+            if name in by_name:
+                if by_name[name] is t:
+                    continue  # same-object re-export, keep the one entry
+                raise ValueError(
+                    f"two different tool definitions claim the name {name!r} in one "
+                    f"capability contribution — refuse rather than silently keep the last"
+                )
+            ordered.append(t)
+            by_name[name] = t
+        self._capability_tools[cap] = ordered
+
+    @staticmethod
+    def _isolated_tool_copy(tool: Any) -> Any:
+        """Per-read isolation for a shared ToolDefinition-like object.
+
+        Consumers legitimately mutate what they receive (runtime's
+        `_normalize_tool_spec` rewrites `parameters` in place; `to_dict()`
+        aliases the live dict) — handing every consumer the registry-stored
+        object lets one consumer's rewrite poison all the others AND the
+        store (adversary P1). Shallow-copy the object, deep-copy its mutable
+        containers; the bound `.function` is intentionally shared (behavior,
+        not data). Degrades to the shared object if the copy fails (a
+        read must never raise on an exotic tool type).
+        """
+        import copy as _copy
+
+        try:
+            clone = _copy.copy(tool)
+            for attr in ("parameters", "tags", "examples"):
+                value = getattr(clone, attr, None)
+                if isinstance(value, (dict, list)):
+                    setattr(clone, attr, _copy.deepcopy(value))
+            return clone
+        except Exception:
+            return tool
+
+    def capability_tools(self, capability: Optional[str] = None) -> Any:
+        """Return the tools a capability plugin contributed through core.
+
+        `capability_tools("camera")` → that capability's tool list, each
+        entry an ISOLATED copy (fresh `parameters`/`tags`/`examples`; the
+        callable is shared) so a consumer's in-place schema rewrite cannot
+        poison the registry or sibling consumers. An unknown or unregistered
+        capability returns `[]` (never raises — absence is a normal state a
+        host handles). `capability_tools()` with no argument returns a
+        `{capability: [tools]}` snapshot for discovery, same isolation.
+
+        Note: a `@tool`-decorated function also carries the module-level
+        definition at `.function._tool_definition` — that backref still
+        aliases the ORIGINAL; consumers must not mutate through it.
+
+        Plugin-load ordering: contributions arrive when entry-point plugins
+        register, so the read side must ensure plugins ran — otherwise a
+        fresh registry answers [] for a capability that IS installed (the
+        silent-vanish window; seat: camera, draft for core's owner review).
+        """
+        self._ensure_plugins_loaded()
+        if capability is None:
+            return {
+                cap: [self._isolated_tool_copy(t) for t in tools]
+                for cap, tools in self._capability_tools.items()
+            }
+        cap = str(capability or "").strip()
+        return [self._isolated_tool_copy(t) for t in self._capability_tools.get(cap, [])]
+
+    def register_capability_tool_policy(self, capability: str, policy: Any) -> None:
+        """Let a capability plugin contribute its tools' APPROVAL partition.
+
+        Derive-never-copy (seat: camera, draft for core's owner review;
+        runtime's fold consumes this so it never imports the plugin package):
+        the PLUGIN is the authority — it computes the partition from its own
+        classification facts and registers the RESULT here; core stores and
+        serves, never derives. Shape: {"auto_approve": [tool names],
+        "require_approval": [tool names]}. Idempotent per capability
+        (re-register replaces). Hosts stay fail-closed on absence: no policy
+        registered means the host treats every tool as approval-required.
+        """
+        cap = str(capability or "").strip()
+        if not cap:
+            raise ValueError("capability must be a non-empty string")
+        if not isinstance(policy, dict):
+            raise ValueError(
+                "policy must be a dict with 'auto_approve'/'require_approval' tool-name lists"
+            )
+        normalized: Dict[str, List[str]] = {}
+        for key in ("auto_approve", "require_approval"):
+            names = policy.get(key) or []
+            if isinstance(names, (str, bytes)):
+                raise ValueError(f"policy[{key!r}] must be an iterable of tool names, not a string")
+            try:
+                normalized[key] = [str(n).strip() for n in names if str(n or "").strip()]
+            except TypeError:
+                raise ValueError(f"policy[{key!r}] must be an iterable of tool names")
+        self._capability_tool_policies[cap] = normalized
+
+    def register_capability_tool_defaults(self, capability: str, defaults: Any) -> None:
+        """Let a capability plugin declare its tools' ENABLEMENT DEFAULTS.
+
+        Default-off wave (runtime ruling c4886, gateway c4892): a capability
+        declares which of its tools are the PRIVACY / DEFAULT-OFF class —
+        environment-capturing capture verbs (camera today; mic/screen later).
+        A host (gateway) SEEDS those tools disabled so an agent that did not
+        explicitly ask for them never gets them silently.
+
+        Same SHAPE as the approval partition (register_capability_tool_policy)
+        so a plugin declares one alongside the other: {"default_disabled":
+        [tool names]}. Idempotent per capability (re-register replaces); None
+        or an empty dict CLEARS the capability's defaults.
+
+        SEED-ONLY semantics (dm#194, runtime's precision): this declaration
+        SEEDS the host's default when the setting is UNSET — an operator's
+        explicit console enable supersedes it forever after (a declaration
+        must never re-disable a toolset the operator turned on). That
+        precedence is the HOST's to enforce; core only carries the seed.
+
+        Derive-over-hardcode (the reason this hook exists instead of a
+        hardcoded 'camera' string in the settings registry): default-off
+        follows the plugin's own declaration, so the next environment-
+        capturing plugin is default-off by DECLARING its class, never by a
+        maintainer remembering to add its name (the forgotten-name failure is
+        silent availability — the exact class this wave closes).
+        """
+        cap = str(capability or "").strip()
+        if not cap:
+            raise ValueError("capability must be a non-empty string")
+        if defaults is None:
+            self._capability_tool_defaults.pop(cap, None)
+            return
+        if not isinstance(defaults, dict):
+            raise ValueError("defaults must be a dict with a 'default_disabled' tool-name list")
+        raw = defaults.get("default_disabled") or []
+        if isinstance(raw, (str, bytes)):
+            raise ValueError("defaults['default_disabled'] must be an iterable of tool names, not a string")
+        try:
+            names = [str(n).strip() for n in raw if str(n or "").strip()]
+        except TypeError:
+            raise ValueError("defaults['default_disabled'] must be an iterable of tool names")
+        if not names:
+            # An empty/absent list CLEARS (nothing default-off) — a legitimate
+            # state, distinct from register_capability_tool_facts' empty-dict
+            # refusal (there an empty dict would silently under-derive a tier;
+            # here an empty default_disabled is honestly "no tool is off").
+            self._capability_tool_defaults.pop(cap, None)
+            return
+        # De-dupe, preserve order.
+        seen: List[str] = []
+        for n in names:
+            if n not in seen:
+                seen.append(n)
+        self._capability_tool_defaults[cap] = {"default_disabled": seen}
+
+    def capability_tool_defaults(self, capability: str) -> Dict[str, List[str]]:
+        """The enablement defaults a plugin declared for `capability`.
+
+        Returns a COPY; `{}` when the capability declared none (a normal
+        state — no tool is default-off). Hosts SEED disabled from
+        `["default_disabled"]` when their setting is unset (dm#194 precedence:
+        operator edits win thereafter).
+        """
+        self._ensure_plugins_loaded()
+        cap = str(capability or "").strip()
+        stored = self._capability_tool_defaults.get(cap)
+        if not stored:
+            return {}
+        return {key: list(names) for key, names in stored.items()}
+
+    def register_capability_tool_facts(self, capability: str, facts_by_tool: Any) -> None:
+        """Let a capability plugin declare its tools' RISK FACTS through core.
+
+        Tool-tiers build (2026-07-23): risk is DERIVED from facts through the
+        one versioned mapping (tools/risk_facts.py) — plugins declare facts,
+        never tiers. The fact vocabulary is CLOSED and validated HERE, at the
+        desk (danger-when-true polarity, declaration-before-engraving): an
+        unknown spelling refuses the registration loudly, so a typo can never
+        silently under-derive a tool's tier. Shape: {tool_name: {fact: bool}}.
+        Idempotent per capability (re-register replaces).
+        """
+        cap = str(capability or "").strip()
+        if not cap:
+            raise ValueError("capability must be a non-empty string")
+        if not isinstance(facts_by_tool, dict):
+            raise ValueError("facts_by_tool must be a dict of {tool_name: {fact_name: bool}}")
+        from ..tools.risk_facts import validate_fact_names
+
+        normalized: Dict[str, Dict[str, bool]] = {}
+        for tool_name, facts in facts_by_tool.items():
+            name = str(tool_name or "").strip()
+            if not name:
+                raise ValueError("every fact entry must carry a non-empty tool name")
+            if not isinstance(facts, dict):
+                raise ValueError(f"facts for tool {name!r} must be a dict of {{fact_name: bool}}")
+            if not facts:
+                # Belt for the derive_risk empty-dict fail-closed (adversary
+                # P0): an empty declaration is indistinguishable from a
+                # forgotten one — refuse it at the desk so a plugin whose
+                # facts dict came out empty gets a loud error, not a tool
+                # silently rendered observe/safe.
+                raise ValueError(
+                    f"tool {name!r} declared NO facts — an empty declaration is "
+                    f"indistinguishable from a forgotten one. Declare at least one "
+                    f"fact (all-False is a non-empty dict of explicit Falses), or omit "
+                    f"the tool entirely (omitted → undeclared → unvetted/top-band)."
+                )
+            validate_fact_names(facts)
+            normalized[name] = {k: bool(v) for k, v in facts.items()}
+        self._capability_tool_facts[cap] = normalized
+
+    def capability_tool_facts(self, capability: str) -> Dict[str, Dict[str, bool]]:
+        """The risk facts a plugin declared for `capability`'s tools.
+
+        Returns a COPY; `{}` when none were registered — consumers deriving
+        risk treat a factless tool as UNDECLARED (gates at the top band,
+        presents `unvetted`; risk_facts.derive_risk(None)).
+        """
+        self._ensure_plugins_loaded()
+        stored = self._capability_tool_facts.get(str(capability or "").strip())
+        if not stored:
+            return {}
+        return {name: dict(facts) for name, facts in stored.items()}
+
+    def capability_tool_policy(self, capability: str) -> Dict[str, List[str]]:
+        """The approval partition a plugin registered for `capability`.
+
+        Returns a COPY; `{}` when the capability registered no policy (a
+        normal state — hosts fail closed and require approval for everything).
+        """
+        self._ensure_plugins_loaded()
+        cap = str(capability or "").strip()
+        stored = self._capability_tool_policies.get(cap)
+        if not stored:
+            return {}
+        return {key: list(names) for key, names in stored.items()}
 
     def register_voice_backend(
         self,

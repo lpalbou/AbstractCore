@@ -251,9 +251,15 @@ class BasicSession:
             # Streaming response - wrap it to collect content
             return self._handle_streaming_response(response)
         else:
-            # Non-streaming response
+            # Non-streaming response. Keep model reasoning in message metadata so
+            # history serialization preserves it (it is NOT replayed to providers —
+            # `_provider_message_dicts` sends role/content only).
             if hasattr(response, 'content') and response.content:
-                self.add_message('assistant', response.content)
+                reasoning_text = getattr(response, 'reasoning', None)
+                if isinstance(reasoning_text, str) and reasoning_text.strip():
+                    self.add_message('assistant', response.content, reasoning=reasoning_text)
+                else:
+                    self.add_message('assistant', response.content)
 
             # Capture trace if enabled and available
             if self.enable_tracing and hasattr(self.provider, 'get_traces'):
@@ -267,6 +273,8 @@ class BasicSession:
     def _handle_streaming_response(self, response_iterator: Iterator[GenerateResponse]) -> Iterator[GenerateResponse]:
         """Handle streaming response and collect content for history"""
         collected_content = ""
+        reasoning_delta_parts: List[str] = []
+        complete_reasoning: Optional[str] = None
 
         for chunk in response_iterator:
             # Yield the chunk for the caller
@@ -276,9 +284,25 @@ class BasicSession:
             if hasattr(chunk, 'content') and chunk.content:
                 collected_content += chunk.content
 
+            # Collect reasoning: incremental deltas, superseded by the trailing
+            # chunk's complete `metadata["reasoning"]` when the provider stack
+            # emits one (BaseProvider guarantees it whenever reasoning was seen).
+            meta = getattr(chunk, 'metadata', None)
+            if isinstance(meta, dict):
+                delta_r = meta.get('reasoning_delta')
+                if isinstance(delta_r, str) and delta_r:
+                    reasoning_delta_parts.append(delta_r)
+                full_r = meta.get('reasoning')
+                if isinstance(full_r, str) and full_r.strip():
+                    complete_reasoning = full_r
+
         # After streaming is complete, add the full response to history
         if collected_content:
-            self.add_message('assistant', collected_content)
+            reasoning_text = complete_reasoning or ("".join(reasoning_delta_parts) or None)
+            if isinstance(reasoning_text, str) and reasoning_text.strip():
+                self.add_message('assistant', collected_content, reasoning=reasoning_text)
+            else:
+                self.add_message('assistant', collected_content)
 
     async def agenerate(self,
                        prompt: str,
@@ -364,9 +388,14 @@ class BasicSession:
                 **kwargs
             )
 
-            # Post-processing (fast, sync is fine)
+            # Post-processing (fast, sync is fine). Reasoning is preserved in
+            # message metadata (history-only; never replayed to providers).
             if hasattr(response, 'content') and response.content:
-                self.add_message('assistant', response.content)
+                reasoning_text = getattr(response, 'reasoning', None)
+                if isinstance(reasoning_text, str) and reasoning_text.strip():
+                    self.add_message('assistant', response.content, reasoning=reasoning_text)
+                else:
+                    self.add_message('assistant', response.content)
 
             # Capture trace if enabled and available
             if self.enable_tracing and hasattr(self.provider, 'get_traces'):
@@ -398,6 +427,9 @@ class BasicSession:
             **kwargs_copy
         )
 
+        reasoning_delta_parts: List[str] = []
+        complete_reasoning: Optional[str] = None
+
         async for chunk in stream_gen:
             # Yield the chunk for the caller
             yield chunk
@@ -406,9 +438,23 @@ class BasicSession:
             if hasattr(chunk, 'content') and chunk.content:
                 collected_content += chunk.content
 
+            # Collect reasoning (same convention as the sync stream handler).
+            meta = getattr(chunk, 'metadata', None)
+            if isinstance(meta, dict):
+                delta_r = meta.get('reasoning_delta')
+                if isinstance(delta_r, str) and delta_r:
+                    reasoning_delta_parts.append(delta_r)
+                full_r = meta.get('reasoning')
+                if isinstance(full_r, str) and full_r.strip():
+                    complete_reasoning = full_r
+
         # After streaming completes, add assistant message
         if collected_content:
-            self.add_message('assistant', collected_content)
+            reasoning_text = complete_reasoning or ("".join(reasoning_delta_parts) or None)
+            if isinstance(reasoning_text, str) and reasoning_text.strip():
+                self.add_message('assistant', collected_content, reasoning=reasoning_text)
+            else:
+                self.add_message('assistant', collected_content)
 
     def _provider_message_dicts(self, source_messages: List['Message']) -> List[Dict[str, str]]:
         """Format session messages for the provider API.

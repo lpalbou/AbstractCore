@@ -2010,6 +2010,15 @@ class ChatCompletionRequest(BaseModel):
                     "Note: 'none' is treated as an alias for 'off'.",
         example="off",
     )
+    # OpenAI-native spelling of the same control. Standard OpenAI clients send
+    # `reasoning_effort`; silently ignoring it would drop a caller's explicit
+    # reasoning request. When both are present, `thinking` wins.
+    reasoning_effort: Optional[str] = Field(
+        default=None,
+        description="OpenAI-compatible reasoning effort ('none'/'minimal'/'low'/'medium'/'high'/'xhigh'). "
+                    "Alias for the unified 'thinking' control; ignored when 'thinking' is also set.",
+        example="medium",
+    )
 
     # Tool calling
     tools: Optional[List[Dict[str, Any]]] = Field(
@@ -4448,7 +4457,13 @@ def _capability_residency_core_for_request(task: str, http_request: Request) -> 
         return _get_capability_core()
     from .capability_generation import create_capability_generation_core
 
-    return create_capability_generation_core()
+    # Music (and any other capability) residency must warm the SAME behavior
+    # config the generation lane uses — config-wins over env (operator ruling
+    # dm#177). Building bare here let an exported ABSTRACTMUSIC_MODEL_ID warm a
+    # different model than /v1/audio/music generates with (adversary F1).
+    from .audio_endpoints import _capability_config
+
+    return create_capability_generation_core(**_capability_config())
 
 
 def _capability_residency_error(exc: Exception, *, task: str) -> HTTPException:
@@ -6795,6 +6810,33 @@ def list_music_models(
         return _capability_error_response(e, operation="music_models")
 
 
+def _model_reasoning_discovery(model_name: str) -> Optional[Dict[str, Any]]:
+    """Registry-backed reasoning discovery block for a `/v1/models` entry.
+
+    Returns `{"thinking_support": bool[, "reasoning_levels": [...]]}` when the model
+    resolves in model_capabilities.json, or None when the registry does not know the
+    model — absent knowledge is presented as an ABSENT block, never as a guessed
+    `thinking_support: false` (a coupled provider->model->effort selector must be able
+    to distinguish "not a reasoning model" from "unknown model").
+    """
+    try:
+        from ..architectures.detection import lookup_registry_model_capabilities
+
+        caps = lookup_registry_model_capabilities(model_name)
+    except Exception:
+        return None
+    if not isinstance(caps, dict):
+        return None
+
+    block: Dict[str, Any] = {"thinking_support": caps.get("thinking_support") is True}
+    levels = caps.get("reasoning_levels")
+    if isinstance(levels, list):
+        normalized = [x.strip().lower() for x in levels if isinstance(x, str) and x.strip()]
+        if normalized:
+            block["reasoning_levels"] = normalized
+    return block
+
+
 @app.get("/v1/models", tags=["models"])
 async def list_models(
     http_request: Request,
@@ -6946,13 +6988,17 @@ async def list_models(
                 ) from e
             for model in models:
                 model_id = f"{provider_norm}/{model}"
-                models_data.append({
+                entry = {
                     "id": model_id,
                     "object": "model",
                     "owned_by": provider_norm,
                     "created": int(time.time()),
                     "permission": [{"allow_create_engine": False, "allow_sampling": True}]
-                })
+                }
+                reasoning_info = _model_reasoning_discovery(model)
+                if reasoning_info is not None:
+                    entry["reasoning"] = reasoning_info
+                models_data.append(entry)
 
             filter_parts = []
             if input_type:
@@ -6983,13 +7029,17 @@ async def list_models(
                 )
                 for model in models:
                     model_id = f"{prov}/{model}"
-                    models_data.append({
+                    entry = {
                         "id": model_id,
                         "object": "model",
                         "owned_by": prov,
                         "created": int(time.time()),
                         "permission": [{"allow_create_engine": False, "allow_sampling": True}]
-                    })
+                    }
+                    reasoning_info = _model_reasoning_discovery(model)
+                    if reasoning_info is not None:
+                        entry["reasoning"] = reasoning_info
+                    models_data.append(entry)
 
             filter_parts = []
             if input_type:
@@ -8452,6 +8502,10 @@ async def process_chat_completion(
         # Add optional parameters
         if request.thinking is not None:
             gen_kwargs["thinking"] = request.thinking
+        elif isinstance(getattr(request, "reasoning_effort", None), str) and request.reasoning_effort.strip():
+            # OpenAI-native alias: reasoning_effort 'none' maps to thinking 'none' (off);
+            # effort levels map 1:1 onto the unified thinking vocabulary.
+            gen_kwargs["thinking"] = request.reasoning_effort.strip().lower()
         if request.stop:
             gen_kwargs["stop"] = request.stop
         if request.seed:
@@ -8633,7 +8687,39 @@ def generate_streaming_response(
             for item in llm.generate(**gen_kwargs):
                 yield item
 
+        reasoning_delta_emitted = False
         for chunk in _iter_chunks():
+            # Reasoning streaming (OpenAI-compatible `delta.reasoning_content`, the
+            # DeepSeek/vLLM/LM Studio convention). Incremental deltas are forwarded
+            # as they arrive; the trailing aggregate `metadata["reasoning"]` is
+            # forwarded once ONLY when no deltas were seen (inline <think> models
+            # surface reasoning only on the trailing chunk) — clients concatenate
+            # reasoning_content deltas, so re-sending the aggregate would double it.
+            chunk_meta = getattr(chunk, "metadata", None)
+            chunk_meta = chunk_meta if isinstance(chunk_meta, dict) else {}
+            reasoning_out = chunk_meta.get("reasoning_delta")
+            if not (isinstance(reasoning_out, str) and reasoning_out):
+                complete_reasoning = chunk_meta.get("reasoning")
+                reasoning_out = (
+                    complete_reasoning
+                    if (isinstance(complete_reasoning, str) and complete_reasoning.strip() and not reasoning_delta_emitted)
+                    else None
+                )
+            if isinstance(reasoning_out, str) and reasoning_out:
+                reasoning_delta_emitted = True
+                reasoning_chunk = {
+                    "id": chat_id,
+                    "object": "chat.completion.chunk",
+                    "created": created_time,
+                    "model": f"{provider}/{model}",
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"reasoning_content": reasoning_out},
+                        "finish_reason": None
+                    }]
+                }
+                yield f"data: {json.dumps(reasoning_chunk)}\n\n"
+
             # Content streaming
             if hasattr(chunk, 'content') and chunk.content:
                 content = chunk.content
@@ -8843,9 +8929,11 @@ def convert_to_openai_response(
             "finish_reason": "stop"
         }],
         "usage": {
-            "prompt_tokens": getattr(response, 'usage', {}).get('prompt_tokens', 0) if hasattr(response, 'usage') else 0,
-            "completion_tokens": getattr(response, 'usage', {}).get('completion_tokens', 0) if hasattr(response, 'usage') else 0,
-            "total_tokens": getattr(response, 'usage', {}).get('total_tokens', 0) if hasattr(response, 'usage') else 0
+            # `usage` can legitimately be None (GenerateResponse.usage is Optional);
+            # `or {}` keeps a None-usage response from crashing the conversion.
+            "prompt_tokens": (getattr(response, 'usage', None) or {}).get('prompt_tokens', 0),
+            "completion_tokens": (getattr(response, 'usage', None) or {}).get('completion_tokens', 0),
+            "total_tokens": (getattr(response, 'usage', None) or {}).get('total_tokens', 0)
         }
     }
 
@@ -8856,6 +8944,14 @@ def convert_to_openai_response(
             details = provider_usage.get(detail_key)
             if isinstance(details, dict) and details:
                 response_dict["usage"][detail_key] = dict(details)
+
+    # Surface model reasoning to clients using the de-facto OpenAI-compatible key
+    # (`message.reasoning_content` — DeepSeek/vLLM/LM Studio convention, and the key
+    # AbstractCore's own OpenAI-compatible provider reads back). Dropping it here
+    # would silently lose reasoning at the server boundary.
+    reasoning_text = getattr(response, "reasoning", None)
+    if isinstance(reasoning_text, str) and reasoning_text.strip():
+        response_dict["choices"][0]["message"]["reasoning_content"] = reasoning_text
 
     # Add tool calls if present
     if tool_calls:

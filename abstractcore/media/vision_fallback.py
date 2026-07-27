@@ -130,6 +130,33 @@ class VisionFallbackHandler:
             logger.debug(f"Vision fallback generation failed on a configured route: {e}")
             raise VisionGenerationError(str(e))
 
+    def create_description_via_route(
+        self, provider: str, model: str, image_path: str, user_prompt: Optional[str] = None
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Describe an image over ONE explicit route, bypassing the configured fallback.
+
+        Used by delegated sight (`analyze_media`) when the SESSION model itself
+        declares vision (operator ruling 2026-07-26, backlog 0837 item B: the
+        configured fallback is SOLELY for models that lack vision — a
+        vision-capable session model sees through its own route, no fallback
+        config required). No config consultation, no chain: one route, and the
+        caller's ``llm_kwargs`` discipline (single attempt, bounded timeout)
+        rides ``_generate_description`` unchanged. Raises on failure — the
+        CALLER decides whether an already-configured fallback is consulted next.
+        """
+        description = self._generate_description(
+            provider, model, image_path, user_prompt=user_prompt
+        )
+        return description, {
+            "backend": {
+                "kind": "llm",
+                "provider": str(provider),
+                "model": str(model),
+                "source": "session_route",
+            },
+            "strategy": "session_route",
+        }
+
     def _has_vision_capability(self) -> bool:
         """Check if any vision capability is configured."""
         return (

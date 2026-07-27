@@ -284,6 +284,7 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
         "thinking_budget",
         "thinking_control",
         "thinking_control_mode",
+        "thinking_disable_supported",
         "reasoning_output",
         "thinking_format",
         "thinking_modes",
@@ -430,6 +431,12 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
     thinking_budget = cfg.get("thinking_budget")
     if thinking_budget is not None:
         assert isinstance(thinking_budget, bool), f"{label}.thinking_budget must be boolean"
+
+    thinking_disable_supported = cfg.get("thinking_disable_supported")
+    if thinking_disable_supported is not None:
+        assert isinstance(thinking_disable_supported, bool), (
+            f"{label}.thinking_disable_supported must be boolean"
+        )
 
     thinking_control_mode = cfg.get("thinking_control_mode")
     if thinking_control_mode is not None:

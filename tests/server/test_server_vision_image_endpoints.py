@@ -21,7 +21,20 @@ def clean_vision_state(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
+    # Isolate the HOST machine's centralized config the same way env is
+    # isolated: vision behavior is config-first now (dm#177), so a real
+    # output.image route on the developer box would legitimately override the
+    # env values these tests stage (config-wins precedence has its own suite:
+    # test_vision_config_precedence.py).
+    class _UnconfiguredMgr:
+        def get_capability_default(self, kind, modality=None, task=None):
+            return {"source": "not_configured"}
+
+    monkeypatch.setattr("abstractcore.config.manager.get_config_manager", lambda: _UnconfiguredMgr())
+
     from abstractcore.server import vision_endpoints
+
+    vision_endpoints._VISION_ROUTE_WARNED.clear()
 
     with vision_endpoints._BACKEND_CACHE_LOCK:
         vision_endpoints._BACKEND_CACHE.clear()
@@ -1683,3 +1696,46 @@ def test_removed_local_abstractvision_alias_is_rejected(client):
     assert resp.status_code == 400
     data = resp.json()
     assert "diffusers/default" in data["error"]["message"]
+
+
+def test_images_generations_uses_task_route_over_broad_route(client, monkeypatch):
+    # Backlog 0826: output.image.text_to_image steers /v1/images/generations
+    # (task row wins over the broad output.image row), and the task row's
+    # options reach the proxy lane (route-option fan-out) — end to end.
+    from abstractcore.server import vision_endpoints
+
+    _FakeProxyClient.calls = []
+    monkeypatch.setattr(vision_endpoints.httpx, "Client", _FakeProxyClient)
+
+    routes = {
+        ("image", None): {
+            "provider": "openai-compatible",
+            "model": "broad-image-model",
+            "base_url": "https://broad.example/v1",
+        },
+        ("image", "text_to_image"): {
+            "provider": "openai-compatible",
+            "model": "t2i-task-model",
+            "base_url": "https://task.example/v1",
+            "options": {"image_generations_path": "/custom/gen"},
+        },
+    }
+
+    class _Mgr:
+        def get_capability_default(self, kind, modality=None, task=None):
+            if kind != "output":
+                return {"source": "not_configured"}
+            row = routes.get((modality, task))
+            return dict(row) if row is not None else {"source": "not_configured"}
+
+    monkeypatch.setattr("abstractcore.config.manager.get_config_manager", lambda: _Mgr())
+
+    resp = client.post(
+        "/v1/images/generations",
+        json={"prompt": "hello", "width": 64, "height": 64, "response_format": "b64_json"},
+    )
+
+    assert resp.status_code == 200
+    call = _FakeProxyClient.calls[0]
+    assert call["url"] == "https://task.example/v1/custom/gen", "task route base_url + path option must win"
+    assert call["json"]["model"] == "t2i-task-model", "task route model must beat the broad route model"

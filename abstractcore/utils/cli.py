@@ -2067,6 +2067,7 @@ class SimpleCLI:
                 full_content = ""
                 display_buffer = ""  # Buffer for cleaned display content
                 reasoning_parts: List[str] = []
+                reasoning_complete: Optional[str] = None
 
                 for chunk in response:
                     if hasattr(chunk, 'content') and chunk.content:
@@ -2102,10 +2103,18 @@ class SimpleCLI:
                                 # Buffer the chunk, we'll process after streaming
                                 display_buffer += chunk_text
 
-                    # Best-effort: capture streamed reasoning metadata (OpenAI-compatible deltas, etc.).
-                    r = getattr(chunk, "reasoning", None)
-                    if isinstance(r, str) and r.strip():
-                        reasoning_parts.append(r.strip())
+                    # Best-effort: capture streamed reasoning. Incremental deltas ride
+                    # `metadata["reasoning_delta"]` (verbatim fragments); the trailing
+                    # chunk carries the complete `metadata["reasoning"]` aggregate and
+                    # supersedes accumulated deltas (never concatenate both).
+                    meta = getattr(chunk, "metadata", None)
+                    if isinstance(meta, dict):
+                        r_delta = meta.get("reasoning_delta")
+                        if isinstance(r_delta, str) and r_delta:
+                            reasoning_parts.append(r_delta)
+                        r_full = meta.get("reasoning")
+                        if isinstance(r_full, str) and r_full.strip():
+                            reasoning_complete = r_full
 
                 if not buffer_for_reasoning_first:
                     print()  # New line after streaming
@@ -2127,7 +2136,7 @@ class SimpleCLI:
                     if self.debug_mode:
                         print(f"\n🔍 Cleaned content differs from streamed content")
 
-                combined = "\n\n".join(reasoning_parts).strip() if reasoning_parts else ""
+                combined = (reasoning_complete or "".join(reasoning_parts)).strip()
                 if show_reasoning and combined:
                     self._print_reasoning_block(combined)
 

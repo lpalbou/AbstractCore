@@ -85,19 +85,26 @@ class AnthropicProvider(BaseProvider):
         caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
         mode = str(caps.get("thinking_control_mode") or "").strip().lower()
         adaptive_supported = mode == "adaptive"
-        max_effort_supported = bool(caps.get("max_effort_supported")) if "max_effort_supported" in caps else False
         if not mode:
             # Backward-compatible heuristic fallback for models missing capability metadata.
             model_s = str(getattr(self, "model", "") or "").strip().lower()
             adaptive_supported = ("opus-4-6" in model_s) or ("sonnet-4-6" in model_s) or ("4.6" in model_s)
-            max_effort_supported = ("opus-4-6" in model_s) or ("4.6" in model_s and "opus" in model_s)
 
-        def _level_to_effort(lvl: Optional[str]) -> str:
-            if lvl in {"low", "medium", "high"}:
-                return lvl
-            if lvl == "xhigh":
-                return "max" if max_effort_supported else "high"
-            return "medium"
+        def _level_to_effort(lvl: Optional[str]) -> Optional[str]:
+            # `output_config.effort` takes the requested level verbatim (the base layer
+            # already clamped it to the model's declared reasoning_levels). "minimal" is
+            # not an Anthropic effort value; map it to the documented floor "low".
+            # Never escalate silently: "max" spends more than the caller asked for and
+            # stays unreachable until the unified vocabulary grows an explicit level
+            # (`max_effort_supported` in the registry reserves that space).
+            if lvl is None:
+                return None
+            s = str(lvl).strip().lower()
+            if s == "minimal":
+                return "low"
+            if s in {"low", "medium", "high", "xhigh"}:
+                return s
+            return None
 
         def _level_to_budget_tokens(lvl: Optional[str]) -> int:
             budget_map = {"low": 1024, "medium": 4096, "high": 8192, "xhigh": 16384}
@@ -106,26 +113,38 @@ class AnthropicProvider(BaseProvider):
         new_kwargs = dict(kwargs)
 
         if enabled is False:
+            if adaptive_supported and caps.get("thinking_disable_supported") is False:
+                # Adaptive-only models (Opus 4.7, Fable 5, Mythos 5) reject
+                # `thinking: {"type": "disabled"}` with HTTP 400; omitting the
+                # `thinking` parameter is the documented off state there.
+                warnings.warn(
+                    f"thinking='off' requested for Anthropic model '{self.model}', which rejects "
+                    "thinking type 'disabled'; omitting the thinking parameter so the server "
+                    "default (no explicit thinking) applies.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+                new_kwargs.pop("thinking", None)
+                return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
             new_kwargs["thinking"] = {"type": "disabled"}
             return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
 
         if adaptive_supported:
             new_kwargs["thinking"] = {"type": "adaptive"}
             effort = _level_to_effort(level)
-            if level == "xhigh" and effort != "max":
-                warnings.warn(
-                    f"thinking='xhigh' requested for Anthropic model '{self.model}', but effort='max' is not "
-                    "supported; using effort='high'.",
-                    RuntimeWarning,
-                    stacklevel=3,
-                )
-            output_config = new_kwargs.get("output_config")
-            output_config_dict: Dict[str, Any] = dict(output_config) if isinstance(output_config, dict) else {}
-            output_config_dict["effort"] = effort
-            new_kwargs["output_config"] = output_config_dict
-            return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=True)
+            handled_level = False
+            if effort is not None:
+                output_config = new_kwargs.get("output_config")
+                output_config_dict: Dict[str, Any] = dict(output_config) if isinstance(output_config, dict) else {}
+                output_config_dict["effort"] = effort
+                new_kwargs["output_config"] = output_config_dict
+                handled_level = True
+            # thinking='on' without a level: send adaptive alone and let the API
+            # default effort apply instead of silently choosing one.
+            return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=handled_level)
 
-        # Manual budget fallback (deprecated on newest models but still best-effort for older ones).
+        # Manual budget fallback (extended thinking; the only thinking mode on Claude 4.5
+        # and earlier — deprecated on 4.6, rejected on adaptive-only models).
         budget_tokens = _level_to_budget_tokens(level)
         max_out = new_kwargs.get("max_output_tokens")
         try:
@@ -133,7 +152,21 @@ class AnthropicProvider(BaseProvider):
         except Exception:
             max_out_i = None
         if isinstance(max_out_i, int) and max_out_i > 0:
-            budget_tokens = max(0, min(int(budget_tokens), int(max_out_i)))
+            # Anthropic constraints: budget_tokens has a hard minimum of 1024 and
+            # max_tokens must be STRICTLY greater than the budget. A request that
+            # cannot satisfy both would be rejected upstream — refuse to enable
+            # thinking and say so instead of sending a known-invalid request.
+            if max_out_i <= 1024:
+                warnings.warn(
+                    f"thinking={(level or 'on')!r} requested for Anthropic model '{self.model}', but "
+                    f"max_output_tokens={max_out_i} cannot satisfy extended thinking constraints "
+                    "(budget_tokens minimum is 1024 and max_tokens must exceed the budget); "
+                    "extended thinking was NOT enabled for this request.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+                return kwargs, ThinkingControlHandling()
+            budget_tokens = max(1024, min(int(budget_tokens), max_out_i - 1))
 
         new_kwargs["thinking"] = {"type": "enabled", "budget_tokens": int(budget_tokens)}
         return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=True)
@@ -890,6 +923,20 @@ class AnthropicProvider(BaseProvider):
                             raw_response=chunk,
                             model=call_params.get("model")
                         )
+                    elif hasattr(chunk.delta, 'thinking'):
+                        # Extended-thinking delta (`thinking_delta` events). Publish as an
+                        # incremental `reasoning_delta`; the base layer aggregates deltas
+                        # into the complete `metadata["reasoning"]` on the trailing chunk
+                        # (parity with the non-streamed thinking-block capture).
+                        # `signature_delta` events carry no renderable text and are skipped.
+                        thinking_text = chunk.delta.thinking
+                        if isinstance(thinking_text, str) and thinking_text:
+                            yield GenerateResponse(
+                                content="",
+                                raw_response=chunk,
+                                model=call_params.get("model"),
+                                metadata={"reasoning_delta": thinking_text},
+                            )
                     elif hasattr(chunk.delta, 'partial_json'):
                         # Tool call arguments coming in chunks
                         if current_tool_call:

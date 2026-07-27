@@ -6,10 +6,10 @@
 # cap), two-observation dead-listener nag. The ledger only THROTTLES —
 # the server-side ack cursor (ack_inbox) is the only truth.
 import hashlib, json, os, sys, time, urllib.request
-URL = 'http://127.0.0.1:8765'
-AGENT = 'core'
+URL = 'core'
+AGENT = 'http://127.0.0.1:8765'
 NOOP = "{}"
-CLIENT = '0.12.5'
+CLIENT = '0.12.46'
 FLOOR = 600
 BACKOFF_BASE, BACKOFF_CAP = 600, 3600
 
@@ -35,25 +35,26 @@ if payload.get("stop_hook_active"):
 # Cursor guards, enforced only when the field exists (Claude/Codex
 # payloads lack both). An aborted/errored turn must not breed a
 # follow-up: the human just cancelled, or the provider just failed —
-# either way another full-context turn is the wrong reflex.
+# either way another full-context turn is the wrong reflex. DEFERRED,
+# not absolute (2026-07-23 fleet blackout, RC-1): sessions that become
+# chains of harness-generated turns present these payloads at EVERY
+# turn-end, so a hard noop here silenced the backstop for days while
+# operator orders rotted. The guards now suppress chatter only — an
+# ESCALATED debt (SLA-breached, hub-raised) prompts through them, with
+# the FLOOR + exponential backoff below still bounding the cadence.
+harness_guarded = False
 status = payload.get("status")
 if status is not None and str(status) != "completed":
-    noop()
+    harness_guarded = True
 try:
     lc = payload.get("loop_count")
     if lc is not None and int(lc) >= 2:
-        noop()  # script-side chain cap; hooks.json loop_limit backstops
+        harness_guarded = True  # chain cap; hooks.json loop_limit backstops
 except Exception:
     pass
 home = os.environ.get("AGORA_HOME", os.path.expanduser("~/.agora"))
 def listener_dead():
-    pidfile = os.path.join(home, f"listen-{AGENT}.pid")
-    try:
-        pid = int(open(pidfile).read().strip() or "0")
-        os.kill(pid, 0)  # signal 0 = liveness probe, sends nothing
-        return False
-    except Exception:
-        return True
+    return False
 try:
     keys = json.load(open(os.path.join(home, "keys.json")))
 except Exception:
@@ -65,7 +66,7 @@ if not key:
 ledger_path = os.path.join(home, f"hook-attempts-{AGENT}.json")
 def _fresh_ledger():
     return {"v": 4, "last_prompt": 0.0, "sig": "", "attempts": 0,
-            "dead_streak": 0}
+            "dead_streak": 0, "last_run": 0.0}
 try:
     led = json.load(open(ledger_path))
     if not (isinstance(led, dict) and led.get("v") == 4):
@@ -80,6 +81,12 @@ def _save():
         pass  # best-effort throttle: prompting matters more than state
 
 now = time.time()
+# Liveness heartbeat, written BEFORE any network call: the 2026-07-23
+# fleet forensics could not tell "hook never fires" from "hook dies
+# mid-run" because the only ledger write sat after the HTTP fetches.
+# last_run answers that at a glance next time.
+led["last_run"] = now
+_save()
 last = led.get("last_prompt", 0.0)
 try:
     last = float(last)
@@ -101,7 +108,9 @@ def _get(path):
     req = urllib.request.Request(
         f"{URL}{path}", headers={"Authorization": f"Bearer {key}",
                                  "X-Agora-Client": CLIENT})
-    with urllib.request.urlopen(req, timeout=5) as r:
+    # 4s, not 5: two calls must fit any harness kill budget with
+    # room for interpreter start (the Jul-23 hook-death class).
+    with urllib.request.urlopen(req, timeout=4) as r:
         return json.load(r)
 
 try:
@@ -112,23 +121,45 @@ if not isinstance(owed, dict):
     owed = {}
 to_answer = [m for m in owed.get("to_answer", []) if isinstance(m, dict)]
 to_consume = [m for m in owed.get("to_consume", []) if isinstance(m, dict)]
+# The deferred harness guard: suppress this turn-end unless the seat
+# owes an ESCALATED debt — the one thing that must ring through a
+# follow-up-only session (RC-1). Checked before the /inbox fetch so
+# guarded turns cost one GET, not two.
+if harness_guarded and not any(m.get("escalated") for m in to_answer):
+    _save()
+    noop()
 try:
     unread = _get("/inbox")
 except Exception:
     unread = []
 if not isinstance(unread, list):
     unread = []
-# Obligation-shaped unread only: open/blocked status, or flags that
-# mark a debt (an answer to YOUR ask, critical, escalated). Bare
+# Obligation-shaped unread only: open/blocked status, or the hub's
+# own debt markers (an answer to YOUR ask, critical, escalated). Bare
 # to-you fyi — including the hub's synthetic notices, which ride
-# fyi+to-you — waits for an organic turn; fyi never costs one.
-IMPORTANT = {"reply-to-me", "critical", "escalated"}
+# fyi+to_me — waits for an organic turn; fyi never costs one.
+# Envelope fields, not the listener's notify-file grammar (the 2026-07-23
+# audit found this filter reading `from`/`flags` — keys the /inbox wire
+# has NEVER carried, so critical/escalated unread outside /owed never
+# reached the backstop): sender is `sender`, and critical/escalated/
+# reply_to_me are BOOLEANS on the envelope.
 oblig_unread = []
 for e in unread:
-    if not isinstance(e, dict) or str(e.get("from", "")) == AGENT:
+    if not isinstance(e, dict) or str(e.get("sender", "")) == AGENT:
         continue
-    flags = {t for t in str(e.get("flags", "")).split(",") if t}
-    if str(e.get("status", "")) in ("open", "blocked") or flags & IMPORTANT:
+    is_oblig = (str(e.get("status", "")) in ("open", "blocked")
+                or e.get("critical") or e.get("escalated")
+                or e.get("reply_to_me"))
+    # Narrowed rule (0135): an ADDRESSED open that does not name
+    # this seat is the named seats' debt, not a reason to prompt
+    # here (62% of commons wakes measured as addressed opens
+    # hitting everyone).
+    if (is_oblig and str(e.get("status", "")) in ("open", "blocked")
+            and e.get("addressed") and not e.get("to_me")
+            and not e.get("critical") and not e.get("escalated")
+            and not e.get("reply_to_me")):
+        is_oblig = False
+    if is_oblig:
         oblig_unread.append(e)
 
 def _mid(m):
@@ -157,7 +188,7 @@ if arm_due:
         "is deaf to hub messages until you re-arm it. Do it NOW, "
         "exactly as your agora rule says: check_inbox, triage, then "
         "start ONE background shell running "
-        "`while true; do agora listen --once --as core --important-only --max-wait 240; sleep 5; done` "
+        "`while true; do agora listen --once --as http://127.0.0.1:8765 --important-only --max-wait 240; sleep 5; done` "
         "monitored on the ANCHORED pattern ^AGORA_WAKE (debounce "
         ">= 15000 ms), then keep your foreground on real work. "
         "FIRST check the listener is not already running (read your "
@@ -181,4 +212,4 @@ if have_debt:
 else:
     led["sig"], led["attempts"] = "", 0
 _save()
-print(json.dumps({'followup_message': msg}))
+print(json.dumps({"decision": "block", "reason": msg}))

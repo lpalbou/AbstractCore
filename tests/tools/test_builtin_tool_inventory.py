@@ -4,7 +4,7 @@ The inventory is the registry side downstream seats derive from (runtime's
 grant tool universe, the gateway's door declarations, observer's descriptor
 contract). These tests pin its load-bearing properties:
 
-- BYTE-STABLE MEMBER SETS: the exact 13 common + 3 shell names, in
+- BYTE-STABLE MEMBER SETS: the exact 14 common + 3 shell names, in
   deterministic order — a widening or rename lands RED here first, so the
   cross-repo consumers are notified by a failing pin instead of drifting.
 - PROGRAMMATIC DERIVATION: the inventory matches a live scan of the
@@ -34,8 +34,12 @@ from abstractcore.tools.inventory import (
 )
 
 
-# The 13 common + 3 shell enumeration recorded in the entity-agency plan's
-# Phase 0.5 (core's authoritative count, cross-verified on the hub record).
+# The 14 common + 3 shell + 7 comms + 2 telegram enumeration (comms/telegram
+# joined at schema v3 under the dm#221 tool-surfacing audit — the v1 exclusion
+# made email/telegram invisible to every host's discovery). A widening lands
+# RED here first so the cross-repo consumers (runtime grant universe, gateway
+# door, observer contract) are notified by a failing pin instead of drifting
+# silently.
 EXPECTED_COMMON = [
     "analyze_code",
     "analyze_media",
@@ -55,6 +59,23 @@ EXPECTED_COMMON = [
 
 EXPECTED_SHELL = ["shell_close", "shell_exec", "shell_write_stdin"]
 
+EXPECTED_COMMS = [
+    "list_email_accounts",
+    "list_emails",
+    "list_whatsapp_messages",
+    "read_email",
+    "read_whatsapp_message",
+    "send_email",
+    "send_whatsapp_message",
+]
+
+EXPECTED_TELEGRAM = ["send_telegram_artifact", "send_telegram_message"]
+
+# browser_tools joined 2026-07-23 (operator-approved dm:core--laurent#21):
+# the headless render probe. remote_write_capable: navigating executes the
+# target page's JS, which can send requests anywhere (fetch_url's class).
+EXPECTED_BROWSER = ["browser_probe"]
+
 EXPECTED_MUTATING = {
     "edit_file",
     "execute_command",
@@ -65,15 +86,24 @@ EXPECTED_MUTATING = {
 }
 
 # fetch_url can send POST/PUT/DELETE with a body through its model-controlled
-# method/data parameters — the one remote-write escape hatch in the set.
-EXPECTED_REMOTE_WRITE_CAPABLE = {"fetch_url"}
+# method/data parameters; the comms send_* tools emit to model-controlled
+# recipients (schema v3).
+EXPECTED_REMOTE_WRITE_CAPABLE = {
+    "fetch_url",
+    "send_email",
+    "send_whatsapp_message",
+    "send_telegram_message",
+    "send_telegram_artifact",
+    "browser_probe",
+}
 
 
 def test_member_sets_are_byte_stable():
-    """The exact ruled enumeration: 13 common + 3 shell, deterministic order."""
+    """The exact ruled enumeration: 14 common + 3 shell + 7 comms + 2
+    telegram + 1 browser, deterministic (module order, then name order)."""
     names = list_builtin_tool_names()
-    assert names == EXPECTED_COMMON + EXPECTED_SHELL
-    assert len(names) == 17
+    assert names == EXPECTED_COMMON + EXPECTED_SHELL + EXPECTED_COMMS + EXPECTED_TELEGRAM + EXPECTED_BROWSER
+    assert len(names) == 27
 
 
 def test_inventory_is_derived_not_copied():
@@ -147,6 +177,31 @@ def test_stale_classification_refuses_loudly(monkeypatch):
     assert "stale" in str(exc_info.value).lower()
 
 
+def test_refiner_naming_unscanned_tool_refuses_loudly(monkeypatch):
+    # Adversary P2: the refiner map is fail-closed BOTH ways — an entry
+    # naming no scanned tool would attach a per-call hook to nothing.
+    import abstractcore.tools.inventory as inv
+
+    widened = dict(inv._REFINER_BY_NAME)
+    widened["ghost_tool_never_scanned"] = "send_email_recipient@v1"
+    monkeypatch.setattr(inv, "_REFINER_BY_NAME", widened)
+    with pytest.raises(RuntimeError) as e:
+        inv.list_builtin_tool_inventory()
+    assert "ghost_tool_never_scanned" in str(e.value)
+
+
+def test_refiner_with_unknown_id_refuses_loudly(monkeypatch):
+    # Adversary P2: a typo'd refiner id on a REAL tool must refuse at build
+    # (the enforcement layer would find no logic — deny-safe, but silent).
+    import abstractcore.tools.inventory as inv
+
+    widened = dict(inv._REFINER_BY_NAME)
+    widened["send_email"] = "send_email_recipient"  # unversioned = unknown
+    monkeypatch.setattr(inv, "_REFINER_BY_NAME", widened)
+    with pytest.raises(ValueError):
+        inv.list_builtin_tool_inventory()
+
+
 def test_classification_map_matches_scan_exactly():
     """Set equality both directions — the two refusal paths above enforce it
     at runtime; this pins it at test time."""
@@ -160,17 +215,127 @@ def test_descriptors_carry_only_core_owned_facts():
     expected_keys = {
         "name", "owner", "module", "mutating", "remote_write_capable",
         "act_only", "model_cost", "description", "parameters",
+        # schema v3 (tool-tiers build): risk facts + the DERIVED risk fields.
+        "comms_send", "captures_environment", "standing_effect",
+        "destructive_capable", "model_controlled_destination",
+        "risk_tier", "risk_rank", "risk_presentation", "risk_mapping_version",
+        "risk_refiner",
     }
     for row in rows:
         assert set(row.keys()) == expected_keys, f"{row['name']}: field drift"
         assert row["owner"] == "core"
-        assert row["module"] in {"common_tools", "shell_tools"}
+        assert row["module"] in {"common_tools", "shell_tools", "comms_tools", "telegram_tools", "browser_tools"}
         assert isinstance(row["mutating"], bool)
         assert isinstance(row["remote_write_capable"], bool)
         assert isinstance(row["act_only"], bool)
         assert isinstance(row["model_cost"], bool)
+        assert row["risk_tier"] in {"observe", "act", "outreach", "destroy"}
         assert row["description"].strip(), f"{row['name']}: empty description"
-    assert INVENTORY_SCHEMA_VERSION == 2
+    assert INVENTORY_SCHEMA_VERSION == 3
+
+
+def test_descriptor_risk_defaults_are_fail_closed():
+    # Adversary P2: a hand-constructed row born without an explicit
+    # derivation must look UNVETTED/top, never observe/safe (the build's own
+    # fail-closed rule applied to the dataclass defaults).
+    from abstractcore.tools.inventory import BuiltinToolDescriptor
+
+    d = BuiltinToolDescriptor(
+        name="hypothetical",
+        owner="core",
+        module="common_tools",
+        mutating=False,
+        remote_write_capable=False,
+        act_only=False,
+        description="x",
+    )
+    assert d.risk_tier == "destroy" and d.risk_rank == 4 and d.risk_presentation == "unvetted"
+
+
+def test_risk_tiers_derive_the_operator_examples():
+    """The dm#221/tool-tiers acceptance shape: every band on the operator's
+    own examples, derived (never hand-assigned) through the ONE mapping."""
+    inventory = {d.name: d for d in list_builtin_tool_inventory()}
+    assert inventory["read_file"].risk_tier == "observe"
+    assert inventory["web_search"].risk_tier == "observe"
+    assert inventory["write_file"].risk_tier == "act"
+    assert inventory["edit_file"].risk_tier == "act"
+    assert inventory["fetch_url"].risk_tier == "act"
+    assert inventory["send_email"].risk_tier == "outreach"
+    assert inventory["send_telegram_message"].risk_tier == "outreach"
+    # The argv-class clamp: rm/git are PROGRAMS inside these tools.
+    assert inventory["execute_command"].risk_tier == "destroy"
+    assert inventory["shell_exec"].risk_tier == "destroy"
+    # Comms reads are observe-band (no state change, fixed own-account reads).
+    assert inventory["read_email"].risk_tier == "observe"
+    assert inventory["list_emails"].risk_tier == "observe"
+    # Every row serves the mapping version (grant surfaces pin against it).
+    from abstractcore.tools.risk_facts import RISK_MAPPING_VERSION
+
+    for d in inventory.values():
+        assert d.risk_mapping_version == RISK_MAPPING_VERSION
+
+
+def test_send_email_carries_the_recipient_refiner():
+    # dm#244: send_email declares a per-call refiner so the enforcement layer
+    # can lower a call to the registered operator to auto; the grant-time band
+    # stays outreach (the ceiling + deny-safe default). Only send_email has it.
+    inventory = {d.name: d for d in list_builtin_tool_inventory()}
+    se = inventory["send_email"]
+    assert se.risk_refiner == "send_email_recipient@v1"
+    assert se.risk_tier == "outreach" and se.risk_rank == 3, "the band is the ceiling, refiner is band-neutral"
+    # whatsapp/telegram have no registered operator-recipient concept.
+    assert inventory["send_whatsapp_message"].risk_refiner is None
+    # It rides to_dict on the wire.
+    row = {r["name"]: r for r in builtin_tool_inventory_as_dicts()}["send_email"]
+    assert row["risk_refiner"] == "send_email_recipient@v1"
+
+
+def test_execute_command_carries_the_git_read_only_refiner():
+    # runtime c5042/c5050: execute_command declares git_read_only@v1 so the
+    # approval lane can LOWER a proven read-only git invocation to auto — the
+    # grant-time band stays destroy (the ceiling + deny-safe default; refiner
+    # is band-neutral). Declaring it retires the clients' hand-rolled git
+    # allowlists. Same architecture as send_email_recipient@v1.
+    inventory = {d.name: d for d in list_builtin_tool_inventory()}
+    ec = inventory["execute_command"]
+    assert ec.risk_refiner == "git_read_only@v1"
+    assert ec.risk_tier == "destroy" and ec.risk_rank == 4, "the band is the ceiling, refiner is band-neutral"
+    row = {r["name"]: r for r in builtin_tool_inventory_as_dicts()}["execute_command"]
+    assert row["risk_refiner"] == "git_read_only@v1"
+    # Exactly the two declared refiner carriers today (fail-closed: a stale
+    # entry naming no scanned tool refuses the whole inventory at build).
+    refined = {n for n, d in inventory.items() if d.risk_refiner}
+    assert refined == {"send_email", "execute_command"}
+
+
+def test_comms_send_fact_classification():
+    inventory = {d.name: d for d in list_builtin_tool_inventory()}
+    senders = {n for n, d in inventory.items() if d.comms_send}
+    assert senders == {
+        "send_email",
+        "send_whatsapp_message",
+        "send_telegram_message",
+        "send_telegram_artifact",
+    }
+    # Every comms sender also carries the approval-rule fact: recipients are
+    # model-controlled arguments.
+    for name in senders:
+        assert inventory[name].model_controlled_destination is True
+
+
+def test_model_controlled_destination_on_model_chosen_egress_tools():
+    """runtime ruling c4879: fetch_url and browser_probe carry
+    model_controlled_destination — their egress destination is model-chosen
+    (fetch_url's URL/method, browser_probe navigates + executes a model-chosen
+    URL's JS). The fact is band-NEUTRAL: both stay `act` (the approval lane
+    consumes mcd via a ceiling-skip, not a band change). Resolves the
+    vocabulary/inventory mismatch two adversaries flagged (risk_facts.py cited
+    fetch_url as the mcd archetype yet the inventory hadn't set it)."""
+    inventory = {d.name: d for d in list_builtin_tool_inventory()}
+    for name in ("fetch_url", "browser_probe"):
+        assert inventory[name].model_controlled_destination is True, name
+        assert inventory[name].risk_tier == "act", f"{name}: mcd must not move the band"
 
 
 def test_act_only_reflects_tool_definitions():
@@ -295,19 +460,21 @@ def test_package_level_exports():
 
     assert ExportedDescriptor is BuiltinToolDescriptor
     assert exported_names() == list_builtin_tool_names()
-    assert len(exported_inventory()) == 17
-    assert len(exported_dicts()) == 17
+    assert len(exported_inventory()) == 27
+    assert len(exported_dicts()) == 27
 
 
-def test_comms_lanes_deliberately_out_of_scope():
-    """The v1 scope ruling (entity-creation directive): comms lanes are OUT —
-    email/WhatsApp (comms_tools) AND Telegram (telegram_tools). This pin makes
-    the exclusions decisions on record; widening is one module entry, and
-    this test flips WITH it."""
-    assert "abstractcore.tools.comms_tools" not in _INVENTORY_MODULES
-    assert "abstractcore.tools.telegram_tools" not in _INVENTORY_MODULES
-    names = set(list_builtin_tool_names())
-    assert "list_emails" not in names
-    assert "send_email" not in names
-    assert "send_telegram_message" not in names
-    assert "send_telegram_artifact" not in names
+def test_comms_lanes_now_in_scope():
+    """SCHEMA V3 (dm#221 tool-surfacing audit): comms lanes JOINED the
+    inventory — the v1 exclusion made email/WhatsApp/Telegram invisible to
+    every host's discovery, which the operator's audit ruled a gap. They now
+    surface WITH their risk facts (send_* → outreach band). The old
+    out-of-scope pin is flipped here, on the record."""
+    assert "abstractcore.tools.comms_tools" in _INVENTORY_MODULES
+    assert "abstractcore.tools.telegram_tools" in _INVENTORY_MODULES
+    inventory = {d.name: d for d in list_builtin_tool_inventory()}
+    for name in ("list_emails", "send_email", "send_telegram_message", "send_telegram_artifact"):
+        assert name in inventory
+    # And they surface vetted (facts declared), never unvetted-at-top.
+    assert inventory["send_email"].risk_tier == "outreach"
+    assert inventory["list_emails"].risk_tier == "observe"

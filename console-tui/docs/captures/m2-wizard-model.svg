@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 990 540" width="990" height="540" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="15" xml:space="preserve">
+<rect width="990" height="540" fill="#000000"/>
+<g shape-rendering="crispEdges">
+<rect x="0" y="0" width="513" height="18" fill="#1a1a2e"/>
+<rect x="513" y="0" width="468" height="18" fill="#191a2e"/>
+<rect x="981" y="0" width="9" height="18" fill="#1a1a2e"/>
+<rect x="0" y="18" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="36" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="54" width="990" height="18" fill="#0f3460"/>
+<rect x="0" y="72" width="990" height="18" fill="#58273d"/>
+<rect x="0" y="90" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="108" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="126" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="144" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="162" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="180" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="198" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="216" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="234" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="252" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="270" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="288" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="306" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="324" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="342" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="360" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="378" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="396" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="414" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="432" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="450" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="468" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="486" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="504" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="522" width="963" height="18" fill="#1a1a2e"/>
+<rect x="972" y="522" width="18" height="18" fill="#1a1a2e"/>
+</g>
+<text x="0" y="14" textLength="198" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700"> AbstractCore Console </text>
+<text x="198" y="14" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#27ae60">● </text>
+<text x="216" y="14" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">loaded </text>
+<text x="279" y="14" textLength="234" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">· wizard · /tmp/console-te</text>
+<text x="513" y="14" textLength="468" lengthAdjust="spacingAndGlyphs" fill="#1a1a2e"> wizard mode — Ctrl+N next step, Esc back, f finish </text>
+<text x="0" y="32" textLength="126" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> 1 Overview   </text>
+<text x="126" y="32" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#eeeeee" font-weight="700">2 Model</text>
+<text x="189" y="32" textLength="801" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">   3 Providers   4 Routes   5 Media   6 Embeddings   7 Server   8 Review                 </text>
+<text x="117" y="50" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#e94560">▔▔▔▔▔▔▔▔▔</text>
+<text x="0" y="68" textLength="990" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa" font-weight="700">section         field                  value                                    state           note          </text>
+<text x="0" y="86" textLength="990" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">default_models  global_provider        lmstudio                                 ● set           coupled: --se…</text>
+<text x="0" y="104" textLength="990" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">default_models  global_model           qwen/qwen3.6-35b-a3b                     ● set                         </text>
+<text x="0" y="122" textLength="990" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">default_models  chat_model             —                                        · default       stored as one…</text>
+<text x="0" y="140" textLength="990" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">default_models  code_model             —                                        · default       stored as one…</text>
+<text x="0" y="482" textLength="288" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700"> default_models.global_provider </text>
+<text x="288" y="482" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">lmstudio  </text>
+<text x="378" y="482" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#27ae60" font-weight="700">set</text>
+<text x="405" y="482" textLength="540" lengthAdjust="spacingAndGlyphs" fill="#666666">  coupled: --set-global-default also writes route input.text</text>
+<text x="0" y="500" textLength="315" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700"> Step 2/10 · Default model (1/8) — </text>
+<text x="315" y="500" textLength="675" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">pick the global provider/model — Enter on global_provider opens the pair e…</text>
+<text x="0" y="536" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">Ctrl+N</text>
+<text x="54" y="536" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> next step</text>
+<text x="144" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="189" y="536" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">Esc</text>
+<text x="216" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> back</text>
+<text x="261" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="306" y="536" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">f</text>
+<text x="315" y="536" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> finish</text>
+<text x="378" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="423" y="536" textLength="54" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">Ctrl+C</text>
+<text x="477" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> quit</text>
+<text x="522" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="567" y="536" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">r</text>
+<text x="576" y="536" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> reload</text>
+<text x="639" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="684" y="536" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">Enter/e</text>
+<text x="747" y="536" textLength="99" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> edit field</text>
+<text x="846" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="891" y="536" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">x</text>
+<text x="900" y="536" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> clear…</text>
+<text x="963" y="536" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">☾  </text>
+</svg>

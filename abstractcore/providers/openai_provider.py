@@ -15,6 +15,7 @@ except ImportError:
     PYDANTIC_AVAILABLE = False
     BaseModel = None
 from .base import BaseProvider, ThinkingControlHandling
+from ._http import build_read_idle_timeout
 from ..core.types import GenerateResponse
 from ..exceptions import AuthenticationError, ProviderAPIError, ModelNotFoundError, format_model_error, format_auth_error
 from ..tools import UniversalToolHandler, execute_tools
@@ -1326,7 +1327,7 @@ class OpenAIProvider(BaseProvider):
 
         headers = {"Authorization": f"Bearer {self.api_key}"}
         files = {"file": (filename, audio, content_type or "application/octet-stream")}
-        with httpx.Client(timeout=self._timeout) as client:
+        with httpx.Client(timeout=build_read_idle_timeout(self._timeout, getattr(self, "_read_idle_timeout", None))) as client:
             response = client.post(
                 f"{self._audio_base_url()}/audio/transcriptions",
                 headers=headers,
@@ -1370,7 +1371,7 @@ class OpenAIProvider(BaseProvider):
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
-        with httpx.Client(timeout=self._timeout) as client:
+        with httpx.Client(timeout=build_read_idle_timeout(self._timeout, getattr(self, "_read_idle_timeout", None))) as client:
             response = client.post(
                 f"{self._audio_base_url()}/audio/speech",
                 headers=headers,
@@ -1417,7 +1418,7 @@ class OpenAIProvider(BaseProvider):
         field_name = str(file_field or "audio_sample").strip() or "audio_sample"
         url = f"{self._audio_base_url().rstrip('/')}{path}"
         headers = {"Authorization": f"Bearer {self.api_key}"}
-        with httpx.Client(timeout=self._timeout) as client:
+        with httpx.Client(timeout=build_read_idle_timeout(self._timeout, getattr(self, "_read_idle_timeout", None))) as client:
             response = client.post(
                 url,
                 headers=headers,

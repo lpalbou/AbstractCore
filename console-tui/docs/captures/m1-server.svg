@@ -1,0 +1,116 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 990 540" width="990" height="540" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="15" xml:space="preserve">
+<rect width="990" height="540" fill="#000000"/>
+<g shape-rendering="crispEdges">
+<rect x="0" y="0" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="18" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="36" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="54" width="990" height="18" fill="#0f3460"/>
+<rect x="0" y="72" width="981" height="18" fill="#58273d"/>
+<rect x="981" y="72" width="9" height="18" fill="#16213e"/>
+<rect x="0" y="90" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="108" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="126" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="144" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="162" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="180" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="198" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="216" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="234" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="252" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="270" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="288" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="306" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="324" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="342" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="360" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="378" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="396" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="414" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="432" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="450" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="468" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="486" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="504" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="522" width="963" height="18" fill="#1a1a2e"/>
+<rect x="972" y="522" width="18" height="18" fill="#1a1a2e"/>
+</g>
+<text x="0" y="14" textLength="198" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700"> AbstractCore Console </text>
+<text x="198" y="14" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#27ae60">● </text>
+<text x="216" y="14" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">loaded </text>
+<text x="279" y="14" textLength="414" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">· browse · /tmp/console-test/abstractcore.json</text>
+<text x="0" y="32" textLength="666" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> 1 Overview   2 Model   3 Providers   4 Routes   5 Media   6 Embeddings   </text>
+<text x="666" y="32" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#eeeeee" font-weight="700">7 Server</text>
+<text x="738" y="32" textLength="252" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">   8 Review                 </text>
+<text x="657" y="50" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#e94560">▔▔▔▔▔▔▔▔▔▔</text>
+<text x="0" y="68" textLength="990" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa" font-weight="700">section         field                  value                                    state          note           </text>
+<text x="0" y="86" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">server          auth_token             set · fp c8eb8397                        ● set                        </text>
+<text x="981" y="86" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">┃</text>
+<text x="0" y="104" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">server          allow_unauthenticated  true                                     ● set          UNSAFE when t…</text>
+<text x="981" y="104" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">┃</text>
+<text x="0" y="122" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">server          base_url_allowlist     —                                        · default      CSV; unset = …</text>
+<text x="981" y="122" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">┃</text>
+<text x="0" y="140" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">server          url_fetch_allowlist    —                                        · default                    </text>
+<text x="981" y="140" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">┃</text>
+<text x="0" y="158" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">server          media_root             —                                        · default                    </text>
+<text x="981" y="158" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">┃</text>
+<text x="0" y="176" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">server          allow_local_files      false                                    · default                    </text>
+<text x="981" y="176" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">┃</text>
+<text x="0" y="194" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">server          host                   —                                        · default      env HOST over…</text>
+<text x="981" y="194" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">┃</text>
+<text x="0" y="212" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">server          port                   8000                                     ● set                        </text>
+<text x="981" y="212" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">┃</text>
+<text x="0" y="230" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">cache           default_cache_dir      ~/.cache/abstractcore                    · default                    </text>
+<text x="981" y="230" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">┃</text>
+<text x="0" y="248" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">cache           huggingface_cache_dir  ~/.cache/huggingface                     · default                    </text>
+<text x="981" y="248" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">┃</text>
+<text x="0" y="266" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">cache           local_models_cache_dir ~/.abstractcore/models                   · default                    </text>
+<text x="981" y="266" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">┃</text>
+<text x="0" y="284" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">cache           glyph_cache_dir        ~/.abstractcore/glyph_cache              · default      no CLI setter…</text>
+<text x="981" y="284" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">┃</text>
+<text x="0" y="302" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">logging         console_level          chatty                                   ✗ &quot;chatty&quot; is…               </text>
+<text x="981" y="302" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="0" y="320" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">logging         file_level             DEBUG                                    · default                    </text>
+<text x="981" y="320" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="0" y="338" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">logging         file_logging_enabled   false                                    · default                    </text>
+<text x="981" y="338" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="0" y="356" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">logging         log_base_dir           —                                        · default      unset = ~/.ab…</text>
+<text x="981" y="356" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="0" y="374" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">logging         verbatim_enabled       true                                     · default                    </text>
+<text x="981" y="374" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="0" y="392" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">logging         console_json           false                                    · default                    </text>
+<text x="981" y="392" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="0" y="410" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">logging         file_json              true                                     · default                    </text>
+<text x="981" y="410" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="0" y="428" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">streaming       cli_stream_default     false                                    · default                    </text>
+<text x="981" y="428" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="0" y="446" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">timeouts        default_timeout        600.0                                    ● set          seconds; 0 = …</text>
+<text x="981" y="446" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="0" y="464" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">timeouts        tool_timeout           600.0                                    · default      seconds; 0 = …</text>
+<text x="981" y="464" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="0" y="482" textLength="981" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">offline         offline_first          true                                     · default                    </text>
+<text x="981" y="482" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="0" y="500" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700"> server.auth_token </text>
+<text x="171" y="500" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">set · fp c8eb8397  </text>
+<text x="342" y="500" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#27ae60" font-weight="700">set</text>
+<text x="0" y="536" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">1-8</text>
+<text x="27" y="536" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> screens</text>
+<text x="99" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="144" y="536" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">q</text>
+<text x="153" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> quit</text>
+<text x="198" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="243" y="536" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">w</text>
+<text x="252" y="536" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> wizard</text>
+<text x="315" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="360" y="536" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">r</text>
+<text x="369" y="536" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> reload</text>
+<text x="432" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="477" y="536" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">Enter/e</text>
+<text x="540" y="536" textLength="99" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> edit field</text>
+<text x="639" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="684" y="536" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">x</text>
+<text x="693" y="536" textLength="108" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> clear field</text>
+<text x="801" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="846" y="536" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">g</text>
+<text x="855" y="536" textLength="108" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> test defau…</text>
+<text x="963" y="536" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">☾  </text>
+</svg>

@@ -829,7 +829,10 @@ def list_email_accounts() -> Dict[str, Any]:
 
 @tool(
     description="Send an email from a configured account (SMTP).",
-    tags=["comms", "email"],
+    # "write": remote_write_capable — consumers keying on the side-effect tag
+    # must see the outbound send (the 2026-07-12 convention; matches the
+    # inventory's remote_write_capable + comms_send facts).
+    tags=["comms", "email", "write"],
     when_to_use=(
         "Use to send an email notification or report. The sender account is restricted to the operator-configured "
         "email accounts (it cannot be overridden by tool arguments)."
@@ -1049,7 +1052,11 @@ def list_emails(
 
     client: Optional[imaplib.IMAP4_SSL] = None
     try:
-        client = imaplib.IMAP4_SSL(imap_cfg.host, int(imap_cfg.port))
+        # Bound the CONNECT, not just post-connect ops (item 0835): a black-holing IMAP
+        # host used to pin the tool for the OS TCP default (~1-2 min) because the socket
+        # timeout was set only AFTER the constructor had already connected. The SMTP lane
+        # already passes timeout=; IMAP now matches (imaplib supports it on Python >= 3.9).
+        client = imaplib.IMAP4_SSL(imap_cfg.host, int(imap_cfg.port), timeout=timeout)
         try:
             if getattr(client, "sock", None) is not None:
                 client.sock.settimeout(timeout)  # type: ignore[attr-defined]
@@ -1212,7 +1219,11 @@ def read_email(
 
     client: Optional[imaplib.IMAP4_SSL] = None
     try:
-        client = imaplib.IMAP4_SSL(imap_cfg.host, int(imap_cfg.port))
+        # Bound the CONNECT, not just post-connect ops (item 0835): a black-holing IMAP
+        # host used to pin the tool for the OS TCP default (~1-2 min) because the socket
+        # timeout was set only AFTER the constructor had already connected. The SMTP lane
+        # already passes timeout=; IMAP now matches (imaplib supports it on Python >= 3.9).
+        client = imaplib.IMAP4_SSL(imap_cfg.host, int(imap_cfg.port), timeout=timeout)
         try:
             if getattr(client, "sock", None) is not None:
                 client.sock.settimeout(timeout)  # type: ignore[attr-defined]
@@ -1332,7 +1343,8 @@ def _twilio_base_url(account_sid: str) -> str:
 
 @tool(
     description="Send a WhatsApp message via a provider API (default: Twilio REST).",
-    tags=["comms", "whatsapp"],
+    # "write": remote_write_capable outbound send (see send_email).
+    tags=["comms", "whatsapp", "write"],
     when_to_use="Use to send a WhatsApp message notification (credentials resolved from env vars).",
     examples=[
         {

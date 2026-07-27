@@ -191,6 +191,14 @@ tools = [
     "psutil>=5.9.0,<6.0.0",
 ]
 
+# Headless-browser render probe (`browser_probe` tool). The pip package is
+# small; the browser binary is a separate post-install step:
+#   python -m playwright install --only-shell chromium
+# (Linux system libs: `playwright install --with-deps chromium`.)
+browser = [
+    "playwright>=1.49.0,<2.0.0",
+]
+
 # Compatibility alias (common typo): `abstractcore[tool]` -> `abstractcore[tools]`
 tool = [
     "requests>=2.25.0,<3.0.0",

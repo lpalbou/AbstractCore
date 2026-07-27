@@ -11,7 +11,11 @@
       "assistant_suffix": "",
       "tool_format": "pythonic",
       "tool_prefix": "<|python_tag|>",
-      "patterns": ["llama-2", "llama2", "codellama"]
+      "patterns": [
+        "llama-2",
+        "llama2",
+        "codellama"
+      ]
     },
     "llama4": {
       "description": "Meta's LLaMA 4 multimodal MoE architecture (April 2025)",
@@ -23,7 +27,11 @@
       "assistant_prefix": "<|start_header_id|>assistant<|end_header_id|>\n\n",
       "assistant_suffix": "<|eot_id|>",
       "tool_format": "native",
-      "patterns": ["llama-4", "llama4", "meta-llama-4"]
+      "patterns": [
+        "llama-4",
+        "llama4",
+        "meta-llama-4"
+      ]
     },
     "llama3_3": {
       "description": "Meta's LLaMA 3.3 architecture (December 2024)",
@@ -35,7 +43,11 @@
       "assistant_prefix": "<|start_header_id|>assistant<|end_header_id|>\n\n",
       "assistant_suffix": "<|eot_id|>",
       "tool_format": "prompted",
-      "patterns": ["llama-3.3", "llama3.3", "meta-llama-3.3"]
+      "patterns": [
+        "llama-3.3",
+        "llama3.3",
+        "meta-llama-3.3"
+      ]
     },
     "llama3_2": {
       "description": "Meta's LLaMA 3.2 multimodal architecture (September 2024)",
@@ -47,7 +59,11 @@
       "assistant_prefix": "<|start_header_id|>assistant<|end_header_id|>\n\n",
       "assistant_suffix": "<|eot_id|>",
       "tool_format": "prompted",
-      "patterns": ["llama-3.2", "llama3.2", "meta-llama-3.2"]
+      "patterns": [
+        "llama-3.2",
+        "llama3.2",
+        "meta-llama-3.2"
+      ]
     },
     "llama3_1": {
       "description": "Meta's LLaMA 3.1 architecture (July 2024)",
@@ -60,7 +76,11 @@
       "assistant_suffix": "<|eot_id|>",
       "tool_format": "native",
       "tool_prefix": "<|start_header_id|>ipython<|end_header_id|>\n\n",
-      "patterns": ["llama-3.1", "llama3.1", "meta-llama-3.1"]
+      "patterns": [
+        "llama-3.1",
+        "llama3.1",
+        "meta-llama-3.1"
+      ]
     },
     "llama3": {
       "description": "Meta's LLaMA 3 architecture (April 2024)",
@@ -72,7 +92,14 @@
       "assistant_prefix": "<|start_header_id|>assistant<|end_header_id|>\n\n",
       "assistant_suffix": "<|eot_id|>",
       "tool_format": "prompted",
-      "patterns": ["llama-3.0", "llama3.0", "llama-3-8b", "llama-3-70b", "llama3-8b", "llama3-70b"]
+      "patterns": [
+        "llama-3.0",
+        "llama3.0",
+        "llama-3-8b",
+        "llama-3-70b",
+        "llama3-8b",
+        "llama3-70b"
+      ]
     },
     "qwen3_next": {
       "description": "Alibaba's Qwen3-Next hybrid MoE architecture (September 2025)",
@@ -81,17 +108,21 @@
       "system_suffix": "<|im_end|>\n",
       "user_prefix": "<|im_start|>user\n",
       "user_suffix": "<|im_end|>\n",
-        "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-	      "tool_format": "special_token",
-	      "tool_prefix": "<|tool_call|>",
-	      "inference_parameters": {
-	        "temperature": 1.0,
-	        "top_p": 0.95,
-	        "top_k": 40
-	      },
-	      "patterns": ["qwen3-next", "qwen3-coder-next", "qwen/qwen3-coder-next"]
-	    },
+      "tool_format": "special_token",
+      "tool_prefix": "<|tool_call|>",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 40
+      },
+      "patterns": [
+        "qwen3-next",
+        "qwen3-coder-next",
+        "qwen/qwen3-coder-next"
+      ]
+    },
     "qwen3_vl": {
       "description": "Alibaba's Qwen3-VL multimodal architecture (May 2025)",
       "message_format": "im_start_end",
@@ -101,14 +132,18 @@
       "user_suffix": "<|im_end|>\n",
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-	      "tool_format": "native",
-	      "inference_parameters": {
-	        "temperature": 0.7,
-	        "top_p": 0.8,
-	        "top_k": 20
-	      },
-	      "patterns": ["qwen3-vl-2b", "qwen3-vl-4b", "qwen3-vl-8b"]
-	    },
+      "tool_format": "native",
+      "inference_parameters": {
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "top_k": 20
+      },
+      "patterns": [
+        "qwen3-vl-2b",
+        "qwen3-vl-4b",
+        "qwen3-vl-8b"
+      ]
+    },
     "qwen3_vl_moe": {
       "description": "Alibaba's Qwen3-VL MoE multimodal architecture (May 2025)",
       "message_format": "im_start_end",
@@ -118,32 +153,41 @@
       "user_suffix": "<|im_end|>\n",
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-	      "tool_format": "native",
-	      "inference_parameters": {
-	        "temperature": 0.7,
-	        "top_p": 0.8,
-	        "top_k": 20
-	      },
-	      "patterns": ["qwen3-vl-30b-a3b", "qwen3-vl-235b-a22b"]
-	    },
-      "qwen3_moe": {
-        "description": "Alibaba's Qwen3 MoE architecture (April 2025)",
-        "message_format": "im_start_end",
-        "system_prefix": "<|im_start|>system\n",
-        "system_suffix": "<|im_end|>\n",
-        "user_prefix": "<|im_start|>user\n",
-        "user_suffix": "<|im_end|>\n",
-        "assistant_prefix": "<|im_start|>assistant\n",
-        "assistant_suffix": "<|im_end|>\n",
-	        "tool_format": "special_token",
-	        "tool_prefix": "<|tool_call|>",
-	        "inference_parameters": {
-	          "temperature": 0.7,
-	          "top_p": 0.8,
-	          "top_k": 20
-	        },
-	        "patterns": ["qwen3-30b-a3b", "qwen3-235b-a22b", "qwen3:30b-a3b", "qwen3-coder:30b", "qwen/qwen3-coder-30b"]
-	      },
+      "tool_format": "native",
+      "inference_parameters": {
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "top_k": 20
+      },
+      "patterns": [
+        "qwen3-vl-30b-a3b",
+        "qwen3-vl-235b-a22b"
+      ]
+    },
+    "qwen3_moe": {
+      "description": "Alibaba's Qwen3 MoE architecture (April 2025)",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "tool_format": "special_token",
+      "tool_prefix": "<|tool_call|>",
+      "inference_parameters": {
+        "temperature": 0.7,
+        "top_p": 0.8,
+        "top_k": 20
+      },
+      "patterns": [
+        "qwen3-30b-a3b",
+        "qwen3-235b-a22b",
+        "qwen3:30b-a3b",
+        "qwen3-coder:30b",
+        "qwen/qwen3-coder-30b"
+      ]
+    },
     "qwen3_omni": {
       "description": "Alibaba's Qwen3-Omni MoE architecture for text, image, audio, and video inputs",
       "message_format": "im_start_end",
@@ -160,7 +204,10 @@
         "top_p": 0.95,
         "top_k": 20
       },
-      "patterns": ["qwen3-omni", "qwen/qwen3-omni"]
+      "patterns": [
+        "qwen3-omni",
+        "qwen/qwen3-omni"
+      ]
     },
     "qwen2_5": {
       "description": "Alibaba's Qwen2.5 architecture (September 2024)",
@@ -173,7 +220,10 @@
       "assistant_suffix": "<|im_end|>\n",
       "tool_format": "special_token",
       "tool_prefix": "<|tool_call|>",
-      "patterns": ["qwen2.5", "qwen-2.5"]
+      "patterns": [
+        "qwen2.5",
+        "qwen-2.5"
+      ]
     },
     "qwen2_5_omni": {
       "description": "Alibaba's Qwen2.5-Omni architecture for text, image, audio, and video inputs",
@@ -186,7 +236,10 @@
       "assistant_suffix": "<|im_end|>\n",
       "tool_format": "special_token",
       "tool_prefix": "<|tool_call|>",
-      "patterns": ["qwen2.5-omni", "qwen/qwen2.5-omni"]
+      "patterns": [
+        "qwen2.5-omni",
+        "qwen/qwen2.5-omni"
+      ]
     },
     "qwen2_vl": {
       "description": "Alibaba's Qwen2-VL multimodal architecture (September 2024)",
@@ -198,7 +251,10 @@
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
       "tool_format": "prompted",
-      "patterns": ["qwen2-vl", "qwen2.5-vl"]
+      "patterns": [
+        "qwen2-vl",
+        "qwen2.5-vl"
+      ]
     },
     "qwen3": {
       "description": "Alibaba's Qwen3 architecture (April 2025)",
@@ -211,13 +267,26 @@
       "assistant_suffix": "<|im_end|>\n",
       "tool_format": "special_token",
       "tool_prefix": "<|tool_call|>",
-      "thinking_tags": ["<think>", "</think>"],
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
       "thinking_control": {
         "prompt_disable_token": "/no_think",
         "template_kwarg": "enable_thinking",
         "assistant_prefill_disable": "<think>\n\n</think>\n\n"
       },
-      "patterns": ["qwen3-0.6b", "qwen3-1.7b", "qwen3-4b", "qwen3-8b", "qwen3-14b", "qwen3-32b", "qwen3:", "qwen3-4b-thinking", "qwen3-4b-instruct"]
+      "patterns": [
+        "qwen3-0.6b",
+        "qwen3-1.7b",
+        "qwen3-4b",
+        "qwen3-8b",
+        "qwen3-14b",
+        "qwen3-32b",
+        "qwen3:",
+        "qwen3-4b-thinking",
+        "qwen3-4b-instruct"
+      ]
     },
     "qwen3_5": {
       "description": "Alibaba's Qwen3.5 architecture family",
@@ -233,7 +302,10 @@
       },
       "tool_format": "special_token",
       "tool_prefix": "<|tool_call|>",
-      "thinking_tags": ["<think>", "</think>"],
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
       "thinking_control": {
         "template_kwarg": "enable_thinking",
         "assistant_prefill_disable": "<think>\n\n</think>\n\n"
@@ -263,19 +335,22 @@
       "tool_format": "xml",
       "tool_prefix": "<tool_call>",
       "tool_calling_format": "qwen3_coder",
-	      "thinking_tags": ["<think>", "</think>"],
-	      "thinking_control": {
-	        "template_kwarg": "enable_thinking",
-	        "assistant_prefill_disable": "<think>\n\n</think>\n\n"
-	      },
-	      "reasoning_support": true,
-	      "inference_parameters": {
-	        "temperature": 1.0,
-	        "top_p": 0.95,
-	        "top_k": 20
-	      },
-	      "patterns": [
-	        "qwen3.6-",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking",
+        "assistant_prefill_disable": "<think>\n\n</think>\n\n"
+      },
+      "reasoning_support": true,
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20
+      },
+      "patterns": [
+        "qwen3.6-",
         "qwen3.6:",
         "qwen3_6-",
         "qwen3_6:",
@@ -296,9 +371,15 @@
       },
       "tool_format": "xml",
       "tool_prefix": "<tool_call>",
-      "thinking_tags": ["<think>", "</think>"],
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
       "reasoning_support": true,
-      "patterns": ["omnicoder-9b", "tesslate/omnicoder-9b"]
+      "patterns": [
+        "omnicoder-9b",
+        "tesslate/omnicoder-9b"
+      ]
     },
     "sera": {
       "description": "AllenAI's SERA architecture (Qwen3-based Open Coding Agents series)",
@@ -309,15 +390,18 @@
       "user_suffix": "<|im_end|>\n",
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-	      "tool_format": "xml",
-	      "thinking_tags": ["<think>", "</think>"],
-	      "inference_parameters": {
-	        "temperature": 0.0,
-	        "top_p": 0.95,
-	        "top_k": 20
-	      },
-	      "patterns": [
-	        "sera-",
+      "tool_format": "xml",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "inference_parameters": {
+        "temperature": 0.0,
+        "top_p": 0.95,
+        "top_k": 20
+      },
+      "patterns": [
+        "sera-",
         "sera-32b",
         "sera-32b-ga",
         "sera-8b",
@@ -343,7 +427,10 @@
       "assistant_suffix": "<|im_end|>\n",
       "tool_format": "special_token",
       "tool_prefix": "<|tool_call|>",
-      "patterns": ["qwen2.", "qwen2-"]
+      "patterns": [
+        "qwen2.",
+        "qwen2-"
+      ]
     },
     "qwen2_audio": {
       "description": "Alibaba's Qwen2-Audio architecture for audio-language input",
@@ -356,7 +443,10 @@
       "assistant_suffix": "<|im_end|>\n",
       "tool_format": "special_token",
       "tool_prefix": "<|tool_call|>",
-      "patterns": ["qwen2-audio", "qwen/qwen2-audio"]
+      "patterns": [
+        "qwen2-audio",
+        "qwen/qwen2-audio"
+      ]
     },
     "mistral": {
       "description": "Mistral AI 7B base architecture",
@@ -368,7 +458,9 @@
       "assistant_prefix": "",
       "assistant_suffix": "",
       "tool_format": "json",
-      "patterns": ["mistral-7b"]
+      "patterns": [
+        "mistral-7b"
+      ]
     },
     "mixtral": {
       "description": "Mistral AI Mixtral MoE architecture",
@@ -380,20 +472,27 @@
       "assistant_prefix": "",
       "assistant_suffix": "",
       "tool_format": "native",
-      "patterns": ["mixtral"]
+      "patterns": [
+        "mixtral"
+      ]
     },
-      "mistral_large": {
-        "description": "Mistral AI Large models (Small, Medium, Large)",
-        "message_format": "inst",
-        "system_prefix": "",
-        "system_suffix": "\n\n",
-        "user_prefix": "[INST] ",
-        "user_suffix": " [/INST]",
-        "assistant_prefix": "",
-        "assistant_suffix": "",
-        "tool_format": "native",
-        "patterns": ["mistral-large", "mistral-medium", "mistral-small", "mistralai/mistral-small"]
-      },
+    "mistral_large": {
+      "description": "Mistral AI Large models (Small, Medium, Large)",
+      "message_format": "inst",
+      "system_prefix": "",
+      "system_suffix": "\n\n",
+      "user_prefix": "[INST] ",
+      "user_suffix": " [/INST]",
+      "assistant_prefix": "",
+      "assistant_suffix": "",
+      "tool_format": "native",
+      "patterns": [
+        "mistral-large",
+        "mistral-medium",
+        "mistral-small",
+        "mistralai/mistral-small"
+      ]
+    },
     "codestral": {
       "description": "Mistral AI Codestral code-specialized architecture",
       "message_format": "inst",
@@ -404,7 +503,9 @@
       "assistant_prefix": "",
       "assistant_suffix": "",
       "tool_format": "native",
-      "patterns": ["codestral"]
+      "patterns": [
+        "codestral"
+      ]
     },
     "mistral3": {
       "description": "Mistral AI Mistral 3 architecture with rope-scaling (December 2024)",
@@ -437,7 +538,10 @@
       "assistant_prefix": "",
       "assistant_suffix": "",
       "tool_format": "native",
-      "patterns": ["devstral-2-123b", "ministral-3-"]
+      "patterns": [
+        "devstral-2-123b",
+        "ministral-3-"
+      ]
     },
     "phi": {
       "description": "Microsoft's Phi architecture family",
@@ -449,20 +553,28 @@
       "assistant_prefix": "Assistant: ",
       "assistant_suffix": "\n",
       "tool_format": "xml",
-      "patterns": ["phi"]
+      "patterns": [
+        "phi"
+      ]
     },
-      "gemma3n": {
-        "description": "Google's Gemma 3n device-optimized architecture (March 2025)",
-        "message_format": "basic",
-        "system_prefix": "",
-        "system_suffix": "\n\n",
-        "user_prefix": "Human: ",
-        "user_suffix": "\n",
-        "assistant_prefix": "Assistant: ",
-        "assistant_suffix": "\n",
-        "tool_format": "native",
-        "patterns": ["gemma3n", "gemma3n:e4b", "gemma3n:e2b", "gemma-3n", "google/gemma-3n"]
-      },
+    "gemma3n": {
+      "description": "Google's Gemma 3n device-optimized architecture (March 2025)",
+      "message_format": "basic",
+      "system_prefix": "",
+      "system_suffix": "\n\n",
+      "user_prefix": "Human: ",
+      "user_suffix": "\n",
+      "assistant_prefix": "Assistant: ",
+      "assistant_suffix": "\n",
+      "tool_format": "native",
+      "patterns": [
+        "gemma3n",
+        "gemma3n:e4b",
+        "gemma3n:e2b",
+        "gemma-3n",
+        "google/gemma-3n"
+      ]
+    },
     "paligemma": {
       "description": "Google's PaliGemma vision-language architecture",
       "message_format": "basic",
@@ -473,7 +585,9 @@
       "assistant_prefix": "Assistant: ",
       "assistant_suffix": "\n",
       "tool_format": "none",
-      "patterns": ["paligemma"]
+      "patterns": [
+        "paligemma"
+      ]
     },
     "codegemma": {
       "description": "Google's CodeGemma code-specialized architecture",
@@ -485,55 +599,74 @@
       "assistant_prefix": "Assistant: ",
       "assistant_suffix": "\n",
       "tool_format": "none",
-      "patterns": ["codegemma"]
+      "patterns": [
+        "codegemma"
+      ]
     },
-	      "gemma3": {
-	        "description": "Google's Gemma 3 multimodal architecture (March 2025)",
-	        "message_format": "basic",
-	        "system_prefix": "",
-	        "system_suffix": "\n\n",
-	        "user_prefix": "Human: ",
-	        "user_suffix": "\n",
-	        "assistant_prefix": "Assistant: ",
-	        "assistant_suffix": "\n",
-	        "tool_format": "native",
-	        "patterns": ["gemma3", "gemma-3", "gemma3:4b", "gemma3:270m", "gemma3:1b"]
-	      },
-	      "gemma4": {
-	        "description": "Google's Gemma 4 multimodal architecture (March 2026)",
-	        "message_format": "gemma_turn",
-	        "system_prefix": "<|turn>system\n",
-	        "system_suffix": "<turn|>\n",
-	        "user_prefix": "<|turn>user\n",
-	        "user_suffix": "<turn|>\n",
-	        "assistant_prefix": "<|turn>model\n",
-	        "assistant_suffix": "<turn|>\n",
-	        "tool_format": "special_token",
-	        "tool_prefix": "<|tool_call>",
-		        "thinking_tags": ["<|channel>thought", "<channel|>"],
-		        "reasoning_support": true,
-		        "thinking_control": {
-		          "template_kwarg": "enable_thinking"
-		        },
-		        "inference_parameters": {
-		          "temperature": 1.0,
-		          "top_p": 0.95,
-		          "top_k": 64
-		        },
-		        "prompt_cache_position_strategy": "dynamic_cache_cumulative_length",
-		        "patterns": ["gemma-4", "gemma4", "gemma4_unified", "gemma4-unified", "google/gemma-4"]
-		      },
-	    "gemma2": {
-	      "description": "Google's Gemma 2 architecture (June 2024)",
-	      "message_format": "basic",
-	      "system_prefix": "",
+    "gemma3": {
+      "description": "Google's Gemma 3 multimodal architecture (March 2025)",
+      "message_format": "basic",
+      "system_prefix": "",
+      "system_suffix": "\n\n",
+      "user_prefix": "Human: ",
+      "user_suffix": "\n",
+      "assistant_prefix": "Assistant: ",
+      "assistant_suffix": "\n",
+      "tool_format": "native",
+      "patterns": [
+        "gemma3",
+        "gemma-3",
+        "gemma3:4b",
+        "gemma3:270m",
+        "gemma3:1b"
+      ]
+    },
+    "gemma4": {
+      "description": "Google's Gemma 4 multimodal architecture (March 2026)",
+      "message_format": "gemma_turn",
+      "system_prefix": "<|turn>system\n",
+      "system_suffix": "<turn|>\n",
+      "user_prefix": "<|turn>user\n",
+      "user_suffix": "<turn|>\n",
+      "assistant_prefix": "<|turn>model\n",
+      "assistant_suffix": "<turn|>\n",
+      "tool_format": "special_token",
+      "tool_prefix": "<|tool_call>",
+      "thinking_tags": [
+        "<|channel>thought",
+        "<channel|>"
+      ],
+      "reasoning_support": true,
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 64
+      },
+      "prompt_cache_position_strategy": "dynamic_cache_cumulative_length",
+      "patterns": [
+        "gemma-4",
+        "gemma4",
+        "gemma4_unified",
+        "gemma4-unified",
+        "google/gemma-4"
+      ]
+    },
+    "gemma2": {
+      "description": "Google's Gemma 2 architecture (June 2024)",
+      "message_format": "basic",
+      "system_prefix": "",
       "system_suffix": "\n\n",
       "user_prefix": "Human: ",
       "user_suffix": "\n",
       "assistant_prefix": "Assistant: ",
       "assistant_suffix": "\n",
       "tool_format": "json",
-      "patterns": ["gemma2-"]
+      "patterns": [
+        "gemma2-"
+      ]
     },
     "gemma": {
       "description": "Google's Gemma (v1) architecture",
@@ -545,7 +678,11 @@
       "assistant_prefix": "Assistant: ",
       "assistant_suffix": "\n",
       "tool_format": "pythonic",
-      "patterns": ["gemma-2b", "gemma-7b", "gemma-2"]
+      "patterns": [
+        "gemma-2b",
+        "gemma-7b",
+        "gemma-2"
+      ]
     },
     "glm4v_moe": {
       "description": "Zhipu AI's GLM-4.6V multimodal MoE architecture (May 2025)",
@@ -562,18 +699,28 @@
         "start": "<|begin_of_box|>",
         "end": "<|end_of_box|>"
       },
-	      "thinking_output_field": "reasoning_content",
-	      "thinking_tags": ["<think>", "</think>"],
-	      "thinking_control": {
-	        "prompt_disable_token": "/nothink"
-	      },
-	      "inference_parameters": {
-	        "temperature": 0.8,
-	        "top_p": 0.6,
-	        "top_k": 2
-	      },
-	      "patterns": ["glm-4.6v", "glm4.6v", "zai-org/glm-4.6v", "glm-4.6v-flash", "glm-4.6v-fp8", "glm-4.6v-flash-fp8"]
-	    },
+      "thinking_output_field": "reasoning_content",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "prompt_disable_token": "/nothink"
+      },
+      "inference_parameters": {
+        "temperature": 0.8,
+        "top_p": 0.6,
+        "top_k": 2
+      },
+      "patterns": [
+        "glm-4.6v",
+        "glm4.6v",
+        "zai-org/glm-4.6v",
+        "glm-4.6v-flash",
+        "glm-4.6v-fp8",
+        "glm-4.6v-flash-fp8"
+      ]
+    },
     "glm4_moe": {
       "description": "Zhipu AI's GLM-4.5+ MoE architecture (July 2025)",
       "message_format": "im_start_end",
@@ -583,14 +730,23 @@
       "user_suffix": "\n",
       "assistant_prefix": "<|assistant|>\n",
       "assistant_suffix": "\n",
-	      "tool_format": "special_token",
-	      "tool_prefix": "<|tool_call|>",
-	      "thinking_output_field": "reasoning_content",
-	      "inference_parameters": {
-	        "temperature": 1.0
-	      },
-	      "patterns": ["glm-4.7", "glm-4.7-flash", "glm-4.6", "glm-4.5", "glm-4.5-air", "glm-5", "zai-org/glm-5", "z-ai/glm-5"]
-	    },
+      "tool_format": "special_token",
+      "tool_prefix": "<|tool_call|>",
+      "thinking_output_field": "reasoning_content",
+      "inference_parameters": {
+        "temperature": 1.0
+      },
+      "patterns": [
+        "glm-4.7",
+        "glm-4.7-flash",
+        "glm-4.6",
+        "glm-4.5",
+        "glm-4.5-air",
+        "glm-5",
+        "zai-org/glm-5",
+        "z-ai/glm-5"
+      ]
+    },
     "glm4v": {
       "description": "Zhipu AI's GLM-4V multimodal architecture (June 2024)",
       "message_format": "glm_special_tokens",
@@ -601,7 +757,13 @@
       "assistant_prefix": "<|assistant|>\n",
       "assistant_suffix": "\n",
       "tool_format": "json",
-      "patterns": ["glm-4v", "glm4v", "glyph", "zai-org/glyph", "glm-4.1v"]
+      "patterns": [
+        "glm-4v",
+        "glm4v",
+        "glyph",
+        "zai-org/glyph",
+        "glm-4.1v"
+      ]
     },
     "glm4": {
       "description": "Zhipu AI's GLM-4 architecture (June 2024)",
@@ -613,54 +775,72 @@
       "assistant_prefix": "<|assistant|>\n",
       "assistant_suffix": "\n",
       "tool_format": "json",
-      "patterns": ["glm-4", "chatglm4"]
+      "patterns": [
+        "glm-4",
+        "chatglm4"
+      ]
     },
-      "granite": {
-        "description": "IBM's Granite architecture family",
-        "message_format": "special_tokens",
-        "system_prefix": "<|system|>\n",
-        "system_suffix": "\n",
-        "user_prefix": "<|user|>\n",
-        "user_suffix": "\n",
-        "assistant_prefix": "<|assistant|>\n",
-        "assistant_suffix": "\n",
-        "tool_format": "json",
-        "tool_prefix": "<|tool_call|>",
-        "patterns": ["granite", "granite3.3:2b"]
-      },
-      "granitemoehybrid": {
-        "description": "IBM's Granite 4.0 chat-template family across dense, Mamba2, and hybrid MoE variants",
-        "message_format": "special_tokens",
-        "system_prefix": "<|start_of_role|>system<|end_of_role|>",
-        "system_suffix": "<|end_of_text|>",
-        "user_prefix": "<|start_of_role|>user<|end_of_role|>",
-        "user_suffix": "<|end_of_text|>",
-        "assistant_prefix": "<|start_of_role|>assistant<|end_of_role|>",
-        "assistant_suffix": "<|end_of_text|>",
-        "tool_format": "xml",
-        "tool_prefix": "<tool_call>",
-        "patterns": ["granite-4.1", "granite-4.0", "granite-4.0-h", "granite-h-tiny", "granite-h-micro"]
-      },
+    "granite": {
+      "description": "IBM's Granite architecture family",
+      "message_format": "special_tokens",
+      "system_prefix": "<|system|>\n",
+      "system_suffix": "\n",
+      "user_prefix": "<|user|>\n",
+      "user_suffix": "\n",
+      "assistant_prefix": "<|assistant|>\n",
+      "assistant_suffix": "\n",
+      "tool_format": "json",
+      "tool_prefix": "<|tool_call|>",
+      "patterns": [
+        "granite",
+        "granite3.3:2b"
+      ]
+    },
+    "granitemoehybrid": {
+      "description": "IBM's Granite 4.0 chat-template family across dense, Mamba2, and hybrid MoE variants",
+      "message_format": "special_tokens",
+      "system_prefix": "<|start_of_role|>system<|end_of_role|>",
+      "system_suffix": "<|end_of_text|>",
+      "user_prefix": "<|start_of_role|>user<|end_of_role|>",
+      "user_suffix": "<|end_of_text|>",
+      "assistant_prefix": "<|start_of_role|>assistant<|end_of_role|>",
+      "assistant_suffix": "<|end_of_text|>",
+      "tool_format": "xml",
+      "tool_prefix": "<tool_call>",
+      "patterns": [
+        "granite-4.1",
+        "granite-4.0",
+        "granite-4.0-h",
+        "granite-h-tiny",
+        "granite-h-micro"
+      ]
+    },
     "deepseek_v4": {
       "description": "DeepSeek V4 million-token MoE architecture with DSML tool-call encoding",
       "message_format": "special_tokens",
-      "system_prefix": "<\uff5cbegin\u2581of\u2581sentence\uff5c>",
+      "system_prefix": "<｜begin▁of▁sentence｜>",
       "system_suffix": "",
-      "user_prefix": "<\uff5cUser\uff5c>",
+      "user_prefix": "<｜User｜>",
       "user_suffix": "",
-      "assistant_prefix": "<\uff5cAssistant\uff5c>",
-      "assistant_suffix": "<\uff5cend\u2581of\u2581sentence\uff5c>",
+      "assistant_prefix": "<｜Assistant｜>",
+      "assistant_suffix": "<｜end▁of▁sentence｜>",
       "tool_format": "prompted",
-	      "tool_prefix": "<\uff5cDSML\uff5ctool_calls>",
-	      "tool_calling_format": "dsml",
-	      "thinking_tags": ["<think>", "</think>"],
-	      "reasoning_support": true,
-	      "inference_parameters": {
-	        "temperature": 1.0,
-	        "top_p": 1.0
-	      },
-	      "patterns": ["deepseek-v4", "deepseek-ai/deepseek-v4"]
-	    },
+      "tool_prefix": "<｜DSML｜tool_calls>",
+      "tool_calling_format": "dsml",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "reasoning_support": true,
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 1.0
+      },
+      "patterns": [
+        "deepseek-v4",
+        "deepseek-ai/deepseek-v4"
+      ]
+    },
     "kimi_k2": {
       "description": "Moonshot AI Kimi K2.6 multimodal agentic reasoning architecture",
       "message_format": "openai_chat",
@@ -668,7 +848,12 @@
       "default_tool_support": "native",
       "thinking_output_field": "reasoning",
       "reasoning_support": true,
-      "patterns": ["kimi-k2.6", "moonshotai/kimi-k2.6", "kimi-k2", "kimi_k25"]
+      "patterns": [
+        "kimi-k2.6",
+        "moonshotai/kimi-k2.6",
+        "kimi-k2",
+        "kimi_k25"
+      ]
     },
     "deepseek": {
       "description": "DeepSeek architecture family",
@@ -680,7 +865,9 @@
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
       "tool_format": "json",
-      "patterns": ["deepseek"]
+      "patterns": [
+        "deepseek"
+      ]
     },
     "minimax_m2_1": {
       "description": "MiniMax M2.1 enhanced MoE architecture with improved coding and agentic capabilities (December 2024)",
@@ -689,16 +876,20 @@
       "system_suffix": "<|im_end|>\n",
       "user_prefix": "<|im_start|>user\n",
       "user_suffix": "<|im_end|>\n",
-	      "assistant_prefix": "<|im_start|>assistant\n",
-	      "assistant_suffix": "<|im_end|>\n",
-	      "tool_format": "native",
-	      "inference_parameters": {
-	        "temperature": 1.0,
-	        "top_p": 0.95,
-	        "top_k": 40
-	      },
-	      "patterns": ["minimax-m2.1", "minimaxai/minimax-m2.1", "minimax/minimax-m2.1"]
-	    },
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "tool_format": "native",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 40
+      },
+      "patterns": [
+        "minimax-m2.1",
+        "minimaxai/minimax-m2.1",
+        "minimax/minimax-m2.1"
+      ]
+    },
     "minimax_m2": {
       "description": "MiniMax M2 family MoE architecture with interleaved thinking",
       "message_format": "im_start_end",
@@ -708,15 +899,22 @@
       "user_suffix": "<|im_end|>\n",
       "assistant_prefix": "<|im_start|>assistant\n",
       "assistant_suffix": "<|im_end|>\n",
-	      "tool_format": "native",
-	      "default_tool_support": "native",
-	      "inference_parameters": {
-	        "temperature": 1.0,
-	        "top_p": 0.95,
-	        "top_k": 40
-	      },
-	      "patterns": ["minimax-m2.5", "minimaxai/minimax-m2.5", "minimax/minimax-m2.5", "minimax-m2", "minimaxai/minimax-m2", "minimax/minimax-m2"]
-	    },
+      "tool_format": "native",
+      "default_tool_support": "native",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 40
+      },
+      "patterns": [
+        "minimax-m2.5",
+        "minimaxai/minimax-m2.5",
+        "minimax/minimax-m2.5",
+        "minimax-m2",
+        "minimaxai/minimax-m2",
+        "minimax/minimax-m2"
+      ]
+    },
     "lfm2": {
       "description": "Liquid AI LFM2/LFM2.5 chat-template family",
       "message_format": "im_start_end",
@@ -728,7 +926,11 @@
       "assistant_suffix": "<|im_end|>\n",
       "tool_format": "special_token",
       "tool_prefix": "<|tool_call_start|>",
-      "patterns": ["lfm2_moe", "lfm2.5-", "lfm2-"]
+      "patterns": [
+        "lfm2_moe",
+        "lfm2.5-",
+        "lfm2-"
+      ]
     },
     "seed_oss": {
       "description": "ByteDance's Seed-OSS long-context architecture (August 2025)",
@@ -743,7 +945,9 @@
       "thinking_control": {
         "budget_template_kwarg": "thinking_budget"
       },
-      "patterns": ["seed-oss"]
+      "patterns": [
+        "seed-oss"
+      ]
     },
     "yi": {
       "description": "01.AI's Yi architecture family",
@@ -755,7 +959,9 @@
       "assistant_prefix": "Assistant: ",
       "assistant_suffix": "\n",
       "tool_format": "json",
-      "patterns": ["yi-"]
+      "patterns": [
+        "yi-"
+      ]
     },
     "claude": {
       "description": "Anthropic's Claude (for Bedrock/vertex compatibility)",
@@ -768,13 +974,34 @@
       "assistant_suffix": "\n",
       "default_tool_support": "native",
       "tool_format": "xml",
-      "patterns": ["claude", "claude-3", "claude-4", "claude-4.1", "claude-4.5"]
+      "patterns": [
+        "claude",
+        "claude-3",
+        "claude-4",
+        "claude-4.1",
+        "claude-4.5",
+        "claude-5",
+        "claude-opus-5",
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-sonnet-5",
+        "claude-fable-5",
+        "claude-mythos-5"
+      ]
     },
     "gpt": {
       "description": "OpenAI GPT architecture (for reference)",
       "message_format": "openai_chat",
       "tool_format": "openai_functions",
-      "patterns": ["gpt", "chatgpt", "gpt-5"]
+      "patterns": [
+        "gpt",
+        "chatgpt",
+        "gpt-5",
+        "gpt-5.6",
+        "gpt-5.6-sol",
+        "gpt-5.6-terra",
+        "gpt-5.6-luna"
+      ]
     },
     "gpt_oss": {
       "description": "OpenAI GPT-OSS open-weight MoE architecture with harmony format (August 2025)",
@@ -786,8 +1013,15 @@
       "assistant_prefix": "<|assistant|>\n",
       "assistant_suffix": "\n",
       "tool_format": "native",
-      "reasoning_levels": ["low", "medium", "high"],
-      "patterns": ["gpt-oss", "openai/gpt-oss"]
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "patterns": [
+        "gpt-oss",
+        "openai/gpt-oss"
+      ]
     },
     "nemotron_hybrid_moe": {
       "description": "NVIDIA Nemotron-3-Nano hybrid MoE architecture with Mamba-2 and Attention layers (December 2025)",
@@ -802,7 +1036,10 @@
       "tool_prefix": "<tool_call>",
       "default_tool_support": "native",
       "reasoning_support": true,
-      "thinking_tags": ["<think>", "</think>"],
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
       "thinking_control": {
         "template_kwarg": "enable_thinking",
         "low_effort_template_kwarg": "low_effort"
@@ -962,7 +1199,9 @@
       "assistant_prefix": "Assistant: ",
       "assistant_suffix": "\n",
       "tool_format": "json",
-      "patterns": ["__abstractcore_generic_fallback__"]
+      "patterns": [
+        "__abstractcore_generic_fallback__"
+      ]
     }
   },
   "message_formats": {

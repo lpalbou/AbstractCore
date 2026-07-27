@@ -42,7 +42,12 @@ class OllamaProvider(BaseProvider):
             os.getenv("OLLAMA_HOST") or
             "http://localhost:11434"
         ).rstrip('/')
-        self.client = httpx.Client(timeout=self._timeout)
+        # Read-idle bound separated from the total (face 2, c5041) — shared
+        # helper so a no-progress stream aborts at the socket here too.
+        from ._http import build_read_idle_timeout
+        self.client = httpx.Client(
+            timeout=build_read_idle_timeout(self._timeout, getattr(self, "_read_idle_timeout", None))
+        )
         self._async_client = None  # Lazy-loaded async client
 
         # Initialize tool handler
@@ -676,7 +681,10 @@ class OllamaProvider(BaseProvider):
                                     "payload": payload,
                                 }
                             }
-                            # Capture incremental thinking output when present.
+                            # Capture incremental thinking output when present. Streamed
+                            # values are DELTAS: keep them verbatim (stripping would corrupt
+                            # whitespace when the base layer joins them into the complete
+                            # `metadata["reasoning"]` on the trailing chunk).
                             try:
                                 if endpoint == "/api/chat":
                                     msg = chunk.get("message") if isinstance(chunk, dict) else None
@@ -686,8 +694,8 @@ class OllamaProvider(BaseProvider):
                                     thinking_text = chunk.get("thinking") or chunk.get("reasoning")
                             except Exception:
                                 thinking_text = None
-                            if isinstance(thinking_text, str) and thinking_text.strip():
-                                metadata.setdefault("reasoning", thinking_text.strip())
+                            if isinstance(thinking_text, str) and thinking_text:
+                                metadata.setdefault("reasoning_delta", thinking_text)
 
                             chunk_response = GenerateResponse(
                                 content=content,
@@ -1028,9 +1036,12 @@ class OllamaProvider(BaseProvider):
     def _update_http_client_timeout(self) -> None:
         """Update HTTP client timeout when timeout is changed."""
         if hasattr(self, 'client'):
-            # Create new client with updated timeout
+            # Create new client with updated timeout (total + read-idle, face 2)
             self.client.close()
-            self.client = httpx.Client(timeout=self._timeout)
+            from ._http import build_read_idle_timeout
+            self.client = httpx.Client(
+                timeout=build_read_idle_timeout(self._timeout, getattr(self, "_read_idle_timeout", None))
+            )
 
     def list_available_models(self, **kwargs) -> List[str]:
         """

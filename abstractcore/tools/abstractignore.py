@@ -31,6 +31,7 @@ _DEFAULT_IGNORE_LINES: List[str] = [
     "node_modules/",
     "dist/",
     "build/",
+    "target/",  # Rust/JVM build tree — the twin of node_modules/dist/build (can be GBs; search-perf incident 2026-07-23)
     ".venv/",
     "venv/",
     "env/",
@@ -110,7 +111,11 @@ class AbstractIgnore:
         return cls(root=root, rules=rules, source=ignore_file)
 
     def _rel(self, path: Path) -> Tuple[str, List[str]]:
-        p = path.resolve()
+        # The caller (is_ignored) has ALREADY resolved `path` — do NOT resolve
+        # again. path.resolve() is a stat-heavy syscall, and this used to fire
+        # TWICE per file (here + is_ignored), which was ~52% of the warm-cache
+        # cost of a full-tree search (search-perf incident 2026-07-23).
+        p = path
         try:
             rel = p.relative_to(self.root)
             rel_str = rel.as_posix()
@@ -122,7 +127,7 @@ class AbstractIgnore:
         return rel_str, [str(x) for x in parts if str(x)]
 
     def is_ignored(self, path: Path, *, is_dir: Optional[bool] = None) -> bool:
-        p = path.resolve()
+        p = path.resolve()  # resolved ONCE here; _rel trusts this result
         if is_dir is None:
             try:
                 is_dir = p.is_dir()

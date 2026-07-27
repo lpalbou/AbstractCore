@@ -465,6 +465,7 @@ def extract_reasoning_from_message(
     *,
     architecture_format: Optional[Mapping[str, Any]] = None,
     model_capabilities: Optional[Mapping[str, Any]] = None,
+    strip: bool = True,
 ) -> Optional[str]:
     """Extract reasoning from a provider message dict when present.
 
@@ -473,14 +474,23 @@ def extract_reasoning_from_message(
     - `reasoning_content` (some OpenAI-compatible servers)
     - `thinking`  (Ollama thinking outputs)
     - `thinking_output_field` from assets (e.g., `reasoning_content` for some GLM models)
+
+    `strip=False` preserves the value verbatim (whitespace included). Streaming DELTAS
+    must be extracted verbatim: stripping each fragment corrupts word boundaries when
+    the fragments are later joined into the complete reasoning text.
     """
     if not isinstance(message, Mapping):
         return None
 
+    def _result(v: str) -> Optional[str]:
+        if not v.strip():
+            return None
+        return v.strip() if strip else v
+
     for key in ("reasoning", "reasoning_content", "thinking"):
         v = message.get(key)
         if isinstance(v, str) and v.strip():
-            return v.strip()
+            return _result(v)
 
     thinking_output_field: Optional[str] = None
     for src in (architecture_format, model_capabilities):
@@ -493,7 +503,7 @@ def extract_reasoning_from_message(
     if thinking_output_field:
         v = message.get(thinking_output_field)
         if isinstance(v, str) and v.strip():
-            return v.strip()
+            return _result(v)
 
     return None
 

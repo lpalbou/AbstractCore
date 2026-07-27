@@ -37,7 +37,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..capabilities import vision_catalog as _vision_catalog
 from ..capabilities.errors import CapabilityUnavailableError
+from ..utils.structured_logging import get_logger
 from .capability_generation import ServerVisionFacade, create_capability_generation_core
+
+logger = get_logger(__name__)
 
 try:  # Optional dependency (needed only for multipart parsing).
     import multipart  # type: ignore  # noqa: F401
@@ -78,6 +81,16 @@ def _image_upscale_route_defaults(
 ) -> Tuple[Optional[str], Optional[str]]:
     if str(provider or "").strip() or str(model or "").strip() or str(base_url or "").strip():
         return provider, model
+    # Config home for the upscale default (dm#177): the image_upscale TASK
+    # row ONLY. The broad output.image row is a GENERATION identity — falling
+    # back to it would aim upscales at a text-to-image model, so the built-in
+    # SeedVR2 default stays the no-config fallback. A model-less task row is
+    # ignored (filling the default model under the row's provider would mint
+    # a pairing the operator never configured — the M1-to-piper class).
+    route = _parsed_vision_route("image", "image_upscale")
+    route_model = str(route.get("model") or "").strip()
+    if route_model:
+        return _route_prefix_for_backend_kind(route.get("backend")), route_model
     return _DEFAULT_IMAGE_UPSCALE_PROVIDER, _DEFAULT_IMAGE_UPSCALE_MODEL
 
 
@@ -1311,18 +1324,25 @@ def load_server_vision_loaded_model(
         merged.update({k: v for k, v in payload.items() if k != "options"})
         payload = merged
     request_model = _vision_request_model_from_residency_payload(payload)
-    backend_kind = _effective_backend_kind(request_model)
+    # Residency modality follows the requested task: a video-task load must
+    # resolve against output.video config, never inherit the image route.
+    residency_modality = "video" if "video" in str(payload.get("task") or "").lower() else "image"
+    # Task-scoped config rows apply only for tasks the config can name;
+    # residency task vocabulary is wider (e.g. "image_generation").
+    residency_task = _normalize_vision_residency_task(payload.get("task"))
+    config_task = residency_task if residency_task in _CONFIG_ROUTE_TASKS else None
+    backend_kind = _effective_backend_kind(request_model, residency_modality, config_task)
     base_url = payload.get("base_url")
     model_id = str(payload.get("model") or "").strip() or None
 
     if backend_kind == "openai_compatible_proxy":
-        base_url_s = _validate_request_base_url(base_url) if isinstance(base_url, str) and base_url.strip() else _upstream_base_url_for_request(request_model)
+        base_url_s = _validate_request_base_url(base_url) if isinstance(base_url, str) and base_url.strip() else _upstream_base_url_for_request(request_model, residency_modality, config_task)
         configured_key = _vision_configured_key(
             provider="openai-compatible",
             backend_kind="openai-compatible",
             base_url=base_url_s,
             api_key=api_key,
-            model=model_id or _upstream_model_env(),
+            model=model_id or _upstream_model_default(residency_modality, config_task),
         )
         now = time.time()
         with _BACKEND_CACHE_LOCK:
@@ -1341,6 +1361,8 @@ def load_server_vision_loaded_model(
     backend, call_lock, _missing, _gen_req, _edit_req, _video_req, _i2v_req, _upscale_req = _unpack_resolved_backend(
         _resolve_backend(
             request_model,
+            modality=residency_modality,
+            task=config_task,
             base_url=payload.get("base_url"),
             api_key=api_key,
         )
@@ -1587,7 +1609,52 @@ def _guard_vision_catalog_credentials(*, request: Request, explicit_provider_key
 
 
 def _vision_catalog_config_from_env() -> Dict[str, Any]:
+    """Catalog/advertising config: configured route first, env #FALLBACK below.
+
+    What the server ADVERTISES must match what it executes (the consolidated
+    report's split-brain class) — so this builder seeds from the same
+    config-first helpers the execution lanes use, then lets env fill only the
+    keys config left empty.
+    """
     config: Dict[str, Any] = {}
+    route = _vision_route_defaults()
+    backend = route.get("backend")
+    if backend:
+        # The plugin's wire vocabulary says "openai-compatible" — the
+        # canonical "openai_compatible_proxy" is this module's internal kind
+        # and abstractvision would refuse it (adversary P2-1).
+        config["vision_backend"] = "openai-compatible" if backend == "openai_compatible_proxy" else backend
+    configured_model = route.get("model")
+    if configured_model:
+        if backend == "mlx-gen":
+            config["vision_mflux_model"] = configured_model
+        elif backend == "sdcpp":
+            config["vision_sdcpp_model"] = configured_model
+        else:
+            config["vision_model_id"] = configured_model
+    configured_base = route.get("base_url") if backend in {None, "openai_compatible_proxy"} else None
+    if configured_base:
+        config["vision_base_url"] = configured_base
+    # Route OPTIONS seed the same catalog keys their env twins fill below
+    # (route-option fan-out, backlog 0826): what the catalog advertises must
+    # come from the same truth generation executes. Env-shaped strings keep
+    # the downstream plugin's coercion path identical to the env source.
+    if backend == "mlx-gen":
+        mflux_options = _route_options_for("mlx-gen")
+        base_model = str(mflux_options.get("base_model") or "").strip()
+        if base_model:
+            config["vision_mflux_base_model"] = base_model
+        model_dir = str(mflux_options.get("model_dir") or "").strip()
+        if model_dir:
+            config["vision_model_dir"] = model_dir
+        allow_download = _coerce_bool(mflux_options.get("allow_download"))
+        if allow_download is not None:
+            config["vision_mflux_allow_download"] = "1" if allow_download else "0"
+    elif backend == "sdcpp":
+        sdcpp_options = _route_options_for("sdcpp")
+        diffusion_model = str(sdcpp_options.get("diffusion_model") or "").strip()
+        if diffusion_model:
+            config["vision_sdcpp_diffusion_model"] = diffusion_model
     env_map = {
         "ABSTRACTCORE_VISION_BACKEND": "vision_backend",
         "ABSTRACTVISION_BACKEND": "vision_backend",
@@ -1660,28 +1727,379 @@ def _reject_removed_vision_model_alias(model: Any) -> None:
         )
 
 
-def _diffusers_model_env() -> Optional[str]:
-    return _env_first("ABSTRACTCORE_VISION_MODEL_ID", "ABSTRACTVISION_DIFFUSERS_MODEL_ID", "ABSTRACTVISION_MODEL_ID")
+def _normalize_backend_alias(raw: Any, *, package_hint_as_auto: bool = False) -> Optional[str]:
+    """Map operator-facing backend/provider spellings to canonical kinds.
+
+    `package_hint_as_auto` is set only for CONFIG-sourced values:
+    "abstractvision" is the wizard's package HINT for output.image, so an
+    operator writing it as the route provider means "the local vision
+    plugin, pick the backend" (auto). Env values keep their historical
+    behavior (unknown spellings pass through verbatim and fail loudly
+    downstream) — env-only deployments stay byte-identical.
+    """
+    v = str(raw or "").strip().lower()
+    if not v:
+        return None
+    if v in {"auto", "default"} or (package_hint_as_auto and v == "abstractvision"):
+        return "auto"
+    if v in {"openai", "openai-compatible", "openai_compatible", "proxy", "openai_compatible_proxy"}:
+        return "openai_compatible_proxy"
+    if v in {"diffusers", "hf-diffusers", "huggingface-diffusers"}:
+        return "diffusers"
+    if v in {"mflux", "m-flux", "mlx-gen", "mlxgen"}:
+        return "mlx-gen"
+    if v in {"sdcpp", "sd-cpp", "stable-diffusion.cpp", "stable-diffusion-cpp", "stable_diffusion_cpp"}:
+        return "sdcpp"
+    return v
 
 
-def _mflux_model_env() -> Optional[str]:
-    return _env_first(
+# Warn-once memo for the config-vs-env migration window (mirrors
+# audio_endpoints._CAPABILITY_WARNED): these helpers run per request, so an
+# unguarded warning would spam every generation/catalog poll.
+_VISION_ROUTE_WARNED: set = set()
+
+# Task keys the capability_defaults config can scope under output.image /
+# output.video. Residency/catalog task vocabularies are wider (e.g.
+# "image_generation", "video_generation") — those have no config task row
+# and must not be passed to the config reader.
+_CONFIG_ROUTE_TASKS: frozenset = frozenset(
+    {"text_to_image", "image_to_image", "image_upscale", "text_to_video", "image_to_video"}
+)
+
+
+def _parsed_vision_route(modality: str, task: Optional[str] = None) -> Dict[str, Any]:
+    """Read + parse EXACTLY ONE configured route row (no task->broad fallback).
+
+    Returns {} when that row is unconfigured/unreadable. Shape:
+    {"backend": canonical-kind, "model": str, "base_url": str,
+    "options": dict} — every field optional.
+    """
+    try:
+        from ..config.manager import get_config_manager
+
+        manager = get_config_manager()
+        route = manager.get_capability_default("output", modality, task) if task else manager.get_capability_default("output", modality)
+    except Exception as e:
+        key = ("config_unreadable",)
+        if key not in _VISION_ROUTE_WARNED:
+            _VISION_ROUTE_WARNED.add(key)
+            logger.warning(f"#FALLBACK vision behavior config unreadable ({e}); using env behavior config.")
+        return {}
+    if not isinstance(route, dict) or str(route.get("source") or "") == "not_configured":
+        return {}
+    out: Dict[str, Any] = {}
+    backend = _normalize_backend_alias(route.get("provider"), package_hint_as_auto=True)
+    if backend and backend != "auto":
+        out["backend"] = backend
+    model = route.get("model")
+    if isinstance(model, str) and model.strip():
+        out["model"] = model.strip()
+    base_url = route.get("base_url")
+    if isinstance(base_url, str) and base_url.strip():
+        out["base_url"] = base_url.strip()
+    options = route.get("options")
+    if isinstance(options, dict):
+        out["options"] = dict(options)
+    return out
+
+
+def _vision_route_defaults(modality: str = "image", task: Optional[str] = None) -> Dict[str, Any]:
+    """Vision behavior config from the centralized config: CONFIG WINS, env is #FALLBACK.
+
+    Operator ruling dm#177 (and the consolidated env-conflict report, angle A
+    finding 4): vision was the un-repaired voice twin — the console PUTs
+    output.image routes into this server's config, which the image endpoints
+    never read; env on the host decided. This is the one config home the
+    audio lane already uses (`abstractcore --config` capability_defaults).
+
+    `modality` scopes the route to what the config key NAMES: image lanes
+    read output.image, video lanes read output.video — an Image Output route
+    must never silently steer /v1/videos/* (adversary P1: the configured
+    image model is not a video default). The env chain below stays shared
+    across modalities, exactly as it always was.
+
+    `task` scopes further to the task row (output.image.text_to_image, ...)
+    when the caller knows it. Semantics match generate_contract's
+    resolve_capability_default_route: a CONFIGURED task row wins WHOLESALE
+    (a route row is ONE coherent backend identity — never field-merged with
+    the broad row); the broad row serves when the task row is absent.
+
+    Returns {} when nothing is configured or the config is unreadable (env
+    #FALLBACK then applies verbatim — nothing breaks mid-migration).
+    Shape: {"backend": canonical-kind, "model": str, "base_url": str,
+    "options": dict} — every field optional.
+    """
+    if task:
+        row = _parsed_vision_route(modality, task)
+        if row:
+            return row
+    return _parsed_vision_route(modality)
+
+
+def _warn_env_overridden(env_names: Tuple[str, ...], config_value: Any, env_value: Any) -> None:
+    """One-shot #FALLBACK warning when centralized config overrides exported env."""
+    key = (tuple(env_names), str(config_value), str(env_value))
+    if key in _VISION_ROUTE_WARNED:
+        return
+    _VISION_ROUTE_WARNED.add(key)
+    logger.warning(
+        "#FALLBACK vision behavior: centralized config (abstractcore --config) "
+        f"supplies {str(config_value)!r}, overriding the exported env value {str(env_value)!r} "
+        f"from {list(env_names)} — the env value is IGNORED. Unset it and configure via `abstractcore --config`."
+    )
+
+
+# Route-option keys each backend lane understands (lowercase). Options are
+# backend-specific settings riding a route identity — the vision backend
+# configs are typed dataclasses (unlike the audio plugin's kwargs bag), so
+# unknown keys are WARNED and not applied rather than passed through
+# (passing them into e.g. MFluxBackendConfig would raise TypeError).
+_ROUTE_OPTION_KEYS: Dict[str, frozenset] = {
+    "diffusers": frozenset({"device", "torch_dtype", "allow_download", "auto_retry_fp32"}),
+    "mlx-gen": frozenset({"base_model", "model_dir", "allow_download"}),
+    "openai_compatible_proxy": frozenset(
+        {
+            "image_generations_path",
+            "image_edits_path",
+            "text_to_video_path",
+            "image_to_video_path",
+            "image_to_video_mode",
+        }
+    ),
+    "sdcpp": frozenset(
+        {
+            "model",
+            "diffusion_model",
+            "bin",
+            "vae",
+            "llm",
+            "llm_vision",
+            "clip_l",
+            "clip_g",
+            "t5xxl",
+            "extra_args",
+        }
+    ),
+}
+
+
+def _route_options_for(backend_kind: str, modality: str = "image", task: Optional[str] = None) -> Dict[str, Any]:
+    """Configured route options recognized as `backend_kind` BACKEND SETTINGS, keys lowercased.
+
+    Options apply ONLY when the winning route row explicitly names this
+    backend (the sdcpp precedent: options never leak across backends or
+    modalities). Route options serve two consumers: backend-construction
+    settings (this helper's registry) and request-level generation
+    parameters, which the generate-contract lane folds into output specs
+    (`ResolvedGenerateRouteEntry.apply_to_output_spec` — e.g. the upscale
+    route's `resolution`/`softness`). Keys this lane does not recognize are
+    therefore warned ONCE as left-to-the-request-layer, never silently
+    dropped and never falsely reported as dropped (the audio lane's
+    "passed through unverified" semantics, ported). Options riding a
+    provider-less row can be claimed by no backend lane and warn likewise.
+    """
+    route = _vision_route_defaults(modality, task)
+    options = route.get("options")
+    if not isinstance(options, dict) or not options:
+        return {}
+    route_backend = route.get("backend")
+    if not route_backend:
+        key = ("providerless_options", modality, str(task or ""), tuple(sorted(str(k) for k in options)))
+        if key not in _VISION_ROUTE_WARNED:
+            _VISION_ROUTE_WARNED.add(key)
+            logger.warning(
+                "#FALLBACK vision route options are configured without a route provider, so no backend lane "
+                f"applies them as backend settings: {sorted(str(k) for k in options)}. Set the route's provider "
+                "via `abstractcore --config` if they are meant as backend settings."
+            )
+        return {}
+    if route_backend != backend_kind:
+        return {}
+    known = _ROUTE_OPTION_KEYS.get(backend_kind, frozenset())
+    out: Dict[str, Any] = {}
+    unknown: list = []
+    for raw_key, value in options.items():
+        if value is None:
+            continue
+        key_l = str(raw_key).strip().lower()
+        if key_l not in known:
+            unknown.append(str(raw_key))
+            continue
+        out[key_l] = value
+    if unknown:
+        warn_key = ("unknown_options", backend_kind, tuple(sorted(unknown)))
+        if warn_key not in _VISION_ROUTE_WARNED:
+            _VISION_ROUTE_WARNED.add(warn_key)
+            logger.warning(
+                f"#FALLBACK vision route options not recognized as {backend_kind!r} backend settings, "
+                f"left to the request layer unverified: {sorted(set(unknown))}. "
+                f"Known {backend_kind!r} backend settings: {sorted(known)}. Confirm they are request-level "
+                "generation parameters (e.g. the image_upscale route's resolution/softness) or fix the key."
+            )
+    return out
+
+
+def _route_option_str(
+    options: Dict[str, Any],
+    key: str,
+    *env_names: str,
+    default: Optional[str] = None,
+) -> Optional[str]:
+    """Config-first string setting: route option wins, env is #FALLBACK.
+
+    When the option is configured AND an env twin is exported with a
+    different value, warn once naming the env var that is ACTUALLY set
+    (labeling law dm#194) — mirrors the per-backend model default helpers.
+    """
+    raw = options.get(key)
+    configured = str(raw).strip() if raw is not None else ""
+    if configured:
+        env_name, env_value = _env_first_named(*env_names)
+        if env_value is not None and env_value != configured:
+            _warn_env_overridden((env_name,), configured, env_value)
+        return configured
+    return _env_first(*env_names, default=default)
+
+
+def _route_option_bool(
+    options: Dict[str, Any],
+    key: str,
+    *env_names: str,
+    default: bool,
+) -> bool:
+    """Config-first boolean setting: route option wins, env is #FALLBACK.
+
+    An un-coercible configured value is warned once and treated as unset
+    (never a silent flip to a guessed boolean).
+    """
+    raw = options.get(key)
+    configured = _coerce_bool(raw)
+    if raw is not None and configured is None:
+        warn_key = ("bad_bool_option", key, str(raw))
+        if warn_key not in _VISION_ROUTE_WARNED:
+            _VISION_ROUTE_WARNED.add(warn_key)
+            logger.warning(
+                f"#FALLBACK vision route option {key}={raw!r} is not a boolean and is IGNORED; "
+                "using the env/default value."
+            )
+    if configured is not None:
+        env_name, env_value = _env_first_named(*env_names)
+        if env_value is not None and _coerce_bool(env_value) != configured:
+            _warn_env_overridden((env_name,), configured, env_value)
+        return configured
+    return _env_bool_first(*env_names, default=default)
+
+
+def _route_prefix_for_backend_kind(kind: Any) -> Optional[str]:
+    """Canonical backend kind -> provider route prefix (request-model vocabulary)."""
+    s = str(kind or "").strip()
+    if not s:
+        return None
+    return "openai-compatible" if s == "openai_compatible_proxy" else s
+
+
+def _route_model_for(backend_kind: str, modality: str = "image", task: Optional[str] = None) -> Optional[str]:
+    """Configured route model, ONLY when it belongs to `backend_kind`.
+
+    The route row is ONE backend identity (same rule as the generate-route
+    options fix): a configured {provider: mflux, model: flux2-klein-9b} must
+    never serve `flux2-klein-9b` to the Diffusers or sdcpp lane. A
+    provider-less route model is attributed by shape (path → sdcpp, HF repo
+    id → diffusers) and withheld when unattributable rather than guessed.
+    """
+    route = _vision_route_defaults(modality, task)
+    model = route.get("model")
+    if not model:
+        return None
+    route_backend = route.get("backend")
+    if route_backend:
+        return model if route_backend == backend_kind else None
+    if _looks_like_filesystem_path(model):
+        inferred: Optional[str] = "sdcpp"
+    elif _looks_like_hf_repo_id(model):
+        inferred = "diffusers"
+    else:
+        inferred = None
+    return model if inferred == backend_kind else None
+
+
+def _env_first_named(*names: str) -> Tuple[Optional[str], Optional[str]]:
+    """Like _env_first but returns (matched_env_name, value) so override
+    warnings can name the env var that is ACTUALLY set (adversary P2: warning
+    the unset MFLUX name when the operator exported MODEL_ID misdirects the
+    fix)."""
+    for name in names:
+        v = _env(name)
+        if v is not None:
+            return name, v
+    return None, None
+
+
+def _diffusers_model_default(modality: str = "image", task: Optional[str] = None) -> Optional[str]:
+    configured = _route_model_for("diffusers", modality, task)
+    env_name, env_value = _env_first_named(
+        "ABSTRACTCORE_VISION_MODEL_ID", "ABSTRACTVISION_DIFFUSERS_MODEL_ID", "ABSTRACTVISION_MODEL_ID"
+    )
+    if configured:
+        if env_value and env_value != configured:
+            _warn_env_overridden((env_name,), configured, env_value)
+        return configured
+    return env_value
+
+
+def _mflux_model_default(modality: str = "image", task: Optional[str] = None) -> Optional[str]:
+    configured = _route_model_for("mlx-gen", modality, task)
+    env_name, env_value = _env_first_named(
         "ABSTRACTCORE_VISION_MFLUX_MODEL",
         "ABSTRACTVISION_MFLUX_MODEL",
         "ABSTRACTCORE_VISION_MODEL_ID",
         "ABSTRACTVISION_MODEL_ID",
     )
+    if configured:
+        if env_value and env_value != configured:
+            _warn_env_overridden((env_name,), configured, env_value)
+        return configured
+    return env_value
 
 
-def _upstream_base_url_env() -> Optional[str]:
-    return _env("OPENAI_BASE_URL")
+def _upstream_base_url_default(modality: str = "image", task: Optional[str] = None) -> Optional[str]:
+    # Route base_url applies only when the route's own backend is the proxy
+    # (a base_url next to provider=diffusers is meaningless for this lane).
+    route = _vision_route_defaults(modality, task)
+    configured = route.get("base_url") if route.get("backend") in {None, "openai_compatible_proxy"} else None
+    env_value = _env("OPENAI_BASE_URL")
+    if configured:
+        if env_value and env_value != configured:
+            _warn_env_overridden(("OPENAI_BASE_URL",), configured, env_value)
+        return configured
+    return env_value
 
 
-def _upstream_model_env() -> Optional[str]:
-    return _env_first("ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID", "ABSTRACTVISION_MODEL_ID")
+def _upstream_model_default(modality: str = "image", task: Optional[str] = None) -> Optional[str]:
+    configured = _route_model_for("openai_compatible_proxy", modality, task)
+    env_name, env_value = _env_first_named("ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID", "ABSTRACTVISION_MODEL_ID")
+    if configured:
+        if env_value and env_value != configured:
+            _warn_env_overridden((env_name,), configured, env_value)
+        return configured
+    return env_value
 
 
-def _sdcpp_env(*names: str) -> Optional[str]:
+def _sdcpp_setting(*names: str, modality: str = "image", task: Optional[str] = None) -> Optional[str]:
+    """sdcpp component/setting lookup: route options (config) win, env is #FALLBACK.
+
+    Option keys are the lowercase of the env suffix (`VAE` → options["vae"],
+    `DIFFUSION_MODEL` → options["diffusion_model"]), consulted only when the
+    configured route's backend IS sdcpp — options never leak across backends
+    (nor across modalities). The env names below stay modality-shared.
+    """
+    options = _route_options_for("sdcpp", modality, task)
+    for name in names:
+        value = options.get(name.lower())
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if value is not None and not isinstance(value, str):
+            return str(value)
     core_names = [f"ABSTRACTCORE_VISION_SDCPP_{name}" for name in names]
     av_names = [f"ABSTRACTVISION_SDCPP_{name}" for name in names]
     return _env_first(*(core_names + av_names))
@@ -1735,22 +2153,23 @@ def _unload_active_backend() -> None:
             _unload_backend_best_effort(backend)
 
 
-def _vision_backend_kind() -> str:
-    raw = _env_first("ABSTRACTCORE_VISION_BACKEND", "ABSTRACTVISION_BACKEND")
-    if not raw:
-        return "auto"
-    v = str(raw).strip().lower()
-    if v in {"auto", "default"}:
-        return "auto"
-    if v in {"openai", "openai-compatible", "openai_compatible", "proxy", "openai_compatible_proxy"}:
-        return "openai_compatible_proxy"
-    if v in {"diffusers", "hf-diffusers", "huggingface-diffusers"}:
-        return "diffusers"
-    if v in {"mflux", "m-flux", "mlx-gen", "mlxgen"}:
-        return "mlx-gen"
-    if v in {"sdcpp", "sd-cpp", "stable-diffusion.cpp", "stable-diffusion-cpp", "stable_diffusion_cpp"}:
-        return "sdcpp"
-    return v
+def _vision_backend_kind(modality: str = "image", task: Optional[str] = None) -> str:
+    """Server-default vision backend: centralized config wins, env is #FALLBACK.
+
+    The configured output.<modality> route's provider names the backend (the
+    console/wizard's vocabulary is the same alias set env accepted); an
+    exported ABSTRACTCORE_VISION_BACKEND/ABSTRACTVISION_BACKEND survives as a
+    deprecated fallback and is warned when the config overrides it (dm#177).
+    The env vars stay modality-shared (their historical meaning).
+    """
+    configured = _vision_route_defaults(modality, task).get("backend")
+    env_name, env_raw = _env_first_named("ABSTRACTCORE_VISION_BACKEND", "ABSTRACTVISION_BACKEND")
+    env_kind = _normalize_backend_alias(env_raw)
+    if configured:
+        if env_kind and env_kind != configured:
+            _warn_env_overridden((env_name,), configured, env_raw)
+        return configured
+    return env_kind or "auto"
 
 
 _KNOWN_MODEL_PREFIXES: set[str] = {
@@ -1981,7 +2400,7 @@ def _looks_like_hf_repo_id(model: str) -> bool:
     return bool(org and name)
 
 
-def _infer_backend_kind(request_model: Any) -> str:
+def _infer_backend_kind(request_model: Any, modality: str = "image", task: Optional[str] = None) -> str:
     raw_model = str(request_model or "").strip()
     prefix, _rest = _split_known_prefix(raw_model)
     if prefix in {"mlx-gen", "mlxgen", "mflux", "m-flux"}:
@@ -2003,23 +2422,33 @@ def _infer_backend_kind(request_model: Any) -> str:
         if _looks_like_hf_repo_id(model):
             return "diffusers"
         # Unknown strings: prefer local generation unless proxy is explicitly configured.
-        if _upstream_base_url_env():
+        if _upstream_base_url_default(modality, task):
             return "openai_compatible_proxy"
         return "diffusers"
 
-    # No request model: fall back to env configuration.
-    if _sdcpp_env("MODEL") or _sdcpp_env("DIFFUSION_MODEL"):
+    # No request model: configured route first (a provider-less configured
+    # model attributed by shape must beat env PRESENCE — an exported
+    # OPENAI_BASE_URL used to flip a configured local setup to the proxy),
+    # then the env-presence chain as #FALLBACK. Every consulted default is
+    # modality-scoped so an Image Output route never steers the video lane.
+    configured_model = str(_vision_route_defaults(modality, task).get("model") or "").strip()
+    if configured_model:
+        if _looks_like_filesystem_path(configured_model):
+            return "sdcpp"
+        if _looks_like_hf_repo_id(configured_model):
+            return "diffusers"
+    if _sdcpp_setting("MODEL", modality=modality, task=task) or _sdcpp_setting("DIFFUSION_MODEL", modality=modality, task=task):
         return "sdcpp"
-    if _upstream_base_url_env():
+    if _upstream_base_url_default(modality, task):
         return "openai_compatible_proxy"
-    if _mflux_model_env():
+    if _mflux_model_default(modality, task):
         return "mlx-gen"
-    if _diffusers_model_env():
+    if _diffusers_model_default(modality, task):
         return "diffusers"
     return "auto_unconfigured"
 
 
-def _effective_backend_kind(request_model: Any) -> str:
+def _effective_backend_kind(request_model: Any, modality: str = "image", task: Optional[str] = None) -> str:
     raw_model = str(request_model or "").strip()
     prefix, _ = _split_known_prefix(raw_model)
     if prefix in {"mlx-gen", "mlxgen", "mflux", "m-flux"}:
@@ -2035,9 +2464,9 @@ def _effective_backend_kind(request_model: Any) -> str:
     if _looks_like_hf_repo_id(raw_model):
         return "diffusers"
 
-    env_kind = _vision_backend_kind()
+    env_kind = _vision_backend_kind(modality, task)
     if env_kind == "auto":
-        return _infer_backend_kind(request_model)
+        return _infer_backend_kind(request_model, modality, task)
 
     model = str(_normalize_request_model_for_backend(request_model) or request_model or "").strip()
     if model and env_kind == "sdcpp" and _looks_like_hf_repo_id(model):
@@ -2050,52 +2479,56 @@ def _effective_backend_kind(request_model: Any) -> str:
     return env_kind
 
 
-def _require_upstream_base_url() -> str:
-    base_url = _upstream_base_url_env()
+def _require_upstream_base_url(modality: str = "image", task: Optional[str] = None) -> str:
+    base_url = _upstream_base_url_default(modality, task)
     if not base_url:
         raise HTTPException(
             status_code=501,
             detail=(
                 "Vision image endpoints are not configured. "
-                "Set OPENAI_BASE_URL to an OpenAI-compatible server base URL "
+                "Configure an Image Output route via `abstractcore --config` "
+                "(provider openai-compatible + base_url), or set OPENAI_BASE_URL "
                 "(e.g. https://api.openai.com/v1 or http://localhost:1234/v1)."
             ),
         )
     return base_url
 
 
-def _upstream_base_url_for_request(request_model: Any) -> str:
-    base_url = _upstream_base_url_env()
+def _upstream_base_url_for_request(request_model: Any, modality: str = "image", task: Optional[str] = None) -> str:
+    base_url = _upstream_base_url_default(modality, task)
     if base_url:
         return base_url
     if _is_openai_image_request_model(request_model):
         return "https://api.openai.com/v1"
-    return _require_upstream_base_url()
+    return _require_upstream_base_url(modality, task)
 
 
-def _upstream_api_key_for_request(request_model: Any) -> Optional[str]:
-    if _is_openai_image_request_model(request_model) or _upstream_base_url_env():
+def _upstream_api_key_for_request(request_model: Any, modality: str = "image", task: Optional[str] = None) -> Optional[str]:
+    if _is_openai_image_request_model(request_model) or _upstream_base_url_default(modality, task):
         return _env("OPENAI_API_KEY")
     return None
 
 
-def _require_diffusers_model_id(request_model: Any) -> str:
-    model_id = str(_normalize_request_model_for_backend(request_model) or _diffusers_model_env() or "").strip()
+def _require_diffusers_model_id(request_model: Any, modality: str = "image", task: Optional[str] = None) -> str:
+    model_id = str(_normalize_request_model_for_backend(request_model) or _diffusers_model_default(modality, task) or "").strip()
     if not model_id:
         raise HTTPException(
             status_code=501,
             detail=(
                 "Vision image endpoints are not configured for Diffusers mode. "
-                "`diffusers/default` requires ABSTRACTCORE_VISION_MODEL_ID, "
-                "ABSTRACTVISION_DIFFUSERS_MODEL_ID, or ABSTRACTVISION_MODEL_ID. "
-                "Alternatively pass `diffusers/<huggingface-repo>` explicitly or configure "
-                "OPENAI_BASE_URL for an OpenAI-compatible image endpoint."
+                "`diffusers/default` needs an Image Output route configured via "
+                "`abstractcore --config` (provider diffusers + model), or one of "
+                "ABSTRACTCORE_VISION_MODEL_ID / ABSTRACTVISION_DIFFUSERS_MODEL_ID / "
+                "ABSTRACTVISION_MODEL_ID. Alternatively pass `diffusers/<huggingface-repo>` "
+                "explicitly or configure an OpenAI-compatible image endpoint."
             ),
         )
     return model_id
 
 
-def _require_sdcpp_model_or_diffusion_model(request_model: Any) -> Tuple[Optional[str], Optional[str]]:
+def _require_sdcpp_model_or_diffusion_model(
+    request_model: Any, modality: str = "image", task: Optional[str] = None
+) -> Tuple[Optional[str], Optional[str]]:
     req = str(_normalize_request_model_for_backend(request_model) or "").strip()
     if req and not _looks_like_filesystem_path(req):
         raise HTTPException(
@@ -2107,28 +2540,23 @@ def _require_sdcpp_model_or_diffusion_model(request_model: Any) -> Tuple[Optiona
             ),
         )
 
-    env_model = str(_sdcpp_env("MODEL") or "").strip()
-    env_diffusion = str(_sdcpp_env("DIFFUSION_MODEL") or "").strip()
+    # Configured route model (backend=sdcpp) is the full-model path; the
+    # component paths and env names remain below it (config wins, dm#177).
+    route_model = str(_route_model_for("sdcpp", modality, task) or "").strip()
+    env_sdcpp_model = str(_sdcpp_setting("MODEL", modality=modality, task=task) or "").strip()
+    if route_model and env_sdcpp_model and env_sdcpp_model != route_model:
+        # Labeling law (dm#194): ignored env must be named, like every other lane.
+        _warn_env_overridden(("ABSTRACTCORE_VISION_SDCPP_MODEL", "ABSTRACTVISION_SDCPP_MODEL"), route_model, env_sdcpp_model)
+    env_model = route_model or env_sdcpp_model
+    env_diffusion = str(_sdcpp_setting("DIFFUSION_MODEL", modality=modality, task=task) or "").strip()
 
-    # Request model overrides env defaults.
+    # Request model overrides configured/env defaults.
     if req:
-        # If the user configured component paths, treat the request as diffusion_model (component mode).
+        # If component paths are configured (route options or env), treat the
+        # request as diffusion_model (component mode).
         component_mode = any(
-            str(_env(k) or "").strip()
-            for k in (
-                "ABSTRACTCORE_VISION_SDCPP_VAE",
-                "ABSTRACTCORE_VISION_SDCPP_LLM",
-                "ABSTRACTCORE_VISION_SDCPP_LLM_VISION",
-                "ABSTRACTCORE_VISION_SDCPP_CLIP_L",
-                "ABSTRACTCORE_VISION_SDCPP_CLIP_G",
-                "ABSTRACTCORE_VISION_SDCPP_T5XXL",
-                "ABSTRACTVISION_SDCPP_VAE",
-                "ABSTRACTVISION_SDCPP_LLM",
-                "ABSTRACTVISION_SDCPP_LLM_VISION",
-                "ABSTRACTVISION_SDCPP_CLIP_L",
-                "ABSTRACTVISION_SDCPP_CLIP_G",
-                "ABSTRACTVISION_SDCPP_T5XXL",
-            )
+            str(_sdcpp_setting(name, modality=modality, task=task) or "").strip()
+            for name in ("VAE", "LLM", "LLM_VISION", "CLIP_L", "CLIP_G", "T5XXL")
         )
         return (None, req) if component_mode else (req, None)
 
@@ -2141,8 +2569,10 @@ def _require_sdcpp_model_or_diffusion_model(request_model: Any) -> Tuple[Optiona
         status_code=501,
         detail=(
             "Vision image endpoints are not configured for sdcpp mode. "
-            "Set ABSTRACTCORE_VISION_SDCPP_MODEL (full model) or ABSTRACTCORE_VISION_SDCPP_DIFFUSION_MODEL "
-            "(component mode), or pass a local .gguf path as `model` in the request."
+            "Configure an Image Output route via `abstractcore --config` (provider sdcpp + "
+            "a local model path), set ABSTRACTCORE_VISION_SDCPP_MODEL (full model) or "
+            "ABSTRACTCORE_VISION_SDCPP_DIFFUSION_MODEL (component mode), or pass a local "
+            ".gguf path as `model` in the request."
         ),
     )
 
@@ -2264,6 +2694,7 @@ def _image_generation_request_parts(
     payload: Dict[str, Any],
     *,
     request_model: Any = None,
+    task: Optional[str] = None,
 ) -> Tuple[Optional[int], Optional[int], Dict[str, Any]]:
     width = _coerce_int(payload.get("width"))
     height = _coerce_int(payload.get("height"))
@@ -2279,11 +2710,17 @@ def _image_generation_request_parts(
 
     # OpenAI-compatible image endpoints expect `size`, not backend-local
     # `width`/`height`. Local generation backends still need width/height.
+    # Modality MUST be "image" here: _effective_backend_kind reads the
+    # config route for the given modality, so passing "video" (a prior bug)
+    # shaped image params by the VIDEO route — the exact cross-modality bleed
+    # the config-wins work set out to kill, mirrored (an operator with
+    # image=local-diffusers + video=openai-proxy got width/height dropped
+    # from image requests).
     effective_request_model = request_model if request_model is not None else _scoped_request_model(
         payload.get("model"),
         payload.get("provider"),
     )
-    if _effective_backend_kind(effective_request_model) == "openai_compatible_proxy":
+    if _effective_backend_kind(effective_request_model, "image", task) == "openai_compatible_proxy":
         size = payload.get("size")
         if size is None and width is not None and height is not None:
             size = f"{int(width)}x{int(height)}"
@@ -2299,6 +2736,7 @@ def _video_generation_request_parts(
     payload: Dict[str, Any],
     *,
     request_model: Any = None,
+    task: Optional[str] = None,
 ) -> Tuple[Optional[int], Optional[int], Optional[int], Optional[int], Dict[str, Any]]:
     width = _coerce_int(payload.get("width"))
     height = _coerce_int(payload.get("height"))
@@ -2323,7 +2761,7 @@ def _video_generation_request_parts(
         payload.get("model"),
         payload.get("provider"),
     )
-    if _effective_backend_kind(effective_request_model) == "openai_compatible_proxy" and payload.get("size") is not None:
+    if _effective_backend_kind(effective_request_model, "video", task) == "openai_compatible_proxy" and payload.get("size") is not None:
         extra.setdefault("size", str(payload.get("size")))
 
     return width, height, fps, num_frames, extra
@@ -2545,10 +2983,123 @@ def _parse_lora_adapters_form(lora_adapters_json: Optional[str]) -> Optional[Lis
     return out or None
 
 
-def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_key: Optional[str] = None):
+def _diffusers_backend_settings(modality: str = "image", task: Optional[str] = None) -> Dict[str, Any]:
+    """Diffusers lane behavior settings: route options win, env is #FALLBACK.
+
+    Route-option fan-out (backlog 0826): these options used to be dropped
+    silently for every lane but sdcpp — the audio lane's translation +
+    unknown-key warning pattern, ported.
+    """
+    options = _route_options_for("diffusers", modality, task)
+    return {
+        "device": _route_option_str(
+            options, "device", "ABSTRACTCORE_VISION_DEVICE", "ABSTRACTVISION_DIFFUSERS_DEVICE", default="auto"
+        )
+        or "auto",
+        "torch_dtype": _route_option_str(
+            options, "torch_dtype", "ABSTRACTCORE_VISION_TORCH_DTYPE", "ABSTRACTVISION_DIFFUSERS_TORCH_DTYPE"
+        ),
+        "allow_download": _route_option_bool(
+            options,
+            "allow_download",
+            "ABSTRACTCORE_VISION_ALLOW_DOWNLOAD",
+            "ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD",
+            default=False,
+        ),
+        "auto_retry_fp32": _route_option_bool(
+            options,
+            "auto_retry_fp32",
+            "ABSTRACTCORE_VISION_AUTO_RETRY_FP32",
+            "ABSTRACTVISION_DIFFUSERS_AUTO_RETRY_FP32",
+            default=True,
+        ),
+    }
+
+
+def _mflux_backend_settings(modality: str = "image", task: Optional[str] = None) -> Dict[str, Any]:
+    """MFlux (mlx-gen) lane behavior settings: route options win, env is #FALLBACK.
+
+    `base_model` is a model CHOICE (behavior, dm#177) — its config home is
+    the mflux route's options; the env vars survive as labeled fallback.
+    """
+    options = _route_options_for("mlx-gen", modality, task)
+    return {
+        "base_model": _route_option_str(
+            options, "base_model", "ABSTRACTCORE_VISION_MFLUX_BASE_MODEL", "ABSTRACTVISION_MFLUX_BASE_MODEL"
+        ),
+        "model_dir": _route_option_str(
+            options, "model_dir", "ABSTRACTCORE_VISION_MODEL_DIR", "ABSTRACTVISION_MODEL_DIR"
+        ),
+        "allow_download": _route_option_bool(
+            options,
+            "allow_download",
+            "ABSTRACTCORE_VISION_MFLUX_ALLOW_DOWNLOAD",
+            "ABSTRACTVISION_MFLUX_ALLOW_DOWNLOAD",
+            default=False,
+        ),
+    }
+
+
+def _proxy_upstream_settings(modality: str = "image", task: Optional[str] = None) -> Dict[str, Any]:
+    """OpenAI-compatible proxy path/mode settings: route options win, env is #FALLBACK."""
+    options = _route_options_for("openai_compatible_proxy", modality, task)
+    return {
+        "image_generations_path": _route_option_str(
+            options,
+            "image_generations_path",
+            "ABSTRACTCORE_VISION_UPSTREAM_IMAGES_GENERATIONS_PATH",
+            "ABSTRACTVISION_IMAGES_GENERATIONS_PATH",
+            default="/images/generations",
+        )
+        or "/images/generations",
+        "image_edits_path": _route_option_str(
+            options,
+            "image_edits_path",
+            "ABSTRACTCORE_VISION_UPSTREAM_IMAGES_EDITS_PATH",
+            "ABSTRACTVISION_IMAGES_EDITS_PATH",
+            default="/images/edits",
+        )
+        or "/images/edits",
+        "text_to_video_path": _route_option_str(
+            options,
+            "text_to_video_path",
+            "ABSTRACTCORE_VISION_UPSTREAM_VIDEOS_GENERATIONS_PATH",
+            "ABSTRACTCORE_VISION_TEXT_TO_VIDEO_PATH",
+            "ABSTRACTVISION_TEXT_TO_VIDEO_PATH",
+            default="/videos/generations",
+        )
+        or "/videos/generations",
+        "image_to_video_path": _route_option_str(
+            options,
+            "image_to_video_path",
+            "ABSTRACTCORE_VISION_UPSTREAM_VIDEOS_EDITS_PATH",
+            "ABSTRACTCORE_VISION_IMAGE_TO_VIDEO_PATH",
+            "ABSTRACTVISION_IMAGE_TO_VIDEO_PATH",
+            default="/videos/edits",
+        )
+        or "/videos/edits",
+        "image_to_video_mode": _route_option_str(
+            options,
+            "image_to_video_mode",
+            "ABSTRACTCORE_VISION_IMAGE_TO_VIDEO_MODE",
+            "ABSTRACTVISION_IMAGE_TO_VIDEO_MODE",
+            default="multipart",
+        )
+        or "multipart",
+    }
+
+
+def _resolve_backend(
+    request_model: Any,
+    *,
+    modality: str = "image",
+    task: Optional[str] = None,
+    base_url: Optional[str] = None,
+    api_key: Optional[str] = None,
+):
     normalized = _normalize_request_model_for_backend(request_model)
     req_model = str(normalized or "").strip()
-    backend_kind = _effective_backend_kind(request_model)
+    backend_kind = _effective_backend_kind(request_model, modality, task)
 
     # Important: return "not configured" errors without requiring optional deps.
     if backend_kind == "auto_unconfigured":
@@ -2556,7 +3107,8 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
             status_code=501,
             detail=(
                 "Vision image endpoints are not configured. "
-                "Either pass a vision-capable `model` in the request (recommended), or set one of:\n"
+                "Either pass a vision-capable `model` in the request (recommended), "
+                "configure an Image/Video Output route via `abstractcore --config`, or set one of:\n"
                 "- ABSTRACTCORE_VISION_MODEL_ID (Diffusers)\n"
                 "- OPENAI_BASE_URL (OpenAI-compatible proxy)\n"
                 "- ABSTRACTCORE_VISION_SDCPP_MODEL / ABSTRACTCORE_VISION_SDCPP_DIFFUSION_MODEL (stable-diffusion.cpp)"
@@ -2569,46 +3121,20 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
     if backend_kind == "openai_compatible_proxy":
         explicit_base_url = _validate_request_base_url(base_url)
         explicit_api_key = str(api_key).strip() if isinstance(api_key, str) and str(api_key).strip() else None
-        base_url = explicit_base_url or _upstream_base_url_for_request(request_model)
-        model_id = str(normalized or _upstream_model_env() or "").strip() or None
+        base_url = explicit_base_url or _upstream_base_url_for_request(request_model, modality, task)
+        model_id = str(normalized or _upstream_model_default(modality, task) or "").strip() or None
+        proxy_settings = _proxy_upstream_settings(modality, task)
         prevalidated.update(
             {
                 "base_url": base_url,
                 "model_id": model_id,
                 "timeout_s": None,
-                "image_generations_path": _env_first(
-                    "ABSTRACTCORE_VISION_UPSTREAM_IMAGES_GENERATIONS_PATH",
-                    "ABSTRACTVISION_IMAGES_GENERATIONS_PATH",
-                    default="/images/generations",
-                )
-                or "/images/generations",
-                "image_edits_path": _env_first(
-                    "ABSTRACTCORE_VISION_UPSTREAM_IMAGES_EDITS_PATH",
-                    "ABSTRACTVISION_IMAGES_EDITS_PATH",
-                    default="/images/edits",
-                )
-                or "/images/edits",
-                "text_to_video_path": _env_first(
-                    "ABSTRACTCORE_VISION_UPSTREAM_VIDEOS_GENERATIONS_PATH",
-                    "ABSTRACTCORE_VISION_TEXT_TO_VIDEO_PATH",
-                    "ABSTRACTVISION_TEXT_TO_VIDEO_PATH",
-                    default="/videos/generations",
-                )
-                or "/videos/generations",
-                "image_to_video_path": _env_first(
-                    "ABSTRACTCORE_VISION_UPSTREAM_VIDEOS_EDITS_PATH",
-                    "ABSTRACTCORE_VISION_IMAGE_TO_VIDEO_PATH",
-                    "ABSTRACTVISION_IMAGE_TO_VIDEO_PATH",
-                    default="/videos/edits",
-                )
-                or "/videos/edits",
-                "image_to_video_mode": _env_first(
-                    "ABSTRACTCORE_VISION_IMAGE_TO_VIDEO_MODE",
-                    "ABSTRACTVISION_IMAGE_TO_VIDEO_MODE",
-                    default="multipart",
-                )
-                or "multipart",
-                "api_key": explicit_api_key or _upstream_api_key_for_request(request_model),
+                "image_generations_path": proxy_settings["image_generations_path"],
+                "image_edits_path": proxy_settings["image_edits_path"],
+                "text_to_video_path": proxy_settings["text_to_video_path"],
+                "image_to_video_path": proxy_settings["image_to_video_path"],
+                "image_to_video_mode": proxy_settings["image_to_video_mode"],
+                "api_key": explicit_api_key or _upstream_api_key_for_request(request_model, modality, task),
             }
         )
         key = (
@@ -2648,53 +3174,45 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
             _ProxyImageUpscaleRequest,
         )
     elif backend_kind == "diffusers":
-        model_id = _require_diffusers_model_id(request_model)
-        allow_download = _env_bool_first(
-            "ABSTRACTCORE_VISION_ALLOW_DOWNLOAD",
-            "ABSTRACTVISION_DIFFUSERS_ALLOW_DOWNLOAD",
-            default=False,
-        )
+        model_id = _require_diffusers_model_id(request_model, modality, task)
+        diffusers_settings = _diffusers_backend_settings(modality, task)
         prevalidated.update(
             {
                 "model_id": model_id,
-                "device": _env_first("ABSTRACTCORE_VISION_DEVICE", "ABSTRACTVISION_DIFFUSERS_DEVICE", default="auto") or "auto",
-                "torch_dtype": _env_first("ABSTRACTCORE_VISION_TORCH_DTYPE", "ABSTRACTVISION_DIFFUSERS_TORCH_DTYPE"),
-                "allow_download": allow_download,
-                "auto_retry_fp32": _env_bool_first(
-                    "ABSTRACTCORE_VISION_AUTO_RETRY_FP32",
-                    "ABSTRACTVISION_DIFFUSERS_AUTO_RETRY_FP32",
-                    default=True,
-                ),
+                "device": diffusers_settings["device"],
+                "torch_dtype": diffusers_settings["torch_dtype"],
+                "allow_download": diffusers_settings["allow_download"],
+                "auto_retry_fp32": diffusers_settings["auto_retry_fp32"],
             }
         )
     elif backend_kind == "mlx-gen":
-        model_id = str(_normalize_request_model_for_backend(request_model) or _mflux_model_env() or "").strip() or None
+        model_id = str(_normalize_request_model_for_backend(request_model) or _mflux_model_default(modality, task) or "").strip() or None
+        mflux_settings = _mflux_backend_settings(modality, task)
         prevalidated.update(
             {
                 "model_id": model_id,
-                "base_model": _env_first("ABSTRACTCORE_VISION_MFLUX_BASE_MODEL", "ABSTRACTVISION_MFLUX_BASE_MODEL"),
-                "model_dir": _env_first("ABSTRACTCORE_VISION_MODEL_DIR", "ABSTRACTVISION_MODEL_DIR"),
-                "allow_download": _env_bool_first(
-                    "ABSTRACTCORE_VISION_MFLUX_ALLOW_DOWNLOAD",
-                    "ABSTRACTVISION_MFLUX_ALLOW_DOWNLOAD",
-                    default=False,
-                ),
+                "base_model": mflux_settings["base_model"],
+                "model_dir": mflux_settings["model_dir"],
+                "allow_download": mflux_settings["allow_download"],
             }
         )
     elif backend_kind == "sdcpp":
-        model_path, diffusion_model_path = _require_sdcpp_model_or_diffusion_model(request_model)
-        extra_args = _sdcpp_env("EXTRA_ARGS")
+        model_path, diffusion_model_path = _require_sdcpp_model_or_diffusion_model(request_model, modality, task)
+        # Component/setting reads are scoped to the modality/task being
+        # resolved (they previously defaulted to the image route even when
+        # resolving a video request — the P1 cross-modality bleed, mirrored).
+        extra_args = _sdcpp_setting("EXTRA_ARGS", modality=modality, task=task)
         prevalidated.update(
             {
-                "sd_cli_path": _sdcpp_env("BIN") or "sd-cli",
+                "sd_cli_path": _sdcpp_setting("BIN", modality=modality, task=task) or "sd-cli",
                 "model_path": model_path,
                 "diffusion_model_path": diffusion_model_path,
-                "vae": _sdcpp_env("VAE"),
-                "llm": _sdcpp_env("LLM"),
-                "llm_vision": _sdcpp_env("LLM_VISION"),
-                "clip_l": _sdcpp_env("CLIP_L"),
-                "clip_g": _sdcpp_env("CLIP_G"),
-                "t5xxl": _sdcpp_env("T5XXL"),
+                "vae": _sdcpp_setting("VAE", modality=modality, task=task),
+                "llm": _sdcpp_setting("LLM", modality=modality, task=task),
+                "llm_vision": _sdcpp_setting("LLM_VISION", modality=modality, task=task),
+                "clip_l": _sdcpp_setting("CLIP_L", modality=modality, task=task),
+                "clip_g": _sdcpp_setting("CLIP_G", modality=modality, task=task),
+                "t5xxl": _sdcpp_setting("T5XXL", modality=modality, task=task),
                 "extra_args": extra_args,
                 "timeout_s": None,
             }
@@ -2838,6 +3356,8 @@ def _resolve_backend(request_model: Any, *, base_url: Optional[str] = None, api_
 def _create_vision_generation_core(
     request_model: Any,
     *,
+    modality: str = "image",
+    task: Optional[str] = None,
     base_url: Optional[str] = None,
     api_key: Optional[str] = None,
 ):
@@ -2853,6 +3373,8 @@ def _create_vision_generation_core(
     ) = _unpack_resolved_backend(
         _resolve_backend(
             request_model,
+            modality=modality,
+            task=task,
             base_url=base_url,
             api_key=api_key,
         )
@@ -2865,14 +3387,14 @@ def _create_vision_generation_core(
         video_generation_request_cls=VideoGenerationRequest,
         image_to_video_request_cls=ImageToVideoRequest,
         image_upscale_request_cls=ImageUpscaleRequest,
-        backend_id=f"abstractcore-server:{_effective_backend_kind(request_model)}",
+        backend_id=f"abstractcore-server:{_effective_backend_kind(request_model, modality, task)}",
     )
     core = create_capability_generation_core(vision_facade=facade)
     return core, OptionalDependencyMissingError
 
 
-def _is_remote_vision_request(request_model: Any) -> bool:
-    return _effective_backend_kind(request_model) == "openai_compatible_proxy"
+def _is_remote_vision_request(request_model: Any, modality: str = "image", task: Optional[str] = None) -> bool:
+    return _effective_backend_kind(request_model, modality, task) == "openai_compatible_proxy"
 
 
 def _generated_image_bytes_list(result: Any) -> list[bytes]:
@@ -2979,8 +3501,12 @@ def _configured_vision_provider_model_entries(task: Optional[str]) -> list[Dict[
     if openai_model and _env("OPENAI_API_KEY"):
         add(provider="openai", model_id=openai_model)
 
-    upstream_base_url = _env("OPENAI_BASE_URL")
-    upstream_model = _env_first("ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID")
+    # Config-first (adversary P1-2): what the server ADVERTISES must come from
+    # the same truth it EXECUTES — a config-only proxy route used to execute
+    # but advertise [], and an env+config split advertised the env pair while
+    # generation used the configured one.
+    upstream_base_url = _upstream_base_url_default()
+    upstream_model = _route_model_for("openai_compatible_proxy") or _env_first("ABSTRACTCORE_VISION_UPSTREAM_MODEL_ID")
     upstream_key = _vision_catalog_api_key_for_base_url(upstream_base_url)
     if upstream_base_url and upstream_model and (not _looks_like_openai_api(upstream_base_url) or upstream_key):
         add(provider="openai" if _looks_like_openai_api(upstream_base_url) else "openai-compatible", model_id=upstream_model)
@@ -3548,12 +4074,13 @@ async def _images_generations_impl(
         payload.get("provider"),
         base_url=payload.get("base_url"),
     )
-    width, height, extra = _image_generation_request_parts(payload, request_model=request_model)
+    width, height, extra = _image_generation_request_parts(payload, request_model=request_model, task="text_to_image")
     provider_api_key = _provider_api_key_from_request(request)
-    if _is_remote_vision_request(request_model):
+    if _is_remote_vision_request(request_model, task="text_to_image"):
         _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
     core, OptionalDependencyMissingError = _create_vision_generation_core(
         request_model,
+        task="text_to_image",
         base_url=payload.get("base_url"),
         api_key=provider_api_key,
     )
@@ -3658,12 +4185,14 @@ async def _videos_generations_impl(
         payload.get("provider"),
         base_url=payload.get("base_url"),
     )
-    width, height, fps, num_frames, extra = _video_generation_request_parts(payload, request_model=request_model)
+    width, height, fps, num_frames, extra = _video_generation_request_parts(payload, request_model=request_model, task="text_to_video")
     provider_api_key = _provider_api_key_from_request(request)
-    if _is_remote_vision_request(request_model):
+    if _is_remote_vision_request(request_model, "video", task="text_to_video"):
         _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
     core, OptionalDependencyMissingError = _create_vision_generation_core(
         request_model,
+        modality="video",
+        task="text_to_video",
         base_url=payload.get("base_url"),
         api_key=provider_api_key,
     )
@@ -3752,13 +4281,14 @@ async def jobs_images_generations(request: Request, payload: ImageGenerationBody
         payload.get("provider"),
         base_url=payload.get("base_url"),
     )
-    width, height, extra = _image_generation_request_parts(payload, request_model=request_model)
+    width, height, extra = _image_generation_request_parts(payload, request_model=request_model, task="text_to_image")
     provider_api_key = _provider_api_key_from_request(request)
-    if _is_remote_vision_request(request_model):
+    if _is_remote_vision_request(request_model, task="text_to_image"):
         _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
 
     core, OptionalDependencyMissingError = _create_vision_generation_core(
         request_model,
+        task="text_to_image",
         base_url=payload.get("base_url"),
         api_key=provider_api_key,
     )
@@ -3884,13 +4414,15 @@ async def jobs_videos_generations(request: Request, payload: VideoGenerationBody
         payload.get("provider"),
         base_url=payload.get("base_url"),
     )
-    width, height, fps, num_frames, extra = _video_generation_request_parts(payload, request_model=request_model)
+    width, height, fps, num_frames, extra = _video_generation_request_parts(payload, request_model=request_model, task="text_to_video")
     provider_api_key = _provider_api_key_from_request(request)
-    if _is_remote_vision_request(request_model):
+    if _is_remote_vision_request(request_model, "video", task="text_to_video"):
         _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
 
     core, OptionalDependencyMissingError = _create_vision_generation_core(
         request_model,
+        modality="video",
+        task="text_to_video",
         base_url=payload.get("base_url"),
         api_key=provider_api_key,
     )
@@ -4113,10 +4645,11 @@ if _HAS_MULTIPART:
             extra.setdefault("reference_images", reference_image_bytes)
         request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
         provider_api_key = _provider_api_key_from_request(request)
-        if _is_remote_vision_request(request_model):
+        if _is_remote_vision_request(request_model, task="image_to_image"):
             _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
         core, OptionalDependencyMissingError = _create_vision_generation_core(
             request_model,
+            task="image_to_image",
             base_url=base_url,
             api_key=provider_api_key,
         )
@@ -4299,10 +4832,11 @@ if _HAS_MULTIPART:
         parsed_lora_adapters = _parse_lora_adapters_form(lora_adapters_json)
         request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
         provider_api_key = _provider_api_key_from_request(request)
-        if _is_remote_vision_request(request_model):
+        if _is_remote_vision_request(request_model, task="image_to_image"):
             _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
         core, OptionalDependencyMissingError = _create_vision_generation_core(
             request_model,
+            task="image_to_image",
             base_url=base_url,
             api_key=provider_api_key,
         )
@@ -4453,10 +4987,11 @@ if _HAS_MULTIPART:
         )
         request_model = _scoped_request_model_for_request(route_model, route_provider, base_url=base_url)
         provider_api_key = _provider_api_key_from_request(request)
-        if _is_remote_vision_request(request_model):
+        if _is_remote_vision_request(request_model, task="image_upscale"):
             _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
         core, OptionalDependencyMissingError = _create_vision_generation_core(
             request_model,
+            task="image_upscale",
             base_url=base_url,
             api_key=provider_api_key,
         )
@@ -4566,10 +5101,11 @@ if _HAS_MULTIPART:
         )
         request_model = _scoped_request_model_for_request(route_model, route_provider, base_url=base_url)
         provider_api_key = _provider_api_key_from_request(request)
-        if _is_remote_vision_request(request_model):
+        if _is_remote_vision_request(request_model, task="image_upscale"):
             _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
         core, OptionalDependencyMissingError = _create_vision_generation_core(
             request_model,
+            task="image_upscale",
             base_url=base_url,
             api_key=provider_api_key,
         )
@@ -4697,12 +5233,17 @@ if _HAS_MULTIPART:
         count = max(1, min(int(count), 4))
         parsed_lora_adapters = _parse_lora_adapters_form(lora_adapters_json)
         request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
-        width_i, height_i, fps_i, num_frames_i, extra = _video_generation_request_parts(payload, request_model=request_model)
+        width_i, height_i, fps_i, num_frames_i, extra = _video_generation_request_parts(payload, request_model=request_model, task="image_to_video")
         provider_api_key = _provider_api_key_from_request(request)
-        if _is_remote_vision_request(request_model):
+        # modality MUST be "video" here (this is the /videos/* lane): backend
+        # resolution previously defaulted to the image route (the P1
+        # cross-modality bleed the t2v lanes already fixed).
+        if _is_remote_vision_request(request_model, "video", task="image_to_video"):
             _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
         core, OptionalDependencyMissingError = _create_vision_generation_core(
             request_model,
+            modality="video",
+            task="image_to_video",
             base_url=base_url,
             api_key=provider_api_key,
         )
@@ -4874,12 +5415,17 @@ if _HAS_MULTIPART:
         parsed_seeds = _parse_seeds_form(seeds)
         parsed_lora_adapters = _parse_lora_adapters_form(lora_adapters_json)
         request_model = _scoped_request_model_for_request(model, provider, base_url=base_url)
-        width_i, height_i, fps_i, num_frames_i, extra = _video_generation_request_parts(payload, request_model=request_model)
+        width_i, height_i, fps_i, num_frames_i, extra = _video_generation_request_parts(payload, request_model=request_model, task="image_to_video")
         provider_api_key = _provider_api_key_from_request(request)
-        if _is_remote_vision_request(request_model):
+        # modality MUST be "video" here (this is the /videos/* lane): backend
+        # resolution previously defaulted to the image route (the P1
+        # cross-modality bleed the t2v lanes already fixed).
+        if _is_remote_vision_request(request_model, "video", task="image_to_video"):
             _guard_vision_catalog_credentials(request=request, explicit_provider_key=bool(provider_api_key))
         core, OptionalDependencyMissingError = _create_vision_generation_core(
             request_model,
+            modality="video",
+            task="image_to_video",
             base_url=base_url,
             api_key=provider_api_key,
         )

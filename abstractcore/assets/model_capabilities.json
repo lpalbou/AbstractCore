@@ -209,6 +209,11 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high"
+      ],
       "unsupported_parameters": [
         "temperature",
         "top_p",
@@ -274,6 +279,11 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high"
+      ],
       "unsupported_parameters": [
         "temperature",
         "top_p",
@@ -306,6 +316,11 @@
       "vision_support": false,
       "audio_support": false,
       "thinking_support": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high"
+      ],
       "unsupported_parameters": [
         "temperature",
         "top_p",
@@ -809,6 +824,214 @@
         "anthropic/claude-sonnet-4-6"
       ],
       "max_tokens": 200000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "claude-opus-5": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "thinking_control_mode": "adaptive",
+      "max_effort_supported": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "notes": "Anthropic Opus-tier flagship, 5th generation (released 2026-07-24). Step-change over Opus 4.8 for agentic coding, deep reasoning, and long-horizon work at Opus 4.8 pricing ($5/$25 per MTok). Official docs: text+image input, text output, 1M context (default and maximum, no long-context premium), 128K max output (300K via Batch API beta header), adaptive thinking on by default, full effort ladder through 'max' (default 'high'), knowledge cutoff May 2026, elevated cybersecurity safeguards, 512-token prompt-cache minimum. thinking:disabled is available only at effort high or lower. Claude Fable 5 remains the highest-capability tier.",
+      "source": "Anthropic Claude model catalog (models.md) + launch posts (accessed 2026-07-25)",
+      "canonical_name": "claude-opus-5",
+      "aliases": [
+        "anthropic/claude-opus-5"
+      ],
+      "max_tokens": 1000000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "claude-opus-4-7": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "thinking_control_mode": "adaptive",
+      "thinking_disable_supported": false,
+      "max_effort_supported": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "notes": "Previous-generation Opus (4.7). Highly autonomous; strong on long-horizon agentic work, knowledge work, vision, and memory. Adaptive thinking only; manual budget_tokens and non-default sampling parameters removed. 1M context, 128K max output.",
+      "source": "Anthropic Claude model catalog (models.md) + launch posts (accessed 2026-07-25)",
+      "canonical_name": "claude-opus-4-7",
+      "aliases": [
+        "anthropic/claude-opus-4-7"
+      ],
+      "max_tokens": 1000000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "claude-sonnet-5": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 2576x2576"
+      ],
+      "audio_support": false,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "thinking_control_mode": "adaptive",
+      "max_effort_supported": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "notes": "Sonnet-tier, 5th generation. Best speed/intelligence balance, near-Opus coding and agentic quality. Adaptive thinking on by default; manual budget_tokens removed; non-default sampling parameters rejected. Effort ladder low..max. High-resolution vision (2576px). New tokenizer (~30% more tokens for the same text vs Sonnet 4.6). 1M context, 128K max output.",
+      "source": "Anthropic Claude model catalog (models.md) + launch posts (accessed 2026-07-25)",
+      "canonical_name": "claude-sonnet-5",
+      "aliases": [
+        "anthropic/claude-sonnet-5"
+      ],
+      "max_tokens": 1000000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "claude-fable-5": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "thinking_control_mode": "adaptive",
+      "thinking_disable_supported": false,
+      "max_effort_supported": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "notes": "Anthropic's most capable widely-released model (gen-5 top tier), for the most demanding reasoning and long-horizon agentic work. Always-on adaptive thinking: thinking:{type:disabled} returns a 400 — omit the thinking parameter instead; the raw chain of thought is never returned (summaries via display:summarized). No assistant prefill. Requires 30-day data retention (not available under ZDR). $10/$50 per MTok. 1M context (default), 128K max output.",
+      "source": "Anthropic Claude model catalog (models.md) + launch posts (accessed 2026-07-25)",
+      "canonical_name": "claude-fable-5",
+      "aliases": [
+        "anthropic/claude-fable-5"
+      ],
+      "max_tokens": 1000000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "claude-mythos-5": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "image_resolutions": [
+        "up to 1568x1568"
+      ],
+      "audio_support": false,
+      "thinking_support": true,
+      "thinking_budget": true,
+      "thinking_control_mode": "adaptive",
+      "thinking_disable_supported": false,
+      "max_effort_supported": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "notes": "Identical capabilities, pricing, limits, and API behavior to Claude Fable 5; only the model ID differs. Available exclusively through Anthropic Project Glasswing (succeeds claude-mythos-preview). Use claude-fable-5 unless the org participates in Project Glasswing.",
+      "source": "Anthropic Claude model catalog (models.md) + launch posts (accessed 2026-07-25)",
+      "canonical_name": "claude-mythos-5",
+      "aliases": [
+        "anthropic/claude-mythos-5"
+      ],
+      "max_tokens": 1000000,
       "video_support": false,
       "video_input_mode": "frames",
       "capability_routes": {
@@ -4426,6 +4649,7 @@
       ],
       "token_param_name": "max_completion_tokens",
       "reasoning_levels": [
+        "minimal",
         "low",
         "medium",
         "high"
@@ -4502,6 +4726,7 @@
       ],
       "token_param_name": "max_completion_tokens",
       "reasoning_levels": [
+        "minimal",
         "low",
         "medium",
         "high"
@@ -4966,6 +5191,116 @@
         ]
       }
     },
+    "gpt-5.6-sol": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "thinking_support": true,
+      "token_param_name": "max_completion_tokens",
+      "reasoning_levels": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "web_browsing": true,
+      "python_execution": true,
+      "notes": "GPT-5.6 family frontier model (GA 2026-07-09); corresponds to the unsuffixed tier of earlier GPT-5 families. Official model card: 1,050,000-token context, 128,000 max output, text+image input, text output, function calling, structured outputs, streaming, Chat Completions + Responses endpoints, reasoning token support. Audio and video input are not supported. The gpt-5.6 alias routes to Sol.",
+      "source": "OpenAI API model card (gpt-5.6-sol, accessed 2026-07-25)",
+      "canonical_name": "gpt-5.6-sol",
+      "aliases": [
+        "gpt-5.6"
+      ],
+      "max_tokens": 1050000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "gpt-5.6-terra": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "thinking_support": true,
+      "token_param_name": "max_completion_tokens",
+      "reasoning_levels": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "web_browsing": true,
+      "python_execution": true,
+      "notes": "GPT-5.6 family balanced intelligence/cost model; corresponds to the mini tier of earlier GPT-5 families. Same official limits as Sol: 1,050,000-token context, 128,000 max output, text+image input, text output, function calling, structured outputs, reasoning token support. Audio and video input are not supported.",
+      "source": "OpenAI API model card (gpt-5.6-terra, accessed 2026-07-25)",
+      "canonical_name": "gpt-5.6-terra",
+      "aliases": [],
+      "max_tokens": 1050000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
+    "gpt-5.6-luna": {
+      "max_output_tokens": 128000,
+      "tool_support": "native",
+      "structured_output": "native",
+      "parallel_tools": true,
+      "max_tools": -1,
+      "vision_support": true,
+      "audio_support": false,
+      "thinking_support": true,
+      "token_param_name": "max_completion_tokens",
+      "reasoning_levels": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "web_browsing": true,
+      "python_execution": true,
+      "notes": "GPT-5.6 family fast, cost-sensitive model; corresponds to the nano tier of earlier GPT-5 families. Same official limits as Sol: 1,050,000-token context, 128,000 max output, text+image input, text output, function calling, structured outputs, reasoning token support. Audio and video input are not supported.",
+      "source": "OpenAI API model card (gpt-5.6-luna, accessed 2026-07-25)",
+      "canonical_name": "gpt-5.6-luna",
+      "aliases": [],
+      "max_tokens": 1050000,
+      "video_support": false,
+      "video_input_mode": "frames",
+      "capability_routes": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      }
+    },
     "text-embedding-ada-002": {
       "max_output_tokens": 0,
       "tool_support": "none",
@@ -5062,6 +5397,11 @@
       "vision_support": true,
       "audio_support": false,
       "thinking_support": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "high"
+      ],
       "unsupported_parameters": [
         "temperature",
         "top_p",

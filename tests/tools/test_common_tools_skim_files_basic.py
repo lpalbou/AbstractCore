@@ -4,10 +4,64 @@ from pathlib import Path
 
 import pytest
 
-from abstractcore.tools.common_tools import skim_files
+from abstractcore.tools.common_tools import (
+    skim_files,
+    _SKIM_HEADING_RE,
+    _SKIM_HR_RE,
+    _SKIM_LIST_RE,
+    _SKIM_CODE_DECL_RE,
+    _SKIM_SENTENCE_END_RE,
+)
 
 
 pytestmark = pytest.mark.basic
+
+
+def test_skim_structure_patterns_are_live_regression() -> None:
+    """Regression for audit item 0827: the structure-detection regexes were raw strings
+    with DOUBLED backslashes (r"\\\\s"), matching a literal backslash instead of the
+    whitespace class — heading/list/def/sentence detection was entirely dead while the
+    tool still "worked" via bookend sampling. This isolation test would have caught it;
+    it exists so a future edit cannot silently re-break the patterns."""
+    # Headings (ATX)
+    assert _SKIM_HEADING_RE.match("## Title")
+    assert _SKIM_HEADING_RE.match("###### H6")
+    assert not _SKIM_HEADING_RE.match("just a paragraph")
+    assert not _SKIM_HEADING_RE.match("#nospace")  # ATX requires whitespace after #
+    # Horizontal rule / setext underline
+    assert _SKIM_HR_RE.match("---")
+    assert _SKIM_HR_RE.match("=====")
+    # Lists / checkboxes
+    assert _SKIM_LIST_RE.match("- item")
+    assert _SKIM_LIST_RE.match("* item")
+    assert _SKIM_LIST_RE.match("1. item")
+    assert _SKIM_LIST_RE.match("[ ] task")
+    assert _SKIM_LIST_RE.match("[x] done")
+    assert not _SKIM_LIST_RE.match("-nospace")
+    # Code-ish declarations
+    assert _SKIM_CODE_DECL_RE.match("def foo():")
+    assert _SKIM_CODE_DECL_RE.match("class Bar:")
+    assert not _SKIM_CODE_DECL_RE.match("defoo")
+    # First-sentence boundary
+    m = _SKIM_SENTENCE_END_RE.search("Hello world. Second sentence.")
+    assert m is not None and "Hello world. Second sentence."[: m.end(1)].strip() == "Hello world."
+
+
+def test_skim_files_prioritizes_midfile_heading(tmp_path: Path) -> None:
+    """End-to-end: a heading deep in a long body is surfaced because _is_heading_line
+    (now live) prioritizes it in the middle sample — not merely by bookend luck."""
+    body = ["Filler paragraph sentence number %d here." % i for i in range(1, 60)]
+    body[40] = "## Deep Section Marker"
+    body[41] = "The first line under the deep heading. Trailing sentence."
+    p = tmp_path / "long.md"
+    p.write_text("\n".join(body) + "\n", encoding="utf-8")
+
+    out = skim_files(paths=[str(p)], target_percent=6.0, head_lines=5, tail_lines=5)
+    assert "## Deep Section Marker" in out
+    # Discriminating assertion (review 2026-07-25): the follow-up line is pulled ONLY by the
+    # heading rule (heading_followup). With the old dead regexes it is absent — so this line
+    # is what proves the fix, not the heading's presence (which interval sampling can hit by luck).
+    assert "first line under the deep heading" in out
 
 
 def test_skim_files_returns_line_numbered_excerpts_and_gaps(tmp_path: Path) -> None:

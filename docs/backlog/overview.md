@@ -9,11 +9,36 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 15
-- Proposed: 18
-- Completed: 23
+- Planned: 17
+- Proposed: 24
+- Completed: 30
 - Deprecated: 3
 - Recurrent: 0
+
+(2026-07-25 hygiene pass — counts reconciled to on-disk reality (prior overview drifted:
+said 15/26/24, disk had 17/22/30). Tools-audit items now in their true lifecycle state:
+COMPLETED (implemented + tested + completion reports, moved to completed/): `0827` skim_files
+dead regexes, `0828` read_file byte-true continuation, `0829` edit_file exact-match-first
+escapes, `0831` search_files context-lines + honest params, `0834` analyze_media .abstractignore,
+`0835` consistency/robustness polish (items A/B/C; item D deferred in-report). `0826` vision
+config-migration remainder implemented in-tree but STAYS proposed (its deferred cross-package
+tier — GGUF/HF/PDF/CLI toggles — is still open). `0830` (execute_command policy) and `0832`
+(read boundaries) REFINED/REFRAMED and STAY proposed — operator remains unconvinced, awaiting
+direction. `0833` (atomic writes) stays proposed (not implemented). Added `0836` batch/multi-file
+edit (research-backed SOTA-parity study, not a commitment). KNOWN filename-compliance debt
+(pre-existing, NOT fixed this pass — renaming legacy audit records risks breaking references):
+6 date-prefixed `proposed/YYYY-MM-DD_*.md` and ~15 date-prefixed `completed/YYYY-MM-DD_*.md`
+plus `completed/788-response.md` violate the `NNNN_slug.md` rule — flagged for a dedicated
+rename pass.)
+
+(2026-07-25: tools quality audit added 9 proposed items `0827`–`0835` — per-tool
+findings verified first-hand across a correctness pass and a SOTA/design pass over all
+27 builtin tools. Highlights: `0827` skim_files dead structure regexes, `0828` read_file
+byte-true continuation, `0829` edit_file exact-match-first escapes, `0830` execute_command
+program-name denial + require_confirmation truthfulness. Full report:
+`untracked/tools_quality_audit_2026-07-25.md`. Also this session: gpt-5.6 family +
+Anthropic gen-5 (opus-5/opus-4-7/sonnet-5/fable-5/mythos-5) added to the model-capabilities
+registry, and analyze_media's vision-fallback hint corrected — shipped in-tree, see CHANGELOG.)
 
 (2026-07-14: added `proposed/0821_gguf_control_plane_embedded_chatml_template_detection.md`
 — the Ornith-GGUF-→-keyed optimization gap found during the live prompt-cache

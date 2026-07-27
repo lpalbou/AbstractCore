@@ -458,20 +458,20 @@ def resolve_model_alias(model_name: str, models: Dict[str, Any]) -> str:
     return fallback
 
 
-def get_model_capabilities(model_name: str) -> Dict[str, Any]:
-    """
-    Get model capabilities from JSON configuration with alias support.
+def lookup_registry_model_capabilities(model_name: str) -> Optional[Dict[str, Any]]:
+    """Return registry-resolved capabilities for a model, or None when unresolved.
 
-    Args:
-        model_name: Full model name (can be an alias)
-
-    Returns:
-        Model capabilities dictionary
+    Resolution covers aliases, exact matches, and the partial-match ladder — the same
+    steps `get_model_capabilities` runs — but WITHOUT the architecture-default
+    fallback and without the unknown-model warning. Discovery surfaces (e.g. the
+    server's model listing) use this to distinguish "the registry knows this model"
+    from "defaults were guessed": absent knowledge must be presented as absent, not
+    as a fabricated capability row.
     """
     _load_json_assets()
 
     if not _model_capabilities:
-        return {}
+        return None
 
     models = _model_capabilities.get("models", {})
 
@@ -551,6 +551,28 @@ def get_model_capabilities(model_name: str) -> Dict[str, Any]:
                         )
             logger.debug(f"Using capabilities from '{best_key}' for '{model_name}' (partial match: {best_mode})")
             return result
+
+    return None
+
+
+def get_model_capabilities(model_name: str) -> Dict[str, Any]:
+    """
+    Get model capabilities from JSON configuration with alias support.
+
+    Args:
+        model_name: Full model name (can be an alias)
+
+    Returns:
+        Model capabilities dictionary
+    """
+    _load_json_assets()
+
+    if not _model_capabilities:
+        return {}
+
+    resolved = lookup_registry_model_capabilities(model_name)
+    if resolved is not None:
+        return resolved
 
     # Step 4: Fallback to default capabilities based on architecture
     architecture = detect_architecture(model_name)

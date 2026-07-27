@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 990 540" width="990" height="540" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace" font-size="15" xml:space="preserve">
+<rect width="990" height="540" fill="#000000"/>
+<g shape-rendering="crispEdges">
+<rect x="0" y="0" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="18" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="36" width="990" height="18" fill="#16213e"/>
+<rect x="0" y="54" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="72" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="90" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="108" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="126" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="144" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="162" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="180" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="198" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="216" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="234" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="252" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="270" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="288" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="306" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="324" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="342" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="360" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="378" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="396" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="414" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="432" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="450" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="468" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="486" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="504" width="990" height="18" fill="#1a1a2e"/>
+<rect x="0" y="522" width="963" height="18" fill="#1a1a2e"/>
+<rect x="972" y="522" width="18" height="18" fill="#1a1a2e"/>
+</g>
+<text x="0" y="14" textLength="198" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700"> AbstractCore Console </text>
+<text x="198" y="14" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#e74c3c">● </text>
+<text x="216" y="14" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">CORRUPT </text>
+<text x="288" y="14" textLength="414" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">· browse · /tmp/console-test/abstractcore.json</text>
+<text x="9" y="32" textLength="90" lengthAdjust="spacingAndGlyphs" fill="#eeeeee" font-weight="700">1 Overview</text>
+<text x="99" y="32" textLength="891" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">   2 Model   3 Providers   4 Routes   5 Media   6 Embeddings   7 Server   8 Review                 </text>
+<text x="0" y="50" textLength="108" lengthAdjust="spacingAndGlyphs" fill="#e94560">▔▔▔▔▔▔▔▔▔▔▔▔</text>
+<text x="0" y="68" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">┌</text>
+<text x="9" y="68" textLength="153" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> Config identity </text>
+<text x="162" y="68" textLength="828" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">───────────────────────────────────────────────────────────────────────────────────────────┐</text>
+<text x="0" y="86" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="9" y="86" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#666666"> file  </text>
+<text x="72" y="86" textLength="315" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">/tmp/console-test/abstractcore.json</text>
+<text x="387" y="86" textLength="306" lengthAdjust="spacingAndGlyphs" fill="#666666">  (default path)  · read 12:00:00Z</text>
+<text x="981" y="86" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="0" y="104" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="9" y="104" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#666666"> cli   </text>
+<text x="72" y="104" textLength="81" lengthAdjust="spacingAndGlyphs" fill="#f39c12" font-weight="700">not found</text>
+<text x="153" y="104" textLength="675" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">  — file mirror works; derived views and writes need it ($ABSTRACTCORE_BIN)</text>
+<text x="981" y="104" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="0" y="122" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="9" y="122" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#666666"> agree </text>
+<text x="72" y="122" textLength="18" lengthAdjust="spacingAndGlyphs" fill="#27ae60" font-weight="700">✓ </text>
+<text x="90" y="122" textLength="531" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">the abstractcore CLI reads the same file this console shows</text>
+<text x="981" y="122" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">│</text>
+<text x="0" y="140" textLength="990" lengthAdjust="spacingAndGlyphs" fill="#3c3c4d">└────────────────────────────────────────────────────────────────────────────────────────────────────────────┘</text>
+<text x="0" y="158" textLength="621" lengthAdjust="spacingAndGlyphs" fill="#e74c3c" font-weight="700">✗ config file corrupt — this console will NOT write until it is fixed</text>
+<text x="0" y="176" textLength="990" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">  parse error: expected `,` at line 3 column 7                                                                </text>
+<text x="0" y="194" textLength="693" lengthAdjust="spacingAndGlyphs" fill="#f39c12">  (a Python-side save from this state would reset it to defaults — fix first)</text>
+<text x="0" y="212" textLength="414" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">  recovery artifacts beside it (newest first):</text>
+<text x="0" y="230" textLength="990" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">    abstractcore.json.corrupt-20260725-080000.bak                                                             </text>
+<text x="0" y="248" textLength="387" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa">  compare/restore one by hand, then press r</text>
+<text x="0" y="536" textLength="27" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">1-8</text>
+<text x="27" y="536" textLength="72" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> screens</text>
+<text x="99" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="144" y="536" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">q</text>
+<text x="153" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> quit</text>
+<text x="198" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="243" y="536" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">w</text>
+<text x="252" y="536" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> wizard</text>
+<text x="315" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="360" y="536" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">r</text>
+<text x="369" y="536" textLength="63" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> reload</text>
+<text x="432" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="477" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">Enter</text>
+<text x="522" y="536" textLength="117" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> open section</text>
+<text x="639" y="536" textLength="45" lengthAdjust="spacingAndGlyphs" fill="#666666">  ·  </text>
+<text x="684" y="536" textLength="9" lengthAdjust="spacingAndGlyphs" fill="#e94560" font-weight="700">g</text>
+<text x="693" y="536" textLength="171" lengthAdjust="spacingAndGlyphs" fill="#aaaaaa"> test default route</text>
+<text x="864" y="536" textLength="126" lengthAdjust="spacingAndGlyphs" fill="#eeeeee">           ☾  </text>
+</svg>

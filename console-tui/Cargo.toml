@@ -1,0 +1,40 @@
+[package]
+name = "abstractcore-console"
+version = "0.1.0"
+edition = "2021"
+# MSRV floor comes from the engine (abstracttui 0.2.22 declares 1.87).
+rust-version = "1.87"
+license = "MIT"
+description = "An intuitive terminal console to configure AbstractCore — default models, providers & API keys, capability routes (vision/audio/video/embeddings), server and logging — rendered by AbstractTUI."
+publish = false
+
+[lib]
+name = "abstractcore_console"
+path = "src/lib.rs"
+
+[[bin]]
+name = "abstractcore-console"
+path = "src/main.rs"
+
+[dependencies]
+# The rendering engine — published crate, exactly what any user installs.
+# Born at 0.2.22: PageHost (screens), Disclosure (config groups),
+# Select/Combobox (pickers — modal popup anchoring fixed 0.2.20),
+# masked TextInput (API keys), ChoicePrompt (decision gates), Drawer
+# (detail inspector), ThemeSwitcher (0.2.21), Block::on_close (0.2.22),
+# Screenshot (SVG test artifacts).
+abstracttui = "0.2.22"
+# JSON: the config file IS JSON, and `abstractcore config ... --json`
+# emits the derived views. Battle-tested parsing; unknown keys must be
+# PRESERVED on rewrite (serde_json::Value round-trip, never a typed
+# schema snapshot — inventory fact #1).
+serde_json = "1"
+# NOTE (M1 review P3-6): ureq (planned for M3's native provider health
+# probes + optional server enrichment) is deliberately ABSENT until the
+# milestone that calls it — no dead compile weight, no idle audit
+# surface. Re-add: ureq 2.12, default-features = false, tls+gzip.
+# Secret fingerprints: api_keys.* / server.auth_token render as
+# sha256[:8] — the SAME convention the Python side uses
+# (provider_profiles.py:120-124), so both surfaces show one fingerprint
+# for one key. Values never leave config.rs unredacted.
+sha2 = "0.10"

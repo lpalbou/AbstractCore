@@ -179,14 +179,8 @@ class OpenAICompatibleProvider(BaseProvider):
         self.api_key = self._resolve_api_key(api_key)
 
         # #[WARNING:TIMEOUT]
-        # Get timeout value - None means unlimited timeout
-        timeout_value = getattr(self, '_timeout', None)
-        # Validate timeout if provided (None is allowed for unlimited)
-        if timeout_value is not None and timeout_value <= 0:
-            timeout_value = None  # Invalid timeout becomes unlimited
-
         try:
-            self.client = httpx.Client(timeout=timeout_value)
+            self.client = httpx.Client(timeout=self._httpx_timeout())
         except Exception as e:
             # Fallback with default timeout if client creation fails
             try:
@@ -210,14 +204,28 @@ class OpenAICompatibleProvider(BaseProvider):
         if self._validate_model_on_init:
             self._validate_model()
 
+    def _httpx_timeout(self):
+        """Build the httpx timeout: total budget on connect/write/pool, and a
+        distinct READ-IDLE bound on read (face 2, runtime c5041).
+
+        httpx's `read` timeout is the max seconds to wait for the NEXT chunk of
+        the response body — exactly the no-progress bound. Passing a single
+        float set read == the 7200s total, so a stalled stream held a worker
+        for 2h; here `read` is `_read_idle_timeout` when set (a stalled stream
+        aborts at the socket), else falls back to the total (byte-unchanged for
+        consumers that did not opt in). None total stays unlimited.
+        """
+        from ._http import build_read_idle_timeout
+
+        return build_read_idle_timeout(
+            getattr(self, "_timeout", None), getattr(self, "_read_idle_timeout", None)
+        )
+
     @property
     def async_client(self):
         """Lazy-load async HTTP client for native async operations."""
         if self._async_client is None:
-            timeout_value = getattr(self, '_timeout', None)
-            if timeout_value is not None and timeout_value <= 0:
-                timeout_value = None
-            self._async_client = httpx.AsyncClient(timeout=timeout_value)
+            self._async_client = httpx.AsyncClient(timeout=self._httpx_timeout())
         return self._async_client
 
     def _get_headers(self) -> Dict[str, str]:
@@ -1259,17 +1267,22 @@ class OpenAICompatibleProvider(BaseProvider):
                                 if not isinstance(delta, dict):
                                     delta = {}
                                 content = delta.get("content", "")
+                                # Streamed values are DELTAS: extract verbatim (strip=False)
+                                # and publish under `reasoning_delta`; the base layer joins
+                                # deltas into the complete `metadata["reasoning"]` on the
+                                # stream's trailing chunk.
                                 reasoning = extract_reasoning_from_message(
                                     delta,
                                     architecture_format=self.architecture_config,
                                     model_capabilities=self.model_capabilities,
+                                    strip=False,
                                 )
                                 tool_calls = delta.get("tool_calls") or choice.get("tool_calls")
                                 finish_reason = choice.get("finish_reason")
 
                                 metadata = {}
                                 if isinstance(reasoning, str) and reasoning.strip():
-                                    metadata["reasoning"] = reasoning
+                                    metadata["reasoning_delta"] = reasoning
 
                                 yielded_any = True
                                 yield GenerateResponse(
@@ -1642,17 +1655,22 @@ class OpenAICompatibleProvider(BaseProvider):
                                 if not isinstance(delta, dict):
                                     delta = {}
                                 content = delta.get("content", "")
+                                # Streamed values are DELTAS: extract verbatim (strip=False)
+                                # and publish under `reasoning_delta`; the base layer joins
+                                # deltas into the complete `metadata["reasoning"]` on the
+                                # stream's trailing chunk.
                                 reasoning = extract_reasoning_from_message(
                                     delta,
                                     architecture_format=self.architecture_config,
                                     model_capabilities=self.model_capabilities,
+                                    strip=False,
                                 )
                                 tool_calls = delta.get("tool_calls") or choice.get("tool_calls")
                                 finish_reason = choice.get("finish_reason")
 
                                 metadata = {}
                                 if isinstance(reasoning, str) and reasoning.strip():
-                                    metadata["reasoning"] = reasoning
+                                    metadata["reasoning_delta"] = reasoning
 
                                 yielded_any = True
                                 yield GenerateResponse(
@@ -1707,16 +1725,10 @@ class OpenAICompatibleProvider(BaseProvider):
         """Update HTTP client timeout when timeout is changed."""
         if hasattr(self, 'client') and self.client is not None:
             try:
-                # Create new client with updated timeout
+                # Create new client with updated timeout (total budget + the
+                # read-idle bound, face 2).
                 self.client.close()
-
-                # Get timeout value - None means unlimited timeout
-                timeout_value = getattr(self, '_timeout', None)
-                # Validate timeout if provided (None is allowed for unlimited)
-                if timeout_value is not None and timeout_value <= 0:
-                    timeout_value = None  # Invalid timeout becomes unlimited
-
-                self.client = httpx.Client(timeout=timeout_value)
+                self.client = httpx.Client(timeout=self._httpx_timeout())
             except Exception as e:
                 # Log error but don't fail - timeout update is not critical
                 if hasattr(self, 'logger'):

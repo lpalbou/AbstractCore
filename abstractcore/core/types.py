@@ -123,10 +123,16 @@ class GenerateResponse:
         AbstractCore's canonical location is `metadata["reasoning"]`, but some providers
         (or upstream OpenAI-compatible servers) may surface alternative keys such as
         `reasoning_content` or `thinking`. This accessor treats them as aliases.
+
+        Streaming note: on intermediate stream chunks the value may be an INCREMENTAL
+        delta (`metadata["reasoning_delta"]`); the complete reasoning is carried by
+        `metadata["reasoning"]` on the stream's trailing chunk and on non-streamed
+        responses. Consumers persisting reasoning should read the final aggregate,
+        not concatenate per-chunk values from this accessor.
         """
         if not isinstance(self.metadata, dict) or not self.metadata:
             return None
-        for key in ("reasoning", "reasoning_content", "thinking"):
+        for key in ("reasoning", "reasoning_content", "thinking", "reasoning_delta"):
             v = self.metadata.get(key)
             if isinstance(v, str) and v.strip():
                 # Return verbatim value (do not strip), only check emptiness via .strip().

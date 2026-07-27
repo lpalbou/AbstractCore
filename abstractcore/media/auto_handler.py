@@ -543,7 +543,11 @@ class AutoMediaHandler(BaseMediaHandler):
         if media_type == MediaType.IMAGE:
             if not self._available_processors.get('image', False):
                 return False
-            image_formats = {'jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp'}
+            # Both TIFF spellings — `tif` was missing here while EXTENSION_TO_MEDIA_TYPE
+            # (types.py) and analyze_media both accept it, so a bare `.tif` was classified
+            # as an image everywhere except this support check (code-tui raster-set align,
+            # 2026-07-25).
+            image_formats = {'jpg', 'jpeg', 'png', 'gif', 'bmp', 'tif', 'tiff', 'webp'}
             return format_ext.lower() in image_formats
 
         elif media_type == MediaType.TEXT:

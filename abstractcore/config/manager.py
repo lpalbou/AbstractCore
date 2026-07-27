@@ -23,6 +23,7 @@ from .capability_defaults import (
 from .provider_profiles import (
     ProviderProfile,
     ProviderProfilesConfig,
+    api_key_fingerprint,
     normalize_base_url,
     normalize_profile_id,
     normalize_provider_family,
@@ -347,6 +348,10 @@ class ConfigurationManager:
                 self.config_dir = Path(config_dir or env_config_dir or (Path.home() / ".abstractcore" / "config")).expanduser()
                 self.config_file = self.config_dir / "abstractcore.json"
         self._apply_env = bool(apply_env)
+        # Warn-once memo for shadowed-key warnings (dm#201): initialized BEFORE
+        # _load_config/_apply_api_keys_to_env run (init-order rule: config-
+        # restored state initializes before the load call that consumes it).
+        self._shadowed_key_warned: set = set()
         self.config = self._load_config()
         self._apply_smart_defaults()
         if self._apply_env:
@@ -398,16 +403,21 @@ class ConfigurationManager:
             return
 
     def _apply_api_keys_to_env(self) -> None:
-        """Inject config-persisted API keys into os.environ (if not already set).
+        """Reconcile config-persisted API keys with os.environ.
 
         Providers read API keys from environment variables (e.g. OPENAI_API_KEY).
         This bridges the gap: keys saved via ``abstractcore --set-api-key`` are
         written to the config JSON but must appear in os.environ for providers
         to find them.
 
-        Rule: environment variables **always win** — we never overwrite a key
-        that is already set in the environment.  #FALLBACK: config-persisted
-        keys are injected only when the env var is absent.
+        Precedence (operator ruling dm#201, 2026-07-22): cloud API keys are the
+        RULED exception to behavior-env elimination — they stay env-INHERITABLE
+        by default (they exist for other apps too; no migration forced). BUT a
+        key redefined in the config ALWAYS supersedes the env var: a rotated
+        console/wizard key must apply to all of this process's traffic, not
+        just the lanes that happened to lack an export (the key-precedence
+        inversion conflict, env-conflict report angle A #3). A shadowed env
+        key is warned once with fingerprints (never key material).
         """
         _KEY_MAP = {
             "openai": "OPENAI_API_KEY",
@@ -420,10 +430,32 @@ class ConfigurationManager:
         }
         try:
             api_keys = self.config.api_keys
+            applied_this_pass: set = set()
             for attr, env_var in _KEY_MAP.items():
                 key = getattr(api_keys, attr, None)
-                if key and not os.environ.get(env_var):
-                    os.environ[env_var] = key
+                if not key:
+                    continue  # env-inheritable by default: nothing configured, env stands
+                if env_var in applied_this_pass:
+                    # Two config fields share one env var (openai /
+                    # openai_compatible → OPENAI_API_KEY): first field wins,
+                    # matching the historical injection order.
+                    continue
+                env_value = os.environ.get(env_var)
+                if env_value and env_value != key:
+                    shadow_state = (env_var, api_key_fingerprint(key), api_key_fingerprint(env_value))
+                    if shadow_state not in self._shadowed_key_warned:
+                        self._shadowed_key_warned.add(shadow_state)
+                        import logging
+
+                        logging.getLogger(__name__).warning(
+                            f"#FALLBACK {env_var} from the environment (fingerprint "
+                            f"{api_key_fingerprint(env_value)}) is SHADOWED by the key configured via "
+                            f"`abstractcore --config` (fingerprint {api_key_fingerprint(key)}) — the "
+                            f"configured key applies (operator ruling dm#201). Unset the env var or "
+                            f"clear the configured key to silence this."
+                        )
+                os.environ[env_var] = key
+                applied_this_pass.add(env_var)
         except Exception:
             # Never fail config initialization.
             pass

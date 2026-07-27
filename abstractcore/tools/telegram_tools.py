@@ -137,6 +137,16 @@ def _telegram_botapi_message_id(body: Any) -> Optional[int]:
 @tool(
     name="send_telegram_message",
     description="Send a Telegram message to a chat_id. Uses TDLib (Secret Chats) when configured; falls back to Bot API when enabled.",
+    when_to_use="Use to deliver a text message to a known Telegram chat_id. Long messages are split into 4096-char chunks; set parse_mode='MarkdownV2'/'HTML' for formatting (falls back to plain text on entity errors).",
+    examples=[
+        {
+            "description": "Send a plain-text notification to a chat",
+            "arguments": {"chat_id": 123456789, "text": "Build finished: all tests green."},
+        },
+    ],
+    # "comms"/"write": outbound send — matches the inventory's comms_send +
+    # remote_write_capable facts; consumers keying on side-effect tags see it.
+    tags=["comms", "telegram", "write"],
 )
 def send_telegram_message(
     *,
@@ -315,6 +325,14 @@ def send_telegram_message(
 @tool(
     name="send_telegram_artifact",
     description="Send an artifact (stored under <artifact_store>/artifacts/<artifact_id>.bin) to a Telegram chat_id as a document/photo.",
+    when_to_use="Use to deliver a previously stored artifact (by artifact_id) to a Telegram chat as a document, or as_photo=True for an image. Optional caption and filename override the defaults.",
+    examples=[
+        {
+            "description": "Send a generated report file to a chat as a document",
+            "arguments": {"chat_id": 123456789, "artifact_id": "report-2026", "filename": "report.pdf"},
+        },
+    ],
+    tags=["comms", "telegram", "write"],
 )
 def send_telegram_artifact(
     *,

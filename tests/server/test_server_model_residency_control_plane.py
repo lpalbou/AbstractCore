@@ -4,6 +4,21 @@ import importlib
 from typing import Any, Dict, List
 
 from fastapi.testclient import TestClient
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _host_config_isolation(monkeypatch):
+    """Keep this suite hermetic: the vision lanes are config-first (dm#177),
+    so a real output.image/video route on the HOST machine would legitimately
+    steer backend selection under these tests. Pin the not-configured shape;
+    the config-wins precedence has its own suite (test_vision_config_precedence)."""
+    from abstractcore.server import vision_endpoints as _ve
+
+    monkeypatch.setattr(_ve, "_vision_route_defaults", lambda modality="image", task=None: {})
+    _ve._VISION_ROUTE_WARNED.clear()
+
+
 
 
 def test_acore_models_routes_image_residency_through_server_vision_cache(monkeypatch) -> None:
@@ -342,8 +357,15 @@ def test_server_vision_residency_helpers_share_backend_cache(monkeypatch) -> Non
     backend = _FakeVisionBackend()
     key = ("diffusers", "runwayml/stable-diffusion-v1-5", "auto", None, False, True)
 
-    def fake_resolve(request_model: str | None, *, base_url: str | None = None, api_key: str | None = None):
-        _ = request_model, base_url, api_key
+    def fake_resolve(
+        request_model: str | None,
+        *,
+        modality: str = "image",
+        task: str | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+    ):
+        _ = request_model, modality, task, base_url, api_key
         cached, call_lock = vision_endpoints._get_or_create_cached_backend(key, lambda: backend)
         return cached, call_lock, RuntimeError, object, object
 
@@ -382,8 +404,15 @@ def test_server_vision_residency_accepts_video_task_filters(monkeypatch) -> None
     backend = _FakeVisionBackend()
     key = ("mlx-gen", "Wan-AI/Wan2.2-TI2V-5B-Diffusers", None, None, False)
 
-    def fake_resolve(request_model: str | None, *, base_url: str | None = None, api_key: str | None = None):
-        _ = request_model, base_url, api_key
+    def fake_resolve(
+        request_model: str | None,
+        *,
+        modality: str = "image",
+        task: str | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+    ):
+        _ = request_model, modality, task, base_url, api_key
         cached, call_lock = vision_endpoints._get_or_create_cached_backend(key, lambda: backend)
         return cached, call_lock, RuntimeError, object, object
 
@@ -423,8 +452,15 @@ def test_server_vision_residency_eviction_clears_records_and_unloads(monkeypatch
     backends: Dict[str, _FakeVisionBackend] = {}
     created: List[_FakeVisionBackend] = []
 
-    def fake_resolve(request_model: str | None, *, base_url: str | None = None, api_key: str | None = None):
-        _ = base_url, api_key
+    def fake_resolve(
+        request_model: str | None,
+        *,
+        modality: str = "image",
+        task: str | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+    ):
+        _ = modality, task, base_url, api_key
         model_key = str(request_model or "default")
         backend = backends.get(model_key)
         if backend is None:

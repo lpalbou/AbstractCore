@@ -594,6 +594,22 @@ class BaseProvider(AbstractCoreInterface, ABC):
         self._timeout = timeout_value  # None = unlimited HTTP requests
         self._tool_timeout = tool_timeout_value  # None = unlimited tool execution
 
+        # Read-idle (no-progress) timeout — the max seconds to wait for the
+        # NEXT chunk of a response body, distinct from the total budget above
+        # (runtime c5041 / face 2). A stalled STREAM aborts at the socket here
+        # instead of pinning a worker up to the full `timeout` (the 40-minute
+        # wedge class: DEFAULT_LLM_TIMEOUT_S=7200 as the httpx read timeout is
+        # present-but-useless). None = no read-idle bound (current behavior),
+        # so every consumer that does not opt in is byte-unchanged; the runtime
+        # factory sets it per-lane. Non-positive → None.
+        read_idle_value = kwargs.get("read_idle_timeout_s", None) if "read_idle_timeout_s" in kwargs else None
+        try:
+            if isinstance(read_idle_value, (int, float)) and float(read_idle_value) <= 0:
+                read_idle_value = None
+        except Exception:
+            read_idle_value = None
+        self._read_idle_timeout = read_idle_value  # None = no read-idle bound
+
         # Setup tool execution mode
         # execute_tools: True = AbstractCore executes tools (legacy mode)
         #                False = Pass-through mode (default - for API server / agentic CLI)
@@ -1056,7 +1072,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if s in {"off", "false", "no", "none"}:
                 return False, None
             # Normalize common separator variants for user ergonomics.
-            s_norm = re.sub(r"[\\s\\-]+", "_", s).strip("_")
+            s_norm = re.sub(r"[\s\-]+", "_", s).strip("_")
             if s_norm in {"extra_high", "x_high"}:
                 return True, "xhigh"
             if s_norm in {"minimal", "low", "medium", "high", "xhigh"}:
@@ -1357,9 +1373,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 line = f"Reasoning: {target_level}"
                 if isinstance(system_prompt, str) and system_prompt.strip():
                     # Replace any existing Reasoning line; otherwise prepend.
-                    if re.search(r"(?mi)^\\s*Reasoning\\s*:\\s*(low|medium|high)\\s*$", system_prompt):
+                    if re.search(r"(?mi)^\s*Reasoning\s*:\s*(low|medium|high)\s*$", system_prompt):
                         system_prompt = re.sub(
-                            r"(?mi)^\\s*Reasoning\\s*:\\s*(low|medium|high)\\s*$",
+                            r"(?mi)^\s*Reasoning\s*:\s*(low|medium|high)\s*$",
                             line,
                             system_prompt,
                             count=1,
@@ -1419,11 +1435,19 @@ class BaseProvider(AbstractCoreInterface, ABC):
         thinking_surfaces = self._thinking_control_surfaces()
         provider_id = str(getattr(self, "provider", "") or "").strip().lower()
         is_hf_gguf = provider_id == "huggingface" and str(getattr(self, "model_type", "") or "").strip().lower() == "gguf"
+        # LM Studio: apply the prefill hard switch even when the provider hook already
+        # claimed the disable via `chat_template_kwargs.enable_thinking` — LM Studio's
+        # OpenAI-compatible endpoint does not document that field and IGNORES it for
+        # some model formats (live-verified: qwen3-0.6b GGUF kept reasoning while the
+        # kwarg-only path reported thinking_effective=off). Both artifacts express the
+        # same off state, so sending both is consistent; skipping the prefill turned
+        # the report dishonest. HF-GGUF keeps the handled gate: its renderers place
+        # the marker themselves and a second copy would duplicate it.
         if (
             enabled is False
             and (provider_id == "lmstudio" or is_hf_gguf)
             and thinking_surfaces.assistant_prefill_disable
-            and not provider_handling.handled_enable_disable
+            and (provider_id == "lmstudio" or not provider_handling.handled_enable_disable)
         ):
             marker = thinking_surfaces.assistant_prefill_disable
             new_messages: List[Dict[str, str]] = []
@@ -3415,6 +3439,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         return provider_s, route_kwargs, None
                     resolver = getattr(self, "resolve_provider_endpoint_profile", None)
                     if not callable(resolver):
+                        # Instance attachment misses when this provider was
+                        # constructed mid-tool-execution; the host-scoped
+                        # contextvar (endpoint_context) is the same resolver
+                        # delivered on the ambient channel.
+                        from .endpoint_context import current_provider_endpoint_profile_resolver
+
+                        resolver = current_provider_endpoint_profile_resolver()
+                    if not callable(resolver):
                         raise UnsupportedFeatureError(
                             f"input.video fallback uses Gateway endpoint profile {provider_s!r}, "
                             "but no endpoint-profile resolver is attached to this Core provider."
@@ -3471,6 +3503,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     try:
                         fallback_llm = create_llm(routed_provider, model=route_model, **route_kwargs)
                         resolver = getattr(self, "resolve_provider_endpoint_profile", None)
+                        if not callable(resolver):
+                            # Propagate the ambient (host-scoped contextvar)
+                            # resolver when no instance-level one exists, so
+                            # the fallback LLM outlives the context with the
+                            # same resolution reach as its creator.
+                            from .endpoint_context import current_provider_endpoint_profile_resolver
+
+                            resolver = current_provider_endpoint_profile_resolver()
                         if callable(resolver):
                             try:
                                 setattr(fallback_llm, "resolve_provider_endpoint_profile", resolver)
@@ -4087,10 +4127,27 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         )
                         last_chunk: Optional[GenerateResponse] = None
                         last_seen_usage: Optional[Dict[str, Any]] = None
+                        reasoning_delta_parts: List[str] = []
                         for processed_chunk in processor.process_stream(response, converted_tools):
                             last_chunk = processed_chunk
                             if isinstance(processed_chunk.usage, dict) and processed_chunk.usage:
                                 last_seen_usage = processed_chunk.usage
+
+                            # Channel-separated reasoning arrives as per-chunk deltas
+                            # (`metadata["reasoning_delta"]`: Ollama `thinking`, LM Studio native
+                            # `reasoning.delta`, OpenAI-compatible `reasoning_content`, Anthropic
+                            # `thinking_delta`). Accumulate them so the stream can end with ONE
+                            # complete `metadata["reasoning"]` on the trailing chunk — consumers
+                            # that persist reasoning (runtime rehydration) read the final
+                            # aggregate, not the deltas. A bare `reasoning` key on an
+                            # intermediate chunk is tolerated as a legacy delta spelling.
+                            chunk_meta = processed_chunk.metadata if isinstance(processed_chunk.metadata, dict) else None
+                            if chunk_meta:
+                                delta_r = chunk_meta.get("reasoning_delta")
+                                if not (isinstance(delta_r, str) and delta_r):
+                                    delta_r = chunk_meta.get("reasoning")
+                                if isinstance(delta_r, str) and delta_r:
+                                    reasoning_delta_parts.append(delta_r)
 
                             # TTFT: measure "time to first token" from the provider stream,
                             # independent of downstream post-processing (wrapper/thinking stripping).
@@ -4132,29 +4189,41 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             self._annotate_output_truncation(processed_chunk)
                             yield processed_chunk
 
+                        tail: Optional[str] = None
+                        stripper_reasoning: Optional[str] = None
                         if thinking_stripper is not None:
-                            tail, reasoning = thinking_stripper.finalize()
-                            reasoning_text = reasoning.strip() if isinstance(reasoning, str) and reasoning.strip() else None
+                            tail, stripper_reasoning = thinking_stripper.finalize()
 
-                            if (isinstance(tail, str) and tail) or reasoning_text:
-                                meta: Dict[str, Any] = {}
-                                if thinking_meta and isinstance(thinking_meta, dict):
-                                    meta.update(thinking_meta)
-                                if reasoning_text:
-                                    meta["reasoning"] = reasoning_text
-                                meta["_resolved_generate_route"] = resolved_generate_route_summary
+                        # Complete reasoning for the trailing chunk: inline <think> capture
+                        # (stripper) and/or accumulated channel deltas. In practice a model
+                        # produces one or the other; join defensively when both exist.
+                        channel_reasoning = "".join(reasoning_delta_parts) if reasoning_delta_parts else ""
+                        reasoning_text_parts = [
+                            p.strip()
+                            for p in (stripper_reasoning, channel_reasoning)
+                            if isinstance(p, str) and p.strip()
+                        ]
+                        reasoning_text = "\n\n".join(reasoning_text_parts) if reasoning_text_parts else None
 
-                                # The LAST chunk of a stream is where consumers read the
-                                # accounting (OpenAI convention). This trailing finalize
-                                # chunk must re-carry the usage the provider already
-                                # reported, or the stream ends usage=None (live find:
-                                # LM Studio reported usage, the stripper's tail buried it).
-                                yield GenerateResponse(
-                                    content=tail if isinstance(tail, str) else "",
-                                    model=self.model,
-                                    metadata=meta or None,
-                                    usage=last_seen_usage,
-                                )
+                        if (isinstance(tail, str) and tail) or reasoning_text:
+                            meta: Dict[str, Any] = {}
+                            if thinking_meta and isinstance(thinking_meta, dict):
+                                meta.update(thinking_meta)
+                            if reasoning_text:
+                                meta["reasoning"] = reasoning_text
+                            meta["_resolved_generate_route"] = resolved_generate_route_summary
+
+                            # The LAST chunk of a stream is where consumers read the
+                            # accounting (OpenAI convention). This trailing finalize
+                            # chunk must re-carry the usage the provider already
+                            # reported, or the stream ends usage=None (live find:
+                            # LM Studio reported usage, the stripper's tail buried it).
+                            yield GenerateResponse(
+                                content=tail if isinstance(tail, str) else "",
+                                model=self.model,
+                                metadata=meta or None,
+                                usage=last_seen_usage,
+                            )
 
                         # Track generation after streaming completes
                         self._track_generation(prompt, None, start_time, success=True, stream=True)

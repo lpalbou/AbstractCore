@@ -592,8 +592,9 @@ class LMStudioProvider(OpenAICompatibleProvider):
 
         LM Studio emits typed events (`reasoning.delta`, `message.delta`, `chat.end`, ...)
         so reasoning arrives pre-separated: message deltas map to chunk `content`, reasoning
-        deltas to chunk `metadata["reasoning"]`, and `chat.end` carries the aggregated stats
-        (incl. `reasoning_output_tokens`).
+        deltas to chunk `metadata["reasoning_delta"]` (the base layer aggregates them into
+        `metadata["reasoning"]` on the trailing chunk), and `chat.end` carries the aggregated
+        stats (incl. `reasoning_output_tokens`).
 
         The HTTP stream is opened (and its status checked) eagerly so connection/validation
         failures surface to the caller before any chunk is yielded — the routing gate can
@@ -642,10 +643,12 @@ class LMStudioProvider(OpenAICompatibleProvider):
                     elif event_type == "reasoning.delta":
                         delta = event.get("content")
                         if isinstance(delta, str) and delta:
+                            # Incremental reasoning delta; the base layer aggregates these
+                            # into the complete `metadata["reasoning"]` on the trailing chunk.
                             yield GenerateResponse(
                                 content="",
                                 model=self.model,
-                                metadata={"reasoning": delta},
+                                metadata={"reasoning_delta": delta},
                                 raw_response=event,
                             )
                     elif event_type == "error":

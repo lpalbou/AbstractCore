@@ -267,16 +267,173 @@ class ProviderRegistry:
         self._logger.debug(f"Registered provider: {provider_info.name}")
 
     def _resolve_endpoint_profile(self, provider_name: str):
-        """Resolve an explicit endpoint profile id, if provider_name is endpoint:<id>."""
+        """Resolve an explicit endpoint profile id, if provider_name is endpoint:<id>.
+
+        Resolution order (2026-07-26 cross-package fix): the operator's LOCAL
+        config always wins (zero behavior change for locally-configured
+        profiles); only when the local config misses do we consult the
+        host-injected contextvar resolver (see ``endpoint_context``) — the
+        channel a host (e.g. AbstractGateway via AbstractRuntime's
+        tool-dispatch site) opens around tool execution so a NESTED
+        ``create_llm("endpoint:<id>", ...)`` can resolve profiles that live
+        in the host's store, not in ``~/.abstractcore``.
+        """
         raw = str(provider_name or "").strip()
         if not raw.lower().startswith("endpoint:"):
             return None
         try:
             from ..config import get_config_manager
 
-            return get_config_manager().resolve_provider_profile(raw)
+            profile = get_config_manager().resolve_provider_profile(raw)
+        except Exception:
+            profile = None
+        if profile is not None:
+            return profile
+        return self._endpoint_profile_from_context_resolver(raw)
+
+    @staticmethod
+    def _endpoint_profile_from_context_resolver(spec: str):
+        """Resolve ``endpoint:<id>`` through the host-injected contextvar resolver.
+
+        Returns a normalized ``ProviderProfile`` (marked as host-sourced so the
+        create path can merge its transport kwargs and attach the resolver to
+        the constructed instance), or ``None`` on any miss. A payload the
+        resolver DID return but Core cannot use is a labeled ``#FALLBACK``
+        warning, never a crash — and warnings/errors must never carry secret
+        values (api_key is scrubbed defensively; base_url is fine to name).
+        """
+        try:
+            from .endpoint_context import current_provider_endpoint_profile_resolver
+
+            resolver = current_provider_endpoint_profile_resolver()
         except Exception:
             return None
+        if resolver is None:
+            return None
+        try:
+            payload = resolver(spec)
+        except Exception as e:
+            logger.warning(
+                f"#FALLBACK: host-injected endpoint-profile resolver raised for {spec!r} "
+                f"({type(e).__name__}); treating as unresolved"
+            )
+            return None
+        if payload is None:
+            # Clean miss: the host looked and does not know this profile.
+            return None
+        if not isinstance(payload, dict):
+            logger.warning(
+                f"#FALLBACK: host-injected endpoint-profile resolver returned "
+                f"{type(payload).__name__} for {spec!r} (expected a dict); treating as unresolved"
+            )
+            return None
+
+        from dataclasses import fields as dataclass_fields
+
+        from ..config.provider_profiles import ProviderProfile
+
+        data = dict(payload)
+        # Gateway private_resolution() carries the family under BOTH "provider"
+        # and "provider_family"; accept either spelling.
+        if not str(data.get("provider_family") or "").strip() and str(data.get("provider") or "").strip():
+            data["provider_family"] = data.get("provider")
+        if not str(data.get("provider_family") or "").strip():
+            # A payload with no family signal describes nothing constructible;
+            # silently defaulting a family here would build a provider the
+            # host never named (missing fields are a MISS, never a guess).
+            logger.warning(
+                f"#FALLBACK: host-injected endpoint-profile payload for {spec!r} carries no "
+                "provider_family/provider; treating as unresolved"
+            )
+            return None
+        if not str(data.get("id") or "").strip():
+            # Default the profile id from the requested spec so a minimal
+            # payload (family + base_url) is usable.
+            data["id"] = spec
+        allowed_fields = {f.name for f in dataclass_fields(ProviderProfile)}
+        filtered = {k: v for k, v in data.items() if k in allowed_fields}
+        secret = str(data.get("api_key") or "")
+        try:
+            profile = ProviderProfile(**filtered)
+        except Exception as e:
+            # Normalization refusals name fields/values, never secrets — but a
+            # weird payload TYPE could echo input, so scrub the key defensively.
+            message = str(e)
+            if secret and secret in message:
+                message = message.replace(secret, "[redacted]")
+            logger.warning(
+                f"#FALLBACK: host-injected endpoint-profile payload for {spec!r} is not "
+                f"usable ({message}); treating as unresolved"
+            )
+            return None
+        if not profile.enabled:
+            logger.warning(
+                f"#FALLBACK: host-injected endpoint profile {spec!r} is disabled; "
+                "treating as unresolved"
+            )
+            return None
+        # Mark the source so create_provider_instance can (a) merge transport
+        # kwargs the local config cannot provide for this profile and (b)
+        # attach the resolver to the constructed instance for nested/fallback
+        # constructions (the BaseProvider setattr-propagation pattern).
+        setattr(profile, "_abstractcore_profile_source", "host_resolver")
+        setattr(profile, "_abstractcore_host_resolver", resolver)
+        logger.debug(
+            f"Resolved {spec!r} via host-injected endpoint-profile resolver "
+            f"(family={profile.provider_family}, base_url={profile.base_url or '<none>'})"
+        )
+        return profile
+
+    @staticmethod
+    def _host_profile_transport_config(endpoint_profile) -> Dict[str, Any]:
+        """Transport/meta config for a HOST-RESOLVED profile, {} otherwise.
+
+        Locally-resolved profiles get their transport kwargs from
+        ``ConfigurationManager.get_provider_config(<endpoint spec>)``, which
+        knows them; the config manager knows NOTHING about host-resolved
+        profiles, so the same key set is derived from the resolved profile
+        itself. Mirrors the exact keys + empty-value filter the manager builds
+        (config/manager.py::get_provider_config) so both sources feed provider
+        construction identically; ``_provider_constructor_kwargs`` strips the
+        metadata keys before the constructor sees them.
+        """
+        if getattr(endpoint_profile, "_abstractcore_profile_source", "local") != "host_resolver":
+            return {}
+        resolution = endpoint_profile.private_resolution()
+        profile_config = {
+            "provider_family": resolution.get("provider_family"),
+            "base_url": resolution.get("base_url"),
+            "api_key": resolution.get("api_key"),
+            "allowed_models": resolution.get("allowed_models") or [],
+            "virtual_provider": resolution.get("virtual_provider"),
+            "provider_profile_id": resolution.get("id"),
+        }
+        return {k: v for k, v in profile_config.items() if v not in (None, "", [])}
+
+    @staticmethod
+    def _unknown_endpoint_suffix(provider_name: str) -> str:
+        """Both-sources note for Unknown-provider errors, ONLY when a
+        host-injected resolver was present and missed.
+
+        Bare core (no resolver installed) must keep today's error strings
+        byte-identical — consumers may pin them — so this returns "" unless
+        the spec is endpoint-shaped AND a contextvar resolver is installed.
+        """
+        raw = str(provider_name or "").strip()
+        if not raw.lower().startswith("endpoint:"):
+            return ""
+        try:
+            from .endpoint_context import current_provider_endpoint_profile_resolver
+
+            if current_provider_endpoint_profile_resolver() is None:
+                return ""
+        except Exception:
+            return ""
+        return (
+            " (endpoint profile not found in the local AbstractCore config and the "
+            "host-injected endpoint-profile resolver did not resolve it — the profile "
+            "may be unregistered, disabled, or malformed on the host)"
+        )
 
     @staticmethod
     def _provider_constructor_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
@@ -354,7 +511,11 @@ class ProviderRegistry:
 
         provider_info = self.get_provider_info(provider_name)
         if not provider_info:
-            raise ValueError(f"Unknown provider: {provider_name}")
+            # Suffix is "" unless a host-injected resolver was present and
+            # missed — bare-core error text stays byte-identical.
+            raise ValueError(
+                f"Unknown provider: {provider_name}{self._unknown_endpoint_suffix(provider_name)}"
+            )
 
         # Lazy loading of provider class
         if provider_info.provider_class is None:
@@ -439,6 +600,11 @@ class ProviderRegistry:
                 runtime_config = get_provider_config(provider_name_norm)
                 if endpoint_profile is not None:
                     endpoint_config = get_provider_config(endpoint_provider_name)
+                    host_config = self._host_profile_transport_config(endpoint_profile)
+                    if host_config:
+                        # Live discovery for a host-resolved profile must probe
+                        # the PROFILE's transport, not the family default.
+                        endpoint_config = {**host_config, **endpoint_config}
                     runtime_config = {**runtime_config, **endpoint_config}
                 if isinstance(runtime_config, dict) and runtime_config:
                     merged_kwargs = {**runtime_config, **merged_kwargs}
@@ -632,7 +798,12 @@ class ProviderRegistry:
         provider_info = self.get_provider_info(provider_lookup_name)
         if not provider_info:
             available_providers = ", ".join(self.list_provider_names())
-            raise ValueError(f"Unknown provider: {provider_name}. Available providers: {available_providers}")
+            # Suffix is "" unless a host-injected resolver was present and
+            # missed — bare-core error text stays byte-identical.
+            raise ValueError(
+                f"Unknown provider: {provider_name}{self._unknown_endpoint_suffix(provider_name)}. "
+                f"Available providers: {available_providers}"
+            )
 
         provider_class = self.get_provider_class(provider_lookup_name)
         model = model or provider_info.default_model
@@ -642,6 +813,12 @@ class ProviderRegistry:
         runtime_config = get_provider_config(provider_lookup_name)
         if endpoint_profile is not None:
             endpoint_config = get_provider_config(requested_provider)
+            host_config = self._host_profile_transport_config(endpoint_profile)
+            if host_config:
+                # Host-resolved profile fields sit UNDER any explicit
+                # endpoint-key runtime overrides, OVER family defaults — the
+                # same precedence local profiles get through the config manager.
+                endpoint_config = {**host_config, **endpoint_config}
             runtime_config = {**runtime_config, **endpoint_config}
 
         # Merge: runtime_config < kwargs (user kwargs take precedence)
@@ -664,6 +841,17 @@ class ProviderRegistry:
                 setattr(instance, "_abstractcore_provider_profile_id", endpoint_profile.id)
                 setattr(instance, "_abstractcore_provider_family", endpoint_profile.provider_family)
                 setattr(instance, "_abstractcore_provider_profile", endpoint_profile.public_dict())
+                host_resolver = getattr(endpoint_profile, "_abstractcore_host_resolver", None)
+                if callable(host_resolver):
+                    # Contextvar-hit constructions inherit the resolver on the
+                    # INSTANCE (the BaseProvider setattr-propagation pattern),
+                    # so nested/fallback constructions this instance performs
+                    # can resolve host profiles even outside the contextvar
+                    # scope. Never rides model-writable surfaces.
+                    try:
+                        setattr(instance, "resolve_provider_endpoint_profile", host_resolver)
+                    except Exception:
+                        pass
             if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
                 self._apply_construction_prompt_cache_key(instance, prompt_cache_key.strip())
             return instance

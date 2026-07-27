@@ -197,7 +197,9 @@ def test_list_emails_uses_imap_env_config_and_parses_headers(monkeypatch: pytest
         out = list_emails(since="7d", status="all", limit=5)
 
     assert out["success"] is True
-    ctor.assert_called_once_with("imap.example.com", 993)
+    # Item 0835: the IMAP connect is now bounded — the timeout is passed to the
+    # constructor (was set only post-connect, leaving the connect unbounded).
+    ctor.assert_called_once_with("imap.example.com", 993, timeout=30.0)
     fake.login.assert_called_once_with("me@example.com", "pw")
     msgs = out.get("messages")
     assert isinstance(msgs, list) and len(msgs) == 1
@@ -235,10 +237,12 @@ def test_read_email_uses_imap_env_config_and_extracts_body(monkeypatch: pytest.M
             raise AssertionError(f"Unexpected command: {command}")
 
     fake = FakeImap()
-    with patch("imaplib.IMAP4_SSL", return_value=fake):
+    with patch("imaplib.IMAP4_SSL", return_value=fake) as ctor:
         out = read_email(uid="1")
 
     assert out["success"] is True
+    # Item 0835: read_email also bounds the IMAP connect via the constructor timeout.
+    ctor.assert_called_once_with("imap.example.com", 993, timeout=30.0)
     fake.login.assert_called_once_with("me@example.com", "pw")
     assert out["subject"] == "Hello"
     assert "Plain body" in out.get("body_text", "")

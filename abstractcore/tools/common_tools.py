@@ -14,7 +14,7 @@ import subprocess
 import sys
 import importlib
 from pathlib import Path
-from typing import Optional, Dict, Any, Union
+from typing import Optional, Dict, Any, Tuple, Union
 import platform
 import re
 import time
@@ -1047,12 +1047,12 @@ def _lint_notice_for_path(path: Path) -> Optional[str]:
 
 
 @tool(
-    description="Return a compact outline + diagnostics for a code file (Python/JavaScript/HTML/R) to guide precise edits.",
-    when_to_use="Use before editing to locate the right block quickly; then read_file(start_line/end_line) around that block instead of re-reading the whole file.",
+    description="Return a compact outline + diagnostics for a code file (20+ languages incl. Python/JS/Rust/Go/Java/C/C++; unknown text gets a generic outline) to guide precise edits.",
+    when_to_use="Use before editing to locate the right block quickly; then read_file(start_line/end_line) around that block instead of re-reading the whole file. Works on any readable text file — unknown languages degrade to a labeled generic outline.",
     examples=[
         {"description": "Outline a Python file", "arguments": {"file_path": "src/app.py"}},
-        {"description": "Outline a JavaScript file", "arguments": {"file_path": "web/app.js"}},
-        {"description": "Outline an HTML file", "arguments": {"file_path": "templates/index.html"}},
+        {"description": "Outline a Rust file", "arguments": {"file_path": "src/main.rs"}},
+        {"description": "Force a language for an odd extension", "arguments": {"file_path": "script.txt", "language": "python"}},
     ],
 )
 def analyze_code(file_path: str, language: Optional[str] = None) -> str:
@@ -1060,19 +1060,25 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
     Return a structured outline of a code file with line ranges + basic diagnostics.
 
     IMPORTANT: Use this tool first for code navigation. Then use `read_file(start_line/end_line)`
-    around the specific block you want to change, followed by `edit_file(...)` for bounded edits.
+    around the specific block you want to change, followed by `edit_file` with a short unique
+    pattern (line params are only needed to disambiguate repeated matches).
 
     Args:
         file_path: required; Path to the file to analyze (required; relative or absolute)
-        language: Optional override for language detection ("python", "javascript", "html", "r")
+        language: Optional override for language detection. Deep analyzers: "python",
+            "javascript"/"typescript", "html", "r". Outline engine: "rust", "go", "java",
+            "c", "cpp", "csharp", "swift", "kotlin", "ruby", "php", "shell", "sql", "css",
+            "markdown", "yaml", "toml", "json". Anything else falls back to a labeled
+            generic text outline (never a refusal).
 
     Returns:
-        A formatted outline including imports/classes/functions (where relevant), references, and
-        basic lint-like diagnostics (e.g., Python ruff, JS/R delimiter balance, HTML sanity checks).
+        A formatted outline including imports/classes/functions/types (where relevant),
+        references, and basic diagnostics (e.g., Python ruff, delimiter balance). Unknown
+        languages return an honest generic outline (metrics + top-level structure).
 
     Examples:
         analyze_code(file_path="src/app.py")
-        analyze_code(file_path="web/app.js")
+        analyze_code(file_path="src/main.rs")
         analyze_code(file_path="script.txt", language="python")
     """
     path = Path(file_path).expanduser()
@@ -1088,9 +1094,53 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
     if not path.is_file():
         return f"Error: '{display_path}' is not a file"
 
+    # Imported for BOTH lanes: the engine/generic handoff below AND the shared
+    # next-step hint the deep lanes render (one constant in code_analysis.py,
+    # never a drifting second copy).
+    from . import code_analysis as _ca
+
     lang = _detect_code_language(path, language)
     if not lang:
-        return f"Error: Unsupported code language for '{display_path}'. Supported: python, javascript, html, r"
+        # Not one of the four deep lanes: hand off to the multi-language
+        # outline engine (rust/go/java/…), then the generic never-refuse
+        # fallback. A navigation tool that REFUSES makes the agent re-read
+        # whole files raw — worse than a labeled best-effort outline
+        # (operator incident 2026-07-22: main.rs).
+        text2, err, truncated, encoding_note = _ca.read_text_bounded(path)
+        if err == "binary":
+            return f"Error: Cannot read '{display_path}' - file appears to be binary"
+        if err:
+            return err
+        first_line = text2.split("\n", 1)[0] if text2 else ""
+        # A shebang can also name one of the DEEP lanes (e.g. a Python script
+        # with no extension) — route it to the deep analyzer, not the engine.
+        if not str(language or "").strip() and first_line.startswith("#!"):
+            if re.search(r"(?:^|[/\s])python[\d.]*(?:\s|$)", first_line.lower()):
+                lang = "python"
+        if lang is None:
+            raw_hint = str(language or "").strip()
+            spec = _ca.spec_for(language, path, first_line)
+            if spec is None and raw_hint:
+                # "text"/"plaintext"/"txt"/"log" mean the GENERIC lane on
+                # purpose — no #FALLBACK label for asking for exactly what
+                # you get (reviewer B, P2-3).
+                if raw_hint.lower() in {"text", "plaintext", "txt", "log", "logs"}:
+                    return _ca.analyze_generic(display_path, text2, truncated=truncated, encoding_note=encoding_note)
+                # Unknown hint but the PATH is unambiguous (e.g.
+                # language="rust-lang" on main.rs): honor the file over the
+                # misspelled hint, with a notice.
+                spec = _ca.spec_for(None, path, first_line)
+                if spec is not None:
+                    result = _ca.analyze_with_spec(path, display_path, text2, spec, truncated=truncated, encoding_note=encoding_note)
+                    return result.replace(
+                        f"language: {spec.name}",
+                        f"language: {spec.name}\nnotice: requested language '{raw_hint}' is unknown; "
+                        f"analyzed as '{spec.name}' from the file itself. #FALLBACK",
+                        1,
+                    )
+            if spec is not None:
+                return _ca.analyze_with_spec(path, display_path, text2, spec, truncated=truncated, encoding_note=encoding_note)
+            return _ca.analyze_generic(display_path, text2, language_hint=raw_hint, truncated=truncated, encoding_note=encoding_note)
 
     try:
         text = path.read_text(encoding="utf-8")
@@ -1104,7 +1154,7 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
 
     out: list[str] = [
         f"Code Analysis: {display_path} (language={lang}, lines={total_lines})",
-        "Next step: use read_file(start_line/end_line) around the block you want to change, then edit_file(start_line/end_line) for a bounded edit.",
+        _ca.ANALYZE_CODE_NEXT_STEP_HINT,
     ]
 
     if lang == "python":
@@ -1851,7 +1901,7 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
         pattern: Glob pattern(s) to match files. Use "|" to separate multiple patterns (default: "*")
         recursive: Whether to search recursively in subdirectories (default: False)
         include_hidden: Whether to include hidden files/directories starting with '.' (default: False)
-        head_limit: Maximum number of entries to return (default: 25, None for unlimited)
+        head_limit: Maximum number of entries to return (default: 10, None for unlimited)
 
     Returns:
         Formatted string with file and directory listings or error message.
@@ -1870,7 +1920,7 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
             try:
                 head_limit = int(head_limit)
             except ValueError:
-                head_limit = 25  # fallback to default
+                head_limit = 10  # fallback to the signature default (item 0835: was 25, drifted from the signature's 10)
 
         # Expand home directory shortcuts like ~
         directory_input = Path(directory_path).expanduser()
@@ -1907,107 +1957,187 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
         # Split pattern by | to support multiple patterns
         patterns = [p.strip() for p in pattern.split('|')]
 
-        # Get all entries first (files + directories), then apply case-insensitive pattern matching.
-        #
-        # NOTE: This tool is intentionally named `list_files` for historical reasons, but it
-        # should list directories too. This is important for agent workflows that need to
-        # confirm that `mkdir -p ...` succeeded even before any files exist.
-        import fnmatch
-        all_entries = []
+        # Path-shaped globs match NOTHING here (item 0835): patterns are fnmatch'd against
+        # entry NAMES only (basenames), so "src/*.py" / "**/*.py" / "docs/**" silently match
+        # nothing. Models trained on Claude Code / Cursor Glob emit path globs and then
+        # conclude the files are absent. Detect the path separator and teach the fix instead
+        # of returning a misleading empty listing.
+        path_shaped = [p for p in patterns if "/" in p]
+        if path_shaped:
+            return (
+                f"Error: list_files matches file/directory NAMES only, not path segments — "
+                f"pattern(s) {path_shaped} contain '/'. To list a subdirectory, set "
+                f"directory_path to it (e.g. directory_path=\"src\", pattern=\"*.py\") and add "
+                f"recursive=True to descend. To find files by content or path across a tree, "
+                f"use search_files(...)."
+            )
 
-        if recursive:
-            for root, dirs, dir_files in os.walk(directory):
-                # Prune hidden directories early unless explicitly requested.
-                if not include_hidden:
-                    dirs[:] = [d for d in dirs if not str(d).startswith(".")]
-                # Prune ignored directories (including AbstractRuntime store dirs like `*.d/`).
+        # Match + collect entries. NOTE: `list_files` lists DIRECTORIES too
+        # (historical name) — agents rely on it to confirm `mkdir -p` before
+        # any files exist.
+        #
+        # STREAMING (list-perf incident 2026-07-23, operator dm 17:56): the old
+        # code built the FULL entry list, is_ignored'd every entry, then
+        # mtime-SORTED all of them (a stat per file) before applying
+        # head_limit — so `list_files(head_limit=100)` over a 130k-file tree
+        # walked+stat'd all 130k to show 100. Now entries stream and collection
+        # STOPS at head_limit + a bounded look-ahead. The old global
+        # most-recent-first sort is PRESERVED for normal trees (when the stream
+        # exhausts within the budget, the full matched set is sorted); only a
+        # tree LARGER than the budget switches to fast stream-order + a "more
+        # exist" hint (the operator's explicit tradeoff: don't scan 130k).
+        import fnmatch
+
+        pats_lower = [p.lower() for p in patterns]
+
+        def _matches(name: str) -> bool:
+            nl = name.lower()
+            return any(fnmatch.fnmatch(nl, p) for p in pats_lower)
+
+        # Set when a HIDDEN entry that MATCHES the pattern was skipped (F1):
+        # lets the empty-result message restore the old "matching hidden
+        # entries exist" disambiguator without a second pass.
+        hidden_match_seen = {"v": False}
+
+        def _iter_matched_entries():
+            # Yields (path, is_dir) so directories never pollute the
+            # extension summary (F2) — recursive knows is_dir free from the
+            # walk; non-recursive costs one bounded is_dir() per matched entry.
+            if recursive:
+                for root, dirs, dir_files in os.walk(directory):
+                    if not include_hidden:
+                        kept = []
+                        for d in dirs:
+                            if str(d).startswith("."):
+                                # Pruned before the per-entry loop — record
+                                # pattern-matching hidden dirs here or the
+                                # F1 hint never fires for them.
+                                if _matches(d):
+                                    hidden_match_seen["v"] = True
+                                continue
+                            kept.append(d)
+                        dirs[:] = kept
+                    try:
+                        dirs[:] = [d for d in dirs if not ignore.is_ignored(Path(root) / d, is_dir=True)]
+                    except Exception:
+                        pass
+                    for d in dirs:
+                        if not _matches(d):
+                            continue
+                        p = Path(root) / d
+                        if not ignore.is_ignored(p, is_dir=True):
+                            yield p, True
+                    for f in dir_files:
+                        if not include_hidden and str(f).startswith("."):
+                            if _matches(f):
+                                hidden_match_seen["v"] = True
+                            continue
+                        if not _matches(f):
+                            continue
+                        p = Path(root) / f
+                        if not ignore.is_ignored(p, is_dir=False):
+                            yield p, False
+            else:
+                # Iterate iterdir() directly (F3): no full-directory
+                # list() materialization; PermissionError raises at first
+                # next(), so the try wraps the loop.
                 try:
-                    dirs[:] = [d for d in dirs if not ignore.is_ignored(Path(root) / d, is_dir=True)]
+                    for p in directory.iterdir():
+                        if not include_hidden and p.name.startswith("."):
+                            if _matches(p.name):
+                                hidden_match_seen["v"] = True
+                            continue
+                        if not _matches(p.name):
+                            continue
+                        if ignore.is_ignored(p):
+                            continue
+                        try:
+                            is_dir = p.is_dir()
+                        except Exception:
+                            is_dir = False
+                        yield p, is_dir
+                except PermissionError:
+                    return
+
+        effective_head = head_limit if (head_limit is not None and head_limit > 0) else None
+        # Bound the collection: head_limit + budget candidates. If the stream
+        # exhausts within this, we have the full matched set (exact counts +
+        # global mtime sort, old behavior). If not, the tree is large.
+        REMAINDER_BUDGET = 500
+        collect_cap = None if effective_head is None else effective_head + REMAINDER_BUDGET
+
+        collected: list[str] = []
+        # Bounded summary accumulators (over what we actually saw).
+        ext_counts: dict[str, int] = {}
+        subfolder_counts: dict[str, int] = {}
+        stream_exhausted = True
+        for entry, entry_is_dir in _iter_matched_entries():
+            if collect_cap is not None and len(collected) >= collect_cap:
+                stream_exhausted = False
+                break
+            collected.append(str(entry))
+            # Summary: extension (FILES only — dirs would read as bogus
+            # "N .data files", F2) + top-level subfolder (recursive).
+            name = entry.name
+            if not entry_is_dir and "." in name and not name.startswith("."):
+                ext = name.rsplit(".", 1)[1].lower()
+                ext_counts[ext] = ext_counts.get(ext, 0) + 1
+            if recursive:
+                try:
+                    rel = entry.relative_to(directory)
+                    if len(rel.parts) > 1:
+                        top = rel.parts[0]
+                        subfolder_counts[top] = subfolder_counts.get(top, 0) + 1
                 except Exception:
                     pass
 
-                # Include directories (so empty folders still show up)
-                for d in dirs:
-                    if not include_hidden and str(d).startswith("."):
-                        continue
-                    p = Path(root) / d
-                    if not ignore.is_ignored(p, is_dir=True):
-                        all_entries.append(p)
-
-                # Include files
-                for f in dir_files:
-                    if not include_hidden and str(f).startswith("."):
-                        continue
-                    p = Path(root) / f
-                    if not ignore.is_ignored(p, is_dir=False):
-                        all_entries.append(p)
-        else:
-            try:
-                # Include both files and directories for better UX and agent correctness.
-                all_entries = [p for p in directory.iterdir() if not ignore.is_ignored(p)]
-            except PermissionError:
-                pass
-
-        # Apply case-insensitive pattern matching
-        matched_files = []
-        for entry_path in all_entries:
-            filename = entry_path.name
-
-            # Check if file matches any pattern (case-insensitive)
-            for single_pattern in patterns:
-                if fnmatch.fnmatch(filename.lower(), single_pattern.lower()):
-                    matched_files.append(str(entry_path))
-                    break
-
-        files = matched_files
-
-        if not files:
+        if not collected:
             if not has_any_entries:
                 return f"Directory '{directory_display}' exists but is empty"
             if not include_hidden and not has_any_visible_entries:
                 return f"Directory '{directory_display}' exists but contains only hidden entries (use include_hidden=True)"
+            # F1: the pattern matched only HIDDEN entries — restore the old
+            # disambiguator so an agent checking for e.g. '.env' isn't told it
+            # doesn't exist.
+            if not include_hidden and hidden_match_seen["v"]:
+                return (
+                    f"Directory '{directory_display}' exists but no VISIBLE entries match pattern '{pattern}' "
+                    "— matching hidden entries exist; use include_hidden=True to see them"
+                )
             return f"Directory '{directory_display}' exists but no entries match pattern '{pattern}'"
 
-        # Filter out hidden entries if include_hidden is False.
-        if not include_hidden:
-            filtered_files = []
-            for file_path in files:
-                path_obj = Path(file_path)
-                # Check if any part of the path (after the directory_path) starts with '.'
-                try:
-                    relative_path = path_obj.relative_to(directory)
-                except Exception:
-                    relative_path = path_obj
-                is_hidden = any(part.startswith(".") for part in relative_path.parts)
-                if not is_hidden:
-                    filtered_files.append(file_path)
-            files = filtered_files
+        unique_collected = list(dict.fromkeys(collected))  # de-dupe, preserve order
 
-        if not files:
-            hidden_note = " (hidden entries excluded)" if not include_hidden else ""
-            if not has_any_entries:
-                return f"Directory '{directory_display}' exists but is empty"
-            if not include_hidden and not has_any_visible_entries:
-                return f"Directory '{directory_display}' exists but contains only hidden entries (use include_hidden=True)"
-            return f"Directory '{directory_display}' exists but no entries match pattern '{pattern}'{hidden_note}"
+        if stream_exhausted:
+            # Full matched set in hand: preserve the old global most-recent-first
+            # ordering (bounded stat cost — at most head_limit + budget files).
+            try:
+                unique_collected.sort(key=lambda f: (Path(f).stat().st_mtime if Path(f).exists() else 0), reverse=True)
+            except Exception:
+                unique_collected.sort()
+            total_files: Optional[int] = len(unique_collected)
+        else:
+            # Large tree: keep stream order (fast), mtime-sort only the window
+            # we will SHOW so the small returned list is still tidy.
+            total_files = None  # unknown without the full walk we deliberately skipped
 
-        # Remove duplicates and sort files by modification time (most recent first), then alphabetically
-        unique_files = set(files)
-        try:
-            # Sort by modification time (most recent first) for better relevance
-            files = sorted(unique_files, key=lambda f: (Path(f).stat().st_mtime if Path(f).exists() else 0), reverse=True)
-        except Exception:
-            # Fallback to alphabetical sorting if stat fails
-            files = sorted(unique_files)
-
-        # Apply head_limit if specified
-        total_files = len(files)
         is_truncated = False
-        if head_limit is not None and head_limit > 0 and len(files) > head_limit:
-            files = files[:head_limit]
-            limit_note = f" (showing {head_limit} of {total_files} entries)"
+        more_is_lower_bound = False
+        if effective_head is not None and len(unique_collected) > effective_head:
+            files = unique_collected[:effective_head]
+            if not stream_exhausted:
+                # Sort the shown window by mtime (cheap: <= head_limit stats).
+                try:
+                    files.sort(key=lambda f: (Path(f).stat().st_mtime if Path(f).exists() else 0), reverse=True)
+                except Exception:
+                    files.sort()
+                more_is_lower_bound = True
+                limit_note = f" (showing {effective_head} of many entries)"
+            else:
+                limit_note = f" (showing {effective_head} of {total_files} entries)"
             is_truncated = True
         else:
+            files = unique_collected
             limit_note = ""
 
         hidden_note = " (hidden entries excluded)" if not include_hidden else ""
@@ -2032,15 +2162,27 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
         # Add a compact truncation note + an explicit “rerun” example. Some models
         # will otherwise call the same tool again with identical parameters.
         if is_truncated:
-            remaining = total_files - head_limit
-            output.append(
-                "\n"
-                f"Note: {remaining} more entries available (increase head_limit to see more results or set head_limit=None to show all results)."
-            )
-            try:
-                suggested = min(total_files, int(head_limit) * 2) if head_limit else total_files
-            except Exception:
-                suggested = None
+            if more_is_lower_bound or total_files is None:
+                # Large tree: we deliberately did NOT walk it all, so we can
+                # only say "more exist" + advise narrowing (operator dm 17:56:
+                # the model should restrict the search, not sweep 130k).
+                output.append(
+                    "\n"
+                    f"Note: more entries exist beyond the {int(effective_head or 0)} shown — the tree is large and was not "
+                    "fully scanned. Narrow with a subfolder (directory_path=...), a more specific pattern "
+                    "(e.g. '*.py'), or a tighter regex; or set head_limit higher to see more."
+                )
+                suggested = int(effective_head) * 2 if effective_head else None
+            else:
+                remaining = total_files - head_limit
+                output.append(
+                    "\n"
+                    f"Note: {remaining} more entries available (increase head_limit to see more results or set head_limit=None to show all results)."
+                )
+                try:
+                    suggested = min(total_files, int(head_limit) * 2) if head_limit else total_files
+                except Exception:
+                    suggested = None
             if suggested and head_limit and suggested != head_limit:
                 rerun = (
                     "If you want to see more results, re-run: "
@@ -2052,6 +2194,22 @@ def list_files(directory_path: str = ".", pattern: str = "*", recursive: bool = 
                     rerun += ", include_hidden=True"
                 rerun += ")"
                 output.append(rerun)
+
+        # Bounded composition summary (operator dm 17:56, part 3: "if not
+        # computationally costly"). Built ONLY from the entries already
+        # streamed (never a second walk); labeled partial when the tree
+        # exceeded the look-ahead budget. Helps the model choose a better
+        # next narrowing than blind re-listing.
+        if is_truncated and (ext_counts or subfolder_counts):
+            scope = "of what was scanned" if not stream_exhausted else "total"
+            top_exts = sorted(ext_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:8]
+            summary_bits = [f"{n} .{e}" for e, n in top_exts]
+            top_subs = sorted(subfolder_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:6]
+            sub_bits = [f"{name}/ {n}" for name, n in top_subs]
+            line = f"Composition ({scope}): " + "; ".join(summary_bits)
+            if sub_bits:
+                line += " | subfolders: " + "; ".join(sub_bits)
+            output.append("\n" + line)
 
         return "\n".join(output)
 
@@ -2363,10 +2521,15 @@ def skim_folders(
     return "\n\n---\n\n".join(out_blocks)
 
 
+# search_files multiline whole-file read bound: a single multi-hundred-MB file must not be
+# slurped entirely into memory. Module-level so tests can monkeypatch it and one constant drives
+# both the alt-mode (files_with_matches/count) and content-mode multiline scans (item 0831).
+_SEARCH_MAX_MULTILINE_BYTES = 16 * 1024 * 1024
+
+
 @tool(
-    description="Search inside file contents for a regex pattern (case-insensitive) and return matching lines with line numbers.",
-    when_to_use="Use to locate where something appears across files; returns up to max_hits matching files, each capped at head_limit matching lines; set multiline=true for cross-line regex (slower).",
-    hide_args=["output_mode", "context_lines", "case_sensitive", "ignore_dirs"],
+    description="Search inside file contents for a regex pattern (case-insensitive by default) and return matching lines with line numbers; supports context_lines and files_with_matches/count output modes.",
+    when_to_use="Locate where something appears across files (max_hits files, head_limit lines each). Options: context_lines=N (surrounding lines), case_sensitive, output_mode=files_with_matches|count, multiline for cross-line regex.",
     examples=[
         {
             "description": "Find TODO/FIXME across Python files (up to 8 files, 10 lines per file)",
@@ -2379,26 +2542,23 @@ def skim_folders(
             }
         },
         {
-            "description": "Search docs with multiple file patterns, limiting to 5 matching files",
+            "description": "Show 2 lines of context around each match (avoids a follow-up read_file)",
             "arguments": {
-                "pattern": "architecture|design|decision",
-                "path": "docs",
-                "file_pattern": "*.md|*.txt",
-                "head_limit": 6,
-                "max_hits": 5,
+                "pattern": "def process",
+                "path": "abstractcore",
+                "file_pattern": "*.py",
+                "context_lines": 2,
             }
         },
         {
-            "description": "Enable multiline regex (slower; reads whole files)",
+            "description": "List just the files that mention a symbol (no excerpts)",
             "arguments": {
-                "pattern": "class\\s+\\w+.*?def\\s+\\w+",
+                "pattern": "GatewayClient",
                 "path": ".",
                 "file_pattern": "*.py",
-                "multiline": True,
-                "head_limit": 3,
-                "max_hits": 3,
+                "output_mode": "files_with_matches",
             }
-        }
+        },
     ]
 )
 def search_files(
@@ -2409,7 +2569,6 @@ def search_files(
     max_hits: Optional[int] = 8,
     multiline: bool = False,
     include_hidden: bool = False,
-    # Deprecated/hidden (kept for backwards compatibility with older callers).
     output_mode: str = "content",
     context_lines: int = 0,
     case_sensitive: bool = False,
@@ -2418,24 +2577,59 @@ def search_files(
     """
     Search inside file contents for a regex pattern and return matching lines with line numbers.
 
-    This tool is always case-insensitive and always returns "content mode" output:
-    matching lines prefixed by their line number, grouped by file.
+    Content mode (default) prints matching lines prefixed by their line number, grouped by
+    file. Context and case are configurable; alternate output modes return just paths/counts.
 
     Args:
-        pattern: required; Regular expression pattern to search for (case-insensitive).
+        pattern: required; Regular expression pattern to search for.
         path: File or directory path to search in (default: current directory).
         file_pattern: Glob pattern(s) for files to search. Use "|" to separate multiple patterns (default: "*" for all files).
         head_limit: Max matching lines returned per file (default: 10). Use None for no per-file limit.
         max_hits: Max number of matching files to return (default: 8). Use None for no file limit.
-        multiline: Enable multiline matching where pattern can span lines (default: False). Trade-off: reads whole files; slower on large trees.
+        multiline: Enable multiline matching where pattern can span lines (default: False). Trade-off: reads whole files (bounded); slower on large trees.
         include_hidden: Include hidden files/directories (default: False).
+        output_mode: "content" (default; line-numbered matches), "files_with_matches" (just the
+            matching file paths), or "count" (match count per file). Unknown values are refused.
+        context_lines: Lines of surrounding context to show around each match (0-10, default 0).
+            Context lines use a "-" separator vs ":" for matches; groups are split by "--".
+            Saves a follow-up read_file when you need the code around a hit. Applies to the
+            default (line) mode only — multiline=True does not add context lines.
+        case_sensitive: Match case-sensitively (default False = case-insensitive).
+        ignore_dirs: Comma-separated directory names to skip (added to the default ignore set).
 
     Returns:
-        Search results with line numbers, or an error message.
+        Search results, or an error message.
     """
     try:
-        # Deprecated args are accepted but ignored (tool is always case-insensitive and always returns content-mode output).
-        _ = (output_mode, context_lines, case_sensitive, ignore_dirs)
+        # Honor the parameters instead of silently discarding them (audit 2026-07-25,
+        # item 0831 — silent-ignore is the exact behavior the suite's arg-coercion
+        # philosophy forbids). Normalize each defensively (tool args can arrive as
+        # strings via non-JSON tool-call formats).
+        def _as_bool(v: Any) -> bool:
+            if isinstance(v, bool):
+                return v
+            return str(v).strip().lower() in ("1", "true", "yes", "on")
+
+        cs = _as_bool(case_sensitive)
+        try:
+            context_n = max(0, min(int(context_lines or 0), 10))  # cap context to keep output bounded
+        except Exception:
+            context_n = 0
+        output_mode = str(output_mode or "content").strip().lower()
+        if output_mode not in ("content", "files_with_matches", "count"):
+            return (
+                f"Error: output_mode must be one of content|files_with_matches|count "
+                f"(got {output_mode!r})."
+            )
+        # Accept BOTH a comma-separated string and a list/tuple (models routinely send
+        # arrays for plural params — a bare str(list).split(",") would yield garbage tokens
+        # and silently no-op, review 2026-07-25).
+        if not ignore_dirs:
+            extra_ignore_dirs: set = set()
+        elif isinstance(ignore_dirs, (list, tuple, set)):
+            extra_ignore_dirs = {str(d).strip() for d in ignore_dirs if str(d).strip()}
+        else:
+            extra_ignore_dirs = {d.strip() for d in str(ignore_dirs).split(",") if d.strip()}
 
         # Expand home directory shortcuts like ~
         search_path_input = Path(path).expanduser()
@@ -2453,8 +2647,8 @@ def search_files(
             # Best-effort; continue without policy if filesystem queries fail.
             ignore = AbstractIgnore.for_path(Path.cwd())
 
-        # Compile regex pattern (case-insensitive).
-        flags = re.IGNORECASE
+        # Compile regex pattern. Case-insensitive by default; honor case_sensitive.
+        flags = 0 if cs else re.IGNORECASE
         if multiline:
             flags |= re.MULTILINE | re.DOTALL
 
@@ -2486,16 +2680,30 @@ def search_files(
             # Default directories to ignore for safety/performance.
             default_ignores = {
                 ".git", ".hg", ".svn", "__pycache__", "node_modules", "dist", "build",
+                # "target": the Rust/JVM build tree — the twin of node_modules/
+                # dist/build (can be multi-GB; a 61k-file target/ was half of
+                # the 196k-file walk in the 2026-07-23 search-perf incident).
+                "target",
                 ".DS_Store", ".Trash", ".cache", ".venv", "venv", "env", ".env",
                 ".cursor", "Library", "Applications", "System", "Volumes"
             }
-            ignore_set = set(default_ignores)
+            ignore_set = set(default_ignores) | extra_ignore_dirs  # caller-supplied ignore_dirs
 
-            if file_pattern == "*":
-                # Search all files recursively
-                files_to_search = []
+            import fnmatch
+
+            file_patterns = None if file_pattern == "*" else [p.strip() for p in file_pattern.split('|')]
+
+            # LAZY candidate stream (search-perf incident 2026-07-23): the old
+            # code built the FULL candidate list — walking the whole tree,
+            # is_ignored-ing and 1KB-sniffing EVERY file — BEFORE any matching,
+            # so max_hits capped only the match loop, never the walk. A single
+            # call over a 196k-file tree ran 8m39s. This generator yields
+            # candidates lazily so the match loop's max_hits break stops the
+            # os.walk early; the binary sniff moved INTO the match loop, so it
+            # only runs on files actually reached. Directory pruning (hidden /
+            # ignore_set / .abstractignore) is unchanged.
+            def _iter_candidate_files():
                 for root, dirs, files in os.walk(search_path):
-                    # Prune directories in-place
                     dirs[:] = [
                         d for d in dirs
                         if (include_hidden or not d.startswith('.'))
@@ -2503,10 +2711,13 @@ def search_files(
                         and not ignore.is_ignored(Path(root) / d, is_dir=True)
                     ]
                     for file in files:
-                        file_path = Path(root) / file
-                        # Skip hidden files unless allowed
-                        if not include_hidden and file_path.name.startswith('.'):
+                        if not include_hidden and file.startswith('.'):
                             continue
+                        if file_patterns is not None:
+                            fl = file.lower()
+                            if not any(fnmatch.fnmatch(fl, p.lower()) for p in file_patterns):
+                                continue
+                        file_path = Path(root) / file
                         if ignore.is_ignored(file_path, is_dir=False):
                             continue
                         # Skip non-regular files (sockets, fifos, etc.) and symlinks
@@ -2515,62 +2726,89 @@ def search_files(
                                 continue
                         except Exception:
                             continue
-                        # Skip binary files by checking if they're text files
-                        try:
-                            with open(file_path, 'r', encoding='utf-8') as f:
-                                f.read(1024)  # Try to read first 1KB
-                            files_to_search.append(file_path)
-                        except (UnicodeDecodeError, PermissionError, OSError):
-                            continue  # Skip binary/inaccessible files
-            else:
-                # Support multiple patterns separated by |
-                import fnmatch
-                file_patterns = [p.strip() for p in file_pattern.split('|')]
-                files_to_search = []
+                        yield file_path
 
-                for root, dirs, files in os.walk(search_path):
-                    # Prune directories in-place
-                    dirs[:] = [
-                        d for d in dirs
-                        if (include_hidden or not d.startswith('.'))
-                        and d not in ignore_set
-                        and not ignore.is_ignored(Path(root) / d, is_dir=True)
-                    ]
-                    for file in files:
-                        file_path = Path(root) / file
-                        filename = file_path.name
-                        # Skip hidden files unless allowed
-                        if not include_hidden and filename.startswith('.'):
-                            continue
-                        if ignore.is_ignored(file_path, is_dir=False):
-                            continue
-                        # Skip non-regular files (sockets, fifos, etc.) and symlinks
-                        try:
-                            if not file_path.is_file() or file_path.is_symlink():
-                                continue
-                        except Exception:
-                            continue
-
-                        # Check if file matches any pattern (case-insensitive)
-                        matches_pattern = False
-                        for single_pattern in file_patterns:
-                            if fnmatch.fnmatch(filename.lower(), single_pattern.lower()):
-                                matches_pattern = True
-                                break
-
-                        if matches_pattern:
-                            # Skip binary files by checking if they're text files
-                            try:
-                                with open(file_path, 'r', encoding='utf-8') as f:
-                                    f.read(1024)  # Try to read first 1KB
-                                files_to_search.append(file_path)
-                            except (UnicodeDecodeError, PermissionError, OSError):
-                                continue  # Skip binary/inaccessible files
+            files_to_search = _iter_candidate_files()
         else:
             return f"Error: Path '{search_path_display}' does not exist"
 
-        if not files_to_search:
-            return f"No files found to search in '{search_path_display}'"
+        # Multiline whole-file read bound (item 0831): read through the module-level
+        # constant (not a local) so it is monkeypatchable in tests and one source drives
+        # both the alt-mode and content-mode multiline scans.
+        MAX_MULTILINE_BYTES = _SEARCH_MAX_MULTILINE_BYTES
+
+        # Alternate output modes (item 0831): "files_with_matches" and "count" are the
+        # ripgrep/Claude-Code Grep modes. Isolated lightweight scan — never touches the
+        # content-mode truncation/remainder logic below.
+        if output_mode in ("files_with_matches", "count"):
+            matched_entries: list[tuple[str, int]] = []
+            alt_capped = False
+            alt_multiline_truncated = False  # any file scanned only up to the multiline byte cap
+            for fp in files_to_search:
+                if max_hits_files is not None and len(matched_entries) >= max_hits_files:
+                    alt_capped = True
+                    break
+                try:
+                    with open(fp, "r", encoding="utf-8") as _s:
+                        _s.read(1024)  # binary sniff (same as content mode)
+                except (UnicodeDecodeError, PermissionError, OSError):
+                    continue
+                cnt = 0
+                try:
+                    with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                        if multiline:
+                            # +1-detect the cap so a count can never silently UNDERCOUNT and
+                            # files_with_matches can never return a false "No matches" for a
+                            # match past the cap (review 2026-07-25: unlabeled truncation was
+                            # the exact ADR-forbidden class — content mode labels it, this
+                            # branch must too).
+                            content = f.read(MAX_MULTILINE_BYTES + 1)
+                            if len(content) > MAX_MULTILINE_BYTES:
+                                alt_multiline_truncated = True
+                                content = content[:MAX_MULTILINE_BYTES]
+                            cnt = len(regex_pattern.findall(content))
+                        else:
+                            for line in f:
+                                if regex_pattern.search(line):
+                                    cnt += 1
+                                    if output_mode == "files_with_matches":
+                                        break  # existence is enough; stop at first hit
+                except Exception:
+                    continue
+                if cnt > 0:
+                    matched_entries.append((_path_for_display(fp), cnt))
+            if not matched_entries:
+                base = f"No matches found for pattern '{pattern}'"
+                if alt_multiline_truncated:
+                    base += (
+                        f"\n\n#TRUNCATION: multiline scanning was capped at {MAX_MULTILINE_BYTES:,} "
+                        "chars per file; a match past the cap would be missed here."
+                    )
+                return base
+            if output_mode == "files_with_matches":
+                header = (
+                    f"Files matching pattern '{pattern}' under '{search_path_display}' "
+                    f"({len(matched_entries)} file(s)):"
+                )
+                body = "\n".join(p for p, _ in matched_entries)
+            else:  # count
+                header = (
+                    f"Match counts for pattern '{pattern}' under '{search_path_display}' "
+                    f"({len(matched_entries)} file(s)):"
+                )
+                body = "\n".join(f"{c}\t{p}" for p, c in matched_entries)
+            out = header + "\n" + body
+            if alt_multiline_truncated:
+                out += (
+                    f"\n\n#TRUNCATION: multiline scanning was capped at {MAX_MULTILINE_BYTES:,} chars "
+                    "per file; counts may undercount and matches past the cap may be missed."
+                )
+            if alt_capped and max_hits_files is not None:
+                out += (
+                    f"\n\nNote: stopped at max_hits={max_hits_files} (more matching files "
+                    "may exist; increase max_hits or set max_hits=None to show all)."
+                )
+            return out
 
         import bisect
 
@@ -2625,18 +2863,31 @@ def search_files(
         # Search through files (content mode only).
         results: list[str] = []
         matching_files = 0  # number of matching files returned/shown
-        scanned_files = 0  # number of candidate files processed before early stop
+        scanned_files = 0  # number of candidate files whose CONTENT was read
         stopped_at_max_hits = False
-        stop_index = None
-        total_matching_files: Optional[int] = None  # filled when we can cheaply compute it
+        _scan_started = time.monotonic()
 
-        COUNT_REMAINDER_CANDIDATES_LIMIT = 500  # safeguard: avoid scanning huge trees just to compute a total
-
-        for idx, file_path in enumerate(files_to_search):
+        candidate_iter = iter(files_to_search)
+        pending_after_stop = None  # the candidate pulled by the for-loop when the break fires
+        for file_path in candidate_iter:
             if max_hits_files is not None and matching_files >= max_hits_files:
                 stopped_at_max_hits = True
-                stop_index = idx
+                # This file was pulled from the lazy stream but not yet
+                # processed — it belongs to the remainder (list-slice parity).
+                pending_after_stop = file_path
                 break
+
+            # Binary sniff moved here from enumeration (search-perf incident):
+            # it now runs only on files the match loop actually REACHES, not on
+            # every file in the tree. A file that fails the strict-utf-8 1KB
+            # read is binary/inaccessible — skip it (does NOT count as scanned
+            # content, matching the old semantics where binaries never entered
+            # files_to_search).
+            try:
+                with open(file_path, "r", encoding="utf-8") as _sniff:
+                    _sniff.read(1024)
+            except (UnicodeDecodeError, PermissionError, OSError):
+                continue
 
             scanned_files += 1
             display_path = _path_for_display(file_path)
@@ -2646,12 +2897,21 @@ def search_files(
 
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     if multiline:
-                        content = f.read()
+                        # Bound the whole-file read (item 0831): read one char past the
+                        # cap to detect truncation, then trim. Prevents a single huge
+                        # file from being slurped entirely into memory.
+                        content = f.read(MAX_MULTILINE_BYTES + 1)
+                        multiline_truncated = len(content) > MAX_MULTILINE_BYTES
+                        if multiline_truncated:
+                            content = content[:MAX_MULTILINE_BYTES]
                         if not regex_pattern.search(content):
                             continue
 
                         newline_positions = [m.start() for m in re.finditer("\n", content)]
-                        lines = content.splitlines()
+                        # Use the SAME \n-based line model for excerpts as for numbering
+                        # (item 0831): str.splitlines() also breaks on form-feed / \v /
+                        # U+2028-9, which drifts the excerpt from its reported line number.
+                        lines = content.split("\n")
 
                         selected_lines: list[int] = []
                         seen_lines: set[int] = set()
@@ -2691,18 +2951,65 @@ def search_files(
                             per_file_added += 1
                             if head_limit_per_file is not None and per_file_added >= head_limit_per_file:
                                 break
+                        if multiline_truncated:
+                            results.append(
+                                f"    #TRUNCATION: file scanned only up to {MAX_MULTILINE_BYTES:,} chars "
+                                "for multiline matching; matches beyond this point may be missed."
+                            )
                     else:
-                        for line_num, line in enumerate(f, 1):
-                            if head_limit_per_file is not None and per_file_added >= head_limit_per_file:
-                                break
-                            m = regex_pattern.search(line)
-                            if not m:
-                                continue
+                        # Streaming line scan with optional context_lines (item 0831).
+                        # A ring buffer holds the last context_n non-match lines for
+                        # "before" context; after_remaining emits trailing context;
+                        # last_emitted guards re-emission and drives the "--" separator
+                        # between non-adjacent groups. With context_n == 0 this produces
+                        # byte-identical output to the previous match-only implementation.
+                        before_buf: list[tuple[int, str]] = []
+                        after_remaining = 0
+                        last_emitted = 0
+
+                        def _emit(ln: int, text: str, *, is_match: bool, ms: Optional[int] = None) -> None:
+                            nonlocal last_emitted, file_header_added
                             if not file_header_added:
                                 results.append(f"\n📄 {display_path}:")
                                 file_header_added = True
-                            results.append(f"    {line_num}: {_bounded_excerpt(line, match_start=m.start())}")
-                            per_file_added += 1
+                            elif context_n and last_emitted and ln > last_emitted + 1:
+                                results.append("    --")
+                            sep = ":" if is_match else "-"
+                            results.append(f"    {ln}{sep} {_bounded_excerpt(text, match_start=ms)}")
+                            last_emitted = ln
+
+                        for line_num, line in enumerate(f, 1):
+                            # Early exit once the match cap is hit AND no trailing context is
+                            # still owed — otherwise the loop would scan to EOF looking for a
+                            # next match it will only reject (review 2026-07-25 perf nit).
+                            if (
+                                head_limit_per_file is not None
+                                and per_file_added >= head_limit_per_file
+                                and after_remaining == 0
+                            ):
+                                break
+                            m = regex_pattern.search(line)
+                            if m:
+                                if head_limit_per_file is not None and per_file_added >= head_limit_per_file:
+                                    break
+                                if context_n:
+                                    for bn, bt in before_buf:
+                                        if bn > last_emitted:
+                                            _emit(bn, bt, is_match=False)
+                                    before_buf.clear()
+                                _emit(line_num, line, is_match=True, ms=m.start())
+                                per_file_added += 1
+                                after_remaining = context_n
+                                continue
+                            # Non-match line: trailing context first, then buffer as
+                            # potential "before" context for a later match.
+                            if after_remaining > 0:
+                                _emit(line_num, line, is_match=False)
+                                after_remaining -= 1
+                            if context_n:
+                                before_buf.append((line_num, line))
+                                if len(before_buf) > context_n:
+                                    before_buf.pop(0)
 
                 if file_header_added:
                     matching_files += 1
@@ -2710,27 +3017,62 @@ def search_files(
             except Exception as e:
                 results.append(f"\n⚠️  Error reading {display_path}: {str(e)}")
 
-        # If we stopped early due to max_hits and the candidate set is small enough, compute
-        # how many additional matching files exist (for better agent UX).
-        if stopped_at_max_hits and stop_index is not None:
-            remaining_candidates = len(files_to_search) - int(stop_index)
-            if (not multiline) and len(files_to_search) <= COUNT_REMAINDER_CANDIDATES_LIMIT:
-                more_matching = 0
-                for file_path in files_to_search[int(stop_index):]:
-                    try:
-                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                            for line in f:
-                                if regex_pattern.search(line):
-                                    more_matching += 1
-                                    break
-                    except Exception:
-                        continue
+        # BOUNDED remainder count (search-perf incident 2026-07-23): the old
+        # code walked the ENTIRE remaining tree to compute an exact total —
+        # that unbounded walk WAS the 8m39s cost. We keep the useful exact
+        # count for SMALL trees by consuming at most REMAINDER_BUDGET more
+        # candidates from the lazy stream; if the stream isn't exhausted within
+        # that budget the tree is large and we report "more may exist" + a
+        # narrowing note instead of paying the full walk.
+        total_matching_files: Optional[int] = None
+        remainder_exhausted = False
+        REMAINDER_BUDGET = 500
+        if stopped_at_max_hits and not multiline:
+            more_matching = 0
+            examined = 0
+            remainder_exhausted = True  # assume exhausted unless the budget trips
+            import itertools
+
+            remainder_stream = (
+                itertools.chain([pending_after_stop], candidate_iter)
+                if pending_after_stop is not None
+                else candidate_iter
+            )
+            for rem_path in remainder_stream:
+                if examined >= REMAINDER_BUDGET:
+                    remainder_exhausted = False
+                    break
+                examined += 1
+                try:
+                    with open(rem_path, "r", encoding="utf-8") as _s:
+                        _s.read(1024)  # binary sniff (same as the match loop)
+                except (UnicodeDecodeError, PermissionError, OSError):
+                    continue
+                try:
+                    with open(rem_path, "r", encoding="utf-8", errors="ignore") as f:
+                        for line in f:
+                            if regex_pattern.search(line):
+                                more_matching += 1
+                                break
+                except Exception:
+                    continue
+            if remainder_exhausted:
                 total_matching_files = matching_files + more_matching
-            else:
-                total_matching_files = None
+
+        _scan_elapsed = time.monotonic() - _scan_started
 
         if not results:
-            return f"No matches found for pattern '{pattern}'"
+            base = f"No matches found for pattern '{pattern}'"
+            # Even on zero matches, tell the model HOW MUCH was scanned so a
+            # slow/empty search reads as "narrow the args", not a hang.
+            if scanned_files >= 200 or _scan_elapsed >= 2.0:
+                base += (
+                    f"\n\nNote: scanned {scanned_files} file(s) in {_scan_elapsed:.1f}s. "
+                    "Narrow `path` or `file_pattern`, or add a .abstractignore, to search faster."
+                )
+                if include_hidden:
+                    base += " (include_hidden=True walks hidden dirs like .git-siblings — drop it unless you need them.)"
+            return base
 
         if total_matching_files is not None and total_matching_files != matching_files:
             header = (
@@ -2739,26 +3081,25 @@ def search_files(
             )
         else:
             header = f"Search results for pattern '{pattern}' under '{search_path_display}' in {matching_files} files:"
-
         out = header + "\n" + "\n".join(results)
 
-        # Truncation hint: make it explicit when max_hits caps results (and include a concrete re-run example).
+        # Truncation hint: make it explicit when max_hits caps results (with a concrete re-run).
         if stopped_at_max_hits and max_hits_files is not None:
             suggested = int(max_hits_files) * 2
             head_limit_repr = "None" if head_limit_per_file is None else str(int(head_limit_per_file))
+            rerun = (
+                "If you want to see more results, re-run: "
+                f"search_files(pattern={json.dumps(pattern)}, path={json.dumps(path)}, file_pattern={json.dumps(file_pattern)}, "
+                f"head_limit={head_limit_repr}, max_hits={int(suggested)}"
+            )
+            if multiline:
+                rerun += ", multiline=True"
+            if include_hidden:
+                rerun += ", include_hidden=True"
+            rerun += ")"
             if total_matching_files is not None:
                 remaining = max(0, int(total_matching_files) - int(matching_files))
                 if remaining:
-                    rerun = (
-                        "If you want to see more results, re-run: "
-                        f"search_files(pattern={json.dumps(pattern)}, path={json.dumps(path)}, file_pattern={json.dumps(file_pattern)}, "
-                        f"head_limit={head_limit_repr}, max_hits={int(suggested)}"
-                    )
-                    if multiline:
-                        rerun += ", multiline=True"
-                    if include_hidden:
-                        rerun += ", include_hidden=True"
-                    rerun += ")"
                     out += (
                         "\n\n"
                         f"Note: {remaining} more matching files available (increase max_hits to see more results or set max_hits=None to show all results)."
@@ -2766,25 +3107,26 @@ def search_files(
                         + rerun
                     )
             else:
-                unsearched = max(0, len(files_to_search) - int(stop_index or 0))
-                if unsearched:
-                    rerun = (
-                        "If you want to see more results, re-run: "
-                        f"search_files(pattern={json.dumps(pattern)}, path={json.dumps(path)}, file_pattern={json.dumps(file_pattern)}, "
-                        f"head_limit={head_limit_repr}, max_hits={int(suggested)}"
-                    )
-                    if multiline:
-                        rerun += ", multiline=True"
-                    if include_hidden:
-                        rerun += ", include_hidden=True"
-                    rerun += ")"
-                    out += (
-                        "\n\n"
-                        f"Note: search stopped after reaching max_hits={max_hits_files}; {unsearched} more files were not searched "
-                        f"(increase max_hits to see more results or set max_hits=None to show all results)."
-                        "\n"
-                        + rerun
-                    )
+                # Large tree: remainder count exceeded the budget — report
+                # capped without the (unaffordable) exact total, + narrowing.
+                out += (
+                    "\n\n"
+                    f"Note: search stopped after reaching max_hits={max_hits_files} (more matching files may exist; "
+                    "increase max_hits or set max_hits=None to show all)."
+                    "\n"
+                    + rerun
+                )
+                if include_hidden:
+                    out += "\n(Large tree: narrow `path`/`file_pattern` or drop include_hidden=True to search faster.)"
+        elif scanned_files >= 200 or _scan_elapsed >= 2.0:
+            # Not capped, but a large/slow scan — teach narrowing (ask D).
+            out += (
+                "\n\n"
+                f"Note: scanned {scanned_files} file(s) in {_scan_elapsed:.1f}s. "
+                "Narrow `path` or `file_pattern`, or add a .abstractignore, to search faster."
+            )
+            if include_hidden:
+                out += " (include_hidden=True walks hidden dirs — drop it unless you need them.)"
 
         return out
 
@@ -2834,9 +3176,14 @@ def read_file(
         file_path: required; Path to the file to read
         start_line: Starting line number (1-indexed, default: 1)
         end_line: Ending line number (1-indexed, inclusive, optional)
-        start_char: Character offset (0-indexed) to read from. Use this to
-            continue after a #TRUNCATION notice (huge/minified files where
-            line ranges cannot bound the size).
+        start_char: BYTE offset (0-indexed) to read from. Use this to continue
+            after a #TRUNCATION notice (huge/minified files where line ranges
+            cannot bound the size). You do not compute this value — copy it
+            verbatim from the notice's "start_char=<N>" (it is the byte position
+            where the previous chunk ended, on a codepoint boundary for well-formed
+            UTF-8; a genuinely corrupt region falls back to lenient decoding).
+            The name is kept for backward compatibility; the value is a byte
+            offset so continuations are exact on non-ASCII files.
         should_read_entire_file: Legacy/compatibility flag. If provided, overrides inference:
             - True  => attempt full read (or refuse if too large)
             - False => range mode (bounded by start_line/end_line)
@@ -2846,9 +3193,10 @@ def read_file(
 
     Returns:
         File contents or error message. Oversized reads return the first
-        MAX_CHARS_PER_CALL characters with a loud #TRUNCATION header AND
-        footer naming the exact continuation call (start_char=<offset>) —
-        truncation is never silent (ADR: label truncation, always).
+        window with a loud #TRUNCATION header AND footer naming the exact
+        continuation call (start_char=<byte-offset>) — truncation is never
+        silent (ADR: label truncation, always). Continuation offsets are
+        byte-true so multibyte content is never overlapped or split.
     """
     try:
         # Expand home directory shortcuts like ~
@@ -2870,7 +3218,8 @@ def read_file(
 
         # Guardrails: keep tool outputs bounded and avoid huge memory/time spikes.
         # These limits intentionally push agents toward:
-        # search_files(output_mode="context") → read_file(start_line/end_line) → edit_file(...)
+        # search_files(context_lines=N) → read_file(start_line/end_line) → edit_file(...)
+        # (search_files has no output_mode="context"; context rides context_lines.)
         # This is a pragmatic compromise:
         # - large enough to avoid constant "Refused" loops for typical source files
         # - still bounded to keep tool outputs manageable for remote hosts and models
@@ -2888,23 +3237,60 @@ def read_file(
         MAX_CHARS_PER_CALL = 120_000
 
         def _partial_chunk(offset: int) -> str:
-            """Char-window read: [offset, offset+cap), with loud truncation
-            notices on BOTH ends (models attend to beginnings and endings)."""
-            total = path.stat().st_size
-            with open(path, 'r', encoding='utf-8', errors='replace') as fh:
+            """Byte-window read: [offset, offset+cap) measured in BYTES, with loud
+            truncation notices on BOTH ends (models attend to beginnings and endings).
+
+            The offset is a BYTE offset (not a character count): the file is opened in
+            binary mode and `seek()` is a byte seek. A prior revision opened the file in
+            TEXT mode and seeked with a character-derived value — but `TextIOWrapper.seek`
+            treats a non-cookie argument as BYTES, so on any non-ASCII file the continuation
+            call (start_char=<footer value>) landed at the wrong position, silently
+            re-reading overlapping content and often splitting a multibyte codepoint into a
+            U+FFFD at the chunk head (audit 2026-07-25, item 0828). Byte-true offsets +
+            codepoint-boundary trimming below make every continuation exact.
+            """
+            total = path.stat().st_size  # bytes
+            with open(path, 'rb') as fh:
                 fh.seek(max(0, offset))
-                chunk = fh.read(MAX_CHARS_PER_CALL)
-                at_eof = fh.read(1) == ""
-            end = offset + len(chunk)
+                raw = fh.read(MAX_CHARS_PER_CALL)   # byte budget (>= chars, so context-safe)
+                at_eof = fh.read(1) == b""          # nothing beyond this window
+
+            # Decode on a codepoint boundary. When NOT at EOF, trim up to 3 trailing bytes
+            # to the last COMPLETE utf-8 sequence so a multibyte char is never split across
+            # the seam; the trimmed bytes are re-read (cleanly) by the next chunk. At EOF
+            # there is nothing after, so any incomplete tail is genuinely corrupt -> replace.
+            if at_eof:
+                chunk = raw.decode('utf-8', errors='replace')
+                consumed = len(raw)
+            else:
+                chunk = None
+                consumed = len(raw)
+                for cut in range(0, 4):
+                    end_b = len(raw) - cut
+                    if end_b <= 0:
+                        break
+                    try:
+                        chunk = raw[:end_b].decode('utf-8')  # strict: proves a clean boundary
+                        consumed = end_b
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                if chunk is None:
+                    # Invalid bytes not at the boundary (a genuinely corrupt region):
+                    # keep the historical lenient behavior and consume the whole budget.
+                    chunk = raw.decode('utf-8', errors='replace')
+                    consumed = len(raw)
+
+            end = offset + consumed  # BYTE offset of the next unread byte (a valid boundary)
             if at_eof:
                 header = (
                     f"File: {display_path} — FINAL PART "
-                    f"(chars {offset:,}-{end:,} of ~{total:,}; end of file)"
+                    f"(bytes {offset:,}-{end:,} of ~{total:,}; end of file)"
                 )
                 return header + "\n\n" + chunk + "\n\n[END OF FILE]"
             pct = 100.0 * end / max(1, total)
             notice = (
-                f"#TRUNCATION: this is a PARTIAL read — chars {offset:,}-{end:,} "
+                f"#TRUNCATION: this is a PARTIAL read — bytes {offset:,}-{end:,} "
                 f"of ~{total:,} (~{pct:.1f}% shown). The file continues.\n"
                 f"NEXT PART: read_file(file_path=\"{file_path}\", start_char={end})"
             )
@@ -3015,14 +3401,19 @@ def read_file(
                         # Range reads need the char cap too: one minified line
                         # can carry megabytes, and line arithmetic cannot see
                         # it. Deliver the requested range's beginning as a
-                        # labeled partial chunk (char-offset of the range
-                        # start), never silently clip and never bare-refuse.
+                        # labeled partial chunk. The offset MUST be a BYTE offset
+                        # (that is _partial_chunk's contract), so count bytes of
+                        # the preceding lines by reading the file in binary and
+                        # splitting on the newline byte — mixing text-mode char
+                        # lengths here was the same byte/char bug (item 0828).
                         range_start_offset = 0
-                        with open(path, 'r', encoding='utf-8', errors='replace') as fh2:
-                            for n2, l2 in enumerate(fh2, 1):
+                        with open(path, 'rb') as fh2:
+                            n2 = 0
+                            for b_line in fh2:
+                                n2 += 1
                                 if n2 >= start_line:
                                     break
-                                range_start_offset += len(l2)
+                                range_start_offset += len(b_line)
                         return _partial_chunk(range_start_offset)
                     selected_lines.append((line_no, line.rstrip("\r\n")))
                     if len(selected_lines) > MAX_LINES_PER_CALL:
@@ -3054,6 +3445,19 @@ def read_file(
         return f"Error: Permission denied reading file: {_path_for_display(Path(file_path).expanduser())}"
     except Exception as e:
         return f"Error reading file: {str(e)}"
+
+
+# skim_files structure-detection patterns.
+# Compiled ONCE at module scope (not inside the closure) so they are unit-testable in
+# isolation and cannot be silently re-broken by a future edit — an earlier revision had
+# these as raw strings with DOUBLED backslashes (r"\\s"), which match a literal backslash
+# instead of the whitespace class, so heading/list/def/sentence detection was entirely
+# dead while the tool still "worked" via bookend sampling (audit 2026-07-25, item 0827).
+_SKIM_HR_RE = re.compile(r"^[-=]{3,}\s*$")                                  # setext underline / horizontal rule
+_SKIM_LIST_RE = re.compile(r"^([-*+]\s+|\d+\.\s+|\[(?: |x|X)\]\s+)\S")      # bullet / numbered / checkbox list
+_SKIM_CODE_DECL_RE = re.compile(r"^(class|def)\s+\w+")                       # code-ish structure in mixed docs
+_SKIM_HEADING_RE = re.compile(r"^#{1,6}\s+\S")                               # markdown ATX heading
+_SKIM_SENTENCE_END_RE = re.compile(r"([.!?])(\s+|$)")                        # first-sentence boundary
 
 
 @tool(
@@ -3217,11 +3621,11 @@ def skim_files(
         if _is_heading_line(stripped):
             return True
         # Markdown headings / underlines
-        if re.match(r"^[-=]{3,}\\s*$", stripped):
+        if _SKIM_HR_RE.match(stripped):
             return True
         # Lists / checkboxes
         # NOTE: use a non-charclass form for checkboxes to avoid regex "nested set" warnings on `[[`.
-        if re.match(r"^([-*+]\\s+|\\d+\\.\\s+|\\[(?: |x|X)\\]\\s+)\\S", stripped):
+        if _SKIM_LIST_RE.match(stripped):
             return True
         # Markdown tables / blockquote / code fences
         if stripped.startswith("|") or stripped.startswith(">"):
@@ -3229,7 +3633,7 @@ def skim_files(
         if stripped.startswith("```") or stripped.startswith("~~~"):
             return True
         # Code-ish structure (useful even in mixed docs)
-        if re.match(r"^(class|def)\\s+\\w+", stripped):
+        if _SKIM_CODE_DECL_RE.match(stripped):
             return True
         if stripped.startswith("@") and len(stripped) <= 120:
             return True
@@ -3245,15 +3649,13 @@ def skim_files(
         s = str(text or "").strip()
         if not s:
             return False
-        return bool(re.match(r"^#{1,6}\\s+\\S", s))
-
-    _SENTENCE_END_RE = re.compile(r"([.!?])(\\s+|$)")
+        return bool(_SKIM_HEADING_RE.match(s))
 
     def _first_sentence(text: str) -> str:
         s = " ".join(str(text or "").strip().split())
         if not s:
             return ""
-        m = _SENTENCE_END_RE.search(s)
+        m = _SKIM_SENTENCE_END_RE.search(s)
         if not m:
             return s
         end = m.end(1)
@@ -3853,6 +4255,16 @@ def web_search(
             snippet_re = re.compile(r'<a[^>]+class="result__snippet"[^>]*>(.*?)</a>', re.IGNORECASE | re.DOTALL)
             tag_re = re.compile(r"<[^>]+>")
 
+            def _html_fragment_to_text(fragment: str) -> str:
+                # Replace tags with a space, never "": highlight markup like
+                # "four<b>sound</b>channels" would otherwise fuse into
+                # "foursoundchannels", which breaks exact-substring filters
+                # downstream (skim_websearch required_terms). Tags are
+                # stripped before unescaping so literal "&lt;b&gt;" in page
+                # text is not treated as markup; the whitespace collapse also
+                # normalizes &nbsp; (\xa0) runs to single plain spaces.
+                return re.sub(r"\s+", " ", html_lib.unescape(tag_re.sub(" ", fragment))).strip()
+
             links = list(link_re.finditer(page))
             results: list[dict[str, Any]] = []
             for i, m in enumerate(links, 1):
@@ -3867,7 +4279,7 @@ def web_search(
                 href = _unwrap_duckduckgo_redirect(href)
 
                 title_html = m.group(2) or ""
-                title = html_lib.unescape(tag_re.sub("", title_html)).strip()
+                title = _html_fragment_to_text(title_html)
 
                 # Try to find the snippet in the following chunk of HTML (best-effort).
                 tail = page[m.end() : m.end() + 5000]
@@ -3875,7 +4287,7 @@ def web_search(
                 snippet = ""
                 if sm:
                     snippet_html = sm.group(1) or ""
-                    snippet = html_lib.unescape(tag_re.sub("", snippet_html)).strip()
+                    snippet = _html_fragment_to_text(snippet_html)
 
                 results.append({"rank": i, "title": title, "url": href, "snippet": snippet})
 
@@ -3964,8 +4376,11 @@ def web_search(
             "arguments": {"query": "vector databases comparison", "required_terms": ["latency", "benchmark"]},
         },
         {
-            "description": "Require all keywords, searching recent results",
-            "arguments": {"query": "llm tool calling formats", "required_terms": ["xml", "qwen"], "match": "all", "time_range": "w"},
+            # Teach the loose combination (match='any' + title_snippet scope):
+            # backend snippets are short and sometimes empty or degraded, so
+            # match='all' against snippet-only text over-filters real hits.
+            "description": "Keep results mentioning either keyword in title or snippet, searching recent results",
+            "arguments": {"query": "llm tool calling formats", "required_terms": ["xml", "qwen"], "match": "any", "require_in": "title_snippet", "time_range": "w"},
         },
     ],
 )
@@ -3995,6 +4410,20 @@ def skim_websearch(
             text = value.strip()
             if not text:
                 return []
+            # Tool-call transports often deliver list arguments as their JSON
+            # source text ('["Game Boy"]' or '"Game Boy"'). Decode those
+            # shapes first: splitting them with the separator heuristics
+            # below would keep the literal brackets/quotes inside the term,
+            # which can never match anything.
+            if text[0] in "[\"":
+                try:
+                    decoded = json.loads(text)
+                except Exception:
+                    decoded = None
+                if isinstance(decoded, (list, tuple)):
+                    return _parse_terms(list(decoded))
+                if isinstance(decoded, str) and decoded.strip():
+                    return [decoded.strip()]
             normalized = text.replace("\r\n", "\n").replace("\r", "\n")
             if "|" in normalized or "\n" in normalized:
                 parts: list[str] = []
@@ -4093,38 +4522,80 @@ def skim_websearch(
     results = payload.get("results")
     if not isinstance(results, list):
         results = []
+    # Non-dict rows can never match nor be returned; dropping them here keeps
+    # counts.fetched truthful about what filtering actually considered.
+    results = [item for item in results if isinstance(item, dict)]
     upstream_success = payload.get("success")
     if upstream_success is None:
         upstream_success = False if payload.get("error") else True
     upstream_status = str(payload.get("status_hint") or ("error" if payload.get("error") else "ok")).strip().lower() or "ok"
     upstream_degraded = bool(payload.get("degraded")) or upstream_status == "warning"
 
-    def _haystack(item: Dict[str, Any]) -> str:
+    _ws_run = re.compile(r"\s+")
+
+    def _scope_fields(item: Dict[str, Any], scope: str) -> list[str]:
         title = str(item.get("title") or "")
         snippet = str(item.get("snippet") or "")
         url = str(item.get("url") or "")
-        if require_in_norm == "title":
-            return title
-        if require_in_norm == "title_snippet":
-            return f"{title} {snippet}".strip()
-        if require_in_norm == "all":
-            return f"{title} {snippet} {url}".strip()
-        return snippet
+        if scope == "title":
+            return [title]
+        if scope == "title_snippet":
+            return [title, snippet]
+        if scope == "all":
+            return [title, snippet, url]
+        return [snippet]
+
+    def _match_item(item: Dict[str, Any], scope: str) -> tuple[bool, bool]:
+        """Evaluate required terms against one result; returns (matched, used_ws_fallback).
+
+        Primary check is plain substring containment. Terms that contain
+        whitespace additionally get a whitespace-elided comparison ("game boy"
+        -> "gameboy" against the haystack with all whitespace removed): search
+        backends sometimes return text with words fused at highlight-tag
+        boundaries (live incident: ddgs bodies like "TheGameBoyhas
+        foursoundchannels"), source pages legitimately spell multi-word names
+        without spaces ("GameBoy"), and non-breaking-space variants defeat a
+        plain space in the term. Whitespace-free terms never take the
+        fallback — plain substring already finds them inside fused text, and
+        skipping them avoids new cross-word false positives (e.g. "ascript"
+        matching inside "java script"). Fields are elided separately and
+        joined with a space so a term can never match across a
+        title/snippet/url boundary. This tolerance is a relevance filter for
+        skim results only; exact-match tools must not adopt it.
+        """
+        fields = [f.lower() for f in _scope_fields(item, scope)]
+        text = " ".join(f for f in fields if f)
+        text_elided = " ".join(_ws_run.sub("", f) for f in fields if f)
+
+        def _elided_ok(term: str) -> bool:
+            collapsed = _ws_run.sub("", term)
+            return collapsed != term and bool(collapsed) and collapsed in text_elided
+
+        primary = [t in text for t in terms]
+        if match_norm == "all":
+            missing = [t for t, hit in zip(terms, primary) if not hit]
+            if not missing:
+                return True, False
+            if all(_elided_ok(t) for t in missing):
+                return True, True
+            return False, False
+        if any(primary):
+            return True, False
+        if any(_elided_ok(t) for t in terms):
+            return True, True
+        return False, False
 
     filtered: list[Dict[str, Any]] = []
+    ws_fallback_matches = 0
     for item in results:
-        if not isinstance(item, dict):
-            continue
         if not terms:
             filtered.append(item)
             continue
-        text = _haystack(item).lower()
-        if match_norm == "all":
-            if all(t in text for t in terms):
-                filtered.append(item)
-        else:
-            if any(t in text for t in terms):
-                filtered.append(item)
+        matched, used_ws_fallback = _match_item(item, require_in_norm)
+        if matched:
+            filtered.append(item)
+            if used_ws_fallback:
+                ws_fallback_matches += 1
 
     def _one_line_text(value: Any) -> str:
         # Keep tool outputs small and JSON-friendly (no stray newlines/tabs).
@@ -4178,8 +4649,41 @@ def skim_websearch(
         out_payload.setdefault("warnings", []).append("num_results was capped at 15 for compact skim output.")
         out_payload.setdefault("limitations", []).append("num_results_capped_at_15")
 
-    if terms and not out_results:
-        out_payload["hint"] = "No matches. Try fewer required_terms or match='any'."
+    if ws_fallback_matches:
+        # Tell the model the matched text is degraded so it treats snippets
+        # as leads (fetch to verify) rather than quotable prose.
+        out_payload["note"] = (
+            f"{ws_fallback_matches} result(s) matched only via whitespace-insensitive comparison "
+            "(backend snippet/title text contains words fused together)."
+        )
+
+    if terms and not filtered:
+        # Cause-aware guidance. The one-size hint ("try fewer terms") sent
+        # models the wrong way when the real blocker was empty backend
+        # snippets or terms sitting in the title/url instead of the snippet.
+        hint = "No matches. Try fewer required_terms or match='any'."
+        empty_snippets = sum(1 for item in results if not str(item.get("snippet") or "").strip())
+        if require_in_norm == "snippet" and results and empty_snippets * 2 > len(results):
+            hint = (
+                f"No matches: {empty_snippets} of {len(results)} fetched results have empty snippets "
+                "(the backend returned no snippet text). Retry with require_in='title_snippet' or require_in='all'."
+            )
+        else:
+            if require_in_norm in {"snippet", "title"}:
+                wider_scopes: tuple[str, ...] = ("title_snippet", "all")
+            elif require_in_norm == "title_snippet":
+                wider_scopes = ("all",)
+            else:
+                wider_scopes = ()
+            for scope in wider_scopes:
+                wider_hits = sum(1 for item in results if _match_item(item, scope)[0])
+                if wider_hits:
+                    hint = (
+                        f"No matches with require_in='{require_in_norm}', but {wider_hits} result(s) match "
+                        f"in the wider '{scope}' scope. Retry with require_in='{scope}'."
+                    )
+                    break
+        out_payload["hint"] = hint
     if isinstance(payload, dict) and payload.get("error"):
         out_payload["error"] = payload.get("error")
         out_payload["search_error"] = payload.get("error")
@@ -4796,13 +5300,42 @@ def _detect_unrenderable_html(raw_html: str, extracted: str) -> Optional[tuple[s
     return None
 
 
-def _classify_fetch_http_error(status: int, headers: Dict[str, Any]) -> tuple[str, list[str]]:
+def _is_loopback_or_private_host(host: Optional[str]) -> bool:
+    """True if host is loopback / private / link-local (or localhost/.local).
+
+    Used to make the 401 error-shaping SAFE for local/control-plane targets
+    (code-tui 401-incident root-cause, c4978): the generic "supply credentials
+    via headers" hint invites a model holding a token in context (e.g. the
+    gateway bearer) to PASTE it into a fetch_url aimed at the loopback control
+    plane. For a local/private host we never issue that hint.
+    """
+    h = str(host or "").strip().lower()
+    if not h:
+        return False
+    if h == "localhost" or h.endswith(".local") or h.endswith(".localhost"):
+        return True
+    h_ip = h.strip("[]").split("%", 1)[0]  # strip IPv6 brackets + zone id
+    try:
+        import ipaddress
+
+        ip = ipaddress.ip_address(h_ip)
+        return bool(ip.is_loopback or ip.is_private or ip.is_link_local)
+    except ValueError:
+        return False
+
+
+def _classify_fetch_http_error(
+    status: int, headers: Dict[str, Any], host: Optional[str] = None
+) -> tuple[str, list[str]]:
     """Map a persistent HTTP failure to (error_class, actionable suggestions).
 
     The class is a coarse, branchable label an AGENT can act on; the
     suggestions are concrete next steps. `error_class` values:
     bot_challenge | rate_limited | auth_required | not_found | gone |
     server_error | client_error.
+
+    `host` (when known) makes the 401 guidance safe for local/control-plane
+    targets — it never tells a model to paste credentials at a loopback host.
     """
     server = str(headers.get("server") or "").lower()
     via_cf = "cloudflare" in server or bool(headers.get("cf-ray"))
@@ -4821,6 +5354,15 @@ def _classify_fetch_http_error(status: int, headers: Dict[str, Any]) -> tuple[st
         base.append("do NOT impersonate a browser UA; keep the honest identified fetcher (many sites whitelist it)")
         return "bot_challenge", base
     if status == 401:
+        if _is_loopback_or_private_host(host):
+            # Local / private / control-plane target: do NOT invite a
+            # credential paste (c4978 — a model holding a token would paste it
+            # into a loopback fetch aimed at the gateway's own API).
+            return "auth_required", [
+                "this is a LOCAL / private-network endpoint (loopback or private IP) that requires authentication",
+                "do NOT paste tokens or credentials into headers to reach it — a local control plane (e.g. a gateway's own API) authenticates through its own session, never a model-supplied token",
+                "if this is your own service, call it through its native client/session, not fetch_url",
+            ]
         return "auth_required", [
             "the resource requires authentication; supply credentials via headers if you have them",
         ]
@@ -5084,8 +5626,15 @@ def fetch_url(
                 # raw headers and discarded the body, which often held the remedy).
                 if not response.ok:
                     status = int(response.status_code)
+                    # Pass the FINAL host (post-redirect) so 401 guidance is
+                    # safe for local/control-plane targets (c4978).
+                    _final_host = None
+                    try:
+                        _final_host = urlparse(str(getattr(response, "url", None) or url)).hostname
+                    except Exception:
+                        _final_host = None
                     error_class, suggestions = _classify_fetch_http_error(
-                        status, dict(response.headers)
+                        status, dict(response.headers), host=_final_host
                     )
                     body_excerpt = ""
                     try:
@@ -8067,8 +8616,8 @@ _EDIT_FILE_PARSE_GUARDS: dict[str, tuple[str, Any]] = {
 
 
 @tool(
-    description="Surgically edit a text file via small find/replace (literal/regex) or a single-file unified diff patch.",
-    when_to_use="Use for small, precise edits. Prefer search_files → read_file → edit_file with a small unique pattern; for whole-file rewrites, use write_file().",
+    description="Surgically edit a text file via small find/replace (literal/regex), a line-range replace, or a single-file unified diff patch.",
+    when_to_use="Use for small, precise edits. Prefer a small unique pattern; whole-file rewrites use write_file(). Different files: batch several edit_file calls in one turn. Several changes in one file: one diff-mode call.",
     tags=["mutating"],
     hide_args=["encoding", "flexible_whitespace"],
     examples=[
@@ -8116,11 +8665,19 @@ def edit_file(
     """
     Edit a UTF-8 text file.
 
-    Two supported modes:
+    Three supported modes:
     1) **Find/replace mode** (recommended for small edits):
        - Provide `pattern` and `replacement` (optionally regex).
-    2) **Unified diff mode** (recommended for precise multi-line edits):
+    2) **Range-replace mode** (bounded rewrite when a unique pattern is impractical):
+       - Provide `start_line` + `end_line` + `replacement` with `pattern=""`.
+    3) **Unified diff mode** (recommended for precise multi-line edits):
        - Call `edit_file(file_path, patch)` with `replacement=None` and `pattern` set to a single-file unified diff.
+
+    Batching (one turn, several edits): edits to DIFFERENT files are independent — send them
+    as several edit_file calls in the SAME turn instead of one call per turn. Several changes
+    to the SAME file belong in ONE call: use unified diff mode (many hunks, applied atomically)
+    rather than sequential pattern calls, whose earlier edits can shift the lines and patterns
+    the later ones depend on.
 
     Finds patterns (text or regex) in files and replaces them with new content.
     For complex multi-line edits, prefer unified diff mode to avoid accidental partial matches.
@@ -8135,8 +8692,13 @@ def edit_file(
             edit fails and asks for more unique context (never silently replaces
             all). Pass -1 (or 0) to explicitly replace ALL occurrences; pass
             N >= 1 to replace the first N occurrences.
-        start_line: Starting line number to limit search scope (1-indexed, optional)
-        end_line: Ending line number to limit search scope (1-indexed, optional)
+        start_line: First line of the search scope (1-based, inclusive). Omit to
+            search from the start of the file — a unique pattern needs no line
+            range; only scope when disambiguating repeated matches or replacing a
+            known line slice. 0 is tolerated as line 1 (with a visible note).
+        end_line: Last line of the search scope (1-based, inclusive). Omit or pass
+            -1 to search through the end of the file. A value past the end of the
+            file is clamped to the last line (with a visible note).
         preview_only: Show what would be changed without applying (default: False)
         encoding: File encoding (default: "utf-8")
         flexible_whitespace: Enable whitespace-flexible matching (default: True).
@@ -8376,39 +8938,119 @@ def edit_file(
         original_content = content
         range_replace_meta: Optional[dict[str, Any]] = None
 
-        # Normalize escape sequences - handles LLMs sending \\n instead of actual newlines
-        pattern = _normalize_escape_sequences("" if pattern is None else str(pattern))
-        replacement = _normalize_escape_sequences(replacement)
+        # Exact-match-first escape handling (item 0829). We do NOT rewrite escape sequences
+        # up front. The previous behavior converted literal \n/\t/\r in BOTH `pattern` and
+        # `replacement` into real control characters before any match — so a caller inserting
+        # a literal escape into SOURCE CODE (e.g. `sep = "\n"`) got a real newline written:
+        # silent corruption on unguarded file types and an UNFIXABLE retry loop on guarded
+        # ones (the parse guard blamed the caller's edit without revealing the rewrite). The
+        # replacement is now kept VERBATIM, and normalization survives only as a LABELED
+        # fallback on the PATTERN (see the probe below) for weak models that over-escape.
+        pattern = "" if pattern is None else str(pattern)
+        replacement = None if replacement is None else str(replacement)
+        escape_note: Optional[str] = None
 
         # Handle line range targeting if specified
         search_content = content
         line_offset = 0
+        scope_bounds: Optional[tuple[int, int]] = None  # resolved 1-based inclusive (first, last)
+        range_notes: list[str] = []  # labeled tolerance dispositions (clamps) — always surfaced
         if start_line is not None or end_line is not None:
             lines = content.splitlines(keepends=True)
             total_lines = len(lines)
+
+            # Range-parameter policy. Two rules drive it:
+            # 1) Validation is BATCHED: each refusal costs the caller a full model
+            #    turn, so ONE message must name EVERY invalid parameter (a caller
+            #    that sent start_line=0 AND end_line=0 must not learn about them
+            #    one turn at a time).
+            # 2) Unambiguous off-by-convention values are tolerated WITH a visible
+            #    note; ambiguous values are refused with teaching. Never silently
+            #    reinterpret an ambiguous value.
+            range_problems: list[str] = []
 
             # Robustness: some models/providers may emit numeric fields as strings.
             if start_line is not None and not isinstance(start_line, int):
                 try:
                     start_line = int(str(start_line).strip())
                 except Exception:
-                    return _with_lint(f"❌ Invalid start_line {start_line}. Must be an integer (1-indexed).")
+                    range_problems.append(
+                        f"start_line {start_line!r} is not an integer (line numbers are 1-based)"
+                    )
+                    start_line = None
             if end_line is not None and not isinstance(end_line, int):
                 try:
                     end_line = int(str(end_line).strip())
                 except Exception:
-                    return _with_lint(f"❌ Invalid end_line {end_line}. Must be an integer (1-indexed).")
+                    range_problems.append(
+                        f"end_line {end_line!r} is not an integer (line numbers are 1-based)"
+                    )
+                    end_line = None
 
-            # Validate line range parameters
-            if start_line is not None and (start_line < 1 or start_line > total_lines):
-                return _with_lint(f"❌ Invalid start_line {start_line}. Must be between 1 and {total_lines}")
+            if start_line is not None:
+                if start_line == 0:
+                    # 0 for the START unambiguously means "from the beginning"
+                    # (0-based habit), so clamping is semantically safe — but only
+                    # with a visible note, never silently.
+                    start_line = 1
+                    range_notes.append("start_line 0 is treated as line 1 (line numbers are 1-based)")
+                elif start_line < 0:
+                    range_problems.append(
+                        f"start_line {start_line} is invalid; use a value between 1 and {total_lines}, "
+                        "or omit it to search from the start of the file"
+                    )
+                elif start_line > total_lines:
+                    range_problems.append(
+                        f"start_line {start_line} is beyond the end of the file ({total_lines} lines); "
+                        "the line numbers may be stale — re-read the file, or omit start_line/end_line"
+                    )
 
-            if end_line is not None and (end_line < 1 or end_line > total_lines):
-                return _with_lint(f"❌ Invalid end_line {end_line}. Must be between 1 and {total_lines}")
+            if end_line is not None:
+                if end_line == -1:
+                    # Documented end-of-file sentinel (mirrors Claude-style view
+                    # ranges); equivalent to omitting end_line.
+                    end_line = total_lines
+                elif end_line == 0:
+                    # 0 for the END is AMBIGUOUS (0-based first line? EOF sentinel?
+                    # "unset" placeholder?) — a clamp could silently do the wrong
+                    # thing, so refuse and teach the unambiguous alternatives.
+                    range_problems.append(
+                        "end_line 0 is ambiguous (line numbers are 1-based, so there is no line 0); "
+                        f"use a value between 1 and {total_lines}, pass -1 for end of file, "
+                        "or omit end_line to search through the end of the file"
+                    )
+                elif end_line < -1:
+                    range_problems.append(
+                        f"end_line {end_line} is invalid; use a value between 1 and {total_lines}, "
+                        "pass -1 for end of file, or omit it"
+                    )
+                elif end_line > total_lines:
+                    # Past-EOF for the END unambiguously means "through the end":
+                    # clamp to the last line, with a visible note (Claude-style
+                    # view ranges clamp the same way).
+                    range_notes.append(
+                        f"end_line {end_line} exceeds the file and is treated as {total_lines} (end of file)"
+                    )
+                    end_line = total_lines
 
-            if start_line is not None and end_line is not None and start_line > end_line:
+            # Cross-param consistency check — only meaningful when both values
+            # individually survived validation (comparing against an already-refused
+            # value would report a derived problem the caller never created).
+            if not range_problems and start_line is not None and end_line is not None and start_line > end_line:
+                range_problems.append(
+                    f"start_line ({start_line}) is greater than end_line ({end_line}); the range is empty"
+                )
+
+            if range_problems:
+                problem_lines = "\n".join(f"- {p}" for p in range_problems)
+                note_lines = (
+                    "\n" + "\n".join(f"Note: {n}." for n in range_notes) if range_notes else ""
+                )
                 return _with_lint(
-                    f"❌ Invalid line range: start_line ({start_line}) cannot be greater than end_line ({end_line})"
+                    f"❌ Invalid line range for '{display_path}' ({total_lines} lines):\n"
+                    f"{problem_lines}{note_lines}\n"
+                    "Omit start_line/end_line to search the whole file "
+                    "(recommended when the pattern is unique)."
                 )
 
             # Calculate actual line range (convert to 0-indexed)
@@ -8419,6 +9061,13 @@ def edit_file(
             target_lines = lines[start_idx:end_idx]
             search_content = ''.join(target_lines)
             line_offset = start_idx  # Track where our search content starts in the original file
+            scope_bounds = (start_idx + 1, end_idx)
+
+        # Resolved-scope suffix for messages. Built from scope_bounds (never the raw
+        # params) so a half-open call (only one of start/end given) renders real
+        # numbers instead of "None".
+        range_info = f" (lines {scope_bounds[0]}-{scope_bounds[1]})" if scope_bounds else ""
+        scope_note_text = ("Note (line range): " + "; ".join(range_notes) + ".") if range_notes else ""
 
         # Range-replace mode: allow omitting `pattern` when replacing a known line slice.
         #
@@ -8505,15 +9154,16 @@ def edit_file(
             Names the match count and locations and asks for more unique context
             (never silently replaces all matches).
             """
-            range_info = (
-                f" (lines {start_line}-{end_line})"
-                if start_line is not None or end_line is not None
-                else ""
-            )
             shown = match_lines[:8]
             where = ", ".join(str(n) for n in shown)
             more = f" and {total - len(shown)} more" if total > len(shown) else ""
             at = f" at line(s) {where}{more}" if shown else ""
+            # If the escape probe swapped the pattern, the shown pattern has control chars the
+            # caller never sent — disclose it so the error is never a hidden rewrite (item 0829).
+            escape_disclosure = f"\n\nNote (escape handling): {escape_note}" if escape_note else ""
+            # A clamped range must be disclosed here too: the resolved bounds shown
+            # above may differ from what the caller sent.
+            scope_disclosure = f"\n\n{scope_note_text}" if scope_note_text else ""
             return _with_lint(
                 f"❌ Ambiguous pattern: {total} matches for {kind} '{pattern}' in "
                 f"'{display_path}'{range_info}{at}.\n"
@@ -8523,12 +9173,90 @@ def edit_file(
                 "- Scope the edit with start_line/end_line around the intended match\n"
                 f"- Pass max_replacements=-1 (or 0) explicitly to replace ALL {total} occurrences\n"
                 "- Pass max_replacements=N to replace the first N occurrence(s)"
+                + scope_disclosure
+                + escape_disclosure
             )
 
         def _line_numbers_for_offsets(text: str, offsets: list[int]) -> list[int]:
             """Absolute 1-based file line numbers for char offsets into `text`
             (which may be a narrowed slice starting at `line_offset`)."""
             return [text.count("\n", 0, off) + 1 + line_offset for off in offsets]
+
+        def _scoped_no_match_hint(compiled_regex: Optional["re.Pattern"] = None) -> str:
+            """Definitive stale-scope diagnosis for scoped misses — never speculative.
+
+            A scoped search that misses while the pattern DOES exist elsewhere in
+            the file is almost always stale line numbers (the file changed since
+            they were read). Probing the whole file turns a dead-end refusal into
+            a one-turn recovery: the model learns whether to drop/fix the range or
+            fix the pattern, instead of guessing from a "may exist outside" hint.
+            """
+            if scope_bounds is None:
+                return ""
+            lo, hi = scope_bounds
+            found_total = 0
+            first_line_no: Optional[int] = None
+            try:
+                if compiled_regex is not None:
+                    whole_matches = list(compiled_regex.finditer(content))
+                    found_total = len(whole_matches)
+                    if whole_matches:
+                        first_line_no = content.count("\n", 0, whole_matches[0].start()) + 1
+                else:
+                    found_total = content.count(pattern)
+                    if found_total:
+                        first_line_no = content.count("\n", 0, content.find(pattern)) + 1
+                    elif flexible_whitespace and (
+                        "\n" in pattern or (pattern != pattern.lstrip() and bool(pattern.lstrip()))
+                    ):
+                        flex = _flexible_whitespace_match(pattern, replacement or "", content, -1)
+                        if flex is not None:
+                            _flex_updated, _flex_count, flex_lines = flex
+                            found_total = len(flex_lines)
+                            first_line_no = flex_lines[0] if flex_lines else None
+            except Exception:
+                # A failed probe must never mask the primary no-match error.
+                return (
+                    "\nHint: The match may exist outside the specified line range. "
+                    "Remove/widen start_line/end_line or re-read the file to confirm."
+                )
+            if found_total > 0:
+                return (
+                    f"\nHint: not found in lines {lo}-{hi}, but {found_total} match(es) exist outside "
+                    f"this range (first at line {first_line_no}); the line numbers may be stale — "
+                    "re-read the file, or omit start_line/end_line (recommended when the pattern is unique)."
+                )
+            return (
+                f"\nHint: the pattern was not found anywhere in the file (the whole file was probed, "
+                f"not just lines {lo}-{hi}); fix the pattern rather than the line range."
+            )
+
+        # Exact-match-first escape probe (item 0829): ONLY for literal find/replace — never
+        # regex (regex assigns its own \n/\t semantics in both pattern and re.sub template) and
+        # never range-replace (its pattern is exact file content). If the RAW pattern matches
+        # nothing but the escape-normalized pattern DOES, the caller is over-escaping the
+        # PATTERN — swap to the normalized pattern and record a labeled note. The replacement is
+        # never rewritten, so inserting a literal backslash-n into source stays possible and the
+        # old "guard blames an edit the tool itself corrupted" retry loop cannot occur.
+        if not use_regex and range_replace_meta is None and pattern:
+            _norm_pattern = _normalize_escape_sequences(pattern)
+            if _norm_pattern != pattern:
+                _mr_probe = max_replacements if isinstance(max_replacements, int) else -1
+
+                def _literal_has_match(pat: str) -> bool:
+                    if search_content.count(pat) > 0:
+                        return True
+                    if flexible_whitespace and ("\n" in pat or (pat != pat.lstrip() and bool(pat.lstrip()))):
+                        return _flexible_whitespace_match(pat, replacement or "", search_content, _mr_probe) is not None
+                    return False
+
+                if not _literal_has_match(pattern) and _literal_has_match(_norm_pattern):
+                    pattern = _norm_pattern
+                    escape_note = (
+                        "the PATTERN matched only after unescaping literal \\n/\\t/\\r to control "
+                        "characters (your pattern appears over-escaped); the replacement was "
+                        "written VERBATIM (a literal backslash-n in the replacement is kept as-is)."
+                    )
 
         # Perform pattern matching and replacement on targeted content
         matches_total: Optional[int] = None
@@ -8542,12 +9270,10 @@ def edit_file(
             matches = list(regex_pattern.finditer(search_content))
             matches_total = len(matches)
             if not matches:
-                range_info = f" (lines {start_line}-{end_line})" if start_line is not None or end_line is not None else ""
-                hint = ""
-                if start_line is not None or end_line is not None:
-                    hint = "\nHint: The match may exist outside the specified line range. Remove/widen start_line/end_line or re-read the file to confirm."
+                hint = _scoped_no_match_hint(compiled_regex=regex_pattern)
+                note = f"\n{scope_note_text}" if scope_note_text else ""
                 diag = _format_edit_file_no_match_diagnostics(content=content, pattern=pattern)
-                return _with_lint(f"❌ No matches found for regex pattern '{pattern}' in '{display_path}'{range_info}{hint}{diag}")
+                return _with_lint(f"❌ No matches found for regex pattern '{pattern}' in '{display_path}'{range_info}{hint}{note}{diag}")
 
             if require_unique_match and matches_total > 1:
                 return _ambiguous_pattern_error(
@@ -8588,19 +9314,15 @@ def edit_file(
                             match_lines=[n + line_offset for n in flexible_match_lines],
                         )
                 else:
-                    range_info = f" (lines {start_line}-{end_line})" if start_line is not None or end_line is not None else ""
-                    hint = ""
-                    if start_line is not None or end_line is not None:
-                        hint = "\nHint: The match may exist outside the specified line range. Remove/widen start_line/end_line or re-read the file to confirm."
+                    hint = _scoped_no_match_hint()
+                    note = f"\n{scope_note_text}" if scope_note_text else ""
                     diag = _format_edit_file_no_match_diagnostics(content=content, pattern=pattern)
-                    return _with_lint(f"❌ No occurrences of '{pattern}' found in '{display_path}'{range_info}{hint}{diag}")
+                    return _with_lint(f"❌ No occurrences of '{pattern}' found in '{display_path}'{range_info}{hint}{note}{diag}")
             elif count == 0:
-                range_info = f" (lines {start_line}-{end_line})" if start_line is not None or end_line is not None else ""
-                hint = ""
-                if start_line is not None or end_line is not None:
-                    hint = "\nHint: The match may exist outside the specified line range. Remove/widen start_line/end_line or re-read the file to confirm."
+                hint = _scoped_no_match_hint()
+                note = f"\n{scope_note_text}" if scope_note_text else ""
                 diag = _format_edit_file_no_match_diagnostics(content=content, pattern=pattern)
-                return _with_lint(f"❌ No occurrences of '{pattern}' found in '{display_path}'{range_info}{hint}{diag}")
+                return _with_lint(f"❌ No occurrences of '{pattern}' found in '{display_path}'{range_info}{hint}{note}{diag}")
             else:
                 # Exact match found
                 if require_unique_match and count > 1:
@@ -8763,18 +9485,27 @@ def edit_file(
                 rendered = _append_edit_file_post_edit_excerpt(rendered=rendered, path=path, after=updated_content)
                 rendered = rendered.replace("Edited ", "Preview ", 1)
                 detail = _format_python_parse_error(py_err)
+                # If the escape probe swapped the pattern, disclose it: the refusal is about the
+                # (verbatim) replacement, never a rewrite the tool hid (item 0829 honesty).
+                escape_disclosure = f"\n\nNote (escape handling): {escape_note}" if escape_note else ""
                 return _with_lint(
                     "❌ Refused: edit would introduce a Python syntax error.\n"
-                    f"{detail}\n\n{rendered}".rstrip(),
+                    f"{detail}\n\n{rendered}".rstrip() + escape_disclosure,
                     lint_content=updated_content,
                 )
 
         guard_refusal = _parse_guard_refusal(updated_content)
         if guard_refusal is not None:
+            if escape_note:
+                guard_refusal = guard_refusal.rstrip() + f"\n\nNote (escape handling): {escape_note}"
             return guard_refusal
 
         if updated_content == original_content:
             rendered = "No changes would be applied." if preview_only else "No changes applied (resulted in identical content)."
+            if scope_note_text:
+                rendered = rendered + f"\n\n{scope_note_text}"
+            if escape_note:
+                rendered = rendered + f"\n\nNote (escape handling): {escape_note}"
             return _with_lint(rendered)
 
         rendered, _, _ = _render_edit_file_diff(path=path, before=original_content, after=updated_content)
@@ -8784,6 +9515,12 @@ def edit_file(
                 rendered_lines[0] = f"{rendered_lines[0]} replacements={replacements_made}/{matches_total}"
             else:
                 rendered_lines[0] = f"{rendered_lines[0]} replacements={replacements_made}"
+            # A scoped search must SAY it was scoped: "replacements=1/1" alone reads
+            # as a whole-file fact and hides that matches outside the range were
+            # never considered. (Range-replace targets a slice by construction —
+            # its diff already names the lines — so no suffix there.)
+            if scope_bounds is not None and range_replace_meta is None:
+                rendered_lines[0] = f"{rendered_lines[0]} (searched lines {scope_bounds[0]}-{scope_bounds[1]})"
         rendered = "\n".join(rendered_lines).rstrip()
 
         rendered = _append_edit_file_post_edit_excerpt(rendered=rendered, path=path, after=updated_content)
@@ -8799,8 +9536,37 @@ def edit_file(
                 rendered
                 + "\n\n"
                 f"Note: {remaining} more match(es) remain. "
-                "Next step: re-run edit_file with a higher max_replacements, or target the remaining occurrence(s) with start_line/end_line."
+                "Next step: re-run edit_file with a higher max_replacements, or target the remaining occurrence(s) with start_line/end_line — re-read first: this edit may have shifted line numbers."
             )
+
+        # Scope honesty: when the scope silently narrowed the result (exact matches
+        # exist outside the searched range), say so — otherwise "replacements=1/1"
+        # invites the model to believe the file has no other occurrences. Probed on
+        # the ORIGINAL content (the pre-edit truth) and exact-only: a conservative
+        # note that may under-count flexible matches, never over-claim.
+        if scope_bounds is not None and range_replace_meta is None and isinstance(matches_total, int):
+            try:
+                if use_regex:
+                    whole_total = len(list(regex_pattern.finditer(original_content)))
+                else:
+                    whole_total = original_content.count(pattern)
+            except Exception:
+                whole_total = matches_total
+            outside = max(0, whole_total - matches_total)
+            if outside > 0:
+                rendered = (
+                    rendered
+                    + "\n\n"
+                    f"Note: the search was scoped to lines {scope_bounds[0]}-{scope_bounds[1]}; "
+                    f"{outside} match(es) outside this range were NOT considered. "
+                    "Re-run without start_line/end_line to reach them."
+                )
+
+        if scope_note_text:
+            rendered = rendered.rstrip() + f"\n\n{scope_note_text}"
+
+        if escape_note:
+            rendered = rendered.rstrip() + "\n\nNote (escape handling): " + escape_note
 
         rendered = _mixed_endings_note(rendered)
         if preview_only:
@@ -8827,6 +9593,19 @@ try:  # pragma: no cover
         meta = _def.parameters.get("pattern")
         if isinstance(meta, dict):
             meta.pop("default", None)
+        # Teach line-number semantics AT CALL TIME. The docstring never reaches the
+        # model: the schema builder emits {type, default} only, so a native-tool
+        # caller had no channel saying "1-based" — the live failure this guards
+        # against was a model sending start_line=0/end_line=0 (0-based habit) and
+        # burning a turn on the refusal. `description` inside a property is
+        # standard JSON Schema and rides native payloads as-is.
+        for _param, _desc in (
+            ("start_line", "First line of the search scope (1-based, inclusive). Omit to search the whole file."),
+            ("end_line", "Last line of the search scope (1-based, inclusive). Omit or pass -1 to search through end of file."),
+        ):
+            _meta = _def.parameters.get(_param)
+            if isinstance(_meta, dict) and "description" not in _meta:
+                _meta["description"] = _desc
 except Exception:
     pass
 
@@ -9001,15 +9780,41 @@ def execute_command(
         start_time = time.time()
 
         try:
-            # Execute command with security controls
-            result = subprocess.run(
+            # Execute via Popen in its OWN session (POSIX) so a timeout can
+            # kill the WHOLE process tree. subprocess.run's timeout kills only
+            # the direct child (the shell) — an orphaned grandchild both
+            # survives AND (holding the captured stdout pipe) pins THIS thread
+            # on the post-timeout pipe-EOF read forever (runtime c5004, face 1:
+            # a 40-minute stuck tick from an orphaned browser). One
+            # implementation of the tree-kill, shared with browser_probe.
+            from types import SimpleNamespace
+
+            from .process_tree import hard_kill_tree
+
+            proc = subprocess.Popen(
                 command,
                 shell=True,
                 cwd=working_dir,
-                timeout=timeout,
-                capture_output=capture_output,
                 text=True,
-                check=False  # Don't raise exception on non-zero return code
+                stdout=subprocess.PIPE if capture_output else None,
+                stderr=subprocess.PIPE if capture_output else None,
+                start_new_session=(os.name == "posix"),
+            )
+            try:
+                _out, _err = proc.communicate(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                # Kill the tree (reaches setsid()'d grandchildren the shell
+                # spawned) so the captured pipes close, THEN drain with a hard
+                # bound — never an unbounded second wait, so the tick can never
+                # be pinned even if a fd-holder somehow lingers.
+                hard_kill_tree(proc)
+                try:
+                    proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass  # tree already SIGKILLed — abandon the pipes, never pin
+                raise  # -> the existing TimeoutExpired handler (returns the timeout dict)
+            result = SimpleNamespace(
+                returncode=proc.returncode, stdout=_out, stderr=_err
             )
 
             execution_time = time.time() - start_time
@@ -9236,9 +10041,88 @@ _ANALYZE_MEDIA_MAX_CHARS = 4000
 # Per-attempt HTTP bound for the nested vision call. The config default_timeout
 # is 2h — unusable for an interactive mid-loop tool; this bounds EACH provider
 # attempt. Honest residual (adversary finding): a configured fallback CHAIN
-# traverses primary + N entries sequentially, so worst case is (1+N) x this;
-# typical configs are primary-only.
+# traverses primary + N entries sequentially, so worst case is (1+N) x this —
+# (2+N) x this when a stamped session route is tried (and fails) first;
+# typical configs are primary-only or, post-ruling, session-route-only.
 _ANALYZE_MEDIA_TIMEOUT_S = 120.0
+
+
+def _analyze_media_session_route(raw: Any) -> Optional[Tuple[str, str]]:
+    """Parse the host-injected ``_session_route`` stamp into (provider, model).
+
+    Canonical shape: ``{"provider": <spec>, "model": <name>}`` — provider specs
+    include ``endpoint:<id>`` profiles; both resolve through the OPERATOR'S
+    local configuration inside ``create_llm``. A JSON-object string is
+    tolerated for hosts whose tool-argument channel is string-typed.
+
+    Raw transport fields (base_url, api keys, headers) are deliberately NOT
+    accepted: ``hide_args`` hides this param from the model-facing schema but
+    does not enforce host-only injection, and analyze_media is classified
+    read-only/auto-approvable — accepting a raw URL here would let a
+    model-authored call turn the tool into an egress channel for local file
+    bytes. Bounding the shape to provider+model bounds the worst case to
+    operator-credentialed routes (the same destination class as the configured
+    fallback chain). Custom transports belong in ``endpoint:<id>`` profiles.
+
+    An ABSENT stamp (None / empty) returns None silently — bare-core behavior
+    stays byte-identical to the unstamped tool. A PRESENT-but-malformed stamp
+    is a HOST bug: warn loudly, then return None (degrade to the configured
+    fallback rather than failing the analysis).
+    """
+    if raw is None:
+        return None
+    value = raw
+    if isinstance(value, str):
+        stripped = value.strip()
+        if not stripped:
+            return None
+        try:
+            value = json.loads(stripped)
+        except Exception:
+            logger.warning(
+                f"#FALLBACK: malformed _session_route stamp (not a JSON object): "
+                f"{stripped[:120]!r}; using the configured vision fallback"
+            )
+            return None
+    if not isinstance(value, dict):
+        logger.warning(
+            f"#FALLBACK: malformed _session_route stamp (expected an object, got "
+            f"{type(value).__name__}); using the configured vision fallback"
+        )
+        return None
+    if not value:
+        return None
+    provider = str(value.get("provider") or "").strip()
+    model = str(value.get("model") or "").strip()
+    if not provider or not model:
+        logger.warning(
+            "#FALLBACK: incomplete _session_route stamp (provider and model are both "
+            "required); using the configured vision fallback"
+        )
+        return None
+    return provider, model
+
+
+def _analyze_media_route_declares_vision(provider: str, model: str) -> bool:
+    """Local capability read: does this route's model declare vision?
+
+    Reads the SAME answer the media stack uses to decide native image
+    attachment (registry ``vision_support`` plus its documented name-pattern
+    inference), so the gate and the nested ``generate(media=...)`` cannot
+    disagree. This is a LOCAL registry read only — never a provider-client
+    construction (client construction fires network validation). Errors are
+    deny-safe: an unreadable capability answers False, which lands on the
+    configured-fallback path (today's behavior).
+    """
+    try:
+        from ..media.capabilities import get_media_capabilities
+
+        return bool(get_media_capabilities(model, provider).vision_support)
+    except Exception as e:
+        logger.debug(
+            f"session-route vision capability read failed for {provider}/{model}: {e}"
+        )
+        return False
 
 
 def _analyze_media_decodes_as_image(path) -> bool:
@@ -9264,14 +10148,16 @@ def _analyze_media_decodes_as_image(path) -> bool:
 
 @tool(
     description=(
-        "Answer a question about an image using the operator's CONFIGURED vision "
-        "model (delegated sight for text-only models). Returns bounded text "
-        "observations — never raw image data into your context."
+        "Answer a question about an image. Delegated sight: the session model's own "
+        "vision when available, else the configured vision fallback. Returns bounded "
+        "text — never raw image data into your context."
     ),
     when_to_use=(
-        "Use to see what an image file shows when your main model cannot view it "
-        "directly; needs the operator's configured vision fallback (images only in v1)."
+        "Use to see what an image file shows (images only): the session model's own "
+        "vision when it can see, else the configured vision fallback. Image bytes are "
+        "sent to that route — possibly a different provider."
     ),
+    hide_args=["_session_route"],
     examples=[
         {
             "description": "Describe a captured photo",
@@ -9286,14 +10172,38 @@ def _analyze_media_decodes_as_image(path) -> bool:
         },
     ],
 )
-def analyze_media(file_path: str, question: str = "") -> str:
-    """Delegated sight over the configured vision route (0825).
+def analyze_media(
+    file_path: str,
+    question: str = "",
+    _session_route: Optional[Dict[str, Any]] = None,
+) -> str:
+    """Delegated sight (0825), session-route-first (0837 item B).
 
-    Ruled constraints (agora c3977): rides the EXISTING vision-fallback
-    config (never a second model knob); loud actionable refusal when
-    unconfigured; bounded text output; the nested LLM call runs ONE attempt
-    (no retry stacking — the 2026-07-21 wedge lesson applies doubly one
-    level down).
+    Resolution order (operator ruling 2026-07-26, amending c3977's
+    fallback-only route: "fallback are SOLELY for models that do NOT have
+    vision capabilities"):
+      1. the run's OWN route — when the host stamped ``_session_route`` AND
+         that model declares vision, sight runs through it natively (no
+         fallback config needed);
+      2. the configured vision fallback — when the session model lacks vision
+         (its sole purpose per the ruling), when no stamp is present (bare
+         core / hosts not yet stamping: byte-identical to the pre-ruling
+         tool), or as an opportunistic backstop after a session-route failure
+         (labeled #FALLBACK — never REQUIRED for a vision-capable model);
+      3. honest refusal naming WHICH model lacked vision and WHERE to
+         configure.
+
+    ``_session_route`` is a HOST-INJECTED stamp (hidden from the model-facing
+    schema via ``hide_args``, the ``_registry_namespace`` precedent): the
+    AbstractRuntime TOOL_CALLS handler derives it from ``_runtime.provider``/
+    ``model`` and OVERWRITES any model-authored value (derive-not-claim). The
+    shape accepts provider+model only — never raw transport (see
+    ``_analyze_media_session_route``).
+
+    Standing constraints (c3977, unamended parts): loud actionable refusal;
+    bounded text output; every nested LLM call runs ONE attempt with a
+    bounded timeout (no retry stacking — the 2026-07-21 wedge lesson applies
+    doubly one level down).
     """
     from pathlib import Path as _Path
 
@@ -9305,6 +10215,22 @@ def analyze_media(file_path: str, question: str = "") -> str:
         return f"Error: File '{file_path}' does not exist"
     if not path.is_file():
         return f"Error: '{file_path}' is not a file"
+
+    # Runtime-enforced filesystem ignore policy (.abstractignore + defaults), item 0834.
+    # analyze_media is the one file-reading tool that ships file BYTES to a possibly-remote
+    # vision provider, so it is the tool MOST in need of the boundary the sibling read tools
+    # already enforce — an operator who ignored a directory to keep artifacts/secrets out of
+    # tool reach reasonably expects that to include the tool that exfiltrates content off-host.
+    from .abstractignore import AbstractIgnore
+
+    ignore = AbstractIgnore.for_path(path)
+    if ignore.is_ignored(path, is_dir=False):
+        return (
+            f"Error: '{_path_for_display(path)}' is ignored by .abstractignore policy. "
+            "analyze_media sends image bytes to the configured vision route (possibly a "
+            "remote provider), so ignored paths are refused before any bytes leave the host."
+        )
+
     suffix = path.suffix.lower()
     if suffix not in _ANALYZE_MEDIA_IMAGE_SUFFIXES:
         return (
@@ -9340,33 +10266,132 @@ def analyze_media(file_path: str, question: str = "") -> str:
         },
     )
     cleaned_question = str(question or "").strip()
-    try:
-        description, trace = handler.create_description_with_trace(
-            str(path), user_prompt=cleaned_question or None
-        )
-    except VisionNotConfiguredError as e:
-        return (
-            f"Error: no vision model is configured for delegated sight ({e}). "
-            "Configure the vision fallback (run `abstractcore --config`, vision "
-            "section) or use a vision-capable main model."
-        )
-    except VisionGenerationError as e:
-        # The route IS configured — surface the real runtime cause, not a
-        # misleading "configure it" (adversary P1).
-        return (
-            f"Error: the configured vision model failed to analyze this image: {e}. "
-            "The route is configured — check the vision endpoint/credentials, not the config."
-        )
-    except Exception as e:
-        return f"Error: vision analysis failed: {e}"
+
+    # Resolution step 1 (operator ruling 2026-07-26): the run's OWN route,
+    # when stamped by the host AND its model declares vision. Unstamped calls
+    # skip this block entirely — behavior stays byte-identical to the
+    # pre-ruling tool (graceful degradation for bare core and hosts that do
+    # not stamp yet).
+    session_route = _analyze_media_session_route(_session_route)
+    session_failure: Optional[str] = None
+    description = None
+    trace: Dict[str, Any] = {}
+    if session_route is not None and _analyze_media_route_declares_vision(*session_route):
+        s_provider, s_model = session_route
+        try:
+            description, trace = handler.create_description_via_route(
+                s_provider, s_model, str(path), user_prompt=cleaned_question or None
+            )
+            if not str(description or "").strip():
+                # A blank caption is a soft route failure, not an answer —
+                # treated like any other session failure so an
+                # already-configured fallback can still serve.
+                raise VisionGenerationError(
+                    "the session vision model returned an empty observation"
+                )
+        except Exception as e:
+            session_failure = str(e)
+            description = None
+            trace = {}
+            logger.warning(
+                f"#FALLBACK: session vision route {s_provider}/{s_model} failed "
+                f"({session_failure}); trying the configured vision fallback"
+            )
+
+    # Resolution step 2: the configured vision fallback — the session model
+    # lacks vision, no stamp is present, or the session attempt failed and an
+    # already-configured fallback may still serve (opportunistic backstop;
+    # config is never REQUIRED when the session model sees).
+    if description is None:
+        try:
+            description, trace = handler.create_description_with_trace(
+                str(path), user_prompt=cleaned_question or None
+            )
+        except VisionNotConfiguredError as e:
+            if session_failure is not None:
+                # The session model DECLARES vision but its attempt failed at
+                # runtime — a live failure, never a config gap (fallbacks are
+                # solely for models without vision, so "configure it" would
+                # misdiagnose; the conditional registry hint covers the one
+                # genuine config-adjacent cause: an over-declaring registry row).
+                s_provider, s_model = session_route
+                return (
+                    f"Error: the session model '{s_provider}/{s_model}' declares vision "
+                    f"support, but the delegated-sight attempt over the session route "
+                    f"failed: {session_failure}. No vision fallback is configured — none "
+                    "is required for a vision-capable session model (fallbacks are solely "
+                    "for models without vision); check the session endpoint/credentials. "
+                    "If the endpoint is healthy, the registry may over-declare this "
+                    "model's vision — then configure a vision-CAPABLE fallback via "
+                    "`abstractcore --config` (vision section)."
+                )
+            if session_route is not None:
+                # Ruling case 3: the session model is KNOWN and lacks vision,
+                # and no fallback is configured. Name WHICH model lacked
+                # vision and WHERE to configure — and never suggest pointing
+                # the model at itself (it cannot see).
+                s_provider, s_model = session_route
+                return (
+                    f"Error: no vision route is available for delegated sight. The "
+                    f"session model '{s_provider}/{s_model}' does not declare vision "
+                    f"support, and no vision fallback is configured ({e}). Fix: run "
+                    "`abstractcore --config` (vision section) and configure the vision "
+                    "fallback with a vision-CAPABLE route — the fallback exists exactly "
+                    "for text-only session models like this one."
+                )
+            # Unstamped path — byte-identical to the pre-ruling tool.
+            # Hint honesty, THREE-WAY geometry (agent lane-owner correction c5662, over the
+            # earlier c5520 two-way framing): the sight lane ships (operator ruling c4089) —
+            # a tool result that DECLARES media (browser_probe capture_screenshot, camera
+            # tools) folds into the NEXT model call, so a vision-capable main model sees the
+            # image NATIVELY (analyze_media isn't even needed there). analyze_media is the path
+            # only for (ii) a text-only main model, or (iii) an UNDECLARED capture (a path
+            # printed as text / hand-fed). The config fix is valid in cases (ii)/(iii).
+            return (
+                f"Error: no vision model is configured for delegated sight ({e}). "
+                "Fix: run `abstractcore --config` (vision section) and configure the vision "
+                "fallback — any vision-capable route works, including your current chat "
+                "endpoint/model. Note: if your capture tool DECLARES a media output "
+                "(browser_probe with capture_screenshot, camera tools), a vision-capable main "
+                "model already sees the image on the NEXT call natively — analyze_media is only "
+                "needed for a text-only main model or an UNDECLARED capture (a path printed as text)."
+            )
+        except VisionGenerationError as e:
+            if session_failure is not None:
+                s_provider, s_model = session_route
+                return (
+                    f"Error: delegated sight failed on both routes. Session route "
+                    f"'{s_provider}/{s_model}': {session_failure}. Configured vision "
+                    f"fallback: {e}. Check the vision endpoints/credentials — the routes "
+                    "are configured, not missing."
+                )
+            # The route IS configured — surface the real runtime cause, not a
+            # misleading "configure it" (adversary P1).
+            return (
+                f"Error: the configured vision model failed to analyze this image: {e}. "
+                "The route is configured — check the vision endpoint/credentials, not the config."
+            )
+        except Exception as e:
+            return f"Error: vision analysis failed: {e}"
 
     text = str(description or "").strip()
     if not text:
+        # Only reachable from the configured-fallback path: a blank SESSION
+        # caption was already converted into a session failure above.
         return "Error: the configured vision model returned an empty observation."
     if len(text) > _ANALYZE_MEDIA_MAX_CHARS:
         text = (
             text[:_ANALYZE_MEDIA_MAX_CHARS]
             + f"\n#TRUNCATION observation capped at {_ANALYZE_MEDIA_MAX_CHARS} chars"
+        )
+    if session_failure is not None:
+        # The configured fallback served AFTER a failed session attempt —
+        # label the degradation so the operator can see WHY the fallback ran
+        # for a vision-capable session model (#FALLBACK house rule).
+        s_provider, s_model = session_route
+        text += (
+            f"\n\n#FALLBACK: session route '{s_provider}/{s_model}' failed "
+            f"({session_failure[:200]}); the configured vision fallback was used instead"
         )
 
     backend = trace.get("backend") if isinstance(trace, dict) else None

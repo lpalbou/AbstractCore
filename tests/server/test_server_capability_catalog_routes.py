@@ -9,6 +9,19 @@ from abstractcore.capabilities.errors import CapabilityUnavailableError
 from abstractcore.server.app import app
 
 
+@pytest.fixture(autouse=True)
+def _host_config_isolation(monkeypatch):
+    """Keep this suite hermetic: the vision lanes are config-first (dm#177),
+    so a real output.image/video route on the HOST machine would legitimately
+    steer backend selection under these tests. Pin the not-configured shape;
+    the config-wins precedence has its own suite (test_vision_config_precedence)."""
+    from abstractcore.server import vision_endpoints as _ve
+
+    monkeypatch.setattr(_ve, "_vision_route_defaults", lambda modality="image", task=None: {})
+    _ve._VISION_ROUTE_WARNED.clear()
+
+
+
 class _FakeVoice:
     backend_id = "fake-voice"
 
