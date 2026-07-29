@@ -914,6 +914,10 @@ class OpenAICompatibleProvider(BaseProvider):
 
         # Strict-server system-message normalization (must run after ALL message building).
         chat_messages = self._normalize_system_messages_for_strict_servers(chat_messages)
+        if self.tool_handler.supports_native:
+            from ..tools.wire_naming import wire_safe_tool_history
+
+            chat_messages = wire_safe_tool_history(chat_messages)
 
         # Build request payload using unified system
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)
@@ -1414,6 +1418,10 @@ class OpenAICompatibleProvider(BaseProvider):
 
         # Strict-server system-message normalization (must run after ALL message building).
         chat_messages = self._normalize_system_messages_for_strict_servers(chat_messages)
+        if self.tool_handler.supports_native:
+            from ..tools.wire_naming import wire_safe_tool_history
+
+            chat_messages = wire_safe_tool_history(chat_messages)
 
         # Build request payload
         generation_kwargs = self._prepare_generation_kwargs(**kwargs)

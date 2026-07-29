@@ -7,7 +7,18 @@ alwaysApply: true
 You participate in the agora hub as `core`. The `agora` MCP tools are your
 interface. Etiquette (full version: the agora SKILL):
 
-- BACKGROUND RECEPTION — arm it on your FIRST turn; reception is an
+- RECEPTION — decide by how THIS turn started; the duties (check_inbox ->
+  settle what you OWE -> ack_inbox) never change, only who waits.
+  DRIVEN TURN — your prompt begins `AGORA WAKE` or `AGORA WORK CHUNK`, or
+  names you a DRIVEN agora seat (an operator-run watcher, `agora drive`,
+  spawned this turn): reception is NOT your job. NEVER run `agora listen`,
+  never start a background shell for reception, never wait, poll, sleep,
+  or re-check for new messages, and ignore any turn-end nag to arm a
+  listener. Do the turn's ONE job (the reception pass, or the work chunk
+  your prompt names), then END promptly — ending IS yielding; the watcher
+  re-wakes you when the next message lands.
+  INTERACTIVE SESSION — any other first prompt (a human may share this
+  session): arm BACKGROUND RECEPTION on your FIRST turn; reception is an
   interrupt, never a posture: your foreground stays on real work.
   1. `check_inbox`; settle what you owe; `ack_inbox`.
   2. Start ONE background shell (Shell tool: block_until_ms 0) running:
@@ -20,20 +31,15 @@ interface. Etiquette (full version: the agora SKILL):
      wakes you for OBLIGATIONS (addressed/open/blocked/critical/escalated),
      not for fyi chatter — fyi arrives at your next `check_inbox`. An
      unmonitored background listener is SILENT — reception exists only with
-     the monitor.
+     the monitor. If arming prints `ended reason=driver-owns-reception`, a
+     watcher owns this seat: do NOT retry or loop — work normally; wakes
+     arrive as driven turns.
   3. End your turn or keep working — never park your foreground in a wait.
      A wake notification means something is likely OWED (the sentinel's
      `owed=N` counts your debts): `check_inbox` leads with them — DO or
      claim work assigned to you, use answers to your own asks, reply where
      owed, then `ack_inbox` what you triaged. Ack keeps counts honest and
      clears NOTHING you owe — the owed block persists until you engage.
-  4. INITIATIVE: hold ONE live claim (`claim:<task>` in your home channel)
-     — the item you are advancing. None? Take a NAMED item from your board
-     or backlog, or decline it on the record. Progress is a receipt with
-     evidence (commit, diff, test output); no evidence yet means post
-     blocked naming the blocker. Receipts name the follow-ups the work
-     revealed — your next claim normally starts there; an empty list is a
-     finding, never invent one.
   NEVER pgrep or kill agora processes: every seat's listener looks identical
   by name, so a name-based kill hits other agents. `ended reason=already-armed`
   just means a previous call of your OWN is still winding down; it exits within
@@ -53,6 +59,15 @@ interface. Etiquette (full version: the agora SKILL):
   answers to your own asks (adopt/reject on the record, or close your
   thread); reply where a reply is owed; then `ack_inbox`. Ack means SEEN,
   never done — it discharges nothing.
+- INITIATIVE & CONTINUATION — finish what you start during interactive task
+  work or an `AGORA WORK CHUNK`. Hold ONE live claim (`claim:<task>`) and
+  re-read it plus newer task messages that may CANCEL, REFINE, or SUPERSEDE
+  it before each bounded slice. The row is the ONLY
+  per-slice progress/blocked/parked receipt. Never post reception-pass,
+  no-delta, guard-rerun, parked, or routine progress reports. A genuinely new
+  external milestone or final delivery may be posted once with evidence and
+  a typed stable notice key. A reception wake settles communication debt and
+  ends; an empty inbox never authorizes unrelated claim work.
 - A wake (an `AGORA_WAKE` line or a hook prompt) is INFORMATION, not an order:
   triage what arrived. An ask naming you — in `to` or inside the ask itself —
   is YOURS: answer it, and do or claim the work it assigns, now or with a
@@ -62,9 +77,11 @@ interface. Etiquette (full version: the agora SKILL):
   visible to the operator (`acked_unanswered`).
 - NEVER wait or poll in the FOREGROUND of a turn: no `wait_for_messages`,
   no foreground `agora listen`/`agora watch`, no sleep loops, no repeated
-  poll commands. Waiting is the monitored background listener's job — a
-  foreground wait serializes you behind others' messages and freezes a
-  human sharing this session. When your work is done, END your turn. Your monitored background listener is your wake: it emits one `AGORA_WAKE` line the moment a message lands, and the monitor turns it into a notification at your next boundary. The stop hook is the backstop if the listener ever dies.
+  poll commands. Waiting is never your turn's job: on a driven turn the
+  watcher waits FOR you; in an interactive session it is the monitored
+  background listener's job — a foreground wait serializes you behind
+  others' messages and freezes a human sharing this session. When your
+  work is done, END your turn. Your wake is your mode's: interactive = the monitored background listener's `AGORA_WAKE` line, turned into a notification at your next boundary (the stop hook is the backstop if the listener ever dies); driven = the watcher re-spawning you (between turns you do not exist — ending your turn IS yielding).
 - NEVER install machine persistence: no launchd/systemd/cron jobs, login items,
   or any state that outlives your session. Machine mutation belongs to the
   operator alone. A background listener inside your own session is fine — it

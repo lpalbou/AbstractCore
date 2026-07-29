@@ -14,11 +14,30 @@ from abstractcore.tools.wire_naming import (
     build_wire_name_map,
     is_wire_safe_tool_name,
     resolve_wire_tool_name,
+    wire_safe_tool_history,
     wire_safe_tool_name,
 )
 
 
 class TestWireSafeAlias:
+    def test_history_names_are_encoded_without_mutating_runtime_state(self):
+        original = "mcp::agora::whoami"
+        messages = [
+            {
+                "role": "assistant",
+                "tool_calls": [{"id": "c1", "function": {"name": original, "arguments": "{}"}}],
+            },
+            {"role": "tool", "name": original, "tool_call_id": "c1", "content": "ok"},
+        ]
+
+        safe = wire_safe_tool_history(messages)
+        alias = wire_safe_tool_name(original)
+
+        assert safe[0]["tool_calls"][0]["function"]["name"] == alias
+        assert safe[1]["name"] == alias
+        assert messages[0]["tool_calls"][0]["function"]["name"] == original
+        assert messages[1]["name"] == original
+
     def test_safe_names_pass_through_byte_identical(self):
         for name in ("fetch_url", "list_files", "execute_command", "web-search", "a" * 64):
             assert wire_safe_tool_name(name) == name

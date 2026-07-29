@@ -77,6 +77,12 @@ def _ensure_bs4() -> bool:
 
 # Import our enhanced tool decorator
 from abstractcore.tools.core import tool
+from abstractcore.tools.fetch_url_ssrf import (
+    FetchUrlSSRFBlocked,
+    SSRFGuardAdapter,
+    fetch_url_guard_destination,
+    fetch_url_strip_sensitive_headers,
+)
 from abstractcore.media.pdf_routing import route_pdf_bytes
 from abstractcore.utils.structured_logging import get_logger
 from abstractcore.utils.truncation import preview_text
@@ -5548,6 +5554,10 @@ def fetch_url(
         if blocked is not None:
             return blocked
 
+        ssrf_block = fetch_url_guard_destination(url)
+        if ssrf_block is not None:
+            return ssrf_block
+
         # Prepare request headers
         request_headers = {
             'User-Agent': user_agent,
@@ -5556,9 +5566,8 @@ def fetch_url(
             'Connection': 'keep-alive'
         }
 
-        # Model-supplied headers pass through untouched (fully functional fetch).
         if headers:
-            request_headers.update(headers)
+            request_headers.update(fetch_url_strip_sensitive_headers(headers))
 
         # Add data for POST/PUT requests
         if data and method.upper() in ['POST', 'PUT', 'PATCH']:
@@ -5583,6 +5592,8 @@ def fetch_url(
 
         # Make the request with a session for connection reuse; keep it open while streaming.
         with requests.Session() as session:
+            session.mount("http://", SSRFGuardAdapter())
+            session.mount("https://", SSRFGuardAdapter())
             session.headers.update(request_headers)
             # Bounded same-profile retry ladder for transient bot-challenge /
             # rate-limit / edge-hiccup statuses (adversary A). GET only — a
@@ -5986,6 +5997,9 @@ def fetch_url(
                         }
                     )
                 return result
+
+    except FetchUrlSSRFBlocked as exc:
+        return exc.payload
 
     except requests.exceptions.Timeout:
         rendered = (
@@ -9610,6 +9624,15 @@ except Exception:
     pass
 
 
+# Ceiling for execute_command's model-supplied `timeout`, in SECONDS.
+# Why: a live run (2026-07-27) passed timeout=30000 meaning MILLISECONDS;
+# nothing capped it, so one tool call waited 8 hours 20 minutes before
+# returning — and then returned without any of the captured output. Ten
+# minutes is the most one foreground command should hold the loop; longer
+# work belongs in a background process the caller polls.
+EXECUTE_COMMAND_MAX_TIMEOUT_S = 600.0
+
+
 @tool(
     description="Execute shell commands safely with security controls and platform detection",
     when_to_use="When you need to run system commands, shell scripts, or interact with command-line tools",
@@ -9650,7 +9673,10 @@ def execute_command(
     Args:
         command: The shell command to execute
         working_directory: Directory to run the command in (default: current directory)
-        timeout: Maximum seconds to wait for command completion (default: 300)
+        timeout: Maximum SECONDS to wait for command completion (default: 300;
+            ceiling: 600 — larger values are clamped to the ceiling and the
+            result says so; zero, negative, NaN or infinite values fall back
+            to the default)
         capture_output: Whether to capture and return command output (default: True)
         require_confirmation: Whether to ask for user confirmation before execution (default: False)
         allow_dangerous: Whether to allow potentially dangerous commands (default: False)
@@ -9679,6 +9705,15 @@ def execute_command(
             return bool(default)
 
         def _coerce_timeout_seconds(value: Any, *, default_s: int) -> float:
+            # A timeout that makes no sense as a duration (zero, negative,
+            # NaN, infinite, unparsable) falls back to the default instead of
+            # erroring or waiting forever. NaN matters: it slips through both
+            # `x <= 0` and a min() clamp, and communicate(timeout=nan) never
+            # expires — a worse hang than the incident this guards.
+            def _sane(x: float) -> float:
+                # `0 < x < inf` is False for NaN, +/-inf and non-positives.
+                return x if (0 < x < float("inf")) else float(default_s)
+
             if value is None:
                 return float(default_s)
             if isinstance(value, (int, float)):
@@ -9686,7 +9721,7 @@ def execute_command(
                     x = float(value)
                 except Exception:
                     return float(default_s)
-                return float(default_s) if x <= 0 else x
+                return _sane(x)
             if isinstance(value, str):
                 s = value.strip()
                 if not s:
@@ -9700,14 +9735,28 @@ def execute_command(
                     x = float(s)
                 except Exception:
                     return float(default_s)
-                return float(default_s) if x <= 0 else x
+                return _sane(x)
             return float(default_s)
 
         command = str(command)
         working_directory = str(working_directory).strip() if isinstance(working_directory, str) else working_directory
         if isinstance(working_directory, str) and not working_directory:
             working_directory = None
-        timeout = _coerce_timeout_seconds(timeout, default_s=300)
+        requested_timeout_s = _coerce_timeout_seconds(timeout, default_s=300)
+        # Ceiling clamp (read at call time so hosts/tests can tune the module
+        # constant). When it fires, the note below rides BOTH the success and
+        # the timeout renders — the caller must learn the window that actually
+        # applied, or a slower rerun of the same command would time out at a
+        # deadline it never asked for.
+        timeout = min(requested_timeout_s, float(EXECUTE_COMMAND_MAX_TIMEOUT_S))
+        timeout_clamp_note = None
+        if requested_timeout_s > timeout:
+            timeout_clamp_note = (
+                f"Note: requested timeout {requested_timeout_s:g}s exceeded the "
+                f"{float(EXECUTE_COMMAND_MAX_TIMEOUT_S):g}s tool maximum; {timeout:g}s was used. "
+                "For longer work, run it in the background and poll, or raise "
+                "the host executor timeout."
+            )
         capture_output = _coerce_bool(capture_output, default=True)
         require_confirmation = _coerce_bool(require_confirmation, default=False)
         allow_dangerous = _coerce_bool(allow_dangerous, default=False)
@@ -9722,6 +9771,26 @@ def execute_command(
             if len(s) <= limit:
                 return s, False
             return s[:limit], True
+
+        def _keep_tail(text: str, *, limit: int) -> tuple[str, bool]:
+            # Timeout reports keep the END of the output: with a killed
+            # command, the last lines written are usually the ones that
+            # explain what went wrong.
+            s = "" if text is None else str(text)
+            if limit <= 0 or len(s) <= limit:
+                return s, False
+            return s[-limit:], True
+
+        def _drained_text(value: Any) -> Optional[str]:
+            # communicate() returns str in text mode, but output salvaged from
+            # a drain-stage TimeoutExpired arrives as raw bytes (CPython joins
+            # the reader's byte chunks before decoding). Normalize both; keep
+            # None as None so "nothing captured" stays distinguishable.
+            if value is None:
+                return None
+            if isinstance(value, bytes):
+                return value.decode("utf-8", errors="replace")
+            return str(value)
 
         # CRITICAL SECURITY VALIDATION - Dangerous commands MUST be blocked
         security_check = _validate_command_security(command, allow_dangerous)
@@ -9791,6 +9860,16 @@ def execute_command(
 
             from .process_tree import hard_kill_tree
 
+            # Filled by the timeout branch below and read by the
+            # TimeoutExpired handler further down, so the timeout result can
+            # report what the command said before it was killed. The 8h20m
+            # incident (2026-07-27) returned a bare "timed out" with all
+            # captured output discarded — the model diagnosed the failure
+            # nine seconds after finally being shown any output.
+            timeout_stdout: Optional[str] = None
+            timeout_stderr: Optional[str] = None
+            timeout_drain_gave_up = False
+
             proc = subprocess.Popen(
                 command,
                 shell=True,
@@ -9804,15 +9883,33 @@ def execute_command(
                 _out, _err = proc.communicate(timeout=timeout)
             except subprocess.TimeoutExpired:
                 # Kill the tree (reaches setsid()'d grandchildren the shell
-                # spawned) so the captured pipes close, THEN drain with a hard
-                # bound — never an unbounded second wait, so the tick can never
-                # be pinned even if a fd-holder somehow lingers.
+                # spawned) so the captured pipes close, THEN drain what the
+                # pipes buffered before the kill. The drain is the reliable
+                # collection point: the TimeoutExpired raised above does not
+                # carry partial output on every platform, but the pipe-reader
+                # state persists across communicate() calls, so this second
+                # call returns everything read so far plus whatever was still
+                # sitting in the pipes when the tree died.
                 hard_kill_tree(proc)
                 try:
-                    proc.communicate(timeout=5)
-                except subprocess.TimeoutExpired:
-                    pass  # tree already SIGKILLed — abandon the pipes, never pin
-                raise  # -> the existing TimeoutExpired handler (returns the timeout dict)
+                    # Hard 5s bound — never an unbounded second wait. The tree
+                    # was just SIGKILLed, so normally the pipes close at once;
+                    # the bound protects against a holder the kill could not
+                    # reach (a process forked between the kill's enumeration
+                    # sweep and the kill itself, or one stuck in
+                    # uninterruptible I/O), which would otherwise pin this
+                    # thread on the pipe-EOF read.
+                    timeout_stdout, timeout_stderr = proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired as drain_error:
+                    # Something still holds the pipes open. Give up rather
+                    # than pin the thread, but keep the bytes the reader
+                    # collected so far — on POSIX they ride the exception.
+                    timeout_drain_gave_up = True
+                    timeout_stdout = _drained_text(getattr(drain_error, "stdout", None))
+                    timeout_stderr = _drained_text(getattr(drain_error, "stderr", None))
+                except Exception:
+                    pass  # the drain is best-effort; the timeout verdict below must still return
+                raise  # -> the TimeoutExpired handler (builds the timeout result)
             result = SimpleNamespace(
                 returncode=proc.returncode, stdout=_out, stderr=_err
             )
@@ -9826,6 +9923,10 @@ def execute_command(
             output_parts.append(f"📁 Working directory: {working_dir or os.getcwd()}")
             output_parts.append(f"⏱️  Execution time: {execution_time:.2f}s")
             output_parts.append(f"🔢 Return code: {result.returncode}")
+            if timeout_clamp_note:
+                # The command finished, but inside a SHORTER window than the
+                # caller asked for — say so here too, not only on timeouts.
+                output_parts.append(timeout_clamp_note)
 
             stdout_full = result.stdout or ""
             stderr_full = result.stderr or ""
@@ -9878,18 +9979,83 @@ def execute_command(
             }
 
         except subprocess.TimeoutExpired:
-            rendered = (
-                f"⏰ Timeout: Command exceeded {timeout} seconds\n"
-                f"Command: {command}\n"
-                "Consider increasing timeout or breaking down the command"
-            )
+            # Build the timeout result WITH the output captured before the
+            # kill. A bare "timed out" starves the model of the very content
+            # that explains the hang; the drained output travels both in the
+            # rendered text (tail-bounded, like the normal render) and in the
+            # structured fields (full, for durable evidence).
+            timeout_display = f"{timeout:g}"
+            stdout_full = timeout_stdout if (capture_output and timeout_stdout) else ""
+            stderr_full = timeout_stderr if (capture_output and timeout_stderr) else ""
+
+            parts = [
+                f"⏰ Command timed out after {timeout_display}s and was killed (including all child processes).",
+                f"Command: {command}",
+            ]
+            if timeout_clamp_note:
+                parts.append(timeout_clamp_note)
+
+            stdout_preview = ""
+            stderr_preview = ""
+            stdout_truncated = False
+            stderr_truncated = False
+            if not capture_output:
+                parts.append(
+                    "Output capture was disabled for this call (capture_output=False), "
+                    "so no output can be shown."
+                )
+            elif stdout_full or stderr_full:
+                parts.append("Output captured before the kill:")
+                if stdout_full:
+                    stdout_preview, stdout_truncated = _keep_tail(stdout_full, limit=20000)
+                    section = "\n📤 STDOUT:\n"
+                    if stdout_truncated:
+                        section += (
+                            f"#TRUNCATION: stdout was {len(stdout_full)} chars; showing the last 20000 "
+                            "(the end of the output usually contains the failure).\n"
+                        )
+                    section += stdout_preview
+                    parts.append(section)
+                if stderr_full:
+                    stderr_preview, stderr_truncated = _keep_tail(stderr_full, limit=5000)
+                    section = "\n❌ STDERR:\n"
+                    if stderr_truncated:
+                        section += (
+                            f"#TRUNCATION: stderr was {len(stderr_full)} chars; showing the last 5000 "
+                            "(the end of the output usually contains the failure).\n"
+                        )
+                    section += stderr_preview
+                    parts.append(section)
+            else:
+                # Honest limit: only what flowed through the captured pipes
+                # can be reported. A backgrounded child that wrote to files
+                # or inherited the terminal never wrote to these pipes.
+                parts.append(
+                    "No output was captured before the kill (a backgrounded child "
+                    "writing to files or inheriting the terminal is invisible here)."
+                )
+            if timeout_drain_gave_up:
+                parts.append(
+                    "\nNote: draining the output pipes gave up after 5 seconds "
+                    "(something the kill could not reach still holds them open); "
+                    "the captured output may be incomplete."
+                )
+            rendered = "\n".join(parts)
             return {
                 "success": False,
-                "error": f"Tool timeout after {int(timeout)}s",
+                "error": f"Command timed out after {timeout_display}s and was killed (including all child processes)",
                 "command": str(command),
                 "platform": str(current_platform),
                 "working_directory": str(working_dir or os.getcwd()) if "working_dir" in locals() else str(working_directory or ""),
                 "timeout_s": int(timeout),
+                "requested_timeout_s": float(requested_timeout_s),
+                "timeout_clamped": bool(timeout_clamp_note),
+                "stdout": stdout_full,
+                "stderr": stderr_full,
+                "stdout_preview": stdout_preview,
+                "stderr_preview": stderr_preview,
+                "stdout_truncated": bool(stdout_truncated),
+                "stderr_truncated": bool(stderr_truncated),
                 "rendered": rendered,
             }
 
@@ -9921,6 +10087,25 @@ def execute_command(
             "working_directory": str(working_directory or ""),
             "rendered": rendered,
         }
+
+
+# Teach the timeout contract AT CALL TIME (same post-definition schema channel
+# as edit_file's block above — the docstring never reaches the model; the
+# schema builder emits {type, default} only, so nothing ever told a caller the
+# unit). The live failure this guards (2026-07-27): a model sent timeout=30000
+# meaning MILLISECONDS and the tool waited 8h20m. `description` inside a
+# property is standard JSON Schema and rides native payloads as-is.
+try:  # pragma: no cover
+    _def = getattr(execute_command, "_tool_definition", None)
+    if _def and isinstance(getattr(_def, "parameters", None), dict):
+        _meta = _def.parameters.get("timeout")
+        if isinstance(_meta, dict) and "description" not in _meta:
+            _meta["description"] = (
+                f"Seconds (max {EXECUTE_COMMAND_MAX_TIMEOUT_S:g}; values above are clamped). "
+                "Time limit before the command tree is killed."
+            )
+except Exception:
+    pass
 
 
 def _validate_command_security(command: str, allow_dangerous: bool = False) -> dict:

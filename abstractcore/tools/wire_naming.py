@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import hashlib
 import re
-from typing import Dict, Iterable, Optional
+from copy import deepcopy
+from typing import Any, Dict, Iterable, List, Optional
 
 # OpenAI function-name contract; Anthropic's is compatible with this subset.
 _WIRE_SAFE_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
@@ -77,3 +78,33 @@ def resolve_wire_tool_name(name: str, allowed_original_names: Iterable[str]) -> 
 def build_wire_name_map(names: Iterable[str]) -> Dict[str, str]:
     """original -> wire map for a declaration batch (unchanged names included)."""
     return {str(n): wire_safe_tool_name(str(n)) for n in names if isinstance(n, str) and n}
+
+
+def wire_safe_tool_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Copy chat history and encode tool names for strict native APIs.
+
+    Native endpoints validate names replayed in assistant ``tool_calls`` and
+    tool-message ``name`` fields just as strictly as current declarations.
+    Runtime history remains in its original namespace; only this outbound copy
+    uses deterministic aliases.
+    """
+    safe = deepcopy(messages)
+    for message in safe:
+        name = message.get("name")
+        if isinstance(name, str) and name:
+            message["name"] = wire_safe_tool_name(name)
+        calls = message.get("tool_calls")
+        if not isinstance(calls, list):
+            continue
+        for call in calls:
+            if not isinstance(call, dict):
+                continue
+            function = call.get("function")
+            if isinstance(function, dict):
+                call_name = function.get("name")
+                if isinstance(call_name, str) and call_name:
+                    function["name"] = wire_safe_tool_name(call_name)
+            direct_name = call.get("name")
+            if isinstance(direct_name, str) and direct_name:
+                call["name"] = wire_safe_tool_name(direct_name)
+    return safe
