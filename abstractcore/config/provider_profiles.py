@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields as dataclass_fields
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, Optional
 
@@ -105,6 +105,19 @@ def split_api_key_value(value: Optional[str]) -> tuple[str, str]:
     return raw, ""
 
 
+def normalize_scope(value: Optional[str]) -> str:
+    """`gateway` (shared) or `user` (private to one runtime). Default: gateway.
+
+    A hosting column, kept on the Core row so a hosted profile does not need a
+    second store to say who may see it. Core reads its own profiles regardless
+    of scope; only a Gateway acts on the distinction.
+    """
+    raw = str(value or "gateway").strip().lower()
+    if raw not in {"gateway", "user"}:
+        raise ValueError("Provider profile scope must be 'gateway' or 'user'")
+    return raw
+
+
 def normalize_string_list(values: Optional[Iterable[Any]]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -126,7 +139,16 @@ def api_key_fingerprint(api_key: Optional[str]) -> Optional[str]:
 
 @dataclass
 class ProviderProfile:
-    """A local Core provider profile exposed as ``endpoint:<id>``."""
+    """A Core provider profile exposed as ``endpoint:<id>``.
+
+    ONE STORE FOR PROVIDER CONFIG (operator ruling 2026-08-01). A profile is
+    provider configuration, so Core holds it whichever console created it --
+    Core's own, or an AbstractGateway console writing through its Core-config
+    seam. `scope` and `capabilities` carry the two columns a hosted Gateway
+    needs on the same row (whether a profile is shared with its users, and
+    which capabilities it serves) so that hosting a profile never requires a
+    second copy of it somewhere else. Core itself reads neither.
+    """
 
     id: str
     display_name: str = ""
@@ -137,6 +159,8 @@ class ProviderProfile:
     api_key_env_var: str = ""
     allowed_models: list[str] = field(default_factory=list)
     enabled: bool = True
+    scope: str = "gateway"
+    capabilities: list[str] = field(default_factory=lambda: ["text"])
     created_at: str = ""
     updated_at: str = ""
 
@@ -150,6 +174,8 @@ class ProviderProfile:
         self.api_key_env_var = normalize_api_key_env_var(self.api_key_env_var)
         self.allowed_models = normalize_string_list(self.allowed_models)
         self.enabled = bool(self.enabled)
+        self.scope = normalize_scope(self.scope)
+        self.capabilities = normalize_string_list(self.capabilities) or ["text"]
         now = utc_now_iso()
         self.created_at = str(self.created_at or now)
         self.updated_at = str(self.updated_at or now)
@@ -176,6 +202,8 @@ class ProviderProfile:
             "base_url": self.base_url,
             "allowed_models": list(self.allowed_models),
             "enabled": bool(self.enabled),
+            "scope": self.scope,
+            "capabilities": list(self.capabilities),
             "api_key_set": bool(resolved_key),
             "api_key_env_var": self.api_key_env_var,
             "api_key_fingerprint": api_key_fingerprint(resolved_key),
@@ -208,6 +236,8 @@ class ProviderProfile:
             "api_key_env_var": self.api_key_env_var,
             "allowed_models": list(self.allowed_models),
             "enabled": bool(self.enabled),
+            "scope": self.scope,
+            "capabilities": list(self.capabilities),
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
@@ -226,7 +256,11 @@ def provider_profile_from_dict(profile_id: str, data: Any) -> ProviderProfile:
         raise ValueError("Provider profile row must be an object")
     payload = dict(data)
     payload.setdefault("id", profile_id)
-    return ProviderProfile(**payload)
+    # Unknown columns are DROPPED, not fatal: a row written by a newer writer
+    # must not make the whole config store unloadable (which reads, downstream,
+    # as a corrupt store and a fallback to defaults).
+    allowed = {f.name for f in dataclass_fields(ProviderProfile)}
+    return ProviderProfile(**{key: value for key, value in payload.items() if key in allowed})
 
 
 def provider_profiles_from_dict(data: Any) -> ProviderProfilesConfig:

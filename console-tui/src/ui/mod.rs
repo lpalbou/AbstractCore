@@ -14,6 +14,7 @@ pub mod review;
 pub mod routes;
 pub mod sections;
 pub mod util;
+pub mod widths;
 pub mod wizard;
 
 use std::cell::RefCell;
@@ -82,9 +83,10 @@ pub struct UiState {
 
     pub overview_sel: Signal<usize>,
     pub route_sel: Signal<usize>,
+    /// The Providers screen's ONE selection. It used to be two (a
+    /// provider-inventory table plus a profiles table underneath);
+    /// the screen has one unified list now, so it has one highlight.
     pub profile_sel: Signal<usize>,
-    /// api_keys table selection (Providers screen).
-    pub keys_sel: Signal<usize>,
     /// Field-table selections for the section pages.
     pub model_sel: Signal<usize>,
     pub media_sel: Signal<usize>,
@@ -108,7 +110,6 @@ impl UiState {
             overview_sel: cx.signal(0),
             route_sel: cx.signal(0),
             profile_sel: cx.signal(0),
-            keys_sel: cx.signal(0),
             model_sel: cx.signal(0),
             media_sel: cx.signal(0),
             embeddings_sel: cx.signal(0),
@@ -251,9 +252,13 @@ impl Ctx {
         self.store.cfg.set(Loadable::Loading);
         self.store.routes.set(Loadable::Loading);
         self.store.profiles.set(Loadable::Loading);
+        self.store.availability.set(Loadable::Loading);
         self.send(Cmd::LoadConfig);
         self.send(Cmd::LoadRoutes);
         self.send(Cmd::LoadProfiles);
+        // A reload is exactly when an operator expects a download that
+        // just finished to show up in the weights column.
+        self.send(Cmd::LoadAvailability);
     }
 }
 
@@ -589,15 +594,17 @@ pub fn humanize_engine_notice(raw: &str) -> String {
     raw.to_string()
 }
 
-fn header(_cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
+fn header(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
     let store = ctx.store;
     let ui = ctx.ui;
+    let viewport = abstracttui::app::use_viewport(cx);
     // shrink(0.0): the title bar is CHROME — without the pin, a page
     // whose content minimum over-demands height flex-shrinks this
     // fixed row to zero and the tab bar paints at row 0 (the sibling's
     // vanishing-title-bar incident; engine finding 0240's class).
     dyn_view(LayoutStyle::line(1).shrink(0.0), move || {
         let t = theme.get().tokens;
+        let avail = viewport.get().w;
         // A file the mirror parsed but PYTHON refuses (loader raise →
         // defaults + backup) must not wear the green dot — either
         // detection lane (fold-side refusals, CLI #FALLBACK stderr)
@@ -635,24 +642,26 @@ fn header(_cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Them
         // cols a long path was evicting the state label — the single
         // most important span (a CORRUPT flag pushed off-screen is a
         // lying header).
-        let path = middle_ellipsize(&path, 46);
+        //
+        // The path is the ELASTIC span, and its budget is the row it is
+        // actually drawn on — a constant 46 cut `…/.abstract…nfig/
+        // abstractcore.json` on a 200-cell terminal with a hundred cells
+        // still free. The FILENAME is what identifies the file, so the
+        // cut keeps the tail.
+        let brand = " AbstractCore Console ";
+        let state = format!("{dot} {label} ");
+        let lead = format!("· {mode} · ");
+        let path = widths::middle_fit(
+            &path,
+            widths::elastic_budget(&[brand, &state, &lead], avail),
+        );
         line(vec![
-            span_bold(" AbstractCore Console ", t.accent),
+            span_bold(brand.to_string(), t.accent),
             span(format!("{dot} "), dot_ink),
             span(format!("{label} "), t.text),
-            span(format!("· {mode} · {path}"), t.text_muted),
+            span(format!("{lead}{path}"), t.text_muted),
         ])
     })
-}
-
-fn middle_ellipsize(s: &str, max: usize) -> String {
-    if s.chars().count() <= max {
-        return s.to_string();
-    }
-    let cs: Vec<char> = s.chars().collect();
-    let head: String = cs[..max / 2 - 1].iter().collect();
-    let tail: String = cs[cs.len() - (max / 2 - 1)..].iter().collect();
-    format!("{head}…{tail}")
 }
 
 fn footer(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
@@ -740,16 +749,26 @@ fn footer(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme
                                     pairs.push(("x", "clear field"));
                                 }
                                 2 => {
-                                    pairs.push(("k", "set key"));
-                                    pairs.push(("a", "add profile"));
+                                    // ONE list, the gateway console's
+                                    // verbs, in its order.
+                                    pairs.push(("a", "add connection"));
                                     pairs.push(("e", "edit"));
                                     pairs.push(("d", "delete"));
-                                    pairs.push(("t", "test provider"));
+                                    pairs.push(("m", "models"));
+                                    pairs.push(("t", "test"));
+                                    pairs.push(("k", "set key"));
                                 }
                                 3 => {
                                     pairs.push(("Enter/e", "edit route"));
                                     pairs.push(("x", "clear route"));
                                     pairs.push(("t", "test route"));
+                                    // `d` is "delete" on Providers and
+                                    // "download" here. The two never share
+                                    // a screen, the hint row names the verb
+                                    // for the screen you are on, and the
+                                    // download confirms with the artifact
+                                    // spelled out before it spends a byte.
+                                    pairs.push(("w", "download weights"));
                                 }
                                 _ => {}
                             }

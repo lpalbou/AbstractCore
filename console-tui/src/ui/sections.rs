@@ -5,7 +5,7 @@
 //! form. Corrupt/missing/unreadable render their honest states.
 
 use abstracttui::prelude::*;
-use abstracttui::widgets::{ColWidth, Column, Table};
+use abstracttui::widgets::Table;
 use serde_json::json;
 
 use crate::config::{FieldState, FileState, Snapshot};
@@ -15,7 +15,8 @@ use crate::worker::Cmd;
 use crate::writes;
 
 use super::editors::open_field_editor;
-use super::util::{ellipsize, error_panel, line, span, span_bold};
+use super::util::{error_panel, line, span, span_bold};
+use super::widths;
 use super::Ctx;
 
 /// Render `f` over the current snapshot, with honest states for every
@@ -155,6 +156,7 @@ pub fn page(
             }
             col = col.child(fields_table(
                 gcx,
+                cx,
                 &ctx_table,
                 &t,
                 snap,
@@ -215,8 +217,15 @@ pub fn page(
         .build()
 }
 
+/// `gcx` builds the table (viewport + element); `page_cx` is the scope
+/// activation opens its modal on. They are NOT interchangeable: `gcx`
+/// belongs to the snapshot dyn and is DISPOSED whenever the config
+/// re-renders (a reload, a write completing), which would take an open
+/// form down with it. Modals belong to the page.
+#[allow(clippy::too_many_arguments)]
 fn fields_table(
-    cx: Scope,
+    gcx: Scope,
+    page_cx: Scope,
     ctx: &Ctx,
     t: &TokenSet,
     snap: &Snapshot,
@@ -225,7 +234,7 @@ fn fields_table(
     sel: Signal<usize>,
 ) -> View {
     let pairs = page_rows(snap, section_names, focus);
-    let w = abstracttui::app::use_viewport(cx).get().w;
+    let w = abstracttui::app::use_viewport(gcx).get().w;
     let mut rows: Vec<Vec<String>> = Vec::new();
     for (section, key) in &pairs {
         let sv = snap
@@ -237,37 +246,50 @@ fn fields_table(
         let state = match &fv.state {
             FieldState::Default => "· default".to_string(),
             FieldState::Set => "● set".to_string(),
-            FieldState::Broken(r) => format!("✗ {}", ellipsize(r, 40)),
+            // The reason is prose and the column is the elastic one here
+            // — `ui::widths` cuts it to whatever the row can spare, so a
+            // wide terminal gets the whole sentence.
+            FieldState::Broken(r) => format!("✗ {r}"),
         };
         let mut row = vec![(*section).to_string(), (*key).to_string()];
-        row.push(ellipsize(&fv.display, 38));
+        // The FULL value: a model id or a path is exactly the sort of
+        // string a 38-char cap turned into its neighbour's twin.
+        row.push(fv.display.clone());
         row.push(state);
         if w >= 100 {
             row.push(fv.note.clone().unwrap_or_default());
         }
         rows.push(row);
     }
-    let mut cols = vec![
-        Column::new("section", ColWidth::Cells(15)),
-        Column::new("field", ColWidth::Cells(22)),
-        Column::new("value", ColWidth::Cells(40)),
-        Column::new("state", ColWidth::Flex(1.0)),
+    // Values are identifiers (model ids, URLs, paths) and cut in the
+    // middle; section/field names and the state/note prose read from the
+    // left.
+    let mut rules = vec![
+        widths::ColRule::head("section", 12),
+        widths::ColRule::head("field", 16),
+        widths::ColRule::tail("value", 20),
+        widths::ColRule::head("state", 12),
     ];
     if w >= 100 {
-        cols.push(Column::new("note", ColWidth::Flex(1.0)));
+        rules.push(widths::ColRule::head("note", 14));
     }
+    let cols = widths::columns(&rules, &mut rows, w);
     let ctx = ctx.clone();
     let pairs2 = pairs.clone();
     Table::new(cols)
         .rows(rows)
         .selection(sel)
+        // Enter, Space and double-click all land here — the same
+        // guarded door the `e` verb opens (open_field_editor owns the
+        // write-route split and posts its own refusals), so keyboard
+        // and mouse can never drift apart.
         .on_activate(move |i| {
             if let Some((section, key)) = pairs2.get(i) {
-                open_field_editor(cx, &ctx, section, key);
+                open_field_editor(page_cx, &ctx, section, key);
             }
         })
         .layout(LayoutStyle::default().grow(1.0))
-        .element(cx, t)
+        .element(gcx, t)
         .autofocus()
         .build()
 }

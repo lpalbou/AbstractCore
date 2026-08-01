@@ -110,6 +110,7 @@ from ..architectures.response_postprocessing import extract_reasoning_from_messa
 from ..core.types import GenerateResponse
 from ..exceptions import (
     ProviderAPIError,
+    EmptyCompletionError,
     ModelNotFoundError,
     AuthenticationError,
     RateLimitError,
@@ -1140,10 +1141,18 @@ class OpenAICompatibleProvider(BaseProvider):
                     tool_calls = choice.get("tool_calls")
                 finish_reason = choice.get("finish_reason", "stop")
             else:
-                content = "No response generated"
-                reasoning = None
-                tool_calls = None
-                finish_reason = "error"
+                # operator 2026-08-01: a 200 with NO choices at all is the
+                # same transient family as the null-content completion — but
+                # this branch used to FABRICATE content="No response
+                # generated", a made-up reply that sailed past the base
+                # empty-completion check as prose and into consumers' mouths.
+                # Raise the typed transient instead: same retried closure,
+                # same full resample budget, same labeled exhaustion.
+                raise EmptyCompletionError(
+                    f"{self.PROVIDER_DISPLAY_NAME} returned an empty completion "
+                    f"(no choices in the response body; model={self.model!r}) — "
+                    "a transient upstream failure dressed as success"
+                )
 
             # Extract usage info
             usage = result.get("usage", {})
@@ -1548,10 +1557,15 @@ class OpenAICompatibleProvider(BaseProvider):
                     tool_calls = choice.get("tool_calls")
                 finish_reason = choice.get("finish_reason", "stop")
             else:
-                content = "No response generated"
-                reasoning = None
-                tool_calls = None
-                finish_reason = "error"
+                # operator 2026-08-01: sync parity — the no-choices 200 is
+                # the same transient family; never fabricate a reply (see
+                # _single_generate). ProviderAPIError subclasses pass the
+                # except-clause below unchanged.
+                raise EmptyCompletionError(
+                    f"{self.PROVIDER_DISPLAY_NAME} returned an empty completion "
+                    f"(no choices in the response body; model={self.model!r}) — "
+                    "a transient upstream failure dressed as success"
+                )
 
             # Extract usage info
             usage = result.get("usage", {})

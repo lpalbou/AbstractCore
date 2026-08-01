@@ -360,10 +360,17 @@ def test_task_route_overrides_broad_route_for_its_task(clean_env, monkeypatch):
     # The task the row names follows the task row...
     assert ve._effective_backend_kind(None, "image", "text_to_image") == "mlx-gen"
     assert ve._mflux_model_default("image", "text_to_image") == "flux2-klein-9b"
-    # ...other tasks (and task-less reads) keep following the broad row.
+    # ...other tasks keep following the broad row.
     assert ve._effective_backend_kind(None, "image", "image_to_image") == "diffusers"
-    assert ve._effective_backend_kind(None, "image") == "diffusers"
     assert ve._diffusers_model_default("image", "image_to_image") == "stabilityai/sdxl-turbo"
+    # A TASK-LESS READ IS THE CATALOG/ADVERTISING QUESTION ("which image
+    # backend does this server use?"), and it now resolves the way a bare
+    # image generation EXECUTES: text_to_image first, broad second. Reading
+    # the broad row alone inverted the hierarchy and produced the live
+    # split-brain of 2026-08-01 -- a host with all three output.image.* rows
+    # on mlx-gen and an empty output.image (the shape the console writes)
+    # advertised the hardcoded `openai` fallback.
+    assert ve._effective_backend_kind(None, "image") == "mlx-gen"
 
 
 def test_task_route_falls_back_to_broad_when_absent(clean_env, monkeypatch):

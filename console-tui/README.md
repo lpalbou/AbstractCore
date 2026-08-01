@@ -25,6 +25,15 @@ names the file being shown and the CLI being used.
 
 - **Browse** (digits 1-8): every section's honest state — set /
   default / broken, secrets fingerprinted, unknown keys flagged.
+- **Providers** (3): ONE list, the AbstractGateway console's columns —
+  `provider | family | base URL | API key | models | enabled | origin`
+  — with every stored endpoint profile inline as its `endpoint:<id>`
+  row. `a` adds a connection (as many as you need; it lands in this
+  file's `provider_profiles`), `e` configures the selected row, `d`
+  deletes a connection, `m` lists its models, `t` probes it, `k` edits
+  a builtin provider's key. `origin` says where a row comes from:
+  `config` · `env` · `auto` (a local server that answered) ·
+  `registry` (known, nothing configured yet).
 - **Edit** (Enter/e, x clears): typed editors per field; coupled
   fields go through the `abstractcore` CLI setters; CLI-less fields
   through unknown-key-preserving direct writes. Every write is

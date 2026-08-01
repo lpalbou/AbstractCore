@@ -38,6 +38,12 @@ def test_capability_defaults_persist_provider_model_base_url_and_options(monkeyp
 
 def test_task_specific_generative_capability_defaults_are_distinct(monkeypatch, tmp_path) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
+    # An EXISTING empty store: a truly fresh install now seeds the recommended
+    # defaults (test_recommended_fresh_install_seed.py), and this test is about
+    # task-row distinctness over an unconfigured broad row.
+    store = tmp_path / ".abstractcore" / "config" / "abstractcore.json"
+    store.parent.mkdir(parents=True, exist_ok=True)
+    store.write_text("{}")
 
     manager = ConfigurationManager()
     assert manager.set_capability_default("output.image.text_to_image", provider="mlx-gen", model="AbstractFramework/z-image-turbo-8bit")
@@ -300,7 +306,12 @@ def test_status_reports_effective_embedding_text_route(monkeypatch, tmp_path) ->
     assert embeddings["provider"] == "lmstudio"
     assert embeddings["model"] == "text-embedding-route"
     assert embeddings["base_url"] == "http://127.0.0.1:1234/v1"
-    assert embeddings["legacy"]["provider"] != embeddings["provider"]
+    # The `embeddings` section mirrors the route in both directions, so the
+    # status and `--show-config` never report different answers for the same
+    # question, whichever entry point wrote last.
+    assert embeddings["legacy"]["provider"] == embeddings["provider"]
+    assert embeddings["legacy"]["model"] == embeddings["model"]
+    assert embeddings["legacy"]["base_url"] == embeddings["base_url"]
 
 
 def test_capability_defaults_include_embedding_and_rerank_route_specs(monkeypatch, tmp_path) -> None:

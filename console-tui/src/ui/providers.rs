@@ -1,317 +1,549 @@
-//! Providers & keys: the api_keys table (k sets/clears the selected
-//! key through the masked editor) and the provider endpoint profiles
-//! (a adds, e edits, d deletes — all through `config set-provider`/
-//! `delete-provider`, verified by re-read).
+//! Providers: ONE unified provider list — the AbstractGateway console-
+//! TUI's Providers screen, cell for cell (operator ruling 2026-08-01:
+//! "I do not understand why the providers are displayed in a different
+//! fashion between gateway and core; they should have the exact same.
+//! Gateway is the one we want. Profiles are just indicated as profile
+//! of the openai-compatible endpoint, and we should have a way to
+//! configure as many as necessary, like in the gateway console.").
+//!
+//! THIS SCREEN USED TO BE TWO TABLES. The top one enumerated the
+//! provider registry with its own vocabulary (`kind` / `key/endpoint` /
+//! `answering`, "local server", "nothing to configure"); a second table
+//! underneath listed the endpoint profiles again — the same objects,
+//! twice, in two spellings. The gateway has ONE table, so this does
+//! too: `provider | family | base URL | API key | models | enabled |
+//! origin`, with every stored profile INLINE as its `endpoint:<id>` row
+//! (`store::ProfilesData::connections` composes it), and the profile
+//! editing that used to justify the second table moved onto those rows.
+//!
+//! Where core differs from the gateway it says so instead of faking a
+//! cell:
+//!   - `enabled` is `—` on a registry row: core has no enable switch
+//!     for a builtin provider, and `yes` beside a column whose other
+//!     value is `NO` would advertise a toggle with nothing to write to.
+//!   - `origin` reads `config | env | auto | registry` — core has one
+//!     store and no scopes, and `registry` (known, nothing configured)
+//!     is a row the gateway does not have at all.
+//!
+//! Verbs, per row, the gateway's set: `a` adds a connection (a real
+//! `provider_profiles` entry, as many as wanted), `e` configures the
+//! selected row, `d` deletes a profile, `m` lists models, `t` probes it.
+//! `k` stays the explicit key verb for the rows that have an `api_keys`
+//! field. Every refusal SAYS why — a footer-advertised key that does
+//! nothing reads as a dead app.
 
 use abstracttui::prelude::*;
-use abstracttui::widgets::{Block, Button, Checkbox, ColWidth, Column, Table};
+use abstracttui::widgets::{Block, Button, Checkbox, Scroll, Table};
 
-use crate::config::FieldState;
+use crate::config::FileState;
 use crate::schema;
-use crate::store::{ProfileRow, ProfilesData};
+use crate::store::{ConnectionRow, Loadable, Origin, ProfileRow, ProfilesData};
 use crate::worker::{next_form_id, Cmd};
 use crate::writes;
 
-use super::forms::{
-    confirm_danger, install_write_done, message_slot, open_form_guarded,
-};
-use super::util::{ellipsize, field, line, loadable_view, span};
+use super::forms::{confirm_danger, install_write_done, message_slot, open_form_guarded};
+use super::util::{error_panel, field, line, loadable_view, span, span_bold};
+use super::widths;
 use super::Ctx;
 
 pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
     let store = ctx.store;
     let ui = ctx.ui;
-    let ctx_key = ctx.clone();
+
+    // Deleting the last row must not strand the highlight past the end.
+    clamp_selection(cx, ui.profile_sel, move || {
+        store
+            .profiles
+            .with(|d| d.ready().map(|d| d.connections().len()).unwrap_or(0))
+    });
+
     let ctx_add = ctx.clone();
     let ctx_edit = ctx.clone();
     let ctx_del = ctx.clone();
+    let ctx_models = ctx.clone();
+    let ctx_test = ctx.clone();
+    let ctx_key = ctx.clone();
+    let ctx_table = ctx.clone();
 
-    // Two halves, both grow(1.0) with zero basis: they split whatever
-    // height exists instead of one half's content starving the other
-    // to zero rows.
-    let keys = dyn_view_scoped(
-        LayoutStyle::default().grow(1.0).basis(Dimension::Cells(0)),
-        move |gcx| {
-            let t = theme.get().tokens;
-            let ctx_tbl = ctx_key.clone();
-            let body = super::sections::with_snapshot(&t, &store, |snap, _| {
-                let Some(sv) = snap.sections.iter().find(|s| s.spec.name == "api_keys") else {
-                    return line(vec![span("api_keys section missing?!", t.error)]);
-                };
-                let rows: Vec<Vec<String>> = sv
-                    .fields
-                    .iter()
-                    .map(|f| {
-                        let state = match &f.state {
-                            FieldState::Default => "not set".to_string(),
-                            FieldState::Set => f.display.clone(),
-                            FieldState::Broken(r) => format!("✗ {}", ellipsize(r, 36)),
-                        };
-                        vec![
-                            f.key.to_string(),
-                            state,
-                            f.note.clone().unwrap_or_default(),
-                        ]
-                    })
-                    .collect();
-                let names: Vec<&'static str> = sv.fields.iter().map(|f| f.key).collect();
-                let ctx_act = ctx_tbl.clone();
-                Element::new()
-                    .style(LayoutStyle::column())
-                    .child(
-                        Table::new(vec![
-                            Column::new("provider key", ColWidth::Cells(20)),
-                            Column::new("state", ColWidth::Cells(26)),
-                            Column::new("note", ColWidth::Flex(1.0)),
-                        ])
-                        .rows(rows)
-                        .selection(ui.keys_sel)
-                        .on_activate(move |i| {
-                            if let Some(name) = names.get(i) {
-                                if ctx_act.writable_now() {
-                                    super::editors::open_field_editor(
-                                        gcx, &ctx_act, "api_keys", name,
-                                    );
-                                }
-                            }
-                        })
-                        .layout(LayoutStyle::default().grow(1.0))
-                        .element(gcx, &t)
-                        .autofocus()
-                        .build(),
-                    )
-                    .child(line(vec![span(
-                        " keys stored HERE override the environment (a differing env var is shadowed at load)",
-                        t.text_faint,
-                    )]))
-                    .build()
-            });
-            Block::new()
-                .title("API keys · api_keys — Enter/k edits the selected key")
-                .layout(LayoutStyle::column().grow(1.0))
-                .child(body)
-                .element(&t)
-                .build()
-        },
-    );
-
-    let profiles = dyn_view_scoped(
-        LayoutStyle::default().grow(1.0).basis(Dimension::Cells(0)),
-        move |gcx| {
-            let t = theme.get().tokens;
-            let data = store.profiles.get();
-            let body = loadable_view(
-                &t,
-                &data,
-                |d: &ProfilesData| d.profiles.is_empty(),
-                "no provider endpoint profiles — a adds one (endpoint:<id> providers)",
-                |d| profiles_table(gcx, &t, d, ui.profile_sel),
-            );
-            Block::new()
-                .title("Provider endpoint profiles · provider_profiles — a add · e edit · d delete")
-                .layout(LayoutStyle::column().grow(1.0))
-                .child(body)
-                .element(&t)
-                .build()
-        },
-    );
-
-    let ctx_k = ctx.clone();
     Element::new()
         .style(LayoutStyle::column().grow(1.0))
-        .shortcut(KeyChord::plain(Key::Char('k')), move |_| {
-            let idx = ui.keys_sel.get_untracked();
-            let name = schema::section("api_keys")
-                .and_then(|s| s.fields.get(idx))
-                .map(|f| f.key);
-            match name {
-                Some(name) => {
-                    if ctx_k.writable_now() {
-                        super::editors::open_field_editor(cx, &ctx_k, "api_keys", name);
-                    }
-                }
-                None => ctx_k.store.notice.set(Some("no key selected".into())),
-            }
-        })
         .shortcut(KeyChord::plain(Key::Char('a')), move |_| {
             if ctx_add.writable_now() {
                 open_profile_editor(cx, &ctx_add, None);
             }
         })
         .shortcut(KeyChord::plain(Key::Char('e')), move |_| {
-            match selected_profile(&ctx_edit) {
-                Some(p) => {
-                    if ctx_edit.writable_now() {
-                        open_profile_editor(cx, &ctx_edit, Some(p));
-                    }
-                }
-                None => ctx_edit
-                    .store
-                    .notice
-                    .set(Some("no profile selected — a adds one".into())),
-            }
+            configure_selected(cx, &ctx_edit);
         })
-        .shortcut(KeyChord::plain(Key::Char('t')), {
-            let ctx_t = ctx.clone();
-            move |_| open_test_picker(cx, &ctx_t)
+        .shortcut(KeyChord::plain(Key::Char('k')), move |_| {
+            edit_selected_key(cx, &ctx_key);
         })
         .shortcut(KeyChord::plain(Key::Char('d')), move |_| {
-            match selected_profile(&ctx_del) {
-                Some(p) => {
-                    if !ctx_del.writable_now() {
-                        return;
-                    }
-                    let ctx2 = ctx_del.clone();
-                    confirm_danger(
-                        cx,
-                        ctx_del.ui,
-                        format!(
-                            "Delete profile {} (endpoint:{})? Its stored key goes with it.",
-                            p.id, p.id
-                        ),
-                        "Delete it",
-                        "Keep it",
-                        move || {
-                            let spec =
-                                writes::delete_profile(&p.id, ctx2.write_base(), None);
-                            ctx2.send(Cmd::Write(Box::new(spec)));
-                        },
-                    );
-                }
-                None => ctx_del
+            delete_selected(cx, &ctx_del);
+        })
+        .shortcut(KeyChord::plain(Key::Char('m')), move |_| {
+            match selected(&ctx_models) {
+                Some(row) => open_models_modal(cx, &ctx_models, row.provider),
+                None => ctx_models
                     .store
                     .notice
-                    .set(Some("no profile selected — nothing to delete".into())),
+                    .set(Some("no provider selected — no models to browse".into())),
             }
         })
-        .child(keys)
-        .child(profiles)
+        .shortcut(KeyChord::plain(Key::Char('t')), move |_| {
+            match selected(&ctx_test) {
+                Some(row) => {
+                    // The unified list is why this verb can be
+                    // selected-row now: the old screen's top table was
+                    // the api_keys section, so a row-scoped test could
+                    // never reach keyless lmstudio/ollama — the
+                    // wizard's own recommended targets. Every provider
+                    // has a row here.
+                    let base_url = (!row.base_url.is_empty()).then_some(row.base_url.as_str());
+                    ctx_test.send_probe(crate::probes::list_models(&row.provider, base_url));
+                }
+                None => ctx_test
+                    .store
+                    .notice
+                    .set(Some("no provider selected — nothing to test".into())),
+            }
+        })
+        .child(dyn_view_scoped(
+            LayoutStyle::default().grow(1.0),
+            move |gcx| {
+                let t = theme.get().tokens;
+                let ctx_tbl = ctx_table.clone();
+                let data = store.profiles.get();
+                let body = loadable_view(
+                    &t,
+                    &data,
+                    |d: &ProfilesData| d.connections().is_empty(),
+                    "the CLI reported no providers — is `abstractcore` on PATH?",
+                    |d| unified_table(gcx, cx, &ctx_tbl, &t, d, ui.profile_sel),
+                );
+                Block::new()
+                    .title("Available providers (a adds a connection)")
+                    .layout(LayoutStyle::column().grow(1.0))
+                    .child(body)
+                    // Selected-row action honesty — the TUI stand-in
+                    // for the web's per-row buttons.
+                    .child(selection_hint(&t, &data, ui.profile_sel.get()))
+                    // The facts under the one list: what answers when
+                    // nothing names a provider, and what is known but
+                    // unconfigured.
+                    .child(defaults_footer(&t, ctx_tbl.store))
+                    .element(&t)
+                    .build()
+            },
+        ))
         .build()
 }
 
-fn selected_profile(ctx: &Ctx) -> Option<ProfileRow> {
-    let idx = ctx.ui.profile_sel.get_untracked();
-    ctx.store
-        .profiles
-        .with_untracked(|d| d.ready().and_then(|d| d.profiles.get(idx).cloned()))
-}
-
-/// The provider test picker (M3): one keyboard-driven prompt over ALL
-/// canonical providers + every endpoint profile — the api_keys table
-/// only lists KEYED providers, so a selected-row-only verb could never
-/// test lmstudio/ollama, the wizard's own recommended targets. Initial
-/// selection follows the selected key row when it maps to a provider
-/// id (api_keys field names spell `openai_compatible` with an
-/// underscore; provider ids use a hyphen).
-pub fn open_test_picker(cx: Scope, ctx: &Ctx) {
-    if ctx.store.probe_busy.get_untracked() {
-        // Refuse at the door, not after the pick — send_probe's guard
-        // stays as the backstop.
-        ctx.store.notice.set(Some(
-            "a test is already running — its result lands in the journal and on Review (8)".into(),
-        ));
-        return;
-    }
-    let mut prompt = abstracttui::app::ChoicePrompt::new(
-        "Test which provider? (live model discovery via config test-provider)",
-    );
-    for p in schema::STATIC_PROVIDERS {
-        prompt = prompt.option(*p, *p);
-    }
-    // Profiles ride the same picker with their base_url for the
-    // reachability disambiguation.
-    let profiles: Vec<ProfileRow> = ctx
-        .store
-        .profiles
-        .with_untracked(|d| d.ready().map(|d| d.profiles.clone()).unwrap_or_default());
-    for p in &profiles {
-        let id = format!("endpoint:{}", p.id);
-        prompt = prompt.option(id.clone(), format!("{id} ({})", ellipsize(&p.base_url, 32)));
-    }
-    let selected_key_provider = {
-        let idx = ctx.ui.keys_sel.get_untracked();
-        schema::section("api_keys")
-            .and_then(|s| s.fields.get(idx))
-            .map(|f| f.key.replace('_', "-"))
-            .filter(|p| schema::STATIC_PROVIDERS.contains(&p.as_str()))
-    };
-    if let Some(p) = &selected_key_provider {
-        prompt = prompt.initial(p.clone());
-    }
-    let ctx2 = ctx.clone();
-    super::forms::open_prompt(cx, ctx.ui, prompt, move |outcome| {
-        if let abstracttui::app::ChoiceOutcome::Answered(a) = outcome {
-            let Some(choice) = a.selected.first() else {
-                return;
-            };
-            let base_url = choice
-                .strip_prefix("endpoint:")
-                .and_then(|id| profiles.iter().find(|p| p.id == id))
-                .map(|p| p.base_url.clone());
-            ctx2.send_probe(crate::probes::list_models(choice, base_url.as_deref()));
+/// Keep a selection inside the list it points at (the gateway console's
+/// `util::clamp_selection`, same body): deleting the last row must not
+/// strand the highlight past the end.
+fn clamp_selection(cx: Scope, sel: Signal<usize>, len_of: impl Fn() -> usize + 'static) {
+    cx.effect(move || {
+        let len = len_of();
+        let cur = sel.get();
+        if len == 0 {
+            if cur != 0 {
+                sel.set(0);
+            }
+        } else if cur >= len {
+            sel.set(len - 1);
         }
     });
 }
 
-fn profiles_table(cx: Scope, t: &TokenSet, d: &ProfilesData, sel: Signal<usize>) -> View {
-    let w = abstracttui::app::use_viewport(cx).get().w;
-    let rows: Vec<Vec<String>> = d
-        .profiles
+/// THE ONE provider table. Every row is a connection row — a builtin
+/// the registry knows, a stored `endpoint:<id>` profile, or a local
+/// server the probe found answering. The first column carries the
+/// provider NAME the row answers to, because that string — not the
+/// internal profile id — is what routes and flows reference.
+fn unified_table(
+    gcx: Scope,
+    page_cx: Scope,
+    ctx: &Ctx,
+    t: &TokenSet,
+    d: &ProfilesData,
+    sel: Signal<usize>,
+) -> View {
+    // Which columns APPEAR is a breakpoint decision (narrow terminals
+    // get fewer, honest columns instead of a silently amputated payload
+    // column); how wide the survivors are is MEASURED from the rows by
+    // `ui::widths`, so a wide terminal prints every base URL whole.
+    let w = abstracttui::app::use_viewport(gcx).get().w;
+    let wide = w >= 104;
+    let mut rows: Vec<Vec<String>> = d
+        .connections()
         .iter()
-        .map(|p| {
-            // api_key_set reflects the RESOLVED key (env var value if
-            // set, else the stored key): a `$VAR` reference that
-            // resolves to nothing must not read as configured.
-            let key = if let Some(env) = &p.api_key_env_var {
-                if p.api_key_set {
-                    format!("${env} ✓")
-                } else {
-                    format!("${env} — EMPTY")
-                }
-            } else if p.api_key_set {
-                match &p.api_key_fingerprint {
-                    Some(f) => format!("fp {f}"),
-                    None => "set".to_string(),
-                }
-            } else {
-                "not set".to_string()
-            };
-            let models = if p.allowed_models.is_empty() {
-                "live discovery".to_string()
-            } else {
-                format!("{} pinned", p.allowed_models.len())
-            };
-            let mut row = vec![p.id.clone(), p.family.clone()];
-            row.push(ellipsize(&p.base_url, 40));
-            row.push(key);
-            if w >= 100 {
-                row.push(models);
+        .map(|c| {
+            let mut row = vec![c.provider.clone()];
+            if wide {
+                row.push(c.family.clone());
             }
-            row.push(if p.enabled { "yes".into() } else { "NO".into() });
+            // The FULL base URL: two endpoints on the same host differ
+            // in their path, so a fixed cap printed one string for both.
+            row.push(c.base_url_text());
+            row.push(c.api_key.clone());
+            if wide {
+                row.push(c.models.clone());
+            }
+            row.push(c.enabled_text());
+            row.push(c.origin.label().to_string());
             row
         })
         .collect();
-    let mut cols = vec![
-        Column::new("id", ColWidth::Cells(16)),
-        Column::new("family", ColWidth::Cells(18)),
-        Column::new("base URL", ColWidth::Flex(1.0)),
-        Column::new("API key", ColWidth::Cells(16)),
-    ];
-    if w >= 100 {
-        cols.push(Column::new("models", ColWidth::Cells(14)));
+    // Provider names and base URLs discriminate on their TAIL (`…/v1`
+    // vs `…/v1/openai`); the rest print bounded phrases whose floor is
+    // their widest word.
+    let mut rules = vec![widths::ColRule::tail("provider", 16)];
+    if wide {
+        rules.push(widths::ColRule::head("family", 12));
     }
-    cols.push(Column::new("enabled", ColWidth::Cells(7)));
+    rules.push(widths::ColRule::tail("base URL", 20));
+    rules.push(widths::ColRule::head("API key", 14));
+    if wide {
+        rules.push(widths::ColRule::head("models", 8));
+    }
+    rules.push(widths::ColRule::head("enabled", 7));
+    rules.push(widths::ColRule::head("origin", 8));
+    // The grid lives inside a bordered Block, so the budget is the
+    // viewport minus that border.
+    let cols = widths::columns(&rules, &mut rows, w - widths::BLOCK_CHROME);
+    let ctx_act = ctx.clone();
     Table::new(cols)
         .rows(rows)
         .selection(sel)
+        // Enter / Space / double-click = the `e` verb. The modal opens
+        // on the PAGE scope, never `gcx`: this dyn re-renders on every
+        // config change, and a form parented here died when a reload
+        // landed mid-edit.
+        .on_activate(move |_| configure_selected(page_cx, &ctx_act))
         .layout(LayoutStyle::default().grow(1.0))
-        .element(cx, t)
+        .element(gcx, t)
+        .autofocus()
         .build()
 }
 
-/// The profile editor: create (id editable) or edit (id fixed).
-/// Secrets: masked, blank keeps, explicit clear; the `$VAR` reference
-/// form rides the same field (`--api-key '$VAR'` stores the NAME).
+fn selected(ctx: &Ctx) -> Option<ConnectionRow> {
+    let idx = ctx.ui.profile_sel.get_untracked();
+    ctx.store
+        .profiles
+        .with_untracked(|d| d.ready().and_then(|d| d.connections().into_iter().nth(idx)))
+}
+
+/// The per-row action line — what THIS row supports and why (the web
+/// shows per-row buttons; a TUI says it under the table).
+fn selection_hint(t: &TokenSet, data: &Loadable<ProfilesData>, sel: usize) -> View {
+    let Some(row) = data
+        .ready()
+        .and_then(|d| d.connections().into_iter().nth(sel))
+    else {
+        return line(vec![span(String::new(), t.text_faint)]);
+    };
+    let verbs = if row.is_profile() {
+        "e edit · d delete · m models · t test"
+    } else if row.takes_key() {
+        "k/e set the key · m models · t test"
+    } else {
+        "no key to set · a adds an endpoint connection · m models · t test"
+    };
+    line(vec![
+        span_bold(format!(" {}", row.provider), t.accent),
+        span(format!(" — {} · {verbs}", row.origin_detail()), t.text_muted),
+    ])
+}
+
+/// The facts under the one list, mirroring the gateway's discovery
+/// footer: the configured default pair (what answers when nothing names
+/// a provider) and the providers with no configuration yet. Degrades
+/// independently of the table — an unread config never blanks the rows.
+fn defaults_footer(t: &TokenSet, store: crate::store::Store) -> View {
+    let default_line = match store.cfg.get() {
+        Loadable::NotAsked => None,
+        Loadable::Loading => Some(span("⟳ reading the config file…", t.info)),
+        Loadable::Failed(e) => Some(span(
+            format!(" core default unavailable — {}", e.headline()),
+            t.warn,
+        )),
+        Loadable::Ready(m) => Some(match &m.state {
+            FileState::Ready(snap) => {
+                let get = |key: &str| {
+                    snap.sections
+                        .iter()
+                        .find(|s| s.spec.name == "default_models")
+                        .and_then(|s| s.fields.iter().find(|f| f.key == key))
+                        .map(|f| f.display.clone())
+                        .unwrap_or_else(|| "—".into())
+                };
+                let (p, m) = (get("global_provider"), get("global_model"));
+                if p == "—" && m == "—" {
+                    span(
+                        " core default: none set (screen 2 sets the global pair)".to_string(),
+                        t.text_muted,
+                    )
+                } else {
+                    span(format!(" core default: {p} / {m}"), t.text_muted)
+                }
+            }
+            FileState::Missing => span(
+                " core default: no config file yet — nothing configured".to_string(),
+                t.text_muted,
+            ),
+            _ => span(
+                " core default unavailable — the config file is unreadable".to_string(),
+                t.warn,
+            ),
+        }),
+    };
+    let free: Vec<String> = store.profiles.with(|d| {
+        d.ready()
+            .map(|d| {
+                d.connections()
+                    .iter()
+                    .filter(|c| c.origin == Origin::Registry)
+                    .map(|c| c.provider.clone())
+                    .collect()
+            })
+            .unwrap_or_default()
+    });
+    let mut col = Element::new().style(LayoutStyle::column().shrink(0.0));
+    if let Some(l) = default_line {
+        col = col.child(line(vec![l]));
+    }
+    if !free.is_empty() {
+        // Affordance FIRST: the line right-truncates on narrow
+        // terminals, and the teaching must survive over tail names.
+        col = col.child(line(vec![span(
+            format!(
+                " not configured yet (k sets a key · a adds a connection): {}",
+                free.join(", ")
+            ),
+            t.text_faint,
+        )]));
+    }
+    col.build()
+}
+
+/// `e` and row activation — ONE body, so the refusals and the write
+/// door can never differ between keyboard and mouse. A stored profile
+/// opens the profile editor; a key-taking builtin opens the masked
+/// `api_keys` field editor (that IS how a builtin is configured in
+/// core); anything else refuses with the reason.
+fn configure_selected(cx: Scope, ctx: &Ctx) {
+    let Some(row) = selected(ctx) else {
+        ctx.store
+            .notice
+            .set(Some("no provider selected — a adds a connection".into()));
+        return;
+    };
+    if let Some(p) = row.profile {
+        if ctx.writable_now() {
+            open_profile_editor(cx, ctx, Some(p));
+        }
+        return;
+    }
+    open_key_editor(cx, ctx, &row);
+}
+
+/// `k` — the explicit key verb, on the rows that have an `api_keys`
+/// field. A stored profile keeps its key in the profile, so `k` sends
+/// the operator to the editor that owns it rather than to a field that
+/// says nothing about this row.
+fn edit_selected_key(cx: Scope, ctx: &Ctx) {
+    let Some(row) = selected(ctx) else {
+        ctx.store.notice.set(Some("no provider selected".into()));
+        return;
+    };
+    if let Some(p) = row.profile {
+        ctx.store.notice.set(Some(format!(
+            "{} keeps its key in the profile — e edits it there",
+            row.provider
+        )));
+        let _ = p;
+        return;
+    }
+    open_key_editor(cx, ctx, &row);
+}
+
+/// The masked `api_keys` field editor for a builtin row — or the
+/// refusal that names the provider and why. "takes no API key" is an
+/// answer, and it is the answer the operator came to this screen for.
+fn open_key_editor(cx: Scope, ctx: &Ctx, row: &ConnectionRow) {
+    if !row.takes_key() {
+        ctx.store.notice.set(Some(format!(
+            "{} takes no API key — a adds an endpoint connection if you need a keyed one",
+            row.provider
+        )));
+        return;
+    }
+    let field_name = schema::section("api_keys")
+        .and_then(|s| s.fields.iter().find(|f| f.key == row.api_key_field))
+        .map(|f| f.key);
+    match field_name {
+        Some(name) => {
+            if ctx.writable_now() {
+                super::editors::open_field_editor(cx, ctx, "api_keys", name);
+            }
+        }
+        None => ctx.store.notice.set(Some(format!(
+            "no api_keys field named {} — edit it on the Sections screen",
+            row.api_key_field
+        ))),
+    }
+}
+
+/// `d` — only a stored profile can be deleted here. A registry row is
+/// not ours to remove; the refusal says where it comes from instead of
+/// swallowing the key.
+fn delete_selected(cx: Scope, ctx: &Ctx) {
+    let Some(row) = selected(ctx) else {
+        ctx.store
+            .notice
+            .set(Some("no provider selected — nothing to delete".into()));
+        return;
+    };
+    let Some(p) = row.profile.clone() else {
+        // Affordance FIRST: a notice truncates at the right edge, and
+        // the rule must survive over the row's name.
+        let from = match row.origin {
+            Origin::Registry => "the provider registry",
+            Origin::Env => "the environment",
+            Origin::Auto => "a local-server probe",
+            Origin::Config => "this config's api_keys section",
+        };
+        ctx.store.notice.set(Some(format!(
+            "only stored connections delete here — '{}' comes from {from} (a adds a connection)",
+            row.provider
+        )));
+        return;
+    };
+    if !ctx.writable_now() {
+        return;
+    }
+    let ctx2 = ctx.clone();
+    confirm_danger(
+        cx,
+        ctx.ui,
+        format!(
+            "Delete provider connection '{}'? Routes and flows pointing at endpoint:{} \
+             will stop resolving, and its stored key goes with it.",
+            p.id, p.id
+        ),
+        "Delete it",
+        "Keep it",
+        move || {
+            let spec = writes::delete_profile(&p.id, ctx2.write_base(), None);
+            ctx2.send(Cmd::Write(Box::new(spec)));
+        },
+    );
+}
+
+/// `m` — the models drill-in for any row, by the provider NAME it
+/// answers to (`config models <name> --json`, which knows both bare
+/// providers and `endpoint:<id>` profiles).
+pub fn open_models_modal(cx: Scope, ctx: &Ctx, provider: String) {
+    let store = ctx.store;
+    if store
+        .models
+        .with_untracked(|m| m.get(&provider).and_then(|l| l.ready()).is_none())
+    {
+        store.models.update(|m| {
+            m.insert(provider.clone(), Loadable::Loading);
+        });
+        ctx.send(Cmd::LoadModels {
+            provider: provider.clone(),
+        });
+    }
+    let theme = use_theme(cx);
+    open_form_guarded(ctx, cx, Size::new(70, 22), move |_mcx, close, _guard| {
+        let p_title = provider.clone();
+        let p_body = provider.clone();
+        // This modal's only focusable (Close) mounts inside a dyn — the
+        // engine's focus-init runs before it exists, so the content root
+        // owns focus itself (engine finding 1000's recipe). Without it
+        // Esc and Enter would land nowhere and the dialog would read as
+        // frozen.
+        Element::new()
+            .style(LayoutStyle::column().gap(1))
+            .focusable()
+            .autofocus()
+            .child(dyn_view(LayoutStyle::line(1), move || {
+                let t = theme.get().tokens;
+                line(vec![span_bold(format!("Models — {p_title}"), t.accent)])
+            }))
+            .child(dyn_view_scoped(
+                LayoutStyle::default().grow(1.0),
+                move |gcx| {
+                    let t = theme.get().tokens;
+                    let entry = store
+                        .models
+                        .with(|m| m.get(&p_body).cloned())
+                        .unwrap_or(Loadable::NotAsked);
+                    match entry {
+                        Loadable::NotAsked | Loadable::Loading => {
+                            line(vec![span("⟳ discovering models…", t.info)])
+                        }
+                        Loadable::Failed(e) => error_panel(&t, &e),
+                        Loadable::Ready(models) if models.is_empty() => line(vec![span(
+                            "∅ no models reported (endpoint offline, or nothing loaded)",
+                            t.text_muted,
+                        )]),
+                        Loadable::Ready(models) => {
+                            let count = models.len();
+                            Element::new()
+                                .style(LayoutStyle::column().grow(1.0))
+                                .child(line(vec![span(format!("{count} models"), t.text_muted)]))
+                                .child(
+                                    Scroll::new(
+                                        Element::new()
+                                            .style(LayoutStyle::column())
+                                            .children(
+                                                models
+                                                    .iter()
+                                                    .map(|m| {
+                                                        line(vec![span(format!("  {m}"), t.text)])
+                                                    })
+                                                    .collect::<Vec<_>>(),
+                                            )
+                                            .build(),
+                                    )
+                                    .view(gcx),
+                                )
+                                .build()
+                        }
+                    }
+                },
+            ))
+            .child(dyn_view_scoped(
+                LayoutStyle::default().h(1).shrink(0.0),
+                move |gcx| {
+                    let t = theme.get().tokens;
+                    let close = close.clone();
+                    Element::new()
+                        .style(LayoutStyle::row().gap(2))
+                        .child(
+                            Button::new("Close (Esc)")
+                                .on_click(move || close())
+                                .element(gcx, &t)
+                                .build(),
+                        )
+                        .build()
+                },
+            ))
+            .build()
+    });
+}
+
+/// The profile editor: create (id editable) or edit (id fixed) — the
+/// `a` door and the `e` door onto an `endpoint:<id>` row. Writes go
+/// through `config set-provider`, so a connection created here lands in
+/// core's own `provider_profiles` section, as many as the operator
+/// wants. Secrets: masked, blank keeps, explicit clear; the `$VAR`
+/// reference form rides the same field (`--api-key '$VAR'` stores the
+/// NAME).
 pub fn open_profile_editor(cx: Scope, ctx: &Ctx, existing: Option<ProfileRow>) {
     let theme = use_theme(cx);
     let ctx2 = ctx.clone();
@@ -329,21 +561,20 @@ pub fn open_profile_editor(cx: Scope, ctx: &Ctx, existing: Option<ProfileRow>) {
         let key_input = mcx.signal(String::new());
         let clear_key = mcx.signal(false);
         let enabled = mcx.signal(p.as_ref().map(|p| p.enabled).unwrap_or(true));
+        // Same vocabulary as the table above and as the gateway
+        // console's key note — one way to say "there is a key here".
         let key_now = p
             .as_ref()
-            .map(|p| {
-                if let Some(env) = &p.api_key_env_var {
-                    format!("${env}")
-                } else if p.api_key_set {
-                    format!(
-                        "stored (fp {})",
-                        p.api_key_fingerprint.clone().unwrap_or_default()
-                    )
-                } else {
-                    "not set".into()
-                }
+            .map(|p| match (&p.api_key_env_var, p.api_key_set) {
+                (Some(env), true) => format!("stored (${env})"),
+                (Some(env), false) => format!("none (${env})"),
+                (None, true) => format!(
+                    "stored ({})",
+                    p.api_key_fingerprint.clone().unwrap_or_default()
+                ),
+                (None, false) => "none".into(),
             })
-            .unwrap_or_else(|| "not set".into());
+            .unwrap_or_else(|| "none".into());
 
         // Family select with placeholder — never fabricate.
         let mut fopts = vec![SelectOption::new("— choose a family —")];
@@ -451,7 +682,9 @@ pub fn open_profile_editor(cx: Scope, ctx: &Ctx, existing: Option<ProfileRow>) {
 
         Block::new()
             .title(if is_new {
-                "Add provider endpoint profile".to_string()
+                // The `a` verb's own words: this creates a CONNECTION —
+                // an `endpoint:<id>` provider in provider_profiles.
+                "Add a provider connection (endpoint:<id>)".to_string()
             } else {
                 format!("Edit profile {}", id.get_untracked())
             })
@@ -466,6 +699,7 @@ pub fn open_profile_editor(cx: Scope, ctx: &Ctx, existing: Option<ProfileRow>) {
                             TextInput::new()
                                 .layout(LayoutStyle::default().grow(1.0).h(1))
                                 .value(id)
+                                .placeholder("lowercase, digits, - _ (answers as endpoint:<id>)")
                                 .view(mcx)
                         } else {
                             // Ids are identities — renaming would mint
@@ -500,13 +734,19 @@ pub fn open_profile_editor(cx: Scope, ctx: &Ctx, existing: Option<ProfileRow>) {
                             .view(mcx),
                     ))
                     .child(line(vec![
-                        span("                    stored now: ", t.text_faint),
+                        span("                    key now: ", t.text_faint),
                         span(key_now.clone(), t.text_muted),
+                        span(
+                            " — leave blank to keep it; type to replace; check clear to remove",
+                            t.text_faint,
+                        ),
                     ]))
                     .child(field(
                         &t,
                         "",
-                        Checkbox::new("clear the stored key").checked(clear_key).view(mcx),
+                        Checkbox::new("clear the stored key")
+                            .checked(clear_key)
+                            .view(mcx),
                     ))
                     .child(field(
                         &t,

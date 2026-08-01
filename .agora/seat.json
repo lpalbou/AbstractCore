@@ -1,0 +1,10 @@
+{
+  "schema": 1,
+  "agent_id": "core",
+  "url": "http://127.0.0.1:8765",
+  "about": "",
+  "harnesses": [
+    "abstractcode"
+  ],
+  "default_drive_harness": "abstractcode"
+}

@@ -6,6 +6,134 @@ All notable changes, one entry per build wave, each with its gate line
 
 ## [Unreleased]
 
+### One providers screen, two doors (2026-08-01, operator ruling)
+
+> "I do not understand why the providers are displayed in a different
+> fashion between gateway and core; they should have the exact same.
+> Gateway is the one we want. Profiles are just indicated as profile of
+> the openai-compatible endpoint, and we should have a way to configure
+> as many as necessary, like in the gateway console."
+
+The Providers screen was TWO tables in two vocabularies: a provider
+inventory (`provider | kind | key/endpoint | answering`, "local
+server", "nothing to configure") and, under it, a second table listing
+the endpoint profiles again — the same objects, twice. It is one table
+now, cell for cell the gateway console-TUI's:
+
+- **`provider | family | base URL | API key | models | enabled |
+  origin`**, `family` and `models` appearing at ≥104 cells like the
+  gateway's; widths still solved by `ui::widths` (untouched).
+- **Endpoint profiles are rows**, inline as `endpoint:<id>`, carrying
+  the family they are a profile OF (`openai-compatible`). The second
+  table is gone; its editing moved onto those rows.
+  `ProfilesData::connections()` composes the list from core's own
+  surfaces — the `config providers --probe --json` inventory joined
+  with the `provider_profiles` rows — so the screen renders rows
+  instead of performing a join, and the composition is unit-tested.
+- **`origin` says where a row lives**: `config` (this file — an
+  endpoint profile, or a key in `api_keys`) · `env` (resolved from the
+  environment) · `auto` (a local server that ANSWERED at its default
+  address) · `registry` (known, nothing configured). Key precedence is
+  now readable per row instead of being a footnote under the table.
+- **Verbs, the gateway's set, per row**: `a` adds a connection (a real
+  `provider_profiles` entry through `config set-provider` — as many as
+  wanted), `e`/Enter/double-click configures the selected row (profile
+  editor, or the masked `api_keys` editor for a keyed builtin), `d`
+  deletes a stored connection, `m` lists its models, `t` probes it.
+  `k` stays the explicit key verb. Every refusal names the row and the
+  reason. `t` could not be selected-row before — the old top table WAS
+  the `api_keys` section, so keyless lmstudio/ollama had no row to
+  select and the verb had to open a picker over a list the screen did
+  not show; the picker is gone with the reason for it.
+- **Footer, gateway-shaped**: the selected row's summary, the
+  configured `core default: <provider> / <model>`, and the
+  `not configured yet (k sets a key · a adds a connection): …` line.
+- **Adapted honestly, not faked**: `enabled` prints `—` on a registry
+  row (core has no enable switch for a builtin — `yes` beside a column
+  whose other value is `NO` would advertise a toggle with nothing to
+  write to), and `origin: registry` is a row the gateway does not have
+  at all (core keeps it: ruling 2026-08-01, "how come we don't have
+  ollama, lmstudio, huggingface and mlx?").
+
+Two defects the live pty run caught, both fixed here:
+
+- **The post-write refresh dropped `--probe`.** It replaces the whole
+  providers view, so a probe-less re-read silently downgraded every
+  probed row after any write: live model counts vanished and `origin`
+  flipped `auto` → `registry` — a wrong word about a server that was
+  still answering.
+- **"Python REFUSES this file", one keystroke after a successful add.**
+  `config set-provider` stamps `scope` + `capabilities` onto every
+  profile row it saves (ONE STORE FOR PROVIDER CONFIG,
+  `provider_profiles.py:140-165`); the console's `PROFILE_FIELDS` did
+  not know them, so its refusal detector flagged a file Python had just
+  written. Both fields are now known (Core reads neither; nothing here
+  edits them).
+
+Gates: `cargo build` · `cargo test` 130 passed (71 lib + 59 headless) ·
+`cargo clippy --all-targets -D warnings` clean · live pty round-trip
+against the real store (`a` → `endpoint:paritytest` appears → `d` →
+disappears), store restored byte-identical (sha256 `28fe8d4d…`).
+
+### One config language, two doors (2026-08-01, operator ruling)
+
+Harmonized with `abstractgateway-console` for the configuration the two
+entry points SHARE. The gateway console is the reference; where a better
+shared pattern emerged it was applied to both.
+
+- **One state vocabulary** on the routes grid, `RouteRow::state_label()`
+  in both crates, same four strings: `configured` · `covered by <key>` ·
+  `derived ← <key>` · `not configured`. The old spellings (`= input.text`,
+  `default`) are gone; `default` read as "a default is set" on a screen
+  literally about defaults, so BOTH consoles now say `not configured`.
+- **Derived-ness comes from the payload**, not from a hardcoded key.
+  `RouteRow` folds `derived_from` and `editable()` reads it (the gateway
+  console's exact body), so a second derived row needs no console edit.
+  Refusals speak the same sentence in both: `output.text derives from
+  input.text — edit that route instead`.
+- **Source attribution per row**: a `source` column at ≥112 cells, the
+  payload's own string — gateway parity.
+- **The editor leads with the stored truth**: `Applies now: <provider> /
+  <model> · reasoning <effort> (source: …)`, derived only from what the
+  store answers, never from local picks. `Clear override` now lives in
+  the editor too, behind the same danger confirm as the table's `x`.
+- **Reasoning is a select, not free text** — `not set / minimal / low /
+  medium / high`, the web console's list verbatim, and only on the
+  text-generation route (`input.text` / `output.text`), where the store
+  keeps it. Deliberately NOT the engine's `ReasoningSelect`: that control
+  is capability-driven and renders locked without `ReasoningFacts`, which
+  a route editor does not have.
+- **The save sends only what the operator edited.** `set-default` is
+  field-preserving (`update_capability_default` keeps every field a
+  command does not name), so the editor diffs each control against the
+  value it opened with: an untouched field carries no flag, an emptied
+  one carries an empty flag (`--base-url ""`) that clears it, and options
+  send `--option ""` to drop them all. Echoing the rendered row back as a
+  write would let a stale grid overwrite a value set from the gateway
+  console between render and save. An untouched Save refuses instead
+  ("nothing changed"). `writes::RouteEdit` carries the diff;
+  `set_route_sends_only_the_edited_fields` pins the argv.
+- **The write proves itself with the resulting row**: `input.text =
+  endpoint:airelay / gpt-5.4 · reasoning medium (source: …)` — the same
+  sentence the gateway console prints after its PUT. `Expect::RouteEq`
+  gained `reasoning` and now verifies exactly the fields the write named.
+- **Providers screen speaks the gateway's connection vocabulary**: the
+  API-key cell is `stored (fp)` / `none` / `none ($VAR)`, and the first
+  column is the PROVIDER NAME (`endpoint:<id>`) — the spelling a route's
+  provider field takes, so the Providers screen and the route editor's
+  dropdown stop naming the same thing two ways.
+- **Fixed: the embeddings model filter never fired.**
+  `class_for_modality` read the row's modality, but `embedding.text`
+  carries kind `embedding` and modality `text` — so the one picker whose
+  class filter earns its keep offered chat models. Now
+  `class_for_route(kind, modality)`, pinned against the live row shapes.
+
+Gate: `cargo build`, `cargo test` (57 lib + 46 headless), `cargo clippy
+--all-targets` all clean. Live: driven over a pty against
+`runtime/config/abstractcore.json` — set a reasoning default from this
+console and from the gateway console, journal and store verified after
+each, config restored byte-identical to its pre-session state.
+
 ### Class-filtered model pickers (2026-07-26, operator request)
 
 - **Selecting a provider now populates a real model dropdown** in the

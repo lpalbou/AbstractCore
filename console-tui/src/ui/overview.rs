@@ -3,13 +3,14 @@
 //! every section. Enter on a section row jumps to its owning screen.
 
 use abstracttui::prelude::*;
-use abstracttui::widgets::{Block, ColWidth, Column, Table};
+use abstracttui::widgets::{Block, Table};
 
 use crate::config::Snapshot;
 use crate::store::Loadable;
 
 use super::sections::with_snapshot;
 use super::util::{line, span, span_bold};
+use super::widths;
 use super::{config_identity_line, screen_for_section, Ctx};
 
 pub fn view(_cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
@@ -61,7 +62,9 @@ pub fn view(_cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Th
                     t.error,
                 )]))
                 .child(line(vec![span(
-                    format!("   {}", super::util::ellipsize(&fb, 200)),
+                    // `line()` fits this to the row it is drawn on; a
+                    // 200-char pre-cut only hid the end on a wide term.
+                    format!("   {fb}"),
                     t.text_muted,
                 )]));
         }
@@ -293,11 +296,13 @@ fn sections_table(cx: Scope, jump: Jump, t: &TokenSet, snap: &Snapshot) -> View 
     }
 
     let w = abstracttui::app::use_viewport(cx).get().w;
-    let rows: Vec<Vec<String>> = rows_data
+    let mut rows: Vec<Vec<String>> = rows_data
         .iter()
         .map(|r| {
             let mut row = vec![r.name.to_string(), r.state.clone()];
-            row.push(super::util::ellipsize(&r.details, 200));
+            // Uncapped: `ui::widths` sizes this column to the summary and
+            // cuts it only when the terminal cannot carry it.
+            row.push(r.details.clone());
             if w >= 96 {
                 row.push(format!("→ {}", super::SCREENS[screen_for_section(r.name)]));
             }
@@ -305,14 +310,17 @@ fn sections_table(cx: Scope, jump: Jump, t: &TokenSet, snap: &Snapshot) -> View 
         })
         .collect();
 
-    let mut cols = vec![
-        Column::new("section", ColWidth::Cells(20)),
-        Column::new("state", ColWidth::Cells(13)),
-        Column::new("details", ColWidth::Flex(1.0)),
+    // `details` is a SENTENCE, so it keeps its head; section names and
+    // the destination screen are short labels that never earn a cut.
+    let mut rules = vec![
+        widths::ColRule::head("section", 14),
+        widths::ColRule::head("state", 11),
+        widths::ColRule::head("details", 24),
     ];
     if w >= 96 {
-        cols.push(Column::new("edit on", ColWidth::Cells(14)));
+        rules.push(widths::ColRule::head("edit on", 12));
     }
+    let cols = widths::columns(&rules, &mut rows, w);
 
     let names: Vec<&'static str> = rows_data.iter().map(|r| r.name).collect();
     Table::new(cols)

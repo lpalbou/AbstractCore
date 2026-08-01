@@ -7,6 +7,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Seque
 
 from ..config.capability_defaults import (
     capability_route_key,
+    capability_route_key_for_output,
     clean_capability_route_default,
     split_capability_default_route,
 )
@@ -300,7 +301,13 @@ def resolve_capability_default_route(
     resolver: Optional[Callable[..., Any]] = None,
     config_file: Optional[str] = None,
 ) -> Optional[dict[str, Any]]:
-    """Resolve one capability default row with exact-key then broad fallback semantics."""
+    """Resolve one capability default row with exact-key then broad fallback semantics.
+
+    THE MODALITY CELL IS THE TASK ROW'S PARENT. `output.image` answers every
+    image task that has no row of its own, so an unset `output.image.image_edit`
+    resolves to `output.image` — that is the whole point of the broad row and
+    what the fresh-install seed relies on (it writes `output.image` alone).
+    """
 
     try:
         kind, modality, task = split_capability_default_route(route_key)
@@ -310,22 +317,36 @@ def resolve_capability_default_route(
     normalized_key = capability_route_key(kind, modality, task)
     broad_key = capability_route_key(kind, modality)
 
-    def _from_scoped(key: str) -> Optional[dict[str, Any]]:
+    def _scoped_row(key: str) -> Any:
         if not isinstance(scoped_routes, Mapping):
             return None
         row = scoped_routes.get(key)
         if row is None and key == capability_route_key("output", "text"):
             row = scoped_routes.get(capability_route_key("input", "text"))
-        if _is_explicit_not_configured(row):
-            return {"key": key, "source": "not_configured"}
-        return _normalize_default_row(row)
+        return row
 
-    for key in (normalized_key, broad_key):
-        scoped = _from_scoped(key)
+    # THE SENTINEL SHORT-CIRCUITS DISK, NOT THE PARENT ROW. A pushed payload
+    # enumerates EVERY route, carrying `source: "not_configured"` for the unset
+    # ones (abstractgateway/core_config.py documents this), and that sentinel's
+    # job is to stop the config-file read below — the live payload already knows
+    # the answer. Consuming it at the TASK key used to return immediately, so in
+    # every Gateway deployment `output.image` was never consulted for an unset
+    # `output.image.*` and this function's own contract line above was false.
+    # Both keys are in the same payload; look at both before believing "unset".
+    lookup_keys = (normalized_key,) if normalized_key == broad_key else (normalized_key, broad_key)
+    scoped_not_configured = False
+    for key in lookup_keys:
+        row = _scoped_row(key)
+        if _is_explicit_not_configured(row):
+            scoped_not_configured = True
+            continue
+        scoped = _normalize_default_row(row)
         if scoped is not None:
             scoped.setdefault("key", key)
             scoped.setdefault("source", "scoped")
             return scoped
+    if scoped_not_configured:
+        return {"key": normalized_key, "source": "not_configured"}
 
     if callable(resolver):
         attempts: list[tuple[Any, ...]] = []
@@ -479,43 +500,25 @@ def _route_entry(
 
 
 def _output_route_key(spec: Mapping[str, Any], request: GenerateRequest) -> Optional[str]:
-    modality = str(spec.get("modality") or "").strip().lower()
-    task = str(spec.get("task") or "").strip().lower().replace("-", "_")
-    source_images = [
-        item
-        for item in request.media
-        if _media_type(item, fallback="image" if isinstance(item, (bytes, bytearray)) else None) == "image"
-        and _media_role(item) == "source"
-    ]
+    """Which capability default route holds this output spec's default.
 
-    if modality == "text":
-        if task == "transcription":
-            return None
-        return "output.text"
-    if modality == "image":
-        if task in {"image_upscale", "upscale_image"}:
-            return "output.image.image_upscale"
-        if task in {"image_edit", "image_to_image"}:
-            return "output.image.image_to_image"
-        if task in {"", "image_generation", "text_to_image"}:
-            return "output.image.image_to_image" if source_images else "output.image.text_to_image"
-    if modality == "video":
-        if task in {"image_to_video", "i2v"}:
-            return "output.video.image_to_video"
-        if task in {"", "video_generation", "text_to_video"}:
-            return "output.video.image_to_video" if source_images else "output.video.text_to_video"
-    if modality == "voice":
-        return "output.voice"
-    if modality == "music":
-        if task == "text_to_audio":
-            return "output.sound"
-        return "output.music"
-    if modality == "scene3d":
-        if task in {"image_to_scene3d", "i23d"}:
-            return "output.scene3d.image_to_scene3d"
-        if task in {"", "scene3d_generation", "text_to_scene3d", "t23d"}:
-            return "output.scene3d.image_to_scene3d" if source_images else "output.scene3d.text_to_scene3d"
-    return None
+    Delegates to THE ONE TABLE in `abstractcore.config.capability_defaults`.
+    This function used to carry its own copy of the mapping, and AbstractRuntime
+    carried a second one that had already drifted from it (it minted
+    `output.voice.tts` / `output.music.text_to_music` keys the store cannot
+    persist). One store, one table.
+    """
+
+    has_source_image = any(
+        _media_type(item, fallback="image" if isinstance(item, (bytes, bytearray)) else None) == "image"
+        and _media_role(item) == "source"
+        for item in request.media
+    )
+    return capability_route_key_for_output(
+        spec.get("modality"),
+        spec.get("task"),
+        has_source_image=has_source_image,
+    )
 
 
 def _input_route_keys(request: GenerateRequest, output_specs: Iterable[Mapping[str, Any]]) -> list[str]:

@@ -1822,18 +1822,50 @@ def _vision_route_defaults(modality: str = "image", task: Optional[str] = None) 
     when the caller knows it. Semantics match generate_contract's
     resolve_capability_default_route: a CONFIGURED task row wins WHOLESALE
     (a route row is ONE coherent backend identity — never field-merged with
-    the broad row); the broad row serves when the task row is absent.
+    the broad row); the broad row is the PARENT and serves when the task row
+    is absent.
+
+    NO TASK is still not a broad-row-only question. "Which image backend does
+    this server use?" is the catalog/advertising lane's question, and what it
+    ADVERTISES must be what it EXECUTES — a bare image generation executes the
+    `text_to_image` row and only falls back to `output.image`. Reading the
+    broad row alone inverted the hierarchy: on a host whose three image task
+    rows all named mlx-gen and whose broad row was empty (the shape the console
+    produces, since it writes task rows), the catalog reported the hardcoded
+    `openai` env fallback. So a task-less call resolves the modality's CANONICAL
+    generation task first, then the broad row — the same order execution uses.
 
     Returns {} when nothing is configured or the config is unreadable (env
     #FALLBACK then applies verbatim — nothing breaks mid-migration).
     Shape: {"backend": canonical-kind, "model": str, "base_url": str,
     "options": dict} — every field optional.
     """
-    if task:
-        row = _parsed_vision_route(modality, task)
+    resolved_task = str(task or "").strip() or _canonical_route_task(modality)
+    if resolved_task:
+        row = _parsed_vision_route(modality, resolved_task)
         if row:
             return row
     return _parsed_vision_route(modality)
+
+
+def _canonical_route_task(modality: str) -> Optional[str]:
+    """The task a BARE `output=<modality>` request executes, or None.
+
+    Derived from THE ONE TABLE (`capability_route_key_for_output`) rather than
+    written out here, so this lane can never name a task the store cannot hold
+    or drift from what generate actually routes.
+    """
+    try:
+        from ..config.capability_defaults import capability_route_key_for_output
+
+        key = capability_route_key_for_output(modality, None)
+    except Exception:
+        return None
+    parts = [part for part in str(key or "").split(".") if part]
+    if len(parts) < 3:
+        return None
+    task = parts[2]
+    return task if task in _CONFIG_ROUTE_TASKS else None
 
 
 def _warn_env_overridden(env_names: Tuple[str, ...], config_value: Any, env_value: Any) -> None:

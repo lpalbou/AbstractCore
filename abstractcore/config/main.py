@@ -54,6 +54,13 @@ from typing import List, Optional
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+# The text-generation route, from its one owner -- never a second literal here.
+from abstractcore.config.capability_defaults import (
+    RECOMMENDED_SELECTORS,
+    TEXT_ROUTE_KEY,
+    TEXT_ROUTE_KEYS,
+)
+
 # Import config manager with fallback
 try:
     from abstractcore.config import get_config_manager
@@ -1393,7 +1400,16 @@ def install_check(auto_accept: bool = False) -> None:
 
 
 def _parse_capability_options(items: List[str]) -> dict:
-    """Parse repeated KEY=VALUE CLI options, accepting JSON scalar/object values."""
+    """Parse repeated KEY=VALUE CLI options, accepting JSON scalar/object values.
+
+    THE CLEAR-ALL SPELLING IS A CONTRACT, not an accident. Options are a SET,
+    so unlike provider/model/base_url/reasoning they have no per-field "" to
+    clear. `--option ""` is the whole-set clear: the empty item is skipped
+    here, yielding `{}`, and the caller distinguishes "no --option at all"
+    (keep the stored set) from "--option given" (replace it) by whether the
+    list is empty. Both console-TUIs rely on this spelling; the CLI help and
+    docs/centralized-config.md state it.
+    """
     out = {}
     for item in items or []:
         raw = str(item or "").strip()
@@ -1427,16 +1443,116 @@ def _config_manager_for_cli(args):
 
 
 def _print_capability_defaults(payload: dict) -> None:
+    """Print the grid, then say how to change it.
+
+    A grid of 24 `not_configured` rows and no next step is a dead end for the
+    person meeting AbstractCore for the first time -- and configuring a default
+    is the FIRST thing they do. The footer names the exact command, so the
+    output that reports the problem also fixes it. Reasoning is shown wherever
+    it is set: it is part of the route, and a row that hid it would let the two
+    entry points disagree about what is configured.
+    """
+
     print("AbstractCore capability defaults")
     print(f"- config_file: {payload.get('config_file')}")
-    for item in payload.get("routes", []):
-        if not isinstance(item, dict):
-            continue
+    _print_store_errors(payload)
+    routes = [item for item in payload.get("routes", []) if isinstance(item, dict)]
+    text_row: dict = {}
+    for item in routes:
         key = item.get("key") or f"{item.get('kind')}.{item.get('modality')}"
         provider = item.get("provider") or "-"
         model = item.get("model") or "-"
         source = item.get("source") or "-"
-        print(f"- {key}: {provider}/{model} ({source})")
+        extras = []
+        reasoning = item.get("reasoning")
+        if isinstance(reasoning, str) and reasoning.strip():
+            extras.append(f"reasoning={reasoning.strip()}")
+        base_url = item.get("base_url")
+        if isinstance(base_url, str) and base_url.strip():
+            extras.append(f"base_url={base_url.strip()}")
+        suffix = f" [{', '.join(extras)}]" if extras else ""
+        # THE ROUTE HIERARCHY, IN THE SHAPE OF THE LIST. `output.image` is the
+        # PARENT of `output.image.*`: one value that answers every image task
+        # without a row of its own. Printed flat, it read as a duplicate sitting
+        # above its own children with a scary `not_configured` — so task rows
+        # indent under their parent, the parent says what it is for, and a
+        # parent nothing can reach says so instead of crying unconfigured.
+        broad_key = str(item.get("broad_key") or "")
+        if broad_key:
+            if item.get("inherits_broad"):
+                # The MIRROR of the same confusion: this row has no value of
+                # its own, but its parent answers it, so it is not unconfigured
+                # in effect. A fresh install is exactly this shape -- the seed
+                # writes `output.image` alone.
+                source = f"inherited from {broad_key}"
+            print(f"  └ {key}: {provider}/{model}{suffix} ({source})")
+        else:
+            note = ""
+            if item.get("task_keys"):
+                modality = str(item.get("modality") or "").strip() or "modality"
+                note = f"  # any {modality} task; overridden per task below"
+                if item.get("covered_by_tasks"):
+                    source = "not needed — every task below has its own route"
+            print(f"- {key}: {provider}/{model}{suffix} ({source}){note}")
+        if key == TEXT_ROUTE_KEY:
+            text_row = item
+
+    text_configured = bool(text_row.get("provider") and text_row.get("model"))
+    print()
+    if not text_configured:
+        print(
+            f"⚠️  No text-generation default. Apps and workflows that name no provider "
+            f"cannot run until {TEXT_ROUTE_KEY} is set."
+        )
+    print("To set one (a flag you omit keeps its stored value):")
+    print(
+        f"  abstractcore config set-default {TEXT_ROUTE_KEY} "
+        "--provider <provider> --model <model> [--reasoning high]"
+    )
+    print("  abstractcore config models <provider>        # list model ids for a provider")
+    print(f"  abstractcore config clear-default {TEXT_ROUTE_KEY}  # drop the whole route")
+    print(
+        "  abstractcore config apply-recommended        # make this machine match the "
+        "framework recommendation (--dry-run first)"
+    )
+
+
+def _unreadable_store_errors(config_file) -> List[str]:
+    """`[]`, or one loud line when the store exists and does not parse.
+
+    A CORRUPT STORE MUST NOT LOOK LIKE A FRESH INSTALL. `_load_config` already
+    refuses to destroy an unparseable file -- it backs it up and falls back to
+    defaults for the session -- but that fallback reaches this CLI as every
+    route `not_configured`, identical to a brand-new install. The operator
+    would then be told to set a default they set months ago, and the next save
+    would overwrite the recoverable file. So say it, at the surface the
+    operator is actually reading (the load-time warning goes to a logger whose
+    console level is ERROR by default).
+    """
+    try:
+        path = Path(str(config_file)).expanduser()
+        if not path.is_file():
+            return []
+        json.loads(path.read_text(encoding="utf-8"))
+        return []
+    except json.JSONDecodeError as exc:
+        try:
+            backups = sorted(p.name for p in path.parent.glob(path.name + ".corrupt-*.bak"))
+        except Exception:
+            backups = []
+        recovery = f" A copy was preserved as {backups[-1]}." if backups else ""
+        return [
+            f"The config store at {path} could not be parsed ({exc}); the values shown/written "
+            f"are DEFAULTS, not what you configured.{recovery} Fix or restore the file before "
+            "saving - a save overwrites it."
+        ]
+    except Exception:
+        return []
+
+
+def _print_store_errors(payload: dict) -> None:
+    for message in payload.get("errors") or []:
+        print(f"⚠️  {message}")
 
 
 def _config_payload(manager) -> dict:
@@ -1448,11 +1564,30 @@ def _config_payload(manager) -> dict:
         "source": "abstractcore.local",
         "config_file": str(manager.config_file),
         "routes": manager.list_capability_defaults(),
-        "errors": [],
+        "errors": _unreadable_store_errors(manager.config_file),
     }
 
 
-def _provider_profiles_payload(manager) -> dict:
+def _provider_profiles_payload(manager, *, probe: bool = False) -> dict:
+    """Endpoint profiles AND the full provider inventory.
+
+    THE PROVIDER LIST IS THE REGISTRY, NOT THE KEY STORE. Every surface that
+    answered "which providers do I have" by enumerating `api_keys` hid every
+    keyless provider -- ollama, lmstudio, mlx, huggingface, the media engines
+    ("how come we don't have ollama, lmstudio, huggingface and mlx?",
+    2026-08-01). `providers` is that missing list; `profiles` stays exactly
+    what it was so nothing that reads this payload has to change at once.
+    """
+
+    from abstractcore.config import model_materializer
+
+    try:
+        providers = model_materializer.provider_inventory(manager, probe=probe)
+    except Exception as exc:  # noqa: BLE001 - a listing must never be a crash
+        providers = []
+        inventory_errors = [f"provider inventory unavailable: {exc}"]
+    else:
+        inventory_errors = []
     return {
         "ok": True,
         "version": 1,
@@ -1460,14 +1595,73 @@ def _provider_profiles_payload(manager) -> dict:
         "writable": True,
         "source": "abstractcore.local",
         "config_file": str(manager.config_file),
+        "providers": providers,
+        "probed": bool(probe),
         "profiles": manager.list_provider_profiles(),
-        "errors": [],
+        "errors": inventory_errors,
     }
 
 
+_PROVIDER_KIND_LABEL = {
+    "cloud_api": "cloud API",
+    "local_server": "local server",
+    "local_engine": "local engine",
+    "endpoint_profile": "endpoint profile",
+}
+
+
+def _provider_state_text(row: dict) -> str:
+    """The ONE thing that decides whether this provider can run.
+
+    Deliberately per-kind: a key state on a local engine and a base URL on a
+    cloud API are both noise, and a column that showed the same word for every
+    provider is what made the old screen useless.
+    """
+
+    kind = str(row.get("kind") or "")
+    if kind in {"local_server", "endpoint_profile"}:
+        url = str(row.get("base_url") or "")
+        if not url:
+            return "no base URL configured"
+        reachable = row.get("reachable")
+        if reachable is True:
+            return f"{url} — {row.get('reachability') or 'reachable'}"
+        if reachable is False:
+            return f"{url} — unreachable"
+        return url
+    if row.get("api_key_set"):
+        source = row.get("api_key_source") or "config"
+        fingerprint = str(row.get("api_key_fingerprint") or "")
+        return f"key set · fp {fingerprint} ({source})" if fingerprint else f"key set ({source})"
+    env_var = str(row.get("api_key_env_var") or "")
+    if kind == "local_engine":
+        # An engine with an OPTIONAL token (huggingface -> HF_TOKEN for gated
+        # repos) still has one thing worth saying; the rest have none.
+        return f"nothing to configure (no {env_var})" if env_var else "nothing to configure"
+    return f"no key ({env_var})" if env_var else "no key"
+
+
+def _print_provider_inventory(payload: dict) -> None:
+    providers = payload.get("providers") or []
+    if not providers:
+        return
+    print("AbstractCore providers")
+    for row in providers:
+        kind = _PROVIDER_KIND_LABEL.get(str(row.get("kind") or ""), "provider")
+        note = str(row.get("note") or "")
+        suffix = f"  [{note}]" if note else ""
+        print(f"- {row.get('provider')}: {kind}, {_provider_state_text(row)}{suffix}")
+    if not payload.get("probed"):
+        print("  (add --probe to check whether local servers are answering)")
+    print()
+
+
 def _print_provider_profiles(payload: dict) -> None:
+    _print_provider_inventory(payload)
     print("AbstractCore provider endpoint profiles")
     print(f"- config_file: {payload.get('config_file')}")
+    for message in payload.get("errors") or []:
+        print(f"⚠️  {message}")
     profiles = payload.get("profiles", [])
     if not profiles:
         print("- no profiles configured")
@@ -1495,12 +1689,21 @@ def _handle_config_defaults(args) -> int:
 
 def _handle_config_set_default(args) -> int:
     manager = _config_manager_for_cli(args)
+    # Warn BEFORE the write: this save is about to overwrite an unparseable
+    # file with defaults + this one route, and the operator deserves to know
+    # while the backup is still the only copy of their settings.
+    for message in _unreadable_store_errors(manager.config_file):
+        print(f"⚠️  {message}")
+    raw_options = getattr(args, "option", []) or []
     try:
-        options = _parse_capability_options(getattr(args, "option", []) or [])
+        # No `--option` at all leaves the stored options alone; `--option` given
+        # replaces them. A flag the operator did not type must not erase a
+        # setting made from the AbstractGateway console or an earlier command.
+        options = _parse_capability_options(raw_options) if raw_options else None
     except ValueError as e:
         print(f"❌ Error: {e}")
         return 1
-    ok = manager.set_capability_default(
+    ok = manager.update_capability_default(
         args.route,
         provider=getattr(args, "provider", None),
         model=getattr(args, "model", None),
@@ -1512,6 +1715,128 @@ def _handle_config_set_default(args) -> int:
         print(f"❌ Error: Failed to set capability default for {args.route}")
         return 1
     print(f"✅ Set capability default for {args.route}")
+    for warning in _text_route_provider_warnings(args.route, getattr(args, "provider", None)):
+        print(f"⚠️  {warning}")
+    return 0
+
+
+def _text_route_provider_warnings(route: str, provider: Optional[str]) -> List[str]:
+    """Warn (never refuse) when a TEXT route names a provider Core cannot build.
+
+    ACCEPT-AND-WARN, and it must match the Gateway PUT's behaviour exactly
+    (`abstractgateway/core_config.py::text_route_provider_warnings`): two entry
+    points to one store that disagree about which values are sane would be a
+    second truth in a different costume. Unknown names stay writable -- media
+    routes legitimately name plugin backends and endpoint profiles can appear
+    after this process started -- but a typo on the text route is worth saying
+    out loud at write time rather than at the first run.
+    """
+
+    name = str(provider or "").strip().lower()
+    if not name or name.startswith("endpoint:"):
+        return []
+    try:
+        from abstractcore.config.capability_defaults import split_capability_default_route
+
+        kind, modality, task = split_capability_default_route(route)
+    except Exception:
+        return []
+    if task or f"{kind}.{modality}" not in TEXT_ROUTE_KEYS:
+        return []
+    try:
+        from abstractcore.providers.registry import get_provider_registry
+
+        known = [str(p).strip().lower() for p in get_provider_registry().list_provider_names()]
+    except Exception:
+        return []
+    if not known or name in known:
+        return []
+    return [
+        f"Provider {name!r} is not a known AbstractCore text provider "
+        f"(available: {', '.join(sorted(known))}). It was saved, but text runs using this "
+        "default will fail until it names a real provider or an existing endpoint profile "
+        "(endpoint:<id>)."
+    ]
+
+
+def _route_pair_text(row: dict) -> str:
+    """`provider/model [extras]` for one route row, or `(not configured)`."""
+    provider = str(row.get("provider") or "").strip()
+    model = str(row.get("model") or "").strip()
+    if not provider and not model:
+        return "(not configured)"
+    extras = []
+    base_url = str(row.get("base_url") or "").strip()
+    if base_url:
+        extras.append(f"base_url={base_url}")
+    reasoning = str(row.get("reasoning") or "").strip()
+    if reasoning:
+        extras.append(f"reasoning={reasoning}")
+    options = row.get("options")
+    if isinstance(options, dict) and options:
+        extras.append("options={" + ", ".join(f"{k}: {v}" for k, v in sorted(options.items())) + "}")
+    suffix = f" [{', '.join(extras)}]" if extras else ""
+    return f"{provider or '-'}/{model or '-'}{suffix}"
+
+
+_APPLY_RECOMMENDED_GLYPH = {
+    "apply": "✅",
+    "overwrite": "♻️ ",
+    "already": "=",
+    "kept": "🙅",
+}
+
+
+def _print_apply_recommended(payload: dict) -> None:
+    """Before -> after, per route, and what was deliberately NOT touched."""
+
+    verb = "Would apply" if payload.get("dry_run") else "Applied"
+    print(f"{verb} the recommended capability defaults")
+    print(f"- config_file: {payload.get('config_file')}")
+    kept_any = False
+    for row in payload.get("routes", []) or []:
+        if not isinstance(row, dict):
+            continue
+        action = str(row.get("action") or "")
+        glyph = _APPLY_RECOMMENDED_GLYPH.get(action, "-")
+        before = _route_pair_text(row.get("before") or {})
+        after = _route_pair_text(row.get("after") or {})
+        selector = row.get("selector") or ""
+        head = f"- {glyph} {row.get('key')}" + (f" ({selector})" if selector else "")
+        if action == "already":
+            print(f"{head}: {after} — already the recommendation")
+        elif action == "kept":
+            kept_any = True
+            recommended = _route_pair_text(row.get("recommended") or {})
+            print(f"{head}: kept yours {before} (recommended {recommended})")
+        else:
+            print(f"{head}: {before} -> {after}")
+    print()
+    if payload.get("dry_run"):
+        print("Nothing was written (--dry-run). Drop --dry-run to apply.")
+    if kept_any and not payload.get("force"):
+        print("Routes you configured differently were KEPT. Add --force to replace them too.")
+    print("  abstractcore config defaults          # the resulting grid")
+    print("  abstractcore models status            # are the weights on this machine")
+
+
+def _handle_config_apply_recommended(args) -> int:
+    manager = _config_manager_for_cli(args)
+    for message in _unreadable_store_errors(manager.config_file):
+        print(f"⚠️  {message}")
+    try:
+        payload = manager.apply_recommended_capability_defaults(
+            only=getattr(args, "only", None),
+            force=bool(getattr(args, "force", False)),
+            dry_run=bool(getattr(args, "dry_run", False)),
+        )
+    except ValueError as exc:
+        print(f"❌ Error: {exc}")
+        return 1
+    if getattr(args, "json", False):
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        _print_apply_recommended(payload)
     return 0
 
 
@@ -1527,7 +1852,7 @@ def _handle_config_clear_default(args) -> int:
 
 def _handle_config_providers(args) -> int:
     manager = _config_manager_for_cli(args)
-    payload = _provider_profiles_payload(manager)
+    payload = _provider_profiles_payload(manager, probe=bool(getattr(args, "probe", False)))
     if getattr(args, "json", False):
         print(json.dumps(payload, indent=2, sort_keys=True))
     else:
@@ -1689,25 +2014,83 @@ def _handle_config_subcommand(argv: List[str]) -> int:
     defaults.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
     defaults.set_defaults(func=_handle_config_defaults)
 
-    set_default = sub.add_parser("set-default", help="Persist one Core capability routing default")
+    set_default = sub.add_parser(
+        "set-default",
+        help="Persist one Core capability routing default",
+        description=(
+            "Persist one Core capability routing default. A flag you do not pass keeps its "
+            "stored value; pass an empty string to clear one field, or use clear-default to "
+            "drop the whole route. Options are a SET, not a field: --option is a whole-set "
+            "replace, and `--option \"\"` clears the set."
+        ),
+    )
     set_default.add_argument("route", help="Capability route, e.g. output.text, input.image, embedding.text")
-    set_default.add_argument("--provider", default=None, help="Provider/backend id")
-    set_default.add_argument("--model", default=None, help="Model id")
-    set_default.add_argument("--base-url", default=None, help="Optional provider base URL")
+    set_default.add_argument("--provider", default=None, help="Provider/backend id; \"\" clears it")
+    set_default.add_argument("--model", default=None, help="Model id; \"\" clears it")
+    set_default.add_argument("--base-url", default=None, help="Optional provider base URL; \"\" clears it")
     set_default.add_argument(
         "--reasoning",
         default=None,
-        help="Optional default reasoning level for reasoning-capable text routes",
+        help="Optional default reasoning level for reasoning-capable text routes; \"\" clears it",
     )
-    set_default.add_argument("--option", action="append", default=[], metavar="KEY=VALUE", help="Optional JSON-capable parameter; repeatable")
+    set_default.add_argument(
+        "--option",
+        action="append",
+        default=[],
+        metavar="KEY=VALUE",
+        help=(
+            "Optional JSON-capable route parameter; repeatable. Omitting --option keeps the "
+            "stored options; passing --option replaces the whole set; passing --option \"\" "
+            "(a single empty value) clears every option on the route."
+        ),
+    )
     set_default.set_defaults(func=_handle_config_set_default)
+
+    apply_recommended = sub.add_parser(
+        "apply-recommended",
+        help="Apply the framework's recommended capability routes to this store",
+        description=(
+            "Apply the framework's recommended provider/model to the capability routes of "
+            "THIS store. A route you configured differently is KEPT and reported, not "
+            "replaced -- pass --force to overrule it. Extra fields on a route (a pinned "
+            "base URL, a reasoning effort, plugin options) are always preserved."
+        ),
+    )
+    apply_recommended.add_argument(
+        "--only",
+        action="append",
+        default=None,
+        metavar="WHICH",
+        choices=sorted(RECOMMENDED_SELECTORS),
+        help="Limit to one recommendation (text|voice|image); repeatable",
+    )
+    apply_recommended.add_argument(
+        "--force",
+        action="store_true",
+        help="Also replace routes you configured differently",
+    )
+    apply_recommended.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would change and write nothing",
+    )
+    apply_recommended.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    apply_recommended.set_defaults(func=_handle_config_apply_recommended)
 
     clear_default = sub.add_parser("clear-default", help="Clear one Core capability routing default")
     clear_default.add_argument("route", help="Capability route, e.g. output.text")
     clear_default.set_defaults(func=_handle_config_clear_default)
 
-    providers = sub.add_parser("providers", help="Show local provider endpoint profiles")
+    providers = sub.add_parser(
+        "providers",
+        help="Show every provider AbstractCore knows, plus local endpoint profiles",
+    )
     providers.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    providers.add_argument(
+        "--probe",
+        action="store_true",
+        help="Also check whether each local server (lmstudio, ollama, vllm, profiles) answers",
+    )
     providers.set_defaults(func=_handle_config_providers)
 
     provider = sub.add_parser("provider", help="Show one local provider endpoint profile")
@@ -1753,6 +2136,342 @@ def _handle_config_subcommand(argv: List[str]) -> int:
     args = parser.parse_args(argv)
     if not getattr(args, "cmd", None):
         args = parser.parse_args([*(argv or []), "defaults"])
+    try:
+        return args.func(args)
+    except Exception as e:
+        print(f"❌ Error: {e}")
+        return 1
+
+
+# ---------------------------------------------------------------------------
+# `abstractcore models` -- weights, not routes
+# ---------------------------------------------------------------------------
+#
+# `abstractcore config` answers "which model should this capability use".
+# `abstractcore models` answers "are its weights on this machine, and how do I
+# get them". Two verbs, one vocabulary (installed / absent / unknown /
+# not applicable), shared with the Gateway console and both console-TUIs
+# through `abstractcore.config.model_materializer`.
+#
+# NOTHING HERE DOWNLOADS BY ITSELF. `status` is a read; `download` is the only
+# verb that spends bytes and it takes an explicit artifact (or --recommended).
+
+_MODELS_STATUS_GLYPH = {
+    "installed": "✅",
+    "absent": "⬇️ ",
+    "unknown": "❓",
+    "not_applicable": "—",
+}
+
+
+def _models_materializer():
+    from abstractcore.config import model_materializer
+
+    return model_materializer
+
+
+def _models_status_payload(args) -> dict:
+    materializer = _models_materializer()
+    manager = _config_manager_for_cli(args)
+    routes = materializer.annotate_route_availability(manager.list_capability_defaults())
+    target = (getattr(args, "target", None) or "").strip()
+    if target:
+        routes = _filter_models_status_rows(routes, target)
+    return {
+        "ok": True,
+        "version": 1,
+        "config_file": str(manager.config_file),
+        "seeded": manager.config.capability_defaults.seeded or None,
+        "routes": routes,
+        "recommended": materializer.recommended_plan(),
+        "providers": materializer.supported_providers(),
+        "show_all": bool(getattr(args, "all", False) or target),
+    }
+
+
+def _filter_models_status_rows(routes: List[dict], target: str) -> List[dict]:
+    """`target` is a route key (`output.text`) or a `provider/model` pair.
+
+    A `provider/model` that matches no configured route is still answered --
+    it is probed directly -- so `models status lmstudio/qwen/qwen3.5-9b@4bit`
+    works before the route exists.
+    """
+
+    wanted = target.strip().lower()
+    matched = [row for row in routes if str(row.get("key") or "").strip().lower() == wanted]
+    if matched:
+        return matched
+    if "/" not in target:
+        return []
+    provider, _, model = target.partition("/")
+    materializer = _models_materializer()
+    presence = materializer.probe(provider, model)
+    return [
+        {
+            "key": "",
+            "label": f"{provider}/{model}",
+            "provider": provider.strip(),
+            "model": model.strip(),
+            "configured": False,
+            "availability": presence.to_dict(),
+        }
+    ]
+
+
+def _print_models_status(payload: dict) -> None:
+    print("AbstractCore model availability")
+    print(f"- config_file: {payload.get('config_file')}")
+    if payload.get("seeded"):
+        print(f"- capability defaults: recommended set ({payload['seeded']})")
+    rows = [row for row in payload.get("routes", []) if isinstance(row, dict)]
+    if not rows:
+        print("- no matching route")
+    # An UNCONFIGURED route has no weights to be missing. It is reported as
+    # `unknown` in the payload (with `evidence: route not configured`, so a
+    # machine reader can tell the two apart), but printing 16 identical `❓`
+    # lines buries the four rows that carry an answer. `--all` shows them.
+    unconfigured = [r for r in rows if (r.get("availability") or {}).get("evidence") == "route not configured"]
+    if not payload.get("show_all"):
+        rows = [r for r in rows if r not in unconfigured]
+    for row in rows:
+        availability = row.get("availability") or {}
+        status = str(availability.get("status") or "unknown")
+        glyph = _MODELS_STATUS_GLYPH.get(status, "?")
+        key = row.get("key") or row.get("label") or "-"
+        pair = f"{row.get('provider') or '-'}/{row.get('model') or '-'}"
+        artifact = row.get("download_artifact")
+        artifact_note = f"  (artifact {artifact})" if artifact else ""
+        detail = availability.get("detail") or availability.get("location") or ""
+        print(f"{glyph} {key}: {pair} — {status}{artifact_note}")
+        if detail:
+            print(f"     {detail}")
+        instruction = availability.get("instruction")
+        if instruction and status in {"absent", "unknown"}:
+            print(f"     → {instruction}")
+
+    if unconfigured and not payload.get("show_all"):
+        print(f"   ({len(unconfigured)} route(s) not configured — nothing to download; --all lists them)")
+
+    plan = payload.get("recommended") or {}
+    if plan.get("total"):
+        print()
+        print(
+            f"Recommended defaults: {plan.get('installed', 0)} of {plan.get('total', 0)} present"
+            + (f", {plan.get('unknown')} unknown" if plan.get("unknown") else "")
+        )
+        for item in plan.get("would_download") or []:
+            print(f"  missing: {item['provider']} {item['artifact']}  ({item['route']})")
+        if plan.get("would_download"):
+            print("  abstractcore models download --recommended        # fetch exactly these")
+            print("  abstractcore models download --recommended --dry-run")
+
+
+def _handle_models_status(args) -> int:
+    payload = _models_status_payload(args)
+    if getattr(args, "json", False):
+        print(json.dumps(payload, indent=2, sort_keys=True))
+    else:
+        _print_models_status(payload)
+    return 0
+
+
+def _models_progress_printer():
+    """Stream provider progress as lines; rewrite the percentage in place.
+
+    A percentage that scrolls 400 lines is not progress reporting. When stdout
+    is a TTY the byte counter overwrites itself and only STATE changes (a new
+    layer, verifying, complete) leave a line behind.
+    """
+
+    state = {"last": ""}
+    is_tty = sys.stdout.isatty()
+
+    def emit(progress) -> None:
+        message = str(getattr(progress, "message", "") or "").strip()
+        percent = getattr(progress, "percent", None)
+        if percent is not None:
+            line = f"   {message} {percent:.0f}%"
+        else:
+            line = f"   {message}"
+        if not message:
+            return
+        if is_tty and percent is not None:
+            print(f"\r{line[:110]:<110}", end="", flush=True)
+            state["last"] = "progress"
+            return
+        if line != state["last"]:
+            if state["last"] == "progress":
+                print()
+            print(line, flush=True)
+            state["last"] = line
+
+    def finish() -> None:
+        if state["last"] == "progress":
+            print()
+
+    return emit, finish
+
+
+def _print_download_outcome(outcome) -> None:
+    data = outcome.to_dict()
+    status = data.get("status")
+    if status == "planned":
+        command = " ".join(data.get("command") or [])
+        print(f"📋 would download {data['artifact']} via {data['provider']}" + (f"  ({command})" if command else ""))
+        return
+    if status == "already_installed":
+        print(f"✅ {data['provider']} {data['artifact']}: already installed")
+        if data.get("location"):
+            print(f"   {data['location']}")
+        return
+    if data.get("ok"):
+        print(f"✅ {data['provider']} {data['artifact']}: {data.get('message') or 'downloaded'}")
+        if data.get("location"):
+            print(f"   {data['location']}")
+        return
+    # RULE 4: the provider tool's own words, then one line the operator can act on.
+    print(f"❌ {data['provider']} {data['artifact']}: {data.get('message') or 'download failed'}")
+    output = str(data.get("output") or "").strip()
+    if output:
+        for line in output.splitlines()[-12:]:
+            print(f"   | {line}")
+    if data.get("instruction"):
+        print(f"   → {data['instruction']}")
+
+
+def _handle_models_download(args) -> int:
+    materializer = _models_materializer()
+    recommended = bool(getattr(args, "recommended", False))
+    provider = getattr(args, "provider", None)
+    artifact = getattr(args, "artifact", None)
+    dry_run = bool(getattr(args, "dry_run", False))
+
+    if recommended and (provider or artifact):
+        print("❌ Error: --recommended fetches the recommended set; do not also name a provider/artifact")
+        return 1
+    if not recommended and not (provider and artifact):
+        print("❌ Error: name a provider and an artifact, or pass --recommended")
+        print("  abstractcore models download ollama gemma3:1b")
+        print("  abstractcore models download --recommended --dry-run")
+        return 1
+
+    # `--json` means MACHINE mode: one JSON document on stdout and nothing
+    # else. The console-TUIs parse the whole stream, so a progress line
+    # printed alongside the payload is a parse error, not a nicety.
+    as_json = bool(getattr(args, "json", False))
+
+    if recommended:
+        targets = [(item["provider"], item["artifact"]) for item in materializer.recommended_downloads()]
+        if not as_json:
+            plan = materializer.recommended_plan()
+            print(
+                f"Recommended defaults: {plan.get('installed', 0)} of {plan.get('total', 0)} present"
+                + (f", {plan.get('absent', 0)} to download" if plan.get("absent") else "")
+            )
+    else:
+        targets = [(provider, artifact)]
+
+    outcomes = []
+    exit_code = 0
+    for target_provider, target_artifact in targets:
+        if not as_json:
+            print(f"\n▸ {target_provider} {target_artifact}")
+        emit, finish = (None, None) if (as_json or dry_run) else _models_progress_printer()
+        outcome = materializer.download(
+            target_provider,
+            target_artifact,
+            progress_cb=emit,
+            dry_run=dry_run,
+        )
+        if finish is not None:
+            finish()
+        outcomes.append(outcome)
+        if not as_json:
+            _print_download_outcome(outcome)
+        if not outcome.ok:
+            exit_code = 1
+
+    if as_json:
+        print(
+            json.dumps(
+                {
+                    "ok": exit_code == 0,
+                    "dry_run": dry_run,
+                    "recommended": recommended,
+                    "results": [o.to_dict() for o in outcomes],
+                },
+                indent=2,
+                sort_keys=True,
+            )
+        )
+    return exit_code
+
+
+def _handle_models_subcommand(argv: List[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="abstractcore models",
+        description=(
+            "Inspect and download the model WEIGHTS behind AbstractCore's capability "
+            "defaults. `abstractcore config` decides which model a capability uses; this "
+            "command answers whether it is on this machine and fetches it when it is not."
+        ),
+    )
+    parser.add_argument("--config-file", default=None, help="Use a specific AbstractCore config JSON file")
+    parser.add_argument("--config-dir", default=None, help="Use a directory containing abstractcore.json")
+    sub = parser.add_subparsers(dest="cmd")
+
+    status = sub.add_parser(
+        "status",
+        help="Show whether each capability default's weights are present locally",
+        description=(
+            "Probe local weights for every configured capability route. Reads only: it "
+            "never contacts a model hub and never downloads. `unknown` is a real answer "
+            "(the provider's tool could not be consulted) and is never dressed up as "
+            "`installed`."
+        ),
+    )
+    status.add_argument(
+        "target",
+        nargs="?",
+        default=None,
+        help="Optional capability route (output.text) or provider/model pair (ollama/gemma3:1b)",
+    )
+    status.add_argument(
+        "--all",
+        action="store_true",
+        help="Include routes that are not configured (they have no weights to be missing)",
+    )
+    status.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    status.set_defaults(func=_handle_models_status)
+
+    download = sub.add_parser(
+        "download",
+        help="Download one artifact, or every missing recommended default",
+        description=(
+            "Run the provider's own download tool once, streaming its progress. The "
+            "ARTIFACT is the exact weights reference (quantization included, e.g. "
+            "qwen/qwen3.5-9b@4bit) -- not the served model id, which drops the "
+            "quantization suffix."
+        ),
+    )
+    download.add_argument("provider", nargs="?", default=None, help="Provider id: lmstudio, ollama, mlx-gen, supertonic, huggingface")
+    download.add_argument("artifact", nargs="?", default=None, help="Exact artifact reference, quantization included")
+    download.add_argument(
+        "--recommended",
+        action="store_true",
+        help="Download every MISSING model of the recommended fresh-install set",
+    )
+    download.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report what would be fetched (and the exact command) without downloading",
+    )
+    download.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    download.set_defaults(func=_handle_models_download)
+
+    args = parser.parse_args(argv)
+    if not getattr(args, "cmd", None):
+        args = parser.parse_args([*(argv or []), "status"])
     try:
         return args.func(args)
     except Exception as e:
@@ -2183,6 +2902,7 @@ def handle_commands(args) -> bool:
 _CONFIG_SUBCOMMANDS = {
     "defaults",
     "set-default",
+    "apply-recommended",
     "clear-default",
     "providers",
     "provider",
@@ -2202,6 +2922,8 @@ def main(argv: List[str] = None):
         return _handle_serve_subcommand(argv[1:])
     if argv and argv[0] == "config":
         return _handle_config_subcommand(argv[1:])
+    if argv and argv[0] == "models":
+        return _handle_models_subcommand(argv[1:])
     if Path(sys.argv[0]).name == "abstractcore-config" and (
         not argv or argv[0] in _CONFIG_SUBCOMMANDS or argv[0].startswith("--")
     ):

@@ -109,11 +109,57 @@ target `output.text` are accepted for compatibility, but persist to
 
 ### Capability Routing Defaults
 
+A fresh install starts with recommended defaults so generation works out of
+the box: text on `lmstudio/qwen/qwen3.5-9b`, voice on `supertonic/supertonic-3`,
+and image on `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit`. They are
+ordinary routes — change or clear them with the commands below, and any
+provider or model supplied on a request always wins. The seed is written only
+when no configuration file exists yet; clearing a route is permanent, and a
+store you already have is never modified.
+
 Capability route defaults use `kind.modality` keys, with optional
 `kind.modality.task` keys for generated-media defaults that need finer routing.
 Each route stores a small provider target: `provider`, `model`, optional
 `base_url`, optional `reasoning` for reasoning-capable text routes, and
 provider/plugin `options`.
+
+### The modality row and its task rows
+
+`output.image` is not a legacy twin of `output.image.text_to_image` — it is its
+**parent**, and the two levels answer different questions:
+
+| you want | set |
+| --- | --- |
+| one image model for everything (generate, edit, upscale) | `output.image` |
+| a different model for one of those tasks | `output.image.<task>` |
+
+Resolution is **exact task row first, modality row second**. A configured task
+row wins *wholesale* — a route row is one coherent backend identity and is never
+field-merged with its parent. Only the seven tasks in `CAPABILITY_ROUTE_TASKS`
+have task rows: `text_to_image`, `image_to_image`, `image_upscale`,
+`text_to_video`, `image_to_video`, `text_to_scene3d`, `image_to_scene3d`.
+
+Setting the modality row is the simple path, and it is what the fresh-install
+seed writes: one `output.image` value makes generate, edit and upscale all work.
+
+The other output modalities — `output.voice`, `output.sound`, `output.music` —
+have **no** task rows at all, so their modality row is the primary key rather
+than a fallback. The same is true of every `input.*`, `embedding.*` and
+`rerank.*` route.
+
+A question asked at the modality level ("which image backend does this host
+use?") resolves the same way generation does — the canonical task row
+(`text_to_image`) first, then `output.image`. Advertising and execution must
+never answer it differently.
+
+Consequences you can see in `abstractcore config defaults`:
+
+- task rows are listed indented beneath their modality row;
+- a modality row that is unset **while every task row beneath it is set** is
+  reported as `not needed` rather than `not configured`: nothing can reach it,
+  because those task rows are exactly the keys generation can produce for that
+  modality. It stays settable — setting it would then be a no-op until a task
+  row is cleared.
 
 Route kinds:
 
@@ -155,11 +201,37 @@ abstractcore config defaults
 abstractcore config clear-default output.voice
 ```
 
+`set-default` is a partial update. A flag you do not pass keeps its stored
+value, so setting a model does not discard a reasoning effort or the route
+options set earlier; pass an empty string to clear one field
+(`--reasoning ""`), or `clear-default` to drop the whole route. AbstractGateway
+writes the same rows under the same rule, so a change made from either entry
+point survives the other.
+
+`--option` is the exception, because options are a SET rather than a field:
+
+| what you type | what happens to the stored options |
+| --- | --- |
+| no `--option` at all | kept exactly as they are |
+| `--option k=v` (one or more) | the whole set is REPLACED by what you typed |
+| `--option ""` | the whole set is CLEARED |
+
+There is no per-key clear; re-send the keys you want to keep, or clear the set
+and rebuild it. Both console-TUIs use `--option ""` for "clear all options".
+
+A write that fails says why. `set-default` / `clear-default` raise
+`CapabilityDefaultWriteError` naming the route and the underlying cause, and
+every surface renders it: the CLI prints it after `❌ Error:`, and the
+AbstractCore server and AbstractGateway routes return it as the body of a 400.
+
 Route defaults are configuration only; they do not load a model into a provider.
 Provider residency is reported separately.
 
-`reasoning` is a route default, not part of the semantic request payload. Core applies it only when
-the resolved text route is reasoning-capable and the caller did not set `thinking=` explicitly.
+`reasoning` is a route default, not part of the semantic request payload. It applies to the
+text-generation route (`output.text`, stored as `input.text`) and takes effect only when the caller
+set no `thinking=` of its own. An explicit `thinking=` always wins, `thinking=False` included; with
+no configured effort and no explicit value, no reasoning parameter is sent at all. The same field is
+editable from the AbstractGateway console, and both entry points write the same row.
 
 `input.image` is a fallback route for image understanding when the configured
 text route cannot natively accept images. If the `input.text` model is known in
@@ -179,7 +251,7 @@ automatically.
 
 `input.sound` is reserved for non-speech audio understanding: environmental
 sound, SFX, audio scenes, and later music-understanding routes. Do not configure
-STT-only models there. Source-backed open candidates in the model registry now
+STT-only models there. Source-backed open candidates in the model registry
 include `qwen3-omni-30b-a3b-instruct`,
 `qwen3-omni-30b-a3b-captioner`, `qwen2.5-omni-7b`, and
 `qwen2-audio-7b-instruct`. Qwen3.6 text/vision/video models remain
@@ -492,6 +564,61 @@ This displays:
 - Logging configuration
 - Configuration file location
 
+## Model Weights
+
+Configuration decides *which* model a capability uses. `abstractcore models`
+answers whether that model is actually on this machine, and fetches it when it
+is not.
+
+```bash
+abstractcore models status                       # every configured route
+abstractcore models status output.text           # one route
+abstractcore models status ollama/gemma3:1b      # one provider/model pair
+abstractcore models status --all --json          # unconfigured routes too, machine-readable
+```
+
+Each route reports one of four states:
+
+| State | Meaning |
+|---|---|
+| `installed` | The weights are on this machine, with the path or the id they were found under. |
+| `not downloaded` | The provider's own tool says the model is absent. Downloadable. |
+| `unknown` | The provider's tool could not be consulted, so there is no answer. Never guessed. |
+| `remote` | The provider serves models it does not store locally (OpenAI, Anthropic, endpoint profiles). Nothing to download. |
+
+Probing is read-only: it never contacts a model hub, never warms a cache and
+never spends a byte. At worst it makes one localhost request or lists one
+directory.
+
+### Downloading
+
+```bash
+abstractcore models download ollama gemma3:1b
+abstractcore models download lmstudio qwen/qwen3.5-9b@4bit
+abstractcore models download --recommended            # every MISSING recommended default
+abstractcore models download --recommended --dry-run  # resolve the commands, fetch nothing
+```
+
+The download runs the provider's own tool and streams its output; a failure
+reports that tool's own words plus one actionable line. `--json` emits a single
+machine-readable document instead of progress.
+
+**The artifact is not the model id.** A capability route stores the id the
+provider *serves* (`qwen/qwen3.5-9b`); the thing you *fetch* names the exact
+weights, quantization included (`qwen/qwen3.5-9b@4bit`). `models status` prints
+the artifact to download next to the route that needs it, so the two never have
+to be reconciled by hand.
+
+Supported providers: `lmstudio`, `ollama`, `supertonic`, and the Hugging
+Face-backed engines (`mlx-gen`, `mlx`, `mlx-vlm`, `huggingface`, `diffusers`).
+
+### Interrupted downloads
+
+A Hugging Face repo that was interrupted mid-download reports `not downloaded`,
+not `installed` — even though the files it did fetch are complete and its
+snapshot directory looks healthy. Re-running the download resumes it from where
+it stopped.
+
 ## Interactive Configuration
 
 Set up configuration interactively:
@@ -719,6 +846,12 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
 ### Embeddings Section
 - **provider**: Embeddings provider (`"huggingface"`, `"openai"`, etc.)
 - **model**: Embeddings model name (e.g., `"all-minilm-l6-v2"`)
+- **base_url**: Optional embeddings provider base URL
+
+This section mirrors the `embedding.text` capability route in both directions, so
+`abstractcore config --set-embeddings-model` and `abstractcore config set-default embedding.text`
+always report the same answer. The capability route is what the framework routes on; this section is
+the shape the embeddings commands and `--show-config` read.
 
 ### API Keys Section
 - **openai**: OpenAI API key

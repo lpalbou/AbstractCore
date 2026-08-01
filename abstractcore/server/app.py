@@ -6560,10 +6560,19 @@ def _capability_error_response(error: Exception, *, operation: str) -> JSONRespo
 
 
 class CapabilityDefaultRouteRequest(BaseModel):
-    provider: Optional[str] = Field(default=None, description="Default provider/backend id for this capability route.")
-    model: Optional[str] = Field(default=None, description="Default model id for this capability route.")
-    base_url: Optional[str] = Field(default=None, description="Optional upstream provider base URL for this capability route.")
-    options: Optional[Dict[str, Any]] = Field(default=None, description="Optional plugin/provider parameters, such as voice/profile/language.")
+    """A PARTIAL update to one capability route.
+
+    Send a field to change it, send `""` to clear it, omit it (or send `null`)
+    and it keeps its stored value. The same rule holds for the `abstractcore
+    config set-default` CLI, so an operator setting a model here never discards
+    a reasoning effort set there.
+    """
+
+    provider: Optional[str] = Field(default=None, description="Default provider/backend id for this capability route. Omit to keep the stored value; send \"\" to clear it.")
+    model: Optional[str] = Field(default=None, description="Default model id for this capability route. Omit to keep the stored value; send \"\" to clear it.")
+    base_url: Optional[str] = Field(default=None, description="Optional upstream provider base URL for this capability route. Omit to keep the stored value; send \"\" to clear it.")
+    reasoning: Optional[str] = Field(default=None, description="Optional default reasoning effort for reasoning-capable text routes (minimal, low, medium, high). Omit to keep the stored value; send \"\" to clear it.")
+    options: Optional[Dict[str, Any]] = Field(default=None, description="Optional plugin/provider parameters, such as voice/profile/language. Omit to keep the stored options; send {} to clear them.")
 
     class Config:
         json_schema_extra = {
@@ -6572,6 +6581,7 @@ class CapabilityDefaultRouteRequest(BaseModel):
                     "provider": "mlx-gen",
                     "model": "AbstractFramework/flux.2-klein-9b-4bit",
                     "base_url": None,
+                    "reasoning": None,
                     "options": {},
                 }
             ]
@@ -6608,7 +6618,11 @@ def list_capability_defaults():
     "/v1/config/capability-defaults/{kind}/{modality}",
     tags=["configuration"],
     summary="Set Capability Routing Default",
-    description="Persist one capability routing default on this AbstractCore execution host.",
+    description=(
+        "Persist one capability routing default on this AbstractCore execution host. "
+        "The update is partial: fields the request omits keep their stored value, and a field "
+        "sent as an empty string is cleared."
+    ),
 )
 def set_capability_default(
     req: CapabilityDefaultRouteRequest,
@@ -6618,14 +6632,22 @@ def set_capability_default(
     from ..config.manager import ConfigurationManager
 
     manager = ConfigurationManager()
-    ok = manager.set_capability_default(
-        kind,
-        modality,
-        provider=req.provider,
-        model=req.model,
-        base_url=req.base_url,
-        options=dict(req.options or {}) if isinstance(req.options, dict) else {},
-    )
+    # A write failure carries its reason (2026-08-01): the manager raises
+    # `CapabilityDefaultWriteError` (a ValueError) naming the route AND the
+    # underlying cause, so the 400 an operator reads is diagnosable instead of
+    # a bare "Failed to set capability default output.text".
+    try:
+        ok = manager.update_capability_default(
+            kind,
+            modality,
+            provider=req.provider,
+            model=req.model,
+            base_url=req.base_url,
+            reasoning=req.reasoning,
+            options=dict(req.options) if isinstance(req.options, dict) else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not ok:
         raise HTTPException(status_code=400, detail=f"Failed to set capability default {kind}.{modality}")
     return _capability_defaults_payload()
@@ -6635,7 +6657,11 @@ def set_capability_default(
     "/v1/config/capability-defaults/{kind}/{modality}/{task}",
     tags=["configuration"],
     summary="Set Task-Specific Capability Routing Default",
-    description="Persist one task-specific capability routing default on this AbstractCore execution host.",
+    description=(
+        "Persist one task-specific capability routing default on this AbstractCore execution host. "
+        "The update is partial: fields the request omits keep their stored value, and a field "
+        "sent as an empty string is cleared."
+    ),
 )
 def set_task_capability_default(
     req: CapabilityDefaultRouteRequest,
@@ -6646,15 +6672,19 @@ def set_task_capability_default(
     from ..config.manager import ConfigurationManager
 
     manager = ConfigurationManager()
-    ok = manager.set_capability_default(
-        kind,
-        modality,
-        task=task,
-        provider=req.provider,
-        model=req.model,
-        base_url=req.base_url,
-        options=dict(req.options or {}) if isinstance(req.options, dict) else {},
-    )
+    try:
+        ok = manager.update_capability_default(
+            kind,
+            modality,
+            task=task,
+            provider=req.provider,
+            model=req.model,
+            base_url=req.base_url,
+            reasoning=req.reasoning,
+            options=dict(req.options) if isinstance(req.options, dict) else None,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not ok:
         raise HTTPException(status_code=400, detail=f"Failed to set capability default {kind}.{modality}.{task}")
     return _capability_defaults_payload()
@@ -6673,7 +6703,10 @@ def clear_capability_default(
     from ..config.manager import ConfigurationManager
 
     manager = ConfigurationManager()
-    ok = manager.clear_capability_default(kind, modality)
+    try:
+        ok = manager.clear_capability_default(kind, modality)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not ok:
         raise HTTPException(status_code=400, detail=f"Failed to clear capability default {kind}.{modality}")
     return _capability_defaults_payload()
@@ -6693,7 +6726,10 @@ def clear_task_capability_default(
     from ..config.manager import ConfigurationManager
 
     manager = ConfigurationManager()
-    ok = manager.clear_capability_default(kind, modality, task=task)
+    try:
+        ok = manager.clear_capability_default(kind, modality, task=task)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not ok:
         raise HTTPException(status_code=400, detail=f"Failed to clear capability default {kind}.{modality}.{task}")
     return _capability_defaults_payload()

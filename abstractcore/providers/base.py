@@ -47,6 +47,7 @@ from ..utils.jsonish import loads_dict_like
 from ..utils.truncation import preview_text
 from ..exceptions import (
     ProviderAPIError,
+    EmptyCompletionError,
     AuthenticationError,
     RateLimitError,
     InvalidRequestError,
@@ -1045,6 +1046,47 @@ class BaseProvider(AbstractCoreInterface, ABC):
             return seconds if seconds >= 0 else None
         except Exception:
             return None
+
+    def _raise_if_empty_completion(self, response: Any) -> None:
+        """Refuse a non-streaming completion that carries NOTHING usable.
+
+        operator 2026-08-01: the entity relay (openai-compatible) answered
+        HTTP 200 with choices[0].message = {"content": null}, no tool_calls,
+        finish_reason "stop", usage null — a transient upstream failure
+        dressed as a valid completion. Every consumer downstream (entity
+        visit turns, the runtime's llm_call effect, the own-time tick loop)
+        accepted it as final after ONE attempt and surfaced a silent empty
+        reply. There is no legitimate all-empty completion, so raise the
+        typed transient (core/retry.py grants it full retries) instead of
+        returning it.
+
+        Deliberately NOT classified empty (each is a real answer shape):
+        - tool-call elections: native tool calls legitimately carry no prose;
+        - reasoning-bearing responses: the model DID speak, on the reasoning
+          channel — usually an output-budget truncation, a different root
+          cause already surfaced by _annotate_output_truncation, and
+          resampling the most expensive completions 3x would be the cure
+          costing more than the disease;
+        - anything that is not a GenerateResponse (streams, structured
+          BaseModel results) — those verdicts belong to their own layers.
+        """
+        if not isinstance(response, GenerateResponse):
+            return
+        content = response.content
+        if isinstance(content, str) and content.strip():
+            return
+        if content is not None and not isinstance(content, str) and content:
+            return  # defensive: never classify a typed non-str payload as empty
+        if response.tool_calls:
+            return
+        reasoning = response.reasoning
+        if isinstance(reasoning, str) and reasoning.strip():
+            return
+        raise EmptyCompletionError(
+            f"{getattr(self, 'provider', None) or self.__class__.__name__} returned an empty "
+            f"completion (no content, no tool calls; finish_reason={response.finish_reason!r}, "
+            f"model={self.model!r}) — a transient upstream failure dressed as success"
+        )
 
     @staticmethod
     def _normalize_thinking_request(thinking: Optional[Union[bool, str]]) -> Tuple[Optional[bool], Optional[str]]:
@@ -4056,12 +4098,25 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     **kwargs
                 )
 
-                return response, start_time, start_perf
-
             except Exception as e:
                 # Convert to custom exception and re-raise for retry handling
                 custom_error = self._handle_api_error(e)
                 raise custom_error
+
+            # operator 2026-08-01: the entity relay answered 200 with an
+            # empty message (content null, no tool_calls, finish_reason
+            # "stop", usage null) — a transient dressed as success, and it
+            # sailed through here as a completed generation with no retry.
+            # Classified INSIDE the retried closure so execute_with_retry
+            # resamples it like any transient, and raised OUTSIDE the try
+            # above so _handle_api_error cannot rewrap the labeled type.
+            # Streams are exempt (a generator holds no verdict yet);
+            # tool-call-only and reasoning-bearing completions are
+            # legitimate and excluded by the check itself.
+            if not stream:
+                self._raise_if_empty_completion(response)
+
+            return response, start_time, start_perf
 
         # Execute with retry. Hosts may pass cancel_event= (threading.Event) to make
         # backoff waits cancellable (C3: a cancelled run must not park a worker for a

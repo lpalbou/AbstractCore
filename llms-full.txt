@@ -1123,6 +1123,19 @@ print(resp.content)
 print(resp.metadata.get("reasoning"))  # when the backend exposes it
 ```
 
+A default effort can be configured once on the text-generation capability route, so calls that name
+no `thinking=` inherit it:
+
+```bash
+abstractcore config set-default output.text --provider lmstudio --model qwen3-30b --reasoning high
+```
+
+An explicit `thinking=` on a call always wins, `thinking=False` included. With no configured effort
+and no explicit value, no reasoning parameter is sent. The same route field is editable from the
+AbstractGateway console; both entry points write the same row, and a write that names only some
+fields keeps the rest, so neither discards the other's setting. See
+[Centralized Config](docs/centralized-config.md).
+
 Notes:
 - For **Qwen3 / Qwen3.5 on LM Studio**, AbstractCore uses LM Studio’s model template variables (`enable_thinking` / `enableThinking`) and a Qwen template “hard switch” for `thinking="none"` (empty `<think></think>`), rather than injecting “Reasoning effort …” text into the system prompt.
 - For **Qwen3 / Qwen3.5 GGUF via HuggingFaceProvider (llama-cpp-python)**, there is no template-kwargs knob exposed by llama-cpp-python today, so `thinking="none"` also uses the Qwen hard-switch marker. If GGUF loading fails due to huge advertised context windows, AbstractCore will retry with smaller `n_ctx` values (best-effort); you can also pass `max_tokens=...` when constructing `HuggingFaceProvider()` to explicitly control llama.cpp `n_ctx`.
@@ -7150,6 +7163,61 @@ This displays:
 - Cache directories
 - Logging configuration
 - Configuration file location
+
+## Model Weights
+
+Configuration decides *which* model a capability uses. `abstractcore models`
+answers whether that model is actually on this machine, and fetches it when it
+is not.
+
+```bash
+abstractcore models status                       # every configured route
+abstractcore models status output.text           # one route
+abstractcore models status ollama/gemma3:1b      # one provider/model pair
+abstractcore models status --all --json          # unconfigured routes too, machine-readable
+```
+
+Each route reports one of four states:
+
+| State | Meaning |
+|---|---|
+| `installed` | The weights are on this machine, with the path or the id they were found under. |
+| `not downloaded` | The provider's own tool says the model is absent. Downloadable. |
+| `unknown` | The provider's tool could not be consulted, so there is no answer. Never guessed. |
+| `remote` | The provider serves models it does not store locally (OpenAI, Anthropic, endpoint profiles). Nothing to download. |
+
+Probing is read-only: it never contacts a model hub, never warms a cache and
+never spends a byte. At worst it makes one localhost request or lists one
+directory.
+
+### Downloading
+
+```bash
+abstractcore models download ollama gemma3:1b
+abstractcore models download lmstudio qwen/qwen3.5-9b@4bit
+abstractcore models download --recommended            # every MISSING recommended default
+abstractcore models download --recommended --dry-run  # resolve the commands, fetch nothing
+```
+
+The download runs the provider's own tool and streams its output; a failure
+reports that tool's own words plus one actionable line. `--json` emits a single
+machine-readable document instead of progress.
+
+**The artifact is not the model id.** A capability route stores the id the
+provider *serves* (`qwen/qwen3.5-9b`); the thing you *fetch* names the exact
+weights, quantization included (`qwen/qwen3.5-9b@4bit`). `models status` prints
+the artifact to download next to the route that needs it, so the two never have
+to be reconciled by hand.
+
+Supported providers: `lmstudio`, `ollama`, `supertonic`, and the Hugging
+Face-backed engines (`mlx-gen`, `mlx`, `mlx-vlm`, `huggingface`, `diffusers`).
+
+### Interrupted downloads
+
+A Hugging Face repo that was interrupted mid-download reports `not downloaded`,
+not `installed` — even though the files it did fetch are complete and its
+snapshot directory looks healthy. Re-running the download resumes it from where
+it stopped.
 
 ## Interactive Configuration
 

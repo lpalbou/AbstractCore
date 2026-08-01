@@ -34,6 +34,23 @@ class ProviderAPIError(ProviderError):
     pass
 
 
+class EmptyCompletionError(ProviderAPIError):
+    """Provider answered 200 with a completion carrying nothing usable.
+
+    operator 2026-08-01: the entity relay answered HTTP 200 with
+    choices[0].message = {"content": null}, no tool_calls, finish_reason
+    "stop", usage null — a transient upstream failure dressed as a valid
+    completion, accepted as final and surfaced to consumers as a silent
+    empty reply. No caller has a legitimate use for a completion with no
+    content, no tool calls and no reasoning, so the provider base raises
+    THIS instead of returning it; core/retry.py classifies it as a fully
+    retryable transient (unlike plain ProviderAPIError's single resample).
+    Tool-call-only and reasoning-bearing completions are legitimate and
+    never classified empty (see BaseProvider._raise_if_empty_completion).
+    """
+    pass
+
+
 class AuthenticationError(ProviderError):
     """Authentication with provider failed"""
     pass
@@ -172,6 +189,7 @@ __all__ = [
     'AbstractCoreError',
     'ProviderError',
     'ProviderAPIError',
+    'EmptyCompletionError',
     'AuthenticationError',
     'Authentication',  # Backward compatibility alias
     'RateLimitError',

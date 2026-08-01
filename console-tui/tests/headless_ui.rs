@@ -13,7 +13,9 @@ use abstracttui::testing::CaptureTerm;
 use serde_json::{json, Value};
 
 use abstractcore_console::config::{self, ConfigPath, FileState, PathSource};
-use abstractcore_console::store::{ConfigMirror, Loadable, ProfilesData, RoutesData, Store};
+use abstractcore_console::store::{
+    AvailabilityData, ConfigMirror, Loadable, ProfilesData, RoutesData, Store,
+};
 use abstractcore_console::ui::{self, Ctx, UiState};
 use abstractcore_console::worker::Cmd;
 
@@ -65,6 +67,15 @@ fn harness_sized(size: Size) -> Harness {
             c.colors_256 = true;
             c.unicode_ok = true;
         })),
+        // Production posture (lib.rs) — the harness drives the SAME
+        // pipeline, so the hover-ink mouse mode must not differ.
+        hover_ink: true,
+        // The one deliberate divergence: the host-clipboard fallback
+        // spawns pbcopy/wl-copy/xclip synchronously. A test suite must
+        // never overwrite the clipboard of whoever runs it — the exact
+        // bug abstracttui 0.3.0 fixed in its OWN suite, and the reason
+        // the flag exists.
+        platform_clipboard: false,
         ..RunConfig::default()
     };
     let driver = Driver::new(&mut app, &mut term, cfg).expect("driver");
@@ -138,12 +149,32 @@ impl Harness {
             .set(Loadable::Ready(ProfilesData::from_value(
                 &profiles_fixture(),
             )));
+        self.store
+            .availability
+            .set(Loadable::Ready(AvailabilityData::from_value(
+                &availability_fixture(),
+            )));
         self.turns(2);
     }
 
     fn goto_screen(&mut self, n: usize) -> String {
         self.ui.screen.set(n);
         self.turns(3)
+    }
+
+    /// Select a route row BY KEY, so a test never hardcodes a grid index
+    /// that reordering or a new route would silently shift.
+    fn select_route(&mut self, key: &str) -> String {
+        let idx = self
+            .store
+            .routes
+            .with_untracked(|d| {
+                d.ready()
+                    .and_then(|d| d.rows.iter().position(|r| r.key == key))
+            })
+            .unwrap_or_else(|| panic!("route {key} is not in the fixture grid"));
+        self.ui.route_sel.set(idx);
+        self.turns(2)
     }
 }
 
@@ -252,9 +283,14 @@ fn routes_fixture() -> Value {
                "label": "Video Input", "provider": "lmstudio", "model": "qwen3-0.6b",
                "configured": true, "covered_by": "input.text", "overrideable": true,
                "source": "abstractcore.capability_defaults"}),
+        // The derived text-output row, in the LIVE shape: the CLI marks
+        // it `derived_from` + `read_only` (manager.py:1138-1151), and
+        // the console reads derived-ness from those fields — never from
+        // a hardcoded key.
         json!({"key": "output.text", "kind": "output", "modality": "text",
                "label": "Text Output", "provider": "lmstudio", "model": "qwen3-0.6b",
-               "configured": true, "source": "abstractcore.capability_defaults"}),
+               "configured": true, "read_only": true, "derived_from": "input.text",
+               "source": "abstractcore.capability_defaults"}),
         json!({"key": "output.voice", "kind": "output", "modality": "voice",
                "label": "Voice Output", "provider": "supertonic", "model": "supertonic-3",
                "options": {"voice": "M2"}, "configured": true,
@@ -285,11 +321,38 @@ fn routes_fixture() -> Value {
         "rerank.text",
     ] {
         let segs: Vec<&str> = key.split('.').collect();
-        routes.push(json!({
+        let mut row = json!({
             "key": key, "kind": segs[0], "modality": segs[1],
             "label": key, "configured": false, "source": "not_configured",
             "package_hint": "abstractvision or a vision-capable LLM"
-        }));
+        });
+        // THE ROUTE HIERARCHY the payload actually carries
+        // (`manager._decorate_route_hierarchy`): a task row names its
+        // parent, a parent names its task rows. Without these the
+        // fixture rendered four flat `output.image*` siblings — the very
+        // shape that made an operator ask whether the parent was a
+        // remnant. `covered_by_tasks` is absent here on purpose: this
+        // fixture's task rows are unconfigured, so the parent IS the
+        // missing setting and must still read "not configured".
+        if segs.len() >= 3 {
+            row["broad_key"] = json!(format!("{}.{}", segs[0], segs[1]));
+        } else if ["output.image", "output.video", "output.scene3d"].contains(&key) {
+            let tasks: Vec<String> = [
+                "output.image.text_to_image",
+                "output.image.image_to_image",
+                "output.image.image_upscale",
+                "output.video.text_to_video",
+                "output.video.image_to_video",
+                "output.scene3d.text_to_scene3d",
+                "output.scene3d.image_to_scene3d",
+            ]
+            .iter()
+            .filter(|t| t.starts_with(&format!("{key}.")))
+            .map(|t| t.to_string())
+            .collect();
+            row["task_keys"] = json!(tasks);
+        }
+        routes.push(row);
     }
     json!({
         "ok": true, "authority": "abstractcore.local",
@@ -298,10 +361,111 @@ fn routes_fixture() -> Value {
     })
 }
 
+/// `abstractcore models status --json` for the fixture machine: the
+/// text route's weights are MISSING (the recommended 4-bit build), the
+/// voice route's are here, the embedding route's provider cannot be
+/// consulted, and an unconfigured route reports `route not configured`
+/// — which is not a missing download and must never be offered as one.
+fn availability_fixture() -> Value {
+    json!({
+        "ok": true,
+        "routes": [
+            {"key": "input.text", "provider": "lmstudio", "model": "qwen3-0.6b",
+             "download_artifact": "qwen/qwen3.5-9b@4bit",
+             "availability": {"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit",
+                              "status": "absent", "downloadable": true,
+                              "evidence": "lms ls --json",
+                              "instruction": "lms get qwen/qwen3.5-9b@4bit"}},
+            {"key": "output.voice", "provider": "supertonic", "model": "supertonic-3",
+             "availability": {"provider": "supertonic", "artifact": "supertonic-3",
+                              "status": "installed", "downloadable": true,
+                              "location": "/cache/supertonic-3"}},
+            {"key": "embedding.text", "provider": "lmstudio",
+             "model": "text-embedding-qwen3-embedding-0.6b",
+             "availability": {"provider": "lmstudio",
+                              "artifact": "text-embedding-qwen3-embedding-0.6b",
+                              "status": "unknown", "downloadable": false,
+                              "evidence": "no lms CLI, server unreachable",
+                              "instruction": "Install LM Studio and enable its CLI"}},
+            {"key": "output.image", "provider": "", "model": "",
+             "availability": {"status": "unknown", "evidence": "route not configured"}}
+        ],
+        "recommended": {
+            "total": 3, "installed": 2, "absent": 1, "unknown": 0,
+            "would_download": [
+                {"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit", "route": "input.text"}
+            ]
+        }
+    })
+}
+
 fn profiles_fixture() -> Value {
     json!({
-        "ok": true, "writable": true,
+        "ok": true, "writable": true, "probed": true,
         "config_file": "/tmp/console-test/abstractcore.json",
+        // THE PROVIDER INVENTORY, not the api_keys section: the screen
+        // used to enumerate api_keys and therefore hid ollama, lmstudio,
+        // mlx and huggingface entirely. Row 0 stays `openai` so the key
+        // editor's fixed selection still lands on a key-taking row.
+        //
+        // The stored profiles ride this SAME array as `endpoint:<id>`
+        // rows (live shape: model_materializer.provider_inventory folds
+        // the profile store into the inventory), which is what lets the
+        // screen render ONE list.
+        "providers": [
+            {"provider": "openai", "kind": "cloud_api", "auth": "required",
+             "api_key_field": "openai", "api_key_env_var": "OPENAI_API_KEY",
+             "api_key_set": true, "api_key_source": "config",
+             "api_key_fingerprint": "9f1c33aa", "base_url": "", "base_url_source": "",
+             "reachable": null, "reachability": "", "note": ""},
+            {"provider": "anthropic", "kind": "cloud_api", "auth": "required",
+             "api_key_field": "anthropic", "api_key_env_var": "ANTHROPIC_API_KEY",
+             "api_key_set": false, "api_key_source": "", "api_key_fingerprint": "",
+             "base_url": "", "base_url_source": "",
+             "reachable": null, "reachability": "", "note": ""},
+            // A key that comes from the ENVIRONMENT — the row core can
+            // show and the gateway's `env` origin means.
+            {"provider": "openrouter", "kind": "cloud_api", "auth": "required",
+             "api_key_field": "openrouter", "api_key_env_var": "OPENROUTER_API_KEY",
+             "api_key_set": true, "api_key_source": "env:OPENROUTER_API_KEY",
+             "api_key_fingerprint": "c0ffee11", "base_url": "", "base_url_source": "",
+             "reachable": null, "reachability": "", "note": ""},
+            {"provider": "lmstudio", "kind": "local_server", "auth": "none",
+             "api_key_field": "", "api_key_env_var": "", "api_key_set": false,
+             "api_key_source": "", "api_key_fingerprint": "",
+             "base_url": "http://localhost:1234/v1", "base_url_source": "default",
+             "reachable": true, "reachability": "reachable (43 models)", "note": ""},
+            {"provider": "ollama", "kind": "local_server", "auth": "none",
+             "api_key_field": "", "api_key_env_var": "", "api_key_set": false,
+             "api_key_source": "", "api_key_fingerprint": "",
+             "base_url": "http://localhost:11434", "base_url_source": "default",
+             "reachable": false, "reachability": "GET .../api/tags unreachable", "note": ""},
+            {"provider": "mlx", "kind": "local_engine", "auth": "none",
+             "api_key_field": "", "api_key_env_var": "", "api_key_set": false,
+             "api_key_source": "", "api_key_fingerprint": "",
+             "base_url": "", "base_url_source": "",
+             "reachable": null, "reachability": "",
+             "note": "Apple Silicon text/vision inference"},
+            {"provider": "huggingface", "kind": "local_engine", "auth": "optional",
+             "api_key_field": "", "api_key_env_var": "HF_TOKEN", "api_key_set": false,
+             "api_key_source": "", "api_key_fingerprint": "",
+             "base_url": "", "base_url_source": "",
+             "reachable": null, "reachability": "",
+             "note": "HF_TOKEN only for gated/private repos"},
+            {"provider": "endpoint:ovh-provider", "kind": "endpoint_profile",
+             "auth": "optional", "api_key_field": "", "api_key_env_var": "",
+             "api_key_set": true, "api_key_source": "profile",
+             "api_key_fingerprint": "35982521",
+             "base_url": "https://oai.example.net/v1", "base_url_source": "endpoint profile",
+             "reachable": true, "reachability": "reachable (22 models)",
+             "note": "endpoint profile (openai-compatible)"},
+            {"provider": "endpoint:team-proxy", "kind": "endpoint_profile",
+             "auth": "optional", "api_key_field": "", "api_key_env_var": "TEAM_KEY",
+             "api_key_set": false, "api_key_source": "", "api_key_fingerprint": "",
+             "base_url": "https://proxy.example/v1", "base_url_source": "endpoint profile",
+             "reachable": null, "reachability": "",
+             "note": "endpoint profile (openai)"}
+        ],
         "profiles": [
             {"id": "ovh-provider", "display_name": "OVH Provider",
              "description": "hosted endpoint", "provider_family": "openai-compatible",
@@ -391,7 +555,10 @@ fn secrets_never_render_on_any_screen() {
     }
     // The Providers screen shows presence + fingerprint instead.
     let s = h.goto_screen(2);
-    assert!(s.contains("set · fp"), "fingerprint presence renders:\n{s}");
+    assert!(
+        s.contains("stored (9f1c33aa)"),
+        "fingerprint presence renders:\n{s}"
+    );
 }
 
 #[test]
@@ -679,34 +846,359 @@ fn r_reloads_everything() {
 // Screens
 // =======================================================================
 
+/// THE SHARED STATE VOCABULARY. These four strings are the words the
+/// gateway console's routes table prints for the same four states —
+/// one grid, whichever entry point the operator opened.
 #[test]
-fn routes_screen_shows_coverage_and_alias() {
+fn routes_screen_speaks_the_shared_state_vocabulary() {
     let mut h = harness();
     h.load_fixtures();
     let s = h.goto_screen(3);
+    assert!(s.contains("writable"), "the write door leads:\n{s}");
     assert!(
         s.contains("6 of 24 configured"),
         "the banner counts:\n{s}"
     );
+    assert!(s.contains("configured"), "configured state:\n{s}");
     assert!(
         s.contains("covered by input.text"),
         "coverage decorations:\n{s}"
     );
-    assert!(s.contains("= input.text"), "output.text alias:\n{s}");
+    assert!(s.contains("derived ← input.text"), "derived state:\n{s}");
+    assert!(s.contains("not configured"), "unconfigured state:\n{s}");
 }
 
+/// THE ROUTE GRID READS AS A HIERARCHY, NOT AS DUPLICATE KEYS. The
+/// operator's question (2026-08-01) was "why do we have output.image and
+/// output.video? are those remnants?" — asked because the grid printed
+/// the parent as a flat sibling ABOVE its own three children with a red
+/// "not configured". It is the opposite of a remnant: it is the one
+/// value that serves every image task with no row of its own, which is
+/// exactly what the fresh-install seed writes. So the parent keeps its
+/// full key and the task rows indent beneath it.
 #[test]
-fn providers_screen_shows_profiles_and_env_refs() {
+fn routes_screen_groups_task_rows_under_their_modality_row() {
     let mut h = harness();
     h.load_fixtures();
-    let s = h.goto_screen(2);
-    assert!(s.contains("ovh-provider"), "profile row:\n{s}");
-    assert!(s.contains("35982521"), "profile fingerprint:\n{s}");
-    assert!(s.contains("$TEAM_KEY"), "env-var reference renders:\n{s}");
+    let s = h.goto_screen(3);
     assert!(
-        s.contains("keys stored HERE override the environment"),
-        "the precedence rule is taught:\n{s}"
+        s.contains("output.image") && s.contains("output.video"),
+        "the parent rows are present and keep their full key:\n{s}"
     );
+    for task in ["text_to_image", "image_to_image", "image_upscale", "image_to_video"] {
+        assert!(
+            s.contains(&format!("└ {task}")),
+            "{task} indents under its modality row:\n{s}"
+        );
+    }
+    assert!(
+        !s.contains("output.image.text_to_image"),
+        "the child does not repeat its parent's prefix — that width is the model column's:\n{s}"
+    );
+    // A modality with no task rows is the PRIMARY key, not a fallback:
+    // it must stay a plain, un-indented row.
+    assert!(
+        s.contains("output.voice") && !s.contains("└ output.voice"),
+        "voice/sound/music have no task rows and take no indent:\n{s}"
+    );
+}
+
+/// The detail line answers "what IS this row" for both hierarchy levels:
+/// the parent says what it serves, a task row names what it overrides,
+/// and the FULL key stays readable there now that the grid abbreviates
+/// it (it is what `config set-default` needs typed).
+#[test]
+fn routes_detail_line_explains_the_hierarchy_level() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.goto_screen(3);
+    let s = h.select_route("output.image");
+    assert!(
+        s.contains("output.image") && s.contains("serves any image task with no row of its own"),
+        "the parent row says what it is for:\n{s}"
+    );
+    let s = h.select_route("output.image.text_to_image");
+    assert!(
+        s.contains("output.image.text_to_image"),
+        "the full key stays copyable on the detail line:\n{s}"
+    );
+    assert!(
+        s.contains("overrides output.image"),
+        "a task row names the parent it overrides:\n{s}"
+    );
+}
+
+/// The Providers screen at a width where the payload fits whole. The
+/// width policy (`ui::widths`) is measured, not capped, so a narrow
+/// terminal legitimately middle-truncates a 21-character
+/// `endpoint:<id>`; these tests are about the CELLS, not the cut.
+fn providers_harness() -> Harness {
+    harness_sized(Size::new(140, 40))
+}
+
+/// Select a provider row BY NAME — the unified list's order is the
+/// CLI's, and a hardcoded index would silently shift when core adds a
+/// backend or the operator adds a connection.
+fn select_provider(h: &mut Harness, name: &str) -> String {
+    let idx = h
+        .store
+        .profiles
+        .with_untracked(|d| {
+            d.ready()
+                .and_then(|d| d.connections().iter().position(|c| c.provider == name))
+        })
+        .unwrap_or_else(|| panic!("{name} is not in the unified provider list"));
+    h.ui.profile_sel.set(idx);
+    h.turns(2)
+}
+
+/// THE PARITY RULING (2026-08-01, with screenshots of both consoles):
+/// "I do not understand why the providers are displayed in a different
+/// fashion between gateway and core; they should have the exact same.
+/// Gateway is the one we want. Profiles are just indicated as profile
+/// of the openai-compatible endpoint, and we should have a way to
+/// configure as many as necessary, like in the gateway console."
+///
+/// ONE table, the gateway console-TUI's seven columns, every stored
+/// profile INLINE as its `endpoint:<id>` row — and no second table.
+#[test]
+fn providers_screen_is_one_table_in_the_gateway_columns() {
+    let mut h = providers_harness();
+    h.load_fixtures();
+    let s = h.goto_screen(2);
+    for column in [
+        "provider", "family", "base URL", "API key", "models", "enabled", "origin",
+    ] {
+        assert!(s.contains(column), "gateway column `{column}` is here:\n{s}");
+    }
+    assert!(
+        s.contains("Available providers (a adds a connection)"),
+        "the gateway's own block title:\n{s}"
+    );
+    // The second table is GONE — its editing moved onto the rows.
+    assert!(
+        !s.contains("Provider endpoint profiles"),
+        "one list, not two:\n{s}"
+    );
+    // The old screen's vocabulary went with it.
+    for gone in ["local server", "local engine", "cloud API", "answering", "key / endpoint"] {
+        assert!(!s.contains(gone), "the old vocabulary `{gone}` is gone:\n{s}");
+    }
+
+    // A profile is a row like any other, saying which endpoint family
+    // it is a profile OF.
+    let (_, row) = find_row(&s, "endpoint:ovh-provider").expect("the profile row is IN the list");
+    let cells = s.lines().nth(row as usize).unwrap_or_default();
+    assert!(
+        cells.contains("openai-compatible"),
+        "the profile row names its family:\n{cells}"
+    );
+    assert!(
+        cells.contains("https://oai.example.net/v1") && cells.contains("stored (35982521)"),
+        "base URL + the shared key vocabulary on one row:\n{cells}"
+    );
+    assert!(
+        cells.contains("22 live") && cells.contains("yes") && cells.contains("config"),
+        "models / enabled / origin:\n{cells}"
+    );
+    // As many connections as necessary: the second one is a row too.
+    assert!(
+        find_row(&s, "endpoint:team-proxy").is_some(),
+        "every stored profile gets a row:\n{s}"
+    );
+}
+
+/// The `origin` column answers "where does this row come from?" — the
+/// gateway's question, in core's four words. Key precedence (a stored
+/// key beats the environment) is READABLE from the column instead of
+/// being a footnote under the table.
+#[test]
+fn origin_column_says_where_each_row_comes_from() {
+    let mut h = providers_harness();
+    h.load_fixtures();
+    let s = h.goto_screen(2);
+    let origin_of = |screen: &str, provider: &str| {
+        let (_, row) = find_row(screen, provider).unwrap_or_else(|| panic!("{provider} row"));
+        screen
+            .lines()
+            .nth(row as usize)
+            .unwrap_or_default()
+            .trim_matches(|c: char| c == ' ' || c == '│')
+            .split_whitespace()
+            .next_back()
+            .unwrap_or_default()
+            .to_string()
+    };
+    assert_eq!(origin_of(&s, "openai"), "config", "a key stored in this file");
+    assert_eq!(
+        origin_of(&s, "openrouter"),
+        "env",
+        "a key resolved from the environment"
+    );
+    assert_eq!(
+        origin_of(&s, "lmstudio"),
+        "auto",
+        "a local server that ANSWERED at its default address"
+    );
+    assert_eq!(
+        origin_of(&s, "ollama"),
+        "registry",
+        "a default address with nothing behind it is not configured"
+    );
+    assert_eq!(origin_of(&s, "endpoint:ovh-provider"), "config");
+
+    // The footer's two facts, gateway-shaped.
+    assert!(
+        s.contains("core default: lmstudio / qwen/qwen3.6-35b-a3b"),
+        "what answers when nothing names a provider:\n{s}"
+    );
+    assert!(
+        s.contains("not configured yet (k sets a key · a adds a connection)"),
+        "the affordance leads the unconfigured line:\n{s}"
+    );
+    assert!(
+        s.contains("anthropic"),
+        "an unconfigured backend is named there:\n{s}"
+    );
+}
+
+/// THE EARLIER DEFECT, still fixed: the screen once listed the
+/// `api_keys` SECTION, so every provider that takes no key had no row
+/// at all ("how come we don't have ollama, lmstudio, huggingface and
+/// mlx?", 2026-08-01). Unifying the list must not lose them again.
+#[test]
+fn providers_screen_lists_every_provider_not_just_keyed_ones() {
+    let mut h = providers_harness();
+    h.load_fixtures();
+    let s = h.goto_screen(2);
+    for keyless in ["ollama", "lmstudio", "mlx", "huggingface"] {
+        assert!(
+            find_row(&s, keyless).is_some(),
+            "keyless provider {keyless} has a row:\n{s}"
+        );
+    }
+    // A probe that counted models says how many are live, beside the
+    // address it counted them at.
+    assert!(s.contains("43 live"), "the probe's live count:\n{s}");
+    assert!(
+        s.contains("http://localhost:1234/v1"),
+        "the address it was probed at:\n{s}"
+    );
+    // Key presence stays a FINGERPRINT, never key material; a missing
+    // key names the var it would have come from.
+    assert!(s.contains("stored (9f1c33aa)"), "key presence proof:\n{s}");
+    assert!(
+        s.contains("none ($ANTHROPIC_API_KEY)"),
+        "a missing key names the var it would come from:\n{s}"
+    );
+    // A registry provider has no enable switch in core — the cell says
+    // so instead of advertising a toggle with nothing behind it.
+    let (_, row) = find_row(&s, "mlx").expect("mlx row");
+    let cells = s.lines().nth(row as usize).unwrap_or_default();
+    assert!(
+        cells.contains('—') && cells.contains("registry"),
+        "no fabricated enabled flag on a registry row:\n{cells}"
+    );
+
+    // The selected row's summary carries the probe's own words.
+    let s = select_provider(&mut h, "ollama");
+    assert!(
+        s.contains("unreachable"),
+        "an unreachable local server says so:\n{s}"
+    );
+    assert!(
+        s.contains("k/e set the key") || s.contains("no key to set"),
+        "the summary says what THIS row supports:\n{s}"
+    );
+
+    // The reserved `google` row is gone: the registry has no google
+    // provider, so a registry-driven list cannot invent one.
+    assert!(
+        find_row(&s, "google").is_none(),
+        "no provider row for a provider that does not exist:\n{s}"
+    );
+}
+
+/// Per-row verbs, gateway's set: every one either acts or REFUSES WITH
+/// THE REASON — an advertised key that silently does nothing reads as
+/// a dead app.
+#[test]
+fn row_verbs_act_or_refuse_with_the_reason() {
+    let mut h = providers_harness();
+    h.load_fixtures();
+    h.goto_screen(2);
+
+    // `k` on a row with no key: the refusal names the provider and why.
+    select_provider(&mut h, "mlx");
+    h.drain_cmds();
+    h.key(b"k");
+    let s = h.turns(2);
+    assert!(
+        s.contains("mlx takes no API key"),
+        "the refusal names the provider and why:\n{s}"
+    );
+    assert!(!s.contains("Secret — api_keys"), "no editor opened:\n{s}");
+    assert!(h.drain_cmds().is_empty(), "nothing sent");
+
+    // `d` on a builtin: only stored connections delete here.
+    h.key(b"d");
+    let s = h.turns(2);
+    assert!(
+        s.contains("only stored connections delete here"),
+        "the delete refusal teaches the alternative:\n{s}"
+    );
+    assert!(h.drain_cmds().is_empty(), "nothing sent");
+
+    // `e` on a key-taking builtin opens the masked api_keys editor —
+    // that IS how a builtin is configured in core.
+    select_provider(&mut h, "openai");
+    h.key(b"e");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Secret — api_keys.openai"),
+        "e configures the selected row:\n{s}"
+    );
+    h.press_escape();
+    h.turns(2);
+
+    // `m` asks for THIS row's models, by the name it answers to.
+    select_provider(&mut h, "endpoint:ovh-provider");
+    h.drain_cmds();
+    h.key(b"m");
+    let s = h.turns(2);
+    assert!(s.contains("Models — endpoint:ovh-provider"), "{s}");
+    let cmds = h.drain_cmds();
+    assert!(
+        matches!(cmds.as_slice(), [Cmd::LoadModels { provider }] if provider == "endpoint:ovh-provider"),
+        "one discovery for the selected row: {cmds:?}"
+    );
+}
+
+/// `d` on a stored connection confirms with the consequence spelled
+/// out, then deletes through `config delete-provider` (verified by
+/// re-read, like every write here).
+#[test]
+fn delete_connection_confirms_then_writes() {
+    let mut h = providers_harness();
+    h.load_fixtures();
+    h.goto_screen(2);
+    select_provider(&mut h, "endpoint:team-proxy");
+    h.drain_cmds();
+    h.key(b"d");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Delete provider connection 'team-proxy'?"),
+        "the confirm names the connection:\n{s}"
+    );
+    assert!(
+        s.contains("endpoint:team-proxy"),
+        "…and the consequence for anything routing through it:\n{s}"
+    );
+    assert!(h.drain_cmds().is_empty(), "nothing written before the answer");
+    // The danger confirm defaults to KEEP — Enter must not delete.
+    h.key(b"\r");
+    h.turns(2);
+    assert!(h.drain_cmds().is_empty(), "the default answer keeps it");
 }
 
 #[test]
@@ -902,7 +1394,7 @@ fn secret_editor_masks_and_redacts() {
     let mut h = harness();
     h.load_fixtures();
     h.goto_screen(2);
-    h.ui.keys_sel.set(0); // openai
+    h.ui.profile_sel.set(0); // openai — the first row of the unified list
     h.drain_cmds();
     h.key(b"k");
     let s = h.turns(2);
@@ -957,13 +1449,14 @@ fn route_editor_and_clear_respect_editability() {
     h.goto_screen(3);
     h.drain_cmds();
 
-    // output.text (row 3) is the alias — e refuses with the teaching.
+    // output.text (row 3) is the derived row — e refuses with the
+    // teaching, in the gateway console's exact words.
     h.ui.route_sel.set(3);
     h.key(b"e");
     let s = h.turns(2);
     assert!(
-        s.contains("mirrors input.text"),
-        "alias refusal teaches:\n{s}"
+        s.contains("output.text derives from input.text — edit that route instead"),
+        "derived-row refusal teaches:\n{s}"
     );
 
     // input.text (row 0) is editable — the editor opens prefilled.
@@ -982,7 +1475,7 @@ fn route_editor_and_clear_respect_editability() {
     h.key(b"x");
     let s = h.turns(2);
     assert!(
-        s.contains("Clear the route output.voice"),
+        s.contains("Clear the override on output.voice"),
         "confirm prompt:\n{s}"
     );
     // Danger confirms default to KEEP — move up to the clear option.
@@ -995,6 +1488,156 @@ fn route_editor_and_clear_respect_editability() {
     assert!(
         dbg.contains("clear-default") && dbg.contains("output.voice"),
         "the clear went through the honest CLI verb: {dbg}"
+    );
+}
+
+/// `a` on Routes applies the framework recommendation — the other half
+/// of the weights banner. Safe by default (routes the operator
+/// configured are KEPT); replacing them is a separate, danger-tinted
+/// answer, never the accidental one.
+#[test]
+fn a_on_routes_applies_the_recommended_defaults() {
+    let mut h = harness();
+    h.load_fixtures();
+    let s = h.goto_screen(3);
+    assert!(
+        s.contains("a applies the recommended routes"),
+        "the banner names the verb:\n{s}"
+    );
+    h.drain_cmds();
+
+    h.key(b"a");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Apply the framework's recommended routes"),
+        "the prompt asks first:\n{s}"
+    );
+    // Default answer is the SAFE one.
+    h.key(b"\r");
+    h.turns(2);
+    let cmds = h.drain_cmds();
+    let dbg = format!("{cmds:?}");
+    assert!(
+        dbg.contains("apply-recommended"),
+        "the honest CLI verb: {dbg}"
+    );
+    assert!(
+        !dbg.contains("--force"),
+        "the default answer never overrules the operator: {dbg}"
+    );
+
+    // The second answer is the explicit overrule.
+    h.key(b"a");
+    h.turns(2);
+    h.key(b"\x1b[B");
+    h.turn();
+    h.key(b"\r");
+    h.turns(2);
+    let dbg = format!("{:?}", h.drain_cmds());
+    assert!(
+        dbg.contains("apply-recommended") && dbg.contains("--force"),
+        "the danger answer forces: {dbg}"
+    );
+}
+
+/// THE PARTIAL-UPDATE CONTRACT, end to end through the editor.
+/// `set-default` preserves the fields a command does not name, so the
+/// editor sends ONLY what the operator moved. Changing the reasoning
+/// must produce a command with `--reasoning` and NOTHING else — no
+/// echo of the provider/model the grid happened to render, which is
+/// exactly how a value set from the gateway console between render and
+/// save would get silently overwritten.
+#[test]
+fn route_editor_sends_only_the_field_the_operator_edited() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.goto_screen(3);
+    h.ui.route_sel.set(0); // input.text — the text-generation route
+    h.key(b"e");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Route — Text Input (input.text)"),
+        "editor opens:\n{s}"
+    );
+    // The stored truth leads the form — never the local picks.
+    assert!(
+        s.contains("Applies now: lmstudio / qwen3-0.6b"),
+        "the editor states what applies now:\n{s}"
+    );
+    assert!(s.contains("reasoning"), "the reasoning row is present:\n{s}");
+    h.drain_cmds();
+
+    // Saving an UNTOUCHED form refuses instead of rewriting the row
+    // with its own rendered values. Tab order: provider, model, base
+    // URL, reasoning, options, [Save].
+    for _ in 0..5 {
+        h.key(b"\t");
+        h.turn();
+    }
+    h.type_text("\r");
+    let s = h.turns(2);
+    assert!(s.contains("nothing changed"), "untouched save refuses:\n{s}");
+    assert!(
+        h.drain_cmds().is_empty(),
+        "an untouched form sends no write"
+    );
+
+    // Move ONLY the reasoning select: focus it and pick "high".
+    h.press_escape();
+    h.turns(2);
+    h.key(b"e");
+    h.turns(2);
+    for _ in 0..3 {
+        h.key(b"\t"); // provider → model → base URL → reasoning
+        h.turn();
+    }
+    h.type_text("\r"); // open the select
+    h.turns(2);
+    for _ in 0..4 {
+        h.key(b"\x1b[B"); // not set → minimal → low → medium → high
+        h.turn();
+    }
+    h.type_text("\r"); // commit
+    h.turns(2);
+    for _ in 0..2 {
+        h.key(b"\t"); // options → Save
+        h.turn();
+    }
+    h.type_text("\r");
+    h.turns(2);
+
+    let cmds = h.drain_cmds();
+    let dbg = format!("{cmds:?}");
+    assert!(dbg.contains("set-default"), "a write went out: {dbg}");
+    assert!(
+        dbg.contains("--reasoning") && dbg.contains("high"),
+        "the edited field is sent: {dbg}"
+    );
+    for unsent in ["--provider", "--model", "--base-url", "--option"] {
+        assert!(
+            !dbg.contains(unsent),
+            "{unsent} must NOT be sent — the store keeps what the editor did not touch: {dbg}"
+        );
+    }
+}
+
+/// The reasoning effort is a property of TEXT GENERATION: the control
+/// exists on the text route and on no other row.
+#[test]
+fn reasoning_row_appears_only_on_the_text_route() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.goto_screen(3);
+    h.ui.route_sel.set(4); // output.voice
+    h.key(b"e");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Route — Voice Output (output.voice)"),
+        "editor opens:\n{s}"
+    );
+    assert!(
+        !s.contains("reasoning"),
+        "no reasoning control on a non-text route:\n{s}"
     );
 }
 
@@ -1196,10 +1839,13 @@ fn wizard_esc_back_and_q_refusal() {
 // guard, and the Review evidence render.
 // =======================================================================
 
-/// `t` on Providers opens the provider test picker (ALL canonical
-/// providers + endpoint profiles — the api_keys table alone could
-/// never reach keyless lmstudio/ollama); `g` (anywhere) sends the
-/// default-route generation. Each pick posts exactly one Probe.
+/// `t` on Providers tests the SELECTED row — the gateway's per-row
+/// verb. It could not be selected-row before: the old top table WAS
+/// the api_keys section, so keyless lmstudio/ollama (the wizard's own
+/// recommended targets) had no row to select, and the verb had to open
+/// a picker over a list the screen did not show. The unified list gives
+/// every provider a row, so the picker is gone. `g` (anywhere) still
+/// sends the default-route generation. Each posts exactly one Probe.
 #[test]
 fn test_verbs_send_probe_commands() {
     use abstractcore_console::probes::ProbeKind;
@@ -1208,43 +1854,39 @@ fn test_verbs_send_probe_commands() {
     h.goto_screen(2); // Providers
     h.drain_cmds();
 
+    // A keyless local server — unreachable through the old picker-less
+    // path, and the reason the picker existed at all.
+    select_provider(&mut h, "lmstudio");
     h.key(b"t");
-    let s = h.turns(2);
-    assert!(s.contains("Test which provider?"), "picker opens:\n{s}");
-    assert!(s.contains("lmstudio"), "keyless providers offered:\n{s}");
-    // (Profiles ride below the list window's fold — their presence is
-    // proven by PICKING one further down.)
-    // Initial selection follows the selected key row (row 0 = openai).
-    h.key(b"\r");
     h.turns(2);
     let cmds = h.drain_cmds();
     let [Cmd::Probe(spec)] = cmds.as_slice() else {
         panic!("expected exactly one Probe, got {cmds:?}");
     };
-    let ProbeKind::ListModels { target, .. } = &spec.kind else {
+    let ProbeKind::ListModels { target, reach } = &spec.kind else {
         panic!("expected ListModels, got {spec:?}");
     };
-    assert_eq!(target, "openai", "initial pick follows the key row");
+    assert_eq!(target, "lmstudio", "the verb tests the SELECTED row");
+    assert_eq!(
+        reach.as_ref().map(|hp| hp.port),
+        Some(1234),
+        "the row's own base URL feeds the reach check: {reach:?}"
+    );
+    h.store.probe_busy.set(false);
 
-    // The single-flight guard: while a probe runs, the picker refuses
-    // at the door with the teaching notice.
+    // The single-flight guard: while a probe runs, the verb refuses at
+    // the door with the teaching notice.
     h.store.probe_busy.set(true);
     h.key(b"t");
     let s = h.turns(2);
     assert!(h.drain_cmds().is_empty(), "no probe queued while busy");
     assert!(s.contains("a test is already running"), "{s}");
-    assert!(!s.contains("Test which provider?"), "picker refused while busy");
     h.store.probe_busy.set(false);
 
-    // Pick the endpoint profile: initial openai is index 5 of the 10
-    // static providers; the profile rides at index 10.
+    // A stored connection answers to `endpoint:<id>` — the name the
+    // first column prints and a route's provider field takes.
+    select_provider(&mut h, "endpoint:ovh-provider");
     h.key(b"t");
-    h.turns(2);
-    for _ in 0..5 {
-        h.key(b"\x1b[B");
-        h.turn();
-    }
-    h.key(b"\r");
     h.turns(2);
     let cmds = h.drain_cmds();
     let [Cmd::Probe(spec)] = cmds.as_slice() else {
@@ -1496,6 +2138,367 @@ fn review_renders_test_evidence() {
 }
 
 // =======================================================================
+// 0.3.0 posture: hover ink
+// =======================================================================
+
+/// Grid position (col, row) of the first occurrence of `needle` in a
+/// `to_text()` dump — the text and the cell grid share coordinates.
+fn find_text(screen: &str, needle: &str) -> Option<(i32, i32)> {
+    screen.lines().enumerate().find_map(|(row, line)| {
+        line.find(needle).map(|byte_col| {
+            let col = line[..byte_col].chars().count();
+            (col as i32, row as i32)
+        })
+    })
+}
+
+/// The engine has ALWAYS drawn Button hover ink; before 0.3.0 nothing
+/// armed motion-with-no-button-held, so it never fired. Two halves,
+/// and they guard DIFFERENT things — verified by flipping the flag off
+/// and watching which assertion moved:
+///
+///   1. the armed mouse mode — the ONLY half that catches `hover_ink`
+///      being dropped from the RunConfig;
+///   2. the Save button's ink under the pointer — the widget-side
+///      visual. `push_input` feeds the parser directly, so this half
+///      passes even with the flag off (a real terminal, not the
+///      harness, is what withholds the motion report). It guards the
+///      ink, never the arming — do not read a green (2) as (1).
+#[test]
+fn hover_ink_is_armed_and_buttons_light_under_the_pointer() {
+    let mut h = harness();
+    h.load_fixtures();
+
+    // Half 1 — RunConfig::hover_ink reached the terminal as mode 1003.
+    // ButtonDrag (the default) would deliver motion only while a button
+    // is held, which is exactly the state a hover never has.
+    assert_eq!(
+        h.term.enter_options().map(|o| o.mouse),
+        Some(abstracttui::term::MouseMode::AnyMotion),
+        "hover_ink must arm AnyMotion (1003), not the ButtonDrag default"
+    );
+
+    // Half 2 — the scalar editor's Save/Cancel row: the crate's densest
+    // button surface, and the one a user meets on every write.
+    h.goto_screen(4);
+    h.ui.media_sel.set(12);
+    h.key(b"e");
+    let s = h.turns(2);
+    let (col, row) = find_text(&s, "Save").unwrap_or_else(|| panic!("Save renders:\n{s}"));
+    let ink_cold = h.term.screen().cell(col, row).expect("Save cell").paint.fg;
+
+    // SGR motion, NO button held (the 1003 report), 1-based coords.
+    h.key(format!("\x1b[<35;{};{}M", col + 1, row + 1).as_bytes());
+    h.turns(2);
+    let ink_hot = h.term.screen().cell(col, row).expect("Save cell").paint.fg;
+    assert_ne!(
+        ink_cold, ink_hot,
+        "the hovered Save button shifts ink (accent garnish)"
+    );
+
+    // Hover is a garnish, not a latch: leaving restores the cold ink.
+    h.key(b"\x1b[<35;1;1M");
+    h.turns(2);
+    let ink_left = h.term.screen().cell(col, row).expect("Save cell").paint.fg;
+    assert_eq!(
+        ink_cold, ink_left,
+        "ink restores when the pointer leaves the button"
+    );
+
+    // The modal survived the whole gesture — hover must never disturb
+    // the form it garnishes.
+    let s = h.turns(1);
+    assert!(s.contains("Edit video.max_frames"), "form intact:\n{s}");
+}
+
+// =======================================================================
+// Row activation: Enter / Space / double-click open the SAME editor as
+// the screen's edit verb, on every table that has one.
+// =======================================================================
+
+/// Position of a TABLE ROW whose first cell is `cell` — the row's own
+/// line, not the first place the text happens to appear. Notices and
+/// refusals quote route keys, so a plain substring search finds prose
+/// and clicks the wrong line.
+fn find_row(screen: &str, cell: &str) -> Option<(i32, i32)> {
+    screen.lines().enumerate().find_map(|(row, line)| {
+        let indent = line.len() - line.trim_start_matches([' ', '│']).len();
+        let rest = &line[indent..];
+        let after = rest.strip_prefix(cell)?;
+        // The cell must END here — `input.text` must not match the
+        // `input.text.foo` row, and column padding follows a real cell.
+        if after.starts_with(' ') || after.is_empty() {
+            Some((indent as i32, row as i32))
+        } else {
+            None
+        }
+    })
+}
+
+impl Harness {
+    /// A true double-click on a row: press 1 selects, press 2 (inside
+    /// the chain's timing window) activates. SGR press+release pairs,
+    /// 1-based coords — the same bytes a terminal sends.
+    fn double_click(&mut self, col: i32, row: i32) {
+        let (cx, cy) = (col + 1, row + 1);
+        for _ in 0..2 {
+            self.key(format!("\x1b[<0;{cx};{cy}M").as_bytes()); // press
+            self.key(format!("\x1b[<0;{cx};{cy}m").as_bytes()); // release
+        }
+        self.turns(2);
+    }
+}
+
+/// Routes was the screen with NO `on_activate` at all: the footer
+/// promised "Enter/e edit route" and neither Enter nor a double-click
+/// did anything. Both triggers must now reach the same editor `e` does.
+#[test]
+fn routes_rows_activate_by_enter_and_double_click() {
+    for (label, activate) in [
+        ("enter", &(|h: &mut Harness| h.key(b"\r")) as &dyn Fn(&mut Harness)),
+        ("double-click", &|h: &mut Harness| {
+            let s = h.turns(1);
+            let (c, r) = find_row(&s, "input.text").expect("input.text row on screen");
+            h.double_click(c, r);
+        }),
+    ] {
+        let mut h = harness();
+        h.load_fixtures();
+        h.goto_screen(3);
+        h.ui.route_sel.set(0); // input.text — editable
+        h.turns(1);
+        activate(&mut h);
+        let s = h.turns(2);
+        assert!(
+            s.contains("Route — Text Input (input.text)"),
+            "{label} opens the route editor:\n{s}"
+        );
+    }
+}
+
+/// Activation is the `e` verb, so it inherits every refusal — a
+/// double-click on the output.text alias must teach, not open a form
+/// that would write to the wrong route.
+#[test]
+fn activation_inherits_the_edit_refusals() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.goto_screen(3);
+    h.ui.route_sel.set(3); // output.text — the alias
+    h.turns(1);
+    h.key(b"\r");
+    let s = h.turns(2);
+    assert!(
+        s.contains("output.text derives from input.text — edit that route instead"),
+        "Enter refuses the derived row with the same teaching as e:\n{s}"
+    );
+    assert!(
+        !s.contains("Route — Text Output"),
+        "no editor opened for a read-only row:\n{s}"
+    );
+}
+
+/// Table cells must carry no double-width emoji. The alias row's
+/// "not editable" marker was `🔒` U+1F512 (Emoji=Yes, 2 cells): the
+/// engine measured 2, terminals drew something else, and every column
+/// after it on that row slid out of alignment — the one visibly broken
+/// row on the Routes screen. `⊘` U+2298 is width 1 in both
+/// unicode-width conventions and emoji-data never touches its block.
+#[test]
+fn locked_route_marker_is_not_a_double_width_emoji() {
+    let mut h = harness();
+    h.load_fixtures();
+    let s = h.goto_screen(3);
+    assert!(
+        !s.contains('\u{1F512}'),
+        "no padlock emoji in the routes table:\n{s}"
+    );
+    let (_, row) = find_row(&s, "output.text").expect("the alias row renders");
+    let line = s.lines().nth(row as usize).expect("row line");
+    assert!(
+        line.contains('\u{2298}'),
+        "the alias row still marks itself locked:\n{line}"
+    );
+    // Alignment is the point: the marked row's `state` cell must start
+    // in the same screen column as an unmarked row's.
+    let state_x = |row_key: &str, state: &str| -> usize {
+        let (_, r) = find_row(&s, row_key).expect("row");
+        let l = s.lines().nth(r as usize).expect("line");
+        let byte = l.find(state).unwrap_or_else(|| panic!("{state} in {l:?}"));
+        l[..byte].chars().count()
+    };
+    assert_eq!(
+        state_x("output.text", "derived ← input.text"),
+        state_x("output.voice", "configured"),
+        "the marked row's state column lines up with an unmarked row's:\n{s}"
+    );
+}
+
+/// `a` ADDS A CONNECTION — "we should have a way to configure as many
+/// as necessary, like in the gateway console". The write lands in
+/// CORE's own store: `config set-provider <id>` writes
+/// `provider_profiles.profiles.<id>`, and the spec verifies by re-read
+/// that the profile exists afterwards.
+#[test]
+fn add_connection_writes_a_provider_profile_to_core() {
+    use abstractcore_console::writes::{Arg, Expect, WriteVerb};
+    let mut h = harness();
+    h.load_fixtures();
+    h.goto_screen(2);
+    h.drain_cmds();
+
+    h.key(b"a");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Add a provider connection (endpoint:<id>)"),
+        "the create door says what it creates:\n{s}"
+    );
+
+    // Tab order: id, family, base URL, API key, clear-key, display
+    // name, description, enabled, [Save].
+    h.type_text("paritytest");
+    h.turns(1);
+    h.key(b"\t");
+    h.turn();
+    // The family select opens with a PLACEHOLDER — never a fabricated
+    // choice; `openai-compatible` is the 5th of PROFILE_FAMILIES.
+    h.type_text("\r");
+    h.turns(2);
+    for _ in 0..5 {
+        h.key(b"\x1b[B");
+        h.turn();
+    }
+    h.type_text("\r");
+    h.turns(2);
+    h.key(b"\t");
+    h.turn();
+    h.type_text("http://127.0.0.1:1234/v1");
+    h.turns(2);
+    for _ in 0..6 {
+        h.key(b"\t");
+        h.turn();
+    }
+    h.type_text("\r"); // Save
+    h.turns(2);
+
+    let cmds = h.drain_cmds();
+    let [Cmd::Write(spec)] = cmds.as_slice() else {
+        panic!("expected exactly one Write, got {cmds:?}");
+    };
+    let [WriteVerb::Cli(args)] = spec.verbs.as_slice() else {
+        panic!("expected one CLI verb, got {:?}", spec.verbs);
+    };
+    let argv: Vec<&str> = args.iter().map(Arg::value).collect();
+    assert_eq!(
+        argv,
+        vec![
+            "config",
+            "set-provider",
+            "paritytest",
+            "--family",
+            "openai-compatible",
+            "--base-url",
+            "http://127.0.0.1:1234/v1",
+            "--enabled",
+        ],
+        "the add-connection argv writes CORE's provider_profiles"
+    );
+    assert_eq!(
+        spec.expects,
+        vec![Expect::ProfileExists {
+            id: "paritytest".into()
+        }],
+        "the write proves itself by re-reading the store"
+    );
+}
+
+/// The profiles table had selection but no activation — `e` worked,
+/// Enter and double-click did not.
+#[test]
+fn profile_rows_activate_into_the_profile_editor() {
+    let mut h = providers_harness();
+    h.load_fixtures();
+    h.goto_screen(2);
+    let s = h.turns(1);
+    // The row's first cell is the PROVIDER NAME — `endpoint:<id>`, the
+    // spelling a route's provider field takes and the gateway console's
+    // column too.
+    let (c, r) = find_row(&s, "endpoint:ovh-provider").expect("profile row on screen");
+    h.double_click(c, r);
+    let s = h.turns(2);
+    // Assert on the EDITOR's own title — the row's id is on screen
+    // either way, so `contains("ovh-provider")` alone would pass with
+    // no editor at all.
+    assert!(
+        s.contains("Edit profile ovh-provider"),
+        "the profile editor opened:\n{s}"
+    );
+}
+
+/// The section screens (Model/Media/Embeddings/Server/Logging) share
+/// one table — activation there opens the field editor.
+#[test]
+fn section_field_rows_activate_into_the_field_editor() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.goto_screen(4);
+    h.ui.media_sel.set(12); // video.max_frames — a scalar editor
+    h.turns(1);
+    h.key(b"\r");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Edit video.max_frames"),
+        "Enter opens the field editor:\n{s}"
+    );
+}
+
+/// The disposal bug behind the whole class: activation used to open the
+/// modal on the DYN's scope, so the next config re-render (a reload
+/// landing, a write completing) disposed the scope and took the open
+/// form with it. Editing then silently lost the user's typing. The
+/// modal belongs to the page scope, which outlives data churn.
+///
+/// This is the regression the `e` verb never had — it always captured
+/// the page scope — which is exactly why it went unnoticed.
+#[test]
+fn a_form_opened_by_activation_survives_a_reload() {
+    // Every screen whose activation opens a form, driven by Enter.
+    let cases: [(usize, Option<usize>, &str); 3] = [
+        (2, None, "Secret — api_keys."),      // providers / api_keys
+        (3, Some(0), "Route — Text Input"),   // routes
+        (4, Some(12), "Edit video.max_frames"), // media / section field
+    ];
+    for (screen, sel, needle) in cases {
+        let mut h = harness();
+        h.load_fixtures();
+        h.goto_screen(screen);
+        if let Some(i) = sel {
+            match screen {
+                3 => h.ui.route_sel.set(i),
+                _ => h.ui.media_sel.set(i),
+            }
+            h.turns(1);
+        }
+        h.key(b"\r");
+        let s = h.turns(2);
+        assert!(s.contains(needle), "screen {screen} form opened:\n{s}");
+
+        // A reload landing mid-edit re-renders the config dyn.
+        h.store
+            .cfg
+            .set(Loadable::Ready(mirror_of(config_fixture_value())));
+        h.store
+            .routes
+            .set(Loadable::Ready(RoutesData::from_value(&routes_fixture())));
+        let s = h.turns(3);
+        assert!(
+            s.contains(needle),
+            "screen {screen} form SURVIVES the reload:\n{s}"
+        );
+    }
+}
+
+// =======================================================================
 // Capture minting (evidence artifacts, not assertions): run on demand
 // with `cargo test --test headless_ui mint_captures -- --ignored`.
 // Writes deterministic SVGs of the fixture-loaded screens into
@@ -1657,4 +2660,197 @@ fn chrome_survives_every_screen_at_every_size() {
             );
         }
     }
+}
+
+
+
+// =======================================================================
+// WEIGHTS: the `d` verb (model downloads)
+// =======================================================================
+
+/// The weights column and banner speak the SAME four words as the
+/// gateway console and the gateway TUI, and the banner names the exact
+/// artifact that is missing — the 4-bit build, not the served id the
+/// route stores.
+#[test]
+fn routes_screen_shows_weight_availability_and_the_missing_artifact() {
+    let mut h = harness_sized(Size::new(150, 40));
+    h.load_fixtures();
+    let s = h.goto_screen(3);
+    assert!(s.contains("recommended models: 2 of 3 present"), "banner counts:\n{s}");
+    assert!(
+        s.contains("qwen/qwen3.5-9b@4bit"),
+        "the banner names the ARTIFACT, not the served id:\n{s}"
+    );
+    assert!(s.contains("not downloaded"), "absent weights read plainly:\n{s}");
+    assert!(s.contains("installed"), "present weights read plainly:\n{s}");
+    assert!(s.contains("weights"), "the column is labelled:\n{s}");
+    assert!(
+        s.contains("download weights"),
+        "the hint row offers the verb on THIS screen:\n{s}"
+    );
+    // The unconfigured route carries no weights word at all: an absent
+    // answer must not read as an answer.
+    assert!(
+        !s.contains("output.image  not downloaded"),
+        "an unconfigured route is not a missing download:\n{s}"
+    );
+}
+
+/// `d` on an ABSENT row confirms first, names the artifact and the
+/// provider, and only then sends the download — the one command in this
+/// console that spends gigabytes never fires on a single keystroke.
+#[test]
+fn w_confirms_then_downloads_the_recommended_artifact() {
+    let mut h = harness_sized(Size::new(150, 40));
+    h.load_fixtures();
+    h.goto_screen(3);
+    h.drain_cmds();
+
+    h.ui.route_sel.set(0); // input.text — weights absent
+    h.key(b"w");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Download qwen/qwen3.5-9b@4bit with lmstudio"),
+        "the confirm names artifact and provider:\n{s}"
+    );
+    assert!(
+        h.drain_cmds().is_empty(),
+        "nothing is downloaded before the operator confirms"
+    );
+    // Danger confirms default to the SAFE option; move to Download.
+    h.key(b"\x1b[A");
+    h.turn();
+    h.key(b"\r");
+    h.turns(2);
+    let dbg = format!("{:?}", h.drain_cmds());
+    assert!(
+        dbg.contains("DownloadModel") && dbg.contains("qwen/qwen3.5-9b@4bit"),
+        "the download names the artifact: {dbg}"
+    );
+    assert!(
+        dbg.contains("LoadAvailability"),
+        "the weights are re-probed right after: {dbg}"
+    );
+}
+
+/// The three refusals, each with its reason — an installed model, a
+/// provider with nothing to fetch, and an `unknown` answer. `unknown`
+/// is the important one: guessing there spends the operator's disk.
+#[test]
+fn w_refuses_with_a_reason_instead_of_guessing() {
+    let mut h = harness_sized(Size::new(150, 40));
+    h.load_fixtures();
+    h.goto_screen(3);
+
+    h.ui.route_sel.set(4); // output.voice — installed
+    h.key(b"w");
+    let s = h.turns(2);
+    assert!(s.contains("already installed"), "installed refusal:\n{s}");
+    assert!(h.drain_cmds().is_empty(), "no download for an installed model");
+
+    h.ui.route_sel.set(5); // embedding.text — unknown
+    h.key(b"w");
+    let s = h.turns(2);
+    assert!(
+        s.contains("availability is unknown"),
+        "unknown is never treated as absent:\n{s}"
+    );
+    assert!(h.drain_cmds().is_empty(), "no download on an unknown answer");
+
+    h.ui.route_sel.set(2); // input.video — no weights row at all
+    h.key(b"w");
+    let s = h.turns(2);
+    assert!(
+        s.contains("no weight information yet"),
+        "an unprobed route says so:\n{s}"
+    );
+    assert!(h.drain_cmds().is_empty(), "no download without evidence");
+}
+
+/// The routes grid AS RENDERED: the header row and every data row under
+/// it, up to the first blank line. Row LABELS belong to the row model;
+/// this helper only cares which cells the width policy drew.
+fn grid_rows(screen: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut inside = false;
+    for l in screen.lines() {
+        if l.trim_start().starts_with("route ") {
+            inside = true;
+            continue;
+        }
+        if inside {
+            if l.trim().is_empty() {
+                break;
+            }
+            out.push(l.to_string());
+        }
+    }
+    out
+}
+
+/// THE OPERATOR'S BUG REPORT, rendered: "don't truncate the text in the
+/// column when not necessary".
+///
+/// A 200-cell terminal has room for every model artifact and source
+/// module the fixture carries — so the routes grid must print them
+/// WHOLE. Before `ui::widths` this screen spent constants (`Cells(30)`,
+/// `Cells(20)`, `ellipsize(model, 40)`) and handed the slack to a Flex
+/// model column, so `text-embedding-qwen3-embedding-0.6b` and
+/// `abstractcore.capability_defaults` wore ellipses beside seventy blank
+/// cells.
+#[test]
+fn routes_grid_prints_whole_names_when_the_terminal_has_room() {
+    let mut h = harness_sized(Size::new(200, 40));
+    h.load_fixtures();
+    let s = h.goto_screen(3);
+    for whole in [
+        "text-embedding-qwen3-embedding-0.6b",
+        "abstractcore.capability_defaults",
+        "covered by input.text",
+    ] {
+        assert!(s.contains(whole), "{whole:?} must print whole at 200:\n{s}");
+    }
+    // Not one cut anywhere in the grid — the banner above may still
+    // elide an open-ended list; the GRID has no excuse at this width.
+    let grid = grid_rows(&s);
+    assert!(grid.len() >= 20, "the grid rendered:\n{s}");
+    assert!(
+        !grid.iter().any(|l| l.contains('\u{2026}')),
+        "no ellipsis belongs in a 200-cell grid:\n{}",
+        grid.join("\n")
+    );
+}
+
+/// And when the terminal is genuinely too narrow, the cut keeps the end
+/// that tells rows apart. `text-embedding-qwen3-embedding-0.6b` is the
+/// fixture's long artifact: head-first it renders as its neighbours'
+/// twin (`text-embed…`), middle-first it still ends in the size tag that
+/// says WHICH embedding model this route runs.
+#[test]
+fn narrow_routes_grid_keeps_the_discriminating_tail() {
+    let mut h = harness_sized(Size::new(84, 40));
+    h.load_fixtures();
+    let s = h.goto_screen(3);
+    let row = grid_rows(&s)
+        .into_iter()
+        .find(|l| l.contains("embedding") && l.contains("0.6b"))
+        .unwrap_or_else(|| panic!("no embedding row survived:\n{s}"));
+    assert!(
+        row.contains('\u{2026}'),
+        "84 cells really is too narrow for this artifact: {row:?}"
+    );
+    assert!(
+        row.contains("\u{2026}") && row.contains("embedding-0.6b"),
+        "the discriminating tail survives the cut: {row:?}"
+    );
+    assert!(
+        !row.contains("text-embedding-qwen3-embedding-0.6b"),
+        "the cell really was cut (otherwise this test proves nothing): {row:?}"
+    );
+    // The closed vocabularies keep their whole word at every width.
+    assert!(
+        s.contains("not configured"),
+        "the state vocabulary is not squeezed into nonsense:\n{s}"
+    );
 }

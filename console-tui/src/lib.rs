@@ -25,7 +25,7 @@ use abstracttui::prelude::*;
 use store::Store;
 use ui::{Ctx, UiState};
 
-pub const ENGINE_VERSION: &str = "0.2.22";
+pub const ENGINE_VERSION: &str = "0.3.0";
 
 const HELP: &str = "\
 abstractcore-console — configure AbstractCore from the terminal
@@ -51,6 +51,11 @@ OPTIONS:
 KEYS: 1-8 screens (browse) · Ctrl+N/P next/prev · Tab focus ·
       Enter/e edit · x clear · k set key · w wizard · f finish wizard ·
       r reload · Ctrl+L repaint · q (browse) / Ctrl+C quit
+      on Capability routes: a applies the recommended routes ·
+      w downloads the selected route's weights
+
+MOUSE: click selects a row · DOUBLE-CLICK opens its editor, the same
+       door Enter opens (and refuses for the same reasons).
 ";
 
 struct Args {
@@ -185,11 +190,25 @@ pub fn run_cli(argv: &[String]) -> i32 {
     store.cfg.set(store::Loadable::Loading);
     store.routes.set(store::Loadable::Loading);
     store.profiles.set(store::Loadable::Loading);
+    store.availability.set(store::Loadable::Loading);
     let _ = tx.send(worker::Cmd::LoadConfig);
     let _ = tx.send(worker::Cmd::LoadRoutes);
     let _ = tx.send(worker::Cmd::LoadProfiles);
+    // Weights last: it is the slowest read (it talks to LM Studio and
+    // Ollama) and the only one nothing else waits on.
+    let _ = tx.send(worker::Cmd::LoadAvailability);
 
-    let result = app.run();
+    // hover_ink (0.3.0) arms motion reporting with no button held, so the
+    // hover visuals the engine has always DRAWN finally receive the
+    // events that trigger them: every Button, the Select/Combobox popup
+    // rows, Checkbox and the ThemeSwitcher glyph. Table has no hover
+    // state in the engine — the section/route tables stay inert by
+    // design, not by bug. Spread-constructed so the next posture flag
+    // costs this call site nothing (the 0.2.27-yank lesson).
+    let result = app.run_with(RunConfig {
+        hover_ink: true,
+        ..RunConfig::default()
+    });
     // Drop the sender so an idle worker unblocks and ends. Deliberately
     // NO join: a worker mid-subprocess would hang quit with the
     // terminal already restored — process exit reaps the thread. The

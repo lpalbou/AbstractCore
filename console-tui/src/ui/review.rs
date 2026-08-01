@@ -3,11 +3,12 @@
 //! M3 — the provider connectivity and generation test verbs.
 
 use abstracttui::prelude::*;
-use abstracttui::widgets::{Block, ColWidth, Column, Table};
+use abstracttui::widgets::{Block, Table};
 
 use crate::store::Loadable;
 
-use super::util::{ellipsize, line, span, span_bold};
+use super::util::{line, span, span_bold};
+use super::widths;
 use super::Ctx;
 
 pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme>) -> View {
@@ -66,8 +67,10 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
 
     // Test evidence: the latest result per target, verdicts colored,
     // never fabricated — an empty state teaches the verbs instead.
+    let viewport = abstracttui::app::use_viewport(cx);
     let tests = dyn_view(LayoutStyle::column().shrink(0.0), move || {
         let t = theme.get().tokens;
+        let avail = viewport.get().w - widths::BLOCK_CHROME;
         let results = store.tests.get();
         let mut col = Element::new().style(LayoutStyle::column());
         if results.is_empty() {
@@ -83,11 +86,22 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
                     crate::probes::Verdict::NotProven => t.warn,
                     crate::probes::Verdict::Failed => t.error,
                 };
+                // The detail is the ELASTIC span of this line: budgeted
+                // against the row it is drawn on, not a constant that cut
+                // it at 110 with ninety cells still free.
+                let when = format!(" {} ", r.when);
+                let verdict =
+                    format!("{} {:<11}", r.verdict.glyph(), r.verdict.word());
+                let label = format!("{} — ", r.label);
+                let detail = widths::head_fit(
+                    &r.detail,
+                    widths::elastic_budget(&[&when, &verdict, &label], avail),
+                );
                 col = col.child(line(vec![
-                    span(format!(" {} ", r.when), t.text_faint),
-                    span_bold(format!("{} {:<11}", r.verdict.glyph(), r.verdict.word()), color),
-                    span(format!("{} — ", r.label), t.text),
-                    span(ellipsize(&r.detail, 110), t.text_muted),
+                    span(when, t.text_faint),
+                    span_bold(verdict, color),
+                    span(label, t.text),
+                    span(detail, t.text_muted),
                 ]));
             }
             // Never let evidence vanish silently (M3 review P3-9).
@@ -114,7 +128,8 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
                 t.text_muted,
             )])
         } else {
-            let rows: Vec<Vec<String>> = entries
+            let w = abstracttui::app::use_viewport(gcx).get().w;
+            let mut rows: Vec<Vec<String>> = entries
                 .iter()
                 .rev()
                 .map(|e| {
@@ -126,22 +141,26 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
                         Err(s) if s.starts_with("NOT PROVEN") => format!("? {s}"),
                         Err(s) => format!("✗ {s}"),
                     };
-                    vec![
-                        e.when.clone(),
-                        ellipsize(&e.action, 46),
-                        ellipsize(&outcome, 120),
-                    ]
+                    // Uncapped: the journal is EVIDENCE, and a wide
+                    // terminal has no reason to hide the end of it.
+                    vec![e.when.clone(), e.action.clone(), outcome]
                 })
                 .collect();
-            Table::new(vec![
-                Column::new("when", ColWidth::Cells(10)),
-                Column::new("action", ColWidth::Cells(48)),
-                Column::new("outcome", ColWidth::Flex(1.0)),
-            ])
-            .rows(rows)
-            .layout(LayoutStyle::default().grow(1.0))
-            .element(gcx, &t)
-            .build()
+            // The action names a route/provider/field — its TAIL says
+            // which one; the outcome is prose and reads from the left.
+            // Two cells for the block's own border, the same chrome the
+            // routes screen budgets for.
+            let rules = [
+                widths::ColRule::head("when", 8),
+                widths::ColRule::tail("action", 24),
+                widths::ColRule::head("outcome", 30),
+            ];
+            let cols = widths::columns(&rules, &mut rows, w - widths::BLOCK_CHROME);
+            Table::new(cols)
+                .rows(rows)
+                .layout(LayoutStyle::default().grow(1.0))
+                .element(gcx, &t)
+                .build()
         };
         Block::new()
             .title("Session journal")

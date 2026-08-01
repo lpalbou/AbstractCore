@@ -7,7 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **GPT-5.6 Sol/Terra/Luna context window corrected from 1,050,000 to the
+  enforced 400,000 tokens** in `model_capabilities.json`. The OpenAI API card
+  advertises 1,050,000 (922,000 max input / 128,000 max output), but input
+  above 272,000 tokens is a premium long-context billing tier and the
+  ChatGPT-subscription Codex backend enforces a 400,000-token session ceiling
+  (272,000 input + 128,000 reserved output) — see openai/codex#32806 and
+  openai/codex#32486. Wire-verified on gpt-5.6-sol 2026-08-01: a 66,004-token
+  input was accepted, a measured 460,345-token request was refused with
+  `context_length_exceeded` (param=input). 400,000 is safe in both regimes;
+  Terra/Luna follow the same published card and family-level Codex policy
+  (wire verification covered Sol only). `max_output_tokens` stays 128,000.
+
+### Added
+- Fresh-install recommended capability defaults: a brand-new configuration
+  store seeds text `lmstudio/qwen/qwen3.5-9b`, voice `supertonic/supertonic-3`,
+  and image `mlx-gen/AbstractFramework/flux.2-klein-4b-8bit` so generation
+  works out of the box. Seeded only when no config file has ever existed —
+  never merged into an existing store, never on the corrupt-file fallback —
+  and written as ordinary routes: overridable, clearable, and always beaten
+  by request pins. Provenance recorded as `capability_defaults.seeded`.
+
+
+### Added
+- **A reasoning effort configured on the text route is applied to calls that name none.**
+  `abstractcore config set-default output.text --reasoning high` persists an effort
+  beside the route's provider and model, and unpinned calls inherit it. An explicit
+  `thinking=` on a call still wins, `thinking=False` included; with no configured
+  effort and no explicit value, no reasoning parameter is sent. The route keys and
+  their precedence are stated once, in
+  `config/capability_defaults.py::capability_default_reasoning`, so AbstractRuntime
+  and AbstractGateway resolve the effort by asking rather than by re-deriving it.
+
 ### Changed
+- **Writing one field of a capability route keeps the rest.** `abstractcore config
+  set-default <route>` and the server's
+  `PUT /v1/config/capability-defaults/...` routes are partial updates: a flag or
+  field you do not pass keeps its stored value, and an empty string clears one
+  field (`--reasoning ""`). `clear-default` still drops the whole route. This is
+  the rule every writer of the store shares — the CLI, the server's config routes,
+  and AbstractGateway through them — so setting a model from one entry point no
+  longer discards a reasoning effort or route options set from another. The shared
+  implementation is `ConfigurationManager.update_capability_default`;
+  `set_capability_default` keeps whole-row semantics for callers that want them.
+  **Migration:** a script that relied on `set-default` clearing unnamed fields
+  should call `clear-default` first, or pass `""` for each field to clear.
+- **The reasoning effort is settable through the AbstractCore server.**
+  `PUT /v1/config/capability-defaults/{kind}/{modality}[/{task}]` accepts a
+  `reasoning` field, so a split deployment can configure the text route's effort
+  over HTTP.
+- **`--set-default-model` and the embeddings setters keep the rest of the route
+  they write.** Both mirror onto a capability route; naming a provider and model no
+  longer clears the reasoning effort, base URL or plugin options on that row.
+- **`--show-config` reports the global default from the capability route.**
+  `global_defaults.provider/model` read the text route, which is the store, with
+  the legacy `default_models.global_*` pair reported beside it under `legacy`. The
+  status output can no longer name a model the framework does not route on.
+- **The `embeddings` config section and the `embedding.text` capability route mirror
+  in both directions.** `abstractcore config --set-embeddings-model` and
+  `abstractcore config set-default embedding.text` now always report the same answer,
+  so `--show-config` cannot name a different embedding model than the one the
+  framework routes on.
+- **A capability route that carries only a reasoning effort is reported as configured.**
+  `list_capability_defaults()` counts `reasoning` towards a row's `configured` flag,
+  matching `CapabilityRouteDefault.configured()`, so the effort is visible to every
+  reader of the route grid including the AbstractGateway console.
+
 - **analyze_media resolves delegated sight through the SESSION MODEL first (operator ruling 2026-07-26, c3977 amendment; backlog 0837-B; fable5-designed, core half of a cross-lane fix)**: the operator ruled "I should NOT need to set a fallback vision model for a model that already has vision — fallbacks are SOLELY for models that do NOT have vision." `analyze_media` now resolves in that order: (1) the RUN'S OWN route when its model declares vision (capability-gated local read via `get_media_capabilities` — the same signal the media stack uses to decide native attachment, so the gate and the nested `generate(media=...)` cannot disagree; never constructs a client, so no network validation) → runs the image through the session route natively (new `VisionFallbackHandler.create_description_via_route(provider, model, image, prompt)`), fallback never consulted; (2) the configured vision fallback ONLY when the session model lacks vision (its sole purpose per the ruling), for unstamped calls (byte-identical to prior behavior), or as a labeled `#FALLBACK` backstop after a session-route runtime failure; (3) honest three-way refusal naming WHICH model lacked vision + where to configure (never suggesting a model point at itself). The session route arrives via a hidden host-injected `_session_route` param (`hide_args`, participants-stamp precedent) of shape `{"provider", "model"}` ONLY — core REFUSES raw transport (`base_url`/keys): `analyze_media` is read-only/auto-approvable and `hide_args` hides-but-doesn't-enforce, so accepting a model-authored URL would turn an auto-approved tool into a local-file-bytes egress channel; bounding to provider+model caps abuse at operator-credentialed routes (the configured-fallback destination class). Degrades byte-identical when unstamped. 25 analyze_media tests (14 pre-existing byte-identity + 11 new). Cross-lane (flagged to owners): runtime stamps `_session_route` in the TOOL_CALLS handler from `_runtime.provider`/`model` (stamp-or-strip); gateway's 0837-A becomes a loud "vision: not configured" status belt for genuinely vision-less setups (auto-seeding is dead by the ruling — it would manufacture the self-pointing fallback); code-tui runs end-to-end acceptance.
 - **Vision config-migration remainder (0826): task-specific routes + route-option fan-out + mflux base-model config-first (operator dm#177, 2026-07-25, one fable5 pass)**: closes the "REMAINING in the vision lane" tier of backlog 0826. (1) **Task-specific routes** — `vision_endpoints.py` now reads `output.image.{text_to_image,image_to_image,image_upscale}` / `output.video.{text_to_video,image_to_video}` FIRST, falling back to the broad `output.image`/`output.video` row; a configured task row wins WHOLESALE (one backend identity, never field-merged — the same semantics `generate_contract.resolve_capability_default_route` uses). `task` is threaded (keyword, default `None` = task-less callers byte-unchanged) through the backend/model/base-url/options resolvers and every endpoint passes its task (t2i/edits/upscale/t2v/i2v, sync + jobs). `_image_upscale_route_defaults` now seeds from the `image_upscale` task row only (the hardcoded SeedVR2 seed previously defeated a configured upscale route), with the built-in as the no-config fallback. (2) **Route-option fan-out** — options previously reached only the sdcpp lane; diffusers (device/torch_dtype/allow_download/auto_retry_fp32), mflux (base_model/model_dir/allow_download), and proxy (upstream paths + image_to_video_mode) lanes now consume their route options with config-first precedence (env labeled `#FALLBACK`, warn naming the actually-set env var), and unknown/untranslated option keys WARN once instead of dropping silently. Honest divergence from audio recorded: vision backend configs are typed dataclasses (unknown keys can't be forwarded), and route options double as request-level params folded downstream, so the warning says "left to the request layer unverified", never falsely "dropped". (3) **mflux base_model config-first** — `options.base_model` on an mflux route now wins over `ABSTRACTCORE_VISION_MFLUX_BASE_MODEL` in both the resolver and the catalog builder (advertising kept equal to execution). Folded-in fix: the two image-to-video lanes resolved backends without `modality="video"`, so an image route steered `/v1/videos/edits` (the same cross-modality bleed the t2v lanes had already fixed) — corrected in the edits/jobs/residency call sites. Env-only deployments byte-identical. 134 server tests green (17 new precedence pins). Residuals left with rationale in 0826: advertising lanes stay broad-route (a deeper pre-existing video-task-reads-image-route gap deserves its own pass), timeout classification stays env/catalog-only (open question), and the deferred cross-package tier (GGUF/HF/embeddings toggles, PDF model, CLI vars) untouched.
 - **Vision behavior config is now config-first on the standalone server (operator ruling dm#177/dm#194; env-conflict report angle A #4, 2026-07-22)**: the image/video endpoints consulted ZERO capability defaults — the console PUT `output.image` routes into the very config this server owns while env on the host decided execution, and the mere PRESENCE of an exported `OPENAI_BASE_URL` flipped a configured local setup to the OpenAI-compatible proxy. `vision_endpoints.py` now reads the centralized config's `output.image`/`output.video` routes FIRST (backend kind, per-backend model defaults, upstream base URL, sdcpp full-model + component options, catalog/advertising seeding), with env retained as a labeled `#FALLBACK` below config — warn-once naming the env var that is actually set. The route row is ONE backend identity (an mflux route's model never leaks into the diffusers/sdcpp/proxy lanes; provider-less models attributed by shape, withheld when unattributable). A fable5 adversary review (SHIP-WITH-FIXES) was folded the same night: modality scoping so an Image Output route never steers `/v1/videos/*` (video lanes read `output.video`; residency follows the requested task), config-first proxy ADVERTISING (a config-only proxy route used to execute but advertise `[]`), plugin wire spelling for the proxy backend, sdcpp shadow warning, actually-set env var named in override warnings, and the `abstractvision` package-hint alias restricted to config-sourced values (env-only deployments stay byte-identical). The audio clone-engine direct-env bypass (`ABSTRACTVOICE_CLONING_ENGINE`) was closed in the same pass. 17 precedence pins; full server suite green.

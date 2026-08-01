@@ -20,7 +20,8 @@ use serde_json::Value;
 use crate::cli::{CliError, CliErrorKind, CoreCli};
 use crate::config::{self, ConfigPath, FileState};
 use crate::store::{
-    models_from_payload, ConfigMirror, JournalEntry, Loadable, ProfilesData, RoutesData, Store,
+    models_from_payload, AvailabilityData, ConfigMirror, JournalEntry, Loadable, ProfilesData,
+    RoutesData, Store,
 };
 use crate::writes::{eval_file_expect, Arg, Expect, WriteSpec, WriteVerb};
 
@@ -46,10 +47,18 @@ pub enum Cmd {
     LoadConfig,
     /// `abstractcore config defaults --json` → routes.
     LoadRoutes,
-    /// `abstractcore config providers --json` → profiles.
+    /// `abstractcore config providers --probe --json` → the provider
+    /// INVENTORY (every provider the registry knows, keyless ones
+    /// included) plus the endpoint profiles. One payload, two tables.
     LoadProfiles,
     /// Per-provider model list for pickers (`config models P --json`).
     LoadModels { provider: String },
+    /// `abstractcore models status --json` → local weight availability.
+    LoadAvailability,
+    /// `abstractcore models download <provider> <artifact>` — the ONLY
+    /// command in this console that spends network bytes, and it only
+    /// ever runs from an explicit `d` on a route the operator selected.
+    DownloadModel { provider: String, artifact: String },
     /// One verified write action.
     Write(Box<WriteSpec>),
     /// One test verb (M3): live model discovery, route membership, or
@@ -67,6 +76,10 @@ const WRITE_TIMEOUT: Duration = Duration::from_secs(60);
 /// A generation may LOAD a local model first (21s observed for a 4B);
 /// the busy strip shows elapsed the whole way.
 const GENERATE_TIMEOUT: Duration = Duration::from_secs(120);
+/// A model download is the one operation here measured in gigabytes.
+/// 2 hours is "the provider tool is wedged", not "this file is large" —
+/// a 9B 4-bit build over a domestic line is comfortably inside it.
+const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(7200);
 /// TCP reachability disambiguation — local endpoints answer instantly.
 const REACH_TIMEOUT: Duration = Duration::from_millis(1500);
 
@@ -152,8 +165,11 @@ fn handle(
                 store,
                 wake,
                 cli,
-                "loading profiles (config providers --json)",
-                &["config", "providers", "--json"],
+                // `--probe` is what turns "lmstudio exists" into "lmstudio is
+                // answering on :1234": one cheap GET per local server, on the
+                // worker thread, never on a render path.
+                "loading providers (config providers --probe --json)",
+                &["config", "providers", "--probe", "--json"],
                 |store, outcome| match outcome {
                     Ok(v) => store
                         .profiles
@@ -190,9 +206,96 @@ fn handle(
                 });
             });
         }
+        Cmd::LoadAvailability => {
+            load_derived(
+                store,
+                wake,
+                cli,
+                "probing model weights (models status --json)",
+                &["models", "status", "--all", "--json"],
+                |store, outcome| match outcome {
+                    Ok(v) => store
+                        .availability
+                        .set(Loadable::Ready(AvailabilityData::from_value(&v))),
+                    Err(e) => store.availability.set(Loadable::Failed(e)),
+                },
+            );
+        }
+        Cmd::DownloadModel { provider, artifact } => {
+            handle_download(store, wake, cli, provider, artifact)
+        }
         Cmd::Write(spec) => handle_write(store, wake, config_path, cli, spec, done),
         Cmd::Probe(spec) => handle_probe(store, wake, config_path, cli, spec),
     }
+}
+
+/// THE ONLY COMMAND HERE THAT SPENDS NETWORK BYTES. It runs the shipped
+/// `abstractcore models download` (which runs the PROVIDER's own tool),
+/// so the console and the CLI cannot disagree about what a download is.
+///
+/// One-shot, not streamed: the busy strip already shows elapsed for the
+/// whole run, and a second lane for provider chatter would buy a
+/// progress bar at the price of a second definition of "downloading".
+/// The outcome lands in the journal and the notice, and availability is
+/// re-probed so the grid tells the truth immediately afterwards.
+fn handle_download(
+    store: &Store,
+    wake: &WakeHandle,
+    cli: Option<&CoreCli>,
+    provider: &str,
+    artifact: &str,
+) {
+    let Some(cli) = cli else {
+        let store = *store;
+        let err = no_cli_error().to_string();
+        wake.post(move || store.notice.set(Some(err)));
+        return;
+    };
+    let op = next_op();
+    let label = format!("downloading {provider} {artifact}");
+    begin(store, wake, op, &label);
+    let action = format!("abstractcore models download {provider} {artifact}");
+    let outcome = cli.run_json(
+        &["models", "download", provider, artifact, "--json"],
+        DOWNLOAD_TIMEOUT,
+    );
+    // A failed download exits non-zero, so `run_json` reports the CLI's
+    // own error line — the provider tool's words, which is the only
+    // useful half of a download failure.
+    let (notice, journal) = match &outcome {
+        Ok(out) => {
+            let result = out
+                .value
+                .get("results")
+                .and_then(|r| r.as_array())
+                .and_then(|a| a.first())
+                .cloned()
+                .unwrap_or(serde_json::Value::Null);
+            let status = result
+                .get("status")
+                .and_then(|s| s.as_str())
+                .unwrap_or("completed");
+            let message = result
+                .get("message")
+                .and_then(|s| s.as_str())
+                .unwrap_or_default();
+            (
+                format!("{provider} {artifact}: {status}{}", if message.is_empty() { String::new() } else { format!(" — {message}") }),
+                Ok(status.to_string()),
+            )
+        }
+        Err(e) => (format!("{provider} {artifact}: {e}"), Err(e.to_string())),
+    };
+    let store = *store;
+    wake.post(move || {
+        store.end_busy(op);
+        store.push_journal(JournalEntry {
+            when: crate::store::now_hms(),
+            action,
+            outcome: journal,
+        });
+        store.notice.set(Some(notice));
+    });
 }
 
 // ---------------------------------------------------------------------
@@ -313,11 +416,13 @@ fn handle_probe(
                 Verdict::Failed => Err(detail.clone()),
             },
         });
+        // No cap here: the notice line fits itself to the terminal
+        // (ui::mod's `ellipsize(&n, viewport.w - 6)`), so a second blind
+        // 90-char cut only hid evidence a wide terminal had room for.
         store.notice.set(Some(format!(
-            "{} {}: {}",
+            "{} {}: {detail}",
             verdict.glyph(),
             label,
-            crate::ui::util::ellipsize(&detail, 90)
         )));
     });
 }
@@ -559,7 +664,16 @@ fn handle_write(
         // specs declare profile expects) — an unconditional refresh added
         // ~5-15s of CLI tail to EVERY write for views it cannot change.
         if spec.needs_profiles() {
-            match cli.run_json(&["config", "providers", "--json"], READ_TIMEOUT) {
+            // `--probe` HERE TOO, exactly as `Cmd::LoadProfiles` reads
+            // it. The post-write refresh REPLACES the screen's whole
+            // providers view, so a probe-less re-read silently downgrades
+            // every probed row: the live model counts vanish and the
+            // `origin` column flips `auto` → `registry` — a WRONG word
+            // about a server that is still answering (caught live by the
+            // parity pty run, 2026-08-01). The probe is one cheap
+            // localhost GET per local server, the same cost the screen
+            // already pays on every reload.
+            match cli.run_json(&["config", "providers", "--probe", "--json"], READ_TIMEOUT) {
                 Ok(out) => {
                     if fallback_new.is_none() {
                         fallback_new = Some(out.fallback_warnings.first().cloned());
@@ -627,6 +741,19 @@ fn handle_write(
     }
 }
 
+/// The confirmed stored row, in the ONE sentence both consoles print
+/// after a route write: what the store now holds and where it applies.
+fn route_proof(row: &crate::store::RouteRow) -> String {
+    let mut out = row.pair_text();
+    if let Some(r) = row.reasoning.as_deref() {
+        out.push_str(&format!(" · reasoning {r}"));
+    }
+    if !row.source.is_empty() {
+        out.push_str(&format!(" (source: {})", row.source));
+    }
+    out
+}
+
 /// One derived-view expectation over the FRESH payloads — pure, so the
 /// verification the routes/profiles writes rely on is unit-testable
 /// (M2 review: this lane had zero coverage).
@@ -640,26 +767,36 @@ pub(crate) fn eval_derived_expect(
             key,
             provider,
             model,
+            reasoning,
         } => {
             let row = routes
                 .and_then(|d| d.rows.iter().find(|r| &r.key == key))
                 .ok_or_else(|| format!("route {key} not found in the fresh view (CLI reload failed?)"))?;
-            if !row.configured
-                || (provider.is_some() && row.provider != *provider)
-                || (model.is_some() && row.model != *model)
+            // A partial update verifies EXACTLY what it named. A field
+            // the write left to the store is not evidence either way,
+            // and an emptied field ("" was sent) must read as absent.
+            let sent = |want: &Option<String>, got: &Option<String>| -> bool {
+                match want.as_deref() {
+                    None => true,
+                    Some("") => got.is_none(),
+                    Some(v) => got.as_deref() == Some(v),
+                }
+            };
+            let cleared_all = [provider, model, reasoning]
+                .iter()
+                .all(|f| matches!(f.as_deref(), None | Some("")));
+            if (!row.configured && !cleared_all)
+                || !sent(provider, &row.provider)
+                || !sent(model, &row.model)
+                || !sent(reasoning, &row.reasoning)
             {
                 return Err(format!(
-                    "route {key} verifies as {}/{} (configured: {})",
-                    row.provider.as_deref().unwrap_or("—"),
-                    row.model.as_deref().unwrap_or("—"),
+                    "route {key} verifies as {} (configured: {})",
+                    route_proof(row),
                     row.configured
                 ));
             }
-            Ok(format!(
-                "route {key} = {}/{}",
-                row.provider.as_deref().unwrap_or("—"),
-                row.model.as_deref().unwrap_or("—")
-            ))
+            Ok(format!("{key} = {}", route_proof(row)))
         }
         Expect::RouteCleared { key } => {
             match routes.and_then(|d| d.rows.iter().find(|r| &r.key == key)) {
@@ -1308,24 +1445,60 @@ mod tests {
                 key: "input.text".into(),
                 provider: Some("lmstudio".into()),
                 model: Some("m".into()),
+                reasoning: None,
             },
             Some(&routes),
             None,
         )
         .unwrap();
-        assert!(ok.contains("input.text = lmstudio/m"));
+        assert!(
+            ok.contains("input.text = lmstudio / m") && ok.contains("(source: x)"),
+            "the proof shows the confirmed row AND where it applies: {ok}"
+        );
 
         let err = eval_derived_expect(
             &Expect::RouteEq {
                 key: "input.text".into(),
                 provider: Some("ollama".into()),
                 model: None,
+                reasoning: None,
             },
             Some(&routes),
             None,
         )
         .unwrap_err();
-        assert!(err.contains("verifies as lmstudio/m"), "{err}");
+        assert!(err.contains("verifies as lmstudio / m"), "{err}");
+
+        // A PARTIAL update verifies only what it named: naming just the
+        // reasoning must not fail because provider/model went unsent.
+        let routes_reasoned = RoutesData::from_value(&json!({
+            "ok": true, "routes": [
+                {"key": "input.text", "provider": "lmstudio", "model": "m",
+                 "reasoning": "high", "configured": true, "kind": "input",
+                 "modality": "text", "label": "Text Input", "source": "x"}
+            ]
+        }));
+        let only_reasoning = |want: &str| Expect::RouteEq {
+            key: "input.text".into(),
+            provider: None,
+            model: None,
+            reasoning: Some(want.into()),
+        };
+        let ok = eval_derived_expect(&only_reasoning("high"), Some(&routes_reasoned), None).unwrap();
+        assert!(ok.contains("reasoning high"), "{ok}");
+        assert!(
+            eval_derived_expect(&only_reasoning("low"), Some(&routes_reasoned), None).is_err(),
+            "a reasoning the store did not take must fail the write"
+        );
+        // "" was sent = clear it: the row must carry NO reasoning.
+        assert!(
+            eval_derived_expect(&only_reasoning(""), Some(&routes_reasoned), None).is_err(),
+            "a cleared field that survived is a failed write"
+        );
+        assert!(
+            eval_derived_expect(&only_reasoning(""), Some(&routes), None).is_ok(),
+            "a cleared field that is gone verifies"
+        );
 
         assert!(eval_derived_expect(
             &Expect::RouteCleared {

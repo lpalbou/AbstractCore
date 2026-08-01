@@ -153,10 +153,14 @@ pub enum Expect {
     /// `path` is a string whose sha256[:8] matches.
     SecretFp { path: Vec<String>, fp: String },
     /// The derived routes view shows `key` configured with this pair.
+    /// Each field is checked only when the write NAMED it — a partial
+    /// update verifies what it sent, and says nothing about the fields
+    /// it deliberately left to the store.
     RouteEq {
         key: String,
         provider: Option<String>,
         model: Option<String>,
+        reasoning: Option<String>,
     },
     /// The derived routes view shows `key` unconfigured.
     RouteCleared { key: String },
@@ -493,6 +497,9 @@ pub fn set_global_default(
                 key: "input.text".into(),
                 provider: Some(provider.into()),
                 model: Some(model.into()),
+                // The coupled setter names no reasoning — it must not
+                // claim anything about the effort the row carries.
+                reasoning: None,
             },
         ],
         base_stamp: base,
@@ -592,6 +599,9 @@ pub fn set_embeddings(
                 key: "embedding.text".into(),
                 provider: Some(provider.into()),
                 model: Some(model.into()),
+                // The coupled setter names no reasoning — it must not
+                // claim anything about the effort the row carries.
+                reasoning: None,
             },
         ],
         base_stamp: base,
@@ -863,55 +873,131 @@ pub fn clear_server_auth_token(
     }
 }
 
-/// Set a capability route (`config set-default` — honest exit codes).
-/// `output.text` writes redirect to input.text Python-side; the UI
+/// A partial update of one capability route — the shape the editor
+/// diffs into. `None` = the operator did not touch this field, so the
+/// flag is NOT sent and the store keeps its value; `Some("")` = the
+/// operator emptied it, so the flag is sent empty and the store clears
+/// it. `output.text` writes redirect to input.text Python-side; the UI
 /// blocks editing it instead of relying on the redirect.
-#[allow(clippy::too_many_arguments)]
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct RouteEdit {
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub base_url: Option<String>,
+    pub reasoning: Option<String>,
+    /// `None` = leave the stored options alone (no `--option` at all);
+    /// `Some(pairs)` = these pairs REPLACE the stored ones, and an
+    /// empty slice sends the one `--option ""` that clears them
+    /// (`_parse_capability_options` folds a blank item away, yielding
+    /// `{}` — the "clear every option" spelling, live-verified).
+    pub options: Option<Vec<(String, String)>>,
+}
+
+impl RouteEdit {
+    /// Nothing was edited — the editor refuses instead of shelling a
+    /// setter that would rewrite the row with its own stored values.
+    pub fn is_empty(&self) -> bool {
+        self.provider.is_none()
+            && self.model.is_none()
+            && self.base_url.is_none()
+            && self.reasoning.is_none()
+            && self.options.is_none()
+    }
+}
+
+/// Set a capability route (`config set-default` — honest exit codes).
+///
+/// FIELD-PRESERVING, PARTIAL. `update_capability_default`
+/// (manager.py:1326-1370) keeps every field the command does not name,
+/// so the editor sends ONLY what the operator changed. It must never
+/// echo the rendered row back as a write: between render and save the
+/// gateway console or another `abstractcore config` run may have set a
+/// field this console is not showing, and resending stale values would
+/// silently overwrite it (the lost-update class).
 pub fn set_route(
     key: &str,
-    provider: Option<&str>,
-    model: Option<&str>,
-    base_url: Option<&str>,
-    reasoning: Option<&str>,
-    options: &[(String, String)],
+    edit: &RouteEdit,
     base: Option<crate::config::FileStamp>,
     form_id: Option<u64>,
 ) -> WriteSpec {
     let mut args = vec![Arg::p("config"), Arg::p("set-default"), Arg::p(key)];
-    if let Some(p) = provider {
-        args.push(Arg::p("--provider"));
-        args.push(Arg::p(p));
+    for (flag, value) in [
+        ("--provider", edit.provider.as_deref()),
+        ("--model", edit.model.as_deref()),
+        ("--base-url", edit.base_url.as_deref()),
+        ("--reasoning", edit.reasoning.as_deref()),
+    ] {
+        if let Some(v) = value {
+            args.push(Arg::p(flag));
+            args.push(Arg::p(v));
+        }
     }
-    if let Some(m) = model {
-        args.push(Arg::p("--model"));
-        args.push(Arg::p(m));
+    match edit.options.as_deref() {
+        None => {}
+        Some([]) => {
+            args.push(Arg::p("--option"));
+            args.push(Arg::p(""));
+        }
+        Some(pairs) => {
+            for (k, v) in pairs {
+                args.push(Arg::p("--option"));
+                args.push(Arg::p(format!("{k}={v}")));
+            }
+        }
     }
-    if let Some(u) = base_url {
-        args.push(Arg::p("--base-url"));
-        args.push(Arg::p(u));
-    }
-    // set-default is REPLACE semantics — a field the editor doesn't
-    // resend is a field it deletes (M2 review P2-5: reasoning).
-    if let Some(r) = reasoning {
-        args.push(Arg::p("--reasoning"));
-        args.push(Arg::p(r));
-    }
-    for (k, v) in options {
-        args.push(Arg::p("--option"));
-        args.push(Arg::p(format!("{k}={v}")));
+    let mut changed: Vec<&str> = Vec::new();
+    for (name, set) in [
+        ("provider", edit.provider.is_some()),
+        ("model", edit.model.is_some()),
+        ("base URL", edit.base_url.is_some()),
+        ("reasoning", edit.reasoning.is_some()),
+        ("options", edit.options.is_some()),
+    ] {
+        if set {
+            changed.push(name);
+        }
     }
     WriteSpec {
-        label: format!(
-            "set route {key} = {}/{}",
-            provider.unwrap_or("—"),
-            model.unwrap_or("—")
-        ),
+        label: format!("set route {key} ({})", changed.join(", ")),
         verbs: vec![WriteVerb::Cli(args)],
         expects: vec![Expect::RouteEq {
             key: key.to_string(),
-            provider: provider.map(str::to_string),
-            model: model.map(str::to_string),
+            provider: edit.provider.clone(),
+            model: edit.model.clone(),
+            reasoning: edit.reasoning.clone(),
         }],
+        base_stamp: base,
+        form_id,
+    }
+}
+
+/// Apply the framework's recommended routes (`config apply-recommended`).
+///
+/// The routes screen already says "recommended models: N of 3 present";
+/// this is the verb that makes the ROUTES match the recommendation too.
+/// Deliberately carries NO `Expect`: which rows change is AbstractCore's
+/// decision (a route the operator configured differently is KEPT unless
+/// `force`), so asserting a provider/model here would either duplicate
+/// that decision — a second truth — or fail the write for doing exactly
+/// what it was asked. The fresh re-read every write performs is what
+/// shows the outcome, and the CLI's own report rides the journal.
+pub fn apply_recommended(
+    force: bool,
+    base: Option<crate::config::FileStamp>,
+    form_id: Option<u64>,
+) -> WriteSpec {
+    let mut args = vec![Arg::p("config"), Arg::p("apply-recommended")];
+    if force {
+        args.push(Arg::p("--force"));
+    }
+    WriteSpec {
+        label: if force {
+            "apply recommended routes (replacing yours)".into()
+        } else {
+            "apply recommended routes (keeping yours)".into()
+        },
+        verbs: vec![WriteVerb::Cli(args)],
+        expects: vec![],
         base_stamp: base,
         form_id,
     }
@@ -1289,5 +1375,136 @@ mod tests {
             .any(|x| matches!(x, Expect::Eq { path, .. } if path == &vec!["audio_strategy_explicit".to_string()])));
         let c = clear_global_default(None, None);
         assert_eq!(c.verbs.len(), 2, "RMW fields + CLI route clear");
+    }
+
+    /// THE PARTIAL-UPDATE CONTRACT. `set-default` preserves the fields
+    /// a command does not name, so the editor must name ONLY what the
+    /// operator changed: an untouched field carries no flag (the store
+    /// keeps it — a value another entry point may have set since the
+    /// grid rendered), and an EMPTIED field carries an empty flag (the
+    /// store clears it, instead of silently keeping the old value).
+    #[test]
+    fn set_route_sends_only_the_edited_fields() {
+        let args = |spec: &WriteSpec| -> Vec<String> {
+            match &spec.verbs[0] {
+                WriteVerb::Cli(a) => a.iter().map(|x| x.value().to_string()).collect(),
+                other => panic!("expected a CLI verb, got {other:?}"),
+            }
+        };
+
+        // Only the reasoning moved: no --provider, no --model, no
+        // --base-url, no --option anywhere near the command line.
+        let only_reasoning = set_route(
+            "input.text",
+            &RouteEdit {
+                reasoning: Some("high".into()),
+                ..RouteEdit::default()
+            },
+            None,
+            None,
+        );
+        assert_eq!(
+            args(&only_reasoning),
+            vec![
+                "config",
+                "set-default",
+                "input.text",
+                "--reasoning",
+                "high"
+            ]
+        );
+        assert!(only_reasoning.label.contains("reasoning"), "{}", only_reasoning.label);
+        assert_eq!(
+            only_reasoning.expects,
+            vec![Expect::RouteEq {
+                key: "input.text".into(),
+                provider: None,
+                model: None,
+                reasoning: Some("high".into()),
+            }],
+            "a partial write verifies exactly what it named"
+        );
+
+        // An emptied field is NAMED, empty — the spelling that clears.
+        let cleared = set_route(
+            "output.voice",
+            &RouteEdit {
+                base_url: Some(String::new()),
+                reasoning: Some(String::new()),
+                ..RouteEdit::default()
+            },
+            None,
+            None,
+        );
+        assert_eq!(
+            args(&cleared),
+            vec![
+                "config",
+                "set-default",
+                "output.voice",
+                "--base-url",
+                "",
+                "--reasoning",
+                ""
+            ]
+        );
+
+        // Options: absent = untouched; Some([]) = the one `--option ""`
+        // that clears every option (a blank item folds away Python-side,
+        // yielding `{}`); Some(pairs) = replace.
+        let untouched = set_route("output.voice", &RouteEdit::default(), None, None);
+        assert!(
+            !args(&untouched).contains(&"--option".to_string()),
+            "no --option when the operator never touched the options"
+        );
+        let cleared_opts = set_route(
+            "output.voice",
+            &RouteEdit {
+                options: Some(Vec::new()),
+                ..RouteEdit::default()
+            },
+            None,
+            None,
+        );
+        assert_eq!(
+            args(&cleared_opts),
+            vec!["config", "set-default", "output.voice", "--option", ""]
+        );
+        let replaced = set_route(
+            "output.voice",
+            &RouteEdit {
+                provider: Some("supertonic".into()),
+                options: Some(vec![
+                    ("voice".into(), "M2".into()),
+                    ("speed".into(), "1.2".into()),
+                ]),
+                ..RouteEdit::default()
+            },
+            None,
+            None,
+        );
+        assert_eq!(
+            args(&replaced),
+            vec![
+                "config",
+                "set-default",
+                "output.voice",
+                "--provider",
+                "supertonic",
+                "--option",
+                "voice=M2",
+                "--option",
+                "speed=1.2"
+            ]
+        );
+
+        // Nothing edited is a refusal at the door, not a rewrite of the
+        // row with its own rendered values.
+        assert!(RouteEdit::default().is_empty());
+        assert!(!RouteEdit {
+            model: Some(String::new()),
+            ..RouteEdit::default()
+        }
+        .is_empty());
     }
 }

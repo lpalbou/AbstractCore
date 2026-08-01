@@ -439,6 +439,16 @@ const PROFILE_FIELDS: &[&str] = &[
     "api_key_env_var",
     "allowed_models",
     "enabled",
+    // ONE STORE FOR PROVIDER CONFIG (ruling 2026-08-01,
+    // provider_profiles.py:140-165): `scope` and `capabilities` are
+    // real dataclass fields — the two columns a hosted Gateway needs on
+    // the same row — and Python's own writer stamps them onto EVERY
+    // profile it saves. Missing here, the console cried "Python REFUSES
+    // this file" the instant the operator added their first connection
+    // through it (caught live by the parity pty run). Core reads
+    // neither, so nothing on this screen edits them.
+    "scope",
+    "capabilities",
     "created_at",
     "updated_at",
 ];
@@ -782,6 +792,28 @@ mod tests {
         let r = refusals(&unknown);
         assert_eq!(r.len(), 1, "{r:?}");
         assert!(r[0].contains("unknown field \"future_field\""), "{r:?}");
+
+        // …but the row PYTHON ITSELF WRITES is not a refusal. Every
+        // `config set-provider` stamps `scope` + `capabilities` onto
+        // every profile in the file (ONE STORE FOR PROVIDER CONFIG,
+        // provider_profiles.py:140-165) — reading those as unknown
+        // fields made the console cry "Python REFUSES this file" about
+        // a file Python had just saved, one keystroke after the
+        // operator added their first connection.
+        let written_by_python = json!({"provider_profiles": {"profiles": {
+            "paritytest": {
+                "id": "paritytest", "display_name": "paritytest", "description": "",
+                "provider_family": "openai-compatible",
+                "base_url": "http://127.0.0.1:1234/v1", "api_key": "",
+                "api_key_env_var": "", "allowed_models": [], "enabled": true,
+                "scope": "gateway", "capabilities": ["text"],
+                "created_at": "2026-08-01T19:04:51Z",
+                "updated_at": "2026-08-01T19:04:51Z"}}}});
+        assert!(
+            refusals(&written_by_python).is_empty(),
+            "{:?}",
+            refusals(&written_by_python)
+        );
 
         // Non-dict row; invalid family; non-http base_url; bad env var.
         let bad = json!({"provider_profiles": {"profiles": {

@@ -2,7 +2,7 @@
 name = "abstractcore-console"
 version = "0.1.0"
 edition = "2021"
-# MSRV floor comes from the engine (abstracttui 0.2.22 declares 1.87).
+# MSRV floor comes from the engine (abstracttui 0.3.0 declares 1.87).
 rust-version = "1.87"
 license = "MIT"
 description = "An intuitive terminal console to configure AbstractCore — default models, providers & API keys, capability routes (vision/audio/video/embeddings), server and logging — rendered by AbstractTUI."
@@ -23,7 +23,14 @@ path = "src/main.rs"
 # masked TextInput (API keys), ChoicePrompt (decision gates), Drawer
 # (detail inspector), ThemeSwitcher (0.2.21), Block::on_close (0.2.22),
 # Screenshot (SVG test artifacts).
-abstracttui = "0.2.22"
+# 0.3.0 (2026-07-30): the ONE breaking change is RunConfig gaining
+# `hover_ink` + `platform_clipboard` — exhaustive literals break, spreads
+# do not, and both of ours spread. We opt INTO hover_ink (lib.rs) so the
+# Button/Select/Checkbox hover visuals the engine always drew finally
+# receive motion, and OUT of platform_clipboard in the headless harness
+# (tests must never shell out to pbcopy). 0.2.27 carried the same change
+# as a patch and was YANKED for it — never pin it.
+abstracttui = "0.3.0"
 # JSON: the config file IS JSON, and `abstractcore config ... --json`
 # emits the derived views. Battle-tested parsing; unknown keys must be
 # PRESERVED on rewrite (serde_json::Value round-trip, never a typed

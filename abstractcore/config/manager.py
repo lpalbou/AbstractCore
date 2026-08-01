@@ -4,8 +4,10 @@ AbstractCore Configuration Manager
 Provides centralized configuration management for AbstractCore.
 """
 
+import copy
 import json
 import os
+import uuid
 import importlib.util
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple, Union
@@ -13,10 +15,15 @@ from dataclasses import dataclass, asdict, fields
 from datetime import datetime, timezone
 
 from .capability_defaults import (
+    TEXT_ROUTE_KEY,
+    TEXT_ROUTE_STORAGE_KEY,
     CapabilityDefaultsConfig,
     CapabilityRouteDefault,
     capability_defaults_from_dict,
+    capability_route_broad_key,
     capability_route_key,
+    capability_route_task_keys,
+    capability_route_tasks_cover_broad,
     iter_capability_default_specs,
     split_capability_default_route,
 )
@@ -32,6 +39,67 @@ from .provider_profiles import (
     provider_profiles_from_dict,
     split_api_key_value,
 )
+
+_MISSING = object()
+
+
+def merge_store_documents(
+    baseline: Optional[Dict[str, Any]],
+    mine: Dict[str, Any],
+    disk: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Three-way merge of the config store, key by key, recursing into objects.
+
+    THE RULE: a writer publishes what it CHANGED and preserves everything else.
+    `baseline` is the document the writer last saw on disk, `mine` is what it
+    wants to publish, `disk` is what is there now. Per key:
+
+      - in `mine` only, or changed by me      -> mine wins
+      - unchanged by me, changed on disk      -> DISK wins (another writer)
+      - in `baseline`, absent from `mine`,
+        and unchanged on disk                 -> a DELETE I made; stays deleted
+      - absent from `baseline` and `mine`,
+        present on disk                       -> another writer ADDED it; kept
+
+    Without this, an atomic whole-file publish is a silent revert of every
+    change made since the writer loaded (incident 2026-08-01: a route row that
+    simply was not there any more). Lists are compared and replaced whole --
+    they are values here (allowlists, fallback chains), never mergeable sets.
+    """
+
+    base = baseline if isinstance(baseline, dict) else {}
+    out: Dict[str, Any] = {}
+    # `mine` first so the published key order stays the writer's order; disk-only
+    # keys (another writer's additions) follow.
+    for key in list(mine.keys()) + [k for k in disk.keys() if k not in mine]:
+        b = base.get(key, _MISSING)
+        m = mine.get(key, _MISSING)
+        d = disk.get(key, _MISSING)
+
+        if m is _MISSING:
+            # I do not carry this key. Deliberate delete, or someone else's row?
+            if b is not _MISSING and b == d:
+                continue  # I deleted it and nobody touched it since -> stays gone
+            out[key] = copy.deepcopy(d)
+            continue
+
+        if d is _MISSING:
+            # Gone from disk: either another writer deleted it, or it is new here.
+            if b is not _MISSING and b == m:
+                continue  # I did not change it; honour their delete
+            out[key] = copy.deepcopy(m)
+            continue
+
+        if isinstance(m, dict) and isinstance(d, dict):
+            out[key] = merge_store_documents(b if isinstance(b, dict) else {}, m, d)
+            continue
+
+        if b is not _MISSING and m == b and d != b:
+            out[key] = copy.deepcopy(d)  # only the other writer changed it
+        else:
+            out[key] = copy.deepcopy(m)
+    return out
+
 
 _SERVER_AUTH_TOKEN_ENV_VAR = "ABSTRACTCORE_AUTH_TOKEN"
 _PROVIDER_MODEL_PREFIXES = {
@@ -322,6 +390,53 @@ class AbstractCoreConfig:
         )
 
 
+class CapabilityDefaultWriteError(ValueError):
+    """A capability-default write failed, and the message says why.
+
+    A `ValueError` on purpose: the AbstractCore server and the AbstractGateway
+    seam already map `ValueError` to a 400, so the reason reaches the operator
+    through every entry point without any of them learning a new type.
+    """
+
+
+def _capability_write_error(
+    action: str,
+    kind: Any,
+    modality: Any,
+    task: Any,
+    cause: Exception,
+) -> "CapabilityDefaultWriteError":
+    route = ".".join(str(part) for part in (kind, modality, task) if part)
+    return CapabilityDefaultWriteError(
+        f"Failed to {action} capability default {route or kind!r}: "
+        f"{type(cause).__name__}: {cause}"
+    )
+
+
+def resolve_config_file(
+    config_dir: Optional[Union[str, Path]] = None,
+    config_file: Optional[Union[str, Path]] = None,
+) -> Path:
+    """WHERE the config lives, without opening it.
+
+    Pure and cheap (no I/O beyond `expanduser`): this is the resolution
+    `ConfigurationManager.__init__` performs, extracted so a caller that only
+    needs the PATH does not pay a full load to learn it. `stat`-ing this path
+    is how a host tells whether the store moved under it, and that check runs
+    per run -- building a manager for it re-read and re-parsed the very file
+    the check exists to avoid re-reading (measured 133us vs 1.7us for the stat).
+    """
+
+    if config_file is not None:
+        return Path(config_file).expanduser()
+    env_config_file = os.getenv("ABSTRACTCORE_CONFIG_FILE")
+    if env_config_file:
+        return Path(env_config_file).expanduser()
+    env_config_dir = os.getenv("ABSTRACTCORE_CONFIG_DIR")
+    base = Path(config_dir or env_config_dir or (Path.home() / ".abstractcore" / "config")).expanduser()
+    return base / "abstractcore.json"
+
+
 class ConfigurationManager:
     """Manages AbstractCore configuration."""
 
@@ -335,23 +450,19 @@ class ConfigurationManager:
         # Backward-compatible meta flags (stored at top-level in the JSON file).
         self._audio_strategy_explicit = False
 
-        if config_file is not None:
-            self.config_file = Path(config_file).expanduser()
-            self.config_dir = self.config_file.parent
-        else:
-            env_config_file = os.getenv("ABSTRACTCORE_CONFIG_FILE")
-            env_config_dir = os.getenv("ABSTRACTCORE_CONFIG_DIR")
-            if env_config_file:
-                self.config_file = Path(env_config_file).expanduser()
-                self.config_dir = self.config_file.parent
-            else:
-                self.config_dir = Path(config_dir or env_config_dir or (Path.home() / ".abstractcore" / "config")).expanduser()
-                self.config_file = self.config_dir / "abstractcore.json"
+        self.config_file = resolve_config_file(config_dir, config_file)
+        self.config_dir = self.config_file.parent
         self._apply_env = bool(apply_env)
         # Warn-once memo for shadowed-key warnings (dm#201): initialized BEFORE
         # _load_config/_apply_api_keys_to_env run (init-order rule: config-
         # restored state initializes before the load call that consumes it).
         self._shadowed_key_warned: set = set()
+        # THE STORE AS THIS MANAGER LAST SAW IT (see `_save_config`): the raw
+        # document at load time, then the document each save publishes. It is
+        # the BASELINE of the three-way merge that keeps a save from reverting
+        # another writer's rows. `{}` means "no trustworthy baseline" (fresh
+        # install or unreadable file) and the merge degrades to a whole publish.
+        self._store_baseline: Dict[str, Any] = self._read_store_document() or {}
         self.config = self._load_config()
         self._apply_smart_defaults()
         if self._apply_env:
@@ -492,6 +603,52 @@ class ConfigurationManager:
             # Never fail config initialization.
             pass
 
+    def _read_store_document(self) -> Optional[Dict[str, Any]]:
+        """The store EXACTLY as it is on disk right now, or `None`.
+
+        `None` means "there is nothing trustworthy to merge against" -- the file
+        is absent, unreadable, or not a JSON object -- and the caller then
+        publishes its own document wholesale, which is the pre-merge behaviour.
+        """
+        try:
+            if not self.config_file.exists():
+                return None
+            with open(self.config_file, "r") as handle:
+                data = json.load(handle)
+            return data if isinstance(data, dict) else None
+        except Exception:
+            return None
+
+    def _adopt_baseline_for_delete(self, *path: str) -> None:
+        """Make an EXPLICIT delete of `path` survive the save-time merge.
+
+        The merge reads "absent from mine, present on disk, absent from my
+        baseline" as ANOTHER writer's row and keeps it -- which is right for a
+        key this manager never knew about, and wrong for a key an operator just
+        asked it to delete. `clear-default`/`delete-provider` say the key must
+        go even if it appeared after this manager loaded, so the on-disk value
+        is copied into the baseline first: the merge then sees a row this
+        manager was carrying and dropped, which is exactly a delete.
+        """
+        if not path:
+            return
+        disk = self._read_store_document()
+        if disk is None:
+            return
+        node: Any = disk
+        for part in path:
+            if not isinstance(node, dict) or part not in node:
+                return
+            node = node[part]
+        target = self._store_baseline
+        for part in path[:-1]:
+            child = target.get(part)
+            if not isinstance(child, dict):
+                child = {}
+                target[part] = child
+            target = child
+        target[path[-1]] = copy.deepcopy(node)
+
     def _load_config(self) -> AbstractCoreConfig:
         """Load configuration from file or create default.
 
@@ -524,10 +681,24 @@ class ConfigurationManager:
                 # Never silently destroy a config we could not parse: preserve
                 # it so the operator can recover the lost settings, and make the
                 # degradation loud instead of a silent defaults regeneration.
+                # Deliberately NO recommended-defaults seed on this branch: the
+                # operator's settings are recoverable from the backup and must
+                # not be shadowed by recommendations in the meantime.
                 self._backup_unreadable_config(e)
                 return AbstractCoreConfig.default()
         else:
-            return AbstractCoreConfig.default()
+            # FRESH INSTALL (no config file has ever existed here): seed the
+            # framework's recommended defaults so a new install works out of
+            # the box (operator ruling 2026-08-01: text qwen3.5-9b, voice
+            # supertonic, image flux.2-klein-4b). Ordinary rows once written —
+            # visible in every grid, overridable from either entry point,
+            # always beaten by request pins. The `seeded` marker records the
+            # provenance; file existence (not the marker) gates re-seeding.
+            config = AbstractCoreConfig.default()
+            from .capability_defaults import seed_recommended_capability_defaults
+
+            seed_recommended_capability_defaults(config.capability_defaults)
+            return config
 
     def _backup_unreadable_config(self, error: Exception) -> None:
         """Copy an unparseable config aside (timestamped) and warn loudly.
@@ -607,7 +778,48 @@ class ConfigurationManager:
         )
 
     def _save_config(self):
-        """Save configuration to file."""
+        """Save configuration to file.
+
+        ONE STORE, MANY WRITERS. `abstractcore config`, the AbstractCore
+        console-TUI, the AbstractCore server's PUT and the Gateway seam all
+        write THIS file, and nothing serializes them. Publishing is atomic
+        (write a temp file, `os.replace` it over the target), but the temp file
+        MUST be unique per writer.
+
+        A shared `abstractcore.json.tmp` corrupted the live config (reproduced
+        2026-08-01, 8 concurrent writers: 41 of 1200 concurrent reads saw a
+        truncated or interleaved file). The sequence: writer B truncates the
+        shared temp while writer A is mid-`json.dump` into the same inode; A
+        renames that inode over the config; B's still-open fd then keeps
+        writing INTO THE LIVE CONFIG FILE. The next process to start reads a
+        broken store, backs it up and falls back to defaults -- the operator's
+        settings appear to vanish. A unique temp name makes every writer's
+        bytes private until its own atomic publish, which is exactly
+        last-writer-wins with no torn state.
+
+        LAST-WRITER-WINS PER FIELD, NOT PER FILE (incident 2026-08-01, the
+        operator's `output.image: mflux/flux2-klein-9b` row). Atomicity alone
+        made the file always parseable and always WRONG in the same way: this
+        method serialises the WHOLE in-memory config, so a manager that loaded
+        the store at T0 and saved one unrelated field at T2 republished its T0
+        snapshot over everything written in between. A long-lived process (a
+        server, a console session, an entity loop) holds such a snapshot for
+        hours; a single `set_default_timeout()` from it silently deleted a
+        capability route another writer had added. Nothing warned, nothing
+        failed, and the row simply was not there any more.
+
+        So a save now publishes a THREE-WAY MERGE of (baseline, mine, disk):
+        the baseline is the document this manager last saw on disk, `mine` is
+        what it is about to write, `disk` is what is there right now. A field
+        this manager changed wins; a field it did NOT change keeps whatever is
+        on disk; a key it deliberately dropped (`clear-default`,
+        `delete-provider`) stays dropped, because "absent from mine but present
+        in the baseline unchanged" is a DELETE, not an omission. That is the
+        per-field preservation `update_capability_default` gives one route,
+        applied to the whole document -- every writer preserves what it does
+        not manage. With no concurrent writer, `disk == baseline` and the merge
+        is exactly `mine`, so the happy path is byte-identical to before.
+        """
         self.config_dir.mkdir(parents=True, exist_ok=True)
 
         # Convert config to dictionary
@@ -633,15 +845,45 @@ class ConfigurationManager:
             'email': asdict(self.config.email),
         }
 
-        tmp = self.config_file.with_suffix(self.config_file.suffix + ".tmp")
-        with open(tmp, 'w') as f:
-            json.dump(config_dict, f, indent=2)
-            f.write("\n")
+        # The merge is a no-op when nothing else wrote since this manager
+        # loaded; `_read_store_document()` returning None (absent/unreadable/
+        # not an object) means there is nothing to merge against.
+        disk = self._read_store_document()
+        published = (
+            config_dict
+            if disk is None
+            else merge_store_documents(self._store_baseline, config_dict, disk)
+        )
+
+        # Unique per writer (pid + a random token): same directory, so the
+        # publish stays a same-filesystem `rename`, which is atomic.
+        tmp = self.config_file.with_suffix(
+            self.config_file.suffix + f".{os.getpid()}-{uuid.uuid4().hex[:8]}.tmp"
+        )
         try:
-            os.chmod(tmp, 0o600)
-        except Exception:
-            pass
-        tmp.replace(self.config_file)
+            with open(tmp, 'w') as f:
+                json.dump(published, f, indent=2)
+                f.write("\n")
+                f.flush()
+                os.fsync(f.fileno())
+            try:
+                os.chmod(tmp, 0o600)
+            except Exception:
+                pass
+            tmp.replace(self.config_file)
+        except BaseException:
+            # A failed save must not leave debris beside the store; the
+            # config itself is untouched because nothing was published.
+            try:
+                tmp.unlink()
+            except Exception:
+                pass
+            raise
+        # The NEW baseline is what this manager INTENDED to write, not the
+        # merged document: rows another writer contributed must stay "not
+        # mine", or the next save would read their absence from `mine` as a
+        # delete and revert them after all.
+        self._store_baseline = copy.deepcopy(config_dict)
         try:
             os.chmod(self.config_file, 0o600)
         except Exception:
@@ -827,6 +1069,7 @@ class ConfigurationManager:
 
     def get_status(self) -> Dict[str, Any]:
         """Get configuration status."""
+        text_route = self.stored_capability_default("input", "text")
         embedding_route = self.get_capability_default("embedding", "text")
         embedding_route_configured = bool(
             embedding_route.get("provider")
@@ -890,11 +1133,22 @@ class ConfigurationManager:
                     "model": self.config.app_defaults.intent_model
                 }
             },
+            # The text capability route is the store for the global default, so
+            # status reports the route. `default_models.global_*` is the legacy
+            # spelling the `--set-default-model` flag also writes; reporting it
+            # directly would name a stale model any time the route was set by
+            # `config set-default` or from the Gateway.
             "global_defaults": {
-                "provider": self.config.default_models.global_provider,
-                "model": self.config.default_models.global_model,
+                "provider": text_route.get("provider") or self.config.default_models.global_provider,
+                "model": text_route.get("model") or self.config.default_models.global_model,
+                "reasoning": text_route.get("reasoning"),
+                "source": "abstractcore.capability_defaults" if text_route else "abstractcore.default_models",
                 "chat_model": self.config.default_models.chat_model,
-                "code_model": self.config.default_models.code_model
+                "code_model": self.config.default_models.code_model,
+                "legacy": {
+                    "provider": self.config.default_models.global_provider,
+                    "model": self.config.default_models.global_model,
+                },
             },
             "capability_defaults": self.list_capability_defaults(),
             "provider_profiles": self.list_provider_profiles(),
@@ -1057,8 +1311,18 @@ class ConfigurationManager:
         clear_api_key: bool = False,
         allowed_models: Optional[list[str]] = None,
         enabled: Optional[bool] = None,
+        scope: Optional[str] = None,
+        capabilities: Optional[list[str]] = None,
+        created_at: Optional[str] = None,
     ) -> ProviderProfile:
-        """Create or update a local provider endpoint profile."""
+        """Create or update a provider endpoint profile.
+
+        `scope` and `capabilities` are the hosting columns a Gateway console
+        sets on the same row (operator ruling 2026-08-01: a profile created
+        from EITHER console is one profile, in this store). `created_at` exists
+        for a migration importing a row that already has a history; ordinary
+        callers leave it alone.
+        """
         pid = normalize_profile_id(profile_id)
         existing = self.config.provider_profiles.profiles.get(pid.lower())
         now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
@@ -1085,7 +1349,9 @@ class ConfigurationManager:
             ),
             allowed_models=allowed_models if allowed_models is not None else (existing.allowed_models if existing else []),
             enabled=bool(enabled) if enabled is not None else (existing.enabled if existing else True),
-            created_at=existing.created_at if existing else now,
+            scope=scope if scope is not None else (existing.scope if existing else "gateway"),
+            capabilities=capabilities if capabilities is not None else (list(existing.capabilities) if existing else None),
+            created_at=(existing.created_at if existing else (created_at or now)),
             updated_at=now,
         )
 
@@ -1104,6 +1370,7 @@ class ConfigurationManager:
         removed = self.config.provider_profiles.profiles.pop(pid.lower(), None)
         if removed is None:
             return False
+        self._adopt_baseline_for_delete("provider_profiles", "profiles", pid.lower())
         self._save_config()
         return True
 
@@ -1115,16 +1382,12 @@ class ConfigurationManager:
     ) -> Dict[str, Any]:
         """Return the effective default route for a capability."""
         try:
-            if modality is None:
-                kind, modality, task = split_capability_default_route(kind)
-            else:
-                kind, modality, task = split_capability_default_route(kind, modality, task)
-            key = capability_route_key(kind, modality, task)
+            key = capability_route_key(*self._route_parts(kind, modality, task))
         except Exception:
             return {}
 
-        if key == capability_route_key("output", "text"):
-            route = self.config.capability_defaults.routes.get(capability_route_key("input", "text"))
+        if key == TEXT_ROUTE_KEY:
+            route = self.config.capability_defaults.routes.get(TEXT_ROUTE_STORAGE_KEY)
             if route and route.configured():
                 out = route.to_dict()
                 out.update(
@@ -1163,13 +1426,71 @@ class ConfigurationManager:
             out = self._decorate_music_input_default(out)
         return out
 
+    def apply_recommended_capability_defaults(
+        self,
+        *,
+        only: Optional[list] = None,
+        force: bool = False,
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """Bring THIS store's routes to the framework recommendation.
+
+        The fresh-install seed never touches an existing store, which is right
+        for safety and left "make my machine match the recommendation" with no
+        product answer at all (operator report 2026-08-01: "I asked for
+        qwen3.5-9b everywhere, I see qwen3-0.6b"). This is that answer, and it
+        is the same action at every surface -- CLI, Gateway endpoint, both
+        console-TUIs -- because it is implemented once, here.
+
+        A route the operator configured DIFFERENTLY is kept and reported, never
+        silently replaced; `force` is the explicit "yes, overrule me". Extra
+        fields on the row (a pinned `base_url`, a reasoning effort, plugin
+        options) are preserved in every case: they describe this machine, not
+        the recommendation. `dry_run` plans and writes nothing.
+        """
+
+        from .capability_defaults import plan_recommended_capability_defaults
+
+        plan = plan_recommended_capability_defaults(
+            self.config.capability_defaults.routes, only=only, force=force
+        )
+        applied: list = []
+        for row in plan:
+            if row["changed"] and not dry_run:
+                self.update_capability_default(
+                    row["key"],
+                    provider=row["recommended"].get("provider"),
+                    model=row["recommended"].get("model"),
+                )
+            applied.append(dict(row))
+        return {
+            "ok": True,
+            "dry_run": bool(dry_run),
+            "force": bool(force),
+            "config_file": str(self.config_file),
+            "changed": sum(1 for row in applied if row["changed"]),
+            "kept": sum(1 for row in applied if row["action"] == "kept"),
+            "already": sum(1 for row in applied if row["action"] == "already"),
+            "routes": applied,
+        }
+
     def list_capability_defaults(self) -> list[Dict[str, Any]]:
         """Return all known capability routes with explicit persisted defaults."""
         rows: list[Dict[str, Any]] = []
         for spec in iter_capability_default_specs():
             route = self.get_capability_default(spec.key)
             row = {**spec.to_dict(), **route}
-            row["configured"] = bool(route.get("provider") or route.get("model") or route.get("base_url") or route.get("options"))
+            # `configured` mirrors `CapabilityRouteDefault.configured()` field for
+            # field, reasoning included: a route that carries only a reasoning
+            # default is a configured route, and a row that claimed otherwise
+            # would hide the operator's setting from every reader of this grid.
+            row["configured"] = bool(
+                route.get("provider")
+                or route.get("model")
+                or route.get("base_url")
+                or route.get("reasoning")
+                or route.get("options")
+            )
             if spec.key == capability_route_key("input", "image"):
                 row = self._decorate_image_input_default(row)
             elif spec.key == capability_route_key("input", "video") and not row["configured"]:
@@ -1179,6 +1500,52 @@ class ConfigurationManager:
             elif spec.key == capability_route_key("input", "music") and not row["configured"]:
                 row = self._decorate_music_input_default(row)
             rows.append(row)
+        return self._decorate_route_hierarchy(rows)
+
+    @staticmethod
+    def _decorate_route_hierarchy(rows: list[Dict[str, Any]]) -> list[Dict[str, Any]]:
+        """Stamp the parent/child facts every surface needs onto the grid.
+
+        ONE DERIVATION, FOUR GRIDS. `output.image` is the PARENT of
+        `output.image.*` -- the value that answers every image task without a row
+        of its own -- and all four surfaces (web console, both console-TUIs, the
+        CLI) used to draw it as a flat sibling ABOVE its own children with a red
+        "not configured", which is what made an operator ask whether the row was
+        dead code. Deriving it here means no surface re-derives it and they
+        cannot drift.
+
+        Fields added:
+          `broad_key`      on a task row: the modality cell it falls back to
+          `task_keys`      on a modality cell: the task rows that override it
+          `covered_by_tasks`  on an UNSET modality cell whose task rows are all
+                           configured -- the state is then benign ("not needed"),
+                           because nothing can reach the parent. Deliberately NOT
+                           `covered_by`, which drives read-only/editability: this
+                           row stays editable, since setting it is the simple
+                           path for an operator who wants one image model.
+          `inherits_broad` on an UNSET task row whose parent IS configured -- the
+                           MIRROR of the same confusion, and the shape a fresh
+                           install has: the seed writes `output.image` alone, so
+                           three red "not configured" task rows sat under a
+                           working parent and read as "image editing is not set
+                           up" when the parent answers every one of them.
+        """
+
+        by_key = {str(row.get("key") or ""): row for row in rows}
+        for row in rows:
+            key = str(row.get("key") or "")
+            broad_key = capability_route_broad_key(key)
+            if broad_key:
+                row["broad_key"] = broad_key
+                if not row.get("configured") and by_key.get(broad_key, {}).get("configured"):
+                    row["inherits_broad"] = True
+                continue
+            task_keys = capability_route_task_keys(key)
+            if not task_keys:
+                continue
+            row["task_keys"] = list(task_keys)
+            if not row.get("configured") and capability_route_tasks_cover_broad(key, by_key):
+                row["covered_by_tasks"] = True
         return rows
 
     def _decorate_image_input_default(self, row: Dict[str, Any]) -> Dict[str, Any]:
@@ -1208,7 +1575,7 @@ class ConfigurationManager:
         overrideable: bool = False,
         read_only: bool = True,
     ) -> Dict[str, Any]:
-        text_route = self.config.capability_defaults.routes.get(capability_route_key("input", "text"))
+        text_route = self.config.capability_defaults.routes.get(TEXT_ROUTE_STORAGE_KEY)
         if not text_route or not text_route.provider or not text_route.model:
             return row
         if not self._model_supports_input(text_route.model, modality):
@@ -1263,6 +1630,94 @@ class ConfigurationManager:
         except Exception:
             return False
 
+    @staticmethod
+    def _route_parts(kind: str, modality: Optional[str], task: Optional[str]) -> Tuple[str, str, Optional[str]]:
+        """Normalize a route named either as `"output.text"` or as `(kind, modality)`."""
+        if modality is None:
+            return split_capability_default_route(kind)
+        return split_capability_default_route(kind, modality, task)
+
+    def storage_capability_route_key(self, kind: str, modality: Optional[str] = None, task: Optional[str] = None) -> str:
+        """The key a capability route is STORED under.
+
+        `output.text` is the name callers use; AbstractCore canonicalizes it to
+        the storage key `input.text`, and every writer must agree on that or two
+        rows describe one route. THE ONE implementation of that rule: the
+        set/clear paths resolve their key through here rather than repeating it.
+        """
+        kind, modality, task = self._route_parts(kind, modality, task)
+        key = capability_route_key(kind, modality, task)
+        return TEXT_ROUTE_STORAGE_KEY if key == TEXT_ROUTE_KEY else key
+
+    def stored_capability_default(
+        self,
+        kind: str,
+        modality: Optional[str] = None,
+        task: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """The route row exactly as it is PERSISTED, or `{}`.
+
+        Unlike `get_capability_default`, this never returns a row derived from
+        another route (`input.image` covered by `input.text`, say). A partial
+        update must merge over what is stored, or it would persist a derivation
+        as if an operator had asked for it.
+        """
+        try:
+            key = self.storage_capability_route_key(kind, modality, task)
+        except Exception:
+            return {}
+        route = self.config.capability_defaults.routes.get(key)
+        if route is None or not route.configured():
+            return {}
+        return route.to_dict()
+
+    def update_capability_default(
+        self,
+        kind: str,
+        modality: Optional[str] = None,
+        *,
+        provider: Optional[str] = None,
+        model: Optional[str] = None,
+        base_url: Optional[str] = None,
+        reasoning: Optional[str] = None,
+        options: Optional[Dict[str, Any]] = None,
+        task: Optional[str] = None,
+    ) -> bool:
+        """Persist a capability default route, PRESERVING the fields not named.
+
+        A route is stored as a whole row, so a writer that named only `provider`
+        and `model` would clear every other field of that row. AbstractCore has
+        more than one writer -- the `abstractcore config` CLI, the AbstractCore
+        server's config routes, and AbstractGateway through them -- and if they
+        do not share this rule they silently overwrite each other's settings.
+
+        Pass a field to change it; pass `""` to clear it; leave it `None` and it
+        keeps whatever is stored. `clear_capability_default` drops the whole row.
+        """
+        stored = self.stored_capability_default(kind, modality, task)
+        if not stored:
+            return self.set_capability_default(
+                kind,
+                modality,
+                provider=provider,
+                model=model,
+                base_url=base_url,
+                reasoning=reasoning,
+                options=options,
+                task=task,
+            )
+        merged_options = options if isinstance(options, dict) else stored.get("options")
+        return self.set_capability_default(
+            kind,
+            modality,
+            provider=stored.get("provider") if provider is None else provider,
+            model=stored.get("model") if model is None else model,
+            base_url=stored.get("base_url") if base_url is None else base_url,
+            reasoning=stored.get("reasoning") if reasoning is None else reasoning,
+            options=dict(merged_options) if isinstance(merged_options, dict) else {},
+            task=task,
+        )
+
     def set_capability_default(
         self,
         kind: str,
@@ -1275,15 +1730,24 @@ class ConfigurationManager:
         options: Optional[Dict[str, Any]] = None,
         task: Optional[str] = None,
     ) -> bool:
-        """Persist a capability default route."""
+        """Persist a capability default route as a WHOLE ROW.
+
+        Every field the caller leaves `None` is cleared. Use
+        `update_capability_default` for a partial write that keeps the fields it
+        does not name.
+
+        A FAILURE CARRIES ITS REASON. This used to swallow every exception into
+        a bare `False`, and every surface above it then printed a reason-free
+        "Failed to set capability default <route>": the CLI, the Gateway's HTTP
+        400, both TUIs. A write that fails once and cannot be reproduced is
+        undiagnosable that way (reported 2026-08-01). Now it raises
+        `CapabilityDefaultWriteError` naming the route, with the original
+        exception as `__cause__`; the boolean return is kept for callers that
+        test it and is only ever `True`.
+        """
         try:
-            if modality is None:
-                kind, modality, task = split_capability_default_route(kind)
-            else:
-                kind, modality, task = split_capability_default_route(kind, modality, task)
-            key = capability_route_key(kind, modality, task)
-            if key == capability_route_key("output", "text"):
-                key = capability_route_key("input", "text")
+            kind, modality, task = self._route_parts(kind, modality, task)
+            key = self.storage_capability_route_key(kind, modality, task)
             route = CapabilityRouteDefault(
                 provider=str(provider).strip() if isinstance(provider, str) and provider.strip() else None,
                 model=str(model).strip() if isinstance(model, str) and model.strip() else None,
@@ -1293,45 +1757,65 @@ class ConfigurationManager:
             )
             if route.configured():
                 self.config.capability_defaults.routes[key] = route
-                if key == capability_route_key("input", "text"):
-                    self.config.capability_defaults.routes.pop(capability_route_key("output", "text"), None)
+                if key == TEXT_ROUTE_STORAGE_KEY:
+                    self.config.capability_defaults.routes.pop(TEXT_ROUTE_KEY, None)
             else:
                 self.config.capability_defaults.routes.pop(key, None)
+                self._adopt_baseline_for_delete("capability_defaults", "routes", key)
+            self._sync_embeddings_from_capability_default(key)
             self._save_config()
             return True
-        except Exception:
-            return False
+        except CapabilityDefaultWriteError:
+            raise
+        except Exception as exc:
+            raise _capability_write_error("set", kind, modality, task, exc) from exc
 
     def clear_capability_default(self, kind: str, modality: Optional[str] = None, task: Optional[str] = None) -> bool:
-        """Clear one persisted capability default route."""
+        """Clear one persisted capability default route.
+
+        Raises `CapabilityDefaultWriteError` on failure -- same reason as
+        `set_capability_default`: a reason-free `False` is undiagnosable at
+        every surface above it.
+        """
         try:
-            if modality is None:
-                kind, modality, task = split_capability_default_route(kind)
-            else:
-                kind, modality, task = split_capability_default_route(kind, modality, task)
-            key = capability_route_key(kind, modality, task)
-            if key == capability_route_key("output", "text"):
-                key = capability_route_key("input", "text")
+            kind, modality, task = self._route_parts(kind, modality, task)
+            key = self.storage_capability_route_key(kind, modality, task)
             self.config.capability_defaults.routes.pop(key, None)
-            if key == capability_route_key("input", "text"):
-                self.config.capability_defaults.routes.pop(capability_route_key("output", "text"), None)
+            self._adopt_baseline_for_delete("capability_defaults", "routes", key)
+            if key == TEXT_ROUTE_STORAGE_KEY:
+                self.config.capability_defaults.routes.pop(TEXT_ROUTE_KEY, None)
+                self._adopt_baseline_for_delete("capability_defaults", "routes", TEXT_ROUTE_KEY)
+            self._sync_embeddings_from_capability_default(key)
             self._save_config()
             return True
-        except Exception:
-            return False
+        except CapabilityDefaultWriteError:
+            raise
+        except Exception as exc:
+            raise _capability_write_error("clear", kind, modality, task, exc) from exc
 
     def set_global_default_model(self, provider_model: str) -> bool:
-        """Set global default model in provider/model format."""
+        """Set the global default model, in provider/model format.
+
+        This is the legacy spelling of "set the text-generation route". The
+        capability route is the store, so the write goes there and keeps the
+        rest of that row: naming a model must not discard the reasoning effort,
+        base URL or options the route already carries.
+        """
         try:
             provider, model = _split_provider_model(provider_model, default_provider="ollama")
 
             self.config.default_models.global_provider = provider
             self.config.default_models.global_model = model
-            self.config.capability_defaults.routes[capability_route_key("input", "text")] = CapabilityRouteDefault(
+            key = TEXT_ROUTE_STORAGE_KEY
+            stored = self.config.capability_defaults.routes.get(key)
+            self.config.capability_defaults.routes[key] = CapabilityRouteDefault(
                 provider=provider,
                 model=model,
+                base_url=stored.base_url if stored else None,
+                reasoning=stored.reasoning if stored else None,
+                options=dict(stored.options) if stored and stored.options else {},
             )
-            self.config.capability_defaults.routes.pop(capability_route_key("output", "text"), None)
+            self.config.capability_defaults.routes.pop(TEXT_ROUTE_KEY, None)
             self._save_config()
             return True
         except Exception:
@@ -1419,16 +1903,47 @@ class ConfigurationManager:
             return False
 
     def _sync_embedding_capability_default(self) -> None:
+        """Mirror `embeddings` onto the `embedding.text` capability route.
+
+        The legacy `embeddings` section names a provider, a model and a base
+        URL. The route it mirrors onto can carry more than that, so the mirror
+        keeps the fields it has nothing to say about: setting an embeddings
+        model must not drop plugin options set on the same route.
+        """
+        key = capability_route_key("embedding", "text")
+        stored = self.config.capability_defaults.routes.get(key)
         route = CapabilityRouteDefault(
             provider=self.config.embeddings.provider,
             model=self.config.embeddings.model,
             base_url=self.config.embeddings.base_url,
+            reasoning=stored.reasoning if stored else None,
+            options=dict(stored.options) if stored and stored.options else {},
         )
-        key = capability_route_key("embedding", "text")
         if route.configured():
             self.config.capability_defaults.routes[key] = route
         else:
             self.config.capability_defaults.routes.pop(key, None)
+
+    def _sync_embeddings_from_capability_default(self, key: str) -> None:
+        """Mirror the `embedding.text` capability route back onto `embeddings`.
+
+        The capability route is the store the whole framework routes on, and the
+        `embeddings` section is the shape the embeddings commands and
+        `--show-config` read. The mirror runs in both directions so the two
+        never report different answers for the same question, whichever entry
+        point wrote last.
+        """
+        if key != capability_route_key("embedding", "text"):
+            return
+        route = self.config.capability_defaults.routes.get(key)
+        if route is None:
+            self.config.embeddings.provider = None
+            self.config.embeddings.model = None
+            self.config.embeddings.base_url = None
+            return
+        self.config.embeddings.provider = route.provider
+        self.config.embeddings.model = route.model
+        self.config.embeddings.base_url = route.base_url
 
     def set_default_cache_dir(self, path: str) -> bool:
         """Set default cache directory for AbstractCore."""

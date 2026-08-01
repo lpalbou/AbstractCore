@@ -43,6 +43,11 @@ class RetryableErrorType(Enum):
     NETWORK = "network"
     API_ERROR = "api_error"
     VALIDATION_ERROR = "validation_error"
+    # operator 2026-08-01: an HTTP-200 completion with no content, no tool
+    # calls and no reasoning (EmptyCompletionError, raised by the provider
+    # base) — a transient dressed as success. Its own class because it earns
+    # FULL retries, not API_ERROR's single resample.
+    EMPTY_COMPLETION = "empty_completion"
     UNKNOWN = "unknown"
 
 
@@ -224,6 +229,7 @@ class RetryManager:
         self.retryable_errors = {
             "RateLimitError",
             "ProviderAPIError",
+            "EmptyCompletionError",
             "TimeoutError",
             "ConnectionError",
             "HTTPError",
@@ -262,6 +268,12 @@ class RetryManager:
         if error_type_name in self.non_retryable_errors:
             return RetryableErrorType.UNKNOWN  # Will not be retried
 
+        # operator 2026-08-01: the empty-completion class is typed at the
+        # raise site (provider base), so classify by NAME before any message
+        # prose — its text deliberately contains none of the keywords below.
+        if error_type_name == "EmptyCompletionError":
+            return RetryableErrorType.EMPTY_COMPLETION
+
         if "rate limit" in error_str or "429" in error_str or error_type_name == "RateLimitError":
             return RetryableErrorType.RATE_LIMIT
         elif "timeout" in error_str or "timed out" in error_str:
@@ -293,7 +305,8 @@ class RetryManager:
         if attempt >= self.config.max_attempts:
             return False
 
-        if error_type in [RetryableErrorType.RATE_LIMIT, RetryableErrorType.TIMEOUT, RetryableErrorType.NETWORK]:
+        if error_type in [RetryableErrorType.RATE_LIMIT, RetryableErrorType.TIMEOUT,
+                          RetryableErrorType.NETWORK, RetryableErrorType.EMPTY_COMPLETION]:
             return True
         elif error_type == RetryableErrorType.VALIDATION_ERROR:
             return True  # Retry validation errors up to max_attempts
@@ -345,6 +358,10 @@ class RetryManager:
             raise ProviderAPIError(f"Max attempts is {self.config.max_attempts}, cannot execute")
 
         sequence_started = time.monotonic()
+        # Attempts that actually reached the provider (budget/cancel breaks
+        # happen BEFORE a call, so the loop variable alone over-counts by one
+        # on those exits) — the exhaustion label below must not inflate.
+        executed_attempts = 0
 
         for attempt in range(1, self.config.max_attempts + 1):
             # Wall-clock budget (0817-adjacent, 2026-07-21 wedge incident):
@@ -385,6 +402,7 @@ class RetryManager:
                 )
             try:
                 # Execute function
+                executed_attempts += 1
                 result = func(*args, **kwargs)
 
                 # Record success in circuit breaker
@@ -482,7 +500,26 @@ class RetryManager:
                         last_error=e,
                     )
 
-        # All retries exhausted, raise the last error
+        # All retries exhausted, raise the last error.
+        # operator 2026-08-01: an exhausted empty-completion sequence must say
+        # how hard it tried — "returned an empty completion" with no attempt
+        # count reads like a single mystery failure, and the whole point of
+        # this class is an honest label instead of a silent "". Type and the
+        # status/retry-after fields are preserved (status-code-first
+        # classifiers, e.g. the runtime's _llm_error_is_retryable, must keep
+        # seeing the same class); only the label grows.
+        if type(last_error).__name__ == "EmptyCompletionError":
+            try:
+                relabeled = type(last_error)(
+                    f"{last_error} [empty completion persisted across "
+                    f"{executed_attempts} attempt{'s' if executed_attempts != 1 else ''}]",
+                    status_code=getattr(last_error, "status_code", None),
+                    retry_after_s=getattr(last_error, "retry_after_s", None),
+                )
+            except Exception:  # pragma: no cover - labeling must never mask the error
+                relabeled = None
+            if relabeled is not None:
+                raise relabeled from last_error
         raise last_error
 
     @staticmethod

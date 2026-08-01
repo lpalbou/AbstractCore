@@ -62,10 +62,16 @@ pub fn filter_for(class: ModelClass, models: &[String]) -> (Vec<String>, usize) 
     }
 }
 
-/// The class a capability-route picker filters for, from the route's
-/// modality (defaults --json rows carry it).
-pub fn class_for_modality(modality: &str) -> ModelClass {
-    if modality.eq_ignore_ascii_case("embedding") {
+/// The class a capability-route picker filters for.
+///
+/// The embedding routes are `embedding.text` / `embedding.image`: the
+/// word "embedding" is the row's KIND, and its MODALITY is the thing
+/// being embedded ("text", "image"). Reading the modality here — as
+/// this did until 2026-08-01 — classified `embedding.text` as
+/// Generative, so the one picker whose filter earns its keep offered
+/// chat models for an embeddings route.
+pub fn class_for_route(kind: &str, _modality: &str) -> ModelClass {
+    if kind.eq_ignore_ascii_case("embedding") {
         ModelClass::Embedding
     } else {
         ModelClass::Generative
@@ -133,10 +139,15 @@ mod tests {
         assert_eq!(hidden, 0);
     }
 
+    /// Pinned against the LIVE row shapes: `embedding.text` arrives as
+    /// kind "embedding" / modality "text", so a modality-only read
+    /// mis-classifies the exact route the filter exists for.
     #[test]
-    fn modality_mapping() {
-        assert_eq!(class_for_modality("embedding"), ModelClass::Embedding);
-        assert_eq!(class_for_modality("text"), ModelClass::Generative);
-        assert_eq!(class_for_modality("voice"), ModelClass::Generative);
+    fn route_class_reads_the_kind_not_the_modality() {
+        assert_eq!(class_for_route("embedding", "text"), ModelClass::Embedding);
+        assert_eq!(class_for_route("embedding", "image"), ModelClass::Embedding);
+        assert_eq!(class_for_route("input", "text"), ModelClass::Generative);
+        assert_eq!(class_for_route("output", "voice"), ModelClass::Generative);
+        assert_eq!(class_for_route("rerank", "text"), ModelClass::Generative);
     }
 }
