@@ -856,14 +856,33 @@ _EMIT_KIND_ORDER: Tuple[str, ...] = (
 )
 
 
-def _emit_section(out: List[str], label: str, entries: List[str]) -> None:
+def _emit_section(
+    out: List[str], label: str, entries: List[str], *, total: Optional[int] = None
+) -> None:
+    """Print up to MAX_SECTION_ENTRIES, and report the REAL remainder.
+
+    `total` is the true number of matches found, which may exceed `len(entries)`
+    when the caller capped what it collected. Without it this function reports
+    `len(entries) - MAX_SECTION_ENTRIES`, which is only correct for callers that
+    collect everything.
+
+    THE BUG THIS FIXES. The TODO collector capped at MAX_SECTION_ENTRIES + 10, so
+    the remainder computed here was ALWAYS exactly 10 — for 61 matches and for
+    5000 alike. A file with 500 TODOs reported "todo_markers=60" and "(10 more)",
+    hiding 440 and stating two false numbers. Worse than a silent cap: the model
+    was handed a bounded, closed problem ("10 missing, go fetch them") and had no
+    reason to re-query, so any judgement about the file was off by an order of
+    magnitude. Every other section here collects in full and was always honest;
+    this function was correct and was being fed a pre-truncated list.
+    """
     out.append(f"{label}:" if entries else f"{label}: []")
     out.extend(entries[:MAX_SECTION_ENTRIES])
-    if len(entries) > MAX_SECTION_ENTRIES:
+    real_total = len(entries) if total is None else int(total)
+    if real_total > MAX_SECTION_ENTRIES:
         # Recovery path, not just honesty: the agent can still reach entries
         # beyond the cap (reviewer B, P2-4).
         out.append(
-            f"  - ... ({len(entries) - MAX_SECTION_ENTRIES} more) #TRUNCATION — use search_files('<name>') for entries beyond the cap"
+            f"  - ... ({real_total - MAX_SECTION_ENTRIES} more) #TRUNCATION — use search_files('<name>') for entries beyond the cap"
         )
 
 
@@ -909,6 +928,9 @@ def analyze_with_spec(
     imports: List[str] = []
     sections: Dict[str, List[str]] = {}
     todos: List[str] = []
+    # Every TODO seen, not just the ones kept for printing. The section cap is a
+    # display limit; it must never become the reported count.
+    todo_total = 0
     todo_re = re.compile(r"\b(TODO|FIXME|XXX|HACK)\b[:\s]?(.{0,80})")
 
     # Cross-line skip state (reviewer A: heredoc bodies, markdown fences and
@@ -964,8 +986,12 @@ def analyze_with_spec(
 
         # TODO markers ride the RAW line (they live in comments).
         m_todo = todo_re.search(raw)
-        if m_todo and len(todos) < MAX_SECTION_ENTRIES + 10:
-            todos.append(f"  - {line_no}: {m_todo.group(1)} {m_todo.group(2).strip()}".rstrip())
+        if m_todo:
+            # COUNT every match; COLLECT only what we will print. Conflating the
+            # two is what made both the diagnostic count and the remainder wrong.
+            todo_total += 1
+            if len(todos) < MAX_SECTION_ENTRIES:
+                todos.append(f"  - {line_no}: {m_todo.group(1)} {m_todo.group(2).strip()}".rstrip())
 
         if not stripped:
             continue
@@ -1063,7 +1089,7 @@ def analyze_with_spec(
     if spec.block_style == "brace":
         diagnostics.append("delimiters=ok" if not delimiter_issues else f"delimiters={len(delimiter_issues)} issue(s)")
     if todos:
-        diagnostics.append(f"todo_markers={len(todos)}")
+        diagnostics.append(f"todo_markers={todo_total}")
     out.append("diagnostics: " + ("; ".join(diagnostics) if diagnostics else "none"))
 
     summary_bits = [f"imports={len(imports)}"] + [f"{k}={len(v)}" for k, v in sections.items()]
@@ -1084,7 +1110,7 @@ def analyze_with_spec(
         if kind in sections:
             _emit_section(out, kind, sections[kind])
     if todos:
-        _emit_section(out, "todo_markers", todos)
+        _emit_section(out, "todo_markers", todos, total=todo_total)
 
     if spec.notes:
         out.append(f"notes: {spec.notes}")

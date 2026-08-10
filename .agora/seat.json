@@ -4,7 +4,7 @@
   "url": "http://127.0.0.1:8765",
   "about": "",
   "harnesses": [
-    "abstractcode"
+    "codex"
   ],
-  "default_drive_harness": "abstractcode"
+  "default_drive_harness": "codex"
 }

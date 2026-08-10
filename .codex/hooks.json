@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/albou/.local/share/uv/tools/agorahub/bin/agora hook PostToolUse --as core --url http://127.0.0.1:8765",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/albou/.local/share/uv/tools/agorahub/bin/agora hook SessionStart --as core --url http://127.0.0.1:8765",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/albou/.local/share/uv/tools/agorahub/bin/agora hook Stop --as core --url http://127.0.0.1:8765",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "command": "/Users/albou/.local/share/uv/tools/agorahub/bin/agora hook UserPromptSubmit --as core --url http://127.0.0.1:8765",
+            "timeout": 10,
+            "type": "command"
+          }
+        ]
+      }
+    ]
+  }
+}

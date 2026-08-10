@@ -42,8 +42,12 @@ class OllamaProvider(BaseProvider):
             os.getenv("OLLAMA_HOST") or
             "http://localhost:11434"
         ).rstrip('/')
-        # Read-idle bound separated from the total (face 2, c5041) — shared
-        # helper so a no-progress stream aborts at the socket here too.
+        # #[WARNING:TIMEOUT] — ADR-0027 §4 / ADR-0014. The shared client carries the
+        # runtime's AUTHORITATIVE total on every field, including `read`. The
+        # read-idle (no-progress) bound is stream-only and opted into per request at
+        # the `client.stream()` sites: on a non-streaming request httpx's `read` is
+        # time-to-first-byte, so a client-level read-idle silently caps the whole
+        # generation (2026-08-02 LM Studio incident; ADR-0027 §2 forbids it).
         from ._http import build_read_idle_timeout
         self.client = httpx.Client(
             timeout=build_read_idle_timeout(self._timeout, getattr(self, "_read_idle_timeout", None))
@@ -636,10 +640,16 @@ class OllamaProvider(BaseProvider):
     def _stream_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None, tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
         """Generate streaming response with tool tag rewriting support"""
         try:
+            # #[WARNING:TIMEOUT] — stream-only read-idle bound, opted in per request
+            # (ADR-0027 §4; the total stays authoritative on connect/write/pool).
+            from ._http import build_read_idle_timeout
             with self.client.stream(
                 "POST",
                 f"{self.base_url}{endpoint}",
-                json=payload
+                json=payload,
+                timeout=build_read_idle_timeout(
+                    self._timeout, getattr(self, "_read_idle_timeout", None), streaming=True
+                ),
             ) as response:
                 response.raise_for_status()
 
@@ -894,7 +904,17 @@ class OllamaProvider(BaseProvider):
                                       tool_call_tags: Optional[str] = None):
         """Native async streaming response generation."""
         try:
-            async with self.async_client.stream("POST", endpoint, json=payload) as response:
+            # #[WARNING:TIMEOUT] — stream-only read-idle bound, opted in per request
+            # (ADR-0027 §4; see _stream_generate above).
+            from ._http import build_read_idle_timeout
+            async with self.async_client.stream(
+                "POST",
+                endpoint,
+                json=payload,
+                timeout=build_read_idle_timeout(
+                    self._timeout, getattr(self, "_read_idle_timeout", None), streaming=True
+                ),
+            ) as response:
                 response.raise_for_status()
 
                 full_content = ""

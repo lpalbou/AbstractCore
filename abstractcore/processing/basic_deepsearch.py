@@ -273,8 +273,8 @@ class BasicDeepSearch:
     def __init__(
         self,
         llm: Optional[AbstractCoreInterface] = None,
-        max_tokens: int = 32000,
-        max_output_tokens: int = 8000,
+        max_tokens: int = -1,
+        max_output_tokens: int = -1,
         timeout: Optional[float] = None,
         max_parallel_searches: int = 5,
         full_text_extraction: bool = False,
@@ -287,8 +287,8 @@ class BasicDeepSearch:
 
         Args:
             llm: AbstractCore instance (any provider). If None, uses default Ollama model
-            max_tokens: Maximum total tokens for LLM context (default 32000)
-            max_output_tokens: Maximum tokens for LLM output generation (default 8000)
+            max_tokens: Total context budget. -1 = AUTO (default): model's full context.
+            max_output_tokens: Output budget. -1 = AUTO (default): no cap imposed.
             timeout: HTTP request timeout in seconds. None for unlimited timeout (default None)
             max_parallel_searches: Maximum number of parallel web searches (default 5)
             full_text_extraction: Whether to extract full text content from pages (default False)
@@ -299,13 +299,19 @@ class BasicDeepSearch:
         """
         if llm is None:
             try:
+                # AUTO by default: only forward budgets the CALLER asked for.
+                llm_kwargs = {
+                    "temperature": temperature,  # Use consistent low temperature
+                    "timeout": timeout,
+                }
+                if max_tokens != -1:
+                    llm_kwargs["max_tokens"] = max_tokens
+                if max_output_tokens != -1:
+                    llm_kwargs["max_output_tokens"] = max_output_tokens
                 self.llm = create_llm(
-                    "ollama", 
-                    model="qwen3:4b-instruct-2507-q4_K_M", 
-                    max_tokens=max_tokens, 
-                    max_output_tokens=max_output_tokens, 
-                    temperature=temperature,  # Use consistent low temperature
-                    timeout=timeout
+                    "ollama",
+                    model="qwen3:4b-instruct-2507-q4_K_M",
+                    **llm_kwargs
                 )
 
             except Exception as e:

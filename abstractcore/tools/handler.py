@@ -6,6 +6,7 @@ across all models, whether they have native tool APIs or require prompting.
 """
 
 import json
+import warnings
 from typing import List, Dict, Any, Optional, Union, Callable
 
 from ..architectures import detect_architecture, get_model_capabilities, get_architecture_format
@@ -167,11 +168,29 @@ class UniversalToolHandler:
             # alias back to the original (see tools.wire_naming).
             from .wire_naming import wire_safe_tool_name
 
+            # `when_to_use` is authored, MODEL-VISIBLE guidance. The prompted path
+            # renders it unconditionally — `parser._should_render_when_to_use` was
+            # changed to always-True because dropping it is the silent lossy
+            # truncation ADR 0001 forbids. Native used to drop the same content
+            # here, silently, and native is the default path for capable
+            # providers. Fold it into `description`, the one field every strict
+            # provider schema already accepts, leading with the one-sentence
+            # description so selection-time scannability is unchanged.
+            #
+            # This is not new footprint: it is the footprint the prompted path
+            # already carries. Merging moves a field boundary, it adds no bytes.
+            # The 200/240 authoring caps (`core._validate_tool_metadata`) are
+            # untouched — this string is a derived send-time artifact and is
+            # deliberately NOT validated against the authoring cap.
+            description = tool_def.description
+            if tool_def.when_to_use:
+                description = f"{description}\n\nWhen to use: {tool_def.when_to_use}"
+
             native_tool = {
                 "type": "function",
                 "function": {
                     "name": wire_safe_tool_name(tool_def.name),
-                    "description": tool_def.description,
+                    "description": description,
                     "parameters": {
                         "type": "object",
                         "properties": cleaned_properties,
@@ -180,8 +199,9 @@ class UniversalToolHandler:
                 }
             }
 
-            # NOTE: Do not include custom keys (tags/when_to_use/examples) in native tool payloads.
+            # NOTE: Do not include custom KEYS (tags/examples) in native tool payloads.
             # Most provider native tool schemas validate strictly and may reject unknown fields.
+            # `when_to_use` is carried as prose inside `description` above, not as a key.
 
             native_tools.append(native_tool)
 
@@ -213,11 +233,84 @@ class UniversalToolHandler:
             else:
                 return self._parse_native_response(response)
 
+    @staticmethod
+    def _dropped_tool_name(tool: Any) -> str:
+        """Best-effort name for a tool that could not be converted (for the warning)."""
+        try:
+            if isinstance(tool, dict):
+                fn = tool.get("function")
+                if isinstance(fn, dict) and fn.get("name"):
+                    return str(fn.get("name"))
+                if tool.get("name"):
+                    return str(tool.get("name"))
+                return f"<dict with keys {sorted(tool.keys())[:6]}>"
+            name = getattr(tool, "name", None) or getattr(tool, "__name__", None)
+            return str(name) if name else f"<{type(tool).__name__}>"
+        except Exception:
+            return "<unknown>"
+
+    @staticmethod
+    def _tool_source_label(tool: Any) -> str:
+        """Where an external tool came from, for the correction report.
+
+        MCP specs carry `origin`; anything else is just "the caller". Naming the
+        server is what turns "some description is too long" into a fix someone
+        can actually make.
+        """
+        try:
+            origin = tool.get("origin") if isinstance(tool, dict) else None
+            if isinstance(origin, dict):
+                server = str(origin.get("server_id") or "").strip()
+                if server:
+                    return f"MCP server '{server}'"
+                kind = str(origin.get("type") or "").strip()
+                if kind:
+                    return f"{kind} source"
+            tags = tool.get("tags") if isinstance(tool, dict) else None
+            if isinstance(tags, list):
+                for tag in tags:
+                    text = str(tag)
+                    if text.startswith("mcp_server:"):
+                        return f"MCP server '{text.split(':', 1)[1]}'"
+        except Exception:
+            pass
+        return "the caller's tool list"
+
+    def _warn_tool_dropped(self, tool: Any, reason: str) -> None:
+        """A tool the caller asked for will NOT reach the model. Say so, loudly.
+
+        ADR 0001 (no silent degradation). This used to be `logger.warning` only,
+        which is DEAD in a default AbstractCore process (root logger is ERROR and
+        every `abstractcore.*` logger is NOTSET), so a dropped tool produced NO
+        output anywhere. The failure mode that made this urgent, measured
+        2026-08-07: `ToolDefinition` caps `description` at 200 chars, so a tool
+        set carrying long descriptions was converted to ZERO definitions ->
+        `format_tools_prompt` returned "" -> the local lanes (MLX, HF
+        transformers, HF GGUF) rendered a prompt with NO TOOLS AT ALL, while the
+        prompt-cache bloc plan happily reported a healthy 3-token "tools" bloc.
+        The caller had no way to find out short of diffing rendered prompts.
+        """
+        name = self._dropped_tool_name(tool)
+        message = (
+            f"Tool '{name}' was DROPPED and will not be sent to the model "
+            f"({self.model_name}): {str(reason).strip().rstrip('.')}. Fix the tool "
+            f"definition — the model cannot call a tool it never sees."
+        )
+        warnings.warn(message, RuntimeWarning, stacklevel=4)
+        logger.warning(message)
+
     def _convert_to_tool_definitions(
         self,
         tools: List[Union[ToolDefinition, Callable, Dict[str, Any]]]
     ) -> List[ToolDefinition]:
-        """Convert various tool formats to ToolDefinition objects."""
+        """Convert various tool formats to ToolDefinition objects.
+
+        Every tool that does not make it into the returned list is announced via
+        `warnings.warn` — see `_warn_tool_dropped`. This method feeds BOTH the
+        prompted lane (`format_tools_prompt`) and the native lane
+        (`prepare_tools_for_native`), so a silent drop here removes a capability
+        on every provider.
+        """
         tool_defs = []
 
         for tool in tools:
@@ -229,7 +322,17 @@ class UniversalToolHandler:
                     if hasattr(tool, '_tool_definition'):
                         tool_defs.append(tool._tool_definition)
                     else:
-                        tool_defs.append(ToolDefinition.from_function(tool))
+                        # An undecorated callable is IMPORTED material, not authored
+                        # here: its docstring may belong to a third-party library we
+                        # cannot edit. `from_function` raises on an over-long first
+                        # docstring line, which used to cost the caller the tool.
+                        tool_defs.append(ToolDefinition.from_function(
+                            tool,
+                            external_source=(
+                                f"an undecorated callable in "
+                                f"{getattr(tool, '__module__', '?')}"
+                            ),
+                        ))
                 elif isinstance(tool, dict):
                     if "name" in tool and "description" in tool:
                         # Direct dict format - extract properties from full schema
@@ -240,10 +343,16 @@ class UniversalToolHandler:
                         else:
                             properties = parameters
 
-                        tool_defs.append(ToolDefinition(
+                        # A dict tool is by construction EXTERNAL — this is the shape
+                        # MCP servers, gateway payloads and hand-written JSON arrive
+                        # in, and we cannot edit their source. `from_external` adapts
+                        # an over-long description and reports it, instead of raising
+                        # into the handler's `except` and losing the tool entirely.
+                        tool_defs.append(ToolDefinition.from_external(
                             name=tool["name"],
                             description=tool["description"],
                             parameters=properties,
+                            source=self._tool_source_label(tool),
                             tags=tool.get("tags", []),
                             when_to_use=tool.get("when_to_use"),
                             examples=tool.get("examples", []),
@@ -252,15 +361,24 @@ class UniversalToolHandler:
                     elif "function" in tool:
                         # OpenAI native format
                         func = tool["function"]
-                        tool_defs.append(ToolDefinition(
+                        tool_defs.append(ToolDefinition.from_external(
                             name=func["name"],
-                            description=func["description"],
-                            parameters=func.get("parameters", {}).get("properties", {})
+                            description=func.get("description"),
+                            parameters=func.get("parameters", {}).get("properties", {}),
+                            source=self._tool_source_label(tool),
                         ))
+                    else:
+                        # A dict matching neither shape used to fall through the
+                        # if/elif with no signal at all — not even a log line.
+                        self._warn_tool_dropped(
+                            tool,
+                            "dict tool needs either 'name' + 'description' or an OpenAI-style "
+                            f"'function' entry; got keys {sorted(tool.keys())[:8]}",
+                        )
                 else:
-                    logger.warning(f"Skipping unsupported tool format: {type(tool)}")
+                    self._warn_tool_dropped(tool, f"unsupported tool format {type(tool).__name__}")
             except Exception as e:
-                logger.warning(f"Failed to convert tool {tool}: {e}")
+                self._warn_tool_dropped(tool, str(e))
 
         return tool_defs
 

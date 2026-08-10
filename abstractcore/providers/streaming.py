@@ -442,6 +442,16 @@ class IncrementalToolDetector:
 
         cleaned = json_content.strip()
 
+        if "<arg_key" in cleaned.lower():
+            try:
+                from ..tools.parser import _parse_arg_kv_tool_call
+
+                arg_kv_calls = _parse_arg_kv_tool_call(cleaned)
+            except Exception:
+                arg_kv_calls = []
+            if arg_kv_calls:
+                return arg_kv_calls[0]
+
         if "<parameter" in cleaned.lower():
             try:
                 from ..tools.parser import _parse_xmlish_parameter_tool_calls
@@ -529,6 +539,17 @@ class IncrementalToolDetector:
         if self.state == ToolDetectionState.IN_TOOL_CALL:
             # Try to parse any remaining content as incomplete tool
             if self.current_tool_content:
+                if "<arg_key" in self.current_tool_content.lower():
+                    try:
+                        from ..tools.parser import _parse_arg_kv_tool_call
+
+                        completed_tools.extend(_parse_arg_kv_tool_call(self.current_tool_content))
+                    except Exception:
+                        pass
+                    if completed_tools:
+                        self.accumulated_content = ""
+                        return completed_tools
+
                 if "<parameter" in self.current_tool_content.lower():
                     try:
                         from ..tools.parser import _parse_xmlish_parameter_tool_calls

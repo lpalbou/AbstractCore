@@ -1075,7 +1075,8 @@
         "</think>"
       ],
       "thinking_control": {
-        "template_kwarg": "enable_thinking"
+        "template_kwarg": "enable_thinking",
+        "assistant_prefill_disable": "<think>\n\n</think>\n\n"
       },
       "reasoning_support": true,
       "patterns": [
@@ -1189,6 +1190,46 @@
         "openbmb/minicpm5"
       ]
     },
+    "laguna": {
+      "description": "Poolside Laguna MoE agentic-coding family (LagunaForCausalLM; interleaved global/sliding attention, 256 routed + 1 shared experts; <system>/<user>/<assistant> tag template with interleaved <think> reasoning; Laguna-S/XS/M, 2026)",
+      "message_format": "laguna_tags",
+      "system_prefix": "<system>",
+      "system_suffix": "</system>\n",
+      "user_prefix": "<user>",
+      "user_suffix": "</user>\n",
+      "assistant_prefix": "<assistant>",
+      "assistant_suffix": "</assistant>\n",
+      "output_wrappers": {
+        "end": "</assistant>"
+      },
+      "tool_format": "glm_xml",
+      "tool_prefix": "<tool_call>",
+      "tool_calling_format": "<tool_call>function_name<arg_key>key</arg_key><arg_value>value</arg_value></tool_call>",
+      "default_tool_support": "native",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_output_field": "reasoning_content",
+      "thinking_control": {
+        "template_kwarg": "enable_thinking",
+        "assistant_prefill_disable": "</think>"
+      },
+      "reasoning_support": true,
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 1.0,
+        "top_k": 20
+      },
+      "patterns": [
+        "laguna",
+        "laguna-s-2.1",
+        "laguna-xs-2.1",
+        "laguna-xs.2",
+        "laguna-m.1",
+        "poolside/laguna"
+      ]
+    },
     "generic": {
       "description": "Generic/unknown architecture fallback",
       "message_format": "basic",
@@ -1214,7 +1255,8 @@
     "llama3_header": "LLaMA 3+ format with <|start_header_id|> and <|eot_id|>",
     "glm_special_tokens": "GLM format with <|system|>, <|user|>, <|assistant|> tokens",
     "gemma_turn": "Gemma 4 turn format with <|turn>role and <turn|> delimiters",
-    "harmony": "OpenAI harmony response format for GPT-OSS models"
+    "harmony": "OpenAI harmony response format for GPT-OSS models",
+    "laguna_tags": "Poolside Laguna format with <system>, <user>, <assistant> and <tool_response> tag pairs"
   },
   "tool_formats": {
     "pythonic": "Python function call syntax: [func(arg=val)]",

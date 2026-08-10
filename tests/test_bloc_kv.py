@@ -579,6 +579,78 @@ def test_bloc_kv_load_reloads_on_miss_and_preserves_default_key(tmp_path: Path) 
     assert provider._default_prompt_cache_key == "keep"
 
 
+# --- composition gate: ordered-prefix composition is ENFORCED at load -------
+#
+# Cached K tensors are rotary-position-encoded at compile time and nothing in
+# this package re-applies them, so an artifact is only valid at the offset it
+# was compiled at, behind the predecessors it was compiled behind. A helper
+# that merely JUDGES that correctly is not a gate — these tests pin that
+# `load_bloc_kv_artifact` REFUSES before `prompt_cache_load` adopts the tensors.
+
+
+def test_bloc_kv_load_refuses_a_shifted_composition_offset(tmp_path: Path) -> None:
+    store = FileBlocStore(root_dir=tmp_path)
+    provider = _StubPersistentMLXProvider(model="qwen3-test")
+    record = _upsert_record(store, tmp_path, sha="c1" * 32, path_name="doc.txt", content="hello world\n")
+
+    ok = load_bloc_kv_artifact(provider=provider, store=store, record=record, key="work")
+    assert ok.manifest.start_offset == 0
+    loads_after_ok = provider.load_calls
+
+    with pytest.raises(ValueError) as exc:
+        load_bloc_kv_artifact(
+            provider=provider, store=store, record=record, key="work2", at_offset=512
+        )
+    assert "offset" in str(exc.value).lower()
+    # Refused BEFORE adoption: no additional prompt_cache_load ran, and the
+    # target key was never created.
+    assert provider.load_calls == loads_after_ok
+    assert provider._prompt_cache_store.get("work2") is None
+
+
+def test_bloc_kv_load_refuses_a_different_prefix_chain(tmp_path: Path) -> None:
+    store = FileBlocStore(root_dir=tmp_path)
+    provider = _StubPersistentMLXProvider(model="qwen3-test")
+    record = _upsert_record(store, tmp_path, sha="c2" * 32, path_name="doc.txt", content="hello world\n")
+
+    load_bloc_kv_artifact(provider=provider, store=store, record=record, key="work")
+    with pytest.raises(ValueError) as exc:
+        load_bloc_kv_artifact(
+            provider=provider,
+            store=store,
+            record=record,
+            key="work2",
+            at_offset=0,
+            prefix_chain=["some-predecessor"],
+        )
+    assert "prefix" in str(exc.value).lower()
+    assert provider._prompt_cache_store.get("work2") is None
+
+
+def test_bloc_kv_load_warns_but_proceeds_for_a_pre_axis_artifact(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Backfill rule: an artifact compiled before the composition-position axis
+    has no recorded offset. Unverifiable is not the same as wrong — reuse with a
+    labeled #FALLBACK, matching every other reuse axis."""
+    store = FileBlocStore(root_dir=tmp_path)
+    provider = _StubPersistentMLXProvider(model="qwen3-test")
+    record = _upsert_record(store, tmp_path, sha="c3" * 32, path_name="doc.txt", content="hello world\n")
+
+    first = load_bloc_kv_artifact(provider=provider, store=store, record=record, key="work")
+    # Strip the axis from the stored manifest, as a pre-axis artifact would be.
+    data = json.loads(first.manifest_path.read_text(encoding="utf-8"))
+    data.pop("start_offset", None)
+    data.pop("prefix_chain", None)
+    first.manifest_path.write_text(json.dumps(data), encoding="utf-8")
+
+    with caplog.at_level("WARNING"):
+        again = load_bloc_kv_artifact(provider=provider, store=store, record=record, key="work3")
+    assert again.manifest.start_offset is None
+    assert provider._prompt_cache_store.get("work3") is not None
+    assert any("#FALLBACK" in r.message and "composition position" in r.message for r in caplog.records)
+
+
 def test_bloc_kv_reloads_stable_key_when_artifact_changes(tmp_path: Path) -> None:
     store = FileBlocStore(root_dir=tmp_path)
     provider = _StubPersistentMLXProvider(model="qwen3-test")

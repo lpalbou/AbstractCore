@@ -103,7 +103,7 @@ def test_stream_rejection_drops_key_and_retries(provider):
             self.requests: List[Dict[str, Any]] = []
 
         @contextlib.contextmanager
-        def stream(self, method, url, json=None, headers=None):  # noqa: A002
+        def stream(self, method, url, json=None, headers=None, **kwargs):  # noqa: A002
             payload = dict(json or {})
             self.requests.append(payload)
             if "prompt_cache_key" in payload:

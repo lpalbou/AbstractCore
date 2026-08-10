@@ -448,13 +448,24 @@ def test_gguf_prompt_cache_prepare_modules_fork_and_update_reuse_prefix(chat_for
     eval_lengths = [len(call) for call in provider.llm.eval_calls]
     assert len(eval_lengths) == 2
     assert eval_lengths[0] > 0
-    # Single-system-turn fix (2026-07-15): tools now MERGE into the system
-    # message instead of opening a second consecutive system block, so the
-    # system-only module render is no longer a token-prefix of system+tools
-    # (the closing tag precedes the tool text). The tools-module append is a
-    # one-time full re-prefill of the merged prompt; session-time reuse
-    # (fork + message appends, asserted below) is what must stay incremental.
-    assert eval_lengths[1] == len(prefix_state.prompt_tokens)
+    # CONTRACT CHANGED 2026-08-07, deliberately. This used to assert
+    #
+    #     eval_lengths[1] == len(prefix_state.prompt_tokens)
+    #
+    # i.e. "the tools-module append is a one-time full re-prefill of the merged
+    # prompt" — true then, because this lane ignored the planner's cut and
+    # re-rendered the whole system+tools text for the tools module. That is
+    # exactly the cost the tools bloc exists to avoid: an unchanged system bloc
+    # bought nothing when a tool changed. The lane now feeds
+    # `bloc_token_ids` (see `_prompt_cache_backend_append`), so the two blocs
+    # PARTITION the prefix: the system bloc is prefilled once and the tools
+    # bloc adds only its own tokens on top.
+    assert sum(eval_lengths) == len(prefix_state.prompt_tokens), (
+        "the bloc chain must feed each prefix token exactly once"
+    )
+    assert eval_lengths[1] < len(prefix_state.prompt_tokens), (
+        "the tools bloc re-prefilled the system bloc — the planned cut was ignored"
+    )
     final_messages = provider._gguf_build_chat_messages(
         system_prompt="You are helpful.",
         tools=[{"type": "function", "function": {"name": "shell"}}],

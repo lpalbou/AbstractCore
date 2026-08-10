@@ -2517,8 +2517,20 @@ def skim_folders(
             body += "\n\nNotable files:\n" + "\n".join([f"- {p}" for p in uniq_notable])
 
         if truncated:
+            # RESTORED 2026-08-08 from memory after `git checkout --` destroyed the
+            # uncommitted original. The quantified half is reconstructed, not verbatim;
+            # the recovery hint below is the pre-existing text, restored exactly.
+            #
+            # "hit internal limit" alone did not let a reader tell a lightly-trimmed
+            # map from a gutted one, which is what ADR 0001 asks a truncation notice
+            # to make explicit. Name the cap and the counts, and keep the recovery
+            # instruction — a notice that says what was cut but not how to get it is
+            # only half of what the ADR requires.
             body += (
-                "\n\nNote: output was truncated (hit internal limit). "
+                f"\n\n#TRUNCATION: output hit the internal limit of "
+                f"{MAX_OUTPUT_LINES_PER_FOLDER} lines per folder "
+                f"({dirs_shown} dirs shown, depth≤{depth_limit}); directories past "
+                f"that point were not walked and their files are not counted above.\n"
                 "Next step: call skim_folders on a subfolder path to expand."
             )
 
@@ -2572,6 +2584,7 @@ def search_files(
     path: str = ".",
     file_pattern: str = "*",
     head_limit: Optional[int] = 10,
+    offset: int = 0,
     max_hits: Optional[int] = 8,
     multiline: bool = False,
     include_hidden: bool = False,
@@ -2899,6 +2912,10 @@ def search_files(
             display_path = _path_for_display(file_path)
             try:
                 per_file_added = 0
+                # Matches SEEN in this file, including ones skipped by `offset`.
+                # `per_file_added` counts only what was emitted; the two differ by
+                # exactly the skipped prefix, which is what makes paging work.
+                per_file_seen = 0
                 file_header_added = False
 
                 with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
@@ -2927,6 +2944,9 @@ def search_files(
                             if line_num in seen_lines:
                                 continue
                             seen_lines.add(line_num)
+                            per_file_seen += 1
+                            if per_file_seen <= offset:
+                                continue  # earlier page; counted, not shown
                             selected_lines.append(line_num)
                             line_match_starts.setdefault(line_num, match.start())
                             if head_limit_per_file is not None and len(selected_lines) >= head_limit_per_file:
@@ -2998,6 +3018,13 @@ def search_files(
                             if m:
                                 if head_limit_per_file is not None and per_file_added >= head_limit_per_file:
                                     break
+                                per_file_seen += 1
+                                if per_file_seen <= offset:
+                                    # Paging: this match belongs to an earlier page.
+                                    # Counted, not emitted, and it must not prime the
+                                    # context buffers either or the next page would
+                                    # open with trailing context from the previous one.
+                                    continue
                                 if context_n:
                                     for bn, bt in before_buf:
                                         if bn > last_emitted:
@@ -3016,6 +3043,42 @@ def search_files(
                                 before_buf.append((line_num, line))
                                 if len(before_buf) > context_n:
                                     before_buf.pop(0)
+
+                # PAGING NOTICE. Emitted only when the cap actually bit: the loop
+                # breaks on an (n+1)-th match it has already found, so "there are
+                # more" is a fact here, never a guess.
+                #
+                # It emits the COMPLETE next call with the caller's real argument
+                # values — not a template. Every value is already in scope, so
+                # printing `pattern=...` and making the model reconstruct its own
+                # call is pure waste: it can get the parameters wrong, and a hint it
+                # has to finish is not a hint. Only non-default extras are included,
+                # so the line stays short without being lossy.
+                if file_header_added and head_limit_per_file is not None and (
+                    per_file_added >= head_limit_per_file
+                ):
+                    next_offset = offset + per_file_added
+                    extras = ""
+                    if case_sensitive:
+                        extras += ", case_sensitive=True"
+                    if multiline:
+                        extras += ", multiline=True"
+                    if context_lines:
+                        extras += f", context_lines={context_lines}"
+                    if include_hidden:
+                        extras += ", include_hidden=True"
+                    results.append(
+                        f"    #TRUNCATION: matches {offset + 1}-{next_offset} of this file shown; "
+                        f"head_limit={head_limit_per_file} stopped the scan at line {last_emitted}, "
+                        f"further matches exist below it.\n"
+                        f"    Next {head_limit_per_file}: search_files("
+                        f"pattern={pattern!r}, path={str(display_path)!r}, "
+                        f"head_limit={head_limit_per_file}, offset={next_offset}{extras})\n"
+                        f"    All of them: search_files("
+                        f"pattern={pattern!r}, path={str(display_path)!r}, head_limit=None{extras})\n"
+                        f"    Too many? refine `pattern`, then size it with "
+                        f"search_files(pattern=..., path={str(display_path)!r}, output_mode='count')."
+                    )
 
                 if file_header_added:
                     matching_files += 1

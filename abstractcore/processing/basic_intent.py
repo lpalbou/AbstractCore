@@ -128,8 +128,8 @@ class BasicIntentAnalyzer:
         self, 
         llm: Optional[AbstractCoreInterface] = None, 
         max_chunk_size: int = 8000,
-        max_tokens: int = 32000,
-        max_output_tokens: int = 8000,
+        max_tokens: int = -1,
+        max_output_tokens: int = -1,
         timeout: Optional[float] = None,
         debug: bool = False
     ):
@@ -139,15 +139,20 @@ class BasicIntentAnalyzer:
         Args:
             llm: AbstractCore instance (any provider). If None, attempts to create ollama gemma3:1b-it-qat
             max_chunk_size: Maximum characters per chunk for long documents (default 8000)
-            max_tokens: Maximum total tokens for LLM context (default 32000)
-            max_output_tokens: Maximum tokens for LLM output generation (default 8000)
+            max_tokens: Total context budget. -1 = AUTO (default): model's full context.
+            max_output_tokens: Output budget. -1 = AUTO (default): no cap imposed.
             timeout: HTTP request timeout in seconds. None for unlimited timeout (default None)
             debug: Enable debug output including raw LLM responses (default False)
         """
         if llm is None:
             try:
-                # Default to gemma3:1b-it-qat with configurable token limits
-                self.llm = create_llm("ollama", model="gemma3:1b-it-qat", max_tokens=max_tokens, max_output_tokens=max_output_tokens, timeout=timeout)
+                # AUTO by default: only forward budgets the CALLER asked for.
+                llm_kwargs = {"timeout": timeout}
+                if max_tokens != -1:
+                    llm_kwargs["max_tokens"] = max_tokens
+                if max_output_tokens != -1:
+                    llm_kwargs["max_output_tokens"] = max_output_tokens
+                self.llm = create_llm("ollama", model="gemma3:1b-it-qat", **llm_kwargs)
             except Exception as e:
                 error_msg = (
                     f"❌ Failed to initialize default Ollama model 'gemma3:1b-it-qat': {e}\n\n"

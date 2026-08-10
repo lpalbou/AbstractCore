@@ -117,8 +117,8 @@ class BasicJudge:
         self,
         llm: Optional[AbstractCoreInterface] = None,
         temperature: float = 0.1,  # Low temperature for consistent evaluation
-        max_tokens: int = 32000,
-        max_output_tokens: int = 8000,
+        max_tokens: int = -1,
+        max_output_tokens: int = -1,
         debug: bool = False,
         timeout: Optional[float] = None
     ):
@@ -127,16 +127,23 @@ class BasicJudge:
         Args:
             llm: AbstractCore instance (any provider). If None, uses default Ollama model
             temperature: Temperature for evaluation consistency (default 0.1)
-            max_tokens: Maximum total tokens for LLM context (default 32000)
-            max_output_tokens: Maximum tokens for LLM output generation (default 8000)
+            max_tokens: Total context budget. -1 = AUTO (default): the model's full
+                advertised context. A positive value is an OPERATOR-REQUESTED bound.
+            max_output_tokens: Output budget. -1 = AUTO (default): no cap imposed
+                (ADR 0026 §2 — assessments are structured output).
             debug: Enable debug output showing raw LLM responses (default False)
             timeout: HTTP request timeout in seconds. None for unlimited timeout (default None)
         """
         if llm is None:
             try:
-                # Use low temperature for consistent evaluation
-                self.llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M",
-                                    max_tokens=max_tokens, max_output_tokens=max_output_tokens, temperature=temperature, timeout=timeout)
+                # Use low temperature for consistent evaluation.
+                # AUTO by default: only forward budgets the CALLER asked for.
+                llm_kwargs = {"temperature": temperature, "timeout": timeout}
+                if max_tokens != -1:
+                    llm_kwargs["max_tokens"] = max_tokens
+                if max_output_tokens != -1:
+                    llm_kwargs["max_output_tokens"] = max_output_tokens
+                self.llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M", **llm_kwargs)
             except Exception as e:
                 error_msg = (
                     f"❌ Failed to initialize default Ollama model 'qwen3:4b-instruct-2507-q4_K_M': {e}\n\n"
@@ -749,8 +756,8 @@ def create_judge(
     provider: Optional[str] = None,
     model: Optional[str] = None,
     temperature: float = 0.1,
-    max_tokens: int = 32000,
-    max_output_tokens: int = 8000,
+    max_tokens: int = -1,
+    max_output_tokens: int = -1,
     debug: bool = False,
     timeout: Optional[float] = None,
     **kwargs
@@ -762,8 +769,8 @@ def create_judge(
         provider: LLM provider (e.g., "ollama", "openai", "anthropic")
         model: Model name
         temperature: Temperature for evaluation (default 0.1 for consistency)
-        max_tokens: Maximum total tokens for LLM context (default 32000)
-        max_output_tokens: Maximum tokens for LLM output generation (default 8000)
+        max_tokens: Total context budget. -1 = AUTO (default): model's full context.
+        max_output_tokens: Output budget. -1 = AUTO (default): no cap imposed.
         debug: Enable debug output showing raw LLM responses (default False)
         timeout: HTTP request timeout in seconds. None for unlimited timeout (default None)
         **kwargs: Additional arguments passed to create_llm
@@ -772,7 +779,12 @@ def create_judge(
         BasicJudge instance
     """
     if provider and model:
-        llm = create_llm(provider, model=model, temperature=temperature, max_tokens=max_tokens, max_output_tokens=max_output_tokens, timeout=timeout, **kwargs)
+        # AUTO by default: only forward budgets the CALLER asked for.
+        if max_tokens != -1:
+            kwargs["max_tokens"] = max_tokens
+        if max_output_tokens != -1:
+            kwargs["max_output_tokens"] = max_output_tokens
+        llm = create_llm(provider, model=model, temperature=temperature, timeout=timeout, **kwargs)
         return BasicJudge(llm=llm, temperature=temperature, max_tokens=max_tokens, max_output_tokens=max_output_tokens, debug=debug, timeout=timeout)
     else:
         return BasicJudge(temperature=temperature, max_tokens=max_tokens, max_output_tokens=max_output_tokens, debug=debug, timeout=timeout)

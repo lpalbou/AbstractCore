@@ -30,7 +30,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 - **[Structured Output](structured-output.md)** — `response_model=...` strategies and limitations
 - **[Request and Output](request-output.md)** — canonical `request=` + `output=` shape, structural task inference, and route-inspection basics
 - **[Session Management](session.md)** — conversation state, persistence, compaction
-- **[Prompt Caching](prompt-caching.md)** — `prompt_cache_key`, KV/prefix caches, persistence, and durable memory bloc bindings
+- **[Prompt Caching](prompt-caching.md)** — `prompt_cache_key`, KV/prefix caches, persistence, durable memory bloc bindings, and the measured cold-vs-warm prefill matrix for the MLX, transformers and GGUF lanes
 - **[Generation Parameters](generation-parameters.md)** — unified parameter vocabulary, default hierarchy, caller overrides, and provider quirks
 - **[HuggingFace Model Compatibility](huggingface-model-compatibility.md)** — Transformers/GGUF loading rules, quantized checkpoint caveats, and trusted proof targets
 - **[Memory Blocs](memory-blocs.md)** — persistent extracted text snapshots + per-model KV artifacts

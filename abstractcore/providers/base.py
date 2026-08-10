@@ -72,6 +72,14 @@ if TYPE_CHECKING:  # pragma: no cover
     from ..media.types import MediaContent
 
 
+# Module-level logger. Three `#FALLBACK` sites in this file already referenced a
+# bare `logger` (the retry-budget parse guard in `__init__`, the module-chain
+# prefix-clone rebuild, and bloc planning) — with no module-level binding they
+# raised NameError instead of warning, turning a labelled degradation into a
+# crash on exactly the paths meant to survive one.
+logger = get_logger("abstractcore.providers.base")
+
+
 @dataclass
 class _PromptCacheEntry:
     value: Any
@@ -92,11 +100,43 @@ class PromptCacheStore:
     - Callers should treat prompt caches as potentially sensitive (they contain user prompt state).
     """
 
-    def __init__(self, *, max_entries: int = 32, default_ttl_s: Optional[float] = None):
+    def __init__(self, *, max_entries: int = 32, default_ttl_s: Optional[float] = None,
+                 on_evict: Optional[Any] = None):
         self._max_entries = int(max_entries) if max_entries and int(max_entries) > 0 else 32
         self._default_ttl_s = default_ttl_s if default_ttl_s is None else float(default_ttl_s)
         self._entries: "OrderedDict[str, _PromptCacheEntry]" = OrderedDict()
         self._lock = threading.RLock()
+        # Called as on_evict(key, value) whenever an entry leaves the store
+        # WITHOUT the caller asking for that key (LRU capacity eviction, TTL
+        # expiry). Explicit delete()/clear() do NOT fire it — callers of those
+        # already know and handle their own teardown. This hook exists because
+        # silent eviction leaks any provider-side state keyed to the entry
+        # (2026-08-03 leak audit: MLX `_hybrid_snapshots` kept a full KV-cache
+        # deepcopy per key for the provider's lifetime once the key was
+        # LRU-evicted, since nothing told the provider the key was gone).
+        self._on_evict = on_evict
+
+    def set_on_evict(self, callback: Optional[Any]) -> None:
+        """Register the eviction callback (see __init__). One callback, last wins."""
+        self._on_evict = callback
+
+    def _fire_evictions(self, evicted: List[tuple]) -> None:
+        """Invoke the eviction callback OUTSIDE self._lock (callbacks may take
+        provider-side locks; never nest them under the store lock)."""
+        cb = self._on_evict
+        if cb is None:
+            return
+        for key, value in evicted:
+            try:
+                cb(key, value)
+            except Exception as exc:
+                # Best-effort — never break the caller — but a broken release
+                # hook must not be INVISIBLE (it silently reintroduces the
+                # leak this callback exists to close).
+                try:
+                    logger.debug(f"prompt cache on_evict callback failed for key '{key}': {exc}")
+                except Exception:
+                    pass
 
     def _is_expired(self, entry: _PromptCacheEntry) -> bool:
         ttl_s = entry.ttl_s if entry.ttl_s is not None else self._default_ttl_s
@@ -108,16 +148,21 @@ class PromptCacheStore:
         if not isinstance(key, str) or not key.strip():
             return None
         key = key.strip()
+        expired_entry = None
         with self._lock:
             entry = self._entries.get(key)
             if entry is None:
                 return None
             if self._is_expired(entry):
-                self.delete(key)
-                return None
-            entry.last_accessed_at_s = time.time()
-            self._entries.move_to_end(key)
-            return entry.value
+                self._entries.pop(key, None)
+                expired_entry = entry
+            else:
+                entry.last_accessed_at_s = time.time()
+                self._entries.move_to_end(key)
+                return entry.value
+        if expired_entry is not None:
+            self._fire_evictions([(key, expired_entry.value)])
+        return None
 
     def set(
         self,
@@ -131,6 +176,7 @@ class PromptCacheStore:
             raise ValueError("prompt cache key must be a non-empty string")
         key = key.strip()
         now = time.time()
+        evicted: List[tuple] = []
         with self._lock:
             self._entries[key] = _PromptCacheEntry(
                 value=value,
@@ -141,7 +187,9 @@ class PromptCacheStore:
             )
             self._entries.move_to_end(key)
             while len(self._entries) > self._max_entries:
-                self._entries.popitem(last=False)
+                evicted_key, evicted_entry = self._entries.popitem(last=False)
+                evicted.append((evicted_key, evicted_entry.value))
+        self._fire_evictions(evicted)
 
     def delete(self, key: str) -> bool:
         if not isinstance(key, str) or not key.strip():
@@ -156,19 +204,24 @@ class PromptCacheStore:
 
     def stats(self) -> Dict[str, Any]:
         # Opportunistically purge expired entries.
+        expired_pairs: List[tuple] = []
         with self._lock:
             expired = []
             for k, v in self._entries.items():
                 if self._is_expired(v):
                     expired.append(k)
             for k in expired:
-                self.delete(k)
+                entry = self._entries.pop(k, None)
+                if entry is not None:
+                    expired_pairs.append((k, entry.value))
 
-            return {
+            result = {
                 "entries": len(self._entries),
                 "max_entries": self._max_entries,
                 "default_ttl_s": self._default_ttl_s,
             }
+        self._fire_evictions(expired_pairs)
+        return result
 
     def keys(self) -> List[str]:
         with self._lock:
@@ -364,6 +417,55 @@ class PromptCacheRenderedFragment:
     cache_backend: str = "provider"
     artifact_format: str = "prompt-cache"
     meta: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class PromptCacheBlocPlan:
+    """Token-exact cut plan for an ordered bloc (module) chain.
+
+    `fragments[k]` are the token ids bloc k contributes; `boundaries[k]` is the
+    cumulative token count after bloc k. The plan's contract:
+
+        concat(fragments[0..k]) == tokenize(generate_prompt(union of blocs 0..k))[:boundaries[k]]
+
+    for EVERY k — i.e. every bloc boundary is a true token prefix of the prompt
+    the provider's own `generate()` would build for the same logical content.
+    See `BaseProvider.prompt_cache_plan_bloc_chain` for the invariant.
+    """
+
+    fragments: List[List[int]]
+    boundaries: List[int]
+    stable_texts: List[str]
+    # Bloc index whose boundary had to be pulled back below its predecessor's
+    # (composition unsound there); None when the whole chain composes.
+    unsound_at: Optional[int] = None
+    # True when the plan-time seam check FAILED and the whole chain was
+    # collapsed into ONE fragment. `fragments` then has length 1 and the caller
+    # must store only the chain's final key. This is the honest degradation:
+    # the blocs stop being independently reusable, but the prefill is still
+    # whole and still correct — never a silently wrong cache.
+    collapsed: bool = False
+    reason: str = ""
+
+    @property
+    def total_tokens(self) -> int:
+        return int(self.boundaries[-1]) if self.boundaries else 0
+
+
+# Canonical continuation probes. These are NOT content: they exist only to
+# discover which trailing bytes of a rendered prefix are still undetermined,
+# i.e. could be rewritten by whatever bloc comes next. They must stay fixed —
+# changing them changes every bloc boundary and therefore every cache key's
+# content.
+_BLOC_PROBE_TOOLS: List[Dict[str, Any]] = [
+    {
+        "name": "__acore_bloc_probe__",
+        "description": "boundary probe",
+        "parameters": {"type": "object", "properties": {}},
+    }
+]
+_BLOC_PROBE_MESSAGES: List[Dict[str, Any]] = [{"role": "user", "content": "__acore_bloc_probe__"}]
+_BLOC_PROBE_PROMPT = "__acore_bloc_probe__"
 
 
 _PROMPT_CACHE_OPERATION_ALIASES: Dict[str, str] = {
@@ -671,6 +773,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
         self._prompt_cache_store = PromptCacheStore(
             max_entries=int(prompt_cache_max_entries) if prompt_cache_max_entries is not None else 32,
             default_ttl_s=prompt_cache_ttl_s,
+            # Implicit evictions (LRU capacity / TTL expiry) must reach the
+            # provider so per-key side state (snapshots, device pools) can be
+            # released — silent eviction is a leak (2026-08-03 audit).
+            on_evict=self._prompt_cache_store_evicted,
         )
 
         # Provider created successfully - no event emission needed
@@ -947,6 +1053,64 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 return None
             return f if f > 0 else None
 
+        # #[WARNING:TIMEOUT] — ADR-0027 §1 requires the SURFACED duration and the
+        # responsible knob to be accurate. A read-idle abort used to be reported as
+        # "timed out after 7200.0s (… set timeout=None …)" because only `_timeout`
+        # was consulted: the operator was told the wrong number AND pointed at a
+        # knob that could not fix it. That misattribution is a large part of why the
+        # 2026-08-02 LM Studio 300s abort survived so long. When the transport
+        # raises a READ timeout and a read-idle bound is configured, that bound is
+        # what fired — name it, and name `read_idle_timeout_s`.
+        def _read_idle_timeout_s() -> Optional[float]:
+            v = getattr(self, "_read_idle_timeout", None)
+            if v is None:
+                return None
+            try:
+                f = float(v)
+            except Exception:
+                return None
+            return f if f > 0 else None
+
+        def _is_read_timeout(exc: Exception) -> bool:
+            # httpx.ReadTimeout / httpcore.ReadTimeout / requests.exceptions.ReadTimeout
+            name = (getattr(exc.__class__, "__name__", "") or "").lower()
+            return "readtimeout" in name
+
+        def _timeout_message() -> str:
+            """The accurate '(duration, responsible knob)' pair for this abort."""
+            read_idle = _read_idle_timeout_s()
+            if read_idle is not None and _is_read_timeout(error):
+                # #[WARNING:TIMEOUT] — ADR-0027 §1: NEVER assert a single
+                # duration here. Since the stream-only gate landed
+                # (providers/_http.py), an httpx ReadTimeout has TWO possible
+                # authors and this frame cannot tell them apart: a STREAMING
+                # request carries `read = read_idle`, a NON-STREAMING request
+                # carries `read = total`. Naming only `read_idle` was correct
+                # before the gate and became a *new* misattribution after it —
+                # a 7200s total abort would have been reported as
+                # "timed out after 1800.0s" pointing at read_idle_timeout_s,
+                # a knob that cannot fix it. That is exactly the §1 failure
+                # that hid the 2026-08-02 LM Studio incident for so long, so
+                # state both bounds and which request shape each governs.
+                total = _configured_timeout_s()
+                total_txt = f"{total}s" if total is not None else "unlimited"
+                return (
+                    f"{_provider_label()} API error: read timed out — the applied "
+                    f"bound is {read_idle}s on a STREAMING request (read-idle, no "
+                    f"chunk arrived in this window; knob: read_idle_timeout_s) or "
+                    f"{total_txt} on a NON-STREAMING request (the total budget; "
+                    f"knobs: timeout / default_timeout, 0 = unlimited). "
+                    "read_idle_timeout_s is stream-only and cannot cap a "
+                    "non-streaming generation"
+                )
+            t = _configured_timeout_s()
+            if t is not None:
+                return (
+                    f"{_provider_label()} API error: timed out after {t}s "
+                    "(configured timeout; set timeout=None or default_timeout=0 for unlimited)"
+                )
+            return f"{_provider_label()} API error: timed out"
+
         def _looks_like_timeout(exc: Exception) -> bool:
             # Type-based (preferred)
             if isinstance(exc, (TimeoutError, asyncio.TimeoutError, socket.timeout)):
@@ -972,27 +1136,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if isinstance(error, ProviderAPIError):
             msg = str(error)
             if _looks_like_timeout(error) and not _has_explicit_duration(msg):
-                t = _configured_timeout_s()
-                if t is not None:
-                    return ProviderAPIError(
-                        f"{_provider_label()} API error: timed out after {t}s "
-                        "(configured timeout; set timeout=None or default_timeout=0 for unlimited)"
-                    )
-                return ProviderAPIError(f"{_provider_label()} API error: timed out")
+                return ProviderAPIError(_timeout_message())
             return error
 
         if isinstance(error, (ModelNotFoundError, AuthenticationError, RateLimitError, InvalidRequestError)):
             return error
 
         # Central timeout normalization for all providers (httpx/requests/SDKs).
+        # #[WARNING:TIMEOUT] — ADR-0027 §1: duration + responsible knob, accurately.
         if _looks_like_timeout(error):
-            t = _configured_timeout_s()
-            if t is not None:
-                return ProviderAPIError(
-                    f"{_provider_label()} API error: timed out after {t}s "
-                    "(configured timeout; set timeout=None or default_timeout=0 for unlimited)"
-                )
-            return ProviderAPIError(f"{_provider_label()} API error: timed out")
+            return ProviderAPIError(_timeout_message())
 
         error_str = str(error).lower()
 
@@ -1067,10 +1220,23 @@ class BaseProvider(AbstractCoreInterface, ABC):
           cause already surfaced by _annotate_output_truncation, and
           resampling the most expensive completions 3x would be the cure
           costing more than the disease;
+        - TRUNCATED responses of any shape (finish_reason=length, operator
+          2026-08-02): a tool call cut by the output cap comes back as
+          content="" + tool_calls=[] + finish_reason="length", which read as
+          the all-empty transient and bought THREE full resamples — each one
+          hitting the identical cap, since resampling cannot widen a budget.
+          Same argument as the reasoning case, now keyed on the cause instead
+          of on a side effect of it. The truncation lane owns this shape:
+          _annotate_output_truncation marks it, the runtime's LLM_CALL handler
+          bumps max_output_tokens and retries, the agent loops retry the step
+          asking for a smaller unit of work;
         - anything that is not a GenerateResponse (streams, structured
           BaseModel results) — those verdicts belong to their own layers.
         """
         if not isinstance(response, GenerateResponse):
+            return
+        fr = str(getattr(response, "finish_reason", "") or "").strip().lower()
+        if fr in ("length", "max_tokens", "max_output_tokens"):
             return
         content = response.content
         if isinstance(content, str) and content.strip():
@@ -1492,15 +1658,45 @@ class BaseProvider(AbstractCoreInterface, ABC):
             and (provider_id == "lmstudio" or not provider_handling.handled_enable_disable)
         ):
             marker = thinking_surfaces.assistant_prefill_disable
-            new_messages: List[Dict[str, str]] = []
+            new_messages: List[Dict[str, Any]] = []
             if isinstance(messages, list) and messages:
                 for m in messages:
-                    if isinstance(m, dict):
-                        # Only keep string roles/contents for compatibility with OpenAI chat.
-                        r = m.get("role")
-                        c = m.get("content")
-                        if isinstance(r, str) and r.strip() and isinstance(c, str):
-                            new_messages.append({"role": r.strip(), "content": c})
+                    if not isinstance(m, dict):
+                        logger.warning(
+                            "thinking-prefill: dropping a non-dict message (%s) while rebuilding "
+                            "the conversation; the model will not see it",
+                            type(m).__name__,
+                        )
+                        continue
+                    r = m.get("role")
+                    if not (isinstance(r, str) and r.strip()):
+                        logger.warning(
+                            "thinking-prefill: dropping a message with no usable role (%r) while "
+                            "rebuilding the conversation; the model will not see it",
+                            r,
+                        )
+                        continue
+                    # PRESERVE THE WHOLE MESSAGE. This rebuild exists only to APPEND the
+                    # prefill marker — it must never alter the conversation, or the same
+                    # history is sent differently depending on whether thinking is off.
+                    #
+                    # It used to emit `{"role", "content"}` only, "for compatibility with
+                    # OpenAI chat". That silently destroyed `tool_calls` on assistant turns
+                    # and `tool_call_id` on tool turns, so an agent's whole tool history
+                    # reached the model as unlinked prose: the assistant appeared to announce
+                    # an intention and an orphan tool message appeared from nowhere, with no
+                    # record that the call had already been made. Models then re-issue the
+                    # same call. Measured on poolside/laguna-s-2.1 via LM Studio, replaying
+                    # the exact wire payload of gateway run a27f4786 at cycle 2: 11/24
+                    # duplicate `list_files` calls as shipped, 0/24 with the linkage restored
+                    # and this same prefill still applied.
+                    #
+                    # The `isinstance(content, str)` filter was a second silent drop: an
+                    # assistant turn carrying tool_calls has `content: None` in the OpenAI
+                    # shape, so pure tool-calling turns vanished from the history entirely.
+                    kept = dict(m)
+                    kept["role"] = r.strip()
+                    new_messages.append(kept)
 
             if isinstance(prompt, str) and prompt.strip():
                 new_messages.append({"role": "user", "content": prompt.strip()})
@@ -4672,6 +4868,38 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if effective_max_output_i <= 0:
                 effective_max_output_i = int(max_output_tokens)
             if effective_max_output_i > int(max_output_tokens):
+                # ADR-0026 §1: this reduction is a budget the caller explicitly
+                # asked for and will not get. It must never happen quietly —
+                # the overwhelmingly common cause is an UNDERSTATED
+                # model_capabilities.json entry, not a real model limit, and
+                # without this warning the symptom is an unexplained short
+                # completion. Attribute it to the registry key so it is
+                # actionable.
+                detail = (
+                    f"Clamping caller-requested max_output_tokens for {self.model}: "
+                    f"requested={effective_max_output_i} "
+                    f"clamped_to={int(max_output_tokens)} "
+                    "(source: model_capabilities.json max_output_tokens for this "
+                    "model). If the model really supports more, widen the "
+                    "registry entry."
+                )
+                # The comment above says "it must never happen quietly" and then
+                # this happened quietly for every caller: importing abstractcore
+                # sets the root logger to ERROR and leaves every `abstractcore.*`
+                # logger at NOTSET, so a `logger.warning` record here is NEVER
+                # CREATED — not filtered, not written, not anywhere. 204 of the 278
+                # registry entries carry a limit below 81920, so this silently cut
+                # a caller's budget on most models in the catalogue. ADR 0001
+                # requires the reduction be visible; `warnings.warn` is on by
+                # default and is what actually reaches the caller.
+                self.logger.warning(detail)
+                warnings.warn(f"#FALLBACK {detail}", RuntimeWarning, stacklevel=3)
+                self._last_output_budget_clamp = {
+                    "requested": effective_max_output_i,
+                    "granted": int(max_output_tokens),
+                    "source": "model_capabilities.json:max_output_tokens",
+                    "model": self.model,
+                }
                 effective_max_output_i = int(max_output_tokens)
             result_kwargs["max_output_tokens"] = effective_max_output_i
         else:
@@ -4752,18 +4980,96 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         return params
 
-    def _annotate_output_truncation(self, response: Any) -> None:
-        """Mark + warn when a response was cut off by the output-token cap.
+    @staticmethod
+    def _looks_like_aborted_generation(response: Any) -> bool:
+        """True when a 200 completion is the CORPSE of an aborted generation.
 
-        finish_reason == 'length' means the model reached max_output_tokens
-        before finishing. Per ADR 0001 this must never be silent: annotate
-        metadata (`output_truncated`) and emit one RuntimeWarning so callers
-        can detect the clip. Best-effort; never raises."""
+        operator 2026-08-02 (LM Studio, qwen3.6-35b-a3b): a generation that is
+        cut mid-tool-call — client disconnect, server stop, backend abort —
+        comes back as a perfectly ordinary-looking success::
+
+            {"message": {"role":"assistant",
+                         "content":"Good, I have the context. Let me continue…",
+                         "tool_calls": []},
+             "finish_reason": "stop",
+             "usage": {"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}
+
+        The tool call the model was actually emitting is dropped on the floor
+        (server log: "Failed to generate a tool call (this tool call will be
+        omitted from the response)"); the HTTP body carries NO error field, so
+        `finish_reason` alone cannot tell this apart from a real answer.
+
+        The one signal that survives is the usage block: a completion that
+        produced text CANNOT have consumed zero prompt tokens and produced
+        zero completion tokens. Zero-everything usage next to non-empty
+        content is physically impossible for a completed generation — it is
+        the abort marker (LM Studio also empties `stats`). We therefore key on
+        exactly that pair, and only when there are NO tool calls (a response
+        that carried its tool calls through is not lost work).
+
+        Deliberately NOT flagged:
+        - usage absent/None entirely — some providers simply do not report it,
+          and "unknown" is not "aborted" (evidence law: missing evidence is
+          UNKNOWN, never a verdict);
+        - zero usage with empty content — that is the all-empty transient
+          already owned by `_raise_if_empty_completion`;
+        - any response bearing tool calls.
+        """
+        try:
+            if response is None or not isinstance(response, GenerateResponse):
+                return False
+            if getattr(response, "tool_calls", None):
+                return False
+            usage = getattr(response, "usage", None)
+            if not isinstance(usage, dict) or not usage:
+                return False  # UNKNOWN, not aborted
+            counters = [
+                usage.get(k)
+                for k in (
+                    "input_tokens",
+                    "output_tokens",
+                    "total_tokens",
+                    "prompt_tokens",
+                    "completion_tokens",
+                )
+                if usage.get(k) is not None
+            ]
+            if not counters:
+                return False  # UNKNOWN, not aborted
+            if any(bool(c) for c in counters):
+                return False  # real accounting -> a real completion
+            content = getattr(response, "content", None)
+            reasoning = getattr(response, "reasoning", None)
+            spoke = bool(isinstance(content, str) and content.strip()) or bool(
+                isinstance(reasoning, str) and reasoning.strip()
+            )
+            return spoke
+        except Exception:
+            return False
+
+    def _annotate_output_truncation(self, response: Any) -> None:
+        """Mark + warn when a response was cut off — by the output cap OR by an abort.
+
+        Two ways a generation dies mid-flight, both of which must never be
+        silent (ADR 0001), both annotated on `metadata`:
+
+        - `output_truncated=True` + `truncation_kind="output_cap"`:
+          finish_reason == 'length', the model reached max_output_tokens.
+        - `output_truncated=True` + `truncation_kind="aborted_generation"`
+          (+ `generation_aborted=True`): a zero-usage 200 whose tool call the
+          server dropped — see `_looks_like_aborted_generation`. finish_reason
+          lies ('stop'), so it is keyed on usage instead.
+
+        Consumers (the runtime LLM_CALL effect, the agent loops' parse nodes)
+        read `truncation_kind` to decide RETRY-THE-STEP vs accept-the-turn.
+        Best-effort; never raises."""
         try:
             if response is None:
                 return
             fr = str(getattr(response, "finish_reason", "") or "").strip().lower()
-            if fr not in ("length", "max_tokens", "max_output_tokens"):
+            capped = fr in ("length", "max_tokens", "max_output_tokens")
+            aborted = (not capped) and self._looks_like_aborted_generation(response)
+            if not capped and not aborted:
                 return
             meta = getattr(response, "metadata", None)
             if not isinstance(meta, dict):
@@ -4775,9 +5081,22 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if meta.get("output_truncated"):
                 return  # already annotated (e.g. structured retry re-entry)
             meta["output_truncated"] = True
+            meta["truncation_kind"] = "output_cap" if capped else "aborted_generation"
             usage = getattr(response, "usage", None)
             produced = usage.get("output_tokens") if isinstance(usage, dict) else None
             import warnings as _warnings
+
+            if aborted:
+                meta["generation_aborted"] = True
+                _warnings.warn(
+                    f"Aborted generation for model '{getattr(self, 'model', '?')}': the provider "
+                    f"returned a zero-usage completion (finish_reason={fr!r}, usage={usage!r}) with "
+                    "content but no tool calls — the generation was cut mid-flight and any tool call "
+                    "it was emitting was dropped. This is lost work, not an answer; retry the step.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+                return
 
             _warnings.warn(
                 f"Output truncated for model '{getattr(self, 'model', '?')}': the response hit the "
@@ -5172,6 +5491,394 @@ class BaseProvider(AbstractCoreInterface, ABC):
         _ = (prompt, messages, system_prompt, tools, add_generation_prompt, prefilled_modules)
         return None
 
+    # ------------------------------------------------------------------
+    # Bloc composition (prompt-cache composability)
+    # ------------------------------------------------------------------
+    #
+    # A BLOC is an independently-cached, independently-keyed slice of ONE
+    # rendered conversation. The whole point of keeping `system`, `tools`,
+    # `memory`, `history`, ... as separate blocs is that a bloc's KV state can
+    # be built once and recombined across sessions and agents.
+    #
+    # THE COMPOSABILITY INVARIANT (this is the contract; everything below
+    # exists to enforce it):
+    #
+    #   (C1) SLOT ORDER. Blocs are laid out in the renderer's slot order
+    #        (system -> tools -> messages -> prompt -> generation prompt). A
+    #        bloc may only occupy slots at or after its predecessor's highest
+    #        slot. Out-of-order blocs would render INTO the middle of an
+    #        already-cached region and are rejected.
+    #
+    #   (C2) SUCCESSOR INDEPENDENCE. Bloc k's rendered token sequence is a
+    #        function of blocs 1..k ONLY. It must not change when bloc k+1
+    #        changes or disappears. This is what makes a bloc's cache key
+    #        (`PromptCacheModule.fingerprint`, which hashes blocs 1..k via the
+    #        chained prefix hash) a truthful name for its bytes.
+    #
+    #   (C3) CONCATENATION EQUALS THE SINGLE-SHOT RENDER. For every k,
+    #          concat(fragment_1..fragment_k)
+    #        must be a token-for-token PREFIX of what this provider's own
+    #        `generate()` builds for the union of blocs 1..k. Not "similar
+    #        bytes": the same token ids, at the same positions.
+    #
+    # Why (C2) is not free: chat templates FOLD content together. Qwen/ChatML
+    # (and every other format in `_build_prompt_fragment`) renders the tool
+    # instructions INSIDE the single system turn — one `<|im_start|>system`
+    # block, never two. So the bytes that follow the system text depend on
+    # whether a tools bloc exists. Rendering each bloc as its own standalone
+    # conversation emitted TWO consecutive `<|im_start|>system` blocks, bytes
+    # `generate()` never produces; the tools bloc and everything after it was
+    # dead weight in the KV cache (measured token LCP 618/2148 on the live
+    # agent prefix, 375/668 on the fixture below).
+    #
+    # The fix is not to merge the blocs. It is to stop treating a bloc as a
+    # conversation: a bloc boundary is a CUT INSIDE ONE RENDERED CONVERSATION.
+    # The `system` bloc holds `<|im_start|>system\n<text>` — with the closing
+    # tag deliberately NOT included, because the closing tag is exactly the
+    # part a successor can still rewrite. The `tools` bloc then holds
+    # `\n\n<tools><|im_end|>\n`, and the concatenation is byte-identical to the
+    # single-shot render.
+    #
+    # Generalization to N blocs, with no per-template knowledge: the cut after
+    # bloc k is the MAXIMAL SUCCESSOR-INDEPENDENT PREFIX of the render of
+    # blocs 1..k — the longest string that is a prefix of the render under
+    # EVERY admissible continuation. It is computed by rendering the union
+    # against a fixed family of canonical probes and taking their common
+    # prefix, then backing off to the last token index on which all probes
+    # agree (BPE can merge across a character seam even when the strings
+    # agree). Both steps depend on blocs 1..k only, so (C2) holds by
+    # construction, and (C3) is asserted, not assumed.
+
+    def prompt_cache_render_bloc_text(
+        self,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        add_generation_prompt: bool = False,
+    ) -> Optional[str]:
+        """Render logical content EXACTLY as this provider's `generate()` renders it.
+
+        This is the single source of truth the bloc planner cuts up. A provider
+        may only override this if the returned text is the same text
+        `generate()` would build for the same arguments — the planner's whole
+        guarantee is relative to it. Returning None (the default) means the
+        provider has no such renderer and bloc planning is unavailable; the
+        legacy per-module append path is used instead.
+        """
+        _ = (prompt, messages, system_prompt, tools, add_generation_prompt)
+        return None
+
+    def prompt_cache_encode_bloc_text(self, text: str) -> Optional[List[int]]:
+        """Tokenize rendered text with the model's own tokenizer (no specials added)."""
+        tok = getattr(self, "tokenizer", None)
+        if tok is None or not isinstance(text, str):
+            return None
+        try:
+            ids = tok.encode(text, add_special_tokens=False)
+        except TypeError:
+            try:
+                ids = tok.encode(text)
+            except Exception:
+                return None
+        except Exception:
+            return None
+        try:
+            return [int(i) for i in ids]
+        except Exception:
+            return None
+
+    @staticmethod
+    def _bloc_union(modules: Sequence["PromptCacheModule"]) -> Dict[str, Any]:
+        """Fold an ordered bloc list into the ONE logical conversation it denotes."""
+        system_parts: List[str] = []
+        tools: List[Dict[str, Any]] = []
+        messages: List[Dict[str, Any]] = []
+        prompt_parts: List[str] = []
+        add_generation_prompt = False
+        for mod in modules:
+            if mod.system_prompt:
+                system_parts.append(str(mod.system_prompt))
+            if mod.tools:
+                tools.extend(mod.tools)
+            if mod.messages:
+                messages.extend(mod.messages)
+            if mod.prompt:
+                prompt_parts.append(str(mod.prompt))
+            if mod.add_generation_prompt:
+                add_generation_prompt = True
+        return {
+            # `\n\n` joins multiple system blocs into the ONE system turn the
+            # templates expect — the same separator the renderers use to fold
+            # the tool instructions in.
+            "system_prompt": "\n\n".join(system_parts) or None,
+            "tools": tools or None,
+            "messages": messages or None,
+            "prompt": "\n\n".join(prompt_parts),
+            "add_generation_prompt": add_generation_prompt,
+        }
+
+    @staticmethod
+    def _bloc_slot_index(mod: "PromptCacheModule") -> int:
+        """Highest renderer slot this bloc writes into (see C1)."""
+        if mod.add_generation_prompt:
+            return 4
+        if mod.prompt:
+            return 3
+        if mod.messages:
+            return 2
+        if mod.tools:
+            return 1
+        return 0
+
+    def _bloc_probe_renders(self, union: Dict[str, Any]) -> Optional[List[str]]:
+        """Every admissible continuation of `union`, rendered.
+
+        Depends on `union` ONLY — that is what makes the derived cut
+        successor-independent (C2).
+        """
+        def _render(**over: Any) -> Optional[str]:
+            args = dict(union)
+            args.update(over)
+            return self.prompt_cache_render_bloc_text(
+                prompt=str(args.get("prompt") or ""),
+                messages=args.get("messages"),
+                system_prompt=args.get("system_prompt"),
+                tools=args.get("tools"),
+                add_generation_prompt=bool(args.get("add_generation_prompt")),
+            )
+
+        base = _render()
+        if base is None:
+            return None
+        out: List[str] = [base]
+        candidates: List[Dict[str, Any]] = []
+        if not union.get("tools"):
+            candidates.append({"tools": _BLOC_PROBE_TOOLS})
+        if not union.get("prompt"):
+            candidates.append({"messages": list(union.get("messages") or []) + _BLOC_PROBE_MESSAGES})
+            candidates.append({"prompt": _BLOC_PROBE_PROMPT})
+        if not union.get("add_generation_prompt"):
+            candidates.append({"add_generation_prompt": True})
+        for over in candidates:
+            rendered = _render(**over)
+            if rendered is None:
+                return None
+            out.append(rendered)
+        return out
+
+    @staticmethod
+    def _common_prefix_len(a: Sequence[Any], b: Sequence[Any]) -> int:
+        n = min(len(a), len(b))
+        i = 0
+        while i < n and a[i] == b[i]:
+            i += 1
+        return i
+
+    def _bloc_stable_prefix(self, union: Dict[str, Any]) -> Optional[Tuple[str, List[int]]]:
+        """The maximal successor-independent prefix of `union`'s render.
+
+        Returns `(text, token_ids)` where `token_ids` is the token prefix every
+        admissible continuation agrees on. Both are functions of `union` alone.
+        """
+        renders = self._bloc_probe_renders(union)
+        if not renders:
+            return None
+        stable_text = renders[0]
+        for other in renders[1:]:
+            stable_text = stable_text[: self._common_prefix_len(stable_text, other)]
+        ids = self.prompt_cache_encode_bloc_text(stable_text)
+        if ids is None:
+            return None
+        # Character agreement is not token agreement: BPE merges can straddle
+        # the seam, so the last token(s) of the stable text may be rewritten by
+        # a continuation. Back off to the last token index all probes agree on.
+        limit = len(ids)
+        for other in renders:
+            other_ids = self.prompt_cache_encode_bloc_text(other)
+            if other_ids is None:
+                return None
+            limit = min(limit, self._common_prefix_len(ids, other_ids))
+            if limit == 0:
+                break
+        return stable_text, ids[:limit]
+
+    def prompt_cache_plan_bloc_chain(
+        self, modules: Sequence["PromptCacheModule"]
+    ) -> Optional[PromptCacheBlocPlan]:
+        """Cut an ordered bloc chain into token fragments (see the invariant above).
+
+        Returns None when this provider has no exact renderer/tokenizer, or
+        when the chain violates slot order (C1) — callers then fall back to the
+        legacy per-module append path.
+
+        Two degradations, both explicit and both loud, never silent:
+        - `unsound_at` — a boundary could not be made monotonic (a bloc rewrote
+          bytes its predecessor already owns). The chain is truncated there.
+        - `collapsed` — the plan-time seam check failed: the concatenated
+          fragments are not a token prefix of the single-shot render, or a bloc
+          ended up contributing zero tokens. The whole chain becomes ONE
+          fragment. Blocs stop being independently reusable; the prefill stays
+          whole and correct.
+        """
+        mods = list(modules or [])
+        if not mods:
+            return None
+        if self.prompt_cache_render_bloc_text(system_prompt="probe") is None:
+            return None
+
+        highest = -1
+        for mod in mods:
+            slot = self._bloc_slot_index(mod)
+            if slot < highest:
+                logger.warning(
+                    f"#FALLBACK prompt-cache bloc chain is out of slot order at module "
+                    f"'{mod.module_id}' (slot {slot} after slot {highest}); a later bloc would "
+                    f"render into an already-cached region. Falling back to per-module appends."
+                )
+                return None
+            highest = max(highest, slot)
+
+        fragments: List[List[int]] = []
+        boundaries: List[int] = []
+        stable_texts: List[str] = []
+        prev_ids: List[int] = []
+        for k in range(1, len(mods) + 1):
+            stable = self._bloc_stable_prefix(self._bloc_union(mods[:k]))
+            if stable is None:
+                return None
+            text, ids = stable
+            if self._common_prefix_len(ids, prev_ids) < len(prev_ids):
+                # Bloc k rewrote bytes bloc k-1 already owns. Composition is
+                # unsound at this boundary for this template; report it rather
+                # than silently caching a lie. (Not reachable for the shipped
+                # renderers — kept because it is the honest failure mode for a
+                # template that re-emits a header or a BOS mid-conversation.)
+                reason = (
+                    f"bloc '{mods[k - 1].module_id}' rewrites {len(prev_ids) - self._common_prefix_len(ids, prev_ids)} "
+                    f"token(s) already owned by its predecessor"
+                )
+                logger.warning(f"#FALLBACK prompt-cache bloc composition unsound: {reason}")
+                return PromptCacheBlocPlan(
+                    fragments=fragments,
+                    boundaries=boundaries,
+                    stable_texts=stable_texts,
+                    unsound_at=k - 1,
+                    reason=reason,
+                )
+            fragments.append(list(ids[len(prev_ids):]))
+            boundaries.append(len(ids))
+            stable_texts.append(text)
+            prev_ids = list(ids)
+
+        # ---- PLAN-TIME SEAM CHECK (C3), asserted, never assumed -------------
+        #
+        # `tokenize(a) + tokenize(b) == tokenize(a + b)` is NOT a property of
+        # BPE: merges straddle raw-text seams (Llama-3 folds `"."` + `"\n\n"`
+        # into one token, 19 ids becoming 18). The per-bloc token backoff above
+        # is what keeps cuts on agreed boundaries; this is the independent check
+        # that it actually worked, run against the FULL single-shot render — the
+        # bytes `generate()` will really send.
+        full_render = self.prompt_cache_render_bloc_text(**self._bloc_union(mods))
+        full_ids = self.prompt_cache_encode_bloc_text(full_render) if full_render is not None else None
+        chain_ids = [t for frag in fragments for t in frag]
+        failure = ""
+        if full_ids is None:
+            failure = "the full chain render could not be tokenized"
+        elif chain_ids != full_ids[: len(chain_ids)]:
+            shared = self._common_prefix_len(chain_ids, full_ids)
+            failure = (
+                f"concatenated bloc fragments are not a token prefix of the single-shot render "
+                f"(shared {shared} of {len(chain_ids)}); a tokenizer merge straddles a bloc seam"
+            )
+        else:
+            for idx, frag in enumerate(fragments):
+                if not frag:
+                    failure = (
+                        f"bloc '{mods[idx].module_id}' contributes 0 tokens after seam backoff; "
+                        f"its cache key would name bytes it does not hold"
+                    )
+                    break
+
+        if failure:
+            logger.warning(
+                f"#FALLBACK prompt-cache bloc seam check failed: {failure}. Collapsing "
+                f"{len(mods)} blocs into one fragment — the prefill stays whole and correct, "
+                f"but the blocs are no longer independently reusable."
+            )
+            collapsed_ids = list(full_ids) if full_ids is not None else chain_ids
+            self._warn_bloc_tools_missing(mods, full_render)
+            return PromptCacheBlocPlan(
+                fragments=[collapsed_ids],
+                boundaries=[len(collapsed_ids)],
+                stable_texts=[full_render or ""],
+                collapsed=True,
+                reason=failure,
+            )
+
+        self._warn_bloc_tools_missing(mods, full_render)
+        return PromptCacheBlocPlan(fragments=fragments, boundaries=boundaries, stable_texts=stable_texts)
+
+    @staticmethod
+    def _bloc_tool_names(tools: Optional[Sequence[Any]]) -> List[str]:
+        """Names of the tools a bloc claims to carry (both dict shapes)."""
+        names: List[str] = []
+        for tool in tools or []:
+            name = None
+            if isinstance(tool, dict):
+                fn = tool.get("function")
+                if isinstance(fn, dict):
+                    name = fn.get("name")
+                if not name:
+                    name = tool.get("name")
+            else:
+                name = getattr(tool, "name", None)
+            if isinstance(name, str) and name.strip():
+                names.append(name.strip())
+        return names
+
+    def _warn_bloc_tools_missing(
+        self, mods: Sequence["PromptCacheModule"], full_render: Optional[str]
+    ) -> None:
+        """A tools bloc whose tools are not in the rendered prompt is a lie. Say so.
+
+        The plan can be perfectly sound and still describe a prompt the caller
+        did not ask for. Measured 2026-08-07 on all three local lanes: a tool set
+        whose descriptions exceeded `ToolDefinition`'s 200-char cap was converted
+        to zero definitions, the renderers emitted no tool text, and the planner
+        returned `boundaries=[1408, 1411]`, `collapsed=False`, `unsound_at=None`
+        — a "tools bloc" holding 3 tokens of closing scaffolding and no tools.
+        Every check passed because every check was about token seams, not about
+        content. Nothing downstream could tell that apart from a real tools bloc.
+
+        This is the content check: if a bloc carries tools whose names do not
+        appear anywhere in the prompt this chain will actually send, the model
+        cannot call them, and the caller hears about it here. The cache itself is
+        not wrong (it matches what `generate()` renders) — the RENDER is missing
+        the tools, which is why this warns instead of collapsing the plan.
+        """
+        if not isinstance(full_render, str) or not full_render:
+            return
+        missing: List[str] = []
+        for mod in mods:
+            for name in self._bloc_tool_names(getattr(mod, "tools", None)):
+                if name not in full_render:
+                    missing.append(f"{mod.module_id}:{name}")
+        if not missing:
+            return
+        shown = ", ".join(missing[:8]) + (f" (+{len(missing) - 8} more)" if len(missing) > 8 else "")
+        message = (
+            f"Prompt-cache bloc chain carries {len(missing)} tool(s) that do NOT appear in the "
+            f"rendered prompt: {shown}. The bloc is cached faithfully, but the model will not see "
+            f"these tools — they were dropped before rendering (a malformed tool entry: a dict "
+            f"needs either 'name' + 'description' or an OpenAI-style 'function' entry) or this "
+            f"model has no prompted tool support. An over-long description is NOT a cause: since "
+            f"2026-08-07 those are adapted to the cap and reported, never dropped."
+        )
+        warnings.warn(message, RuntimeWarning, stacklevel=3)
+        logger.warning(message)
+
     def prompt_cache_key_meta(self, key: Any) -> Dict[str, Any]:
         """Return JSON-safe metadata for an in-process prompt-cache key."""
         normalized = self._normalize_prompt_cache_key(key)
@@ -5378,6 +6085,17 @@ class BaseProvider(AbstractCoreInterface, ABC):
     # `prompt_cache_update`, `prompt_cache_fork`, and `prompt_cache_prepare_modules`.
     def _prompt_cache_backend_create(self) -> Optional[Any]:
         return None
+
+    def _prompt_cache_store_evicted(self, key: str, cache_value: Any) -> None:
+        """Hook: `key` left the prompt-cache store WITHOUT an explicit clear
+        (LRU capacity eviction or TTL expiry).
+
+        Providers override this to release per-key side state that would
+        otherwise outlive the entry — MLX drops the key's `_hybrid_snapshots`
+        deepcopy; the HF transformers lane returns freed device pool memory.
+        Default: nothing to release. Never raises (the store swallows errors,
+        but keep overrides cheap: this can fire on a hot store.set)."""
+        _ = (key, cache_value)
 
     def _prompt_cache_backend_clone(self, cache_value: Any) -> Optional[Any]:
         _ = cache_value
@@ -5789,12 +6507,71 @@ class BaseProvider(AbstractCoreInterface, ABC):
             keys.append(key)
             derived.append({"module_id": mod.module_id, "cache_key": key, "module_hash": fp})
 
-        # Find the longest existing prefix cache.
+        # Find the longest existing prefix cache. The chain's FINAL key is
+        # checked first and on its own: a collapsed chain (seam check failed)
+        # writes only that key, so a forward scan would find nothing and
+        # re-prefill the whole prefix on every call.
+        if self._prompt_cache_store.get(keys[-1]) is not None:
+            if make_default:
+                self._default_prompt_cache_key = keys[-1]
+            warm_meta = self._prompt_cache_store.meta(keys[-1]) or {}
+            result: Dict[str, Any] = {
+                "supported": True,
+                "capabilities": caps.to_dict(),
+                "namespace": ns,
+                "version": int(version),
+                # Only report per-module keys that actually exist. A chain built
+                # collapsed (seam check failed) wrote ONLY the final key, and
+                # handing back the full list would name intermediate keys a
+                # caller could fork from and get nothing.
+                "modules": (
+                    [{"module_id": str(warm_meta.get("module_id") or derived[-1]["module_id"]),
+                      "cache_key": keys[-1],
+                      "module_hash": derived[-1].get("module_hash")}]
+                    if warm_meta.get("bloc_collapsed")
+                    else [d for d in derived if self._prompt_cache_store.get(d["cache_key"]) is not None]
+                    or derived
+                ),
+                "final_cache_key": keys[-1],
+            }
+            if warm_meta.get("bloc_collapsed"):
+                result["bloc_plan"] = {"composable": False, "collapsed": True}
+            return result
+
         start_idx = -1
         for i, key in enumerate(keys):
             if self._prompt_cache_store.get(key) is None:
                 break
             start_idx = i
+
+        # Plan the bloc cuts (see the composability invariant above). Planning
+        # is render+tokenize work only, and it never runs when the chain is
+        # already warm — the hot path returned above.
+        plan: Optional[PromptCacheBlocPlan] = None
+        try:
+            plan = self.prompt_cache_plan_bloc_chain(normalized_modules)
+        except Exception as e:
+            logger.warning(f"#FALLBACK prompt-cache bloc planning failed ({e}); per-module appends.")
+            plan = None
+        if plan is not None and plan.unsound_at is not None and plan.unsound_at <= start_idx + 1:
+            # The first module we actually have to build is the one that
+            # cannot compose: no plan is better than a wrong plan.
+            plan = None
+
+        if plan is not None and plan.collapsed:
+            # Seam check failed. Build the whole chain as ONE fragment into the
+            # chain's final key and write nothing else — an intermediate key
+            # would name a boundary the tokenizer refused to give us.
+            return self._prompt_cache_prepare_collapsed_chain(
+                caps=caps,
+                ns=ns,
+                version=version,
+                keys=keys,
+                derived=derived,
+                plan=plan,
+                make_default=make_default,
+                ttl_s=ttl_s,
+            )
 
         # Start from existing prefix (clone to avoid mutating the stored snapshot).
         current_cache: Optional[Any] = None
@@ -5836,8 +6613,28 @@ class BaseProvider(AbstractCoreInterface, ABC):
         prior_meta: Optional[Dict[str, Any]] = None
         if start_idx >= 0:
             prior_meta = self._prompt_cache_store.meta(keys[start_idx])
-        for j in range(start_idx + 1, len(keys)):
+        last_j = len(keys) - 1
+        if plan is not None and plan.unsound_at is not None:
+            # Build up to the last sound boundary; the caller's `final_cache_key`
+            # still names the full chain, so stop the whole chain there instead
+            # of caching a key whose bytes do not match its name.
+            last_j = plan.unsound_at - 1
+        for j in range(start_idx + 1, last_j + 1):
             mod = normalized_modules[j]
+            # `bloc_token_ids` is the planned cut for this bloc: the exact token
+            # ids that make the cache after module j a true token prefix of the
+            # prompt `generate()` builds for modules 0..j. Providers that honour
+            # it MUST feed those ids verbatim (no re-rendering, no re-encoding).
+            append_kwargs: Dict[str, Any] = {}
+            if plan is not None and j < len(plan.fragments):
+                append_kwargs["bloc_token_ids"] = plan.fragments[j]
+                # The CUMULATIVE stable text for this boundary. A lane that keeps
+                # a text/token pair (HF GGUF) needs the text that matches the ids
+                # it just fed; re-deriving it from the module alone is exactly the
+                # standalone re-render the plan exists to avoid. Providers that
+                # do not keep prompt text ignore it.
+                if j < len(plan.stable_texts):
+                    append_kwargs["bloc_stable_text"] = plan.stable_texts[j]
             ok = self._prompt_cache_backend_append(
                 current_cache,
                 prompt=str(mod.prompt or ""),
@@ -5845,6 +6642,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 system_prompt=mod.system_prompt,
                 tools=mod.tools,
                 add_generation_prompt=bool(mod.add_generation_prompt),
+                **append_kwargs,
             )
             if not ok:
                 provider, model = self._prompt_cache_error_context()
@@ -5879,6 +6677,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
             tok = self._prompt_cache_backend_token_count(snapshot)
             if isinstance(tok, int) and tok >= 0:
                 meta["token_count"] = tok
+            if plan is not None and j < len(plan.boundaries):
+                # The planned boundary this key claims to sit on. A later
+                # reader can check `token_count == bloc_boundary_tokens` to know
+                # the cache really landed where the plan said it would.
+                meta["bloc_boundary_tokens"] = int(plan.boundaries[j])
 
             try:
                 extras = self._prompt_cache_append_record_meta(prior_meta)
@@ -5890,16 +6693,133 @@ class BaseProvider(AbstractCoreInterface, ABC):
             self._prompt_cache_store.set(keys[j], snapshot, ttl_s=ttl_s, meta=meta)
             prior_meta = meta
 
+        final_key = keys[last_j]
+        if make_default:
+            self._default_prompt_cache_key = final_key
+
+        result: Dict[str, Any] = {
+            "supported": True,
+            "capabilities": caps.to_dict(),
+            "namespace": ns,
+            "version": int(version),
+            "modules": derived[: last_j + 1],
+            "final_cache_key": final_key,
+        }
+        if plan is not None:
+            result["bloc_plan"] = {
+                "boundaries": [int(b) for b in plan.boundaries],
+                "fragment_tokens": [len(f) for f in plan.fragments],
+                "composable": plan.unsound_at is None,
+            }
+            if plan.unsound_at is not None:
+                result["bloc_plan"]["unsound_at"] = int(plan.unsound_at)
+                result["bloc_plan"]["reason"] = plan.reason
+        return result
+
+    def _prompt_cache_prepare_collapsed_chain(
+        self,
+        *,
+        caps: "PromptCacheCapabilities",
+        ns: str,
+        version: int,
+        keys: List[str],
+        derived: List[Dict[str, Any]],
+        plan: PromptCacheBlocPlan,
+        make_default: bool,
+        ttl_s: Optional[float],
+    ) -> Dict[str, Any]:
+        """Build a seam-check-failed chain as ONE bloc under the final key.
+
+        The blocs are no longer independently reusable — that is the cost, and
+        it is reported in the result so a caller can see the degradation rather
+        than infer it from a performance number.
+        """
+        cache = self._prompt_cache_backend_create()
+        if cache is None:
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                "Provider does not implement an in-process prompt-cache backend.",
+                operation="prepare_modules",
+                provider=provider,
+                model=model,
+                code="prompt_cache_backend_unavailable",
+                capabilities=caps,
+            )
+        # `bloc_stable_text` is NOT optional here, despite the collapsed chain being
+        # a single fragment. The GGUF backend honours a planned cut only when the
+        # text verifies against the ids; with no text it cannot verify, warns, and
+        # falls through to a rebuild branch that — with every content argument None —
+        # renders an EMPTY conversation. Measured: 2 planned tokens, 0 prefilled,
+        # `state.prompt_tokens == 0`, and `ok` still True. `prepare_modules` then
+        # stored that empty cache under the chain's final key and every later call
+        # found it "warm" and permanently empty. The normal (non-collapsed) loop at
+        # ~6606 always passed both; only this path did not.
+        # `stable_texts[0]` is the full render the collapsed ids were tokenized from,
+        # so it verifies exactly.
+        ok = self._prompt_cache_backend_append(
+            cache,
+            bloc_token_ids=plan.fragments[0],
+            bloc_stable_text=(plan.stable_texts[0] if plan.stable_texts else None),
+        )
+        snapshot = self._prompt_cache_backend_clone(cache) if ok else None
+        if not ok or snapshot is None:
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                "Provider failed to build the collapsed prompt cache module chain.",
+                operation="prepare_modules",
+                provider=provider,
+                model=model,
+                code="prompt_cache_append_failed",
+                capabilities=caps,
+            )
+
+        meta: Dict[str, Any] = {
+            "namespace": ns,
+            "module_id": "+".join(str(d.get("module_id") or "") for d in derived),
+            "module_hash": derived[-1].get("module_hash"),
+            "index": len(keys) - 1,
+            "backend": "provider",
+            "bloc_collapsed": True,
+            "bloc_boundary_tokens": int(plan.boundaries[0]),
+        }
+        tok = self._prompt_cache_backend_token_count(snapshot)
+        if isinstance(tok, int) and tok >= 0:
+            meta["token_count"] = tok
+        try:
+            extras = self._prompt_cache_append_record_meta(None)
+        except Exception:
+            extras = None
+        if isinstance(extras, dict) and extras:
+            meta.update(extras)
+        self._prompt_cache_store.set(keys[-1], snapshot, ttl_s=ttl_s, meta=meta)
+
         if make_default:
             self._default_prompt_cache_key = keys[-1]
-
         return {
             "supported": True,
             "capabilities": caps.to_dict(),
             "namespace": ns,
             "version": int(version),
-            "modules": derived,
+            # ONE entry, naming the only key that exists. Reporting the full
+            # per-module list here would hand callers `cache_key`s for
+            # intermediate boundaries that were never written — a caller forking
+            # from `modules[0]["cache_key"]` would fork from nothing and get a
+            # cold key that looks prepared.
+            "modules": [
+                {
+                    "module_id": meta["module_id"],
+                    "cache_key": keys[-1],
+                    "module_hash": derived[-1].get("module_hash"),
+                }
+            ],
             "final_cache_key": keys[-1],
+            "bloc_plan": {
+                "boundaries": [int(plan.boundaries[0])],
+                "fragment_tokens": [len(plan.fragments[0])],
+                "composable": False,
+                "collapsed": True,
+                "reason": plan.reason,
+            },
         }
 
     def _prompt_cache_append_record_meta(

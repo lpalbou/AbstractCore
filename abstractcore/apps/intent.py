@@ -14,8 +14,8 @@ Options:
     --chunk-size <size>             Chunk size in characters (default: 8000, max: 32000)
     --provider <provider>           LLM provider (requires --model)
     --model <model>                 LLM model (requires --provider)
-    --max-tokens <tokens>           Maximum total tokens for LLM context (default: 32000)
-    --max-output-tokens <tokens>    Maximum tokens for LLM output generation (default: 8000)
+    --max-tokens <tokens>           Total context budget (default: auto = model's full context)
+    --max-output-tokens <tokens>    Output-token budget (default: auto = no cap)
     --conversation-mode             Analyze as conversation (expects multiple messages)
     --focus-participant <role>      In conversation mode, focus on specific participant (user, assistant, etc.)
     --verbose                       Show detailed progress information
@@ -435,15 +435,19 @@ Examples:
     parser.add_argument(
         '--max-tokens',
         type=int,
-        default=32000,
-        help='Maximum total tokens for LLM context (default: 32000)'
+        default=-1,
+        help='Total context budget. -1 = AUTO (default): use the model\'s full '
+             'advertised context. Pass a positive value only as an explicit '
+             'deployment constraint (e.g. limited GPU RAM).'
     )
 
     parser.add_argument(
         '--max-output-tokens',
         type=int,
-        default=8000,
-        help='Maximum tokens for LLM output generation (default: 8000)'
+        default=-1,
+        help='Output-token budget. -1 = AUTO (default): no cap is sent, so the '
+             'model uses its full output capability. Pass a positive value only '
+             'if you explicitly want the response cut off at that length.'
     )
 
     # Other options
@@ -534,13 +538,18 @@ Examples:
         if args.verbose:
             print(f"🤖 Using LLM: {provider}/{model}")
 
-        # Create LLM instance
+        # Create LLM instance.
+        # AUTO (-1) means "operator asked for no bound" — do not forward it, so the
+        # provider keeps the model's full advertised capability.
+        llm_kwargs = {"timeout": args.timeout}
+        if args.max_tokens != -1:
+            llm_kwargs["max_tokens"] = args.max_tokens
+        if args.max_output_tokens != -1:
+            llm_kwargs["max_output_tokens"] = args.max_output_tokens
         llm = create_llm(
             provider=provider,
             model=model,
-            max_tokens=args.max_tokens,
-            max_output_tokens=args.max_output_tokens,
-            timeout=args.timeout
+            **llm_kwargs
         )
 
         # Create intent analyzer

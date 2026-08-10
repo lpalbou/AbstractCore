@@ -210,3 +210,72 @@ def test_audio_music_upstream_timeout_preserves_gateway_status(client, monkeypat
 
     assert resp.status_code == 504
     assert "HTTP 504" in resp.json()["error"]["message"]
+
+
+def _make_fake_detailed_music_plugin_ep(details_payload):
+    def register(registry):
+        class _Music:
+            backend_id = "fake-music"
+
+            def available_providers(self, task=None):
+                return [{"provider_id": "acestep", "tasks": [task], "local": True}]
+
+            def provider_details(self, *, task=None):
+                _ = task
+                return details_payload
+
+            def t2m(self, prompt: str, **kwargs):
+                _ = prompt, kwargs
+                return b"wav-bytes"
+
+        registry.register_music_backend(backend_id="fake-music", factory=lambda _owner: _Music(), priority=0)
+
+    return _FakeEntryPoint(name="fake", value="tests.fake_detailed_music:register", obj=register)
+
+
+def test_music_provider_details_route_reports_unusable_providers_with_reasons(client, monkeypatch):
+    details_payload = [
+        {"provider_id": "acestep", "usable": True, "metadata": {"reason": "", "cached_models": ["ACE-Step/acestep-v15-xl-turbo-diffusers"]}},
+        {"provider_id": "acemusic", "usable": False, "metadata": {"reason": "no API key configured", "cached_models": []}},
+    ]
+    monkeypatch.setattr(
+        importlib.metadata,
+        "entry_points",
+        lambda: _EntryPoints([_make_fake_detailed_music_plugin_ep(details_payload)]),
+    )
+    _reset_audio_core(monkeypatch)
+
+    resp = client.get("/v1/audio/music/provider-details")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["ok"] is True
+    assert body["operation"] == "music_provider_details"
+    assert body["capability"] == "music"
+    assert body["task"] == "text_to_music"
+    assert body["provider_details"] == details_payload
+
+
+def test_music_provider_details_route_501_when_backend_lacks_method(client, monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_make_fake_music_plugin_ep()]))
+    _reset_audio_core(monkeypatch)
+
+    resp = client.get("/v1/audio/music/provider-details")
+
+    assert resp.status_code == 501
+    body = resp.json()
+    assert body["ok"] is False
+    assert "provider_details" in body["error"]
+    assert "abstractmusic >= 0.1.14" in body["error"]
+
+
+def test_music_provider_details_route_501_when_plugin_unavailable(client, monkeypatch):
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([]))
+    _reset_audio_core(monkeypatch)
+
+    resp = client.get("/v1/audio/music/provider-details")
+
+    assert resp.status_code == 501
+    body = resp.json()
+    assert body["ok"] is False
+    assert 'pip install "abstractcore[music]"' in body["error"]

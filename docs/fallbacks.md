@@ -9,6 +9,37 @@ The goal of a fallback is:
 - Avoid “system prompt injection” where possible
 - Be explicit about trade-offs and when behavior is only best-effort
 
+## Not a fallback: which model gets loaded
+
+There is **no fallback between model artifacts**. A model handle names an artifact, and
+AbstractCore either loads that artifact or fails ([ADR 0009](adr/0009-model-handle-fidelity.md)).
+Every fallback on this page changes *how* a request is served; none of them changes *what model
+serves it*.
+
+This was not always true. `HuggingFaceProvider` used to promote any handle to GGUF when a local
+LM Studio Hub manifest existed and any GGUF could be resolved from the caches — so
+`create_llm("huggingface", model="Qwen/Qwen3.6-27B")` silently loaded a 4-bit
+`lmstudio-community/Qwen3.6-27B-GGUF` file on llama.cpp instead of the requested bf16
+transformers weights. That promotion has been removed; the case now raises
+`ModelArtifactMismatchError`.
+
+If you were relying on it, say which artifact you want:
+
+```python
+# The GGUF that the LM Studio Hub alias points at:
+create_llm("huggingface", model="Qwen/Qwen3.6-27B", model_type="gguf")
+create_llm("huggingface", model="lmstudio-community/Qwen3.6-27B-GGUF")   # or name it directly
+create_llm("huggingface", model="/path/to/Qwen3.6-27B-Q4_K_M.gguf")      # or the file itself
+
+# The transformers weights the handle actually names:
+create_llm("huggingface", model="Qwen/Qwen3.6-27B", model_type="transformers")
+```
+
+An explicit `:quant` selector is likewise honoured exactly or refused — `repo-GGUF:Q8_0` will
+never quietly hand back `Q4_K_M`. Where a handle genuinely underdetermines the artifact (a GGUF
+repository holding several quantizations and no selector), the default pick is logged at WARNING
+on the `abstractcore.providers.huggingface` logger.
+
 ## Qwen3 / Qwen3.5: thinking (“reasoning”) toggle
 
 ### What upstream Qwen recommends

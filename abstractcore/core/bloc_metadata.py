@@ -337,7 +337,7 @@ def generate_bloc_metadata_jsonld(
     schema: Optional[Dict[str, Any]] = None,
     enabled: bool = False,
     debug: bool = False,
-    max_output_tokens: int = 512,
+    max_output_tokens: Optional[int] = None,
 ) -> BlocMetadataResult:
     """Generate + persist compact JSON-LD metadata for a bloc (best-effort).
 
@@ -476,21 +476,30 @@ def generate_bloc_metadata_jsonld(
             if uses_mlx_bloc_cache:
                 call_system_prompt = None
                 call_prompt = f"{system_prompt}\n\n{user_prompt}"
-            attempt_max = int(max_output_tokens)
-            if attempt == 1:
-                attempt_max = max(attempt_max, 2048)
-            elif attempt >= 2:
-                attempt_max = max(attempt_max, 4096)
+            # Output budget policy (ADR 0026 §2): the caller decides. When they did
+            # not (max_output_tokens=None, the default) we send NO cap at all and let
+            # the provider/model use its full output capability — a literal default
+            # here silently truncated schema-constrained JSON on thinking models.
+            # An explicit caller cap is honoured verbatim, but still escalates on the
+            # retry ladder so a too-small cap fails loudly rather than looping.
+            gen_kwargs = {}
+            if max_output_tokens is not None:
+                attempt_max = int(max_output_tokens)
+                if attempt == 1:
+                    attempt_max = max(attempt_max, 2048)
+                elif attempt >= 2:
+                    attempt_max = max(attempt_max, 4096)
+                gen_kwargs["max_output_tokens"] = int(attempt_max)
 
             resp = provider.generate(
                 call_prompt,
                 system_prompt=call_system_prompt,
                 stream=False,
                 thinking=False,
-                max_output_tokens=int(attempt_max),
                 temperature=0.0,
                 top_p=1.0,
                 prompt_cache_key=tmp_key,
+                **gen_kwargs,
             )
             last_raw = str(getattr(resp, "content", "") or "")
 

@@ -423,6 +423,30 @@ class AbstractCoreInterface(ABC):
 
         Returns:
             Tuple of (max_tokens, max_output_tokens, max_input_tokens)
+
+        AUTO-DERIVED `max_input_tokens` (when the caller set none) is a PLANNING
+        figure, not a wire-enforced reservation. No provider reserves the output
+        ceiling out of the context window up front: `max_output_tokens` bounds
+        the completion, and generation additionally stops when the window fills.
+        Subtracting the full output CEILING therefore reports the worst case
+        (caller asks for the maximum completion) as if it were the only case.
+
+        That turns every honest widening of an output ceiling into a SILENT
+        SHRINK of the input budget — the caller-asks-for-more-gets-less shape
+        ADR-0026 forbids. Concretely, correcting qwen3-1.7b's ceiling from an
+        understated 8192 to the vendor's 38912 would have dropped the derived
+        input budget from 24576 to 2048, and with it the summarizer's chunking
+        threshold from 23376 to its 8000 floor — a widening fix causing a
+        four-fold reduction in usable input.
+
+        So the auto-derivation reserves AT MOST a quarter of the window for
+        generation: `max_input = max_tokens - min(max_output_tokens,
+        max_tokens // 4)`. Because `min(out, ctx//4) <= out`, this is provably
+        never smaller than the old `ctx - out` for any (ctx, out) pair — it is
+        a widening-only rule that cannot regress any model, and it removes the
+        inversion entirely. Explicitly configured `max_input_tokens` is
+        untouched and still validated against `max_input + max_output <=
+        max_tokens` by `_validate_token_parameters`.
         """
         effective_max_tokens = self.max_tokens
         effective_max_output_tokens = self.max_output_tokens
@@ -430,7 +454,23 @@ class AbstractCoreInterface(ABC):
 
         # If max_tokens is set but max_input_tokens is not, calculate it
         if effective_max_tokens and effective_max_input_tokens is None:
-            effective_max_input_tokens = effective_max_tokens - effective_max_output_tokens
+            # Reserve at most a quarter of the window for generation. This is
+            # >= the old `max_tokens - max_output_tokens` for every input, so
+            # no model's budget can regress; it only stops large output
+            # CEILINGS from being misread as large output RESERVATIONS.
+            # It also makes the registry's shared-window class usable at all:
+            # entries with `max_output_tokens >= max_tokens` (the vendor
+            # publishes no separate completion cap — gpt-oss, Gemma, Mistral,
+            # Phi, codestral, ...) previously derived max_input <= 0, i.e.
+            # "this model accepts no input".
+            reserve = min(
+                int(effective_max_output_tokens or 0),
+                int(effective_max_tokens) // 4,
+            )
+            derived = int(effective_max_tokens) - max(reserve, 0)
+            if derived <= 0:
+                derived = int(effective_max_tokens)
+            effective_max_input_tokens = derived
 
         return effective_max_tokens, effective_max_output_tokens, effective_max_input_tokens
 

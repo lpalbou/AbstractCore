@@ -36,11 +36,21 @@ plugins, so `llm.capabilities.status()` reports their availability and selected
 backend id, and a missing plugin fails with an actionable install hint rather
 than a silent stub.
 
-`abstractvoice` 0.10.18+ can install its base AbstractCore plugin path on
+`abstractvoice` 0.11.0+ can install its base AbstractCore plugin path on
 Python 3.9 without OmniVoice, torch, or torchaudio. Python 3.10+ is
 recommended. Local voice engines and clone backends are installed through
 explicit local aggregate profiles such as `abstractcore[all-apple]` and
 `abstractcore[all-gpu]`; AEC requires Python 3.11+.
+
+`abstractvoice` 0.11.0 adds the local Qwen3-TTS engine
+(`pip install "abstractvoice[qwen3-tts]"`, Python 3.10+): preset speakers
+through the standard voice selectors, voice cloning from a few seconds of
+reference audio, and voice *design* from a natural-language description via the
+existing `instructions` selector — all of which flow through AbstractCore's
+`llm.voice.tts(...)` / `/v1/audio/speech` unchanged, since the plugin owns
+discovery and per-model capability reporting. Discovery is also engine-free
+since 0.10.19: listing providers, models, or voices answers from the model
+cache without importing torch or loading weights.
 
 ```python
 from abstractcore import create_llm
@@ -98,6 +108,12 @@ batch = llm.vision.t2i_batch(
 # Generic discovery for plugins that expose the shared contract.
 music_providers = llm.capabilities.available_providers("music", task="text_to_music")
 music_models = llm.capabilities.list_models("music", task="text_to_music")
+
+# Why is a music provider missing from available_providers? provider_details
+# (abstractmusic >= 0.1.14) reports every known provider with `usable` and the
+# reason it is not — a missing API key, an uninstalled extra, or weights that
+# have not been downloaded — so an empty provider list is never a dead end.
+music_provider_details = llm.music.provider_details(task="text_to_music")
 
 # Music via AbstractMusic when installed.
 wav_music = llm.music.generate(
@@ -235,6 +251,7 @@ The server exposes the same deep catalogs through:
 - `POST /{provider}/v1/audio/music`
 - `GET /v1/audio/music/providers`
 - `GET /v1/audio/music/models`
+- `GET /v1/audio/music/provider-details`
 - `POST /v1/videos/generations`
 - `POST /v1/videos/edits`
 - `POST /v1/images/upscale`
@@ -244,11 +261,20 @@ The server exposes the same deep catalogs through:
 - `POST /v1/vision/jobs/videos/generations`
 - `POST /v1/vision/jobs/videos/edits`
 
-For `abstractmusic>=0.1.13`, the default lightweight music backend is the
+For `abstractmusic>=0.1.15`, the default lightweight music backend is the
 remote ACE Music API path (`provider="acemusic"` or `/acemusic/v1/audio/music`).
 Set `ACEMUSIC_API_KEY` in the server or Python environment. The server music
 route accepts `wav`, `mp3`, and `flac`; individual backends may support fewer
 formats.
+
+`/v1/audio/music/providers` lists only providers that are runnable right now
+(installed, weights cached, API answering). `/v1/audio/music/provider-details`
+explains the rest: every known provider with `usable` and, when it is not, the
+reason in `metadata.reason`. Local `acestep` generations also report quality
+diagnostics from abstractmusic 0.1.15 — for example
+`audio_stats.probably_noise_texture`, a warning-grade screen for the
+noise-collapse signature — in the generation metadata that flows through the
+plugin unchanged.
 
 Keep `/v1/models` for LLM/embedding provider discovery. Generated-media
 catalogs are intentionally separate so image and voice backends can expose their

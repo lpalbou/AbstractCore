@@ -5,6 +5,7 @@ Supports both transformers models and GGUF models via llama-cpp-python.
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 import importlib.util
 import os
@@ -16,16 +17,28 @@ import sys
 import threading
 import time
 import uuid
+import warnings
 from datetime import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union, Iterator, Type, TYPE_CHECKING
+from typing import List, Dict, Any, Optional, Sequence, Union, Iterator, Type, TYPE_CHECKING
 
 # Import config manager to respect offline-first settings
 from ..config.manager import get_config_manager
 
 # Get config instance and set offline environment variables if needed
 _config = get_config_manager()
+
+# Did the CALLER ask for offline, or did we? `offline_first` defaults to True,
+# so the three variables below are almost always ours. That distinction is
+# load-bearing exactly once — see `_resolve_bnb_mps_fused_kernel`, which may
+# lift OUR flag for a single accelerator-kernel resolution but must never
+# override an offline setting the user made deliberately.
+_USER_SET_HF_OFFLINE = {
+    name: os.environ.get(name)
+    for name in ("TRANSFORMERS_OFFLINE", "HF_DATASETS_OFFLINE", "HF_HUB_OFFLINE")
+}
+
 if _config.is_offline_first():
     os.environ["TRANSFORMERS_OFFLINE"] = "1"
     os.environ["HF_DATASETS_OFFLINE"] = "1"
@@ -50,7 +63,13 @@ except ImportError:
     BaseModel = None
 from .base import BaseProvider, PromptCacheCapabilities, PromptCacheRenderedFragment, ThinkingControlHandling
 from ..core.types import GenerateResponse
-from ..exceptions import ModelNotFoundError, format_model_error
+from ..core import degeneration as _degeneration
+from ..exceptions import (
+    InvalidRequestError,
+    ModelArtifactMismatchError,
+    ModelNotFoundError,
+    format_model_error,
+)
 from ..tools import UniversalToolHandler, execute_tools, merge_tools_into_system
 from ..events import EventType
 
@@ -61,6 +80,369 @@ if TYPE_CHECKING:
 
 _MPS_GENERATION_LOCK = threading.Lock()
 _AUTO_GROWING_LLAMA_RAM_CACHE_CLS = None
+
+_ARTIFACT_LOGGER = None
+
+
+def _artifact_logger():
+    """Module-scoped logger for artifact-resolution decisions (ADR 0009).
+
+    Deliberately NOT `self.logger`: the resolution helpers run on providers built
+    with `__new__` (no instance logger), and a resolution choice that cannot be
+    logged would be a silent choice. Resolved lazily to keep import cheap.
+    """
+    global _ARTIFACT_LOGGER
+    if _ARTIFACT_LOGGER is None:
+        import logging
+
+        _ARTIFACT_LOGGER = logging.getLogger("abstractcore.providers.huggingface")
+    return _ARTIFACT_LOGGER
+
+
+# ---------------------------------------------------------------------------
+# torch-MPS short-query SDPA corruption (pytorch#163597) — DETECT AND WARN ONLY
+# ---------------------------------------------------------------------------
+# MEASURED on torch 2.10.0, macOS 26.3, Apple M5 Max (2026-08-05; artifacts in
+# untracked/prompt-cache-bench/results/MPS_INVESTIGATION_RESULTS.md):
+# scaled_dot_product_attention on the MPS backend returned NON-DETERMINISTIC and
+# numerically WRONG results for q_len <= 8 over kv_len >= 1024 in float16/bfloat16
+# (32 identical calls -> 32 distinct results, error 6.35x the output's magnitude
+# vs a CPU float64 reference). q_len == 1 is every decode step, so on 2.10 every
+# token past ~1024 tokens of context read corrupted attention.
+#
+# RE-MEASURED on torch 2.13.0 at the same shapes: 1 distinct result / 16 calls,
+# rel err 0.004 (bf16 rounding) — the defect is GONE
+# (untracked/prompt-cache-bench/cleanremeasure/verify_torch213_kernel.json).
+# torch >= 2.11.0 measured clean; <= 2.9 was never measured and is not claimed.
+#
+# The in-process attention workaround that used to live here has been REMOVED:
+# it had no torch version gate, so it fired on every MPS load regardless of
+# torch, and it defeated the fused decode kernel (materialising a [B,H,q,kv]
+# score matrix plus a repeat_interleave of K/V on every decode step). All that
+# remains is a one-time warning on the exact affected configuration.
+_MPS_SDPA_DEFECT_WARNED = False
+
+
+def _warn_if_mps_sdpa_defective(device, model) -> bool:
+    """Warn once if this torch build carries the MPS SDPA defect (2.10.x only)."""
+    global _MPS_SDPA_DEFECT_WARNED
+    if _MPS_SDPA_DEFECT_WARNED or str(device) != "mps":
+        return False
+    try:
+        import torch  # type: ignore
+        ver = tuple(int(p) for p in torch.__version__.split("+")[0].split(".")[:2])
+        dtype = next(model.parameters()).dtype
+    except Exception:
+        return False
+    # Version gate is STRICT: 2.10.x only. 2.10.0 measured broken, >= 2.11.0
+    # measured clean, <= 2.9 never measured (so no claim, and no slow path).
+    # Deliberately NOT narrowed by head_dim: the fault was characterised at
+    # head_dim 128, and this is only a warning about a known-bad torch build —
+    # under-warning costs silently wrong generations, over-warning costs a line
+    # of stderr on a torch release the user should be off anyway.
+    if ver != (2, 10) or dtype not in (torch.float16, torch.bfloat16):
+        return False
+    _MPS_SDPA_DEFECT_WARNED = True
+    import warnings
+    warnings.warn(
+        f"abstractcore: torch {torch.__version__} on the MPS backend returns "
+        "non-deterministic, numerically wrong scaled_dot_product_attention for "
+        "short queries over a long KV cache (pytorch#163597) — i.e. every token "
+        "generated past ~1024 tokens of context in float16/bfloat16. UPGRADE to "
+        "torch >= 2.11 (measured clean); as a stopgap set "
+        "ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL=eager, which is slower but exact."
+    )
+    return True
+
+
+# The bitsandbytes fused Metal 4-bit kernel, and why abstractcore probes for it.
+#
+# `bitsandbytes.backends.mps.ops._get_kernel()` resolves
+# `kernels-community/bitsandbytes-mps` lazily on the first `Linear4bit` forward.
+# It swallows EVERY failure and latches `_kernel_load_failed = True` for the
+# lifetime of the process, after which every 4-bit op falls back to
+# `dequantize -> F.linear`. The fallback is numerically fine — the model loads
+# and answers correctly — it is just about x4 slower to decode, with no warning
+# anywhere. That is a silent degradation, which ADR 0001/0009 forbid, and it
+# killed three measurement cells on 2026-08-06 as the `kernels` package moved
+# between versions underneath a running sweep.
+#
+# bitsandbytes is third-party, so the probe lives here: run the SAME resolution
+# it would run, at model-load time, and say so out loud when it fails.
+_BNB_MPS_FUSED_KERNEL_REPO = "kernels-community/bitsandbytes-mps"
+
+# Serialises the brief offline-flag lift below. The lift mutates process-wide
+# state, so no two loads may overlap inside it.
+_BNB_KERNEL_RESOLVE_LOCK = threading.Lock()
+
+# The lift is attempted at most ONCE per process. On a genuinely disconnected
+# machine it costs 7.2 s before huggingface_hub's own connect timeout gives up
+# (measured against a black-hole endpoint; bounded, and the flags are restored)
+# — acceptable once against a permanent x4 decode penalty, not acceptable on
+# every subsequent model load. bitsandbytes' own latch cannot serve as this
+# memo: it is only set when ITS `_get_kernel()` runs, and a failed lift never
+# reaches that call.
+_BNB_KERNEL_LIFT_ATTEMPTED = False
+
+
+def _resolve_bnb_mps_fused_kernel():
+    """Resolve the fused Metal 4-bit kernel, lifting OUR offline flag if needed.
+
+    THE PRODUCT BUG THIS FIXES (measured 2026-08-06, in-process, one variable):
+    `offline_first` (default True) sets `HF_HUB_OFFLINE=1` at the top of this
+    module, and `kernels.get_kernel` verifies the kernel repo's publisher over
+    the Hub API — a check with no offline path. Through the product path the
+    resolution therefore fails in 0.008 s, bitsandbytes latches the failure for
+    the life of the process, and every `Linear4bit` forward silently falls back
+    to `dequantize -> F.linear` at about x4 the cost. A benchmark harness that
+    happened to import bitsandbytes BEFORE abstractcore got the fused kernel and
+    kept it (`kernels.get_kernel` memoises), which is how a warm NF4 figure of
+    0.0681 s came to be published against a product-path reality of 0.2696 s.
+
+    `offline_first` exists to keep model WEIGHTS off the network. It was never
+    meant to disable an accelerator. So: try the shipped offline path first; if
+    that fails, retry ONCE with our own flag lifted, then put it back.
+
+    Clearing the environment variable is NOT sufficient and that is not an
+    oversight — `huggingface_hub` snapshots `HF_HUB_OFFLINE` into
+    `constants.HF_HUB_OFFLINE` at ITS import, so the constant must be patched
+    too (env-only: still fails in 0.000 s; env + constant: succeeds in 0.608 s).
+    Both are restored in `finally`, whatever happens.
+
+    Never lifts a flag the USER set: `_USER_SET_HF_OFFLINE` records the values
+    that existed before this module touched them, and a user-set offline flag is
+    left exactly as found — those callers get the warning instead.
+
+    The lifted window must cover BITSANDBYTES' OWN `_get_kernel()`, not just
+    ours, and that is not belt-and-braces. `kernels.get_kernel` memoises the
+    build it returns but re-runs `_check_trust_remote_code` on EVERY call, so a
+    resolution we complete and then hand back to a re-armed offline flag buys
+    bitsandbytes nothing — measured: our call succeeds via the lift, bitsandbytes'
+    next call still returns None and latches. Priming its module-global `_kernel`
+    inside the window is what makes the fused path reachable, and once that
+    global is set bitsandbytes never calls `get_kernel` again.
+
+    Ordering is load-bearing too: bitsandbytes' `_get_kernel()` is NEVER called
+    before a plain `get_kernel` has succeeded, because its `except` arm latches
+    `_kernel_load_failed = True` permanently and every later attempt — lifted or
+    not — short-circuits on that latch.
+
+    Returns (kernel_or_None, how) where `how` is 'offline', 'network-lift',
+    'declined-user-offline' or 'failed'.
+    """
+    try:
+        from kernels import get_kernel  # type: ignore
+        from bitsandbytes.backends.mps import ops as bnb_ops  # type: ignore
+    except Exception:
+        return None, "failed"
+
+    def _prime_bnb():
+        """Populate bitsandbytes' module-global `_kernel`. Only ever called
+        after a plain `get_kernel` has already succeeded under the same
+        conditions, so its latching `except` arm cannot be reached."""
+        try:
+            return bnb_ops._get_kernel()
+        except Exception:  # noqa: BLE001 - bitsandbytes swallows internally
+            return None
+
+    # Already resolved earlier in this process (a second provider instance, a
+    # second model): bitsandbytes holds the kernel in a module global and will
+    # never call `get_kernel` again, so neither should we.
+    existing = getattr(bnb_ops, "_kernel", None)
+    if existing is not None and not getattr(bnb_ops, "_kernel_load_failed", False):
+        return existing, "already-resolved"
+
+    try:
+        get_kernel(_BNB_MPS_FUSED_KERNEL_REPO, version=1)
+        primed = _prime_bnb()
+        if primed is not None:
+            return primed, "offline"
+    except Exception:
+        pass
+
+    # The user asked for offline explicitly — respect it and do not retry.
+    if any(str(v or "").strip() not in ("", "0")
+           for v in _USER_SET_HF_OFFLINE.values()):
+        return None, "declined-user-offline"
+
+    if not _config.is_offline_first():
+        return None, "failed"  # nothing of ours to lift; the failure is real
+
+    global _BNB_KERNEL_LIFT_ATTEMPTED
+    names = ("TRANSFORMERS_OFFLINE", "HF_DATASETS_OFFLINE", "HF_HUB_OFFLINE")
+    with _BNB_KERNEL_RESOLVE_LOCK:
+        if _BNB_KERNEL_LIFT_ATTEMPTED:
+            return None, "failed"  # already tried this process; do not re-stall
+        _BNB_KERNEL_LIFT_ATTEMPTED = True
+        saved_env = {n: os.environ.get(n) for n in names}
+        hub_constants = None
+        saved_constant = None
+        try:
+            import huggingface_hub.constants as hub_constants  # type: ignore
+
+            saved_constant = getattr(hub_constants, "HF_HUB_OFFLINE", None)
+        except Exception:
+            hub_constants = None
+        try:
+            for n in names:
+                os.environ.pop(n, None)
+            if hub_constants is not None:
+                hub_constants.HF_HUB_OFFLINE = False
+            get_kernel(_BNB_MPS_FUSED_KERNEL_REPO, version=1)
+            primed = _prime_bnb()
+            return (primed, "network-lift") if primed is not None else (None, "failed")
+        except Exception:
+            return None, "failed"
+        finally:
+            for n, v in saved_env.items():
+                if v is None:
+                    os.environ.pop(n, None)
+                else:
+                    os.environ[n] = v
+            if hub_constants is not None and saved_constant is not None:
+                hub_constants.HF_HUB_OFFLINE = saved_constant
+
+
+def _probe_bnb_mps_fused_kernel() -> Dict[str, Any]:
+    """Resolve the bitsandbytes fused Metal 4-bit kernel and report the outcome.
+
+    Returns a record; never raises. `available` is True only when the kernel
+    object is live AND bitsandbytes has not already latched its failure flag
+    from an earlier attempt in this process.
+    """
+    record: Dict[str, Any] = {
+        "available": False,
+        "reason": None,
+        "remedy": None,
+        "error": None,
+        "kernels_version": None,
+        "bitsandbytes_version": None,
+        "macos_major": None,
+        "latched_failed": None,
+        "resolved_via": None,
+        "bnb_own_call_returned_kernel": None,
+        "user_set_offline_flags": {k: v for k, v in _USER_SET_HF_OFFLINE.items()
+                                   if v is not None},
+        "hf_hub_offline": os.environ.get("HF_HUB_OFFLINE"),
+        "offline_flags_set": [
+            f"{k}={os.environ[k]}" for k in
+            ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "HF_DATASETS_OFFLINE")
+            if str(os.environ.get(k) or "").strip() not in ("", "0")
+        ],
+    }
+    kernels_pin_note = (
+        "pin `kernels==0.14.1` — kernels <=0.13 resolves the wrong Hub repo type "
+        "(the model repo, which carries no torch213 Metal build) and kernels "
+        ">=0.15 breaks transformers model imports"
+    )
+    try:
+        import platform
+
+        mac = platform.mac_ver()[0]
+        record["macos_major"] = int(mac.split(".")[0]) if mac else 0
+    except Exception:
+        record["macos_major"] = None
+    for pkg, field_name in (("kernels", "kernels_version"), ("bitsandbytes", "bitsandbytes_version")):
+        try:
+            import importlib.metadata as _md
+
+            record[field_name] = _md.version(pkg)
+        except Exception:
+            record[field_name] = None
+
+    try:
+        from bitsandbytes.backends.mps import ops as _bnb_mps_ops  # type: ignore
+    except Exception as e:
+        record["reason"] = "bitsandbytes MPS backend not importable"
+        record["error"] = f"{type(e).__name__}: {e}"
+        record["remedy"] = "install a bitsandbytes build with the MPS backend"
+        return record
+
+    # macOS < 26 pre-sets the latch: bitsandbytes never attempts the hub
+    # kernel there, so this is a platform limit, not a resolution failure.
+    if isinstance(record["macos_major"], int) and record["macos_major"] < 26:
+        record["latched_failed"] = True
+        record["reason"] = (
+            f"macOS {record['macos_major']} is below 26; bitsandbytes does not "
+            "attempt the Metal hub kernel on this OS"
+        )
+        record["remedy"] = (
+            "no software fix — the fused Metal kernel needs macOS 26+; use the "
+            "MLX or GGUF lane for fast 4-bit on this OS"
+        )
+        return record
+
+    # Run the real resolution, lifting our own offline flag if that is what is
+    # in the way (see `_resolve_bnb_mps_fused_kernel`). `kernels.get_kernel`
+    # memoises, so this is the work the first Linear4bit forward would have
+    # done, moved to load time — not extra work.
+    kernel, how = _resolve_bnb_mps_fused_kernel()
+    record["resolved_via"] = how
+    if kernel is None:
+        try:
+            from kernels import get_kernel  # type: ignore
+
+            get_kernel(_BNB_MPS_FUSED_KERNEL_REPO, version=1)
+            e = RuntimeError("resolution failed under the offline flag")
+        except Exception as exc:  # noqa: BLE001 - captured only to name it
+            e = exc
+        record["reason"] = f"{_BNB_MPS_FUSED_KERNEL_REPO} did not resolve"
+        record["error"] = f"{type(e).__name__}: {e}"
+        # `kernels` verifies the publisher over the Hub API and has no offline
+        # path, so abstractcore's own offline-first env (HF_HUB_OFFLINE=1, set
+        # at import) fails the check even when the kernel is already in the
+        # local cache. Isolated A/B on 2026-08-06: HF_HUB_OFFLINE=1 alone, with
+        # nothing else changed, turns a LOADED kernel into None and latches it.
+        if "trust status" in str(e) and record["offline_flags_set"]:
+            flags = ", ".join(record["offline_flags_set"])
+            record["reason"] = (
+                f"{_BNB_MPS_FUSED_KERNEL_REPO} could not be trust-verified because "
+                f"offline mode ({flags}) blocks the Hub publisher check `kernels` "
+                "requires (the kernel itself is cached locally; the check is not). "
+                "Measured 2026-08-06: HF_HUB_OFFLINE=1 alone, and "
+                "TRANSFORMERS_OFFLINE=1 alone, each turn a loading kernel into None"
+            )
+            record["remedy"] = (
+                "this is abstractcore's own offline-first env, not a packaging "
+                "fault: the Hub publisher check has no offline path in `kernels`. "
+                "Either allow that one Hub call at load (clear the offline flags "
+                "for the load), or accept the fallback and use the MLX/GGUF lane "
+                "for fast 4-bit"
+            )
+        else:
+            record["remedy"] = kernels_pin_note
+        return record
+
+    # `_resolve_bnb_mps_fused_kernel` already primed bitsandbytes' own global
+    # inside whatever window was needed. Re-read it here through bitsandbytes'
+    # OWN accessor — the code path every `Linear4bit` forward takes — because
+    # that, not our resolution, is what proves the fix reaches the product.
+    try:
+        bnb_kernel = _bnb_mps_ops._get_kernel()
+    except Exception:  # noqa: BLE001 - bitsandbytes never raises here, but
+        bnb_kernel = None  # a future version must not break a model load
+    record["bnb_own_call_returned_kernel"] = bnb_kernel is not None
+
+    # An earlier attempt in this process may already have latched the failure —
+    # in which case the fused path stays dead regardless of what resolves now.
+    latched = bool(getattr(_bnb_mps_ops, "_kernel_load_failed", False))
+    record["latched_failed"] = latched
+    if latched or bnb_kernel is None:
+        record["reason"] = (
+            "the kernel resolves for us, but bitsandbytes' own `_get_kernel()` "
+            f"still returns {bnb_kernel!r} (latched={latched}) — the fused path "
+            "is dead for this process's lifetime"
+        )
+        record["remedy"] = (
+            "restart the process: bitsandbytes latches its failure permanently "
+            "and exposes no way to clear it, so a first 4-bit load that failed "
+            "cannot be rescued by a later one"
+        )
+        return record
+
+    record["available"] = True
+    return record
+
 
 # We no longer download models - cache-only approach
 # huggingface_hub not required for basic operation
@@ -78,7 +460,11 @@ def _get_local_model_path(model_name: str) -> Optional[str]:
     if model_cache_path.exists():
         snapshot_dirs = [d for d in model_cache_path.iterdir() if d.is_dir()]
         if snapshot_dirs:
-            return str(snapshot_dirs[0])  # Return first snapshot
+            # Deterministic pick, matching `_find_gguf_in_cache`: `iterdir()` order is
+            # filesystem-dependent, so the previous `[0]` could hand back a different
+            # cached revision run to run. Same repository either way (never a
+            # substitution), but the choice must at least be reproducible.
+            return str(max(snapshot_dirs, key=lambda d: d.stat().st_mtime))
     return None
 
 
@@ -92,6 +478,14 @@ class _GGUFPromptCacheValue:
     add_generation_prompt: bool = False
     prompt_text: str = ""
     prompt_tokens: tuple[int, ...] = field(default_factory=tuple)
+    # The PREVIOUS generate turn's full prompt ids, for the snapshot-boundary
+    # holdback only (MLX `_FED_TOKEN_IDS_META` / transformers
+    # `_TRANSFORMERS_FED_IDS_META` parity). Deliberately NOT `prompt_tokens`:
+    # that field is the durable-bloc prefix that
+    # `_gguf_compose_cached_prompt_tokens` treats as source-of-truth and
+    # CONCATENATES a suffix onto, so overwriting it per turn would compose
+    # previous-prompt + new-prompt into a garbage prompt.
+    fed_prompt_tokens: tuple[int, ...] = field(default_factory=tuple)
 
 
 @dataclass
@@ -167,6 +561,12 @@ class HuggingFaceProvider(BaseProvider):
             if "max_tokens" not in kwargs:
                 kwargs["max_tokens"] = context_size
 
+        # Explicit artifact selector (ADR 0009). `model_type=` is how a caller declares
+        # WHICH artifact of an ambiguous handle they want: "gguf" or "transformers".
+        # It is deliberately the ONLY such switch — the model handle is otherwise
+        # authoritative, and nothing else may override it.
+        requested_model_type = self._coerce_requested_model_type(kwargs.pop("model_type", None))
+
         user_provided_max_tokens = "max_tokens" in kwargs and kwargs.get("max_tokens") is not None
 
         super().__init__(model, **kwargs)
@@ -197,9 +597,21 @@ class HuggingFaceProvider(BaseProvider):
 
         # Store transformers-specific parameters
         self.transformers_kwargs = {
-            k: v for k, v in kwargs.items() 
-            if k in ['trust_remote_code', 'torch_dtype', 'device_map', 'load_in_8bit', 'load_in_4bit', 'attn_implementation']
+            k: v for k, v in kwargs.items()
+            if k in ['trust_remote_code', 'torch_dtype', 'device_map', 'load_in_8bit', 'load_in_4bit', 'attn_implementation', 'quantization_config']
         }
+        # `load_in_4bit` / `load_in_8bit` were REMOVED from
+        # `from_pretrained` in transformers 5.9 — `quantization_config` is the
+        # only supported route — so forwarding them verbatim raises on a current
+        # stack. Translate them (with their `bnb_4bit_*` / `llm_int8_*`
+        # companions) into a BitsAndBytesConfig, and let an explicit
+        # `quantization_config=` win. Purely additive: a caller that passes
+        # neither is unaffected.
+        self._transformers_quantization_request = self._build_transformers_quantization_config(kwargs)
+        if self._transformers_quantization_request is not None:
+            self.transformers_kwargs['quantization_config'] = self._transformers_quantization_request
+        self.transformers_kwargs.pop('load_in_4bit', None)
+        self.transformers_kwargs.pop('load_in_8bit', None)
 
         # Store device preference for custom models
         self.preferred_device = kwargs.get('device_map', 'auto')
@@ -216,20 +628,32 @@ class HuggingFaceProvider(BaseProvider):
         )
         self._gguf_prompt_cache_pending_capacity_bytes: Optional[int] = None
 
-        # Detect model type and load accordingly
-        is_gguf = self._is_gguf_model(model)
-
-        # LM Studio Hub aliases (e.g. "qwen/qwen3.5-35b-a3b") may not contain "gguf" in the name,
-        # but resolve to a GGUF dependency stored in LM Studio's cache. If a local Hub manifest
-        # exists and we can resolve a GGUF file from caches, treat this as a GGUF model.
-        if not is_gguf:
-            try:
-                from ..utils.model_cache import resolve_lmstudio_hub_manifest
-
-                if resolve_lmstudio_hub_manifest(model) is not None and self._find_gguf_in_cache(model):
-                    is_gguf = True
-            except Exception:
-                pass
+        # Artifact selection (ADR 0009: a named handle is honoured, or the call fails).
+        #
+        # An explicit `model_type=` is the caller's own declaration and wins. Otherwise
+        # the artifact class comes from the handle itself, and a handle that does not
+        # name a GGUF is NEVER promoted to one.
+        #
+        # This site previously did the opposite: any handle with a local LM Studio Hub
+        # manifest was promoted to GGUF whenever *some* GGUF could be resolved from the
+        # caches. Because a Hub manifest's `baseModel` dependency routinely points at a
+        # DIFFERENT repository (`Qwen/Qwen3.6-27B` -> `lmstudio-community/Qwen3.6-27B-GGUF`),
+        # asking for a repo's bf16 transformers weights silently returned someone else's
+        # 4-bit conversion, on llama.cpp, with no warning — and measurements taken through
+        # it were attributed to the model the caller named.
+        if requested_model_type is not None:
+            is_gguf = requested_model_type == "gguf"
+            if not is_gguf and self._is_gguf_model(model):
+                raise ModelArtifactMismatchError(
+                    f"model_type='transformers' was requested, but the handle '{model}' names a "
+                    "GGUF artifact, which transformers cannot load.\n\n"
+                    "Drop model_type= to load it as GGUF, or pass a transformers repository id "
+                    "(or a local snapshot directory) instead."
+                )
+        else:
+            is_gguf = self._is_gguf_model(model)
+            if not is_gguf:
+                self._reject_silent_gguf_substitution(model)
 
         if is_gguf:
             if not LLAMACPP_AVAILABLE:
@@ -243,6 +667,116 @@ class HuggingFaceProvider(BaseProvider):
             self.model_type = "transformers"
             self._setup_device_transformers()
             self._load_transformers_model()
+
+    # Artifact classes this provider can load. `model_type=` selects between them
+    # when the handle alone is ambiguous; there is no third option and no other flag.
+    _ARTIFACT_TYPES = ("transformers", "gguf")
+
+    @staticmethod
+    def _coerce_requested_model_type(value: Any) -> Optional[str]:
+        """Validate an explicit `model_type=` artifact declaration."""
+        if value is None:
+            return None
+        val = str(value).strip().lower()
+        if val in HuggingFaceProvider._ARTIFACT_TYPES:
+            return val
+        raise InvalidRequestError(
+            f"HuggingFaceProvider: model_type={value!r} is not a valid artifact selector. "
+            f"Use one of {list(HuggingFaceProvider._ARTIFACT_TYPES)}, or omit it and let the "
+            f"model handle decide."
+        )
+
+    def _reject_silent_gguf_substitution(self, model: str) -> None:
+        """Fail loudly when this handle would have been swapped for a cached GGUF.
+
+        ADR 0009. `model` reaching here does NOT name a GGUF (no `.gguf` path, no
+        on-disk GGUF directory, no `gguf` token in the id), so the caller asked for
+        this repository's transformers weights. If an LM Studio Hub manifest can
+        nonetheless route the name to a GGUF, that GGUF is a *different artifact* —
+        a separately quantized conversion, usually built from a different
+        repository, executed by llama.cpp rather than transformers. Returning it
+        under the requested name is the substitution this method exists to stop.
+
+        Only fires when the named artifact CANNOT be loaded as named. ADR 0009 is a
+        rule against *substitution*, not against coexistence: a handle whose own
+        transformers weights are sitting in the cache is going to load those weights,
+        so there is nothing to substitute and nothing to refuse. Checking the Hub
+        manifest alone is not sufficient evidence of a substitution — `Qwen/Qwen3.6-27B`
+        has both a complete bf16 snapshot and a manifest pointing at
+        `lmstudio-community/Qwen3.6-27B-GGUF`, and refusing it blocked a load that
+        would have been correct.
+
+        Silent on the common path: costs one manifest `is_file()` probe for handles
+        that have no Hub manifest, which is the overwhelming majority.
+        """
+        try:
+            from ..utils.model_cache import resolve_lmstudio_hub_manifest
+
+            manifest = resolve_lmstudio_hub_manifest(model)
+            substitute = self._find_gguf_in_cache(model) if manifest is not None else None
+        except ModelArtifactMismatchError:
+            raise
+        except Exception:
+            # A broken/unreadable manifest means we cannot prove a substitution would
+            # occur. Proceed as transformers — the honest reading of the handle.
+            return
+
+        if not substitute:
+            return
+
+        # The decisive question, and the only one that separates substitution from
+        # coexistence: can this handle be loaded as the artifact class it names? If
+        # yes, that is what happens next and the GGUF is irrelevant.
+        if self._transformers_weights_present(model):
+            return
+
+        raise ModelArtifactMismatchError(
+            f"Refusing to load a different model artifact than the one requested.\n"
+            f"\n"
+            f"  Requested : {model!r}  (HuggingFace transformers weights — NOT present locally)\n"
+            f"  Found     : {substitute!r}\n"
+            f"              (GGUF, reached via the LM Studio Hub manifest at {manifest})\n"
+            f"\n"
+            f"These are not interchangeable. A GGUF is a separately quantized conversion — "
+            f"typically built from a different repository and usually 4-bit — and it runs on "
+            f"llama.cpp instead of transformers. Loading it under the name {model!r} would "
+            f"attribute its speed, memory profile and output quality to the model you named.\n"
+            f"\n"
+            f"Ask for exactly one of them:\n"
+            f"  - the GGUF                 : pass the .gguf file path, or the GGUF repository "
+            f"id, or model_type='gguf'\n"
+            f"  - the transformers weights : pass model_type='transformers' (which reports "
+            f"plainly if they are not present locally)\n"
+        )
+
+    @staticmethod
+    def _transformers_weights_present(model: str) -> bool:
+        """True when `model` names transformers weights that are on this disk.
+
+        Cache-only and network-free, so it cannot turn a local decision into a Hub
+        round trip. Requires a config AND at least one weight shard: a snapshot
+        directory holding only a tokenizer (what a bare `tokenizer_config.json`
+        download leaves behind) is not loadable and must not read as present.
+        """
+        try:
+            from pathlib import Path
+
+            from ..utils.model_cache import resolve_hf_snapshot_dir
+
+            candidate = Path(str(model)).expanduser()
+            snapshot = candidate if candidate.is_dir() else resolve_hf_snapshot_dir(model)
+            if snapshot is None or not snapshot.is_dir():
+                return False
+            if not (snapshot / "config.json").is_file():
+                return False
+            return any(
+                any(snapshot.glob(pattern))
+                for pattern in ("*.safetensors", "*.bin", "*.pt", "*.msgpack")
+            )
+        except Exception:
+            # Cannot prove presence -> fall through to the caller's refusal, which
+            # names both artifacts and asks the caller to pick. Never silently load.
+            return False
 
     def _apply_provider_thinking_kwargs(
         self,
@@ -309,8 +843,24 @@ class HuggingFaceProvider(BaseProvider):
             if hasattr(self, 'pipeline') and self.pipeline is not None:
                 self.pipeline = None
 
+            # Hybrid boundary snapshots are the LARGEST tensors this provider
+            # holds (deepcopied KV caches, up to the snapshot bound of them) —
+            # an unload that strands them frees almost nothing (ADVERSARY
+            # FINDING 2; same defect family as the 2026-08-03 leak audit).
+            # The lane-routing flag must go with the model it describes, or a
+            # different model loaded onto this instance would be mis-routed.
+            self._ensure_transformers_snapshot_state()
+            with self._transformers_snapshot_lock:
+                self._transformers_snapshots.clear()
+            for attr in ("_transformers_snapshot_lane_flag",
+                         "_transformers_logits_to_keep_supported",
+                         "_transformers_prefill_step_cached"):
+                if hasattr(self, attr):
+                    delattr(self, attr)
+
             # Force garbage collection to free memory immediately
             gc.collect()
+            self._transformers_release_device_pool()
         except Exception as e:
             # Log but don't raise - unload should be best-effort
             if hasattr(self, 'logger'):
@@ -684,6 +1234,98 @@ class HuggingFaceProvider(BaseProvider):
             )
 
         return None
+
+    def prompt_cache_render_bloc_text(
+        self,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        add_generation_prompt: bool = False,
+    ) -> Optional[str]:
+        """Exact `generate()` render, for the bloc planner (see base.py).
+
+        PARITY (2026-08-07). Before this, only the MLX lane implemented this
+        hook, so only MLX got a token-exact bloc plan; both HuggingFace lanes
+        returned the base default (None) and fell back to the legacy per-module
+        append path with NO seam verification. Same abstraction, two very
+        different guarantees — measured: MLX planned 2 blocs, transformers and
+        GGUF planned none.
+
+        Both lanes delegate to the SAME renderer their live prompt goes through
+        (`_transformers_build_prompt_fragment` / `_gguf_render_prompt_text`),
+        which is the only reason the planner's token-prefix guarantee holds.
+        """
+        model_type = str(getattr(self, "model_type", "") or "").strip().lower()
+
+        if model_type == "transformers":
+            if getattr(self, "tokenizer", None) is None:
+                return None
+            try:
+                return self._transformers_build_prompt_fragment(
+                    prompt=str(prompt or ""),
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    tools=tools,
+                    add_generation_prompt=bool(add_generation_prompt),
+                )
+            except Exception:
+                return None
+
+        if model_type == "gguf":
+            # Gated on the exact renderer, deliberately. Without it the text
+            # this returns would not be the text `generate()` sends, and every
+            # bloc boundary derived from it would be a lie.
+            if getattr(self, "llm", None) is None:
+                return None
+            if not self._gguf_prompt_cache_supports_local_control_plane():
+                return None
+            try:
+                chat_messages = self._gguf_build_chat_messages(
+                    system_prompt=system_prompt,
+                    messages=messages,
+                    tools=tools,
+                    user_message_content=prompt if isinstance(prompt, str) and prompt else None,
+                )
+                return self._gguf_render_prompt_text(
+                    messages=chat_messages,
+                    add_generation_prompt=bool(add_generation_prompt),
+                )
+            except Exception:
+                return None
+
+        return None
+
+    def prompt_cache_encode_bloc_text(self, text: str) -> Optional[List[int]]:
+        """Tokenize rendered bloc text with the SAME call the live path uses.
+
+        The base default (`tokenizer.encode`) is wrong for both lanes: the GGUF
+        lane has no `self.tokenizer` at all (llama.cpp owns the vocabulary), and
+        the transformers lane needs the live path's BOS policy or every boundary
+        shifts by one token.
+        """
+        if not isinstance(text, str):
+            return None
+        model_type = str(getattr(self, "model_type", "") or "").strip().lower()
+
+        if model_type == "transformers":
+            if getattr(self, "tokenizer", None) is None:
+                return None
+            try:
+                return list(self._transformers_tokenize_fragment(text, add_bos_if_empty=True))
+            except Exception:
+                return None
+
+        if model_type == "gguf":
+            if getattr(self, "llm", None) is None:
+                return None
+            try:
+                return [int(t) for t in self._gguf_tokenize_rendered_prompt(text)]
+            except Exception:
+                return None
+
+        return super().prompt_cache_encode_bloc_text(text)
 
     def get_prompt_cache_capabilities(self) -> PromptCacheCapabilities:
         if not self.supports_prompt_cache():
@@ -1120,8 +1762,7 @@ class HuggingFaceProvider(BaseProvider):
                 parts.append("<|im_end|>\n")
         if add_generation_prompt:
             parts.append("<|im_start|>assistant\n")
-            if enable_thinking is False and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
-                parts.append("<think>\n\n</think>\n\n")
+            parts.append(self._thinking_disable_prefill(enable_thinking))
         return "".join(parts)
 
     def _gguf_render_llama3_prompt(
@@ -1241,28 +1882,50 @@ class HuggingFaceProvider(BaseProvider):
         # the key non-extendable (`prefix + eos` is not a prefix of `prefix + delta + eos`).
         return list(bos_tokens + prefix_tokens)
 
-    def _gguf_render_prompt_tokens(
+    def _gguf_render_prompt_text(
         self,
         *,
         messages: List[Dict[str, Any]],
         add_generation_prompt: bool,
         enable_thinking: Optional[bool] = None,
-    ) -> tuple[str, tuple[int, ...]]:
+    ) -> str:
+        """The exact prompt STRING this lane sends for these chat messages.
+
+        Split out of `_gguf_render_prompt_tokens` so the bloc planner and the
+        live generate path share ONE renderer and ONE tokenizer (below). The
+        planner's guarantee — every bloc boundary is a true token prefix of the
+        prompt `generate()` would build — is only worth something if both sides
+        are literally the same code.
+        """
         chat_format = self._gguf_prompt_cache_control_plane_chat_format() or self._gguf_prompt_cache_chat_format()
         if chat_format == "llama-3":
-            prompt_text = self._gguf_render_llama3_prompt(
+            return self._gguf_render_llama3_prompt(
                 messages=messages,
                 add_generation_prompt=bool(add_generation_prompt),
                 enable_thinking=enable_thinking,
             )
-            prompt_tokens = tuple(int(tok) for tok in self._gguf_tokenize_completion_prompt(prompt_text))
-        elif chat_format == "llama-cpp-chat-template":
-            prompt_text = self._gguf_render_llama_cpp_chat_template_prompt(
+        if chat_format == "llama-cpp-chat-template":
+            return self._gguf_render_llama_cpp_chat_template_prompt(
                 messages=messages,
                 add_generation_prompt=bool(add_generation_prompt),
                 enable_thinking=enable_thinking,
             )
-            prompt_tokens = tuple(
+        return self._gguf_render_chatml_prompt(
+            messages=messages,
+            add_generation_prompt=bool(add_generation_prompt),
+            enable_thinking=enable_thinking,
+        )
+
+    def _gguf_tokenize_rendered_prompt(self, prompt_text: str) -> tuple[int, ...]:
+        """Tokenize a rendered prompt exactly as the live path tokenizes it.
+
+        BOS handling is per-chat-format and is NOT incidental: getting it wrong
+        shifts every position by one and silently invalidates every cached
+        prefix. Kept in one place for that reason.
+        """
+        chat_format = self._gguf_prompt_cache_control_plane_chat_format() or self._gguf_prompt_cache_chat_format()
+        if chat_format == "llama-cpp-chat-template":
+            return tuple(
                 int(tok)
                 for tok in self.llm.tokenize(
                     prompt_text.encode("utf-8"),
@@ -1270,24 +1933,30 @@ class HuggingFaceProvider(BaseProvider):
                     special=True,
                 )
             )
-        else:
-            prompt_text = self._gguf_render_chatml_prompt(
-                messages=messages,
-                add_generation_prompt=bool(add_generation_prompt),
-                enable_thinking=enable_thinking,
-            )
-            if chat_format == "chatml":
-                prompt_tokens = tuple(
-                    int(tok)
-                    for tok in self.llm.tokenize(
-                        prompt_text.encode("utf-8"),
-                        add_bos=True,
-                        special=True,
-                    )
+        if chat_format == "chatml":
+            return tuple(
+                int(tok)
+                for tok in self.llm.tokenize(
+                    prompt_text.encode("utf-8"),
+                    add_bos=True,
+                    special=True,
                 )
-            else:
-                prompt_tokens = tuple(int(tok) for tok in self._gguf_tokenize_completion_prompt(prompt_text))
-        return prompt_text, prompt_tokens
+            )
+        return tuple(int(tok) for tok in self._gguf_tokenize_completion_prompt(prompt_text))
+
+    def _gguf_render_prompt_tokens(
+        self,
+        *,
+        messages: List[Dict[str, Any]],
+        add_generation_prompt: bool,
+        enable_thinking: Optional[bool] = None,
+    ) -> tuple[str, tuple[int, ...]]:
+        prompt_text = self._gguf_render_prompt_text(
+            messages=messages,
+            add_generation_prompt=bool(add_generation_prompt),
+            enable_thinking=enable_thinking,
+        )
+        return prompt_text, self._gguf_tokenize_rendered_prompt(prompt_text)
 
     def _gguf_tokenize_prompt_suffix(self, prompt_text: str) -> tuple[int, ...]:
         if getattr(self, "llm", None) is None or not prompt_text:
@@ -1426,45 +2095,420 @@ class HuggingFaceProvider(BaseProvider):
                 best_state = state
         return best_len, best_state
 
+    def _gguf_live_context_prefix_len(self, prompt_tokens: tuple[int, ...]) -> int:
+        """Tokens of `prompt_tokens` already RESIDENT in llama.cpp's context.
+
+        llama.cpp keeps the previous call's KV in the context, and that resident
+        prefix is the cheapest reuse available anywhere on this lane: `Llama.eval`
+        drops everything past `n_tokens` by itself, so reusing it costs one
+        in-place `kv_cache_seq_rm` and no copy at all — against `load_state`, which
+        restores a multi-GB snapshot.
+
+        Mirrors `Llama.generate`'s own scan, including its `tokens[:-1]` bound: at
+        least one prompt token must be evaluated or there are no logits to sample
+        from.
+        """
+        llm = getattr(self, "llm", None)
+        if llm is None or not prompt_tokens:
+            return 0
+        try:
+            n_tokens = int(getattr(llm, "n_tokens", 0) or 0)
+        except Exception:
+            return 0
+        if n_tokens <= 0:
+            return 0
+        input_ids = getattr(llm, "_input_ids", None)
+        if input_ids is None:
+            return 0
+        try:
+            resident = list(input_ids[:n_tokens])
+        except Exception:
+            return 0
+        shared = 0
+        for a, b in zip(resident, prompt_tokens[:-1]):
+            if int(a) != int(b):
+                break
+            shared += 1
+        return shared
+
+    @staticmethod
+    def _gguf_token_lcp(a: Sequence[int], b: Sequence[int]) -> int:
+        n = min(len(a), len(b))
+        i = 0
+        while i < n and int(a[i]) == int(b[i]):
+            i += 1
+        return i
+
+    def _gguf_generation_prompt_boundary(
+        self,
+        *,
+        messages: List[Dict[str, Any]],
+        prompt_tokens: tuple[int, ...],
+        enable_thinking: Optional[bool] = None,
+    ) -> Optional[int]:
+        """Token POSITION where this call's generation-prompt scaffolding begins.
+
+        That scaffolding is PER-CALL VOLATILE by construction: it asks the model
+        to speak now, and the next turn's transcript replaces it with the
+        assistant turn that actually happened. A snapshot boundary containing it
+        is a prefix of nothing — which matters only where a boundary is the sole
+        reusable artifact (Gated-DeltaNet / recurrent layers, where llama.cpp
+        refuses a partial `kv_cache_seq_rm` so the tail cannot be dropped after
+        the fact).
+
+        DERIVED FROM THE RENDERER, never from a literal list: the position is
+        obtained by re-rendering THIS call's messages through the SAME
+        `_gguf_render_prompt_tokens` with `add_generation_prompt=False` and
+        taking the token-level LCP. A hardcoded tail list has to be maintained
+        per template family and was previously inert for 8 of 10 of them; this
+        asks the template itself, so a new family works with no code change.
+
+        A POSITION, deliberately, not a count: if the seam merges into one token,
+        `len(full) - len(head)` and the true divergence position differ by one and
+        a count would put the boundary one token INSIDE the scaffolding. The LCP
+        is the divergence position by definition, merge or no merge — and it is a
+        prefix of `prompt_tokens` by construction, so a template that does more
+        than append can only cost reuse, never correctness.
+
+        Returns None when it cannot be computed (no renderer, render failure,
+        empty head, or a head that shares nothing): no holdback is applied, which
+        is the pre-existing behaviour and never a guess.
+        """
+        if not prompt_tokens:
+            return None
+        try:
+            _head_text, head_ids = self._gguf_render_prompt_tokens(
+                messages=messages,
+                add_generation_prompt=False,
+                enable_thinking=enable_thinking,
+            )
+        except Exception:
+            return None
+        if not head_ids:
+            return None
+        shared = self._gguf_token_lcp(head_ids, prompt_tokens)
+        if shared <= 0 or shared >= len(prompt_tokens):
+            # `shared >= len(prompt_tokens)` means the renderer emitted no
+            # generation prompt at all — nothing volatile to hold back.
+            return None
+        return int(shared)
+
+    def _gguf_snapshot_boundary(
+        self,
+        prompt_tokens: tuple[int, ...],
+        *,
+        prefix_len: int,
+        prev_prompt_tokens: Sequence[int] = (),
+        generation_boundary: Optional[int] = None,
+    ) -> int:
+        """Where to take this turn's state snapshot (ported 1:1 from the MLX
+        `_hybrid_snapshot_feed` / transformers `_transformers_snapshot_feed`
+        lattice).
+
+        - `boundary_end = len - 1` — at least one prompt token must always be
+          left to feed, so the snapshot can never produce a zero-token
+          evaluation (see `_gguf_prefill_prompt_cache`).
+        - previous-prompt LCP holdback: when the previous turn's prompt is NOT a
+          prefix of this one its tail was rewritten; whatever the two prompts
+          share is stable transcript and the first divergence is where this
+          turn's ephemeral tail begins.
+        - renderer-derived generation-scaffolding holdback on a recordless key
+          (turn 1), where the LCP has nothing to compare against.
+        - `prefix_len` is a FLOOR: never regress below a boundary already
+          restored from.
+        """
+        boundary_end = max(len(prompt_tokens) - 1, 0)
+        stable_end = boundary_end
+        if prev_prompt_tokens:
+            shared = self._gguf_token_lcp(prev_prompt_tokens, prompt_tokens)
+            if shared < len(prev_prompt_tokens):
+                stable_end = min(shared, boundary_end)
+        elif isinstance(generation_boundary, int) and generation_boundary > 0:
+            stable_end = min(stable_end, int(generation_boundary))
+        return max(int(prefix_len), int(stable_end))
+
+    def _gguf_snapshot_bound(self) -> int:
+        """Hard cap on states kept in ONE key's llama cache (LRU beyond it).
+
+        A `LlamaState` is the whole context serialized — measured 53.7 MB for a
+        4B hybrid at n_ctx=512 and multi-GB at benchmark context sizes — so
+        keeping one per turn of a growing loop is a leak with a nice name.
+        `LlamaRAMCache` already evicts on a byte budget, but the auto-growing
+        variant raises that budget to fit the largest state, so the byte bound
+        alone is not a bound on COUNT. Default 2 (the boundary in use plus one
+        predecessor, so an A/B alternation still hits), env-overridable via
+        `ABSTRACTCORE_GGUF_SNAPSHOT_BOUND`."""
+        bound = 2
+        try:
+            raw = os.environ.get("ABSTRACTCORE_GGUF_SNAPSHOT_BOUND")
+            if raw is not None and str(raw).strip():
+                bound = max(1, int(str(raw).strip()))
+        except Exception:
+            bound = 2
+        return bound
+
+    def _gguf_prune_snapshots(
+        self,
+        cache_obj: Any,
+        keep_key: tuple[int, ...],
+        *,
+        protect: Sequence[int] = (),
+    ) -> None:
+        """Keep one boundary per key (the growing one supersedes its
+        predecessor) and at most `_gguf_snapshot_bound()` states overall.
+
+        A stored key that is a STRICT PREFIX of `keep_key` is dominated by it:
+        every restore `keep_key` can serve, the shorter one can serve too, and
+        worse. `protect` is the durable-bloc prefix the key was built from
+        (`_GGUFPromptCacheValue.prompt_tokens`), which `prompt_cache_save`
+        requires to exist verbatim — never evicted here."""
+        state_map = getattr(cache_obj, "cache_state", None)
+        if not hasattr(state_map, "items") or not hasattr(state_map, "pop"):
+            return
+        keep = tuple(int(t) for t in keep_key)
+        guarded = {keep}
+        if protect:
+            guarded.add(tuple(int(t) for t in protect))
+        try:
+            keys = [tuple(int(t) for t in k) for k in list(state_map.keys())]
+        except Exception:
+            return
+        for k in keys:
+            if k in guarded:
+                continue
+            if len(k) < len(keep) and keep[: len(k)] == k:
+                try:
+                    state_map.pop(k, None)
+                except Exception:
+                    pass
+        bound = self._gguf_snapshot_bound()
+        try:
+            while len(state_map) > bound:
+                dropped = False
+                for k in list(state_map.keys()):
+                    if tuple(int(t) for t in k) in guarded:
+                        continue
+                    state_map.pop(k, None)  # OrderedDict order == LRU (oldest first)
+                    dropped = True
+                    break
+                if not dropped:
+                    break
+        except Exception:
+            pass
+
+    def _gguf_reuse_live_context(self, prefix_len: int) -> bool:
+        """Keep `prefix_len` resident tokens and drop the rest, in place.
+
+        `Llama.eval` already begins with `kv_cache_seq_rm(-1, n_tokens, -1)`, so
+        setting `n_tokens` is sufficient for the append itself. The explicit probe
+        mirrors `Llama.generate`, which checks the return value before committing:
+        a backend without partial KV removal must fall back to a full reset rather
+        than silently evaluate against stale KV.
+        """
+        llm = getattr(self, "llm", None)
+        if llm is None or prefix_len <= 0:
+            return False
+        ctx = getattr(llm, "_ctx", None)
+        rm = getattr(ctx, "kv_cache_seq_rm", None)
+        if not callable(rm):
+            return False
+        try:
+            if not rm(-1, int(prefix_len), -1):
+                return False
+            llm.n_tokens = int(prefix_len)
+        except Exception:
+            return False
+        return True
+
     def _gguf_prefill_prompt_cache(
         self,
         cache_obj: Any,
         prompt_tokens: tuple[int, ...],
         *,
         save_state: bool = True,
+        save_state_on_live_reuse: bool = True,
         set_cache: bool = True,
+        snapshot_at_boundary: bool = False,
+        prev_prompt_tokens: Sequence[int] = (),
+        generation_boundary: Optional[int] = None,
+        protect_snapshot_key: Sequence[int] = (),
+        telemetry: Optional[Dict[str, Any]] = None,
     ) -> bool:
+        """Bring llama.cpp's context to `prompt_tokens`, reusing whatever is cheapest.
+
+        LIVE CONTEXT FIRST (2026-08-03). This method used to open with an
+        unconditional `llm.reset()`, which erased `n_tokens`/`_input_ids` — exactly
+        the state llama.cpp's own prefix reuse reads. The consequence was that
+        passing a `prompt_cache_key` made the GGUF lane DRAMATICALLY SLOWER than
+        passing none: measured on `Qwen3-4B-Instruct-2507-GGUF`, same model, same
+        process, same growing prompts, the only difference being the key —
+
+            turn 2  with key: 10,016 tokens prefilled / 14.97 s
+            turn 2  no key:       24 tokens prefilled /  0.31 s
+
+        — a 48x regression, because with no key the engine's `Llama.generate`
+        trimmed its resident context to the 9,993-token shared prefix and evaluated
+        only the 24 grown tokens. `load_state` fired ZERO times across the whole
+        run, while `save_state` was paid on EVERY call at 1.41 GB a snapshot: the
+        machinery that replaced the engine's reuse delivered none of its own.
+
+        The policy below is llama.cpp's, not a new one — `Llama._create_completion`
+        loads a snapshot only `if cache_prefix_len > eval_prefix_len`, i.e. only
+        when the stored state beats what is already resident. Snapshots become the
+        fallback for a genuinely cold or divergent turn instead of the default.
+
+        TWO INVARIANTS THIS METHOD NOW OWNS (2026-08-05):
+
+        1. **At least one prompt token is ALWAYS evaluated.** `llama.cpp` writes
+           no logits when nothing is decoded (`Llama.eval`'s explicit `else: pass`
+           with `logits_all=False`), and `LlamaState` restores KV / `input_ids` /
+           `n_tokens` but NOT the context's output-logits buffer. A restore that
+           covers the whole prompt therefore left `remaining == []`, no forward
+           pass ran, and the sampler read the PREVIOUS call's last decoded
+           position: an identical resend replayed the tail of the previous answer
+           (measured to token-id precision: first token 304 warm vs 785 cold on
+           `unsloth/Qwen3-4B-Instruct-2507-GGUF`), or re-sampled EOS and raised
+           `EmptyCompletionError` when the previous call had ended on EOS. The
+           sibling live-context path already carried this bound and documents it
+           (`_gguf_live_context_prefix_len`, `prompt_tokens[:-1]`); it is
+           llama.cpp's own bound in `Llama.generate`.
+
+        2. **`snapshot_at_boundary=True` stores the state BEFORE this turn's
+           volatile tail**, not at the full prompt. Storing at the full prompt is
+           why every grown turn re-prefilled everything on Gated-DeltaNet models:
+           a chat render puts `<|im_end|>\\n<|im_start|>assistant\\n` AFTER the
+           user content, so turn *i*'s full prompt stops being a prefix of turn
+           *i+1*'s, the forward-only restore is refused, and — because llama.cpp
+           REFUSES a partial `kv_cache_seq_rm` on recurrent state — there is no
+           trim to fall back on either. Dense models hid it (live trimming works
+           there, and their numbers are unchanged by this). Same defect, same
+           repair, as the MLX and transformers lanes.
+        """
         llm = getattr(self, "llm", None)
         if llm is None:
             return False
-        try:
-            llm.reset()
-        except Exception:
+        if not prompt_tokens:
+            # Nothing to evaluate means nothing to sample from — invariant 1.
             return False
 
-        prefix_len, prefix_state = self._gguf_prompt_cache_prefix_state(cache_obj, prompt_tokens)
-        if prefix_state is not None and prefix_len > 0:
-            try:
-                llm.load_state(prefix_state)
-            except Exception:
-                try:
-                    llm.reset()
-                except Exception:
-                    pass
-                prefix_len = 0
+        def _note(**fields: Any) -> None:
+            if telemetry is not None:
+                telemetry.update(fields)
 
-        remaining = list(prompt_tokens[prefix_len:])
+        n_prompt = len(prompt_tokens)
+        feed_floor = n_prompt - 1  # max reusable prefix; ≥1 token must be fed
+
+        live_prefix = self._gguf_live_context_prefix_len(prompt_tokens)  # already ≤ feed_floor
+        state_prefix_len, prefix_state = self._gguf_prompt_cache_prefix_state(cache_obj, prompt_tokens)
+
+        reused_live = False
+        if live_prefix > 0 and live_prefix >= state_prefix_len:
+            reused_live = self._gguf_reuse_live_context(live_prefix)
+
+        restored_key_len: Optional[int] = None
+        if reused_live:
+            prefix_len = live_prefix
+        else:
+            try:
+                llm.reset()
+            except Exception:
+                return False
+            prefix_len = 0
+            if prefix_state is not None and state_prefix_len > 0:
+                try:
+                    llm.load_state(prefix_state)
+                    prefix_len = state_prefix_len
+                    restored_key_len = state_prefix_len
+                except Exception:
+                    try:
+                        llm.reset()
+                    except Exception:
+                        pass
+                    prefix_len = 0
+                    restored_key_len = None
+                if prefix_len > feed_floor:
+                    # ZERO-FEED GUARD (invariant 1). A state covering the WHOLE
+                    # prompt — what every pre-2026-08-05 turn stored, and what a
+                    # durable bloc still stores — would leave nothing to feed.
+                    # Roll the restored context back one token so the final prompt
+                    # token is re-evaluated and the sampled position has logits
+                    # produced by THIS prompt. `_gguf_reuse_live_context` is the
+                    # CHECKED rollback (it verifies `kv_cache_seq_rm` rather than
+                    # assuming it): recurrent architectures refuse it, and there
+                    # the only honest answer is a full re-prefill.
+                    if feed_floor <= 0 or not self._gguf_reuse_live_context(feed_floor):
+                        try:
+                            llm.reset()
+                        except Exception:
+                            return False
+                        prefix_len = 0
+                        restored_key_len = None
+                    else:
+                        prefix_len = feed_floor
+                        restored_key_len = None  # live boundary ≠ the stored key
+
+        # Where the snapshot goes. Legacy/durable callers keep the full-prompt
+        # boundary they depend on (`prompt_cache_save` looks the key up verbatim);
+        # only the generate lane opts into the volatile-tail holdback.
+        if snapshot_at_boundary:
+            stable_end = self._gguf_snapshot_boundary(
+                prompt_tokens,
+                prefix_len=prefix_len,
+                prev_prompt_tokens=prev_prompt_tokens,
+                generation_boundary=generation_boundary,
+            )
+        else:
+            stable_end = n_prompt
+
+        head = list(prompt_tokens[prefix_len:stable_end])
+        tail = list(prompt_tokens[stable_end:])
         try:
-            if remaining:
-                llm.eval(remaining)
-            if save_state and prompt_tokens:
+            if head:
+                llm.eval(head)
+            # Snapshot the clean boundary BEFORE the volatile tail is evaluated
+            # and before generation mutates the context.
+            #
+            # `save_state_on_live_reuse=False` is the OPPORTUNISTIC case (the
+            # generate lane): when the resident context already carried this turn,
+            # it now holds this prompt plus the reply, so the next turn of the same
+            # session gets a LONGER live prefix than any snapshot could offer, and
+            # `save_state` — measured at 1.41 GB per call — buys nothing. Callers
+            # for which persisting IS the point (`prompt_cache_update`, building a
+            # durable bloc) keep the default and always snapshot.
+            boundary_key = tuple(prompt_tokens[:stable_end])
+            if (
+                save_state
+                and boundary_key
+                and (save_state_on_live_reuse or not reused_live)
+                and restored_key_len != stable_end  # already stored at this boundary
+            ):
                 saved_state = llm.save_state()
                 cloned_state = self._gguf_clone_llama_state(saved_state)
-                cache_obj[prompt_tokens] = cloned_state if cloned_state is not None else saved_state
+                cache_obj[boundary_key] = cloned_state if cloned_state is not None else saved_state
+                if snapshot_at_boundary:
+                    self._gguf_prune_snapshots(cache_obj, boundary_key, protect=protect_snapshot_key)
+            if tail:
+                llm.eval(tail)
             if set_cache and hasattr(llm, "set_cache"):
                 llm.set_cache(cache_obj)
         except Exception:
             return False
+
+        fed = len(head) + len(tail)
+        if reused_live:
+            outcome = "hit_extend"
+        elif prefix_len > 0:
+            outcome = "hit_restore"
+        else:
+            outcome = "cold" if state_prefix_len <= 0 else "rebuilt"
+        _note(
+            backend="gguf",
+            outcome=outcome,
+            cached_tokens=int(prefix_len),
+            fed_tokens=int(fed),
+            prompt_tokens=int(n_prompt),
+            snapshot_boundary=int(stable_end),
+        )
         return True
 
     def _transformers_prompt_cache_state(self, cache_value: Any) -> Optional[_TransformersPromptCacheValue]:
@@ -1695,6 +2739,391 @@ class HuggingFaceProvider(BaseProvider):
         except Exception:
             return None
 
+    # ------------------------------------------------------------------
+    # Snapshot/restore lane for UNTRIMMABLE transformers architectures
+    # (Gated-DeltaNet / linear-attention hybrids: Qwen3.5/3.6, Ornith, …).
+    #
+    # `Cache.crop` is an explicit no-op on linear-attention layers, so
+    # `_transformers_crop_cache` REFUSES these architectures and every warm
+    # full-context call previously rebuilt fresh — correct output, zero
+    # savings (measured x0.96 vs no-cache at 10k). The MLX provider solved
+    # the identical problem with a snapshot-before-decode policy, ported
+    # here 1:1: keep ONE deepcopy per key taken at a clean boundary BEFORE
+    # generation mutates the cache; restore FORWARD-ONLY when the stored
+    # boundary ids are a TRUE PREFIX of the new prompt; feed only the
+    # suffix; never roll anything back. Bounded (leak audit 2026-08-03):
+    # one snapshot per key, hard LRU bound overall, dropped on store
+    # eviction (`_prompt_cache_store_evicted`) and `prompt_cache_clear`.
+    # ------------------------------------------------------------------
+
+    _TRANSFORMERS_FED_IDS_META = "fed_token_ids"
+
+    def _ensure_transformers_snapshot_state(self) -> None:
+        """Lazily materialize the snapshot store/lock (instances are sometimes
+        built via `__new__` in unit tests that exercise pure cache logic)."""
+        if not hasattr(self, "_transformers_snapshot_lock"):
+            self._transformers_snapshot_lock = threading.RLock()
+        if not hasattr(self, "_transformers_snapshots"):
+            self._transformers_snapshots = {}
+
+    def _get_transformers_snapshot(self, key: str) -> Optional[Dict[str, Any]]:
+        self._ensure_transformers_snapshot_state()
+        with self._transformers_snapshot_lock:
+            snap = self._transformers_snapshots.get(key)
+            if snap is not None:
+                # LRU recency: a restored-from key must not be the next one
+                # bound-evicted just because it was stored long ago.
+                self._transformers_snapshots.pop(key, None)
+                self._transformers_snapshots[key] = snap
+            return snap
+
+    def _transformers_snapshot_bound(self) -> int:
+        """Hard cap on resident snapshots (LRU beyond it).
+
+        A hybrid Cache deepcopy is BIG. Qwen3.5-4B bf16 from config: 8
+        full-attention layers x 4 kv-heads x 256 head-dim x 2 (K+V) x 2 B =
+        32 KiB/token -> ~0.31 GiB at 10k + ~0.05-0.1 GiB linear/conv states
+        ~= 0.36-0.41 GiB per snapshot (~1.0 GiB at 30k; ~2 GiB per 30k
+        snapshot on a 27B) — so unlike the MLX lane (bound = store entries,
+        32) the default here is 4, overridable via
+        `ABSTRACTCORE_TRANSFORMERS_SNAPSHOT_BOUND` and never above the
+        store's own entry bound (a snapshot only ever mirrors a store key;
+        more snapshots than entries is by definition leaked state)."""
+        bound = 4
+        try:
+            raw = os.environ.get("ABSTRACTCORE_TRANSFORMERS_SNAPSHOT_BOUND")
+            if raw is not None and str(raw).strip():
+                bound = max(1, int(str(raw).strip()))
+        except Exception:
+            bound = 4
+        store = getattr(self, "_prompt_cache_store", None)
+        try:
+            store_bound = int(getattr(store, "_max_entries", 0) or 0)
+        except Exception:
+            store_bound = 0
+        if store_bound > 0:
+            bound = min(bound, store_bound)
+        return bound
+
+    def _store_transformers_snapshot(self, key: str, cache: Any, token_ids: List[int]) -> None:
+        """Keep one snapshot per key (the growing one evicts its predecessor),
+        and at most `_transformers_snapshot_bound()` snapshots overall (LRU).
+        Dropped deepcopies land in the MPS pool; the threshold-guarded
+        `_transformers_maybe_release_device_pool` on the generate path caps
+        the ratchet (never an unconditional empty_cache on a hot path)."""
+        self._ensure_transformers_snapshot_state()
+        with self._transformers_snapshot_lock:
+            self._transformers_snapshots.pop(key, None)
+            self._transformers_snapshots[key] = {"cache": cache, "ids": list(token_ids)}
+            bound = self._transformers_snapshot_bound()
+            while len(self._transformers_snapshots) > bound:
+                # dicts preserve insertion order; get/store re-insert = LRU.
+                oldest = next(iter(self._transformers_snapshots))
+                self._transformers_snapshots.pop(oldest, None)
+
+    def _drop_transformers_snapshot(self, key: str) -> None:
+        self._ensure_transformers_snapshot_state()
+        with self._transformers_snapshot_lock:
+            self._transformers_snapshots.pop(key, None)
+
+    @staticmethod
+    def _transformers_token_lcp(a: List[int], b: List[int]) -> int:
+        n = min(len(a), len(b))
+        i = 0
+        while i < n and a[i] == b[i]:
+            i += 1
+        return i
+
+    def _transformers_snapshot_lane_required(self, state: "_TransformersPromptCacheValue") -> bool:
+        """Architecture routing for the snapshot lane, decided ONCE per loaded
+        model: True when the cache has layers whose state cannot be rolled
+        back (`_transformers_uncroppable_layers` — the same predicate the
+        crop-refusal guard uses, so lane routing and refusal can never
+        disagree). Pure-attention models return False and take the existing
+        crop/delta path untouched. Undecidable (a cache with no layers yet)
+        returns False WITHOUT caching, so a lazily-built hybrid cache is
+        re-examined once its layers exist."""
+        cached = getattr(self, "_transformers_snapshot_lane_flag", None)
+        if isinstance(cached, bool):
+            return cached
+        probe = getattr(state, "cache", None)
+        layers = getattr(probe, "layers", None)
+        if not (isinstance(layers, (list, tuple)) and len(layers) > 0):
+            fallback = self._transformers_empty_native_cache()
+            f_layers = getattr(fallback, "layers", None)
+            if isinstance(f_layers, (list, tuple)) and len(f_layers) > 0:
+                probe = fallback
+            else:
+                return False  # undecidable now — do not cache the answer
+        required = bool(self._transformers_uncroppable_layers(probe))
+
+        # HYBRID + UNSAFE TRANSFORMERS -> REFUSE TO CACHE, LOUDLY.
+        #
+        # This is the only place that knows both facts at once: that the model is
+        # a linear-attention hybrid, and which transformers is installed. On
+        # versions below the floor the warm path returns confidently wrong text
+        # (see `_HYBRID_CACHE_MIN_TRANSFORMERS`). Refusing costs a re-prefill;
+        # not refusing costs the user a wrong answer they cannot detect. ADR 0001
+        # allows a degradation only if it is announced, so this announces on
+        # `warnings.warn` — `logger.warning` is dead here (root logger is ERROR,
+        # every `abstractcore.*` logger NOTSET, record never created).
+        if required:
+            ok, ver = self._hybrid_cache_transformers_version_ok()
+            if not ok:
+                if not getattr(self, "_hybrid_cache_version_warned", False):
+                    self._hybrid_cache_version_warned = True
+                    floor = ".".join(str(p) for p in self._HYBRID_CACHE_MIN_TRANSFORMERS)
+                    warnings.warn(
+                        f"#FALLBACK prompt cache DISABLED for {self.model}: it is a "
+                        f"linear-attention hybrid and transformers {ver} is below the "
+                        f"{floor} floor required for a correct warm path. On affected "
+                        f"versions a cached call returns fluent but WRONG answers with "
+                        f"no error — measured warm recall 0/5 on planted facts. Answers "
+                        f"stay correct; prefill is not reused. Upgrade transformers to "
+                        f">= {floor} to re-enable caching for this model.",
+                        RuntimeWarning,
+                        stacklevel=3,
+                    )
+                self._transformers_snapshot_lane_flag = False
+                self._transformers_hybrid_cache_blocked = True
+                return False
+
+        self._transformers_snapshot_lane_flag = required
+        return required
+
+    def _transformers_generation_prompt_literals(self) -> List[str]:
+        """The exact generation-prompt tail(s) THIS provider's renderer emits.
+
+        DERIVED, never mirrored (the MLX lane's `<think>\\n\\n</think>\\n\\n`
+        lesson): `_transformers_build_prompt_fragment` with every content
+        input empty renders nothing except the `add_generation_prompt`
+        block, so calling it that way returns the literal itself for
+        whichever renderer branch this model takes. `enable_thinking` is not
+        known here, so both forms are produced and the caller matches
+        longest-first (the thinking-disabled form extends the plain one)."""
+        out: List[str] = []
+        for thinking in (False, None):
+            try:
+                tail = self._transformers_build_prompt_fragment(
+                    add_generation_prompt=True,
+                    enable_thinking=thinking,
+                )
+            except Exception:
+                continue
+            if tail and tail not in out:
+                out.append(tail)
+        out.sort(key=len, reverse=True)
+        return out
+
+    def _transformers_generation_prompt_boundary(
+        self, full_text: str, full_ids: List[int]
+    ) -> Optional[int]:
+        """Token POSITION where this call's generation-prompt scaffolding
+        begins — per-call volatile by construction (the next turn's
+        transcript replaces it with the assistant turn that actually
+        happened), so a snapshot boundary must stop BEFORE it.
+
+        A POSITION, deliberately, not a count: re-tokenize the prompt
+        without the literal and take the token-level LCP against the full
+        prompt's ids — if the seam merges into one token, a count would put
+        the boundary one token INSIDE the scaffolding. Returns None when the
+        prompt does not end in this renderer's generation prompt (no
+        holdback is applied — never a guess)."""
+        text = str(full_text or "")
+        for tail in self._transformers_generation_prompt_literals():
+            if not text.endswith(tail):
+                continue
+            head_ids = self._transformers_tokenize_fragment(
+                text[: -len(tail)], add_bos_if_empty=True
+            )
+            if not head_ids:
+                return None
+            return self._transformers_token_lcp(head_ids, full_ids)
+        return None
+
+    def _transformers_snapshot_feed(
+        self,
+        key: str,
+        state: "_TransformersPromptCacheValue",
+        full_text: str,
+        new_ids: List[int],
+        telemetry: Dict[str, Any],
+    ) -> List[int]:
+        """Snapshot/restore feed for untrimmable architectures (full-context
+        callers only). Decides what the cache should contain BEFORE
+        `generate()` runs, mutates `state` accordingly, and returns the
+        delta ids `generate()` must feed. On return, `state.prompt_tokens`
+        describes exactly the tokens resident in `state.cache`.
+
+        Lattice (ported from the MLX `_hybrid_snapshot_feed`):
+        - live-cache seed: the cache holds exactly its recorded prompt ids
+          and they are a true prefix of the new prompt (a key prefilled via
+          `prompt_cache_update`, never generated into) → use it in place;
+        - snapshot restore: the per-key snapshot's ids are a TRUE PREFIX of
+          the new prompt with a suffix left to feed → deepcopy-restore,
+          forward-only, never a rollback;
+        - otherwise: one honest cold prefill on a fresh cache (release the
+          old one first — leak audit 2026-08-03) that still leaves a
+          snapshot behind, so the loop's next warm turn is cheap.
+
+        The snapshot boundary is chosen conservatively BEFORE this call's
+        volatile tail: previous-prompt LCP holdback when a fed-token record
+        exists, renderer-derived generation-scaffolding holdback on a
+        recordless key (turn 1). The deepcopy happens at that boundary,
+        before the tail prefill and before generation mutates the cache."""
+        telemetry.setdefault("lane", "snapshot")
+        meta = dict(self._prompt_cache_store.meta(key) or {})
+        raw_prev = meta.get(self._TRANSFORMERS_FED_IDS_META)
+        prev_ids: List[int] = []
+        if isinstance(raw_prev, (list, tuple)):
+            try:
+                prev_ids = [int(t) for t in raw_prev]
+            except Exception:
+                prev_ids = []
+
+        live_ids = [int(t) for t in state.prompt_tokens]
+        live_len = len(live_ids)
+        prefix_len = 0
+        restored = False
+        live_seed = False
+
+        # PHYSICAL length check (MLX parity: `cache_len == len(fed_ids)`,
+        # mlx_provider.py live-seed). Bookkeeping alone is not trustworthy:
+        # generate() can raise after mutating the cache, leaving phantom KV
+        # past the record (ADVERSARY FINDING 1). On hybrids get_seq_length
+        # reads the full-attention layers, which count real tokens; an
+        # uncountable cache (no layer reports) can never verify — skip the
+        # seed and let restore/rebuild handle it.
+        phys_lens = (
+            self._transformers_layer_seq_lengths(state.cache)
+            if state.cache is not None else []
+        )
+        phys_len = max(phys_lens) if phys_lens else None
+
+        if (
+            live_len
+            and state.cache is not None
+            and phys_len == live_len
+            and live_len < len(new_ids)
+            and self._transformers_token_lcp(live_ids, new_ids) == live_len
+        ):
+            # LIVE-CACHE SEED: no generated drift — the cache IS a valid
+            # boundary already; forward-only extension, no copy needed.
+            prefix_len = live_len
+            live_seed = True
+        else:
+            snap = self._get_transformers_snapshot(key)
+            if snap is not None:
+                snap_ids = list(snap.get("ids") or [])
+                lcp_snap = self._transformers_token_lcp(snap_ids, new_ids)
+                if snap_ids and lcp_snap == len(snap_ids) and lcp_snap < len(new_ids):
+                    # Drop the stale live cache FIRST so the MPS pool can hand
+                    # its buffers straight to the clone (never old + snapshot
+                    # + clone resident at once). If the clone then fails, the
+                    # not-restored branch below rebuilds fresh — same result
+                    # the old cache was headed for anyway.
+                    state.cache = None
+                    state.prompt_tokens = ()
+                    clone = self._transformers_clone_cache(snap.get("cache"))
+                    if clone is not None:
+                        state.cache = clone
+                        state.prompt_tokens = tuple(snap_ids)
+                        prefix_len = lcp_snap
+                        restored = True
+            if not restored:
+                if live_len:
+                    # Divergence with nothing restorable: rebuild = RELEASE
+                    # point for the old full cache (existing discipline).
+                    state.cache = None
+                    self._transformers_release_device_pool()
+                    state.cache = self._transformers_empty_native_cache()
+                    state.prompt_tokens = ()
+                elif state.cache is None:
+                    state.cache = self._transformers_empty_native_cache()
+                prefix_len = 0
+
+        boundary_end = max(len(new_ids) - 1, 0)  # keep ≥1 token to seed decode
+        stable_end = boundary_end
+        if prev_ids:
+            shared = self._transformers_token_lcp(prev_ids, new_ids)
+            if shared < len(prev_ids):
+                # The previous prompt's tail was rewritten: whatever the two
+                # prompts share is stable transcript; the first divergence is
+                # where THIS turn's ephemeral tail begins. `prefix_len` is a
+                # floor — never regress below a boundary we restored from.
+                stable_end = max(prefix_len, min(shared, boundary_end))
+        if prefix_len > 0 and not restored:
+            # First snapshot-lane turn seeded from the LIVE cache: the seed
+            # is the only content two observations agree on.
+            stable_end = prefix_len
+        if not prev_ids:
+            gen_at = self._transformers_generation_prompt_boundary(full_text, new_ids)
+            if gen_at is not None:
+                stable_end = max(0, min(stable_end, gen_at))
+
+        def _rebuild_full_feed(reason: str) -> List[int]:
+            self._drop_transformers_snapshot(key)
+            state.cache = None
+            self._transformers_release_device_pool()
+            state.cache = self._transformers_empty_native_cache()
+            state.prompt_tokens = ()
+            meta[self._TRANSFORMERS_FED_IDS_META] = list(new_ids)
+            try:
+                self._prompt_cache_store.set(key, state, meta=meta)
+            except Exception:
+                pass
+            telemetry.update(
+                {"outcome": "rebuilt", "cached_tokens": 0, "fed_tokens": len(new_ids),
+                 "degraded_reason": f"#FALLBACK {reason}"}
+            )
+            return list(new_ids)
+
+        head = list(new_ids[prefix_len:stable_end])
+        if head and not self._transformers_prefill_cache(state, head):
+            return _rebuild_full_feed("snapshot-lane head prefill failed; rebuilt fresh")
+
+        # Snapshot the clean boundary (deepcopy) BEFORE generation mutates the
+        # cache. Skipped only when a snapshot we actually RESTORED from already
+        # describes this exact boundary. The `len == stable_end` invariant
+        # guards against ever storing ids that misdescribe the cache.
+        boundary_ids = list(new_ids[:stable_end])
+        if boundary_ids and len(state.prompt_tokens) == stable_end and (
+            stable_end > prefix_len or not restored
+        ):
+            snap_copy = self._transformers_clone_cache(state.cache)
+            if snap_copy is not None:
+                self._store_transformers_snapshot(key, snap_copy, boundary_ids)
+            else:
+                self._drop_transformers_snapshot(key)
+        elif not boundary_ids:
+            self._drop_transformers_snapshot(key)
+
+        meta[self._TRANSFORMERS_FED_IDS_META] = list(new_ids)
+        try:
+            self._prompt_cache_store.set(key, state, meta=meta)
+        except Exception:
+            pass
+
+        delta = list(new_ids[stable_end:])
+        fed_this_turn = len(head) + len(delta)
+        if prefix_len > 0:
+            telemetry.update(
+                {"outcome": "hit_restore", "cached_tokens": int(prefix_len),
+                 "fed_tokens": int(fed_this_turn)}
+            )
+        elif not prev_ids and not live_len:
+            # TURN ONE ON A FRESH KEY is `cold`, not `rebuilt` (parity,
+            # 2026-08-07) — nothing existed to discard. Matches the MLX snapshot
+            # lane and the GGUF lane, which already said `cold` here.
+            telemetry.update(
+                {"outcome": "cold", "cached_tokens": 0, "fed_tokens": int(fed_this_turn)}
+            )
+        else:
+            telemetry.update(
+                {"outcome": "rebuilt", "cached_tokens": 0, "fed_tokens": int(fed_this_turn)}
+            )
+        return delta
+
     def _transformers_arch_prefix_suffix(self, role: str) -> tuple[str, str]:
         cfg = getattr(self, "architecture_config", None)
         if not isinstance(cfg, dict):
@@ -1708,6 +3137,36 @@ class HuggingFaceProvider(BaseProvider):
             return str(cfg.get("assistant_prefix") or ""), str(cfg.get("assistant_suffix") or "")
         # Fallback: simple conversational format.
         return "", "\n"
+
+    def _thinking_disable_prefill(self, enable_thinking: Optional[bool]) -> str:
+        """Assistant-generation-prompt prefill that disables thinking, or ``""``.
+
+        The marker is whatever the model's registry entry DECLARES as
+        `thinking_control.assistant_prefill_disable` — never a hardcoded
+        architecture allow-list. Every renderer in this provider that emits a
+        generation prompt by hand (rather than through the tokenizer's chat
+        template) must ask here, because a hand-rendered prompt gets no
+        `enable_thinking` template variable and would otherwise leave a
+        reasoning model free to open a `<think>` block.
+
+        Why an allow-list was wrong (2026-08-05, measured on
+        `deepreinforce-ai/Ornith-1.0-9B` bf16/MPS): the set
+        `{"qwen3", "qwen3_5", "qwen3_6"}` excluded `qwen3_5_agentic` (Ornith,
+        Qwen-AgentWorld, Agents-A1), so on the KEYED-CACHE lane — the only lane
+        that uses the hand renderer — the prompt ended at a bare
+        `<|im_start|>assistant\\n`, the model's first generated token was
+        `<think>` (id 248068), and `strip_thinking_tags` turned that
+        unterminated block into EMPTY visible content: every cached arm
+        returned "" with finish_reason=stop and no exception, while the
+        uncached arm (chat template + `enable_thinking=False`) was healthy.
+        Reading the declared surface makes a new model family work by registry
+        update alone, which is the contract the typed surfaces exist for."""
+        if enable_thinking is not False:
+            return ""
+        try:
+            return self._thinking_control_surfaces().assistant_prefill_disable or ""
+        except Exception:
+            return ""
 
     def _transformers_render_message(self, role: str, content: str, *, close: bool = True) -> str:
         prefix, suffix = self._transformers_arch_prefix_suffix(role)
@@ -1802,8 +3261,7 @@ class HuggingFaceProvider(BaseProvider):
 
         if add_generation_prompt:
             parts.append(self._transformers_render_message("assistant", "", close=False))
-            if enable_thinking is False and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
-                parts.append("<think>\n\n</think>\n\n")
+            parts.append(self._thinking_disable_prefill(enable_thinking))
 
         return "".join(parts)
 
@@ -1836,20 +3294,413 @@ class HuggingFaceProvider(BaseProvider):
                     out.insert(0, bos_i)
         return out
 
-    def _transformers_crop_cache(self, state: _TransformersPromptCacheValue, keep_tokens: int) -> bool:
-        """Crop the live KV cache back to its first `keep_tokens` tokens (best-effort).
+    @staticmethod
+    def _quantization_config_is_bnb_4bit(cfg: Dict[str, Any]) -> bool:
+        """Does this quantization config mean bitsandbytes 4-bit?"""
+        if not cfg:
+            return False
+        try:
+            if cfg.get("load_in_4bit"):
+                return True
+            method = str(cfg.get("quant_method") or "").lower()
+            if method in ("bitsandbytes", "bnb", "bitsandbytes_4bit"):
+                return bool(cfg.get("load_in_4bit")) or int(cfg.get("bits") or 0) == 4
+        except Exception:
+            return False
+        return False
 
-        "Crop didn't raise" is NOT "crop was exact" (adversarial find,
-        2026-07-12): transformers deliberately no-ops `crop` on
-        linear-attention/mamba layers, and some hybrid layer classes (zamba)
-        inherit the no-op over their ATTENTION half too — silently keeping the
-        cropped tokens' KV. The post-crop VERIFY below catches the
-        wrong-context class (reported length still past `keep_tokens` →
-        refuse, callers rebuild fresh). Hybrids whose attention layers crop
-        exactly while linear layers keep O(1) recurrent state pass the verify:
-        the long attention prefix is reused exactly and the residual linear
-        state is an APPROXIMATION — accepted, but labeled once per provider
-        (never silent).
+    def _prepare_bnb_mps_fused_kernel(self, quantization_config: Dict[str, Any]) -> None:
+        """Resolve the fused Metal kernel BEFORE the weights are loaded.
+
+        Timing is the whole point and it was learned the hard way: loading a
+        bnb-quantized checkpoint QUANTIZES as it loads, which calls
+        `bitsandbytes...ops._get_kernel()` — under the offline flag — and latches
+        `_kernel_load_failed = True` before any post-load hook can run. A probe
+        placed after `from_pretrained` therefore always finds a dead latch and
+        can only report it. Measured exactly that way before this hook existed:
+        `probe=failed bnb_kernel_live=False latched=True linear4bit=248`.
+
+        So the resolution has to happen here, before the first quantize op.
+        Cheap and inert otherwise: it returns immediately unless the target is
+        bitsandbytes 4-bit on MPS.
+        """
+        try:
+            if str(getattr(self, "device", "") or "").strip().lower() != "mps":
+                return
+            requested = getattr(self, "_transformers_quantization_request", None)
+            as_dict: Dict[str, Any] = {}
+            if requested is not None:
+                as_dict = requested if isinstance(requested, dict) else (
+                    requested.to_dict() if hasattr(requested, "to_dict") else {})
+            if not (self._quantization_config_is_bnb_4bit(as_dict)
+                    or self._quantization_config_is_bnb_4bit(quantization_config or {})):
+                return
+            kernel, how = _resolve_bnb_mps_fused_kernel()
+            self._bnb_mps_fused_kernel_preload = {
+                "resolved": kernel is not None, "resolved_via": how}
+        except Exception:  # noqa: BLE001 - must never break a model load
+            pass
+
+    def _transformers_count_bnb_4bit_modules(self) -> int:
+        """Number of live `bitsandbytes` `Linear4bit` modules in the loaded model."""
+        model = getattr(self, "model_instance", None)
+        if model is None or "bitsandbytes" not in sys.modules:
+            return 0
+        try:
+            return sum(1 for _, m in model.named_modules() if type(m).__name__ == "Linear4bit")
+        except Exception:
+            return 0
+
+    def _warn_if_bnb_mps_fused_kernel_missing(self) -> bool:
+        """Warn ONCE per provider instance when a 4-bit model on MPS has no fused kernel.
+
+        bitsandbytes degrades silently here (see `_probe_bnb_mps_fused_kernel`):
+        the model loads, answers correctly, and decodes about x4 slower with no
+        signal of any kind. ADR 0001/0009 forbid silent degradation, so state it.
+
+        Never raises: an unusable probe leaves the load untouched.
+        """
+        try:
+            if str(getattr(self, "device", "") or "").strip().lower() != "mps":
+                return False
+            n_4bit = self._transformers_count_bnb_4bit_modules()
+            if n_4bit <= 0:
+                return False
+            record = _probe_bnb_mps_fused_kernel()
+            record["linear4bit_modules"] = n_4bit
+            self._bnb_mps_fused_kernel_probe = record
+            if record.get("available"):
+                return False
+            if getattr(self, "_bnb_mps_fused_kernel_warned", False):
+                return False
+            self._bnb_mps_fused_kernel_warned = True
+            cause = record.get("reason") or "unknown"
+            error = record.get("error")
+            remedy = record.get("remedy") or "unknown"
+            self.logger.warning(
+                f"#FALLBACK bitsandbytes 4-bit on MPS: the fused Metal kernel "
+                f"({_BNB_MPS_FUSED_KERNEL_REPO}) is NOT available, so all "
+                f"{n_4bit} Linear4bit module(s) run the dequantize -> F.linear "
+                f"fallback on every forward. Output stays correct; decode is about "
+                f"x4 SLOWER (measured on this stack: warm identical resend 0.0681s "
+                f"fused vs 0.2696s fallback = x3.96; per-forward A/B x4.65-x4.79). "
+                f"bitsandbytes swallows this failure and latches it for the whole "
+                f"process, so nothing else reports it. "
+                f"Cause: {cause}"
+                + (f" [{error}]" if error else "")
+                + f". Fix: {remedy}. "
+                f"Versions seen: kernels={record.get('kernels_version')}, "
+                f"bitsandbytes={record.get('bitsandbytes_version')}, "
+                f"macOS major={record.get('macos_major')}."
+            )
+            return True
+        except Exception:
+            return False
+
+    def _transformers_release_device_pool(self) -> None:
+        """Return freed device memory to the OS after a cache RELEASE point.
+
+        torch's MPS allocator pools every freed buffer for reuse and never
+        returns it to the OS on its own; on unified memory the pool counts
+        against process footprint. Before 2026-08-03 the ONLY call site of
+        `torch.mps.empty_cache()` was the vision lane, so the text/cached
+        lanes' release paths (key cleared, LRU-evicted, hybrid rebuild
+        replacing a full cache) parked every dropped KV cache in the pool
+        forever — the 164.5 GB peak class of failure. Release points only:
+        NEVER on the per-token or per-call hot path (empty_cache walks the
+        allocator; a performance decrease is unacceptable)."""
+        if str(getattr(self, "device", "") or "").strip().lower() != "mps":
+            return
+        try:
+            import torch  # type: ignore
+
+            if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                    if hasattr(torch.mps, "synchronize"):
+                        torch.mps.synchronize()
+                    torch.mps.empty_cache()
+        except Exception:
+            pass
+
+    def _prompt_cache_store_evicted(self, key: str, cache_value: Any) -> None:
+        """Store LRU/TTL-evicted `key`: its `_TransformersPromptCacheValue`
+        just lost its last durable reference. Drop the key's hybrid snapshot
+        too (a deepcopy must never outlive the entry it mirrors — 2026-08-03
+        leak audit), then return the freed KV tensors' device memory to the
+        OS instead of the MPS pool. Fires only on implicit evictions
+        (≥ max_entries concurrent keys / TTL) — not on the per-call
+        store.set of a resident key."""
+        try:
+            self._drop_transformers_snapshot(str(key))
+        except Exception:
+            pass
+        if self._transformers_prompt_cache_state(cache_value) is not None:
+            self._transformers_release_device_pool()
+            return
+        # GGUF: the key's boundary snapshots are `LlamaState`s holding the whole
+        # serialized context (multi-GB at benchmark context sizes). They die with
+        # the cache object, but only once the last reference does — drop them here
+        # so an LRU/TTL eviction actually returns the memory at eviction time.
+        gguf_cache = self._gguf_prompt_cache_unwrap(cache_value)
+        if gguf_cache is not None:
+            state_map = getattr(gguf_cache, "cache_state", None)
+            if hasattr(state_map, "clear"):
+                try:
+                    state_map.clear()
+                except Exception:
+                    pass
+
+    def _transformers_pool_release_threshold_bytes(self) -> int:
+        """Pooled-but-unused MPS bytes above which the text lanes release the
+        pool between calls. Env `ABSTRACTCORE_MPS_POOL_RELEASE_GB` (float GiB;
+        <= 0 disables), default 4 GiB."""
+        cached = getattr(self, "_transformers_pool_release_threshold", None)
+        if isinstance(cached, int):
+            return cached
+        gib = 4.0
+        try:
+            raw = os.environ.get("ABSTRACTCORE_MPS_POOL_RELEASE_GB")
+            if raw is not None and str(raw).strip():
+                gib = float(raw)
+        except Exception:
+            gib = 4.0
+        threshold = int(gib * 1073741824) if gib > 0 else 0
+        self._transformers_pool_release_threshold = threshold
+        return threshold
+
+    def _transformers_maybe_release_device_pool(self) -> None:
+        """Threshold-guarded pool release for the text-lane HOT paths (cached
+        and uncached generate).
+
+        The 164.5 GB incident record (`hf_bf16_30000.json`) shows the blowup
+        happened during floor + A_nocache + B_cold — arms C/D never ran — so
+        release points on keyed-cache paths alone cannot protect the lane that
+        actually died: the UNCACHED pipeline path has no cache to release,
+        only per-forward transients that the MPS allocator pools forever.
+
+        Design constraint: a performance decrease is unacceptable, so the pool
+        is NEVER dropped while it is doing its job. This reads two allocator
+        counters (cheap) and calls `empty_cache` only when the pool holds more
+        than `_transformers_pool_release_threshold_bytes()` of freed-but-
+        retained memory — i.e. only in the pathological regime. Healthy small-
+        call loops never cross the threshold and keep full pool reuse. If the
+        counters are unavailable, do NOTHING (an unconditional empty_cache on
+        the hot path is exactly the perf hazard this guard exists to avoid).
+
+        MEASURED AND DELIBERATELY NOT TUNED (FINISHER, 2026-08-06). A hot-path
+        exemption — skip the release on decode-shaped cached calls, hold them to
+        a raised pooled-bytes bound — was implemented and A/B'd in-process on one
+        resident model, one knob, both orders
+        (`results/bench_b/finisher_pool_ab_v2_ornith9b_30000.json`). It was
+        REVERTED on its own evidence: the dispatch it removes costs 3.8 ms of a
+        124-164 ms warm call (~2-3%, not the 13% reported), the arm-level
+        difference is swamped by a same-arm drift of 0.124 s -> 0.164 s across
+        the cell, and retained pool rose (max slack 7.482 GiB exempt vs 6.634
+        GiB shipped, parked at ~7.4 vs ~4.2 GiB). The discriminator is also
+        caller-shape dependent: the same logical warm call feeds 1 token through
+        the `messages=` full-context lane and 35 through the `prompt=` append
+        lane, so the exemption would apply to one spelling and silently not the
+        other. 3.8 ms is not worth reintroducing the ratchet this guard exists
+        to bound."""
+        if str(getattr(self, "device", "") or "").strip().lower() != "mps":
+            return
+        threshold = self._transformers_pool_release_threshold_bytes()
+        if threshold <= 0:
+            return
+        try:
+            import torch  # type: ignore
+
+            if not (hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache")):
+                return
+            if not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
+                return
+            driver_fn = getattr(torch.mps, "driver_allocated_memory", None)
+            current_fn = getattr(torch.mps, "current_allocated_memory", None)
+            if not callable(driver_fn) or not callable(current_fn):
+                return
+            pooled = int(driver_fn()) - int(current_fn())
+            if pooled >= threshold:
+                if hasattr(torch.mps, "synchronize"):
+                    torch.mps.synchronize()
+                torch.mps.empty_cache()
+        except Exception:
+            pass
+
+    def _transformers_pool_guard_stride(self) -> int:
+        """Forwards between pooled-bytes checks inside a live `generate()` call.
+
+        Env `ABSTRACTCORE_MPS_POOL_GUARD_STRIDE`, default 8; <= 0 DISABLES the
+        in-call guard, matching the `<= 0 disables` convention of
+        `ABSTRACTCORE_TRANSFORMERS_PREFILL_STEP` and
+        `ABSTRACTCORE_MPS_POOL_RELEASE_GB`. The switch exists so the fix can be
+        A/B'd against its own absence on one resident model rather than by
+        editing the source between arms — that is how
+        `oom/results/consecutive_*_12k.json` was produced."""
+        cached = getattr(self, "_transformers_pool_guard_stride_cached", None)
+        if isinstance(cached, int):
+            return cached
+        stride = 8
+        try:
+            raw = os.environ.get("ABSTRACTCORE_MPS_POOL_GUARD_STRIDE")
+            if raw is not None and str(raw).strip():
+                stride = int(str(raw).strip())
+        except Exception:
+            stride = 8
+        self._transformers_pool_guard_stride_cached = stride
+        return stride
+
+    @contextlib.contextmanager
+    def _transformers_decode_pool_guard(self):
+        """Keep the MPS allocator pool bounded DURING a single `generate()` call.
+
+        WHY THIS EXISTS (2026-08-07, measured). `_transformers_maybe_release_
+        device_pool` is CALL-scoped: every text-lane call site invokes it in a
+        `finally`, i.e. after `generate()` has already returned. The ratchet it
+        is meant to bound is STEP-scoped. `DynamicCache` grows by `torch.cat` on
+        every decode step, so step *t* asks the allocator for a buffer sized for
+        *t* tokens and frees the *t-1* one. The sizes never repeat and never
+        shrink, which is the worst possible input to a caching allocator that
+        only reuses blocks it already holds and never returns them to the OS on
+        its own.
+
+        MEASURED, Qwen3.5-4B bf16 on MPS, 12,718-token UNCACHED prompt, one
+        process, one model load (`oom/results/decode_budget_v1.json`):
+
+            max_output_tokens=512   ->  driver  10.26 GiB, pool slack   1.89 GiB
+            max_output_tokens=4096  ->  driver 113.26 GiB, pool slack 104.78 GiB
+
+        In the second arm `current_allocated_memory` was 8.48 GiB: the
+        computation needed ~8.5 GiB and the allocator was sitting on 104.8 GiB
+        of FREED buffers. Host free+inactive fell from 111 GB to 18 GB inside
+        one call and a watchdog had to stop it. Eight times the decode budget
+        cost a hundred times the memory, because the growth is not steady: the
+        driver sits flat for hundreds of steps and then jumps in 1-2 GiB
+        heap-sized increments as the requested sizes outgrow every heap the
+        allocator already owns (`oom/results/decode_mechanism.json`). Nothing
+        inside `generate()` ever yields to the call-scoped guard, so one long
+        call ratchets without limit — and a call that never returns never
+        releases at all, which is the shape of the two gateway deaths in
+        `product/results/hf_gateway_death.json`.
+
+        This does NOT change the policy: same two counters, same
+        `_transformers_pool_release_threshold_bytes()` bound, still a no-op
+        while the pool is doing its job, still never an unconditional
+        `empty_cache` on the hot path. It only gives the existing policy
+        somewhere to run while a call is still in flight, through a read-only
+        forward pre-hook. Nothing about generation semantics is touched — the
+        hook inspects no tensors, returns nothing, and swallows its own errors.
+        Stride-limited (`ABSTRACTCORE_MPS_POOL_GUARD_STRIDE`, default 8
+        forwards) so two counter reads do not land on literally every token.
+
+        Yields a stats dict so callers and tests can assert the guard actually
+        ran rather than assuming it: {"checks", "releases", "seconds",
+        "peak_pooled_bytes"}.
+        """
+        stats: Dict[str, Any] = {"checks": 0, "releases": 0, "seconds": 0.0,
+                                 "peak_pooled_bytes": 0, "enabled": False}
+        model = getattr(self, "model_instance", None)
+        try:
+            threshold = self._transformers_pool_release_threshold_bytes()
+        except Exception:
+            threshold = 0
+        if (str(getattr(self, "device", "") or "").strip().lower() != "mps"
+                or threshold <= 0
+                or model is None
+                or not hasattr(model, "register_forward_pre_hook")):
+            yield stats
+            return
+        try:
+            import torch  # type: ignore
+
+            if not (hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache")):
+                yield stats
+                return
+            if not (hasattr(torch.backends, "mps") and torch.backends.mps.is_available()):
+                yield stats
+                return
+            driver_fn = getattr(torch.mps, "driver_allocated_memory", None)
+            current_fn = getattr(torch.mps, "current_allocated_memory", None)
+            if not callable(driver_fn) or not callable(current_fn):
+                yield stats
+                return
+        except Exception:
+            yield stats
+            return
+
+        stride = self._transformers_pool_guard_stride()
+        if stride <= 0:  # operator kill-switch / A-B control arm
+            yield stats
+            return
+        stats["enabled"] = True
+        seen = {"n": 0}
+
+        def _check() -> None:
+            seen["n"] += 1
+            if seen["n"] % stride:
+                return
+            try:
+                pooled = int(driver_fn()) - int(current_fn())
+                if pooled > stats["peak_pooled_bytes"]:
+                    stats["peak_pooled_bytes"] = pooled
+                stats["checks"] += 1
+                if pooled >= threshold:
+                    t0 = time.time()
+                    if hasattr(torch.mps, "synchronize"):
+                        torch.mps.synchronize()
+                    torch.mps.empty_cache()
+                    stats["seconds"] += time.time() - t0
+                    stats["releases"] += 1
+            except Exception:
+                pass
+
+        handle = None
+        try:
+            try:
+                handle = model.register_forward_pre_hook(
+                    lambda _m, _a, _k: _check(), with_kwargs=True)
+            except TypeError:
+                handle = model.register_forward_pre_hook(lambda _m, _a: _check())
+        except Exception:
+            handle = None
+        try:
+            yield stats
+        finally:
+            if handle is not None:
+                try:
+                    handle.remove()
+                except Exception:
+                    pass
+
+    def _transformers_crop_cache(self, state: _TransformersPromptCacheValue, keep_tokens: int) -> bool:
+        """Crop the live KV cache back to its first `keep_tokens` tokens.
+
+        REFUSES on any architecture with layers whose state cannot be rolled
+        back. Returns False; the caller rebuilds fresh (one honest cold prefill).
+
+        WHY THIS IS A REFUSAL AND NOT AN ACCEPTED APPROXIMATION (2026-08-03).
+        `transformers.cache_utils` implements `crop` as an explicit `pass` on the
+        linear-attention layer classes ("We don't crop the linear attention cache,
+        so simply do nothing here"), while `Cache.crop` loops every layer. On a
+        hybrid the result is not an approximation, it is an INTERNALLY INCONSISTENT
+        cache: the full-attention layers roll back, the linear layers keep the
+        removed tokens' recurrent state, and the two halves then disagree about
+        what context they hold. Measured on `Qwen/Qwen3.5-4B` (24 linear / 8 full
+        of 32 layers): 24 of 32 layers BIT-IDENTICAL after a crop at 10k, and
+        reproduced at 30k. Behaviourally it does not degrade gracefully — cropped-
+        warm arms returned EMPTY completions (`finish_reason='stop'`, no content)
+        across retries until the circuit breaker tripped.
+
+        This code previously accepted that case with a warning, on the theory that
+        "the long attention prefix is reused exactly and the residual linear state
+        is an approximation". The empty-output measurement refutes the theory, and
+        a warning is not a substitute for a correct cache.
+
+        WHY THE OLD VERIFY MISSED IT. It read `cache.get_seq_length()`, and
+        `Cache.get_seq_length` deliberately skips to the first attention layer for
+        exactly these hybrids (`cache_utils.py`: "For alternating attention/linear
+        attention caches, `get_seq_length` needs to use attention layer idx"). It
+        therefore sampled a layer that DID crop and always passed. The verify below
+        checks EVERY layer that can report a length instead of trusting one.
         """
         cache = getattr(state, "cache", None)
         if cache is None:
@@ -1857,47 +3708,196 @@ class HuggingFaceProvider(BaseProvider):
         crop = getattr(cache, "crop", None)
         if not callable(crop):
             return False
+
+        # Refuse BEFORE mutating. `Cache.crop` rolls back the attention layers even
+        # when it no-ops the linear ones, so a post-hoc refusal would hand the
+        # caller back the very inconsistent cache this guard exists to prevent.
+        uncroppable = self._transformers_uncroppable_layers(cache)
+        if uncroppable:
+            if not getattr(self, "_transformers_linear_crop_warned", False):
+                self._transformers_linear_crop_warned = True
+                shown = ", ".join(f"[{i}]{n}" for i, n in uncroppable[:4])
+                self.logger.warning(
+                    f"#FALLBACK transformers prompt cache: this model has "
+                    f"{len(uncroppable)} layer(s) whose state cannot be rolled back "
+                    f"({shown}{' …' if len(uncroppable) > 4 else ''}). `crop` is a no-op on "
+                    f"them while attention layers DO roll back, which leaves an inconsistent "
+                    f"cache that produces empty completions. Cropping is refused for this "
+                    f"architecture; warm calls rebuild fresh (one cold prefill, correct "
+                    f"output, no prefill savings)."
+                )
+            return False
+
         try:
             crop(int(keep_tokens))
         except Exception:
             return False
 
-        # Post-crop verify: a no-op crop on attention layers leaves the
-        # reported sequence length past the crop point — wrong context, refuse.
+        # Post-crop verify, PER LAYER. `cache.get_seq_length()` alone cannot detect
+        # a partial rollback — that is precisely how the hybrid case survived.
         try:
-            get_len = getattr(cache, "get_seq_length", None)
-            if callable(get_len):
-                seq_len = int(get_len())
-                if seq_len > int(keep_tokens):
+            for length in self._transformers_layer_seq_lengths(cache):
+                if length > int(keep_tokens):
                     return False
         except Exception:
             pass  # unverifiable: keep legacy accept (raise-only contract)
-
-        if self._transformers_cache_has_linear_layers(cache) and not getattr(
-            self, "_transformers_linear_crop_warned", False
-        ):
-            self._transformers_linear_crop_warned = True
-            self.logger.warning(
-                "#FALLBACK transformers cache crop: this model mixes linear-attention/mamba "
-                "layers whose recurrent state cannot be rolled back — attention KV is reused "
-                "exactly, linear state is approximate after context edits/multi-turn reuse. "
-                "Output quality typically holds (state decay), but this is not byte-exact "
-                "cold-prefill equivalence."
-            )
         return True
 
     @staticmethod
-    def _transformers_cache_has_linear_layers(cache: Any) -> bool:
-        """True when any cache layer is a linear-attention/mamba-style layer
-        (crop is a documented no-op for those in transformers)."""
+    def _transformers_layer_seq_lengths(cache: Any) -> List[int]:
+        """Every per-layer sequence length this cache can report.
+
+        Layers that do not track a length at all (linear-attention/recurrent)
+        contribute nothing — they are unverifiable by construction, which is why
+        they are refused up front rather than checked here.
+        """
+        out: List[int] = []
         layers = getattr(cache, "layers", None)
         if not isinstance(layers, (list, tuple)):
-            return False
+            get_len = getattr(cache, "get_seq_length", None)
+            if callable(get_len):
+                try:
+                    out.append(int(get_len()))
+                except Exception:
+                    pass
+            return out
         for layer in layers:
-            name = type(layer).__name__.lower()
-            if "linear" in name or "mamba" in name or "conv" in name:
-                return True
-        return False
+            fn = getattr(layer, "get_seq_length", None)
+            if not callable(fn):
+                continue
+            try:
+                out.append(int(fn()))
+            except Exception:
+                continue
+        return out
+
+    # Minimum transformers version whose HYBRID (linear-attention) warm path is
+    # trustworthy on this provider. Below this, a warm bloc-chain/snapshot call on
+    # a Gated-DeltaNet model returns FLUENT, CONFIDENT, WRONG text — not an error,
+    # not an empty string. Measured on Qwen3.5-4B, stock sdpa, three gate cells:
+    #
+    #   transformers 5.6.0  ->  warm recall 0/5 at every planted-fact depth
+    #                           cold "designated KESTREL-9" / warm "designated as Loop C"
+    #                           cold "3.7 microradians"     / warm "the log does not contain
+    #                                                              any record of segment M-14"
+    #   transformers 5.9.0  ->  PASS
+    #
+    # Deterministic, zero errors, nothing in the payload signals failure — the
+    # worst shape a cache defect can take. `pyproject.toml` pins
+    # `transformers>=4.57.1,<6.0.0`, which ADMITS 5.6.0, and the shim that once
+    # masked this (`abstractcore_sdpa_mps_safe`) no longer exists in the tree. So a
+    # spec-compliant install plus a default-on cache plus a hybrid model produced
+    # silently wrong answers with no guard anywhere. This is that guard.
+    _HYBRID_CACHE_MIN_TRANSFORMERS = (5, 9, 0)
+
+    @classmethod
+    def _hybrid_cache_transformers_version_ok(cls) -> tuple[bool, str]:
+        """(ok, version_string) for the installed transformers on the hybrid path."""
+        try:
+            import transformers  # type: ignore
+
+            raw = str(getattr(transformers, "__version__", "") or "")
+            parts = []
+            for chunk in raw.split(".")[:3]:
+                digits = "".join(ch for ch in chunk if ch.isdigit())
+                parts.append(int(digits) if digits else 0)
+            while len(parts) < 3:
+                parts.append(0)
+            return (tuple(parts) >= cls._HYBRID_CACHE_MIN_TRANSFORMERS, raw)
+        except Exception:  # noqa: BLE001
+            # Cannot prove the version is safe -> treat as unsafe. A cache that
+            # might return wrong answers must fail closed.
+            return (False, "unknown")
+
+    @staticmethod
+    def _transformers_uncroppable_layers(cache: Any) -> List[tuple]:
+        """`(index, class_name)` for every layer whose `crop` cannot roll state back.
+
+        Identified by TYPE where transformers exposes the type
+        (`LinearAttentionCacheLayerMixin`, the base of all three linear-attention
+        layer classes — including `LinearAttentionAndFullAttentionLayer`, whose MRO
+        puts the no-op `crop` ahead of its own attention half). The name heuristic
+        is only a fallback for versions that do not export the mixin: a substring
+        match is not a contract, and this predicate now decides correctness rather
+        than the wording of a warning.
+        """
+        layers = getattr(cache, "layers", None)
+        if not isinstance(layers, (list, tuple)):
+            return []
+        mixin = None
+        try:
+            from transformers.cache_utils import LinearAttentionCacheLayerMixin  # type: ignore
+
+            mixin = LinearAttentionCacheLayerMixin
+        except Exception:
+            mixin = None
+
+        out: List[tuple] = []
+        for idx, layer in enumerate(layers):
+            name = type(layer).__name__
+            if mixin is not None and isinstance(layer, mixin):
+                out.append((idx, name))
+                continue
+            lowered = name.lower()
+            if "linear" in lowered or "mamba" in lowered or "conv" in lowered or "recurrent" in lowered:
+                out.append((idx, name))
+                continue
+            # A layer that cannot report a length cannot be verified after a crop
+            # either; treat it as uncroppable rather than trust it silently.
+            if mixin is None and not callable(getattr(layer, "get_seq_length", None)):
+                out.append((idx, name))
+        return out
+
+    def _transformers_forward_supports_logits_to_keep(self) -> bool:
+        """True when the loaded model's forward() accepts `logits_to_keep`.
+
+        Mirrors transformers' own `GenerationMixin._supports_logits_to_keep`;
+        computed once per loaded model (signature inspection is not free and
+        the prefill path can run per turn)."""
+        cached = getattr(self, "_transformers_logits_to_keep_supported", None)
+        if isinstance(cached, bool):
+            return cached
+        supported = False
+        model = getattr(self, "model_instance", None)
+        try:
+            probe = getattr(model, "_supports_logits_to_keep", None)
+            if callable(probe):
+                supported = bool(probe())
+            elif model is not None:
+                import inspect
+
+                supported = "logits_to_keep" in set(
+                    inspect.signature(model.forward).parameters.keys()
+                )
+        except Exception:
+            supported = False
+        self._transformers_logits_to_keep_supported = supported
+        return supported
+
+    def _transformers_prefill_step(self) -> int:
+        """Prefill chunk size (tokens per forward) for the transformers lanes.
+
+        A one-shot long prefill materializes an attention-score transient of
+        [heads, L, L] float32 whenever torch's SDPA falls back to its math
+        path (MPS does at long L — resolved implementation `sdpa`, verified
+        by probe): at 30k on Qwen3-4B (32 q-heads) that is ONE 107.15 GiB
+        MTLBuffer, which Metal refuses outright — measured twice as
+        `Failed to allocate private MTLBuffer for size 115054126208`
+        (= 32 x 29981^2 x 4 exactly). Chunked at 2048 the largest transient
+        is [32, 2048, 30k] fp32 ≈ 7.9 GiB. Env override
+        `ABSTRACTCORE_TRANSFORMERS_PREFILL_STEP`; <= 0 disables chunking."""
+        cached = getattr(self, "_transformers_prefill_step_cached", None)
+        if isinstance(cached, int):
+            return cached
+        step = 2048
+        try:
+            raw = os.environ.get("ABSTRACTCORE_TRANSFORMERS_PREFILL_STEP")
+            if raw is not None and str(raw).strip():
+                step = int(str(raw).strip())
+        except Exception:
+            step = 2048
+        self._transformers_prefill_step_cached = step
+        return step
 
     def _transformers_prefill_cache(self, state: _TransformersPromptCacheValue, token_ids: List[int]) -> bool:
         if not token_ids:
@@ -1910,33 +3910,51 @@ class HuggingFaceProvider(BaseProvider):
             return False
 
         device = self._transformers_cache_device() or torch.device("cpu")
-        input_ids = torch.tensor([token_ids], dtype=torch.long, device=device)
-        past_len = len(state.prompt_tokens)
-        attention_mask = torch.ones((1, past_len + len(token_ids)), dtype=torch.long, device=device)
+        use_mps_lock = str(device).startswith("mps") or str(getattr(self, "device", "") or "").strip().lower() == "mps"
+        step = self._transformers_prefill_step()
+        if step <= 0:
+            step = len(token_ids)
 
-        kwargs: Dict[str, Any] = {
-            "input_ids": input_ids,
-            "attention_mask": attention_mask,
-            "use_cache": True,
-        }
-        if state.cache is not None:
-            kwargs["past_key_values"] = state.cache
+        # Chunked: never materialize an [heads, L, L] score transient for the
+        # whole prompt at once (see _transformers_prefill_step). Each chunk's
+        # forward extends the SAME cache, so the resulting KV is identical.
+        for start in range(0, len(token_ids), step):
+            chunk = token_ids[start:start + step]
+            past_len = len(state.prompt_tokens)
+            input_ids = torch.tensor([chunk], dtype=torch.long, device=device)
+            attention_mask = torch.ones((1, past_len + len(chunk)), dtype=torch.long, device=device)
 
-        try:
-            with torch.inference_mode():
-                use_mps_lock = str(device).startswith("mps") or str(getattr(self, "device", "") or "").strip().lower() == "mps"
-                if use_mps_lock:
-                    with _MPS_GENERATION_LOCK:
+            kwargs: Dict[str, Any] = {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "use_cache": True,
+            }
+            if state.cache is not None:
+                kwargs["past_key_values"] = state.cache
+            # Only the KV cache is kept from this forward — the logits are never
+            # read. Without `logits_to_keep=1` a raw forward materializes
+            # [1, seq, vocab] float32 logits: at 30k on Qwen3.5-4B (vocab 248320)
+            # that is a ~27.8 GiB transient PER PREFILL, which the MPS allocator
+            # then pools forever (2026-08-03 leak audit). `generate()` already
+            # passes 1 on every model that supports it (generation/utils.py:2527);
+            # this forward must match.
+            if self._transformers_forward_supports_logits_to_keep():
+                kwargs["logits_to_keep"] = 1
+
+            try:
+                with torch.inference_mode():
+                    if use_mps_lock:
+                        with _MPS_GENERATION_LOCK:
+                            outputs = self.model_instance(**kwargs)
+                    else:
                         outputs = self.model_instance(**kwargs)
-                else:
-                    outputs = self.model_instance(**kwargs)
-        except Exception:
-            return False
+            except Exception:
+                return False
 
-        new_cache = getattr(outputs, "past_key_values", None)
-        if new_cache is not None:
-            state.cache = new_cache
-        state.prompt_tokens = tuple(int(tok) for tok in (state.prompt_tokens + tuple(token_ids)))
+            new_cache = getattr(outputs, "past_key_values", None)
+            if new_cache is not None:
+                state.cache = new_cache
+            state.prompt_tokens = tuple(int(tok) for tok in (state.prompt_tokens + tuple(chunk)))
         return True
 
     def _prompt_cache_backend_create(self) -> Optional[Any]:
@@ -2028,6 +4046,7 @@ class HuggingFaceProvider(BaseProvider):
             add_generation_prompt=bool(state.add_generation_prompt),
             prompt_text=str(state.prompt_text or ""),
             prompt_tokens=tuple(int(tok) for tok in state.prompt_tokens),
+            fed_prompt_tokens=tuple(int(tok) for tok in state.fed_prompt_tokens),
         )
 
     def _prompt_cache_backend_append(
@@ -2047,6 +4066,36 @@ class HuggingFaceProvider(BaseProvider):
         )
         gguf_enable_thinking = kwargs.get("_acore_gguf_enable_thinking")
         gguf_enable_thinking = gguf_enable_thinking if isinstance(gguf_enable_thinking, bool) else None
+
+        # PLANNED BLOC CUT (bloc composability, see base.py — MLX has honoured
+        # this since the bloc work landed; both HuggingFace lanes did not).
+        #
+        # WHAT THIS FIXES, MEASURED 2026-08-07 on Qwen3-4B-Instruct-2507 (bf16,
+        # MPS), a 702-token system bloc + a 661-token tools bloc:
+        #
+        #   before  chain [system, tools] cold build ...... 2068 tokens prefilled
+        #           (the system bloc is prefilled, then THROWN AWAY and the whole
+        #            system+tools text re-prefilled, because `tools is not None`
+        #            forced `needs_rebuild`)
+        #           edit ONE tool description ............. 1367 tokens re-prefilled
+        #           (the unchanged system bloc bought nothing)
+        #
+        # So the tools bloc cost 52% MORE to build than one merged bloc and saved
+        # nothing on the edit it exists for. The plan was correct all along
+        # (`boundaries=[702, 1363]`, `collapsed=False`) — this lane simply never
+        # read it. Feeding the planned fragment verbatim is what makes the system
+        # bloc's KV survive a tools change.
+        planned = kwargs.get("bloc_token_ids")
+        planned_ids: Optional[List[int]] = None
+        if isinstance(planned, (list, tuple)):
+            try:
+                planned_ids = [int(tok) for tok in planned]
+            except Exception:
+                planned_ids = None
+            if not planned_ids:
+                planned_ids = None
+        planned_text = kwargs.get("bloc_stable_text")
+        planned_text = planned_text if isinstance(planned_text, str) else None
 
         transformers_state = self._transformers_prompt_cache_state(cache_value)
         if transformers_state is not None:
@@ -2075,6 +4124,17 @@ class HuggingFaceProvider(BaseProvider):
 
             new_add_generation_prompt = bool(add_generation_prompt)
             transformers_state.add_generation_prompt = new_add_generation_prompt
+
+            if planned_ids is not None:
+                # The planner already rendered the WHOLE conversation through this
+                # lane's own renderer and cut it at successor-independent token
+                # boundaries. Feed the cut verbatim on top of the warm cache; the
+                # logical state above is still updated so a later UNPLANNED append
+                # (a live `generate`) re-renders the correct cumulative text, and
+                # the generate path composes against `prompt_tokens` by LCP, so
+                # the closing tag the plan deliberately holds back arrives with
+                # the next turn's suffix.
+                return self._transformers_prefill_cache(transformers_state, list(planned_ids))
 
             needs_rebuild = bool(system_prompt is not None or tools is not None or not prev_prompt_tokens)
             # Changing add_generation_prompt from True -> False is a structural edit; rebuild.
@@ -2147,6 +4207,56 @@ class HuggingFaceProvider(BaseProvider):
             # Keyed-only GGUF caches still keep the in-process cache object, but they do not
             # advertise modular update/fork support to higher layers.
             return False
+
+        if planned_ids is not None:
+            # PLANNED BLOC CUT, GGUF lane. Same contract as the transformers
+            # branch above: feed the planner's cut instead of re-rendering this
+            # module, so the predecessor bloc's KV survives.
+            #
+            # `prompt_text` must stay EXACTLY the text of `prompt_tokens` —
+            # `_gguf_compose_cached_prompt_tokens` concatenates it with a live
+            # suffix to form the prompt actually sent, so a text/token pair that
+            # disagree by even one token corrupts every warm turn after it.
+            #
+            # The planner's stable text is NOT that text in general: the seam
+            # backoff drops the last token(s) the tokenizer could still merge, so
+            # the text runs a token or two past the ids (measured on this lane:
+            # `tokenize(stable_text)` = 283 against `boundary` = 282). llama.cpp's
+            # own detokenizer IS the exact inverse — verified here by re-encoding,
+            # never assumed — so the text is derived from the ids that were fed.
+            cumulative_ids = tuple(int(tok) for tok in (prev_prompt_tokens + tuple(planned_ids)))
+            verified_text: Optional[str] = None
+            candidates: List[str] = []
+            try:
+                decoded = self.llm.detokenize(list(cumulative_ids), special=True)
+                candidates.append(decoded.decode("utf-8", errors="strict"))
+            except Exception:
+                pass
+            if planned_text is not None:
+                candidates.append(planned_text)
+            for candidate in candidates:
+                try:
+                    text_ids = tuple(int(tok) for tok in self._gguf_tokenize_rendered_prompt(candidate))
+                except Exception:
+                    continue
+                if text_ids == cumulative_ids:
+                    verified_text = candidate
+                    break
+            if verified_text is not None:
+                with getattr(self, "_gguf_prompt_cache_lock", _MPS_GENERATION_LOCK):
+                    ok = self._gguf_prefill_prompt_cache(state.cache, cumulative_ids)
+                if not ok:
+                    return False
+                state.prompt_text = verified_text
+                state.prompt_tokens = cumulative_ids
+                return True
+            message = (
+                "#FALLBACK prompt-cache bloc: GGUF could not verify the planned fragment's text "
+                "against its token ids; rebuilding this bloc from the cumulative render instead "
+                "(correct, but the predecessor bloc's prefill is not reused)."
+            )
+            warnings.warn(message, RuntimeWarning, stacklevel=2)
+            self.logger.warning(message)
 
         # Fast path: append-only updates (no system/tools changes) can reuse the serialized prompt.
         can_incremental = (
@@ -2321,8 +4431,21 @@ class HuggingFaceProvider(BaseProvider):
         return True
 
     def prompt_cache_clear(self, key: Optional[str] = None) -> bool:
-        """Clear llama.cpp prompt caches (GGUF only; best-effort)."""
+        """Clear prompt caches AND their hybrid snapshots (a snapshot must not
+        outlive the key it mirrors); on the transformers lane also return the
+        freed KV tensors' device memory to the OS (release point, not hot
+        path)."""
         cleared = super().prompt_cache_clear(key)
+        self._ensure_transformers_snapshot_state()
+        with self._transformers_snapshot_lock:
+            if key is None:
+                self._transformers_snapshots.clear()
+            else:
+                norm = self._normalize_prompt_cache_key(key)
+                if norm:
+                    self._transformers_snapshots.pop(norm, None)
+        if getattr(self, "model_type", None) == "transformers":
+            self._transformers_release_device_pool()
         llm = getattr(self, "llm", None)
         try:
             if llm is not None and hasattr(llm, "set_cache"):
@@ -2997,15 +5120,35 @@ class HuggingFaceProvider(BaseProvider):
         ):
             import warnings
 
-            warnings.warn(
-                "GGUF Metal offload disabled because PyTorch/transformers is already imported in this process "
-                "(llama-cpp-python Metal offload can SIGABRT). "
-                "Start a fresh Python process (import GGUF first) to use Metal, "
-                "or ensure `llama_cpp` is imported before PyTorch, "
-                "or set ABSTRACTCORE_GGUF_METAL_UNSAFE=1 to force Metal offload.",
-                RuntimeWarning,
-                stacklevel=3,
+            poisoner = "PyTorch" if "torch" in sys.modules else "transformers"
+            detail = (
+                f"GGUF Metal offload disabled because {poisoner} is already imported in this "
+                f"process (llama-cpp-python Metal offload can SIGABRT). EVERY layer of "
+                f"{self.model} will run on CPU, which is typically 5-20x slower than Metal "
+                f"and changes memory behaviour. "
+                f"To get Metal: build a provider (any `create_llm`) BEFORE importing "
+                f"torch/transformers/mlx_lm in this process — abstractcore pre-imports "
+                f"llama.cpp for Metal at that point and marks it safe — or run the GGUF "
+                f"work in a fresh process, or set ABSTRACTCORE_GGUF_METAL_UNSAFE=1 to "
+                f"force Metal offload."
             )
+            # The previous wording said "ensure `llama_cpp` is imported before PyTorch",
+            # which does not work and was measured not working: this gate keys on
+            # `llama_cpp.__abstractcore_preimported_for_metal`, a marker set ONLY by
+            # `registry._preimport_llama_cpp_for_macos()`. A caller who imports
+            # llama_cpp by hand, in any order, still lands here. A remedy that cannot
+            # work is worse than no remedy — it sends the user away satisfied.
+            # A bare `warnings.warn` is not enough signal for a whole-model CPU
+            # downgrade: warnings are deduplicated per location, are filtered out
+            # entirely under `-W ignore`, and leave nothing on the object for
+            # telemetry to record. `import mlx_lm` and `abstractcore.embeddings` both
+            # pull in transformers, so an ordinary process reaches this branch without
+            # the caller ever naming torch — and then silently benchmarks CPU numbers
+            # as if they were Metal. Emit it the way every other degradation in this
+            # provider is emitted, and record it where a caller can read it back.
+            self.logger.warning(f"#FALLBACK {detail}")
+            self.gguf_metal_disabled_reason = detail
+            warnings.warn(detail, RuntimeWarning, stacklevel=3)
             self.n_gpu_layers = 0
             return
 
@@ -3030,6 +5173,73 @@ class HuggingFaceProvider(BaseProvider):
         if _config.should_force_local_files_only():
             kwargs["local_files_only"] = True
         return kwargs
+
+    @staticmethod
+    def _build_transformers_quantization_config(kwargs: Dict[str, Any]) -> Any:
+        """Caller-requested transformers quantization, as a config object.
+
+        Two accepted spellings, both first-class:
+
+          create_llm("huggingface", model=..., quantization_config=BitsAndBytesConfig(...))
+          create_llm("huggingface", model=..., load_in_4bit=True, bnb_4bit_quant_type="nf4", ...)
+
+        The second is the legacy bitsandbytes spelling. transformers 5.9 REMOVED
+        `load_in_4bit`/`load_in_8bit` from `from_pretrained` (modeling_utils
+        accepts `quantization_config` only), so passing them through verbatim
+        raises. They are translated here instead of being dropped, so callers
+        written against older transformers keep working.
+
+        Returns None when the caller asked for no quantization — in which case
+        nothing about the load changes.
+        """
+        explicit = kwargs.get("quantization_config")
+        if explicit is not None:
+            return explicit
+
+        want_4bit = bool(kwargs.get("load_in_4bit"))
+        want_8bit = bool(kwargs.get("load_in_8bit"))
+        if not (want_4bit or want_8bit):
+            return None
+        if want_4bit and want_8bit:
+            raise ValueError(
+                "load_in_4bit and load_in_8bit are mutually exclusive; pass one, "
+                "or build a transformers BitsAndBytesConfig and pass it as "
+                "quantization_config=."
+            )
+
+        try:
+            from transformers import BitsAndBytesConfig  # type: ignore
+        except Exception as exc:  # pragma: no cover - transformers is a hard dep here
+            raise ImportError(
+                "load_in_4bit/load_in_8bit need transformers' BitsAndBytesConfig, "
+                f"which could not be imported: {exc}"
+            ) from exc
+        if not _module_available("bitsandbytes"):
+            raise ImportError(
+                "load_in_4bit/load_in_8bit require the `bitsandbytes` package, which "
+                "is not installed. Install it for this platform, or use an "
+                "unquantized Transformers model, an MLX model with the MLX provider, "
+                "or a GGUF model with the GGUF path."
+            )
+
+        cfg: Dict[str, Any] = {"load_in_4bit": want_4bit, "load_in_8bit": want_8bit}
+        for name in ("bnb_4bit_quant_type", "bnb_4bit_use_double_quant",
+                     "bnb_4bit_quant_storage", "llm_int8_threshold",
+                     "llm_int8_skip_modules", "llm_int8_enable_fp32_cpu_offload",
+                     "llm_int8_has_fp16_weight"):
+            if name in kwargs:
+                cfg[name] = kwargs[name]
+        compute_dtype = kwargs.get("bnb_4bit_compute_dtype")
+        if isinstance(compute_dtype, str):
+            import torch  # type: ignore
+            resolved = getattr(torch, compute_dtype, None)
+            if not isinstance(resolved, torch.dtype):
+                raise ValueError(
+                    f"bnb_4bit_compute_dtype={compute_dtype!r} is not a torch dtype name")
+            compute_dtype = resolved
+        if compute_dtype is not None:
+            cfg["bnb_4bit_compute_dtype"] = compute_dtype
+        return BitsAndBytesConfig(**cfg)
 
     @staticmethod
     def _extract_quantization_config(config: Any) -> Dict[str, Any]:
@@ -3260,28 +5470,63 @@ class HuggingFaceProvider(BaseProvider):
             # Load model with all transformers-specific parameters
             # Try AutoModelForCausalLM first, fall back to AutoModel for custom models
             model_kwargs = self.transformers_kwargs.copy()
+
+            # An explicit caller choice always wins; ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL
+            # overrides the transformers default (use "eager" as the stopgap for
+            # the torch-2.10 MPS SDPA defect — see _warn_if_mps_sdpa_defective).
+            if 'attn_implementation' not in model_kwargs:
+                forced = os.environ.get("ABSTRACTCORE_TRANSFORMERS_ATTN_IMPL")
+                if isinstance(forced, str) and forced.strip():
+                    model_kwargs['attn_implementation'] = forced.strip()
+
             # Respect offline-first configuration
             if _config.should_force_local_files_only():
                 model_kwargs['local_files_only'] = True
             if quantization_config:
                 model_kwargs["output_loading_info"] = True
 
-            try:
-                loaded = AutoModelForCausalLM.from_pretrained(self.model, **model_kwargs)
-                self.model_instance, loading_info = self._unpack_transformers_load_result(loaded)
-                self._validate_transformers_weight_load(loading_info, quantization_config)
-            except ValueError as e:
-                if "Unrecognized configuration class" in str(e) or "glm4v" in str(e).lower():
-                    # Fall back to AutoModel for custom models like DeepSeek-OCR
-                    loaded = AutoModel.from_pretrained(self.model, **model_kwargs)
-                    self.model_instance, loading_info = self._unpack_transformers_load_result(loaded)
-                    self._validate_transformers_weight_load(loading_info, quantization_config)
-                else:
-                    raise
+            # Caller-requested quantization (quantization_config=, or the legacy
+            # load_in_4bit/8bit spelling translated in __init__). Validated on
+            # the same runtime rules as a checkpoint that carries its own config,
+            # and pinned to the target device at load time: a bnb-quantized
+            # module cannot be moved afterwards, and the post-load `.to(device)`
+            # below is skipped only when `device_map` is present.
+            if getattr(self, "_transformers_quantization_request", None) is not None:
+                requested = self._transformers_quantization_request
+                as_dict = requested if isinstance(requested, dict) else (
+                    requested.to_dict() if hasattr(requested, "to_dict") else {})
+                self._validate_transformers_quantization_runtime(dict(as_dict or {}))
+                if self.device in ("cuda", "mps") and "device_map" not in model_kwargs:
+                    model_kwargs["device_map"] = {"": self.device}
+                    self.transformers_kwargs["device_map"] = model_kwargs["device_map"]
+
+            def _load_with(kwargs: Dict[str, Any]):
+                try:
+                    obj = AutoModelForCausalLM.from_pretrained(self.model, **kwargs)
+                except ValueError as e:
+                    if "Unrecognized configuration class" in str(e) or "glm4v" in str(e).lower():
+                        # Fall back to AutoModel for custom models like DeepSeek-OCR
+                        obj = AutoModel.from_pretrained(self.model, **kwargs)
+                    else:
+                        raise
+                inst, info = self._unpack_transformers_load_result(obj)
+                self._validate_transformers_weight_load(info, quantization_config)
+                return inst
+
+            # MUST run before the first weight is quantized: the quantize op
+            # itself resolves (and latches) the fused kernel. See
+            # `_prepare_bnb_mps_fused_kernel`.
+            self._prepare_bnb_mps_fused_kernel(quantization_config)
+
+            self.model_instance = _load_with(model_kwargs)
 
             # Move to device (only if not using device_map)
             if self.device in ["cuda", "mps"] and 'device_map' not in self.transformers_kwargs:
                 self.model_instance = self.model_instance.to(self.device)
+            _warn_if_mps_sdpa_defective(self.device, self.model_instance)
+            # 4-bit on MPS silently loses its fused kernel and decodes ~x4
+            # slower. Probe at load, warn once, never raise.
+            self._warn_if_bnb_mps_fused_kernel_missing()
             self._apply_loaded_generation_config_defaults()
 
             # Create pipeline - handle custom models that don't support text-generation
@@ -3429,8 +5674,20 @@ class HuggingFaceProvider(BaseProvider):
             else:
                 raise RuntimeError(f"Failed to load HuggingFace vision model {self.model}: {str(e)}")
 
-    def _find_gguf_in_cache(self, model_name: str, *, _seen: Optional[set[str]] = None) -> Optional[str]:
-        """Find GGUF model in local caches (HuggingFace hub / LM Studio; cache-only, no downloading)."""
+    def _find_gguf_in_cache(
+        self,
+        model_name: str,
+        *,
+        _seen: Optional[set[str]] = None,
+        _selector: Optional[str] = None,
+    ) -> Optional[str]:
+        """Find GGUF model in local caches (HuggingFace hub / LM Studio; cache-only, no downloading).
+
+        Pure locator: it answers "where does this GGUF live", and callers decide
+        whether asking was legitimate. The ADR 0009 gate lives at the construction
+        site (`_reject_silent_gguf_substitution`), so probing a Hub alias here stays
+        allowed.
+        """
 
         if _seen is None:
             _seen = set()
@@ -3439,28 +5696,66 @@ class HuggingFaceProvider(BaseProvider):
             return None
         _seen.add(key)
 
+        # An explicit ":quant" selector belongs to the ORIGINAL request and must survive
+        # alias/manifest recursion — otherwise `repo:Q8_0` resolved through a manifest and
+        # landed on the preferred-quant default under a name the caller had disambiguated.
+        selector_source = str(model_name or "").strip()
+        explicit_selector = _selector
+        if explicit_selector is None and ":" in selector_source:
+            explicit_selector = selector_source.split(":", 1)[1].strip().strip("/") or None
+
+        def _announce_quant_pick(picked: Path, candidates: list[Path]) -> str:
+            # A repository id underdetermines WHICH quantization to load, so a default
+            # pick is legitimate resolution rather than substitution (ADR 0009) — but
+            # ADR 0001 still forbids it being invisible.
+            if len(candidates) > 1:
+                _artifact_logger().warning(
+                    "huggingface: %r names a GGUF repository holding %d quantizations; "
+                    "loading %r by default. Append ':<quant>' to the handle to choose "
+                    "explicitly.",
+                    model_name, len(candidates), picked.name,
+                )
+            return str(picked)
+
         def _pick_preferred_gguf(gguf_files: list[Path]) -> Optional[str]:
             if not gguf_files:
                 return None
             gguf_files = sorted(gguf_files, key=lambda p: p.name)
-            explicit_selector = None
-            selector_source = str(model_name or "").strip()
-            if ":" in selector_source:
-                explicit_selector = selector_source.split(":", 1)[1].strip().strip("/")
-                explicit_selector = explicit_selector or None
+
             if explicit_selector:
                 selector_upper = explicit_selector.upper()
-                for gguf_file in gguf_files:
-                    file_name_upper = gguf_file.name.upper()
-                    file_path_upper = str(gguf_file).upper()
-                    if selector_upper == file_name_upper or selector_upper in file_name_upper or selector_upper in file_path_upper:
-                        return str(gguf_file)
+                # Ordered and deterministic: exact filename, then filename substring,
+                # then path substring. The previous single OR-pass let a loose *path*
+                # match on an early file beat an exact *filename* match on a later one.
+                for matches in (
+                    lambda p: selector_upper == p.name.upper(),
+                    lambda p: selector_upper in p.name.upper(),
+                    lambda p: selector_upper in str(p).upper(),
+                ):
+                    for gguf_file in gguf_files:
+                        if matches(gguf_file):
+                            return str(gguf_file)
+
+                # ADR 0009: an explicit quant selector that matches nothing is a request
+                # we cannot satisfy. Falling through to `preferred_quants` here handed
+                # back a DIFFERENT quantization than the caller spelled out, silently.
+                raise ModelArtifactMismatchError(
+                    f"No GGUF matching the selector ':{explicit_selector}' for "
+                    f"{model_name!r}.\n"
+                    f"\n"
+                    f"  Requested : ':{explicit_selector}'\n"
+                    f"  Available : {', '.join(p.name for p in gguf_files)}\n"
+                    f"\n"
+                    f"Re-request with one of the available files, or drop the ':...' "
+                    f"selector to accept this provider's default quantization pick."
+                )
+
             preferred_quants = ['Q4_K_M', 'Q5_K_M', 'Q4_0', 'Q4_1', 'Q5_0', 'Q8_0']
             for quant in preferred_quants:
                 for gguf_file in gguf_files:
                     if quant in gguf_file.name.upper():
-                        return str(gguf_file)
-            return str(gguf_files[0])
+                        return _announce_quant_pick(gguf_file, gguf_files)
+            return _announce_quant_pick(gguf_files[0], gguf_files)
 
         def _to_repo_id(raw: str) -> Optional[str]:
             s = str(raw or "").strip()
@@ -3503,6 +5798,9 @@ class HuggingFaceProvider(BaseProvider):
                 picked = _pick_preferred_gguf(list(candidate.glob("*.gguf")))
                 if picked:
                     return picked
+        except ModelArtifactMismatchError:
+            # An unsatisfiable explicit selector is an answer, not a lookup failure.
+            raise
         except (OSError, ValueError):
             # A non-path string (NUL bytes, over-long) — fall through to cache
             # resolution, never crash the lookup.
@@ -3528,6 +5826,14 @@ class HuggingFaceProvider(BaseProvider):
                     if snapshot_dirs:
                         # Use the most recent snapshot
                         latest_snapshot = max(snapshot_dirs, key=lambda x: x.stat().st_mtime)
+                        if len(snapshot_dirs) > 1:
+                            # Same repository either way, so not a substitution — but the
+                            # caller named no revision and we picked one, so say which.
+                            _artifact_logger().warning(
+                                "huggingface: %r has %d cached snapshots (revisions); using the "
+                                "most recently modified one (%s).",
+                                model_name, len(snapshot_dirs), latest_snapshot.name,
+                            )
 
                         # Look for GGUF files in the snapshot
                         gguf_files = list(latest_snapshot.glob("*.gguf"))
@@ -3535,6 +5841,8 @@ class HuggingFaceProvider(BaseProvider):
                         if picked:
                             return picked
 
+                except ModelArtifactMismatchError:
+                    raise
                 except Exception:
                     pass
 
@@ -3549,6 +5857,8 @@ class HuggingFaceProvider(BaseProvider):
                 picked = _pick_preferred_gguf(gguf_files)
                 if picked:
                     return picked
+        except ModelArtifactMismatchError:
+            raise
         except Exception:
             pass
 
@@ -3596,9 +5906,22 @@ class HuggingFaceProvider(BaseProvider):
                         ordered.append(c2)
 
                     for cand in ordered:
-                        resolved = self._find_gguf_in_cache(cand, _seen=_seen)
+                        resolved = self._find_gguf_in_cache(
+                            cand, _seen=_seen, _selector=explicit_selector
+                        )
                         if resolved:
+                            if str(cand).strip().strip("/").lower() != str(repo_id or "").strip().strip("/").lower():
+                                # Legitimate only because the caller already asked for a
+                                # GGUF (ADR 0009 gate ran at construction). Still a
+                                # cross-repository hop, so it is stated out loud.
+                                _artifact_logger().warning(
+                                    "huggingface: LM Studio Hub manifest for %r resolves to a "
+                                    "different repository %r; loading %r.",
+                                    repo_id, cand, resolved,
+                                )
                             return resolved
+        except ModelArtifactMismatchError:
+            raise
         except Exception:
             pass
 
@@ -3840,6 +6163,13 @@ class HuggingFaceProvider(BaseProvider):
             except Exception:
                 pass
 
+        except ModelArtifactMismatchError:
+            # ADR 0009 Enforcement: an artifact-fidelity refusal must reach the caller
+            # as itself. Wrapping it in RuntimeError here made the contract type
+            # uncatchable on the constructor path — callers that handle
+            # ModelArtifactMismatchError saw a generic load failure instead, which is
+            # the same information loss the ADR exists to prevent.
+            raise
         except Exception as e:
             raise RuntimeError(f"Failed to load GGUF model {self.model}: {str(e)}")
 
@@ -4743,6 +7073,12 @@ class HuggingFaceProvider(BaseProvider):
                 if torch.cuda.is_available():
                     torch.cuda.manual_seed_all(seed_value)
 
+            # Runaway-loop detection. `generate()` is a closed loop, so a
+            # StoppingCriteria is the only place a detector can observe the
+            # stream. Never a cap: it stops on evidence of a verbatim repeating
+            # cycle and returns everything produced before it.
+            _rep_detector = _degeneration.attach_to_generation_kwargs(generation_kwargs)
+
             # Generate response
             generated_ids = None
             try:
@@ -4790,10 +7126,19 @@ class HuggingFaceProvider(BaseProvider):
             input_tokens = inputs["input_ids"].shape[1]
             output_tokens = len(generated_ids[0]) - input_tokens
 
+            # A degenerate stop must be distinguishable from a natural one and
+            # from budget exhaustion — collapsing all three into "stop" is the
+            # information loss this detector exists to remove.
+            if _rep_detector is not None and _rep_detector.tripped:
+                _rep_detector.warn(self.model)
+
             response = GenerateResponse(
                 content=output_text.strip(),
                 model=self.model,
-                finish_reason="stop",
+                finish_reason=(
+                    _rep_detector.finish_reason("stop")
+                    if _rep_detector is not None else "stop"
+                ),
                 usage={
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
@@ -4803,6 +7148,12 @@ class HuggingFaceProvider(BaseProvider):
                 },
                 gen_time=gen_time
             )
+            if _rep_detector is not None and _rep_detector.tripped:
+                # The caller needs the cycle length, the repeat count and where
+                # it started — enough to tell a real loop from a false stop.
+                md = dict(getattr(response, "metadata", None) or {})
+                md.update(_rep_detector.metadata())
+                response.metadata = md
             if stream:
                 def _single_chunk_stream() -> Iterator[GenerateResponse]:
                     yield response
@@ -5062,10 +7413,15 @@ class HuggingFaceProvider(BaseProvider):
                     stream=bool(stream),
                     enable_thinking=gguf_enable_thinking,
                     cache_state=cache_state,
+                    cache_key=(
+                        prompt_cache_key.strip()
+                        if isinstance(prompt_cache_key, str) and prompt_cache_key.strip()
+                        else None
+                    ),
                 )
 
-            if gguf_enable_thinking is False and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
-                marker = "<think>\n\n</think>\n\n"
+            marker = self._thinking_disable_prefill(gguf_enable_thinking)
+            if marker:
                 fallback_messages = copy.deepcopy(chat_messages)
                 if not (
                     fallback_messages
@@ -5230,6 +7586,7 @@ class HuggingFaceProvider(BaseProvider):
         seed: Optional[int],
         enable_thinking: Optional[bool] = None,
         cache_state: Optional[_GGUFPromptCacheValue] = None,
+        cache_key: Optional[str] = None,
     ) -> Iterator[GenerateResponse]:
         """Generate GGUF text by prefilling cached KV state and sampling from it.
 
@@ -5273,24 +7630,69 @@ class HuggingFaceProvider(BaseProvider):
             live_prompt_tokens=prompt_tokens,
         )
 
-        # Prefill prompt KV from cache AND persist the prefilled snapshot so the
-        # NEXT plain generate(prompt_cache_key=...) call reuses this prefix
-        # instead of re-prefilling the whole prompt. The snapshot is keyed by the
-        # (with-generation-prompt) prompt tokens; because a growing-prefix loop's
-        # turn N+1 continues exactly after this turn's generation prompt, the
-        # saved key is a TRUE token prefix of the next prompt and `_gguf_prefill_
-        # prompt_cache` loads it + evals only the suffix. Without this
-        # (`save_state=False`, the prior behavior), the control-plane lane gave
-        # ZERO in-process reuse on the plain-generate convention the runtime uses
-        # — every warm turn re-prefilled the full context and, worse, `llm.reset()`
-        # forfeited llama.cpp's own n_past reuse too (fable5 GGUF adversary,
-        # 2026-07-14). Snapshots are correctness-safe (true-prefix KV reuse only),
-        # coexist with prompt_cache_update's transcript-aligned states (longest
-        # true prefix wins), and stay RAM-bounded by LlamaRAMCache eviction (the
-        # growing snapshot evicts its smaller predecessor). set_cache stays False:
-        # the low-level `llm.generate([], reset=False)` below does not consult
-        # `llm.cache`, so attaching it would be inert.
-        ok = self._gguf_prefill_prompt_cache(cache_obj, prompt_tokens, save_state=True, set_cache=False)
+        # Bring the context to `prompt_tokens`, preferring llama.cpp's RESIDENT KV
+        # over a stored snapshot (see `_gguf_prefill_prompt_cache`). In a
+        # growing-prefix loop the resident context is always the better source: it
+        # already holds the previous turn's prompt AND its reply, so turn N+1 shares
+        # a longer prefix with it than with any snapshot taken before that reply
+        # existed.
+        #
+        # `save_state_on_live_reuse=False` therefore stops the snapshot being paid
+        # for on exactly the turns it cannot help. The earlier note here claimed
+        # `save_state=True` was what restored reuse on this lane; hardware refuted
+        # that — across a 4-turn growing session `load_state` fired ZERO times while
+        # `save_state` was paid EVERY call at 1.41 GB. The snapshot remains for the
+        # cold/divergent turn, where it is the only thing that can help.
+        #
+        # set_cache stays False: the low-level `llm.generate([], reset=False)` below
+        # does not consult `llm.cache`, so attaching it would be inert.
+        #
+        # `snapshot_at_boundary=True` is the AGENT-LOOP repair: store the state
+        # before this turn's volatile tail so turn i's boundary is still a true
+        # prefix of turn i+1's prompt. The boundary comes from the previous turn's
+        # recorded prompt (LCP holdback) once there is one, and from the renderer
+        # itself on turn 1 — never from a hardcoded tail literal.
+        #
+        # `ABSTRACTCORE_GGUF_BOUNDARY_SNAPSHOT=0` restores the pre-2026-08-05
+        # full-prompt snapshot policy. It exists so the repair stays MEASURABLE
+        # in one process against the policy it replaced (the A/B that produced
+        # the numbers above), and as an escape hatch — same shape as the existing
+        # `ABSTRACTCORE_GGUF_CONTROL_PLANE` switch. It does NOT disable the
+        # zero-feed guard, which is a correctness invariant and not a policy.
+        boundary_enabled = os.environ.get(
+            "ABSTRACTCORE_GGUF_BOUNDARY_SNAPSHOT", "1"
+        ).strip().lower() not in {"0", "false", "no", "off"}
+        prev_prompt_tokens: tuple[int, ...] = ()
+        if cache_state is not None:
+            prev_prompt_tokens = tuple(int(t) for t in (cache_state.fed_prompt_tokens or ()))
+        generation_boundary: Optional[int] = None
+        if boundary_enabled and not prev_prompt_tokens and not prompt_cache_meta.get("prompt_cache_composed"):
+            # Composed prompts (durable-bloc prefix + live suffix) are excluded:
+            # their head is not what `chat_messages` renders, so the re-render
+            # would diverge early and the LCP would understate the boundary.
+            generation_boundary = self._gguf_generation_prompt_boundary(
+                messages=chat_messages,
+                prompt_tokens=prompt_tokens,
+                enable_thinking=enable_thinking,
+            )
+        # Same STRUCTURE as the MLX and transformers lanes (parity, 2026-08-07):
+        # mode/key identify the cache, outcome/cached_tokens/fed_tokens describe
+        # the call. This lane already reported the decision fields; it did not
+        # say WHICH cache it was reporting on, so a reader with more than one
+        # session in flight could not attribute a row to a key.
+        cache_telemetry: Dict[str, Any] = {"mode": "key", "key": cache_key} if cache_key else {}
+        ok = self._gguf_prefill_prompt_cache(
+            cache_obj,
+            prompt_tokens,
+            save_state=True,
+            save_state_on_live_reuse=False,
+            set_cache=False,
+            snapshot_at_boundary=boundary_enabled,
+            prev_prompt_tokens=prev_prompt_tokens,
+            generation_boundary=generation_boundary,
+            protect_snapshot_key=(cache_state.prompt_tokens if cache_state is not None else ()),
+            telemetry=cache_telemetry,
+        )
         if not ok:
             yield GenerateResponse(
                 content="Error: failed to prefill GGUF prompt cache",
@@ -5298,6 +7700,8 @@ class HuggingFaceProvider(BaseProvider):
                 finish_reason="error",
             )
             return
+        if cache_state is not None:
+            cache_state.fed_prompt_tokens = tuple(int(t) for t in prompt_tokens)
 
         # Best-effort determinism.
         if seed is not None:
@@ -5411,6 +7815,11 @@ class HuggingFaceProvider(BaseProvider):
             usage=usage,
             metadata={
                 "_acore_backend": "gguf_control_plane",
+                # MEASURED reuse for this call (MLX-lane parity: same key names,
+                # same meaning). `fed_tokens` is the number of prompt tokens this
+                # call actually pushed through a forward pass — the ground truth
+                # the estimate in `usage.input_tokens` cannot give.
+                "prompt_cache": dict(cache_telemetry),
                 **prompt_cache_meta,
             },
         )
@@ -5437,6 +7846,7 @@ class HuggingFaceProvider(BaseProvider):
         stream: bool,
         enable_thinking: Optional[bool] = None,
         cache_state: Optional[_GGUFPromptCacheValue] = None,
+        cache_key: Optional[str] = None,
     ) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         if stream:
             return self._gguf_control_plane_stream_generate(
@@ -5458,6 +7868,7 @@ class HuggingFaceProvider(BaseProvider):
                 seed=seed,
                 enable_thinking=enable_thinking,
                 cache_state=cache_state,
+                cache_key=cache_key,
             )
 
         collected = ""
@@ -5481,6 +7892,7 @@ class HuggingFaceProvider(BaseProvider):
             seed=seed,
             enable_thinking=enable_thinking,
             cache_state=cache_state,
+            cache_key=cache_key,
         ):
             last = chunk
             if isinstance(chunk.content, str) and chunk.content:
@@ -5645,6 +8057,15 @@ class HuggingFaceProvider(BaseProvider):
 
         start_time = time.time()
 
+        # Surfaces as response.metadata["prompt_cache"] with the MLX lane's
+        # vocabulary and the MLX lane's STRUCTURE: mode/key identify the cache,
+        # outcome/cached_tokens/fed_tokens describe what this call actually did,
+        # degraded_reason explains any fallback. Seeded here (not per-lane) so
+        # every lane through this method reports — crop, snapshot and append
+        # alike. An empty struct would omit the key from metadata entirely,
+        # which is what made the crop lane invisible before 2026-08-07.
+        cache_telemetry: Dict[str, Any] = {"mode": "key", "key": key}
+
         if full_context:
             full_text = self._transformers_build_prompt_fragment(
                 prompt=str(prompt or ""),
@@ -5666,36 +8087,95 @@ class HuggingFaceProvider(BaseProvider):
                     i += 1
                 return i
 
-            prefix = _lcp(state.prompt_tokens, new_ids)
-            if prefix >= len(new_ids):
-                # Identical resend: keep one token to step generation.
-                prefix = len(new_ids) - 1
-            if prefix < len(state.prompt_tokens):
-                # Divergence or stale generated tokens: crop back to the LCP;
-                # hybrid caches without crop support rebuild fresh (one cold
-                # prefill — never a stale-context answer, never a double one).
-                if prefix > 0 and self._transformers_crop_cache(state, prefix):
-                    state.prompt_tokens = tuple(state.prompt_tokens[:prefix])
+            if self._transformers_snapshot_lane_required(state):
+                # UNTRIMMABLE ARCHITECTURE (linear-attention/Gated-DeltaNet
+                # hybrids): crop is refused by construction, so route on the
+                # ARCHITECTURE — from turn 1, so the first turn already
+                # leaves a reusable boundary snapshot (the MLX lane's
+                # lesson: entering only on trim refusal costs the loop one
+                # extra full prefill on turn 2).
+                delta_ids = self._transformers_snapshot_feed(
+                    key, state, full_text, new_ids, cache_telemetry
+                )
+            else:
+                # CROP LANE TELEMETRY (parity, 2026-08-07). This lane is the one
+                # every pure-attention model takes — i.e. most models — and until
+                # now it was the ONLY local cache lane that reported nothing:
+                # `cache_telemetry` stayed empty, so `metadata["prompt_cache"]`
+                # was omitted entirely and a user could not tell a warm call from
+                # a cold one. Measured before the fix on Qwen3-4B-Instruct-2507
+                # bf16/MPS: warm calls ran 1.2s against 3.8s uncached (the cache
+                # was working perfectly) with zero evidence of it on the wire.
+                # Vocabulary is MLX's, exactly: cold / hit_full / hit_extend /
+                # rebuilt, with `cached_tokens` + `fed_tokens` measured, and
+                # `degraded_reason` carrying the `#FALLBACK` label on rebuild.
+                cache_len_before = len(state.prompt_tokens)
+                prefix = _lcp(state.prompt_tokens, new_ids)
+                identical = prefix >= len(new_ids)
+                if identical:
+                    # Identical resend: keep one token to step generation.
+                    prefix = len(new_ids) - 1
+                crop_refused = False
+                if prefix < len(state.prompt_tokens):
+                    # Divergence or stale generated tokens: crop back to the LCP;
+                    # non-croppable caches rebuild fresh (one cold
+                    # prefill — never a stale-context answer, never a double one).
+                    if prefix > 0 and self._transformers_crop_cache(state, prefix):
+                        state.prompt_tokens = tuple(state.prompt_tokens[:prefix])
+                    else:
+                        crop_refused = True
+                        # Crop refused (sliding-window past fill, no-op-crop
+                        # hybrids caught by the verify, or prefix 0): one honest
+                        # cold prefill — loudly, once per key (labeled-degradation
+                        # policy; the MLX lane's analogous branches already warn).
+                        warned = getattr(self, "_transformers_rebuild_warned_keys", None)
+                        if warned is None:
+                            warned = set()
+                            self._transformers_rebuild_warned_keys = warned
+                        if key not in warned:
+                            warned.add(key)
+                            self.logger.warning(
+                                f"#FALLBACK transformers prompt cache '{key}': cache cannot be cropped "
+                                f"for this architecture (sliding-window past fill, or non-croppable "
+                                f"layers); rebuilding fresh per warm call — no prefill savings."
+                            )
+                        # Rebuild = RELEASE point for the old full cache (~1 GB at
+                        # 30k). Drop it BEFORE building fresh so its buffers are
+                        # dead at empty_cache time; otherwise every warm rep parks
+                        # another full KV in the MPS pool (2026-08-03 leak audit).
+                        # Cost: this branch already pays a full cold prefill —
+                        # empty_cache here is noise, not hot-path overhead.
+                        state.cache = None
+                        self._transformers_release_device_pool()
+                        state.cache = self._transformers_empty_native_cache()
+                        state.prompt_tokens = ()
+                        prefix = 0
+                delta_ids = list(new_ids[prefix:])
+
+                cache_telemetry.setdefault("lane", "crop")
+                if crop_refused:
+                    cache_telemetry.update({
+                        "outcome": "rebuilt",
+                        "cached_tokens": 0,
+                        "fed_tokens": len(delta_ids),
+                        "degraded_reason": (
+                            "#FALLBACK cache cannot be cropped for this architecture "
+                            "(sliding-window past fill, or non-croppable layers); "
+                            "rebuilt fresh — no prefill savings this call"
+                        ),
+                    })
+                elif cache_len_before <= 0:
+                    cache_telemetry.update({
+                        "outcome": "cold",
+                        "cached_tokens": 0,
+                        "fed_tokens": len(delta_ids),
+                    })
                 else:
-                    # Crop refused (sliding-window past fill, no-op-crop
-                    # hybrids caught by the verify, or prefix 0): one honest
-                    # cold prefill — loudly, once per key (labeled-degradation
-                    # policy; the MLX lane's analogous branches already warn).
-                    warned = getattr(self, "_transformers_rebuild_warned_keys", None)
-                    if warned is None:
-                        warned = set()
-                        self._transformers_rebuild_warned_keys = warned
-                    if key not in warned:
-                        warned.add(key)
-                        self.logger.warning(
-                            f"#FALLBACK transformers prompt cache '{key}': cache cannot be cropped "
-                            f"for this architecture (sliding-window past fill, or non-croppable "
-                            f"layers); rebuilding fresh per warm call — no prefill savings."
-                        )
-                    state.cache = self._transformers_empty_native_cache()
-                    state.prompt_tokens = ()
-                    prefix = 0
-            delta_ids = list(new_ids[prefix:])
+                    cache_telemetry.update({
+                        "outcome": "hit_full" if identical else "hit_extend",
+                        "cached_tokens": int(prefix),
+                        "fed_tokens": len(delta_ids),
+                    })
 
             # Keep the update-lane bookkeeping coherent for mixed callers.
             state.system_prompt_parts = [str(system_prompt)] if isinstance(system_prompt, str) and system_prompt.strip() else []
@@ -5731,7 +8211,30 @@ class HuggingFaceProvider(BaseProvider):
             )
             delta_ids = self._transformers_tokenize_fragment(delta_text, add_bos_if_empty=not bool(state.prompt_tokens))
 
+            # APPEND LANE (prompt-only caller: CachedSession KV mode). The cache
+            # IS the context by contract, so there is nothing to reconcile — but
+            # it still has to report, or KV-mode sessions stay unobservable.
+            # MLX names this outcome `append`; so do we.
+            cache_telemetry.setdefault("lane", "append")
+            cache_telemetry.update({
+                "outcome": "append" if state.prompt_tokens else "cold",
+                "cached_tokens": len(state.prompt_tokens),
+                "fed_tokens": len(delta_ids),
+            })
+
         if not delta_ids:
+            # Nothing left to feed. This returns EMPTY content, so it must say so
+            # rather than look like a normal empty reply (ADR 0001: no silent
+            # no-ops) — the telemetry names the outcome and the reason.
+            cache_telemetry.update({
+                "outcome": "noop",
+                "cached_tokens": len(state.prompt_tokens),
+                "fed_tokens": 0,
+                "degraded_reason": (
+                    "#FALLBACK prompt produced no tokens to feed beyond the cached "
+                    "prefix; returned empty content without generating"
+                ),
+            })
             return GenerateResponse(
                 content="",
                 model=self.model,
@@ -5744,7 +8247,23 @@ class HuggingFaceProvider(BaseProvider):
                     "completion_tokens": 0,
                 },
                 gen_time=round((time.time() - start_time) * 1000, 1),
+                metadata={"prompt_cache": dict(cache_telemetry)},
             )
+
+        # LONG-DELTA GUARD: `generate()` forwards its whole input in ONE pass,
+        # which at 30k asserts inside Metal (see _transformers_prefill_step).
+        # Feed all but the last token through the chunked prefill and let
+        # `generate()` start from a single-token seed — same KV, same next
+        # token, bounded transients. Small deltas keep the one-pass path
+        # byte-identically.
+        chunk_step = self._transformers_prefill_step()
+        if chunk_step > 0 and len(delta_ids) > chunk_step:
+            if not self._transformers_prefill_cache(state, list(delta_ids[:-1])):
+                raise RuntimeError(
+                    "Transformers cached generation failed: chunked prefill of the "
+                    f"{len(delta_ids) - 1}-token delta failed"
+                )
+            delta_ids = [delta_ids[-1]]
 
         device = self._transformers_cache_device() or torch.device("cpu")
         past_len = len(state.prompt_tokens)
@@ -5797,7 +8316,9 @@ class HuggingFaceProvider(BaseProvider):
 
         output = None
         try:
-            with torch.inference_mode():
+            # The pool ratchet is per DECODE STEP, so the release policy has to
+            # be able to run inside this call, not only after it returns.
+            with torch.inference_mode(), self._transformers_decode_pool_guard():
                 use_mps_lock = str(device).startswith("mps") or str(getattr(self, "device", "") or "").strip().lower() == "mps"
                 if use_mps_lock:
                     with _MPS_GENERATION_LOCK:
@@ -5805,7 +8326,23 @@ class HuggingFaceProvider(BaseProvider):
                 else:
                     output = self.model_instance.generate(**generate_kwargs)
         except Exception as e:
+            # generate() can RAISE AFTER mutating the cache in place (MPS OOM
+            # mid-decode): `state.prompt_tokens` then no longer describes the
+            # physical KV, and every later call would silently misattend over
+            # phantom tokens — and the snapshot lane would store a poisoned
+            # boundary (ADVERSARY FINDING 1, adversary_snapshot_poison_test).
+            # Reset the key's live state before re-raising; the key's next
+            # call rebuilds — or restores from the still-clean pre-decode
+            # snapshot, which is exactly what the snapshot is for.
+            state.cache = None
+            state.prompt_tokens = ()
+            self._transformers_release_device_pool()
             raise RuntimeError(f"Transformers cached generation failed: {e}") from e
+        finally:
+            # Threshold-guarded (no-op below the pooled-bytes bound): caps the
+            # MPS pool ratchet from decode cat-churn without touching healthy
+            # pool reuse. See _transformers_maybe_release_device_pool.
+            self._transformers_maybe_release_device_pool()
 
         sequences = getattr(output, "sequences", None)
         if sequences is None:
@@ -5866,6 +8403,151 @@ class HuggingFaceProvider(BaseProvider):
             finish_reason="stop",
             usage=usage,
             gen_time=gen_time,
+            metadata={"prompt_cache": dict(cache_telemetry)} if cache_telemetry else None,
+        )
+
+    def _transformers_generate_uncached_chunked(
+        self,
+        input_text: str,
+        max_new_tokens: int,
+        temperature: float,
+        top_p: float,
+        top_k: Optional[int] = None,
+    ) -> Optional[GenerateResponse]:
+        """Uncached generation for prompts too long to one-shot prefill.
+
+        The pipeline path forwards the whole prompt in ONE pass; on MPS the
+        SDPA math fallback then materializes an [heads, L, L] float32 score
+        transient — at 30k on Qwen3-4B that is a single 107.15 GiB MTLBuffer
+        and Metal aborts the PROCESS (measured twice; see
+        `_transformers_prefill_step`). This path prefills all but the last
+        token in chunks over a throwaway cache, generates from the one-token
+        seed, and discards the cache: same tokens, bounded transients.
+
+        Returns None when not applicable (short prompt, chunking disabled,
+        or setup failure) — the caller then uses the pipeline exactly as
+        before. Once the prompt is known to be one-shot-hostile, failures
+        RAISE instead of falling back: the fallback would abort the process,
+        not just the call."""
+        step = self._transformers_prefill_step()
+        if step <= 0:
+            return None
+        if getattr(self, "model_instance", None) is None or getattr(self, "tokenizer", None) is None:
+            return None
+        try:
+            import torch  # type: ignore
+        except Exception:
+            return None
+        try:
+            prompt_ids = self.tokenizer(str(input_text or ""))["input_ids"]
+        except Exception:
+            return None
+        if not isinstance(prompt_ids, list) or len(prompt_ids) <= step:
+            return None
+
+        start_time = time.time()
+        output = None
+        pool_guard_stats: Dict[str, Any] = {}
+        state = _TransformersPromptCacheValue(cache=self._transformers_empty_native_cache())
+        try:
+            if not self._transformers_prefill_cache(state, [int(t) for t in prompt_ids[:-1]]):
+                raise RuntimeError(
+                    f"chunked prefill of the {len(prompt_ids) - 1}-token prompt failed"
+                )
+
+            device = self._transformers_cache_device() or torch.device("cpu")
+            seed_ids = [int(prompt_ids[-1])]
+            input_ids = torch.tensor([seed_ids], dtype=torch.long, device=device)
+            attention_mask = torch.ones((1, len(prompt_ids)), dtype=torch.long, device=device)
+
+            do_sample = True
+            try:
+                if float(temperature) <= 0:
+                    do_sample = False
+            except Exception:
+                pass
+            eos_i = getattr(self.tokenizer, "eos_token_id", None)
+            generate_kwargs: Dict[str, Any] = {
+                "input_ids": input_ids,
+                "attention_mask": attention_mask,
+                "max_new_tokens": int(max_new_tokens),
+                "do_sample": bool(do_sample),
+                "use_cache": True,
+                "return_dict_in_generate": True,
+                "pad_token_id": eos_i,
+            }
+            if do_sample:
+                generate_kwargs["temperature"] = float(temperature)
+                generate_kwargs["top_p"] = float(top_p)
+                if top_k is not None:
+                    generate_kwargs["top_k"] = int(top_k)
+            if eos_i is not None:
+                generate_kwargs["eos_token_id"] = eos_i
+            if state.cache is not None:
+                generate_kwargs["past_key_values"] = state.cache
+
+            use_mps_lock = str(device).startswith("mps") or str(getattr(self, "device", "") or "").strip().lower() == "mps"
+            # This path bounds its PREFILL by chunking and then decodes with
+            # whatever budget the caller resolved — up to the model's registry
+            # `max_output_tokens`. Without a step-scoped release that asymmetry
+            # is what consumed the host: 12.7k prompt + 4096 decode = 113 GiB
+            # driver / 104.8 GiB of it pooled and dead. See
+            # `_transformers_decode_pool_guard`.
+            with torch.inference_mode(), self._transformers_decode_pool_guard() as _pool_stats:
+                if use_mps_lock:
+                    with _MPS_GENERATION_LOCK:
+                        output = self.model_instance.generate(**generate_kwargs)
+                else:
+                    output = self.model_instance.generate(**generate_kwargs)
+            pool_guard_stats = dict(_pool_stats)
+
+            sequences = getattr(output, "sequences", None)
+            if sequences is None:
+                sequences = output
+            seq0 = sequences[0].tolist() if hasattr(sequences, "__getitem__") else []
+            gen_ids = [int(tok) for tok in seq0[len(seed_ids):]] if seq0 else []
+            try:
+                response_text = self.tokenizer.decode(gen_ids, skip_special_tokens=True).strip() if gen_ids else ""
+            except Exception:
+                response_text = ""
+        finally:
+            # The throwaway cache is a full-prompt KV (~1 GB at 30k):
+            # drop the reference, then let the threshold-guarded release
+            # decide whether the pool needs trimming (never unconditional
+            # on a hot path).
+            #
+            # EVERY reference to this call's KV must die BEFORE the release
+            # measures the pool, not after (2026-08-07). The release compares
+            # `driver - current`, so anything still holding the decoded cache is
+            # charged to `current` and UNDER-REPORTS the pool by exactly that
+            # much. Three separate references held it: `output` (which carries
+            # `past_key_values` because `return_dict_in_generate=True`),
+            # `sequences`, and `generate_kwargs["past_key_values"]` — clearing
+            # `state.cache` alone left the other three alive.
+            #
+            # This is not a rounding error, it is the difference between firing
+            # and not firing. Measured across 10 consecutive uncached calls with
+            # 1024-token budgets at 10-13.6k (`oom/results/consecutive_BEFORE_12k.json`):
+            # resting pool slack climbed 2.426 -> 4.427 GiB and STOPPED there,
+            # parked just under the 4 GiB bound once the ~0.46 GiB of live KV was
+            # subtracted, so the release never ran and the driver ratcheted
+            # 10.26 -> 12.26 GiB with no recovery.
+            state.cache = None
+            output = None
+            sequences = None
+            try:
+                generate_kwargs.clear()
+            except Exception:
+                pass
+            self._transformers_maybe_release_device_pool()
+
+        return GenerateResponse(
+            content=response_text,
+            model=self.model,
+            finish_reason="stop",
+            usage=self._calculate_usage(input_text, response_text),
+            gen_time=round((time.time() - start_time) * 1000, 1),
+            metadata={"mps_pool_guard": pool_guard_stats} if pool_guard_stats.get("enabled") else None,
         )
 
     def _single_generate_transformers(self, input_text: str, max_new_tokens: int,
@@ -5908,7 +8590,28 @@ class HuggingFaceProvider(BaseProvider):
                 if top_k is not None:
                     pipeline_kwargs["top_k"] = int(top_k)
 
-            outputs = self.pipeline(input_text, **pipeline_kwargs)
+            # Prompts too long to one-shot prefill take the chunked manual
+            # path (None = not applicable → pipeline below, exactly as
+            # before). On MPS a one-shot 30k prefill aborts the PROCESS
+            # (Metal assert), so this must run before the pipeline.
+            chunked_resp = self._transformers_generate_uncached_chunked(
+                input_text, max_new_tokens, temperature, top_p, top_k
+            )
+            if chunked_resp is not None:
+                return chunked_resp
+
+            try:
+                # Same step-scoped guard as the chunked path. A short prompt
+                # still decodes with the caller's full budget, so this lane can
+                # reach a long context too — just from the other end.
+                with self._transformers_decode_pool_guard():
+                    outputs = self.pipeline(input_text, **pipeline_kwargs)
+            finally:
+                # The UNCACHED text lane is where the 164.5 GB incident
+                # actually peaked (arms floor/A/B; C/D never ran). Threshold-
+                # guarded: no-op unless the MPS pool retains > bound of freed
+                # memory. See _transformers_maybe_release_device_pool.
+                self._transformers_maybe_release_device_pool()
 
             gen_time = round((time.time() - start_time) * 1000, 1)
 
@@ -6058,8 +8761,7 @@ class HuggingFaceProvider(BaseProvider):
 
         text_parts.append(f"User: {prompt}\n")
         text_parts.append("Assistant:")
-        if enable_thinking is False and self.architecture in {"qwen3", "qwen3_5", "qwen3_6"}:
-            text_parts.append("<think>\n\n</think>\n\n")
+        text_parts.append(self._thinking_disable_prefill(enable_thinking))
 
         return "".join(text_parts)
 

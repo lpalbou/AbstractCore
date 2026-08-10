@@ -30,6 +30,12 @@ Quick Start:
 from .utils.version import __version__
 
 from .core.factory import create_llm
+# Public because a HOST process is the only thing that can call it in time: GGUF
+# Metal offload must be reserved before anything imports torch, and abstractcore's
+# own reservation at `create_provider` time is too late for an app that builds an
+# embedding store at boot. Importing this name costs nothing; it does not import
+# llama_cpp until called.
+from .providers.registry import enable_gguf_metal
 from .core.session import BasicSession
 from .core.cached_session import CachedSession
 from .core.types import GenerateResponse, Message

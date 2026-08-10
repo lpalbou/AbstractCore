@@ -1,6 +1,14 @@
 # ADR 0001: Engineering guardrails and no silent degradation
 
-Status: Accepted.
+Status: Accepted. Amended by [ADR 0009: Model handle fidelity](0009-model-handle-fidelity.md).
+
+> **Amendment (ADR 0009).** The "does not ban fallbacks" note below is about behaviour, not
+> identity. It does not license loading a different model artifact than the caller named — a
+> GGUF conversion in place of transformers weights, a different repository reached through an
+> alias manifest, or a different quantization than an explicit selector requested. There is no
+> acceptable fallback between model artifacts, warned or otherwise; such a request must fail.
+> ADR 0009 was written after `HuggingFaceProvider` silently substituted a 4-bit GGUF for
+> `Qwen/Qwen3.6-27B` under exactly that reading.
 
 ## Context
 
@@ -50,7 +58,7 @@ removal path must be clear.
 
 ### Neutral
 
-- This ADR does not ban fallbacks.
+- This ADR does not ban fallbacks. (Except between model artifacts — see ADR 0009.)
 - This ADR does not require every provider to support every feature.
 
 ## Enforcement

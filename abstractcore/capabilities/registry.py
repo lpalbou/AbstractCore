@@ -1707,8 +1707,50 @@ class _MusicFacade:
     def list_operations(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]:
         return self._registry.list_operations("music", task=task)
 
+    def provider_details(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Every known music provider with whether and why it is usable.
+
+        `available_providers` answers "what can run now"; this answers "what
+        else exists and what is missing" — a rejected API key, an uninstalled
+        extra, or weights not downloaded — so an empty provider list is never
+        a dead end. The backend is the authority on the record shape
+        (abstractmusic >= 0.1.14: `usable`, `metadata.reason`,
+        `metadata.cached_models`); core passes its records through untouched
+        rather than normalizing fields away.
+        """
+        backend = self._registry.get_music()
+        return self._provider_details_from_backend(backend, task=task)
+
+    def _provider_details_from_backend(self, backend: Any, *, task: Optional[str]) -> List[Dict[str, Any]]:
+        method = getattr(backend, "provider_details", None)
+        if not callable(method):
+            raise CapabilityUnavailableError(
+                capability="music",
+                reason=(
+                    "The selected music capability backend does not expose "
+                    "provider_details(task=...). abstractmusic >= 0.1.14 implements it."
+                ),
+                install_hint=self._registry._default_install_hint("music"),
+                details={"backend_id": getattr(backend, "backend_id", None)},
+            )
+        raw = _call_capability_discovery_method(method, task=task)
+        # Accept the same payload shapes the sibling discovery routes accept
+        # ({"providers": [...]} wrappers included) instead of silently
+        # answering [] for them; non-record entries are dropped. Copies are
+        # per-read: top level plus the metadata dict (the mutation surface
+        # consumers actually touch), mirroring _normalize_provider_records.
+        out: List[Dict[str, Any]] = []
+        for item in _list_from_payload(raw):
+            if not isinstance(item, Mapping):
+                continue
+            record = dict(item)
+            if isinstance(record.get("metadata"), Mapping):
+                record["metadata"] = dict(record["metadata"])
+            out.append(record)
+        return out
+
     def capability_catalog(self, *, task: Optional[str] = None) -> Dict[str, Any]:
-        return {
+        out: Dict[str, Any] = {
             "capability": "music",
             "backend_id": self.backend_id,
             "task": task,
@@ -1716,6 +1758,15 @@ class _MusicFacade:
             "models": self.list_models(task=task),
             "operations": self.list_operations(task=task),
         }
+        # Optional-by-duck-typing: when the backend cannot answer, OMIT the key
+        # rather than publish [] — "we never asked" and "there are no known
+        # providers" are different facts. One backend fetch serves both the
+        # presence check and the call, so a concurrent preferred-backend switch
+        # cannot turn this optional key into a raise.
+        backend = self._registry.get_music()
+        if callable(getattr(backend, "provider_details", None)):
+            out["provider_details"] = self._provider_details_from_backend(backend, task=task)
+        return out
 
     def t2m(self, prompt: str, **kwargs: Any) -> Any:
         return self._registry.get_music().t2m(prompt, **kwargs)

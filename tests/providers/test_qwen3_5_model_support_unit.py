@@ -123,7 +123,12 @@ def test_lfm2_family_capabilities_resolve_from_aliases() -> None:
     assert reasoning_moe.get("model_type") == "lfm2_moe"
     assert reasoning_moe.get("max_tokens") == 128000
     assert reasoning_moe.get("max_output_tokens") is None
-    assert get_context_limits("LiquidAI/LFM2.5-8B-A1B")["max_output_tokens"] == 4096
+    # `max_output_tokens: null` records "the vendor publishes no separate
+    # completion cap", so the runtime bound is the context window. It used to
+    # resolve to an invented 4096 here — an arbitrary output cap applied by
+    # default, which ADR-0026 §2 forbids, and which silently truncated every
+    # request on providers that must send a bound (adversarial budget audit).
+    assert get_context_limits("LiquidAI/LFM2.5-8B-A1B")["max_output_tokens"] == 128000
     assert reasoning_moe.get("tool_support") == "prompted"
     assert reasoning_moe.get("structured_output") == "prompted"
     assert reasoning_moe.get("thinking_support") is True

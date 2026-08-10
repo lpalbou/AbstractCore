@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Protocol, Set
 
@@ -21,6 +22,13 @@ def _normalize_one_line(text: Optional[str]) -> str:
 
 
 def _short_description(text: Optional[str], *, max_chars: int = 200) -> str:
+    """DEPRECATED — kept only for callers outside this module.
+
+    Silently cut at `max_chars - 3` and glued on "...", which can invert a
+    description's meaning and told nobody. Use
+    `abstractcore.tools.core.adapt_external_description`, which keeps whole
+    sentences and reports the overflow for correction.
+    """
     one = _normalize_one_line(_first_non_empty_line(text))
     if not one:
         return ""
@@ -98,10 +106,18 @@ def mcp_tool_to_abstractcore_tool_spec(
     if not name:
         raise ValueError("MCP tool is missing a valid name")
 
+    # An MCP server's description is not ours to edit, and MCP servers routinely
+    # ship paragraph-length ones. Adapt it to the cap on a sentence boundary and
+    # report the overflow so the integrator can ask upstream for a better line —
+    # never a silent mid-sentence cut, never a dropped tool.
+    from ..tools.core import adapt_external_description
+
     raw_description = tool.get("description") or tool.get("title") or ""
-    description = _short_description(str(raw_description or ""), max_chars=200)
-    if not description:
-        description = _short_description(f"MCP tool '{name}'", max_chars=200) or f"MCP tool '{name}'"
+    description = adapt_external_description(
+        str(raw_description or ""),
+        tool_name=name,
+        source=f"MCP server '{server.server_id}'",
+    )
 
     parameters = _normalize_mcp_parameters(tool.get("inputSchema"))
 
@@ -153,12 +169,30 @@ class McpToolSource:
         return self._server
 
     def list_tool_specs(self) -> List[Dict[str, Any]]:
+        """Every tool the server advertises — and a warning for each one we could not take.
+
+        The skip stays best-effort (one malformed entry must not cost the whole
+        server), but it is no longer SILENT: a skipped tool is a capability the
+        caller asked for and will never see (ADR 0001). `logger.warning` is not
+        a channel here — abstractcore leaves the root logger at ERROR and its own
+        loggers NOTSET, so such a record is never even created.
+        """
         tools = self._client.list_tools()
         specs: List[Dict[str, Any]] = []
         for t in tools:
             try:
                 specs.append(mcp_tool_to_abstractcore_tool_spec(t, server=self._server))
-            except Exception:
-                # Skip invalid tool entries; listing should be best-effort.
+            except Exception as exc:
+                name = ""
+                if isinstance(t, dict):
+                    name = str(t.get("name") or t.get("title") or "").strip()
+                warnings.warn(
+                    f"MCP server '{self._server.server_id}' advertised a tool "
+                    f"{('named ' + repr(name)) if name else '(unnamed)'} that AbstractCore could "
+                    f"NOT import: {exc}. It will not be offered to the model — the model cannot "
+                    f"call a tool it never sees.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
                 continue
         return specs

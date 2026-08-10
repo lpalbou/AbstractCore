@@ -507,6 +507,12 @@ class MusicCapability(Protocol):
 
     def list_operations(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]: ...
 
+    # Every known provider with whether/why it is usable (abstractmusic >= 0.1.14).
+    # The registry facade treats it as optional-by-duck-typing so older or
+    # third-party backends keep working; absence raises a clean
+    # CapabilityUnavailableError naming the minimum version.
+    def provider_details(self, *, task: Optional[str] = None) -> List[Dict[str, Any]]: ...
+
     def t2m(
         self,
         prompt: str,

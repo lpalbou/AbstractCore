@@ -95,3 +95,70 @@ def test_transformers_fp8_quantization_requires_cuda_or_xpu(monkeypatch):
 
     assert "uses FP8 quantization" in str(exc.value)
     assert "requires a CUDA/XPU runtime" in str(exc.value)
+
+
+# ---------------------------------------------------------------------------
+# Caller-requested quantization (added 2026-08-06).
+#
+# Before this, the provider's transformers kwarg allowlist forwarded the LEGACY
+# `load_in_4bit`/`load_in_8bit` flags — which transformers 5.9 REMOVED from
+# `from_pretrained` — and did not forward `quantization_config` at all, so there
+# was no way to ask abstractcore for a bitsandbytes-quantized transformers model.
+# ---------------------------------------------------------------------------
+
+_BUILD = HuggingFaceProvider._build_transformers_quantization_config
+
+
+def test_no_quantization_kwargs_is_inert():
+    assert _BUILD({}) is None
+    assert _BUILD({"trust_remote_code": True, "device_map": "auto"}) is None
+    assert _BUILD({"load_in_4bit": False, "load_in_8bit": False}) is None
+
+
+def test_explicit_quantization_config_is_passed_through_unchanged():
+    sentinel = object()
+    assert _BUILD({"quantization_config": sentinel}) is sentinel
+    # ...and wins over the legacy flags rather than being merged with them.
+    assert _BUILD({"quantization_config": sentinel, "load_in_4bit": True}) is sentinel
+
+
+def test_legacy_4bit_and_8bit_are_mutually_exclusive():
+    with pytest.raises(ValueError) as exc:
+        _BUILD({"load_in_4bit": True, "load_in_8bit": True})
+    assert "mutually exclusive" in str(exc.value)
+
+
+def test_legacy_flags_require_bitsandbytes(monkeypatch):
+    monkeypatch.setattr(hf_provider, "_module_available", lambda name: False)
+    with pytest.raises(ImportError) as exc:
+        _BUILD({"load_in_4bit": True})
+    assert "`bitsandbytes` package" in str(exc.value)
+
+
+def test_legacy_flags_translate_to_bitsandbytesconfig(monkeypatch):
+    pytest.importorskip("transformers")
+    monkeypatch.setattr(hf_provider, "_module_available", lambda name: True)
+    torch = pytest.importorskip("torch")
+
+    cfg = _BUILD({
+        "load_in_4bit": True,
+        "bnb_4bit_quant_type": "nf4",
+        "bnb_4bit_use_double_quant": True,
+        "bnb_4bit_compute_dtype": "bfloat16",   # a dtype NAME, not a torch object
+        "device_map": "auto",                   # unrelated kwarg, must be ignored
+    })
+
+    from transformers import BitsAndBytesConfig
+    assert isinstance(cfg, BitsAndBytesConfig)
+    assert cfg.load_in_4bit is True and cfg.load_in_8bit is False
+    assert cfg.bnb_4bit_quant_type == "nf4"
+    assert cfg.bnb_4bit_use_double_quant is True
+    assert cfg.bnb_4bit_compute_dtype is torch.bfloat16
+
+
+def test_bad_compute_dtype_name_is_rejected(monkeypatch):
+    pytest.importorskip("transformers")
+    monkeypatch.setattr(hf_provider, "_module_available", lambda name: True)
+    with pytest.raises(ValueError) as exc:
+        _BUILD({"load_in_4bit": True, "bnb_4bit_compute_dtype": "not_a_dtype"})
+    assert "is not a torch dtype name" in str(exc.value)

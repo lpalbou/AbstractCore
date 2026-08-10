@@ -66,3 +66,43 @@ def test_missing_config_is_defaults_no_backup() -> None:
     cm = ConfigurationManager(config_file=d / "abstractcore.json", apply_env=False)
     assert cm.config.embeddings.model  # default, non-empty
     assert not list(d.glob("*.bak")), "a missing config is not an error and needs no backup"
+
+
+def test_unreadable_config_raises_instead_of_falling_back_to_defaults() -> None:
+    """An I/O failure is NOT evidence the config is bad.
+
+    A full disk, an EIO, an unreadable mount — the file itself may be perfectly
+    intact. Falling back to defaults here would be a guess, and the next
+    `_save_config()` would publish that guess OVER a good store: the same loss
+    path as incident 2026-07-11, reached through a different door.
+
+    Observed 2026-08-02 on a full volume: a `.corrupt-*.bak` was quarantined for
+    a file that parsed cleanly both before and after. Nothing was corrupt.
+    """
+    import os
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_file = Path(tmpdir) / "abstractcore.json"
+        config_file.write_text(json.dumps({"capability_defaults": {"routes": {}}}), encoding="utf-8")
+        os.chmod(config_file, 0o000)
+        try:
+            with pytest.raises(OSError) as excinfo:
+                ConfigurationManager(config_file=config_file)
+            # The operator must be told the file may be fine and why we stopped.
+            assert "Refusing to continue with default settings" in str(excinfo.value)
+            # No quarantine copy: there is nothing wrong with the file to preserve.
+            assert not list(Path(tmpdir).glob("*.corrupt-*.bak"))
+        finally:
+            os.chmod(config_file, 0o600)
+
+
+def test_malformed_config_still_quarantines_and_falls_back() -> None:
+    """The narrowing must not weaken the original invariant: a file that really
+    is unparseable is still preserved, and load still degrades rather than
+    dying."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_file = Path(tmpdir) / "abstractcore.json"
+        config_file.write_text("{ this is not json", encoding="utf-8")
+        manager = ConfigurationManager(config_file=config_file)
+        assert manager.config is not None
+        assert len(list(Path(tmpdir).glob("*.corrupt-*.bak"))) == 1

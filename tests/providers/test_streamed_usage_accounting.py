@@ -57,7 +57,7 @@ class _StreamingClient:
         self.requests: List[Dict[str, Any]] = []
 
     @contextlib.contextmanager
-    def stream(self, method, url, json=None, headers=None):  # noqa: A002 - httpx signature
+    def stream(self, method, url, json=None, headers=None, **kwargs):  # noqa: A002 - httpx signature
         payload = dict(json or {})
         self.requests.append(payload)
         if self.reject_stream_options and "stream_options" in payload:
@@ -238,7 +238,7 @@ def test_unrelated_stream_400_still_raises():
 
     class _Always400(_StreamingClient):
         @contextlib.contextmanager
-        def stream(self, method, url, json=None, headers=None):  # noqa: A002
+        def stream(self, method, url, json=None, headers=None, **kwargs):  # noqa: A002
             self.requests.append(dict(json or {}))
             yield _Resp(400, {"error": {"message": "context length exceeded"}})
 
@@ -274,7 +274,7 @@ def test_async_stream_surfaces_usage_and_retries_on_rejection():
             self.requests: List[Dict[str, Any]] = []
 
         @contextlib.asynccontextmanager
-        async def stream(self, method, url, json=None, headers=None):  # noqa: A002
+        async def stream(self, method, url, json=None, headers=None, **kwargs):  # noqa: A002
             payload = dict(json or {})
             self.requests.append(payload)
             if self.reject_stream_options and "stream_options" in payload:

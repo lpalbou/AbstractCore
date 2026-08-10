@@ -52,22 +52,39 @@ class BasicExtractor:
         self,
         llm: Optional[AbstractCoreInterface] = None,
         max_chunk_size: int = 8000,
-        max_tokens: int = 32000,
-        max_output_tokens: int = 8000,
-        timeout: Optional[float] = None
+        max_tokens: int = -1,
+        max_output_tokens: int = -1,
+        timeout: Optional[float] = None,
+        prior_graph_preview: Optional[int] = 15
     ):
         """Initialize the extractor
 
         Args:
             llm: AbstractCore instance (any provider). If None, uses default Ollama model
             max_chunk_size: Maximum characters per chunk for long documents (default 8000)
-            max_tokens: Maximum total tokens for LLM context (default 32000)
-            max_output_tokens: Maximum tokens for LLM output generation (default 8000)
+            max_tokens: Total context budget. -1 = AUTO (default): use the model's
+                full advertised context from the capability registry. A positive
+                value is an OPERATOR-REQUESTED deployment constraint (e.g. GPU RAM).
+            max_output_tokens: Output budget. -1 = AUTO (default): do NOT impose a
+                cap — the model's full output capability is used (ADR 0026 §2: no
+                arbitrary output caps by default on structured-output paths).
             timeout: HTTP request timeout in seconds. None for unlimited timeout (default None)
+            prior_graph_preview: How many already-extracted entities/relationships to
+                replay into the NEXT chunk's prompt (default 15). None = replay all.
+                Selection is always announced in-band with a #[WARNING:TRUNCATION]
+                marker naming the omitted count (ADR-0026).
         """
         if llm is None:
             try:
-                self.llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M", max_tokens=max_tokens, max_output_tokens=max_output_tokens, timeout=timeout)
+                # AUTO by default: only forward a budget the CALLER explicitly asked for.
+                # Forwarding a literal here would make it "explicit" to the provider and
+                # silently cap every extraction at that value (ADR 0026 §2).
+                llm_kwargs = {"timeout": timeout}
+                if max_tokens != -1:
+                    llm_kwargs["max_tokens"] = max_tokens
+                if max_output_tokens != -1:
+                    llm_kwargs["max_output_tokens"] = max_output_tokens
+                self.llm = create_llm("ollama", model="qwen3:4b-instruct-2507-q4_K_M", **llm_kwargs)
             except Exception as e:
                 error_msg = (
                     f"❌ Failed to initialize default Ollama model 'qwen3:4b-instruct-2507-q4_K_M': {e}\n\n"
@@ -90,6 +107,7 @@ class BasicExtractor:
             self.llm = llm
 
         self.max_chunk_size = max_chunk_size
+        self.prior_graph_preview = prior_graph_preview
         self.retry_strategy = FeedbackRetry(max_attempts=3)
 
     def extract(
@@ -762,15 +780,34 @@ CRITICAL : ONLY OUTPUT THE FULL JSON-LD WITHOUT ANY OTHER TEXT OR COMMENTS.
             else:
                 return '?'
 
-        existing_entities = "\n".join([
-            f"  - {e.get('s:name', e.get('@id'))} ({e.get('@type', 'Unknown')})"
-            for e in prev_entities[:15]  # Limit to avoid token overflow
-        ])
+        # #[WARNING:TRUNCATION] bounded top-K SELECTION of the already-extracted
+        # graph that is replayed into the next chunk's prompt (ADR-0026: selection
+        # under a budget is allowed, silent selection is not). The omitted count is
+        # stated IN-BAND so the model — and anyone reading the prompt — can see that
+        # the summary is partial rather than the complete graph so far.
+        # Operator-overridable via `prior_graph_preview` on the extractor.
+        preview_k = self.prior_graph_preview
+        def _bounded(items, render):
+            shown = items if preview_k is None else items[:preview_k]
+            lines = [render(i) for i in shown]
+            omitted = len(items) - len(shown)
+            if omitted > 0:
+                lines.append(
+                    f"  … #[WARNING:TRUNCATION] {omitted} more not shown "
+                    f"(prompt-budget selection, {len(items)} total); raise "
+                    f"BasicExtractor(prior_graph_preview=…) or set it to None to show all"
+                )
+            return "\n".join(lines)
 
-        existing_relationships = "\n".join([
-            f"  - {safe_extract_id(r.get('s:about', {}))} --[{r.get('s:name', '?')}]--> {safe_extract_id(r.get('s:object', {}))}"
-            for r in prev_relationships[:15]  # Limit to avoid token overflow
-        ])
+        existing_entities = _bounded(
+            prev_entities,
+            lambda e: f"  - {e.get('s:name', e.get('@id'))} ({e.get('@type', 'Unknown')})",
+        )
+
+        existing_relationships = _bounded(
+            prev_relationships,
+            lambda r: f"  - {safe_extract_id(r.get('s:about', {}))} --[{r.get('s:name', '?')}]--> {safe_extract_id(r.get('s:object', {}))}",
+        )
 
         # Knowledge graph refinement prompt with JSON-LD output (matches initial extraction format)
         prompt = f"""You are an expert in Semantic extraction and your task is to refine and improve an existing knowledge graph. Your output is a COMPLETE refined JSON-LD knowledge graph with entities and relationships. {domain_note}

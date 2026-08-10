@@ -202,7 +202,7 @@
       }
     },
     "o1": {
-      "max_output_tokens": 32768,
+      "max_output_tokens": 100000,
       "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
@@ -225,7 +225,7 @@
       "source": "OpenAI official docs + empirical API testing 2026-02-22",
       "canonical_name": "o1",
       "aliases": [],
-      "max_tokens": 128000,
+      "max_tokens": 200000,
       "video_support": false,
       "max_tools": -1,
       "video_input_mode": "none",
@@ -271,7 +271,7 @@
       }
     },
     "o3": {
-      "max_output_tokens": 32768,
+      "max_output_tokens": 100000,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -295,7 +295,7 @@
       "source": "OpenAI official docs + empirical API testing 2026-02-22",
       "canonical_name": "o3",
       "aliases": [],
-      "max_tokens": 128000,
+      "max_tokens": 200000,
       "video_support": false,
       "video_input_mode": "none",
       "capability_routes": {
@@ -308,7 +308,7 @@
       }
     },
     "o3-mini": {
-      "max_output_tokens": 32768,
+      "max_output_tokens": 100000,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -332,7 +332,7 @@
       "source": "OpenAI official docs + empirical API testing 2026-02-22",
       "canonical_name": "o3-mini",
       "aliases": [],
-      "max_tokens": 128000,
+      "max_tokens": 200000,
       "video_support": false,
       "video_input_mode": "none",
       "capability_routes": {
@@ -564,7 +564,7 @@
       }
     },
     "claude-4-opus": {
-      "max_output_tokens": 4096,
+      "max_output_tokens": 32000,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -601,7 +601,7 @@
       }
     },
     "claude-4.1-opus": {
-      "max_output_tokens": 4096,
+      "max_output_tokens": 32000,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -638,7 +638,7 @@
       }
     },
     "claude-4-sonnet": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 64000,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -777,12 +777,12 @@
         "xhigh"
       ],
       "notes": "Claude Opus 4.6. Most intelligent Anthropic model for building agents and coding. Extended + adaptive thinking",
-      "source": "Anthropic official docs 2026",
+      "source": "Anthropic Claude Opus 4.6 announcement + Claude Platform context-windows docs: 1M-token context window (beta), outputs up to 128k tokens (accessed 2026-08-02)",
       "canonical_name": "claude-opus-4-6",
       "aliases": [
         "anthropic/claude-opus-4-6"
       ],
-      "max_tokens": 200000,
+      "max_tokens": 1000000,
       "video_support": false,
       "video_input_mode": "frames",
       "capability_routes": {
@@ -1625,7 +1625,7 @@
       }
     },
     "qwen3-0.6b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 38912,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
@@ -1634,10 +1634,10 @@
       "thinking_support": true,
       "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "Qwen3 base model with thinking capabilities",
-      "source": "Alibaba Qwen3 technical report",
+      "source": "Hugging Face Qwen/Qwen3-0.6B config.json max_position_embeddings=40960 (rope_scaling null); model card Best Practices 'max output length to 38,912 tokens' (accessed 2026-08-02)",
       "canonical_name": "qwen3-0.6b",
       "aliases": [],
-      "max_tokens": 32768,
+      "max_tokens": 40960,
       "video_support": false,
       "max_tools": -1,
       "video_input_mode": "none",
@@ -1651,7 +1651,7 @@
       }
     },
     "qwen3-1.7b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 38912,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
@@ -1660,10 +1660,10 @@
       "thinking_support": true,
       "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "Qwen3 1.7B model with thinking capabilities",
-      "source": "Alibaba Qwen3 technical report",
+      "source": "Hugging Face Qwen/Qwen3-1.7B config.json max_position_embeddings=40960 (rope_scaling null); model card Best Practices 'max output length to 38,912 tokens' (accessed 2026-08-02)",
       "canonical_name": "qwen3-1.7b",
       "aliases": [],
-      "max_tokens": 32768,
+      "max_tokens": 40960,
       "video_support": false,
       "max_tools": -1,
       "video_input_mode": "none",
@@ -1677,7 +1677,7 @@
       }
     },
     "qwen3-4b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 38912,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
@@ -1685,8 +1685,8 @@
       "audio_support": false,
       "thinking_support": true,
       "thinking_control": { "prompt_disable_token": "/no_think" },
-      "notes": "Qwen3 4B model with extended context via YaRN scaling",
-      "source": "Alibaba Qwen3 technical report",
+      "notes": "Qwen3 4B model with extended context via YaRN scaling. Output ceiling corrected 2026-08-02 from an unsourced 8192 to the model card's documented maximum: Best Practices recommends 32,768 output tokens for most queries and 38,912 for highly complex math/programming problems. The table records the card's MAX (same convention as the qwen3.5/3.6 entries' 81,920). The old 8192 silently under-capped output to a quarter of the documented ceiling on every provider that requires a bound (LM Studio); accepted live at 38912 on a 40,960-context local GGUF, so the bound is a ceiling and not a context reservation.",
+      "source": "Hugging Face model card Qwen/Qwen3-4B, Best Practices section (accessed 2026-08-02); verified live against LM Studio qwen/qwen3-4b",
       "canonical_name": "qwen3-4b",
       "aliases": [],
       "max_tokens": 131072,
@@ -1703,7 +1703,7 @@
       }
     },
     "qwen3-4b-2507": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 16384,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
@@ -1711,10 +1711,15 @@
       "audio_support": false,
       "thinking_support": false,
       "notes": "Qwen3-4B-2507 non-thinking instruct variant. Supports only non-thinking mode; does not generate <think></think> blocks.",
-      "source": "LM Studio model card (Qwen/Qwen3-4B-2507) and Qwen3 2507 release notes",
+      "source": "Hugging Face Qwen/Qwen3-4B-Instruct-2507: 'Context Length: 262,144 natively'; Best Practices 'output length of 16,384 tokens for most queries' (accessed 2026-08-02)",
       "canonical_name": "qwen3-4b-2507",
       "aliases": [
         "qwen/qwen3-4b-2507"
+      ,
+        "qwen/qwen3-4b-instruct-2507",
+        "qwen3-4b-instruct-2507",
+        "unsloth/qwen3-4b-instruct-2507-gguf",
+        "qwen3-4b-instruct-2507-gguf"
       ],
       "max_tokens": 262144,
       "video_support": false,
@@ -1730,7 +1735,7 @@
       }
     },
     "qwen3-4b-thinking-2507": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 81920,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
@@ -1739,10 +1744,13 @@
       "thinking_support": true,
       "thinking_output_field": "reasoning_content",
       "notes": "Qwen3-4B-Thinking-2507 thinking-only variant. The decoded output often contains only the closing </think> tag, with the opening <think> supplied by the chat template.",
-      "source": "LM Studio model card (Qwen/Qwen3-4B-Thinking-2507) and Qwen3 Thinking 2507 docs",
+      "source": "Hugging Face Qwen/Qwen3-4B-Thinking-2507: native 262,144 context; Best Practices 'For highly challenging tasks (including PolyMATH and all reasoning and coding tasks), we use an output length of 81,920 tokens' (accessed 2026-08-02)",
       "canonical_name": "qwen3-4b-thinking-2507",
       "aliases": [
         "qwen/qwen3-4b-thinking-2507"
+      ,
+        "unsloth/qwen3-4b-thinking-2507-gguf",
+        "qwen3-4b-thinking-2507-gguf"
       ],
       "max_tokens": 262144,
       "video_support": false,
@@ -1758,7 +1766,7 @@
       }
     },
     "qwen3-32b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 38912,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
@@ -1908,7 +1916,7 @@
       }
     },
     "qwen3-30b-a3b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 38912,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
@@ -1917,10 +1925,10 @@
       "thinking_support": true,
       "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "Qwen3 MoE model with 4-bit precision, 30B total/3B active parameters",
-      "source": "Alibaba Qwen3 technical report",
+      "source": "Hugging Face Qwen/Qwen3-30B-A3B model card: native 32,768 context, YaRN-validated 131,072; Best Practices max output 38,912 (accessed 2026-08-02)",
       "canonical_name": "qwen3-30b-a3b",
       "aliases": [],
-      "max_tokens": 40960,
+      "max_tokens": 131072,
       "video_support": false,
       "max_tools": -1,
       "video_input_mode": "none",
@@ -1934,7 +1942,7 @@
       }
     },
     "qwen3-30b-a3b-2507": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 16384,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": false,
@@ -1942,10 +1950,13 @@
       "audio_support": false,
       "thinking_support": true,
       "notes": "Qwen3-30B-A3B-Instruct-2507 with enhanced reasoning, coding, and mathematical skills. Supports up to 256K context, extendable to 1M tokens",
-      "source": "Alibaba Qwen3 2507 release",
+      "source": "Hugging Face Qwen/Qwen3-30B-A3B-Instruct-2507: native 262,144 context; Best Practices 'output length of 16,384 tokens for most queries' (accessed 2026-08-02)",
       "canonical_name": "qwen3-30b-a3b-2507",
       "aliases": [
         "qwen/qwen3-30b-a3b-2507"
+      ,
+        "qwen/qwen3-30b-a3b-instruct-2507",
+        "qwen3-30b-a3b-instruct-2507"
       ],
       "max_tokens": 262144,
       "video_support": false,
@@ -4509,7 +4520,7 @@
       "video_input_mode": "none"
     },
     "qwen3-14b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 38912,
       "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
@@ -5154,6 +5165,7 @@
         ]
       }
     },
+
     "gpt-5.5-pro": {
       "max_output_tokens": 128000,
       "tool_support": "native",
@@ -5509,7 +5521,7 @@
       }
     },
     "qwen3-8b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 38912,
       "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
@@ -5535,7 +5547,7 @@
       }
     },
     "qwen3-235b-a22b": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 38912,
       "tool_support": "native",
       "structured_output": "prompted",
       "parallel_tools": false,
@@ -5544,10 +5556,10 @@
       "thinking_support": true,
       "thinking_control": { "prompt_disable_token": "/no_think" },
       "notes": "Qwen3 MoE model with 4-bit precision, 235B total/22B active parameters",
-      "source": "Alibaba Qwen3 technical report",
+      "source": "Hugging Face Qwen/Qwen3-235B-A22B model card: 'natively supports context lengths of up to 32,768 tokens', 'validated on context lengths of up to 131,072 tokens using the YaRN method'; Best Practices 'max output length to 38,912 tokens' (accessed 2026-08-02)",
       "canonical_name": "qwen3-235b-a22b",
       "aliases": [],
-      "max_tokens": 40960,
+      "max_tokens": 131072,
       "video_support": false,
       "max_tools": -1,
       "video_input_mode": "none",
@@ -6081,7 +6093,7 @@
       }
     },
     "gemini-2.5-flash": {
-      "max_output_tokens": 8192,
+      "max_output_tokens": 65536,
       "tool_support": "native",
       "structured_output": "native",
       "parallel_tools": true,
@@ -6104,7 +6116,7 @@
       "aliases": [
         "gemini-2.5-flash-001"
       ],
-      "max_tokens": 1000000,
+      "max_tokens": 1048576,
       "video_input_mode": "native",
       "capability_routes": {
         "input": [
@@ -8158,13 +8170,13 @@
       "python_execution": true,
       "fine_tunable": true,
       "notes": "OpenAI GPT-OSS 20B open-weight model (21B total/3.6B active). Designed for lower latency, local, and specialized use cases. MXFP4 quantization enables running within 16GB memory. Configurable reasoning effort (low/medium/high). Full chain-of-thought access. Requires harmony response format. Apache 2.0 license for commercial use.",
-      "source": "OpenAI GPT-OSS HuggingFace and arXiv:2508.10925",
+      "source": "Hugging Face openai/gpt-oss-20b config.json max_position_embeddings=131072 (accessed 2026-08-02)",
       "canonical_name": "gpt-oss-20b",
       "aliases": [
         "openai/gpt-oss-20b",
         "gpt-oss:20b"
       ],
-      "max_tokens": 128000,
+      "max_tokens": 131072,
       "release_date": "2025-08",
       "arxiv": "2508.10925",
       "license": "Apache-2.0",
@@ -8207,13 +8219,13 @@
       "fine_tunable": true,
       "gpu_memory_required": "80GB",
       "notes": "OpenAI GPT-OSS 120B open-weight model (117B total/5.1B active). Production-ready for general purpose, high reasoning use cases. MXFP4 quantization enables single 80GB GPU deployment (H100/MI300X). Configurable reasoning effort (low/medium/high). Full chain-of-thought access. Requires harmony response format. Apache 2.0 license for commercial use.",
-      "source": "OpenAI GPT-OSS HuggingFace and arXiv:2508.10925",
+      "source": "Hugging Face openai/gpt-oss-120b config.json max_position_embeddings=131072 (YaRN, factor 32) (accessed 2026-08-02)",
       "canonical_name": "gpt-oss-120b",
       "aliases": [
         "openai/gpt-oss-120b",
         "gpt-oss:120b"
       ],
-      "max_tokens": 128000,
+      "max_tokens": 131072,
       "release_date": "2025-08",
       "arxiv": "2508.10925",
       "license": "Apache-2.0",
@@ -9398,6 +9410,58 @@
         "output": [
           "text",
           "voice"
+        ]
+      }
+    },
+    "laguna-s-2.1": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": true,
+      "vision_support": false,
+      "audio_support": false,
+      "video_support": false,
+      "thinking_support": true,
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_output_field": "reasoning_content",
+      "thinking_control": {
+        "template_kwarg": "enable_thinking"
+      },
+      "architecture": "laguna",
+      "total_parameters": "118B",
+      "active_parameters": "8B",
+      "experts": 256,
+      "shared_experts": 1,
+      "experts_activated": 10,
+      "license": "OpenMDW-1.1",
+      "release_date": "2026-07-13",
+      "notes": "Poolside Laguna-S-2.1 agentic-coding MoE (LagunaForCausalLM, model_type 'laguna'; 48 layers, 256 routed + 1 shared experts, 10 routed activated per token; 100,352-token vocab). Attention interleaves 12 global (YaRN, factor 128) and 36 sliding-window layers (window 512) with 8 KV heads. Config max_position_embeddings 1,048,576 (1M context). Native tool calling and reasoning via the 'poolside_v1' parsers in vLLM/SGLang (TRT-LLM uses reasoning parser 'laguna'); thinking is interleaved between tool calls and enabled by default, disabled per request with chat_template_kwargs {\"enable_thinking\": false}. Tool calls use the GLM-style <tool_call>name<arg_key>k</arg_key><arg_value>v</arg_value></tool_call> encoding; stop tokens are 〈|EOS|〉 and </assistant>. Model card states no separate output-token cap, so max_output_tokens is a practical serving default bounded by the 1M context. Siblings: Laguna-XS-2.1 / XS.2 / M.1, plus FP8, NVFP4, INT4, GGUF and MLX quantizations and DFlash speculative-decoding draft models.",
+      "source": "Hugging Face config.json, tokenizer_config.json, generation_config.json and model card (poolside/Laguna-S-2.1, accessed 2026-08-08)",
+      "canonical_name": "laguna-s-2.1",
+      "aliases": [
+        "poolside/Laguna-S-2.1",
+        "poolside/Laguna-S-2.1-FP8",
+        "poolside/Laguna-S-2.1-NVFP4",
+        "poolside/Laguna-S-2.1-INT4",
+        "poolside/Laguna-S-2.1-GGUF",
+        "poolside/Laguna-S-2.1-NVFP4-mlx",
+        "laguna-s-2.1-fp8",
+        "laguna-s-2.1-nvfp4",
+        "laguna-s-2.1-int4",
+        "laguna-s-2.1-gguf"
+      ],
+      "max_tokens": 1048576,
+      "max_tools": -1,
+      "video_input_mode": "none",
+      "capability_routes": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
         ]
       }
     },

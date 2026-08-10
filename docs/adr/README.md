@@ -17,6 +17,7 @@ that future work must respect.
 | [0006](0006-text-generation-adapter-lifecycle.md) | Accepted | Text-generation adapter lifecycle | Defines how LoRA-style text adapters should become first-class Core behavior. |
 | [0007](0007-durable-memory-bloc-cache-binding.md) | Accepted | Durable memory bloc cache binding | Defines exact local bloc artifact binding across Python, endpoint, gateway, and provider hooks. |
 | [0008](0008-provider-owned-model-residency-truth.md) | Accepted | Provider-owned model residency truth | Requires model loaded-state truth to come from provider/capability contracts. |
+| [0009](0009-model-handle-fidelity.md) | Accepted | Model handle fidelity | Forbids loading a different model artifact than the handle names; amends 0001. |
 
 ## How To Use This Set
 

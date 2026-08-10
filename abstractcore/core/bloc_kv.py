@@ -438,6 +438,36 @@ class BlocKVArtifactManifest:
     # (recompile), absent (pre-axis artifact) accepts with a labeled
     # #FALLBACK, unavailable CURRENT state abstains (load-time gate re-checks).
     weights_fingerprint: str = ""
+    # ---- Composition position (bloc composability, 0803, axis 5) ----------
+    #
+    # A cached K tensor is POSITION-ENCODED: rotary embeddings are applied at
+    # compile time, at the absolute offsets the tokens occupied then. Nothing in
+    # this package re-applies or shifts them (there is no rope/offset rewrite
+    # anywhere in bloc_kv.py or mlx_provider.py). So a bloc's KV is valid at ONE
+    # absolute offset — the one it was compiled at — and only behind exactly the
+    # predecessors it was compiled behind.
+    #
+    # The supported model is therefore ORDERED-PREFIX COMPOSITION, not free
+    # N-way recombination:
+    #   - reuse is sound when a bloc is replayed at the same start offset,
+    #     behind the same ordered prefix;
+    #   - swapping bloc order, dropping a predecessor, or splicing a bloc into a
+    #     different chain is NOT sound and must be refused, not silently reused.
+    # These two fields exist so that constraint can be REPRESENTED and CHECKED.
+    # Without them a wrong composition is not even expressible as an error.
+    #
+    # `start_offset` is the absolute token index this artifact's first token sat
+    # at. `prefix_chain` is the ordered list of predecessor bloc identities
+    # (`bloc_sha256` values, or module fingerprints) that must precede it, and
+    # is empty for a bloc compiled at offset 0.
+    #
+    # Backfill discipline matches the other axes: never part of `binding_id`,
+    # so pre-axis manifests keep their recomputed binding. `start_offset is
+    # None` means "pre-axis artifact, position unknown" — see
+    # `bloc_kv_composition_verdict`, which `load_bloc_kv_artifact` calls before
+    # adopting any artifact into a live cache key (mismatch raises).
+    start_offset: Optional[int] = None
+    prefix_chain: List[str] = field(default_factory=list)
     provider_meta: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -467,6 +497,8 @@ class BlocKVArtifactManifest:
             "tokenizer_fingerprint": self.tokenizer_fingerprint,
             "model_config_fingerprint": self.model_config_fingerprint,
             "weights_fingerprint": self.weights_fingerprint,
+            "start_offset": int(self.start_offset) if isinstance(self.start_offset, int) and self.start_offset >= 0 else None,
+            "prefix_chain": [str(x) for x in (self.prefix_chain or [])],
             "provider_meta": dict(self.provider_meta or {}),
         }
 
@@ -506,6 +538,12 @@ class BlocKVArtifactManifest:
             tokenizer_fingerprint=str(data.get("tokenizer_fingerprint") or ""),
             model_config_fingerprint=str(data.get("model_config_fingerprint") or ""),
             weights_fingerprint=str(data.get("weights_fingerprint") or ""),
+            start_offset=(
+                int(data.get("start_offset"))
+                if isinstance(data.get("start_offset"), int) and int(data.get("start_offset")) >= 0
+                else None
+            ),
+            prefix_chain=[str(x) for x in (data.get("prefix_chain") or []) if isinstance(x, (str, int))],
             provider_meta=dict(provider_meta or {}) if isinstance(provider_meta, dict) else {},
         )
         if not manifest.binding_id:
@@ -516,6 +554,54 @@ class BlocKVArtifactManifest:
                 }
             )
         return manifest
+
+
+def bloc_kv_composition_verdict(
+    manifest: BlocKVArtifactManifest,
+    *,
+    at_offset: int,
+    prefix_chain: Optional[List[str]] = None,
+) -> tuple[str, str]:
+    """Can this artifact's KV be reused at `at_offset`, behind `prefix_chain`?
+
+    Returns `(verdict, detail)` with the same three-way shape the other reuse
+    axes use:
+
+    - ``"match"``   — same offset, same ordered prefix: sound, reuse.
+    - ``"mismatch"``— different offset or a different/reordered prefix: the
+      cached K tensors carry rotary phases for positions this replay does not
+      put them at. REFUSE (recompile); do NOT reuse.
+    - ``"abstain"`` — pre-axis artifact with no recorded position: unverifiable.
+      Callers reuse with a labeled ``#FALLBACK``, exactly as they do for a
+      pre-axis engine/tokenizer/weights fingerprint.
+
+    ORDERED-PREFIX COMPOSITION IS THE WHOLE CONTRACT. Nothing in this package
+    re-applies rotary position embeddings to a cached K tensor, so "compose
+    blocs in any order" is not a thing that can be implemented by relabelling
+    metadata — it needs position re-encoding, which is not here. This function
+    exists so the unsupported case is refused loudly instead of producing
+    plausible-looking garbage.
+    """
+    want_chain = [str(x) for x in (prefix_chain or [])]
+    have_chain = [str(x) for x in (manifest.prefix_chain or [])]
+    if manifest.start_offset is None:
+        return (
+            "abstain",
+            "artifact predates the composition-position axis (no start_offset recorded)",
+        )
+    if int(manifest.start_offset) != int(at_offset):
+        return (
+            "mismatch",
+            f"artifact KV was computed at absolute token offset {int(manifest.start_offset)}; "
+            f"this replay places it at {int(at_offset)}. Rotary phases would be wrong.",
+        )
+    if have_chain != want_chain:
+        return (
+            "mismatch",
+            f"artifact was compiled behind prefix {have_chain!r}; this replay puts it behind "
+            f"{want_chain!r}. Same offset, different context — not the same KV.",
+        )
+    return ("match", "")
 
 
 def _compute_binding_id(payload: Dict[str, Any], *, include_binding: bool = False) -> str:
@@ -1464,6 +1550,17 @@ def ensure_bloc_kv_artifact(
                 tokenizer_fingerprint=_tokenizer_fingerprint(provider),
                 model_config_fingerprint=_model_config_fingerprint(provider),
                 weights_fingerprint=_weights_fingerprint(provider),
+                # This artifact is compiled into a FRESH cache key
+                # (`prompt_cache_set` above), so its tokens occupied absolute
+                # positions 0.. and nothing precedes it. Recorded, not assumed,
+                # and ENFORCED: `load_bloc_kv_artifact` runs
+                # `bloc_kv_composition_verdict` against these two fields BEFORE
+                # `prompt_cache_load` adopts the tensors, and raises on a
+                # mismatch. An artifact reused at a different offset would be
+                # replayed at the wrong rotary phase and the only symptom would
+                # be a plausible wrong answer.
+                start_offset=0,
+                prefix_chain=[],
                 provider_meta=dict(rendered.provider_meta or {}),
             )
             manifest = BlocKVArtifactManifest(
@@ -1529,7 +1626,17 @@ def load_bloc_kv_artifact(
     force_rebuild: bool = False,
     debug: bool = False,
     quantization: str = "fp",
+    at_offset: int = 0,
+    prefix_chain: Optional[List[str]] = None,
 ) -> BlocKVLoadResult:
+    """Adopt a compiled bloc KV artifact into a live prompt-cache key.
+
+    `at_offset` / `prefix_chain` describe WHERE this replay puts the artifact's
+    tokens. They default to the only composition this package can execute today
+    (offset 0, nothing before it); pass them explicitly when adopting a bloc into
+    a chain. The gate below is what makes ordered-prefix composition enforced
+    rather than merely documented.
+    """
     _require_operations(provider, ["load"], context="loading")
     record = _resolve_record(store=store, record=record, sha256=sha256, bloc_id=bloc_id)
     model_id = str(model or getattr(provider, "model", "") or "").strip()
@@ -1543,6 +1650,27 @@ def load_bloc_kv_artifact(
         debug=debug,
         quantization=quantization,
     )
+
+    # COMPOSITION GATE (0803, axis 5). Cached K tensors are rotary-position-
+    # encoded at compile time and nothing here re-applies them, so an artifact
+    # is only valid at the offset it was compiled at, behind the predecessors it
+    # was compiled behind. Refuse before `prompt_cache_load` puts the tensors
+    # into a live key — after that the wrong context is already adopted and the
+    # only symptom is a plausible wrong answer.
+    verdict, detail = bloc_kv_composition_verdict(
+        ensured.manifest, at_offset=int(at_offset), prefix_chain=list(prefix_chain or [])
+    )
+    if verdict == "mismatch":
+        raise ValueError(
+            f"Bloc KV artifact {ensured.artifact_path.name} cannot be composed here: {detail} "
+            f"Recompile the bloc for this position instead of reusing it."
+        )
+    if verdict == "abstain":
+        logger.warning(
+            f"#FALLBACK bloc KV artifact {ensured.artifact_path.name} carries no composition "
+            f"position ({detail}); adopting it at offset {int(at_offset)} UNVERIFIED. "
+            f"Recompile to pin it."
+        )
 
     target_key = str(key or stable_cache_key or f"cache:bloc:{uuid.uuid4().hex[:12]}").strip()
     stable_key = str(stable_cache_key).strip() if isinstance(stable_cache_key, str) and stable_cache_key.strip() else None

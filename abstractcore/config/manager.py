@@ -227,7 +227,17 @@ class MaintenanceConfig:
     triage_llm_model: str = "qwen/qwen3-next-80b"
     triage_llm_temperature: float = 0.2
     triage_llm_max_tokens: int = 800
-    triage_llm_timeout_s: float = 30.0
+    # #[WARNING:TIMEOUT] Triage LLM client timeout, 7200s (ADR-0027 §2/§4).
+    # This dataclass is the AUTHORITATIVE source: `MaintenanceConfig` is
+    # always serialized into `~/.abstractcore/config/abstractcore.json`, so
+    # `abstractgateway.maintenance.llm_assist` reads THIS number via
+    # `stored.get("triage_llm_timeout_s", DEFAULT_TRIAGE_LLM_TIMEOUT_S)` and
+    # the module-level 7200s fallback there is NEVER reached. It was 30.0:
+    # raising only the gateway fallback left every triage call capped at 30s
+    # (local prompt processing alone exceeds that), surfaced as an opaque
+    # "LLM assist failed". Configure via `maintenance.triage_llm_timeout_s`
+    # or ABSTRACT_TRIAGE_LLM_TIMEOUT_S; `0` = no client timeout.
+    triage_llm_timeout_s: float = 7200.0
 
 
 @dataclass
@@ -331,10 +341,19 @@ class StreamingConfig:
 @dataclass
 class TimeoutConfig:
     """Timeout configuration settings."""
-    # Default HTTP timeout for LLM providers (in seconds).
-    # This is used as the *process-wide* default unless overridden per-provider/per-call.
+    # #[WARNING:TIMEOUT] Process-wide LLM HTTP budget, 7200s (ADR-0027 §2:
+    # high safeguard for correctness-critical paths; `0` = unlimited).
+    # Overridden per-provider/per-call, and by `abstractruntime`'s
+    # authoritative per-effect budget under orchestration (ADR-0014 §1).
+    # Config key: `timeouts.default_timeout`.
     default_timeout: float = 7200.0  # 2 hours
-    tool_timeout: float = 600.0     # 10 minutes for tool execution (in seconds)
+    # #[WARNING:TIMEOUT] One tool call, 7200s. ADR-0014 §2 fixes the tool
+    # default at 7200s alongside the LLM default; the former 600s here was a
+    # second, LOWER floor that could truncate a healthy long-running tool
+    # (build, test suite, indexing run) below the orchestrator's budget
+    # whenever abstractcore was used directly. Config key:
+    # `timeouts.tool_timeout` (`0` = unlimited).
+    tool_timeout: float = 7200.0    # 2 hours (ADR-0014 §2), matches default_timeout
 
 
 @dataclass
@@ -677,8 +696,28 @@ class ConfigurationManager:
                         if isinstance(nested, dict) and "strategy_explicit" in nested:
                             self._audio_strategy_explicit = bool(nested.get("strategy_explicit"))
                 return self._dict_to_config(data)
+            except OSError as e:
+                # THE FILE IS FINE; THE READ FAILED. A full disk, an EIO, a
+                # momentarily unreadable mount — none of these are evidence that
+                # the operator's config is bad, so falling back to defaults here
+                # would be a guess, and the next _save_config() would publish
+                # that guess OVER a perfectly good store. That is the exact
+                # incident-2026-07-11 loss path, reached through a different
+                # door. Observed 2026-08-02: a full volume produced a
+                # `.corrupt-*.bak` quarantine of a file that parsed cleanly both
+                # before and after.
+                #
+                # So: refuse to proceed. A loud failure is recoverable; a silent
+                # defaults-regeneration is not. No quarantine copy either —
+                # there is nothing wrong with the file to preserve.
+                raise OSError(
+                    f"Could not READ the AbstractCore config at {self.config_file}: {e}. "
+                    "The file itself may be intact — this is an I/O failure (a full disk is "
+                    "the usual cause). Refusing to continue with default settings, which "
+                    "would overwrite your configuration on the next save."
+                ) from e
             except Exception as e:
-                # Never silently destroy a config we could not parse: preserve
+                # Never silently destroy a config we could not PARSE: preserve
                 # it so the operator can recover the lost settings, and make the
                 # degradation loud instead of a silent defaults regeneration.
                 # Deliberately NO recommended-defaults seed on this branch: the

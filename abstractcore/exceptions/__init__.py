@@ -100,6 +100,23 @@ class ModelNotFoundError(ProviderError):
     pass
 
 
+class ModelArtifactMismatchError(ProviderError):
+    """The named model handle cannot be honoured with the artifact that was found.
+
+    ADR 0009 (model handle fidelity). Raised instead of silently loading a
+    DIFFERENT artifact than the caller named — a GGUF conversion in place of
+    transformers weights, a different quantization than an explicit `:quant`
+    selector asked for, or a different repository reached through an alias
+    manifest. The distinction this error enforces is: resolving WHERE the
+    requested artifact lives is allowed; returning a different artifact is not.
+
+    The message is the actionable part: it states what was requested, what was
+    found, why they are not interchangeable, and how to ask for either one
+    explicitly.
+    """
+    pass
+
+
 def format_model_error(provider: str, invalid_model: str, available_models: list) -> str:
     """
     Format a helpful error message for model not found errors.
@@ -200,6 +217,7 @@ __all__ = [
     'SessionError',
     'ConfigurationError',
     'ModelNotFoundError',
+    'ModelArtifactMismatchError',
     'format_model_error',
     'format_auth_error',
     'format_provider_error'

@@ -42,6 +42,7 @@ class ToolFormat(Enum):
 
     # XML-based
     XML_WRAPPED = "xml_wrapped"       # <tool_call>...</tool_call>
+    XMLISH_PARAMETER = "xmlish_parameter"  # <tool_call><function=name><parameter=k>v</parameter></function></tool_call>
 
     # Native
     NATIVE = "native"                 # API-level tool calls
@@ -195,6 +196,18 @@ def format_tool_prompt(
 
     # Get tool format
     tool_format = _get_tool_format(model_name)
+
+    # A declared native CONVENTION wins over the generic syntax-family prompt.
+    # Teaching a format the model never saw in training measurably degrades tool
+    # calling: under the generic XML prompt, qwen3_6 emits `{"name": "read_file",
+    # {...}}` — the "arguments" key missing entirely — and the call is unparseable.
+    if _get_tool_calling_format(model_name) == "qwen3_coder":
+        return _format_qwen3_coder_style(
+            tools,
+            model_name=model_name,
+            include_tool_list=include_tool_list,
+            include_examples=include_examples,
+        )
 
     # Format based on architecture
     if tool_format == ToolFormat.TOOL_CODE:
@@ -378,6 +391,30 @@ def _sanitize_tool_call_tags(response: str) -> str:
         logger.debug(f"Sanitized malformed tool call tags")
 
     return response
+
+
+def _get_tool_calling_format(model_name: Optional[str]) -> str:
+    """Read the architecture's declared native tool-call CONVENTION, if any.
+
+    `tool_format` says which syntax family we parse; `tool_calling_format` names the
+    exact convention the model was TRAINED on. The two are not interchangeable: the
+    qwen3_6 / qwen3_5_agentic families declare `tool_format: "xml"` (so the parser
+    accepts `<tool_call>` wrappers) AND `tool_calling_format: "qwen3_coder"`, whose
+    payload is `<function=name><parameter=k>v</parameter></function>` — NOT the
+    JSON-in-`<tool_call>` shape our generic XML prompt teaches.
+
+    Until 2026-08-08 nothing outside the schema tests read this key, so those models
+    were prompted with a convention they never saw in training. The read path already
+    accepted both (`_parse_xml_wrapped` case 2), so only the prompt was wrong.
+    """
+    if not model_name:
+        return ""
+    try:
+        architecture = detect_architecture(model_name)
+        arch_format = get_architecture_format(architecture)
+    except Exception:
+        return ""
+    return str((arch_format or {}).get("tool_calling_format") or "").strip().lower()
 
 
 def _get_tool_format(model_name: Optional[str]) -> ToolFormat:
@@ -693,6 +730,49 @@ def _iter_xml_tool_call_bodies(response: str):
         pos = body_end
 
 
+def _parse_arg_kv_tool_call(body: str) -> List[ToolCall]:
+    """Parse the GLM/Laguna payload that pairs <arg_key> with <arg_value> tags.
+
+    The tool name is bare leading text, not a tag:
+
+        <tool_call>get_weather<arg_key>city</arg_key><arg_value>Paris</arg_value></tool_call>
+
+    Emitters render string arguments verbatim and JSON-encode everything else, so
+    each value is decoded as JSON when possible and kept as raw text otherwise.
+    """
+    if not isinstance(body, str) or "<arg_key>" not in body.lower():
+        return []
+
+    first_key = re.search(r"<arg_key\s*>", body, re.IGNORECASE)
+    if not first_key:
+        return []
+
+    name = body[:first_key.start()].strip().strip("\"'")
+    if not re.fullmatch(_XML_TOOL_NAME_PATTERN, name or ""):
+        return []
+
+    arguments: Dict[str, Any] = {}
+    for pair in re.finditer(
+        r"<arg_key\s*>(.*?)</arg_key\s*>\s*<arg_value\s*>(.*?)</arg_value\s*>",
+        body,
+        re.DOTALL | re.IGNORECASE,
+    ):
+        key = (pair.group(1) or "").strip()
+        if not key:
+            continue
+
+        raw_value = _strip_pretty_xml_parameter_value(pair.group(2) or "")
+        try:
+            arguments[key] = json.loads(raw_value.strip())
+        except (json.JSONDecodeError, ValueError):
+            arguments[key] = raw_value
+
+    if not arguments:
+        return []
+
+    return [ToolCall(name=name, arguments=arguments, call_id=None)]
+
+
 def _parse_xmlish_parameter_tool_calls(body: str) -> List[ToolCall]:
     """Parse XML-ish tool calls that encode arguments as <parameter=...> tags."""
     tool_calls: List[ToolCall] = []
@@ -779,7 +859,14 @@ def _parse_xml_wrapped(response: str) -> List[ToolCall]:
                 logger.warning(f"Failed to parse XML tool call JSON: {body_stripped} - {e}")
                 continue
 
-        # Case 2: XML-ish function/parameter encoding.
+        # Case 2: GLM/Laguna <arg_key>/<arg_value> encoding, whose tool name is bare
+        # leading text rather than a tag, so it must be tried before the tag scans below.
+        arg_kv_calls = _parse_arg_kv_tool_call(body)
+        if arg_kv_calls:
+            tool_calls.extend(arg_kv_calls)
+            continue
+
+        # Case 3: XML-ish function/parameter encoding.
         tool_calls.extend(_parse_xmlish_parameter_tool_calls(body))
 
     return tool_calls
@@ -1279,15 +1366,35 @@ _WHEN_TO_USE_PRIORITY_TOOLS: set[str] = {
 
 
 def _should_render_when_to_use(tool: ToolDefinition, *, total_tools: int) -> bool:
-    when = getattr(tool, "when_to_use", None)
-    if not when:
-        return False
-    # If the tool list is small, include all `when_to_use` guidance.
-    if total_tools <= 6:
-        return True
-    # For larger tool catalogs, include guidance only for priority tools.
-    name = str(getattr(tool, "name", "") or "").strip()
-    return name in _WHEN_TO_USE_PRIORITY_TOOLS
+    """Always True. `when_to_use` is authored guidance and is never dropped.
+
+    WHAT THIS USED TO DO, and why it was wrong. Above a 6-tool catalog this
+    returned True only for the seven names in `_WHEN_TO_USE_PRIORITY_TOOLS`, so
+    every other tool's `when_to_use` was discarded — silently, with no warning,
+    no metadata flag and nothing in the payload. Measured on the standard
+    catalog: 5 of 10 tools lost it, 950 characters of deliberately-authored
+    model-visible guidance gone.
+
+    ADR 0001 forbids exactly this: "Avoid silent lossy truncation on user-visible,
+    MODEL-VISIBLE, or correctness-critical content", and "truncation or preview
+    behavior must be explicit in names, metadata, warnings, or docs". It was none
+    of those — the only trace was the comment "Prompt footprint control".
+
+    The compounding is what makes it worth removing rather than merely warning
+    about: the dropped strings are the RECOVERY INSTRUCTIONS FOR THE OTHER
+    TRUNCATIONS. `read_file`'s guidance explains how to follow a `#TRUNCATION`
+    notice's `start_char` continuation; `search_files`' is the only place its
+    `head_limit` is documented at all. The system was truncating its own
+    instructions for handling truncation, and the tools that lost theirs were the
+    entire file-reading loop.
+
+    Footprint is a real concern and it has a real answer: `when_to_use` is capped
+    at 240 chars per tool at authoring time and RAISES if exceeded
+    (`core._validate_tool_metadata`). The budget is enforced where it can be
+    fixed — by the author — not by discarding it at render time from someone who
+    cannot.
+    """
+    return bool(getattr(tool, "when_to_use", None))
 
 
 def _append_tool_examples(
@@ -1486,6 +1593,56 @@ To call multiple tools, repeat the block once per call.
 
     if include_examples:
         prompt = _append_tool_examples(prompt, tools, tool_format=ToolFormat.XML_WRAPPED)
+
+    return prompt
+
+
+def _format_qwen3_coder_style(
+    tools: List[ToolDefinition],
+    *,
+    model_name: Optional[str] = None,
+    include_tool_list: bool = True,
+    include_examples: bool = True,
+) -> str:
+    """Format tools using the qwen3_coder convention the model was trained on.
+
+    Payload is `<function=name>` with one `<parameter=key>` block per argument, all
+    inside `<tool_call>`. Values are RAW TEXT on their own lines — not JSON — so
+    multi-line arguments (file contents, patches) need no escaping. `_parse_xml_wrapped`
+    case 2 already reads exactly this, so the prompt and the parser now agree.
+    """
+    if not tools:
+        return ""
+
+    prompt = "You have access to these tools:\n\n"
+
+    if include_tool_list:
+        total_tools = len(tools)
+        for tool in tools:
+            prompt += f'<tool name="{tool.name}">\n'
+            prompt += f"  <description>{tool.description}</description>\n"
+            if tool.parameters:
+                prompt += f"  <args>{_format_parameters_compact(tool.parameters)}</args>\n"
+            if _should_render_when_to_use(tool, total_tools=total_tools):
+                prompt += f"  <when_to_use>{tool.when_to_use}</when_to_use>\n"
+            prompt += "</tool>\n\n"
+
+    prompt += """To use a tool, output one or more <tool_call> blocks (no other text):
+<tool_call>
+<function=tool_name>
+<parameter=param1>
+value1
+</parameter>
+</function>
+</tool_call>
+
+To call multiple tools, repeat the block once per call.
+""" + _critical_rules(tool_format=ToolFormat.XMLISH_PARAMETER)
+
+    if include_examples:
+        prompt = _append_tool_examples(
+            prompt, tools, tool_format=ToolFormat.XMLISH_PARAMETER, model_name=model_name
+        )
 
     return prompt
 
@@ -1797,6 +1954,75 @@ def clean_tool_syntax(content: str, tool_calls: List[ToolCall] = None) -> str:
     return content.strip()
 
 
+def render_transcript_tool_calls(
+    tool_calls: Any,
+    *,
+    model_name: Optional[str] = None,
+) -> List[str]:
+    """Render PRIOR assistant tool calls for re-injection into a prompted transcript.
+
+    This is the write-side twin of `parse_tool_calls`, for providers that hand-roll
+    chat rendering instead of delegating to a server/tokenizer chat template (MLX
+    today). Such a renderer receives OpenAI-shaped transcripts (assistant messages
+    carrying `tool_calls`, `role="tool"` results) and must re-render the calls in
+    the SAME convention the tool prompt teaches — dropping them renders an EMPTY
+    assistant turn, so the model sees a transcript where it "did nothing" and a
+    tool result that appeared from nowhere (live defect, MLX + Qwen3.6, 2026-08-08).
+
+    Accepts both entry shapes that reach providers:
+    - OpenAI wire: `{"type": "function", "id": ..., "function": {"name": ...,
+      "arguments": "<json string>"}}` (abstractagent/abstractruntime payloads);
+    - parsed/ledger: `{"name": ..., "arguments": {...}, "call_id": ...}`.
+
+    Returns one rendered block per call (callers join with a newline, matching
+    the trained layout). Entries without a usable name are skipped — there is
+    nothing honest to render for them.
+    """
+    blocks: List[str] = []
+    if not isinstance(tool_calls, (list, tuple)):
+        return blocks
+    for entry in tool_calls:
+        name = ""
+        arguments: Any = None
+        if isinstance(entry, dict):
+            fn = entry.get("function") if isinstance(entry.get("function"), dict) else None
+            source = fn if fn is not None else entry
+            name = str(source.get("name") or "").strip()
+            arguments = source.get("arguments")
+        else:
+            # Tolerate ToolCall-like objects (name/arguments attributes).
+            name = str(getattr(entry, "name", "") or "").strip()
+            arguments = getattr(entry, "arguments", None)
+        if not name:
+            continue
+        # The OpenAI wire carries `arguments` as a JSON STRING; the renderers
+        # below want the object. A non-JSON string stays as-is (it renders as a
+        # string value in the JSON convention — never guess structure).
+        if isinstance(arguments, str) and arguments.strip():
+            try:
+                parsed = json.loads(arguments)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                arguments = parsed
+        if arguments is None:
+            arguments = {}
+        blocks.append(_render_transcript_tool_call(name, arguments, model_name=model_name))
+    return blocks
+
+
+def _render_transcript_tool_call(name: str, arguments: Any, *, model_name: Optional[str]) -> str:
+    """One tool call -> the block a compliant model would have emitted for it."""
+    if not isinstance(arguments, dict):
+        # Non-dict arguments cannot ride the dict-shaped example renderers; fall
+        # back to the canonical JSON convention with the value kept verbatim.
+        payload = json.dumps({"name": name, "arguments": arguments}, separators=(",", ":"), ensure_ascii=False)
+        return f"<tool_call>\n{payload}\n</tool_call>"
+    if _get_tool_calling_format(model_name) == "qwen3_coder":
+        return _format_tool_call_example(name, arguments, ToolFormat.XMLISH_PARAMETER)
+    return _format_tool_call_example(name, arguments, _get_tool_format(model_name), model_name=model_name)
+
+
 def _format_tool_call_example(
     tool_name: str,
     arguments: Dict[str, Any],
@@ -1816,6 +2042,24 @@ def _format_tool_call_example(
         Formatted tool call example string
     """
     tool_call_json = json.dumps({"name": tool_name, "arguments": arguments}, separators=(",", ":"), ensure_ascii=False)
+
+    if tool_format == ToolFormat.XMLISH_PARAMETER:
+        # qwen3_coder: raw-text values, one <parameter=...> block each. Booleans and
+        # numbers render bare (true/1), matching the model's training distribution.
+        parts = [f"<function={tool_name}>"]
+        for key, value in (arguments or {}).items():
+            if isinstance(value, bool):
+                rendered = "true" if value else "false"
+            elif isinstance(value, (int, float)):
+                rendered = str(value)
+            elif isinstance(value, str):
+                rendered = value
+            else:
+                rendered = json.dumps(value, ensure_ascii=False)
+            parts.append(f"<parameter={key}>\n{rendered}\n</parameter>")
+        parts.append("</function>")
+        body = "\n".join(parts)
+        return f"<tool_call>\n{body}\n</tool_call>"
 
     if tool_format == ToolFormat.SPECIAL_TOKEN:
         # Qwen-style: <|tool_call|> ... </|tool_call|>
@@ -1850,7 +2094,7 @@ def _format_tool_call_example(
         return tool_call_json
 
 
-def _critical_rules():
+def _critical_rules(*, tool_format: Optional[ToolFormat] = None):
     """
     Returns the critical rules for tool usage as a string.
 
@@ -1861,6 +2105,22 @@ def _critical_rules():
     Returns:
         str: The critical rules for tool usage.
     """
+    # Rules 4-5 describe the JSON-in-<tool_call> payload. The qwen3_coder convention
+    # has no JSON at all (values are raw text inside <parameter=...> blocks), so
+    # stating them there would instruct the model to produce the wrong shape.
+    if tool_format == ToolFormat.XMLISH_PARAMETER:
+        return (
+            "CRITICAL RULES FOR TOOL USAGE:\n"
+            "1. If you can answer directly, do not call a tool.\n"
+            "2. If you need info or an action, call the smallest relevant tool.\n"
+            "3. Do not call tools to show off; if asked, describe capabilities.\n"
+            "4. The tool name goes in the <function=...> tag, one <parameter=...> block per argument.\n"
+            "5. Parameter values are raw text on their own lines - do not JSON-encode or quote them.\n"
+            "6. Never fabricate tool results; outputs are returned separately.\n"
+            "7. Do not write your own `tool:` result lines.\n"
+            "8. You MAY batch multiple tool calls by repeating the tool-call block once per call (prefer independent calls).\n"
+        )
+
     return (
         "CRITICAL RULES FOR TOOL USAGE:\n"
         "1. If you can answer directly, do not call a tool.\n"

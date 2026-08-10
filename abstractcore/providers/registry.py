@@ -18,6 +18,46 @@ from ..utils.structured_logging import get_logger
 
 logger = get_logger("provider_registry")
 
+# Bounded pool for the provider-status fan-out. Discovery must not spawn a
+# thread per provider on a box that is also running inference.
+_PROVIDER_STATUS_MAX_WORKERS = 8
+
+
+def enable_gguf_metal() -> bool:
+    """Reserve Metal offload for GGUF in this process. Call it FIRST, before torch.
+
+    WHY A HOST APPLICATION NEEDS THIS. GGUF Metal offload is only taken when
+    `llama_cpp` was imported before PyTorch/transformers, and abstractcore does that
+    for you — but only at `create_provider` time, which is too late if the host has
+    already imported torch during its own boot. A host that builds, say, an embedding
+    store at startup imports torch transitively, and from then on EVERY GGUF model in
+    that process runs entirely on CPU. It is deterministic, not a race.
+
+    Measured on an M5 Max: a 4B GGUF prefilled 10,102 tokens at ~31 tok/s on CPU
+    against ~1900 tok/s for the same box on Metal. A host that trips this does not
+    have a slow GGUF lane, it has an unusable one.
+
+    Call this as the first abstractcore statement in your process:
+
+        import abstractcore
+        abstractcore.enable_gguf_metal()   # before anything imports torch
+        ...                                # now build embedders, stores, etc.
+
+    Returns True when Metal offload is reserved (or was already), False when it is
+    too late or unavailable — a False return is worth logging, because it means every
+    later GGUF load in this process will be CPU-only. Safe and cheap to call more
+    than once; a no-op off macOS/arm64 and when `llama_cpp` is not installed.
+    """
+    _preimport_llama_cpp_for_macos()
+    try:
+        import sys as _sys
+
+        mod = _sys.modules.get("llama_cpp")
+        return bool(getattr(mod, "__abstractcore_preimported_for_metal", False))
+    except Exception:  # noqa: BLE001
+        return False
+
+
 def _preimport_llama_cpp_for_macos() -> None:
     """Best-effort: import `llama_cpp` early on macOS to keep Metal offload stable.
 
@@ -716,11 +756,39 @@ class ProviderRegistry:
             }
 
     def get_all_providers_status(self) -> List[Dict[str, Any]]:
-        """Get status information for all registered providers."""
-        return [
-            self.get_provider_status(provider_name)
-            for provider_name in self.list_provider_names()
-        ]
+        """Get status information for all registered providers.
+
+        Providers are probed CONCURRENTLY. Each `get_provider_status` call is
+        an independent round trip to a different host, and none of them reads
+        another's answer, so probing them one after another made this cost the
+        SUM of the probes instead of the slowest one. Measured with two
+        configured provider hosts black-holed: 14.40s, of which two serial
+        5.00s connects on a single thread -- and this is the fan-out behind
+        `/discovery/providers?include_models=true`, a picker route.
+
+        Order is preserved: `map` yields results positionally, so the returned
+        list matches `list_provider_names()` exactly as the comprehension did.
+        A provider that fails still returns its own status dict -- the
+        per-provider try/except lives inside `get_provider_status`, unchanged.
+
+        Safe to thread: `get_provider_status` builds a FRESH provider instance
+        per call and shares nothing mutable between distinct provider names.
+        The registry's only write is the idempotent lazy
+        `provider_info.provider_class` assignment, which is per-provider and
+        guarded underneath by the import lock; the config-manager singleton is
+        warmed on THIS thread by `list_provider_names()` before any worker runs.
+        """
+        provider_names = list(self.list_provider_names())
+        if len(provider_names) < 2:
+            return [self.get_provider_status(name) for name in provider_names]
+
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(
+            max_workers=min(len(provider_names), _PROVIDER_STATUS_MAX_WORKERS),
+            thread_name_prefix="provider-status",
+        ) as pool:
+            return list(pool.map(self.get_provider_status, provider_names))
 
     def get_providers_with_models(self, include_models: bool = True) -> List[Dict[str, Any]]:
         """
@@ -856,14 +924,24 @@ class ProviderRegistry:
                 self._apply_construction_prompt_cache_key(instance, prompt_cache_key.strip())
             return instance
         except ImportError as e:
-            # Re-raise import errors with helpful message
+            # Re-raise import errors with a helpful message, WITHOUT discarding the
+            # original. A provider constructor raises ImportError for causes the extras
+            # hint does not cover — a 4-bit load needing `bitsandbytes`, say — and
+            # replacing that text with "install abstractcore[huggingface]" sends the
+            # caller to a remedy that does not fix their problem and hides the one that
+            # would. `from e` preserves the chain for a traceback, but the message a
+            # caller reads (and logs) is this one, so the real cause belongs in it.
             if provider_info.installation_extras:
                 raise ImportError(
-                    f"{provider_info.display_name} dependencies not installed. "
-                    f"Install with: pip install \"abstractcore[{provider_info.installation_extras}]\""
+                    f"{provider_info.display_name} provider could not be constructed: {e}\n"
+                    f"If a core dependency is missing, install with: "
+                    f"pip install \"abstractcore[{provider_info.installation_extras}]\" — "
+                    f"but read the underlying error above first; it names what actually failed."
                 ) from e
             else:
-                raise ImportError(f"{provider_info.display_name} provider not available") from e
+                raise ImportError(
+                    f"{provider_info.display_name} provider not available: {e}"
+                ) from e
 
     @staticmethod
     def _apply_construction_prompt_cache_key(instance: Any, key: str) -> None:

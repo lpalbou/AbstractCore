@@ -15,8 +15,8 @@ Options:
     --provider <provider>           LLM provider (requires --model)
     --model <model>                 LLM model (requires --provider)
     --temperature <temp>            Temperature for evaluation (default: 0.1 for consistency)
-    --max-tokens <tokens>           Maximum total tokens for LLM context (default: 32000)
-    --max-output-tokens <tokens>    Maximum tokens for LLM output generation (default: 8000)
+    --max-tokens <tokens>           Total context budget (default: auto = model's full context)
+    --max-output-tokens <tokens>    Output-token budget (default: auto = no cap)
     --verbose                       Show detailed progress information
     --debug                         Show raw LLM responses and detailed debugging information
     --include-criteria              Include detailed explanation of evaluation criteria in assessment
@@ -380,15 +380,19 @@ Default model setup:
     parser.add_argument(
         '--max-tokens',
         type=int,
-        default=32000,
-        help='Maximum total tokens for LLM context (default: 32000)'
+        default=-1,
+        help='Total context budget. -1 = AUTO (default): use the model\'s full '
+             'advertised context. Pass a positive value only as an explicit '
+             'deployment constraint (e.g. limited GPU RAM).'
     )
 
     parser.add_argument(
         '--max-output-tokens',
         type=int,
-        default=8000,
-        help='Maximum tokens for LLM output generation (default: 8000)'
+        default=-1,
+        help='Output-token budget. -1 = AUTO (default): no cap is sent, so the '
+             'model uses its full output capability. Pass a positive value only '
+             'if you explicitly want the response cut off at that length.'
     )
 
     parser.add_argument(

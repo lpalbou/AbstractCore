@@ -7,7 +7,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Poolside Laguna support: `laguna` architecture + `laguna-s-2.1` capability
+  entry.** `architecture_formats.json` gains a `laguna` entry (60 → 61) and
+  `model_capabilities.json` a `laguna-s-2.1` entry, every fact verified against
+  the repo's `config.json`, `tokenizer_config.json`, `generation_config.json`
+  and chat template on access date (2026-08-08). Laguna-S-2.1 is a 118B-A8B
+  agentic-coding MoE (`LagunaForCausalLM`, `model_type: laguna`; 48 layers, 256
+  routed + 1 shared experts, 10 routed activated per token, 100,352-token vocab)
+  interleaving 12 global YaRN-scaled attention layers with 36 sliding-window
+  layers (window 512), 8 KV heads, and a 1,048,576-token context. Its template
+  is **not** ChatML: it uses `<system>` / `<user>` / `<assistant>` /
+  `<tool_response>` tag pairs — a new `laguna_tags` message format — with
+  `〈|EOS|〉` and `</assistant>` as stop tokens, so `output_wrappers.end` is
+  `</assistant>`. Tool calls use the GLM-style
+  `<tool_call>name<arg_key>k</arg_key><arg_value>v</arg_value></tool_call>`
+  encoding (`tool_format: glm_xml`, `default_tool_support: native`, matching the
+  `poolside_v1` tool/reasoning parsers vLLM and SGLang ship; TRT-LLM names the
+  reasoning parser `laguna`). Thinking is interleaved between tool calls and on
+  by default, disabled per request via `chat_template_kwargs
+  {"enable_thinking": false}`. Sampling defaults come from
+  `generation_config.json` (temperature 1.0, top_p 1.0, top_k 20). The
+  architecture patterns cover the whole published family — Laguna-S-2.1,
+  Laguna-XS-2.1, Laguna-XS.2, Laguna-M.1 and the FP8 / NVFP4 / INT4 / GGUF / MLX
+  quantizations and DFlash draft models — while only Laguna-S-2.1 carries a
+  verified capability entry; the siblings inherit the architecture's native tool
+  support. The model card documents no separate output-token cap, so
+  `max_output_tokens` is a practical serving default bounded by the 1M context,
+  stated as such in `notes` rather than presented as a published figure.
+- **Music `provider_details` surfaced through the plugin boundary.**
+  `llm.music.provider_details(task=...)` and
+  `GET /v1/audio/music/provider-details` report every known music provider with
+  `usable` and, when it is not, the reason (`metadata.reason`: a missing API
+  key, an uninstalled extra, or weights not downloaded) plus
+  `metadata.cached_models` — so an empty `/v1/audio/music/providers` answer is
+  never a dead end. The backend record shape passes through untouched (the
+  plugin is the authority); `llm.music.capability_catalog(...)` includes the
+  same records under `provider_details`, omitting the key — never publishing
+  `[]` — when the selected backend cannot answer. Requires
+  `abstractmusic >= 0.1.14`; older or third-party backends raise a clean
+  `CapabilityUnavailableError` naming the method and minimum version.
+
+### Changed
+- **Media plugin floors raised: `abstractvoice>=0.11.0`, `abstractmusic>=0.1.15`**
+  (base extras and the `[all-apple]`/`[all-gpu]` aggregate profiles).
+  AbstractVoice 0.11.0 brings the local Qwen3-TTS engine — preset speakers,
+  voice cloning, and description-driven voice design through the existing
+  `instructions` selector, which AbstractCore already forwards on
+  `/v1/audio/speech` and `llm.voice.tts(...)` (streaming TTS forwards it too,
+  but abstractvoice 0.11.0 rejects `instructions` on the streaming surface —
+  use buffered TTS for voice design) —
+  plus engine-free discovery (no torch import to list providers/models/voices)
+  and fixed `surface="default"` capability queries. AbstractMusic 0.1.15 brings
+  registered XL checkpoints, checkpoint-aware caption rendering, cold-start
+  cheap discovery, and quality diagnostics (for example
+  `audio_stats.probably_noise_texture`) that flow through generation metadata
+  unchanged.
+
 ### Fixed
+- **`<arg_key>` / `<arg_value>` tool calls parsed to nothing.** The `glm_xml`
+  tool format was routed to the XML-wrapped parser, but that parser only
+  understood JSON-in-`<tool_call>` and `<function=name><parameter=k>` payloads —
+  never the `<tool_call>name<arg_key>k</arg_key><arg_value>v</arg_value>` shape
+  the format is named for, whose tool name is bare leading text rather than a
+  tag. `detect_tool_calls` returned `True` while `parse_tool_calls` returned
+  `[]`, so every call silently vanished. This hit GLM-4.5/4.6/5.x and the newly
+  added Laguna family. Both the buffered parser and the incremental streaming
+  detector now decode the pairs, including a `<tool_call>` truncated before its
+  closing tag. Values follow the emitters' contract: strings are rendered
+  verbatim and everything else is JSON-encoded, so each value is JSON-decoded
+  when it parses and kept as raw text otherwise. Observed in production against
+  LM Studio: an unregistered Laguna resolved to the `generic` architecture and
+  therefore to *prompted* tools, so no `tools` field reached llama.cpp, which
+  applied no tool grammar and answered `tool_calls: []` with three well-formed
+  `<tool_call>` blocks left in `content` — and the content-level recovery that
+  exists for exactly this case dropped all three silently. Registering the model
+  fixes the mode; this fixes the safety net.
+- **A dropped tool is no longer silent.** `UniversalToolHandler` discarded any
+  tool it could not convert — most commonly a `description` over the 200-char
+  cap — reporting it only through `logger.warning`, which is dead in a default
+  AbstractCore process. The tool simply vanished from the prompt (and from the
+  native wire payload), so the model could not call a capability the caller
+  believed it had. Every drop now raises a `RuntimeWarning` naming the tool, the
+  model and the reason. Measured consequence before the fix: a 12-tool set with
+  long descriptions rendered a prompt containing **no tools at all** on MLX, HF
+  transformers and HF GGUF, with no output anywhere. The limits are now
+  documented in `docs/tool-calling.md`.
+- **The prompt-cache bloc planner reports a tools bloc that holds no tools.**
+  The seam checks are about token boundaries, so a chain whose tools were
+  dropped before rendering passed every one of them and reported a healthy
+  3-token "tools" bloc (`collapsed=False`, `unsound_at=None`). A bloc carrying
+  tool names that do not appear in the prompt the chain will send now warns.
+- **Both HuggingFace lanes now feed the planner's bloc cut** (`bloc_token_ids`),
+  as MLX already did. The transformers lane treated any tools module as
+  "rebuild", so a tools bloc reset the cache and re-prefilled the whole
+  system+tools text: measured on `Qwen3-4B-Instruct-2507`, a `[system, tools]`
+  chain cost 2068 prefilled tokens to build (against 1363 for one merged bloc)
+  and saved nothing when a tool changed. It now builds in 1363 and re-prefills
+  665 on a one-tool edit — 51 % of the prefill skipped, the same figure the MLX
+  lane gets. The GGUF lane derives its stored prompt text from the ids it fed
+  via llama.cpp's detokenizer and verifies the round-trip, falling back loudly
+  to the rebuild rather than storing a text that disagrees with its tokens.
 - **GPT-5.6 Sol/Terra/Luna context window corrected from 1,050,000 to the
   enforced 400,000 tokens** in `model_capabilities.json`. The OpenAI API card
   advertises 1,050,000 (922,000 max input / 128,000 max output), but input

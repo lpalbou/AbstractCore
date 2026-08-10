@@ -179,6 +179,123 @@ def test_generic_capability_provider_model_and_operation_discovery(monkeypatch):
 
 
 @pytest.mark.basic
+def test_music_provider_details_passthrough_and_catalog_key(monkeypatch):
+    details_payload = [
+        {
+            "provider_id": "acestep",
+            "usable": True,
+            "models": ["ACE-Step/acestep-v15-xl-turbo-diffusers"],
+            "metadata": {"reason": "", "cached_models": ["ACE-Step/acestep-v15-xl-turbo-diffusers"]},
+        },
+        {
+            "provider_id": "acemusic",
+            "usable": False,
+            "models": ["acemusic/ace-step-api"],
+            "metadata": {"reason": "no API key configured", "cached_models": []},
+        },
+    ]
+
+    def register(registry):
+        class _Music:
+            backend_id = "music-detailed"
+
+            def available_providers(self, task=None):
+                return [{"provider_id": "acestep", "tasks": [task], "local": True}]
+
+            def list_models(self, task=None, provider=None):
+                return []
+
+            def list_operations(self, task=None):
+                return []
+
+            def provider_details(self, *, task=None):
+                _ = task
+                return details_payload
+
+            def t2m(self, prompt: str, **kwargs):
+                _ = prompt, kwargs
+                return b"wav"
+
+        registry.register_music_backend(backend_id="music-detailed", factory=lambda _owner: _Music(), priority=0)
+
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_FakeEntryPoint(name="fake", value="tests.fake_music_details:register", obj=register)]))
+
+    llm = _DummyProvider(model="dummy")
+    details = llm.music.provider_details(task="text_to_music")
+    # Records pass through untouched: the backend is the authority on shape,
+    # so `usable`, `models`, and `metadata.reason` must survive.
+    assert details == details_payload
+    # Per-read copies cover the top level AND the metadata dict (the mutation
+    # surface consumers actually touch) — a caller's edit must not poison the
+    # backend's own records.
+    details[0]["usable"] = False
+    details[1]["metadata"]["reason"] = "clobbered"
+    assert details_payload[0]["usable"] is True
+    assert details_payload[1]["metadata"]["reason"] == "no API key configured"
+
+    catalog = llm.music.capability_catalog(task="text_to_music")
+    assert catalog["provider_details"] == details_payload
+
+
+@pytest.mark.basic
+def test_music_provider_details_accepts_wrapped_payload_shape(monkeypatch):
+    # Sibling discovery routes accept {"providers": [...]} wrappers; a backend
+    # answering provider_details in that shape must not be flattened to a
+    # silent [].
+    def register(registry):
+        class _Music:
+            backend_id = "music-wrapped"
+
+            def provider_details(self, *, task=None):
+                _ = task
+                return {"providers": [{"provider_id": "acestep", "usable": True, "metadata": {}}, "not-a-record"]}
+
+            def t2m(self, prompt: str, **kwargs):
+                _ = prompt, kwargs
+                return b"wav"
+
+        registry.register_music_backend(backend_id="music-wrapped", factory=lambda _owner: _Music(), priority=0)
+
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_FakeEntryPoint(name="fake", value="tests.fake_music_wrapped:register", obj=register)]))
+
+    llm = _DummyProvider(model="dummy")
+    details = llm.music.provider_details(task="text_to_music")
+    assert details == [{"provider_id": "acestep", "usable": True, "metadata": {}}]
+
+
+@pytest.mark.basic
+def test_music_provider_details_absent_backend_method_raises_actionable_error(monkeypatch):
+    def register(registry):
+        class _Music:
+            backend_id = "music-minimal"
+
+            def available_providers(self, task=None):
+                return []
+
+            def list_models(self, task=None, provider=None):
+                return []
+
+            def list_operations(self, task=None):
+                return []
+
+            def t2m(self, prompt: str, **kwargs):
+                _ = prompt, kwargs
+                return b"wav"
+
+        registry.register_music_backend(backend_id="music-minimal", factory=lambda _owner: _Music(), priority=0)
+
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda: _EntryPoints([_FakeEntryPoint(name="fake", value="tests.fake_music_minimal:register", obj=register)]))
+
+    llm = _DummyProvider(model="dummy")
+    with pytest.raises(CapabilityUnavailableError) as e:
+        llm.music.provider_details(task="text_to_music")
+    assert "provider_details" in str(e.value)
+    assert "abstractmusic >= 0.1.14" in str(e.value)
+    # The catalog must OMIT the key (not publish []) when the backend cannot answer.
+    assert "provider_details" not in llm.music.capability_catalog(task="text_to_music")
+
+
+@pytest.mark.basic
 def test_capability_host_text_service_is_text_only_and_plugin_safe(monkeypatch):
     def register(registry):
         class _Music:

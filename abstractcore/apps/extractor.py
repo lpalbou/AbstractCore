@@ -279,15 +279,19 @@ Default model setup:
     parser.add_argument(
         '--max-tokens',
         type=int,
-        default=32000,
-        help='Maximum total tokens for LLM context (default: 32000)'
+        default=-1,
+        help='Total context budget. -1 = AUTO (default): use the model\'s full '
+             'advertised context. Pass a positive value only as an explicit '
+             'deployment constraint (e.g. limited GPU RAM).'
     )
 
     parser.add_argument(
         '--max-output-tokens',
         type=int,
-        default=8000,
-        help='Maximum tokens for LLM output generation (default: 8000)'
+        default=-1,
+        help='Output-token budget. -1 = AUTO (default): no cap is sent, so the '
+             'model uses its full output capability. Pass a positive value only '
+             'if you explicitly want the response cut off at that length.'
     )
 
     # Parse arguments
@@ -357,7 +361,14 @@ Default model setup:
                 if adjusted_chunk_size != args.chunk_size:
                     print(f"Adjusted chunk size from {args.chunk_size} to {adjusted_chunk_size} characters for {args.provider} compatibility")
 
-            llm = create_llm(args.provider, model=args.model, max_tokens=args.max_tokens, max_output_tokens=args.max_output_tokens, timeout=args.timeout)
+            # AUTO (-1) means "operator asked for no bound" — do not forward it,
+            # so the provider keeps the model's full advertised capability.
+            llm_kwargs = {"timeout": args.timeout}
+            if args.max_tokens != -1:
+                llm_kwargs["max_tokens"] = args.max_tokens
+            if args.max_output_tokens != -1:
+                llm_kwargs["max_output_tokens"] = args.max_output_tokens
+            llm = create_llm(args.provider, model=args.model, **llm_kwargs)
 
             extractor = BasicExtractor(
                 llm=llm,

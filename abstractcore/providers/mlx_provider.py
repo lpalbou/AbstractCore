@@ -69,6 +69,11 @@ class MLXProvider(BaseProvider):
         # prompt_cache_update to extend the fed-token-id record).
         self._delta_feed_warned_keys: set = set()
         self._pending_append_fragment: Optional[str] = None
+        # Exact token ids of the last append. Authoritative over the text stash:
+        # a PLANNED bloc fragment (base.prompt_cache_plan_bloc_chain) is a token
+        # slice of one rendered conversation and has no standalone text whose
+        # re-encoding is guaranteed to reproduce it.
+        self._pending_append_fragment_ids: Optional[List[int]] = None
         self._pending_append_precount: int = 0
         # Snapshot/restore lane for UNTRIMMABLE architectures (Gated-DeltaNet
         # hybrids: Qwen3.5/3.6/Ornith, and pure-SSM). A recurrent state cannot
@@ -208,6 +213,41 @@ class MLXProvider(BaseProvider):
             artifact_format=self.prompt_cache_artifact_format(),
             meta={"prompt_format": fmt},
         )
+
+    def prompt_cache_render_bloc_text(
+        self,
+        *,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, Any]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        add_generation_prompt: bool = False,
+    ) -> Optional[str]:
+        """Exact `generate()` render, for the bloc planner (see base.py).
+
+        `_build_prompt` IS `_build_prompt_fragment` with
+        `add_generation_prompt=True`, so this is literally the same renderer the
+        live prompt goes through — which is the only reason the planner's
+        token-prefix guarantee is worth anything. `include_bos` stays at its
+        `generate()` default (True): the planner always renders the CUMULATIVE
+        union from position 0, so a BOS appears exactly once, at the head of the
+        first bloc, and never inside a later delta.
+        """
+        if getattr(self, "tokenizer", None) is None:
+            return None
+        try:
+            return self._build_prompt_fragment(
+                prompt=str(prompt or ""),
+                messages=messages,
+                system_prompt=system_prompt,
+                tools=tools,
+                add_generation_prompt=bool(add_generation_prompt),
+            )
+        except Exception:
+            return None
+
+    def prompt_cache_encode_bloc_text(self, text: str) -> Optional[List[int]]:
+        return self._encode_prompt_token_ids(text)
 
     def _apply_provider_thinking_kwargs(self, *, enabled, level=None, kwargs: Dict[str, Any]):
         """Map unified thinking control into MLX prompt serialization state.
@@ -362,6 +402,19 @@ class MLXProvider(BaseProvider):
         sampled token — so the cache lands on the EXACT token boundary with no
         reply pollution. This is the clean boundary a recurrent state needs for
         a reusable snapshot (it cannot be reached by trimming after the fact).
+
+        WIRED-LIMIT / STREAM SYNC (2026-08-02, gateway crash-loop). `generate_step`
+        leaves an `mx.async_eval` in flight on mlx_lm's dedicated `generation_stream`.
+        `stream_generate` — the lane this one replaces — always ran inside
+        `wired_limit(model, [generation_stream])`, whose __exit__ SYNCHRONIZES that
+        stream before restoring the wired limit; mlx_lm's own docstring warns the
+        wired limit "should not be changed during an async eval". Calling
+        `generate_step` bare left GPU work pending after return, so the caller's next
+        `mx.eval` (and any concurrent generate in another thread flipping the wired
+        limit back) hit Metal's `-[_MTLCommandBuffer addCompletedHandler:]` assert →
+        SIGABRT. In a single-threaded script that window is invisible; inside the
+        gateway, where MLX runs on worker threads, it crash-looped the process on the
+        first cached call. Mirror `stream_generate` exactly.
         """
         if cache_value is None or not token_ids:
             return False
@@ -371,10 +424,26 @@ class MLXProvider(BaseProvider):
         except Exception:
             return False
         try:
-            for _ in generate_step(
-                mx.array(token_ids), self.llm, max_tokens=0, prompt_cache=cache_value
-            ):
-                pass  # max_tokens=0 yields nothing; prefill is the side effect
+            from mlx_lm.generate import generation_stream, wired_limit
+        except Exception:  # older mlx_lm: fall back to a plain synchronize
+            generation_stream = None
+            wired_limit = None
+        try:
+            if wired_limit is not None and generation_stream is not None:
+                with wired_limit(self.llm, [generation_stream]):
+                    for _ in generate_step(
+                        mx.array(token_ids), self.llm, max_tokens=0, prompt_cache=cache_value
+                    ):
+                        pass  # max_tokens=0 yields nothing; prefill is the side effect
+            else:
+                for _ in generate_step(
+                    mx.array(token_ids), self.llm, max_tokens=0, prompt_cache=cache_value
+                ):
+                    pass
+                try:
+                    mx.synchronize()
+                except Exception:
+                    pass
             try:
                 mx.eval([getattr(layer, "state", None) for layer in cache_value])
             except Exception:
@@ -412,39 +481,72 @@ class MLXProvider(BaseProvider):
     def _get_hybrid_snapshot(self, key: str) -> Optional[Dict[str, Any]]:
         self._ensure_hybrid_snapshot_state()
         with self._hybrid_snapshot_lock:
-            return self._hybrid_snapshots.get(key)
+            snap = self._hybrid_snapshots.get(key)
+            if snap is not None:
+                # LRU recency: a restored-from key must not be the next one
+                # bound-evicted just because it was stored long ago.
+                self._hybrid_snapshots.pop(key, None)
+                self._hybrid_snapshots[key] = snap
+            return snap
+
+    def _hybrid_snapshot_bound(self) -> int:
+        """Max resident snapshots == the prompt-cache store's entry bound.
+
+        A snapshot only ever mirrors a store key (it is captured on the feed
+        path of a key that is IN the store), so more snapshots than store
+        entries is by definition leaked state. 2026-08-03 leak audit / red-team
+        P1: this dict was unbounded — `PromptCacheStore` LRU-evicted keys with
+        no callback and each orphaned entry held a full KV-cache deepcopy
+        (~1 GB at 30k on Qwen3.5-4B) for the provider's lifetime."""
+        store = getattr(self, "_prompt_cache_store", None)
+        try:
+            bound = int(getattr(store, "_max_entries", 0) or 0)
+        except Exception:
+            bound = 0
+        return bound if bound > 0 else 32
 
     def _store_hybrid_snapshot(self, key: str, cache_value: Any, token_ids: List[int]) -> None:
-        """Keep one snapshot per key (the growing one evicts its predecessor)."""
+        """Keep one snapshot per key (the growing one evicts its predecessor),
+        and at most `_hybrid_snapshot_bound()` snapshots overall (LRU)."""
         self._ensure_hybrid_snapshot_state()
         with self._hybrid_snapshot_lock:
+            self._hybrid_snapshots.pop(key, None)
             self._hybrid_snapshots[key] = {"cache": cache_value, "ids": list(token_ids)}
+            bound = self._hybrid_snapshot_bound()
+            while len(self._hybrid_snapshots) > bound:
+                # dicts preserve insertion order; get/store re-insert = LRU.
+                oldest = next(iter(self._hybrid_snapshots))
+                self._hybrid_snapshots.pop(oldest, None)
 
     def _drop_hybrid_snapshot(self, key: str) -> None:
         self._ensure_hybrid_snapshot_state()
         with self._hybrid_snapshot_lock:
             self._hybrid_snapshots.pop(key, None)
 
-    def _capture_hybrid_snapshot(self, key: str, new_ids: List[int]) -> None:
-        """Prefill new_ids into a FRESH cache and store it as this key's
-        snapshot boundary, so the NEXT full-context call that extends new_ids
-        restores it and feeds only the suffix.
+    def _prompt_cache_store_evicted(self, key: str, cache_value: Any) -> None:
+        """Store evicted `key` behind our back (LRU capacity / TTL expiry):
+        drop its hybrid snapshot too, or the deepcopy outlives the entry it
+        mirrors for the provider's lifetime (2026-08-03 leak audit)."""
+        _ = cache_value
+        try:
+            self._drop_hybrid_snapshot(str(key))
+        except Exception:
+            pass
 
-        A fresh dedicated prefill (rather than reusing the just-generated cache)
-        is what gives a clean, reply-free boundary — the generated cache holds
-        new_ids + the sampled reply, and an untrimmable recurrent state cannot
-        be rewound to drop the reply. The prefill costs one prompt pass, but it
-        is amortized across every subsequent warm turn in the loop; without it
-        the architecture pays that pass EVERY turn.
-        """
-        if not new_ids:
-            return
-        fresh = self._prompt_cache_backend_create()
-        if fresh is None:
-            return
-        if not self._prefill_tokens_into_cache(fresh, new_ids):
-            return
-        self._store_hybrid_snapshot(key, fresh, new_ids)
+    # NOTE (2026-08-03): `_capture_hybrid_snapshot` lived here — prefill the ids
+    # into a SECOND, fresh cache and store that as the key's boundary. It had
+    # zero callers in HEAD and in the tree, and it is now removed rather than
+    # wired, for two reasons:
+    #   1. It is redundant. `_hybrid_snapshot_feed` takes its deepcopy BEFORE
+    #      generation touches `working`, so the boundary it stores is already
+    #      clean and reply-free — which was this helper's entire stated purpose.
+    #   2. Wiring it would cost a WHOLE EXTRA PROMPT PASS per turn to produce a
+    #      boundary the lane already produces for free, and there is no longer a
+    #      call site where it could even be correct: untrimmable architectures
+    #      now enter the snapshot lane on the architecture check, so they never
+    #      finish a turn on the trim lane needing a snapshot bolted on after.
+    # Left as a comment because a duplicate snapshot path is exactly the shape a
+    # future "fix" would reach for, and it would reintroduce the double prefill.
 
     def _prompt_cache_backend_token_count(self, cache_value: Any) -> Optional[int]:
         """Token count of a live cache, or None when it cannot be known.
@@ -510,6 +612,14 @@ class MLXProvider(BaseProvider):
 
     _FED_TOKEN_IDS_META = "fed_token_ids"
 
+    # Class-level defaults for the append stash. `__init__` sets instance
+    # copies; these keep the record path working for providers built through
+    # `__new__` (the render/plan-only construction used by tests, which must
+    # never load weights).
+    _pending_append_fragment: Optional[str] = None
+    _pending_append_fragment_ids: Optional[List[int]] = None
+    _pending_append_precount: int = 0
+
     def _encode_prompt_token_ids(self, text: str) -> Optional[List[int]]:
         """Tokenize exactly as mlx_lm's str path would.
 
@@ -553,6 +663,76 @@ class MLXProvider(BaseProvider):
         while i < n and a[i] == b[i]:
             i += 1
         return i
+
+    def _generation_prompt_literals(self) -> List[str]:
+        """The exact generation-prompt tail(s) THIS provider's renderer emits.
+
+        DERIVED, never mirrored. `_build_prompt_fragment` with every content input
+        empty and `include_bos=False` renders nothing at all except the
+        `add_generation_prompt` block, so calling it that way returns the literal
+        itself — for whichever of the renderer's branches this model takes, ChatML
+        or gemma-turn or the `role:`/`assistant:` fallback alike.
+
+        A hand-copied list of literals was the first attempt and it was wrong: it
+        covered two of the renderer's three branches, so every family that falls
+        through to `assistant:` — `basic`, `inst`, `openai_chat`, `llama3_header`,
+        `special_tokens`, `glm_special_tokens`, `human_assistant`, `harmony`, and
+        critically the UNTRIMMABLE HYBRID `granitemoehybrid` that this whole lane
+        exists to serve — silently got no holdback and the turn-2 rebuild back.
+        Deriving from the renderer cannot drift out of sync with the renderer.
+
+        `enable_thinking` is not known here, so both forms are produced and the
+        caller matches longest-first (the thinking-disabled ChatML form extends
+        the plain one).
+        """
+        out: List[str] = []
+        for thinking in (False, None):
+            try:
+                tail = self._build_prompt_fragment(
+                    add_generation_prompt=True,
+                    enable_thinking=thinking,
+                    include_bos=False,
+                )
+            except Exception:
+                continue
+            if tail and tail not in out:
+                out.append(tail)
+        out.sort(key=len, reverse=True)
+        return out
+
+    def _generation_prompt_boundary(
+        self, full_prompt: str, full_ids: List[int]
+    ) -> Optional[int]:
+        """Token POSITION where this call's generation-prompt scaffolding begins.
+
+        That scaffolding is PER-CALL VOLATILE by construction: it asks the model to
+        speak now, and the next turn's transcript replaces it with the assistant
+        turn that actually happened. A cache boundary containing it is a prefix of
+        nothing — which matters only on untrimmable architectures, where a boundary
+        is the sole reusable artifact (a recurrent state cannot be rewound to drop
+        it after the fact).
+
+        A POSITION, deliberately, not a count. Re-tokenize the prompt without the
+        literal and take the token-level LCP against the full prompt: if the seam
+        merges, `len(full) - len(head)` and the true divergence position differ by
+        one, and using the count as a position would put the boundary one token
+        INSIDE the scaffolding — i.e. silently back in the bug. The LCP is the
+        divergence position by definition, merge or no merge.
+
+        Returns None when the prompt does not end in this renderer's generation
+        prompt, or when it cannot be tokenized: no holdback is applied, which is
+        the pre-existing behaviour and never a guess. Costs one extra tokenize, and
+        only on a key that has no fed-token record yet (turn 1 of a session).
+        """
+        text = str(full_prompt or "")
+        for tail in self._generation_prompt_literals():
+            if not text.endswith(tail):
+                continue
+            head_ids = self._encode_prompt_token_ids(text[: -len(tail)])
+            if not head_ids:
+                return None
+            return self._token_lcp_len(head_ids, full_ids)
+        return None
 
     def _cache_is_trimmable(self, cache_value: Any) -> bool:
         """True if mlx_lm can trim this cache (architecture-determined, not
@@ -768,7 +948,28 @@ class MLXProvider(BaseProvider):
 
         def _is_artifact_backed() -> bool:
             meta = self.prompt_cache_key_meta(key) or {}
-            return bool(meta.get("loaded_from") or meta.get("binding_id") or meta.get("artifact_sha256"))
+            if not (
+                meta.get("loaded_from")
+                or meta.get("binding_id")
+                or meta.get("artifact_sha256")
+            ):
+                return False
+            # A FORKED key is a private COPY of an artifact, not the artifact.
+            #
+            # `prompt_cache_fork` copies the source meta wholesale, so a session
+            # forked from a durable bloc inherited this flag — and every branch it
+            # guards is "bypass rather than modify", so from turn 2 onward the
+            # session cache was never used AT ALL. Measured 4-turn lattice on both
+            # lanes: `hit_extend, bypassed, bypassed, bypassed`, against
+            # `hit_restore x4` for an identical fork from a non-artifact bloc. Any
+            # benchmark of bloc-ARTIFACT reuse was therefore measuring turn 1 only.
+            #
+            # The protection is for a SHARED, verified artifact that other callers
+            # will read: trimming it to a divergent caller's prefix would leave the
+            # next reader a stub. A forked session key has no other readers, and
+            # the artifact it was copied from is untouched by anything done here —
+            # so the copy must not inherit the protection.
+            return not str(meta.get("forked_from") or "").strip()
 
         def _hybrid_snapshot_feed() -> tuple[Any, Any, Optional[List[int]]]:
             """Snapshot/restore feed for UNTRIMMABLE architectures.
@@ -796,6 +997,27 @@ class MLXProvider(BaseProvider):
                     if restored is not None:
                         working = restored
                         prefix_len = lcp_snap
+            restored_from_snapshot = working is not None
+
+            # LIVE-CACHE SEED (2026-08-03). No snapshot yet, but the live cache
+            # may ALREADY be a valid boundary: a session forked from a bloc chain
+            # holds exactly its fed-token record, and when that record is a true
+            # prefix of this prompt the fork IS the boundary. Reusing it turns the
+            # first turn of every forked session from a full cold prefill into a
+            # restore. The `cache_len == len(fed_ids)` equality is what makes this
+            # safe — it excludes the trim-refusal caller (whose cache holds
+            # generated reply tokens PAST the record, unreachable without a rewind)
+            # and uncountable caches (cache_len None, composition unverifiable).
+            if (
+                working is None
+                and fed_ids
+                and cache_len is not None
+                and cache_len == len(fed_ids)
+                and self._token_lcp_len(fed_ids, new_ids) == len(fed_ids)
+                and len(fed_ids) < len(new_ids)
+            ):
+                working = cache_value
+                prefix_len = len(fed_ids)
             if working is None:
                 working = self._prompt_cache_backend_create()
                 prefix_len = 0
@@ -804,21 +1026,99 @@ class MLXProvider(BaseProvider):
                 return None, full_prompt, None
 
             boundary_end = max(len(new_ids) - 1, 0)  # keep ≥1 token to seed decode
-            to_prefill = new_ids[prefix_len:boundary_end]
-            if to_prefill and not self._prefill_tokens_into_cache(working, to_prefill):
+
+            # SNAPSHOT BOUNDARY (2026-08-02). Snapshotting the FULL prompt boundary
+            # makes the snapshot unusable for every agent loop whose prompt ENDS in
+            # per-call ephemeral bytes — a `[loop] iteration N of M.` tail, a
+            # fresh-timestamp `<runtime_metadata>` envelope, the generation prompt.
+            # The next turn replaces those bytes with the assistant/tool turn that
+            # actually happened, so the stored ids stop being a TRUE PREFIX, the
+            # forward-only restore above is refused, and every turn pays a full cold
+            # prefill (measured: `rebuilt`, cached=0, on 15 of 16 consecutive calls of
+            # a real coding loop). A recurrent state cannot be rewound, so the boundary
+            # must be chosen conservatively BEFORE the volatile tail.
+            #
+            # The PREVIOUS turn's recorded prompt says exactly where that is: whatever
+            # two consecutive prompts share is stable transcript, and the first
+            # divergence is where this turn's ephemeral tail begins. Snapshotting there
+            # costs nothing (the same tokens get prefilled either way — only the clone
+            # point moves) and leaves a boundary that lands one turn behind instead of
+            # nowhere. `prefix_len` is a floor: a snapshot we just restored from is
+            # already known-good, never regress below it.
+            #
+            # When the previous prompt is a TRUE PREFIX of this one there was no
+            # rewritten tail (append-only caller, or turn one off a forked prefix), so
+            # nothing is gained by holding back — keep the full boundary.
+            stable_end = boundary_end
+            if fed_ids:
+                shared = self._token_lcp_len(fed_ids, new_ids)
+                if shared < len(fed_ids):
+                    stable_end = max(prefix_len, min(shared, boundary_end))
+            if prefix_len > 0 and not restored_from_snapshot:
+                # First snapshot-lane turn on a key seeded from the LIVE cache
+                # (a bloc fork). The `shared == len(fed_ids)` test above cannot
+                # detect a volatile tail here: the record is a BLOC, and a bloc is
+                # trivially a prefix of every prompt, so "no rewritten tail" is
+                # unproven rather than true. Snapshot the seed boundary — the only
+                # content two observations agree on. Without this the very first
+                # snapshot carries this turn's ephemeral tail, the next turn's
+                # forward-only restore is refused, and turn 2 rebuilds anyway.
+                stable_end = prefix_len
+            if not fed_ids:
+                # NO record at all — turn 1 on a fresh key. The LCP holdback above
+                # has nothing to compare against, so it cannot fire, and the
+                # boundary defaults to the FULL prompt. That is wrong for one
+                # specific reason we can still name exactly: the generation
+                # scaffolding this call appended. `_build_prompt_fragment` ends the
+                # prompt with `<|im_start|>assistant\n` and, when thinking is
+                # explicitly disabled, `<think>\n\n</think>\n\n` — and the NEXT
+                # turn's transcript carries the assistant turn that actually
+                # happened there instead. A boundary containing it is a prefix of
+                # nothing, so the very next restore is refused.
+                #
+                # MEASURED (hardware, Qwen3.5-4B-MLX-4bit, 10k agent loop): turn 1
+                # snapshotted at len-1, turn 2 rebuilt a full 10,118-token prefill
+                # (5.46 s), and only turn 3 — the first turn that HAS a record, so
+                # the LCP holdback could fire — restored. The divergence was exactly
+                # 4 tokens, and `<think>\n\n</think>\n\n` tokenizes to exactly
+                # ['<think>', '\n\n', '</think>', '\n\n'] on that tokenizer.
+                #
+                # Holding those few tokens back costs a handful of fed tokens on
+                # turn 2 and removes a full cold prefill per session.
+                gen_at = self._generation_prompt_boundary(full_prompt, new_ids)
+                if gen_at is not None:
+                    stable_end = max(0, min(stable_end, gen_at))
+
+            head = new_ids[prefix_len:stable_end]
+            if head and not self._prefill_tokens_into_cache(working, head):
                 # Prefill failed: drop the (now-suspect) snapshot and take the
                 # plain fresh full feed — correct, just without snapshot savings.
                 self._drop_hybrid_snapshot(key)
                 return _fresh_full_feed()
 
-            # Snapshot the clean boundary (deepcopy) BEFORE generation mutates
-            # `working` with the seed token + reply. One snapshot per key.
-            boundary_ids = new_ids[:boundary_end]
-            snap_copy = self._prompt_cache_backend_clone(working)
-            if snap_copy is not None and boundary_ids:
-                self._store_hybrid_snapshot(key, snap_copy, boundary_ids)
-            else:
+            # Snapshot the clean boundary (deepcopy) BEFORE the tail prefill and
+            # before generation mutates `working`. One snapshot per key. The
+            # deepcopy is skipped ONLY when a snapshot we actually RESTORED from
+            # already describes this boundary. `prefix_len == 0` used to stand in
+            # for "nothing was restored"; that is wrong once the live cache can
+            # seed the lane (prefix_len > 0 with no snapshot behind it → the
+            # boundary would go unrecorded and the next turn would rebuild) and it
+            # is also wrong when a STALE, non-restorable snapshot is still present.
+            boundary_ids = new_ids[:stable_end]
+            if boundary_ids and (stable_end > prefix_len or not restored_from_snapshot):
+                snap_copy = self._prompt_cache_backend_clone(working)
+                if snap_copy is not None:
+                    self._store_hybrid_snapshot(key, snap_copy, boundary_ids)
+                else:
+                    self._drop_hybrid_snapshot(key)
+            elif not boundary_ids:
                 self._drop_hybrid_snapshot(key)
+
+            tail = new_ids[stable_end:boundary_end]
+            if tail and not self._prefill_tokens_into_cache(working, tail):
+                self._drop_hybrid_snapshot(key)
+                return _fresh_full_feed()
+            to_prefill = head + tail
 
             # Persist `working` as the live key cache (meta/TTL preserved).
             prior_meta = dict(self.prompt_cache_key_meta(key) or {})
@@ -840,17 +1140,40 @@ class MLXProvider(BaseProvider):
             fed_this_turn = len(to_prefill) + len(seed)
             if prefix_len > 0:
                 _note("hit_restore", cached=prefix_len, fed=fed_this_turn)
+            elif not fed_ids:
+                # TURN ONE ON A FRESH KEY is `cold`, not `rebuilt` (parity,
+                # 2026-08-07). There was no prior cache to discard, so `rebuilt`
+                # named a failure that did not happen — and it read as a thrashing
+                # cache on the FIRST call of every hybrid session. The GGUF lane
+                # already reported `cold` here; MLX and transformers now agree.
+                _note("cold", cached=0, fed=fed_this_turn)
             else:
                 _note("rebuilt", cached=0, fed=fed_this_turn)
             return working, seed, new_ids
 
-        # Cold EMPTY cache: if the architecture is untrimmable (hybrid/SSM —
-        # empty already reports not-trimmable), take the snapshot lane NOW so
-        # turn 1 leaves a reusable boundary for turn 2. Trimmable models keep
-        # the plain cold feed (their delta path handles warm reuse by trimming).
+        # UNTRIMMABLE ARCHITECTURE (hybrid Gated-DeltaNet / SSM): the snapshot
+        # lane is the ONLY lane that can reuse anything here, so route to it on
+        # the ARCHITECTURE, not on the fill state.
+        #
+        # This check used to live inside `if cold_empty:` alone, which made it
+        # unreachable for the shape the runtime actually uses. A session FORKED
+        # from a (system, tools) bloc chain is WARM on turn 1 and its cache
+        # exactly matches its fed-token record, so `trim_needed` is 0, the trim
+        # below never runs, the architecture is never discovered untrimmable, the
+        # turn reports `hit_extend` and stores NO snapshot. Turn 2 is then the
+        # first call that needs a trim, it is refused, and the snapshot lane finds
+        # nothing to restore: `rebuilt`, cached=0, a full cold prefill. That one
+        # rebuild is the whole gap between ~47% and ~96% steady-state reuse, and
+        # it governs every locally available model above 4B — they are all Gated
+        # DeltaNet hybrids on this lane.
+        #
+        # Trimmable models are unaffected: `_cache_is_trimmable` is architecture-
+        # determined (an empty hybrid cache already reports False), so pure
+        # attention keeps the plain cold feed and the trim-based delta path.
+        if not _is_artifact_backed() and not self._cache_is_trimmable(cache_value):
+            return _hybrid_snapshot_feed()
+
         if cold_empty:
-            if not _is_artifact_backed() and not self._cache_is_trimmable(cache_value):
-                return _hybrid_snapshot_feed()
             _note("cold", cached=0, fed=len(new_ids))
             return cache_value, full_prompt, new_ids
 
@@ -992,16 +1315,35 @@ class MLXProvider(BaseProvider):
             if tool_prompt:
                 tool_system_prompt = tool_prompt
 
+        # CANONICAL WHITESPACE. `PromptCacheModule.normalized()` strips
+        # system_prompt before it is fingerprinted AND before it is rendered
+        # into a bloc cache, and the gemma-turn and plain branches below strip
+        # too — but the ChatML branch used to render the caller's RAW string.
+        # A system prompt with any leading/trailing whitespace therefore
+        # produced one byte stream through the bloc chain (stripped) and a
+        # different one through `generate()` (raw), diverging at the FIRST
+        # token of the system text: the entire prefix cache became unreachable
+        # on the main lane. Stripping here makes the renderer canonical, so
+        # both paths agree by construction. (Not cosmetic: this is the second,
+        # independent cause of full-prefix loss, red-team find 2026-08-03.)
+        if isinstance(base_system_prompt, str):
+            base_system_prompt = base_system_prompt.strip() or None
+        if isinstance(tool_system_prompt, str):
+            tool_system_prompt = tool_system_prompt.strip() or None
+
         # ONE system turn (parity with the GGUF/transformers builders): when
         # this fragment renders BOTH the user system prompt and the tool
         # instructions, they share a single system block — chat templates are
         # trained on exactly one system turn, and a second consecutive block
         # is out-of-distribution (degraded tool-calling, live find on
-        # Ornith-1.0-35B, 2026-07-15). When the system module is already
-        # prefilled in the KV cache, its block is closed and cannot be
-        # reopened, so the tool prompt still enters as its own block below —
-        # module-chain appends carry system and tools in separate calls, so
-        # their rendered bytes are unchanged by this merge.
+        # Ornith-1.0-35B, 2026-07-15).
+        #
+        # NOTE `prefilled_modules` (the `"system" not in prefilled` guards) is a
+        # legacy escape hatch that CANNOT express a mid-turn continuation: it
+        # skips the system block and then reopens a second one for the tools.
+        # Bloc chains no longer use it — `BaseProvider.prompt_cache_plan_bloc_chain`
+        # cuts one cumulative render instead. See
+        # tests/providers/test_mlx_single_system_block_unit.py.
         if base_system_prompt and "system" not in prefilled and tool_system_prompt:
             base_system_prompt = f"{base_system_prompt}\n\n{tool_system_prompt}"
             tool_system_prompt = None
@@ -1118,31 +1460,83 @@ class MLXProvider(BaseProvider):
         add_generation_prompt: bool = False,
         **kwargs,
     ) -> bool:
-        _ = kwargs
         if cache_value is None:
             return False
 
         existing_tokens = self._prompt_cache_backend_token_count(cache_value)
-        fragment = self._build_prompt_fragment(
-            prompt=str(prompt or ""),
-            messages=messages,
-            system_prompt=system_prompt,
-            tools=tools,
-            add_generation_prompt=bool(add_generation_prompt),
-            enable_thinking=kwargs.get("_acore_mlx_enable_thinking"),
-            include_bos=not (isinstance(existing_tokens, int) and int(existing_tokens) > 0),
-        )
+
+        # PLANNED BLOC CUT (bloc composability, see base.py). When the caller is
+        # `prompt_cache_prepare_modules` it has already rendered the WHOLE
+        # conversation through this provider's own `generate()` renderer and cut
+        # it at successor-independent token boundaries. Those ids are fed
+        # verbatim: re-rendering this module standalone is exactly the defect
+        # that made a two-bloc chain emit two consecutive `<|im_start|>system`
+        # blocks and stranded everything past the first bloc.
+        planned = kwargs.get("bloc_token_ids")
+        fragment_ids: Optional[List[int]] = None
+        if isinstance(planned, (list, tuple)):
+            try:
+                fragment_ids = [int(t) for t in planned]
+            except Exception:
+                fragment_ids = None
+
+        fragment: Optional[str] = None
+        if fragment_ids is None:
+            fragment = self._build_prompt_fragment(
+                prompt=str(prompt or ""),
+                messages=messages,
+                system_prompt=system_prompt,
+                tools=tools,
+                add_generation_prompt=bool(add_generation_prompt),
+                enable_thinking=kwargs.get("_acore_mlx_enable_thinking"),
+                include_bos=not (isinstance(existing_tokens, int) and int(existing_tokens) > 0),
+            )
+            fragment_ids = self._encode_prompt_token_ids(fragment) if fragment else None
+
         # Stash for prompt_cache_update's fed-token-id bookkeeping (delta feed,
         # B2): the base method that calls us knows the KEY; we know the exact
-        # fragment bytes that were fed. Locked: prepare_modules (base loop)
-        # and prompt_cache_update can race on this instance-level stash from
+        # tokens that were fed. Locked: prepare_modules (base loop) and
+        # prompt_cache_update can race on this instance-level stash from
         # different threads — an unlocked write here cross-pollinates records
-        # across keys (adversarial find 2026-07-13).
+        # across keys (adversarial find 2026-07-13). The ID stash is what the
+        # record actually uses; the text stash stays for the legacy lane.
         with self._append_stash_lock:
             self._pending_append_fragment = fragment or None
+            self._pending_append_fragment_ids = list(fragment_ids) if fragment_ids else None
             self._pending_append_precount = int(existing_tokens or 0)
-        if not fragment:
+        if not fragment_ids:
             return True
+
+        # EXACT-BOUNDARY PREFILL (prompt-cache record truth, 2026-08-02).
+        #
+        # `generate_step(max_tokens=0)` runs the whole prefill (the chunked loop
+        # plus the final single-token `_step`) and stops BEFORE yielding, so the
+        # cache lands exactly on the fragment boundary with nothing to trim.
+        # The legacy lane below samples one token, and mlx_lm feeds that sampled
+        # token back into the cache on the next `_step` — hence the `trim(1)`.
+        # That trim is a SILENT NO-OP on untrimmable architectures (hybrid
+        # linear-attention / SSM: an `ArraysCache` layer reports
+        # `is_trimmable() == False`, so mlx_lm returns 0 WITHOUT raising and the
+        # `except` below never fires). The cache then sits exactly ONE token
+        # ahead of the fragment it claims to hold, `_prompt_cache_append_record_meta`'s
+        # precount guard correctly refuses to describe it, the module chain's
+        # final prefix cache carries NO `fed_token_ids`, and every session forked
+        # from it degrades to "warm cache of unknown token composition; rebuilt
+        # fresh" — a full cold prefill on EVERY turn. Same token ids, one fewer
+        # forward pass.
+        if self._prefill_tokens_into_cache(cache_value, fragment_ids):
+            return True
+
+        if fragment is None:
+            # A planned bloc cut has no standalone text form (it is a slice of
+            # the whole conversation), so the token-sampling fallback below —
+            # which takes a STRING — cannot express it. Refusing here keeps the
+            # cache honest; `prepare_modules` reports the failure.
+            self.logger.warning(
+                "#FALLBACK MLX prompt cache: exact-boundary prefill unavailable for a planned "
+                "bloc fragment; module preparation cannot proceed on this backend."
+            )
+            return False
 
         try:
             from mlx_lm.models.cache import trim_prompt_cache
@@ -1201,8 +1595,10 @@ class MLXProvider(BaseProvider):
         """
         with self._append_stash_lock:
             fragment = self._pending_append_fragment
+            stashed_ids = self._pending_append_fragment_ids
             precount = int(self._pending_append_precount or 0)
             self._pending_append_fragment = None
+            self._pending_append_fragment_ids = None
             self._pending_append_precount = 0
 
         prior_ids_raw = (prior_meta or {}).get(self._FED_TOKEN_IDS_META)
@@ -1215,11 +1611,14 @@ class MLXProvider(BaseProvider):
 
         if precount > 0 and (prior_ids is None or len(prior_ids) != precount):
             return None  # unknown or stale head: refuse to describe it
-        if not fragment:
-            return {self._FED_TOKEN_IDS_META: list(prior_ids)} if prior_ids else None
-        fragment_ids = self._encode_prompt_token_ids(fragment) or []
+        # The ID stash is authoritative — a planned bloc fragment is a token
+        # slice, and re-encoding its text (if it even has one) is not the same
+        # operation.
+        fragment_ids = list(stashed_ids or [])
+        if not fragment_ids and fragment:
+            fragment_ids = self._encode_prompt_token_ids(fragment) or []
         if not fragment_ids:
-            return None
+            return {self._FED_TOKEN_IDS_META: list(prior_ids)} if prior_ids else None
         return {self._FED_TOKEN_IDS_META: (prior_ids or []) + fragment_ids}
 
     def prompt_cache_update(self, key: str, **kwargs) -> bool:
@@ -1233,13 +1632,16 @@ class MLXProvider(BaseProvider):
         """
         with self._append_stash_lock:
             self._pending_append_fragment = None
+            self._pending_append_fragment_ids = None
             self._pending_append_precount = 0
             ok = super().prompt_cache_update(key, **kwargs)
             fragment = self._pending_append_fragment
+            stashed_ids = self._pending_append_fragment_ids
             precount = int(self._pending_append_precount or 0)
             self._pending_append_fragment = None
+            self._pending_append_fragment_ids = None
             self._pending_append_precount = 0
-        if not ok or not fragment:
+        if not ok or not (fragment or stashed_ids):
             return ok
         normalized = self._normalize_prompt_cache_key(key)
         if normalized is None:
@@ -1254,7 +1656,9 @@ class MLXProvider(BaseProvider):
             # actually holds `prior + gap + fragment` (adversarial find P1-3).
             # The old record stands — still a true prefix, still trimmable-to.
             return ok
-        fragment_ids = self._encode_prompt_token_ids(fragment) or []
+        fragment_ids = list(stashed_ids or [])
+        if not fragment_ids and fragment:
+            fragment_ids = self._encode_prompt_token_ids(fragment) or []
         if fragment_ids:
             self._record_fed_token_ids(normalized, (prior_ids or []) + fragment_ids)
         return ok
@@ -1584,6 +1988,12 @@ class MLXProvider(BaseProvider):
             "loaded_from": str(filename),
         }
         store_meta.update(meta_dict)
+        # A loaded artifact IS the artifact, whatever its saved meta happens to
+        # say. If the cache was forked before it was saved, `forked_from` rode
+        # along into the file — and `_is_artifact_backed` reads that field to tell
+        # a private copy from the real thing, so leaving it here would strip this
+        # key of the protection it genuinely needs.
+        store_meta.pop("forked_from", None)
         live_count: Optional[int] = None
         try:
             tok = self._prompt_cache_backend_token_count(loaded_cache)

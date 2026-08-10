@@ -393,6 +393,33 @@ Note for anyone replaying a request at raw HTTP (outside `generate()`): the
 flat spec must be wrapped into the provider envelope by hand — the
 normalization lives inside AbstractCore, not on the wire.
 
+### Metadata Limits, and What Happens When You Exceed Them
+
+Tool metadata is capped so the tool block stays a short, cacheable prefix:
+
+| Field | Limit |
+|---|---|
+| `description` | 200 characters |
+| `when_to_use` | 240 characters |
+| `examples` | 3 |
+
+A tool that exceeds a limit — or that arrives in a shape AbstractCore does not
+recognize — is **dropped from the request**, per tool. The others still go
+through. Since 2026-08-07 every drop raises a `RuntimeWarning` naming the tool,
+the model and the reason, on the prompted lane and the native (wire) lane alike:
+
+```
+RuntimeWarning: Tool 'write_file' was DROPPED and will not be sent to the model
+(mlx-community/Qwen3-4B-Instruct-2507-4bit): Tool 'write_file': description is
+too long (257 chars; max 200) ...
+```
+
+Before that it was logged only, and `abstractcore.*` loggers are silent by
+default — so an over-long description removed a capability from the model with
+no output anywhere. If you see this warning, shorten the description and move the
+detail into `when_to_use` or your own docs. Do not ignore it: the model cannot
+call a tool it never sees.
+
 ### Parameter Types
 
 Supported parameter types:

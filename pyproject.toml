@@ -227,11 +227,11 @@ pdf-pymupdf-commercial = [
 ]
 
 voice = [
-    "abstractvoice>=0.10.18",
+    "abstractvoice>=0.11.0",
 ]
 
 audio = [
-    "abstractvoice>=0.10.18",
+    "abstractvoice>=0.11.0",
 ]
 
 compression = [
@@ -276,9 +276,9 @@ all = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.10.18",
+    "abstractvoice>=0.11.0",
     "omnivoice>=0.1.5",
-    "abstractmusic>=0.1.13",
+    "abstractmusic>=0.1.15",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
@@ -318,9 +318,9 @@ all-apple = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice[all-apple]>=0.10.18",
+    "abstractvoice[all-apple]>=0.11.0",
     "omnivoice>=0.1.5",
-    "abstractmusic[all-apple]>=0.1.13",
+    "abstractmusic[all-apple]>=0.1.15",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
@@ -356,9 +356,9 @@ all-gpu = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice[all-gpu]>=0.10.18",
+    "abstractvoice[all-gpu]>=0.11.0",
     "omnivoice>=0.1.5",
-    "abstractmusic[all-gpu]>=0.1.13",
+    "abstractmusic[all-gpu]>=0.1.15",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
@@ -395,9 +395,9 @@ all-non-mlx = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.10.18",
+    "abstractvoice>=0.11.0",
     "omnivoice>=0.1.5",
-    "abstractmusic>=0.1.13",
+    "abstractmusic>=0.1.15",
     # Server
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
@@ -448,7 +448,7 @@ vision-local = [
 ]
 
 music = [
-    "abstractmusic>=0.1.13",
+    "abstractmusic>=0.1.15",
 ]
 
 scene3d = [
@@ -521,9 +521,9 @@ full-dev = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.10.18",
+    "abstractvoice>=0.11.0",
     "omnivoice>=0.1.5",
-    "abstractmusic>=0.1.13",
+    "abstractmusic>=0.1.15",
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",

@@ -700,7 +700,17 @@ def get_context_limits(model_name: str) -> Dict[str, int]:
     """Get context and output token limits."""
     capabilities = get_model_capabilities(model_name)
     max_tokens = capabilities.get("max_tokens") or 16384
-    max_output_tokens = capabilities.get("max_output_tokens") or 4096
+    raw_output = capabilities.get("max_output_tokens")
+    if raw_output is None:
+        # A registry entry with `"max_output_tokens": null` means "the vendor
+        # publishes no separate completion cap" (e.g. grok-4, lfm2.5-8b-a1b) —
+        # it does NOT mean "cap at 4096". Inventing a small bound here silently
+        # truncated every request to such a model on providers that require an
+        # output bound (Anthropic/Ollama/LM Studio/MLX send this value).
+        # Output shares the context window, so the honest ceiling is that window.
+        max_output_tokens = int(max_tokens)
+    else:
+        max_output_tokens = int(raw_output) or 4096
     return {
         "max_tokens": int(max_tokens),  # Total context window
         "max_output_tokens": int(max_output_tokens)  # Runtime default when hard cap is unpublished

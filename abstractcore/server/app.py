@@ -5357,6 +5357,39 @@ def _normalize_control_plane_base_url(base_url: str) -> str:
     return u.rstrip("/")
 
 
+# #[WARNING:TIMEOUT] Control-plane proxy budget, 7200s (ADR-0027 §2/§4).
+# It was a hidden 30.0s default. `/acore/prompt_cache/set` and `/update` do
+# not "read a status field": they make the upstream endpoint PREFILL the
+# cache, i.e. run full prompt processing over a context that can be hundreds
+# of thousands of tokens. On a local server that is minutes, so a 30s bound
+# aborted healthy cache preparation and returned `{"supported": false,
+# "error": "<bare httpx text>"}` — a silent timeout under ADR-0027 §1 (no
+# duration, no component, no knob). Override with
+# ABSTRACTCORE_SERVER_CONTROL_PLANE_TIMEOUT_S (`0` = no client timeout).
+def _control_plane_proxy_timeout_s() -> float:
+    raw = os.getenv("ABSTRACTCORE_SERVER_CONTROL_PLANE_TIMEOUT_S")
+    if raw is None or not str(raw).strip():
+        return 7200.0
+    try:
+        return float(str(raw).strip())
+    except (TypeError, ValueError):
+        return 7200.0
+
+
+def _control_plane_timeout_error(
+    exc: Exception, *, url: str, timeout_s: Optional[float], component: str
+) -> Optional[str]:
+    """ADR-0027 §1 text for a proxy abort, or None if `exc` is not a timeout."""
+    name = (getattr(exc.__class__, "__name__", "") or "").lower()
+    if "timeout" not in name and "timed out" not in str(exc).lower():
+        return None
+    return (
+        f"#[WARNING:TIMEOUT] {component} timed out after {timeout_s}s calling {url} "
+        "(configure via ABSTRACTCORE_SERVER_CONTROL_PLANE_TIMEOUT_S; 0 = no client "
+        f"timeout): {exc}"
+    )
+
+
 def _proxy_prompt_cache_request(
     *,
     http_request: Optional[Request] = None,
@@ -5365,7 +5398,7 @@ def _proxy_prompt_cache_request(
     method: str,
     path: str,
     json_body: Optional[Dict[str, Any]] = None,
-    timeout_s: float = 30.0,
+    timeout_s: Optional[float] = None,  # #[WARNING:TIMEOUT] None → _control_plane_proxy_timeout_s()
 ) -> Dict[str, Any]:
     if not isinstance(base_url, str) or not base_url.strip():
         return {
@@ -5393,14 +5426,22 @@ def _proxy_prompt_cache_request(
     if upstream_api_key:
         headers["Authorization"] = f"Bearer {upstream_api_key}"
 
+    # #[WARNING:TIMEOUT] see _control_plane_proxy_timeout_s (ADR-0027 §1/§2).
+    eff_timeout = _control_plane_proxy_timeout_s() if timeout_s is None else float(timeout_s)
+    if eff_timeout <= 0:
+        eff_timeout = None  # explicit "no client timeout"
     try:
-        with httpx.Client(timeout=timeout_s) as client:
+        with httpx.Client(timeout=eff_timeout) as client:
             if method.upper() == "GET":
                 resp = client.get(url, headers=headers)
             else:
                 resp = client.post(url, headers=headers, json=json_body or {})
     except Exception as e:
-        return {"supported": False, "error": str(e)}
+        named = _control_plane_timeout_error(
+            e, url=url, timeout_s=eff_timeout,
+            component="abstractcore.server._proxy_prompt_cache_request",
+        )
+        return {"supported": False, "error": named or str(e)}
 
     try:
         payload = resp.json()
@@ -5429,7 +5470,7 @@ def _proxy_endpoint_control_request(
     path: str,
     json_body: Optional[Dict[str, Any]] = None,
     query_params: Optional[Dict[str, Any]] = None,
-    timeout_s: float = 30.0,
+    timeout_s: Optional[float] = None,  # #[WARNING:TIMEOUT] None → _control_plane_proxy_timeout_s()
 ) -> Any:
     if not isinstance(base_url, str) or not base_url.strip():
         return JSONResponse(
@@ -5462,14 +5503,22 @@ def _proxy_endpoint_control_request(
 
     params = {k: v for k, v in (query_params or {}).items() if v is not None}
 
+    # #[WARNING:TIMEOUT] see _control_plane_proxy_timeout_s (ADR-0027 §1/§2).
+    eff_timeout = _control_plane_proxy_timeout_s() if timeout_s is None else float(timeout_s)
+    if eff_timeout <= 0:
+        eff_timeout = None  # explicit "no client timeout"
     try:
-        with httpx.Client(timeout=timeout_s) as client:
+        with httpx.Client(timeout=eff_timeout) as client:
             if method.upper() == "GET":
                 resp = client.get(url, headers=headers, params=params)
             else:
                 resp = client.post(url, headers=headers, params=params, json=json_body or {})
     except Exception as e:
-        return JSONResponse(status_code=502, content={"ok": False, "error": str(e)})
+        named = _control_plane_timeout_error(
+            e, url=url, timeout_s=eff_timeout,
+            component="abstractcore.server._proxy_endpoint_control_request",
+        )
+        return JSONResponse(status_code=502, content={"ok": False, "error": named or str(e)})
 
     try:
         payload = resp.json()
@@ -6844,6 +6893,31 @@ def list_music_models(
         }
     except Exception as e:
         return _capability_error_response(e, operation="music_models")
+
+
+@app.get(
+    "/v1/audio/music/provider-details",
+    tags=["audio"],
+    summary="List Music Provider Details",
+    description=(
+        "List every known music provider with whether it is usable now and, when it is not, "
+        "the reason — a missing API key, an uninstalled extra, or weights that have not been "
+        "downloaded. `/v1/audio/music/providers` lists only runnable providers; this route "
+        "explains the rest. Requires abstractmusic >= 0.1.14."
+    ),
+)
+def list_music_provider_details(task: Optional[str] = Query("text_to_music", description="Optional music task filter.")):
+    registry = _server_capability_registry()
+    try:
+        return {
+            "ok": True,
+            "operation": "music_provider_details",
+            "capability": "music",
+            "task": task,
+            "provider_details": registry.music.provider_details(task=task),
+        }
+    except Exception as e:
+        return _capability_error_response(e, operation="music_provider_details")
 
 
 def _model_reasoning_discovery(model_name: str) -> Optional[Dict[str, Any]]:

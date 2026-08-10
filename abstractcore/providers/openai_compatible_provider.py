@@ -12,6 +12,7 @@ Supports any server implementing the OpenAI API format:
 """
 
 import os
+import warnings
 import httpx
 import json
 import re
@@ -205,21 +206,37 @@ class OpenAICompatibleProvider(BaseProvider):
         if self._validate_model_on_init:
             self._validate_model()
 
-    def _httpx_timeout(self):
+    # #[WARNING:TIMEOUT] — ADR-0027 §4 (tagged), ADR-0014 (runtime authority).
+    def _httpx_timeout(self, *, streaming: bool = False):
         """Build the httpx timeout: total budget on connect/write/pool, and a
-        distinct READ-IDLE bound on read (face 2, runtime c5041).
+        distinct READ-IDLE bound on read for STREAMING requests only.
 
         httpx's `read` timeout is the max seconds to wait for the NEXT chunk of
-        the response body — exactly the no-progress bound. Passing a single
-        float set read == the 7200s total, so a stalled stream held a worker
-        for 2h; here `read` is `_read_idle_timeout` when set (a stalled stream
-        aborts at the socket), else falls back to the total (byte-unchanged for
-        consumers that did not opt in). None total stays unlimited.
+        the response body. On a STREAM that is exactly the no-progress bound
+        (face 2, runtime c5041): passing a single float set read == the 7200s
+        total, so a stalled stream held a worker for 2h.
+
+        On a NON-STREAMING request (`stream: false`) there is no "next chunk" —
+        the body only starts arriving once generation has fully finished — so
+        `read` degenerates into a cap on the ENTIRE generation. The runtime's
+        300s read-idle default therefore silently aborted every local tool call
+        that took longer than 5 minutes (2026-08-02 LM Studio incident: server
+        logged `Client disconnected. Stopping generation...` at exactly +300.0s
+        and dropped the half-written tool call), below the authoritative 7200s
+        budget ADR-0014 assigns to the runtime — the silent low timeout
+        ADR-0027 §1/§2 forbids.
+
+        So: `streaming=False` (the default, and what the shared client uses)
+        puts the authoritative total on `read`; `streaming=True` is passed
+        per-request at the `client.stream()` call sites, where the read-idle
+        bound is real. None total stays unlimited.
         """
         from ._http import build_read_idle_timeout
 
         return build_read_idle_timeout(
-            getattr(self, "_timeout", None), getattr(self, "_read_idle_timeout", None)
+            getattr(self, "_timeout", None),
+            getattr(self, "_read_idle_timeout", None),
+            streaming=streaming,
         )
 
     @property
@@ -297,6 +314,21 @@ class OpenAICompatibleProvider(BaseProvider):
         - `extra_body`: vLLM and other servers
         - `chat_template_kwargs`: llama.cpp/LM Studio style servers
         """
+        # `reasoning_effort` — PART 2 of the thinking fix, and the load-bearing half.
+        #
+        # Patching only `_apply_provider_thinking_kwargs` (above) is INERT, which was
+        # verified on the wire rather than assumed: both payload builders compose from an
+        # explicit allowlist (model/messages/stream/temperature/top_p/...), so a kwarg the
+        # hook sets is never copied through. With Part 1 alone the request still left
+        # without the field and upstream still received `reasoning: null`.
+        #
+        # This hook is the single correct place: it is called by BOTH payload builders,
+        # so one line covers the sync and streaming paths. Adding it to the two allowlists
+        # separately would work and would duplicate the logic.
+        reasoning_effort = kwargs.get("reasoning_effort")
+        if isinstance(reasoning_effort, str) and reasoning_effort:
+            payload["reasoning_effort"] = reasoning_effort
+
         extra_body = kwargs.get("extra_body")
         if isinstance(extra_body, dict) and extra_body:
             existing = payload.get("extra_body")
@@ -388,6 +420,60 @@ class OpenAICompatibleProvider(BaseProvider):
         # Which chat-template variables a model's template understands is model knowledge and
         # lives in the registries; this hook only owns the transport (how the kwargs are sent).
         surfaces = self._thinking_control_surfaces()
+
+        # OpenAI-standard `reasoning_effort`, for models that declare reasoning levels but
+        # NO chat-template surface.
+        #
+        # WHY THIS EXISTS. Without it this hook fell straight through to the final
+        # `return kwargs, ThinkingControlHandling()` and the requested effort was
+        # discarded. gpt-5.4 is exactly that shape: `model_capabilities.json` gives it
+        # `reasoning_levels: [none, low, medium, high, xhigh]` and `thinking_support:
+        # true`, but no `thinking_control` block, and architecture `gpt` supplies none
+        # either — so `surfaces` is all-None and nothing below matched.
+        #
+        # MEASURED CONSEQUENCE: a 24-cell cross-client benchmark ran five of eight arms
+        # with reasoning OFF while every layer above reported medium. The gateway stored
+        # `_runtime.thinking = "medium"`, the run store reported the route as verified,
+        # and the relay received no `reasoning_effort` at all — its own default for
+        # gpt-5.4 being "none". Across 9,021 requests in the relay's history carrying
+        # this provider's user-agent, exactly zero ever sent the field.
+        #
+        # `reasoning_effort` is part of the OpenAI Chat Completions API, not a hosted-
+        # endpoint extension, so any OpenAI-compatible relay fronting a reasoning model
+        # was losing effort control. `openai_provider.py:97-149` already implements this
+        # mapping; the two providers simply disagreed.
+        #
+        # Gated on there being NO template surface so that models which DO declare one
+        # keep their existing path byte-for-byte: this only fills the gap where the hook
+        # previously returned empty-handed. Gated on declared `reasoning_levels` so a
+        # strict third-party server never receives a field its model never advertised.
+        if not surfaces.template_kwarg and not surfaces.budget_template_kwarg:
+            reasoning_levels = self._model_reasoning_levels()
+            if reasoning_levels:
+                effort: Optional[str] = None
+                if level is not None:
+                    effort = level
+                elif enabled is False:
+                    if "none" in reasoning_levels:
+                        effort = "none"
+                    else:
+                        effort = next(
+                            (x for x in ("minimal", "low", "medium", "high", "xhigh")
+                             if x in reasoning_levels), None)
+                        if effort:
+                            warnings.warn(
+                                f"thinking='off' requested for model '{self.model}', but "
+                                f"reasoning_effort cannot be fully disabled (supported: "
+                                f"{reasoning_levels}); using reasoning_effort={effort!r}.",
+                                RuntimeWarning, stacklevel=3)
+                elif enabled is True:
+                    effort = next((x for x in ("medium", "high", "low")
+                                   if x in reasoning_levels), None)
+                if effort:
+                    new_kwargs = dict(kwargs)
+                    new_kwargs["reasoning_effort"] = effort
+                    return new_kwargs, ThinkingControlHandling(
+                        handled_enable_disable=True, handled_level=True)
 
         # Boolean template switch (e.g. Qwen3/Nemotron/Gemma-4 `enable_thinking`).
         #
@@ -1193,11 +1279,16 @@ class OpenAICompatibleProvider(BaseProvider):
         """Generate streaming response"""
         request_url = f"{self.base_url}/chat/completions"
 
+        # #[WARNING:TIMEOUT] — the READ-IDLE (no-progress) bound is stream-only and
+        # is opted into HERE, per request (ADR-0027 §4; ADR-0014 keeps the total
+        # authoritative on connect/write/pool). The shared client deliberately
+        # carries read == total so non-streaming generations are never capped.
         with self.client.stream(
             "POST",
             request_url,
             json=payload,
-            headers=self._get_headers()
+            headers=self._get_headers(),
+            timeout=self._httpx_timeout(streaming=True),
         ) as response:
             status0 = getattr(response, "status_code", None)
             if status0 is not None and int(status0) >= 400:
@@ -1602,11 +1693,14 @@ class OpenAICompatibleProvider(BaseProvider):
         """Native async streaming response generation."""
         request_url = f"{self.base_url}/chat/completions"
 
+        # #[WARNING:TIMEOUT] — stream-only read-idle bound, opted in per request
+        # (see _stream_generate above; ADR-0027 §4, ADR-0014).
         async with self.async_client.stream(
             "POST",
             request_url,
             json=payload,
-            headers=self._get_headers()
+            headers=self._get_headers(),
+            timeout=self._httpx_timeout(streaming=True),
         ) as response:
             status0 = getattr(response, "status_code", None)
             if status0 is not None and int(status0) >= 400:
@@ -1747,8 +1841,10 @@ class OpenAICompatibleProvider(BaseProvider):
         """Update HTTP client timeout when timeout is changed."""
         if hasattr(self, 'client') and self.client is not None:
             try:
-                # Create new client with updated timeout (total budget + the
-                # read-idle bound, face 2).
+                # #[WARNING:TIMEOUT] — rebuilt with the authoritative total on every
+                # field (ADR-0014). The read-idle bound is NOT applied here: it is
+                # stream-only and opted into per request (ADR-0027 §2 — a client-level
+                # read-idle silently capped non-streaming generations at 300s).
                 self.client.close()
                 self.client = httpx.Client(timeout=self._httpx_timeout())
             except Exception as e:
