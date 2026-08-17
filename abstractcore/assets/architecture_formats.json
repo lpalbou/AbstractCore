@@ -357,6 +357,49 @@
         "qwen/qwen3.6-"
       ]
     },
+    "qwen3_8": {
+      "description": "Alibaba's Qwen3.8 multimodal reasoning architecture family, built on the Qwen3.5 hybrid (Gated DeltaNet + Gated Attention) foundation with reasoning_effort control (August 2026)",
+      "message_format": "im_start_end",
+      "system_prefix": "<|im_start|>system\n",
+      "system_suffix": "<|im_end|>\n",
+      "user_prefix": "<|im_start|>user\n",
+      "user_suffix": "<|im_end|>\n",
+      "assistant_prefix": "<|im_start|>assistant\n",
+      "assistant_suffix": "<|im_end|>\n",
+      "output_wrappers": {
+        "end": "<|im_end|>"
+      },
+      "tool_format": "xml",
+      "tool_prefix": "<tool_call>",
+      "tool_calling_format": "qwen3_coder",
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "thinking_control": {
+        "template_kwarg": "enable_thinking",
+        "assistant_prefill_disable": "<think>\n\n</think>\n\n",
+        "request_param": "reasoning_effort"
+      },
+      "reasoning_support": true,
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "xhigh"
+      ],
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20
+      },
+      "patterns": [
+        "qwen3.8-",
+        "qwen3.8:",
+        "qwen3_8-",
+        "qwen3_8:",
+        "qwen/qwen3.8-"
+      ]
+    },
     "omnicoder": {
       "description": "Tesslate OmniCoder chat template on top of Qwen3.5 with XML tool calls",
       "message_format": "im_start_end",

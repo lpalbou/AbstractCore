@@ -4432,6 +4432,124 @@
         ]
       }
     },
+    "qwen3.8-27b": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "thinking_support": true,
+      "thinking_control": { "template_kwarg": "enable_thinking" },
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "xhigh"
+      ],
+      "architecture": "qwen3_8",
+      "total_parameters": "27B",
+      "transformer_layers": 64,
+      "vision_encoder": "Qwen3.8 vision encoder",
+      "image_resolutions": [
+        "variable"
+      ],
+      "notes": "Qwen3.8-27B dense multimodal reasoning model: 64 layers on the Qwen3.5 hybrid foundation (3x Gated DeltaNet + 1x Gated Attention per block, HF model_type 'qwen3_5'), native image and video input, 262,144-token native context extensible to 1,000,000 via YaRN (factor 4.0). Thinking is ON by default and is disabled per request with chat_template_kwargs enable_thinking=false; depth is tuned with reasoning_effort (xhigh default, medium, low) and prior reasoning is retained via preserve_thinking (on by default). Tool calls use the Qwen3-Coder XML convention (<tool_call><function=name><parameter=key> blocks), which the chat template teaches directly. max_output_tokens records the card's FINAL-response budget (131,072); the card additionally recommends up to 262,144 tokens for reasoning content on frameworks that cap reasoning separately, a split that only fits once the context is YaRN-extended toward 1M.",
+      "source": "Hugging Face model card, config.json (max_position_embeddings=262144) and chat_template.jinja (Qwen/Qwen3.8-27B, accessed 2026-08-14)",
+      "canonical_name": "qwen3.8-27b",
+      "aliases": [
+        "Qwen/Qwen3.8-27B",
+        "qwen3.8:27b",
+        "unsloth/Qwen3.8-27B",
+        "unsloth/Qwen3.8-27B-GGUF",
+        "lmstudio-community/Qwen3.8-27B-GGUF",
+        "lmstudio-community/Qwen3.8-27B-MLX-4bit",
+        "ggml-org/Qwen3.8-27B-GGUF",
+        "bartowski/Qwen3.8-27B-GGUF",
+        "mlx-community/Qwen3.8-27B-4bit",
+        "mlx-community/Qwen3.8-27B-8bit",
+        "mlx-community/Qwen3.8-27B-bf16"
+      ],
+      "max_tokens": 262144,
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "native",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20
+      }
+    },
+    "qwen3.8-27b-fp8": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "thinking_support": true,
+      "thinking_control": { "template_kwarg": "enable_thinking" },
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "xhigh"
+      ],
+      "architecture": "qwen3_8",
+      "total_parameters": "27B",
+      "transformer_layers": 64,
+      "tensor_type": "FP8",
+      "quantization_method": "FP8",
+      "vision_encoder": "Qwen3.8 vision encoder",
+      "image_resolutions": [
+        "variable"
+      ],
+      "notes": "FP8-quantized Qwen3.8-27B checkpoint with the same 262,144-token native context, image/video input, thinking behavior (enable_thinking, reasoning_effort xhigh/medium/low, preserve_thinking) and output budgets as the BF16 release.",
+      "source": "Hugging Face model card and config (Qwen/Qwen3.8-27B-FP8, accessed 2026-08-14)",
+      "canonical_name": "qwen3.8-27b-fp8",
+      "aliases": [
+        "Qwen/Qwen3.8-27B-FP8",
+        "qwen3.8:27b-fp8",
+        "unsloth/Qwen3.8-27B-FP8"
+      ],
+      "max_tokens": 262144,
+      "license": "Apache-2.0",
+      "max_tools": -1,
+      "video_input_mode": "native",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20
+      }
+    },
     "qwen3-omni-30b-a3b-instruct": {
       "max_output_tokens": 16384,
       "tool_support": "none",
