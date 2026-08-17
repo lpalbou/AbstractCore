@@ -216,6 +216,23 @@ def test_expect_text_missing_fails(tmp_path):
     out = browser_probe(str(page), expect_text="Game Over", timeout_s=3)
     assert out.startswith("Browser probe: FAIL")
     assert "'Game Over'" in out
+    assert "visible DOM text" in out
+
+
+@needs_browser
+def test_expect_text_miss_on_canvas_page_teaches_visual_verification(tmp_path):
+    page = tmp_path / "canvas_text_probe.html"
+    page.write_text(
+        "<html><body style='margin:0'><canvas id='c' width='400' height='300'></canvas>"
+        "<script>const c=document.getElementById('c').getContext('2d');"
+        "c.fillRect(0,0,400,300);c.fillText('Game Over',20,40);</script>"
+        "</body></html>"
+    )
+    out = browser_probe(str(page), expect_text="Game Over", timeout_s=4)
+    assert out.startswith("Browser probe: FAIL")
+    assert "not found in visible DOM text within budget" in out
+    assert "`expect_text` checks visible DOM text only" in out
+    assert "switch to `expect_selector` or screenshot/visual verification" in out
 
 
 @needs_browser

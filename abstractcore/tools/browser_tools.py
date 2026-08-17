@@ -415,7 +415,12 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
                     )
                 except PWTimeout:
                     result["checks"].append(
-                        {"name": f"text {shown!r} present", "ok": False, "detail": "not found in visible text within budget", "elapsed_s": round(time.monotonic() - t0, 2)}
+                        {
+                            "name": f"text {shown!r} present",
+                            "ok": False,
+                            "detail": "not found in visible DOM text within budget",
+                            "elapsed_s": round(time.monotonic() - t0, 2),
+                        }
                     )
                 except PWError as e:
                     result["checks"].append(
@@ -618,6 +623,9 @@ def _format_report(res: Dict[str, Any], *, timeout_s: float) -> str:
     # to a text scan for pre-flag results.
     local_cors = bool(res.get("local_cors_detected")) or _local_file_cors_blocked(is_local, console_errors, page_errors)
     nonblank_failed = any(c.get("name") == "nonblank" and not c.get("ok") for c in checks)
+    text_failed = any(str(c.get("name") or "").startswith("text ") and not c.get("ok") for c in checks)
+    visual_elements = res.get("visual_elements")
+    has_visual_elements = isinstance(visual_elements, int) and visual_elements > 0
 
     lines: List[str] = []
     verdict = "PASS" if ok else "FAIL"
@@ -710,6 +718,14 @@ def _format_report(res: Dict[str, Any], *, timeout_s: float) -> str:
             detail = f" — {c['detail']}" if c.get("detail") else ""
             elapsed = f" ({c['elapsed_s']}s)" if c.get("elapsed_s") is not None else ""
             lines.append(f"  {mark} {c['name']}{detail}{elapsed}")
+
+    if text_failed and has_visual_elements and not nonblank_failed and not local_cors:
+        lines.append(
+            "\nNote: `expect_text` checks visible DOM text only; it does not read pixels drawn inside "
+            "canvas/WebGL/images. This page rendered nonblank and includes visual elements, so if the "
+            "expected content is drawn rather than DOM text, switch to `expect_selector` or screenshot/"
+            "visual verification instead of retrying the same text probe."
+        )
 
     # P0: the blank was almost certainly a file:// limitation, not the code.
     if local_cors and nonblank_failed:
@@ -804,7 +820,10 @@ def browser_probe(
             (canvas/svg/img/video) appear within the budget (default: True).
             Sees the TOP frame only — iframe-hosted content is not inspected.
         expect_selector: Optional CSS selector that must become VISIBLE.
-        expect_text: Optional text that must appear in the page's visible text.
+        expect_text: Optional text that must appear in the page's visible DOM
+            text. It does NOT read pixels drawn inside canvas/WebGL/images, so
+            canvas-heavy pages may need selector- or screenshot-based
+            verification instead.
         timeout_s: Total wall-clock budget shared by navigation and all
             checks (default 20, clamped 1..120). The probe never hangs: the
             worker is killed at budget + fixed launch grace.
