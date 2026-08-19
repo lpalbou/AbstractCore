@@ -107,7 +107,13 @@ the architecture entry.
   "assistant_prefill_disable": "<think>\n\n</think>\n\n",
   "budget_template_kwarg": "thinking_budget",
   "low_effort_template_kwarg": "low_effort",
-  "request_param": "reasoning_effort"
+  "request_param": "reasoning_effort",
+  "effort_template_kwarg": "reasoning_effort",
+  "effort_system_lines": {
+    "xhigh": "Reasoning effort is set to xhigh. …",
+    "medium": "",
+    "low": "Reasoning effort is set to low. …"
+  }
 }
 ```
 
@@ -123,6 +129,16 @@ the architecture entry.
   while keeping thinking enabled (Nemotron `low_effort`).
 - `request_param` — provider-native request parameter name (declares the surface exists;
   informational until a provider consumes it).
+- `effort_template_kwarg` — string chat-template variable selecting a reasoning-effort level
+  (Qwen3.8 `reasoning_effort`). Providers whose backend renders the model's chat template send
+  it as a template kwarg; LM Studio additionally sends the OpenAI-standard `reasoning_effort`
+  request field, which its server maps into the template.
+- `effort_system_lines` — map of level → the exact instruction sentence the model's own chat
+  template prepends to the system block for that level. It lets providers that serialize
+  prompts locally (MLX, and the HuggingFace cached and ChatML renderers) reproduce the
+  template's effort control byte-for-byte. An **empty string** means "level supported, template
+  renders no text" (Qwen3.8 `medium`). Keys must match `reasoning_levels` exactly; the asset
+  schema tests enforce that, so a level can never be forwarded to a template that rejects it.
 
 History: this field was previously an untyped string, which conflated prompt tokens with
 template-variable names — the generic disable fallback then appended values like

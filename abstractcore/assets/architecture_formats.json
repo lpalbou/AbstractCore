@@ -379,7 +379,13 @@
       "thinking_control": {
         "template_kwarg": "enable_thinking",
         "assistant_prefill_disable": "<think>\n\n</think>\n\n",
-        "request_param": "reasoning_effort"
+        "request_param": "reasoning_effort",
+        "effort_template_kwarg": "reasoning_effort",
+        "effort_system_lines": {
+          "xhigh": "Reasoning effort is set to xhigh. Please think carefully through the task, validate key assumptions, consider plausible alternatives, and prioritize correctness, consistency, and clarity in the final answer.",
+          "medium": "",
+          "low": "Reasoning effort is set to low. Keep your thinking brief and focused, moving directly to the conclusion without unnecessary elaboration."
+        }
       },
       "reasoning_support": true,
       "reasoning_levels": [

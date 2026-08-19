@@ -99,6 +99,22 @@ class VLLMProvider(OpenAICompatibleProvider):
         ctk_dict: Dict[str, Any] = dict(ctk) if isinstance(ctk, dict) else {}
         if enabled is not None:
             ctk_dict["enable_thinking"] = bool(enabled)
+
+        # String effort template variable (Qwen3.8 `reasoning_effort`): vLLM renders the
+        # model's own chat template server-side, so forwarding the declared kwarg engages
+        # the model's native effort control directly (the token budget below is a cap,
+        # not the template's mechanism). Gated on the level being one the model
+        # advertises so a template that raises on unknown efforts never sees one.
+        surfaces = self._thinking_control_surfaces()
+        if (
+            surfaces.effort_template_kwarg
+            and enabled is not False
+            and isinstance(level, str)
+            and level
+        ):
+            supported = self._model_reasoning_levels()
+            if not supported or level in supported:
+                ctk_dict[surfaces.effort_template_kwarg] = level
         extra_body_dict["chat_template_kwargs"] = ctk_dict
 
         # Best-effort per-request reasoning token budget.

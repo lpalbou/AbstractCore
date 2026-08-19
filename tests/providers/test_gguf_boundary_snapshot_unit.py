@@ -461,7 +461,7 @@ def test_generation_prompt_boundary_is_derived_from_the_renderer():
     full = _turn(2)
     head = full[: _generation_boundary(2)]
 
-    def _render(*, messages, add_generation_prompt, enable_thinking=None):
+    def _render(*, messages, add_generation_prompt, enable_thinking=None, reasoning_effort=None):
         return ("<text>", full if add_generation_prompt else head)
 
     p._gguf_render_prompt_tokens = _render  # type: ignore[assignment]

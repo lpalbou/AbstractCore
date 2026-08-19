@@ -15,7 +15,9 @@ text. The typed object form makes the surface kind explicit:
   "assistant_prefill_disable": "<think>\n\n</think>\n\n",
   "budget_template_kwarg": "thinking_budget",
   "low_effort_template_kwarg": "low_effort",
-  "request_param": "reasoning_effort"
+  "request_param": "reasoning_effort",
+  "effort_template_kwarg": "reasoning_effort",
+  "effort_system_lines": {"xhigh": "…", "medium": "", "low": "…"}
 }
 ```
 
@@ -36,6 +38,14 @@ Semantics:
   while keeping thinking enabled (Nemotron ``low_effort``).
 - ``request_param``: provider-native request parameter name (informational; recorded so the
   control surface is declared even before a provider consumes it).
+- ``effort_template_kwarg``: string chat-template variable selecting a reasoning-effort
+  level (Qwen3.8 ``reasoning_effort``), sent via ``chat_template_kwargs`` by providers whose
+  backend renders the template.
+- ``effort_system_lines``: level -> exact instruction sentence the model's own chat template
+  prepends to the system block for that effort level. Lets locally-serializing providers
+  (MLX) reproduce the template's effort control byte-for-byte. An EMPTY string value means
+  "level supported, template renders no text" (Qwen3.8 ``medium``). Merged as a whole map
+  (model capabilities replace the architecture's map, not per-level).
 """
 
 from __future__ import annotations
@@ -51,7 +61,10 @@ _SURFACE_KEYS = (
     "budget_template_kwarg",
     "low_effort_template_kwarg",
     "request_param",
+    "effort_template_kwarg",
 )
+
+_MAPPING_SURFACE_KEYS = ("effort_system_lines",)
 
 
 @dataclass(frozen=True)
@@ -64,6 +77,8 @@ class ThinkingControlSurfaces:
     budget_template_kwarg: Optional[str] = None
     low_effort_template_kwarg: Optional[str] = None
     request_param: Optional[str] = None
+    effort_template_kwarg: Optional[str] = None
+    effort_system_lines: Optional[Mapping[str, str]] = None
 
     def any_declared(self) -> bool:
         return any(getattr(self, f.name) is not None for f in fields(self))
@@ -74,6 +89,19 @@ def _coerce_surface_value(value: Any) -> Optional[str]:
         return None
     # Prefill markers are whitespace-significant; only reject empty/whitespace-only values.
     return value if value.strip() else None
+
+
+def _coerce_surface_mapping(value: Any) -> Optional[Mapping[str, str]]:
+    """Coerce a level->text surface map. Values may be EMPTY strings ("supported, renders
+    no text"); non-string keys/values and empty keys are dropped."""
+    if not isinstance(value, Mapping):
+        return None
+    coerced: dict = {}
+    for key, text in value.items():
+        if not (isinstance(key, str) and key.strip() and isinstance(text, str)):
+            continue
+        coerced[key.strip().lower()] = text
+    return coerced or None
 
 
 def _merge_source(merged: dict, raw: Any, *, source_name: str) -> None:
@@ -107,6 +135,10 @@ def _merge_source(merged: dict, raw: Any, *, source_name: str) -> None:
     if isinstance(raw, Mapping):
         for key in _SURFACE_KEYS:
             value = _coerce_surface_value(raw.get(key))
+            if value is not None:
+                merged[key] = value
+        for key in _MAPPING_SURFACE_KEYS:
+            value = _coerce_surface_mapping(raw.get(key))
             if value is not None:
                 merged[key] = value
 

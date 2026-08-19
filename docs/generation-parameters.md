@@ -124,6 +124,10 @@ Portkey is a routing gateway that forwards payloads to **many** backends (OpenAI
 
 ## Thinking / Reasoning Control (Unified)
 
+> For the full picture — per-provider transports, model requirements, how to verify a request
+> took effect, and the interaction with prompt caching — see
+> **[Reasoning Control](reasoning-control.md)**.
+
 Modern models may expose “thinking”/“reasoning effort” as either:
 - a **request-side control** (enable/disable or low/medium/high), and/or
 - a **separate output channel** (provider fields or inline tags).
@@ -153,12 +157,14 @@ print(response.reasoning)
     - This is the “clean” LM Studio approach: it matches the model’s own `Enable Thinking` custom field and does **not** rely on system-prompt injection.
     - **LM Studio robustness note (Qwen3/Qwen3.5)**: some LM Studio runtimes do not consistently honor `chat_template_kwargs` for all model formats. As a fallback for `thinking="off"/"none"`, AbstractCore can append an empty Qwen think block right before generation (`<think>\n\n</think>\n\n`) to hard-disable thinking without polluting the system prompt.
     - Qwen also supports a “soft” `/no_think` / `/think` instruction (stateful across turns), but AbstractCore prefers the stateless hard-switch where needed. See `docs/fallbacks.md`.
-    - **Effort levels**: for Qwen3/Qwen3.5 on LM Studio, `thinking="low|medium|high"` currently maps to “thinking enabled” (boolean). Most templates do not expose a stable per-effort budget knob, so effort scaling is best-effort and may be a no-op beyond on/off.
+    - **Effort levels**: models whose registry entry declares `thinking_control.effort_template_kwarg` (for example Qwen3.8) receive the OpenAI-standard `reasoning_effort` request field, which LM Studio maps into the model's chat template. Templates that expose only a boolean switch treat a level request as “thinking enabled” and warn.
     - **Nemotron**: `thinking="low"` additionally maps to `chat_template_kwargs.low_effort=True` when supported by the template.
   - **Seed‑OSS**: `chat_template_kwargs.thinking_budget` (levels map to budgets: low=512, medium=1024, high=4096, xhigh=8192; `off` → 0).
+- **MLX** (`MLXProvider`): the provider serializes prompts locally, so both controls are prompt artifacts. `thinking="off"/"none"` places the empty think block at the generation boundary; a level declared in `thinking_control.effort_system_lines` renders the template's own effort instruction into the system block.
+- **HuggingFace (transformers)** (`HuggingFaceProvider`): `enable_thinking` and the declared effort kwarg are passed to `tokenizer.apply_chat_template(...)`, so the model's own template produces the prompt. The cached (KV) renderer writes the same effort instruction into its system block.
 - **HuggingFace (GGUF / llama-cpp-python)** (`HuggingFaceProvider` with GGUF models):
-  - llama.cpp’s CLI/server supports template kwargs (e.g., `--chat-template-kwargs '{"enable_thinking":false}'`), but `llama-cpp-python`’s `Llama.create_chat_completion()` does not currently expose/forward per-request template kwargs like `enable_thinking`. As a result, Qwen3/Qwen3.5 `thinking="off"/"none"` uses the Qwen hard-switch marker (`<think>\n\n</think>\n\n`) as a robust input-side control.
-  - `thinking="low|medium|high"` is treated as “thinking enabled” (best-effort) and may be a no-op beyond on/off for Qwen templates.
+  - `llama-cpp-python`’s `Llama.create_chat_completion()` does not forward per-request template kwargs, so thinking-controlled requests are served by AbstractCore's local renderer. Builds that ship an embedded chat template are rendered through it with `enable_thinking` and the declared effort kwarg; plain ChatML builds get the empty think block at the generation boundary and the effort instruction in the system block.
+  - Structured output, media, tool-role or content-part histories are served by `create_chat_completion` instead. Those requests carry no control artifact, so AbstractCore reports the control as unhandled and warns rather than claiming it.
   - **Local context note**: model cards may advertise extremely large context windows (e.g. 262k). For GGUF loads, AbstractCore will first try the advertised `max_tokens` (context window); if allocation fails locally it retries with smaller llama.cpp `n_ctx` values (best-effort). Pass `max_tokens=...` to `HuggingFaceProvider()` to explicitly control the runtime `n_ctx`.
 - **vLLM**: `extra_body.chat_template_kwargs.enable_thinking` (commonly used by Qwen3/Qwen3.5 templates)
   - When `thinking` is a level (`low|medium|high|xhigh`), AbstractCore also sets `extra_body.thinking_token_budget` (vLLM reasoning-budget feature).
@@ -171,6 +177,7 @@ When a requested thinking mode is not supported by a model/provider, AbstractCor
 
 - If the model advertises `reasoning_levels`, AbstractCore maps the requested level to the nearest supported level (generic ordering: `minimal < low < medium < high < xhigh`) and reports the effective level in the warning.
 - If a provider/model can only toggle reasoning on/off (no effort scaling), AbstractCore still enables reasoning for level requests and warns that the requested effort level may be ignored.
+- `thinking_effective` reports a level only when a control artifact actually reached the model, so an unenforced request never reads as an enforced one.
 
 ### Observability: requested vs effective thinking
 

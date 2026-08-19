@@ -784,20 +784,54 @@ class HuggingFaceProvider(BaseProvider):
         enabled: Optional[bool],
         level: Optional[str],
         kwargs: Dict[str, Any],
+        request_shape: Optional[Dict[str, Any]] = None,
     ) -> tuple[Dict[str, Any], ThinkingControlHandling]:
         new_kwargs = dict(kwargs or {})
         model_type = str(getattr(self, "model_type", "") or "").strip().lower()
         # Asset-driven: the tokenizer chat-template boolean switch (`enable_thinking`-style)
         # is declared as `thinking_control.template_kwarg` in the registries.
         surfaces = self._thinking_control_surfaces()
+
+        # Effort artifacts live in the SYSTEM region. When the caller feeds a prefilled
+        # system bloc, the renderers must not reopen it, so no level artifact can be
+        # applied — decline the claim so the base ladder warns (same rule as MLX).
+        prefilled = new_kwargs.get("prompt_cache_prefilled_modules")
+        if isinstance(prefilled, str):
+            prefilled = [prefilled]
+        system_prefilled = isinstance(prefilled, (list, tuple)) and any(
+            str(item or "").strip().lower() == "system" for item in prefilled
+        )
+
         if model_type == "transformers" and surfaces.template_kwarg:
             if enabled is False:
                 new_kwargs["_acore_hf_transformers_enable_thinking"] = False
                 return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
             if enabled is True or level is not None:
                 new_kwargs["_acore_hf_transformers_enable_thinking"] = True
-                return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
+                handled_level = False
+                effort_lines = surfaces.effort_system_lines or {}
+                if (
+                    surfaces.effort_template_kwarg
+                    and isinstance(level, str)
+                    and level
+                    and not system_prefilled
+                ):
+                    declared = self._model_reasoning_levels()
+                    # Uncached lane: the REAL chat template consumes the kwarg
+                    # (verified on transformers 5.8.0: extra apply_chat_template
+                    # kwargs reach template.render). Cached lane renders by hand
+                    # and can only inject a level declared in the asset
+                    # effort_system_lines map — so in cache mode the claim is
+                    # additionally gated on that map.
+                    cache_key = new_kwargs.get("prompt_cache_key")
+                    cached_mode = isinstance(cache_key, str) and bool(cache_key.strip())
+                    level_renderable = (not cached_mode) or (level in effort_lines)
+                    if (not declared or level in declared) and level_renderable:
+                        new_kwargs["_acore_hf_transformers_reasoning_effort"] = level
+                        handled_level = True
+                return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=handled_level)
 
+        # (helper for the transformers/vision lanes lives below: _hf_thinking_template_kwargs)
         # llama-cpp-python (GGUF) does not currently expose chat-template kwargs such as
         # `enable_thinking` / `thinking_budget`. For exact local control-plane renders we can still
         # place Qwen's no-thinking marker at the assistant generation boundary ourselves.
@@ -808,12 +842,92 @@ class HuggingFaceProvider(BaseProvider):
         # directly to `enable_thinking` instead of relying on the `<think>\n\n</think>\n\n` marker.
         # See: `docs/backlog/planned/2026-03-30_llama-cpp-python_expose_chat_template_kwargs.md`.
         if model_type == "gguf" and surfaces.assistant_prefill_disable:
+            # Requests that cannot ride the local-render lane: native structured output
+            # (response_format) and multimodal payloads go through llama-cpp-python's
+            # create_chat_completion, whose Jinja formatter renders a trailing assistant
+            # marker as a CLOSED turn — the disable marker measurably does not work
+            # there (live find 2026-08-19: model thought 113-1359 chars behind an
+            # "off" claim on three models). Decline every claim for those shapes so
+            # the base ladder warns honestly. Text-shaped requests are served by the
+            # control-plane local render, where both controls are real.
+            shape = request_shape if isinstance(request_shape, dict) else {}
+            lane_blocked = bool(shape.get("has_response_model")) or bool(shape.get("has_media"))
+            # Lane-predicate PARITY (adversarial find V2-F2, 2026-08-20): the claim
+            # must be computed with the same tests the control-plane gate applies at
+            # generate time, or a claim-then-fallback path reaches
+            # create_chat_completion where neither control has a transport.
+            if os.environ.get("ABSTRACTCORE_GGUF_CONTROL_PLANE", "1").strip().lower() in {"0", "false", "no", "off"}:
+                lane_blocked = True
+            # Template-less GGUF conversions (no embedded template, llama.cpp guesses
+            # e.g. "llama-2") have no control-plane render — same parity rule.
+            if not self._gguf_prompt_cache_supports_local_control_plane():
+                lane_blocked = True
+            shape_messages = shape.get("messages")
+            if isinstance(shape_messages, list) and shape_messages:
+                # Same criteria as _gguf_control_plane_can_stream, applied to the raw
+                # caller messages (whose roles/content _gguf_build_chat_messages copies
+                # verbatim): exotic roles (tool/function) or content-parts payloads
+                # fall back to create_chat_completion.
+                for msg in shape_messages:
+                    if not isinstance(msg, dict):
+                        lane_blocked = True
+                        break
+                    role = str(msg.get("role") or "").strip().lower()
+                    if role not in {"system", "user", "assistant"}:
+                        lane_blocked = True
+                        break
+                    content = msg.get("content")
+                    if content is not None and not isinstance(content, str):
+                        lane_blocked = True
+                        break
+            if lane_blocked:
+                return kwargs, ThinkingControlHandling()
+            chat_format = (
+                self._gguf_prompt_cache_control_plane_chat_format() or self._gguf_prompt_cache_chat_format()
+            )
             if enabled is False:
                 new_kwargs["_acore_gguf_enable_thinking"] = False
                 return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
             if enabled is True or level is not None:
-                return kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=False)
+                handled_level = False
+                effort_lines = surfaces.effort_system_lines or {}
+                # chatml renders the asset line by hand; the embedded-template format
+                # renders the model's own template with the declared kwarg. llama-3
+                # format has no effort surface — never claim there.
+                level_renderable = (
+                    chat_format == "llama-cpp-chat-template" and bool(surfaces.effort_template_kwarg)
+                ) or (chat_format not in {"llama-3", "llama-cpp-chat-template"} and level in effort_lines)
+                if (
+                    isinstance(level, str)
+                    and level
+                    and level_renderable
+                    and not system_prefilled
+                ):
+                    declared = self._model_reasoning_levels()
+                    if not declared or level in declared:
+                        new_kwargs["_acore_gguf_reasoning_effort"] = level
+                        handled_level = True
+                return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=handled_level)
         return kwargs, ThinkingControlHandling()
+
+    def _hf_thinking_template_kwargs(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """Chat-template render kwargs for the transformers/vision lanes.
+
+        Reads the request stashes set by `_apply_provider_thinking_kwargs` and maps
+        the effort level to the asset-declared template variable. Callers pass the
+        result into `apply_chat_template`; processors that reject extra kwargs get
+        a warned retry without them (never a silent drop).
+        """
+        out: Dict[str, Any] = {}
+        et = kwargs.get("_acore_hf_transformers_enable_thinking")
+        if isinstance(et, bool):
+            out["enable_thinking"] = et
+        effort = kwargs.get("_acore_hf_transformers_reasoning_effort")
+        if isinstance(effort, str) and effort:
+            surfaces = self._thinking_control_surfaces()
+            if surfaces.effort_template_kwarg:
+                out[surfaces.effort_template_kwarg] = effort
+        return out
 
     def unload_model(self, model_name: str) -> None:
         """
@@ -1734,7 +1848,32 @@ class HuggingFaceProvider(BaseProvider):
         messages: List[Dict[str, Any]],
         add_generation_prompt: bool,
         enable_thinking: Optional[bool] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> str:
+        # Reasoning-effort instruction (asset surface `thinking_control.
+        # effort_system_lines`): merged into the FIRST system message — the same
+        # placement the model's own template uses — or emitted as the leading
+        # system block when the conversation has none. Injection lives HERE, not
+        # upstream in _gguf_build_chat_messages, so the embedded-template branch
+        # (which renders the sentence itself from the kwarg) can never see it
+        # twice (adversarial design review 2026-08-19).
+        effort_line = ""
+        if isinstance(reasoning_effort, str) and reasoning_effort:
+            effort_lines = self._thinking_control_surfaces().effort_system_lines or {}
+            candidate = effort_lines.get(reasoning_effort)
+            if isinstance(candidate, str) and candidate.strip():
+                effort_line = candidate.strip()
+        if effort_line:
+            first = messages[0] if messages and isinstance(messages[0], dict) else None
+            if first is not None and str(first.get("role") or "").strip().lower() == "system":
+                merged = dict(first)
+                merged["content"] = (
+                    f"{effort_line}\n\n{self._gguf_prompt_cache_message_text(merged.get('content'))}"
+                )
+                messages = [merged, *list(messages)[1:]]
+            else:
+                messages = [{"role": "system", "content": effort_line}, *list(messages)]
+
         parts: List[str] = []
         for message in messages:
             if not isinstance(message, dict):
@@ -1826,6 +1965,7 @@ class HuggingFaceProvider(BaseProvider):
         messages: List[Dict[str, Any]],
         add_generation_prompt: bool,
         enable_thinking: Optional[bool] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> str:
         metadata = getattr(getattr(self, "llm", None), "metadata", {})
         template = str(metadata.get("tokenizer.chat_template") or "") if isinstance(metadata, dict) else ""
@@ -1850,6 +1990,14 @@ class HuggingFaceProvider(BaseProvider):
         render_kwargs: Dict[str, Any] = {}
         if isinstance(enable_thinking, bool):
             render_kwargs["enable_thinking"] = enable_thinking
+        if isinstance(reasoning_effort, str) and reasoning_effort:
+            # The model's OWN embedded template consumes the declared kwarg
+            # (Jinja2ChatFormatter forwards **kwargs into template.render —
+            # verified on llama-cpp-python 0.3.35), so the effort sentence,
+            # its placement, and the think scaffold are byte-true by construction.
+            effort_kwarg = self._thinking_control_surfaces().effort_template_kwarg
+            if effort_kwarg:
+                render_kwargs[effort_kwarg] = reasoning_effort
         response = formatter(
             messages=[copy.deepcopy(m) for m in messages if isinstance(m, dict)],
             tools=None,
@@ -1888,6 +2036,7 @@ class HuggingFaceProvider(BaseProvider):
         messages: List[Dict[str, Any]],
         add_generation_prompt: bool,
         enable_thinking: Optional[bool] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> str:
         """The exact prompt STRING this lane sends for these chat messages.
 
@@ -1909,11 +2058,13 @@ class HuggingFaceProvider(BaseProvider):
                 messages=messages,
                 add_generation_prompt=bool(add_generation_prompt),
                 enable_thinking=enable_thinking,
+                reasoning_effort=reasoning_effort,
             )
         return self._gguf_render_chatml_prompt(
             messages=messages,
             add_generation_prompt=bool(add_generation_prompt),
             enable_thinking=enable_thinking,
+            reasoning_effort=reasoning_effort,
         )
 
     def _gguf_tokenize_rendered_prompt(self, prompt_text: str) -> tuple[int, ...]:
@@ -1950,11 +2101,13 @@ class HuggingFaceProvider(BaseProvider):
         messages: List[Dict[str, Any]],
         add_generation_prompt: bool,
         enable_thinking: Optional[bool] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> tuple[str, tuple[int, ...]]:
         prompt_text = self._gguf_render_prompt_text(
             messages=messages,
             add_generation_prompt=bool(add_generation_prompt),
             enable_thinking=enable_thinking,
+            reasoning_effort=reasoning_effort,
         )
         return prompt_text, self._gguf_tokenize_rendered_prompt(prompt_text)
 
@@ -2145,6 +2298,7 @@ class HuggingFaceProvider(BaseProvider):
         messages: List[Dict[str, Any]],
         prompt_tokens: tuple[int, ...],
         enable_thinking: Optional[bool] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> Optional[int]:
         """Token POSITION where this call's generation-prompt scaffolding begins.
 
@@ -2181,6 +2335,7 @@ class HuggingFaceProvider(BaseProvider):
                 messages=messages,
                 add_generation_prompt=False,
                 enable_thinking=enable_thinking,
+                reasoning_effort=reasoning_effort,
             )
         except Exception:
             return None
@@ -2478,6 +2633,10 @@ class HuggingFaceProvider(BaseProvider):
             boundary_key = tuple(prompt_tokens[:stable_end])
             if (
                 save_state
+                and cache_obj is not None  # keyless control-plane rides with no store:
+                # a None deref HERE lands after the full prefill AND a ~GB save_state
+                # were already paid, and the except below turns it into a whole-request
+                # failure (adversarial design review 2026-08-19)
                 and boundary_key
                 and (save_state_on_live_reuse or not reused_live)
                 and restored_key_len != stable_end  # already stored at this boundary
@@ -3189,6 +3348,7 @@ class HuggingFaceProvider(BaseProvider):
         add_generation_prompt: bool = False,
         prefilled_modules: Optional[Union[List[str], tuple[str, ...]]] = None,
         enable_thinking: Optional[bool] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> str:
         """Build a prompt fragment that can be appended to an existing KV cache."""
 
@@ -3227,6 +3387,20 @@ class HuggingFaceProvider(BaseProvider):
                     tool_prompt = ""
                 tool_prompt = str(tool_prompt or "").strip()
 
+        # Reasoning-effort instruction (Qwen3.8-style): the model's own chat template
+        # controls effort by prepending a per-level sentence to the FIRST system block
+        # (asset surface `thinking_control.effort_system_lines`; empty value = level
+        # renders no text). Only when this fragment owns the system region — a
+        # prefilled system bloc was serialized without the line. Merged into a
+        # leading system message inside `messages` rather than opening a second
+        # consecutive system block (same rule as the MLX renderer).
+        effort_line = ""
+        if isinstance(reasoning_effort, str) and reasoning_effort and "system" not in prefilled:
+            effort_lines = self._thinking_control_surfaces().effort_system_lines or {}
+            candidate = effort_lines.get(reasoning_effort)
+            if isinstance(candidate, str) and candidate.strip():
+                effort_line = candidate.strip()
+
         if base_system_prompt and "system" not in prefilled:
             # ONE system turn (parity with _gguf_build_chat_messages and the
             # uncached _build_input_text_transformers, which already merged):
@@ -3241,10 +3415,28 @@ class HuggingFaceProvider(BaseProvider):
             if tool_prompt:
                 system_block = f"{base_system_prompt}\n\n{tool_prompt}"
                 tool_prompt = ""
+            if effort_line:
+                system_block = f"{effort_line}\n\n{system_block}"
+                effort_line = ""
             parts.append(self._transformers_render_message("system", system_block, close=True))
 
         if tool_prompt:
+            if effort_line:
+                tool_prompt = f"{effort_line}\n\n{tool_prompt}"
+                effort_line = ""
             parts.append(self._transformers_render_message("system", tool_prompt, close=True))
+
+        if effort_line and messages and isinstance(messages[0], dict) and (
+            str(messages[0].get("role") or "").strip().lower() == "system"
+        ):
+            first = dict(messages[0])
+            first["content"] = f"{effort_line}\n\n{_as_text(first.get('content'))}"
+            messages = [first, *list(messages)[1:]]
+            effort_line = ""
+
+        if effort_line:
+            parts.append(self._transformers_render_message("system", effort_line, close=True))
+            effort_line = ""
 
         if messages:
             for msg in messages:
@@ -4064,6 +4256,10 @@ class HuggingFaceProvider(BaseProvider):
         hf_transformers_enable_thinking = (
             hf_transformers_enable_thinking if isinstance(hf_transformers_enable_thinking, bool) else None
         )
+        hf_transformers_reasoning_effort = kwargs.get("_acore_hf_transformers_reasoning_effort")
+        hf_transformers_reasoning_effort = (
+            hf_transformers_reasoning_effort if isinstance(hf_transformers_reasoning_effort, str) else None
+        )
         gguf_enable_thinking = kwargs.get("_acore_gguf_enable_thinking")
         gguf_enable_thinking = gguf_enable_thinking if isinstance(gguf_enable_thinking, bool) else None
 
@@ -4155,6 +4351,7 @@ class HuggingFaceProvider(BaseProvider):
                     tools=transformers_state.tools,
                     add_generation_prompt=transformers_state.add_generation_prompt,
                     enable_thinking=hf_transformers_enable_thinking,
+                    reasoning_effort=hf_transformers_reasoning_effort,
                 )
 
                 token_ids = self._transformers_tokenize_fragment(full_text, add_bos_if_empty=True)
@@ -4164,6 +4361,9 @@ class HuggingFaceProvider(BaseProvider):
 
             # Incremental: append-only messages or toggling add_generation_prompt to True.
             delta_add_gen = bool(new_add_generation_prompt and not prev_add_generation_prompt)
+            # NOTE: no reasoning_effort here — delta fragments never own the system
+            # region, and the effort line belongs to the first system block only
+            # (rendered by the full-rebuild branch above).
             delta_text = self._transformers_build_prompt_fragment(
                 prompt="",
                 messages=delta_messages,
@@ -6375,8 +6575,18 @@ class HuggingFaceProvider(BaseProvider):
                             self.tokenizer
                         )
 
-                    # Build input text (same as normal generation)
-                    input_text = self._build_input_text_transformers(prompt, messages, system_prompt, tools)
+                    # Build input text (same as normal generation, thinking controls included —
+                    # this lane used to drop them entirely, adversarial find 2026-08-19)
+                    _ol_enable_thinking = kwargs.get("_acore_hf_transformers_enable_thinking")
+                    _ol_reasoning_effort = kwargs.get("_acore_hf_transformers_reasoning_effort")
+                    input_text = self._build_input_text_transformers(
+                        prompt,
+                        messages,
+                        system_prompt,
+                        tools,
+                        enable_thinking=_ol_enable_thinking if isinstance(_ol_enable_thinking, bool) else None,
+                        reasoning_effort=_ol_reasoning_effort if isinstance(_ol_reasoning_effort, str) else None,
+                    )
 
                     generation_kwargs = self._prepare_generation_kwargs(**kwargs)
                     max_new_tokens = self._get_provider_max_tokens_param(generation_kwargs)
@@ -6451,6 +6661,7 @@ class HuggingFaceProvider(BaseProvider):
         top_k = generation_kwargs.get("top_k")
         seed_value = generation_kwargs.get("seed")
         hf_transformers_enable_thinking = kwargs.get("_acore_hf_transformers_enable_thinking")
+        hf_transformers_reasoning_effort = kwargs.get("_acore_hf_transformers_reasoning_effort")
 
         prompt_cache_key = kwargs.get("prompt_cache_key")
         prefilled_modules = kwargs.get("prompt_cache_prefilled_modules")
@@ -6473,6 +6684,7 @@ class HuggingFaceProvider(BaseProvider):
                     top_k=int(top_k) if top_k is not None else None,
                     seed=seed_value,
                     enable_thinking=hf_transformers_enable_thinking if isinstance(hf_transformers_enable_thinking, bool) else None,
+                    reasoning_effort=hf_transformers_reasoning_effort,
                 )
             except Exception as e:
                 return GenerateResponse(
@@ -6545,6 +6757,7 @@ class HuggingFaceProvider(BaseProvider):
             system_prompt,
             tools,
             enable_thinking=hf_transformers_enable_thinking if isinstance(hf_transformers_enable_thinking, bool) else None,
+            reasoning_effort=hf_transformers_reasoning_effort if isinstance(hf_transformers_reasoning_effort, str) else None,
         )
 
         try:
@@ -6921,7 +7134,20 @@ class HuggingFaceProvider(BaseProvider):
                     mm_messages.append({"role": "system", "content": [{"type": "text", "text": system_prompt}]})
                 mm_messages.append({"role": "user", "content": user_content})
 
-                prompt_text = self.processor.apply_chat_template(mm_messages, add_generation_prompt=True)
+                mm_template_kwargs = self._hf_thinking_template_kwargs(kwargs)
+                try:
+                    prompt_text = self.processor.apply_chat_template(
+                        mm_messages, add_generation_prompt=True, **mm_template_kwargs
+                    )
+                except TypeError:
+                    if mm_template_kwargs:
+                        warnings.warn(
+                            f"vision processor rejected chat-template kwargs {sorted(mm_template_kwargs)}; "
+                            "rendering without them — thinking controls were NOT applied to this request.",
+                            RuntimeWarning,
+                            stacklevel=2,
+                        )
+                    prompt_text = self.processor.apply_chat_template(mm_messages, add_generation_prompt=True)
 
                 # Prepare explicit video inputs for the processor.
                 #
@@ -6997,13 +7223,31 @@ class HuggingFaceProvider(BaseProvider):
                 if hasattr(inputs, "to"):
                     inputs = inputs.to(self.model_instance.device)
             else:
-                templated = self.processor.apply_chat_template(
-                    chat_messages,
-                    tokenize=True,
-                    add_generation_prompt=True,
-                    return_dict=True,
-                    return_tensors="pt",
-                )
+                mm_template_kwargs = self._hf_thinking_template_kwargs(kwargs)
+                try:
+                    templated = self.processor.apply_chat_template(
+                        chat_messages,
+                        tokenize=True,
+                        add_generation_prompt=True,
+                        return_dict=True,
+                        return_tensors="pt",
+                        **mm_template_kwargs,
+                    )
+                except TypeError:
+                    if mm_template_kwargs:
+                        warnings.warn(
+                            f"vision processor rejected chat-template kwargs {sorted(mm_template_kwargs)}; "
+                            "rendering without them — thinking controls were NOT applied to this request.",
+                            RuntimeWarning,
+                            stacklevel=2,
+                        )
+                    templated = self.processor.apply_chat_template(
+                        chat_messages,
+                        tokenize=True,
+                        add_generation_prompt=True,
+                        return_dict=True,
+                        return_tensors="pt",
+                    )
                 if isinstance(templated, str):
                     # Processor returned a prompt string; fall back to explicit processor call.
                     image_inputs = []
@@ -7384,8 +7628,20 @@ class HuggingFaceProvider(BaseProvider):
         try:
             # GGUF local control-plane generation: use cached state snapshots + `llm.generate(reset=False)`
             # to avoid llama-cpp-python's `create_chat_completion()` resetting and re-evaluating the full prompt.
+            #
+            # ALSO the lane for KEYLESS thinking-controlled requests: the fallback lane's
+            # trailing-assistant no-think marker renders as a CLOSED turn through
+            # create_chat_completion and measurably does not disable thinking (live find
+            # 2026-08-19: 113-1359 reasoning chars behind an "off" claim on three models),
+            # and effort levels have no transport there at all. The control-plane render
+            # owns the bytes, so both controls are real — route thinking-controlled text
+            # requests here even with no cache key (cache_obj=None: prefill runs without
+            # snapshot stores).
+            gguf_reasoning_effort = kwargs.get("_acore_gguf_reasoning_effort")
+            gguf_reasoning_effort = gguf_reasoning_effort if isinstance(gguf_reasoning_effort, str) else None
+            thinking_controlled = gguf_enable_thinking is False or gguf_reasoning_effort is not None
             control_plane_enabled = (
-                cache_obj is not None
+                (cache_obj is not None or thinking_controlled)
                 and self._gguf_prompt_cache_supports_local_control_plane()
                 and os.environ.get("ABSTRACTCORE_GGUF_CONTROL_PLANE", "1").strip().lower() not in {"0", "false", "no", "off"}
                 and response_model is None
@@ -7412,6 +7668,7 @@ class HuggingFaceProvider(BaseProvider):
                     seed=seed_value,
                     stream=bool(stream),
                     enable_thinking=gguf_enable_thinking,
+                    reasoning_effort=gguf_reasoning_effort,
                     cache_state=cache_state,
                     cache_key=(
                         prompt_cache_key.strip()
@@ -7585,6 +7842,7 @@ class HuggingFaceProvider(BaseProvider):
         mirostat_eta: float,
         seed: Optional[int],
         enable_thinking: Optional[bool] = None,
+        reasoning_effort: Optional[str] = None,
         cache_state: Optional[_GGUFPromptCacheValue] = None,
         cache_key: Optional[str] = None,
     ) -> Iterator[GenerateResponse]:
@@ -7592,6 +7850,8 @@ class HuggingFaceProvider(BaseProvider):
 
         This bypasses llama-cpp-python's `create_chat_completion()` so we can benefit from
         cached state snapshots even when llama.cpp does not support incremental KV trimming.
+        Also the lane that serves KEYLESS thinking-controlled requests (cache_obj=None):
+        it is the only GGUF path whose render owns the control artifacts.
         """
         llm = getattr(self, "llm", None)
         if llm is None:
@@ -7616,6 +7876,7 @@ class HuggingFaceProvider(BaseProvider):
                 messages=chat_messages,
                 add_generation_prompt=True,
                 enable_thinking=enable_thinking,
+                reasoning_effort=reasoning_effort,
             )
         except Exception as e:
             yield GenerateResponse(
@@ -7674,6 +7935,7 @@ class HuggingFaceProvider(BaseProvider):
                 messages=chat_messages,
                 prompt_tokens=prompt_tokens,
                 enable_thinking=enable_thinking,
+                reasoning_effort=reasoning_effort,
             )
         # Same STRUCTURE as the MLX and transformers lanes (parity, 2026-08-07):
         # mode/key identify the cache, outcome/cached_tokens/fed_tokens describe
@@ -7684,7 +7946,7 @@ class HuggingFaceProvider(BaseProvider):
         ok = self._gguf_prefill_prompt_cache(
             cache_obj,
             prompt_tokens,
-            save_state=True,
+            save_state=cache_obj is not None,
             save_state_on_live_reuse=False,
             set_cache=False,
             snapshot_at_boundary=boundary_enabled,
@@ -7845,6 +8107,7 @@ class HuggingFaceProvider(BaseProvider):
         seed: Optional[int],
         stream: bool,
         enable_thinking: Optional[bool] = None,
+        reasoning_effort: Optional[str] = None,
         cache_state: Optional[_GGUFPromptCacheValue] = None,
         cache_key: Optional[str] = None,
     ) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
@@ -7867,6 +8130,7 @@ class HuggingFaceProvider(BaseProvider):
                 mirostat_eta=mirostat_eta,
                 seed=seed,
                 enable_thinking=enable_thinking,
+                reasoning_effort=reasoning_effort,
                 cache_state=cache_state,
                 cache_key=cache_key,
             )
@@ -7891,6 +8155,7 @@ class HuggingFaceProvider(BaseProvider):
             mirostat_eta=mirostat_eta,
             seed=seed,
             enable_thinking=enable_thinking,
+            reasoning_effort=reasoning_effort,
             cache_state=cache_state,
             cache_key=cache_key,
         ):
@@ -8009,6 +8274,7 @@ class HuggingFaceProvider(BaseProvider):
         top_k: Optional[int] = None,
         seed: Optional[int] = None,
         enable_thinking: Optional[bool] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> GenerateResponse:
         """Generate a single response using a transformers KV cache keyed by `prompt_cache_key`."""
 
@@ -8075,6 +8341,7 @@ class HuggingFaceProvider(BaseProvider):
                 add_generation_prompt=True,
                 prefilled_modules=prefilled_modules,
                 enable_thinking=enable_thinking,
+                reasoning_effort=reasoning_effort,
             )
             new_ids = self._transformers_tokenize_fragment(full_text, add_bos_if_empty=True)
             if not new_ids:
@@ -8711,6 +8978,7 @@ class HuggingFaceProvider(BaseProvider):
         tools: Optional[List[Dict[str, Any]]] = None,
         *,
         enable_thinking: Optional[bool] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> str:
         """Build input text for transformers model with tool support"""
 
@@ -8734,15 +9002,30 @@ class HuggingFaceProvider(BaseProvider):
                 template_kwargs: Dict[str, Any] = {}
                 if isinstance(enable_thinking, bool):
                     template_kwargs["enable_thinking"] = bool(enable_thinking)
+                if isinstance(reasoning_effort, str) and reasoning_effort:
+                    # The model's own template consumes this (declared in assets as
+                    # thinking_control.effort_template_kwarg); transformers forwards
+                    # extra apply_chat_template kwargs into template.render.
+                    surfaces = self._thinking_control_surfaces()
+                    if surfaces.effort_template_kwarg:
+                        template_kwargs[surfaces.effort_template_kwarg] = reasoning_effort
                 return self.tokenizer.apply_chat_template(
                     chat_messages,
                     tokenize=False,
                     add_generation_prompt=True,
                     **template_kwargs,
                 )
-            except:
-                # Fallback if chat template fails
-                pass
+            except Exception as e:
+                # Fallback if chat template fails. Never silent when a thinking
+                # control was riding on the render: the plain-format fallback
+                # carries no effort artifact and only a crude disable prefill.
+                if template_kwargs:
+                    warnings.warn(
+                        f"chat template render failed ({e}); falling back to plain format — "
+                        f"thinking controls {sorted(template_kwargs)} were NOT applied.",
+                        RuntimeWarning,
+                        stacklevel=2,
+                    )
 
         # Build simple conversational format. Use `final_system_prompt` (with
         # the tool block merged in) — the prior fallback used the raw

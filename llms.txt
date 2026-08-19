@@ -2,7 +2,7 @@
 
 > Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media handling (images/audio/video + documents), embeddings, and an optional OpenAI-compatible HTTP server. Default install stays lightweight; features are enabled via extras.
 
-Last reviewed against source: 2026-06-14. Package version in source: 2.13.38. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
+Last reviewed against source: 2026-08-20. Package version in source: 2.13.39. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 This is the curated, high-signal index for agents. For a self-contained handbook with the important details inlined, read `llms-full.txt`.
 
@@ -47,6 +47,7 @@ Quick start:
 - [API (Python)](docs/api.md): public API map and common patterns
 - [API Reference](docs/api-reference.md): full function/class listing
 - [Generation parameters](docs/generation-parameters.md): sampling defaults, caller overrides, max tokens, and thinking semantics across providers
+- [Reasoning control](docs/reasoning-control.md): the unified `thinking=` parameter, the per-provider transports for on/off and effort levels (`reasoning_effort` request field, chat-template kwargs, locally rendered effort instructions), the registry surfaces a model must declare (`thinking_control.effort_template_kwarg`, `thinking_control.effort_system_lines`, `reasoning_levels`), the response metadata that reports whether a control was actually applied (`thinking_effective`, `thinking_handled_level`), the request shapes that fall back with a warning, and the prompt-cache implications of changing effort mid-session
 - [Prompt caching](docs/prompt-caching.md): `CachedSession`, cache keys, file attachments, durable memory bloc bindings, the per-lane model support matrix (MLX / GGUF / transformers) with measured cells separated from untested ones, the measured cold-vs-warm prefill matrix for all three local lanes on Apple M5 Max / 128 GB (identical columns per lane, plus the cross-lane `Ornith-1.0-9B` comparison where only the ratio is comparable because the quantizations differ), the measurement method and why ratios rather than absolute seconds are the comparable quantity, the boundary snapshot / one-token guard / telemetry design the three lanes share, the correctness gates (and why byte equality is diagnostic only), the correctness guarantee (identical token ids, identical logical context, same top-1 token at the first generated position — but not byte-identical text), prefill chunking on the transformers lane (`ABSTRACTCORE_TRANSFORMERS_PREFILL_STEP`, default 2048) and the torch >= 2.11 requirement on Apple silicon, the ordered-prefix bloc composability contract, why hybrid models take the snapshot lane instead of a `Cache.crop` rollback, the artifact-backed-session turn-1-only limit, cache residency/memory sizing, and the open pending-measurement list
 - [HuggingFace model compatibility](docs/huggingface-model-compatibility.md): Transformers/GGUF loading rules, quantized checkpoint caveats, and trusted proof targets
 - [Memory blocs](docs/memory-blocs.md): text/file -> bloc -> provider/model durable cache artifacts with optional request-time binding

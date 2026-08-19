@@ -2,8 +2,8 @@
 
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
-Last updated: 2026-06-13
-Package version: 2.13.38
+Last updated: 2026-08-20
+Package version: 2.13.39
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -1138,8 +1138,9 @@ fields keeps the rest, so neither discards the other's setting. See
 
 Notes:
 - For **Qwen3 / Qwen3.5 on LM Studio**, AbstractCore uses LM Studio’s model template variables (`enable_thinking` / `enableThinking`) and a Qwen template “hard switch” for `thinking="none"` (empty `<think></think>`), rather than injecting “Reasoning effort …” text into the system prompt.
-- For **Qwen3 / Qwen3.5 GGUF via HuggingFaceProvider (llama-cpp-python)**, there is no template-kwargs knob exposed by llama-cpp-python today, so `thinking="none"` also uses the Qwen hard-switch marker. If GGUF loading fails due to huge advertised context windows, AbstractCore will retry with smaller `n_ctx` values (best-effort); you can also pass `max_tokens=...` when constructing `HuggingFaceProvider()` to explicitly control llama.cpp `n_ctx`.
+- For **Qwen3 / Qwen3.5 GGUF via HuggingFaceProvider (llama-cpp-python)**, there is no template-kwargs knob exposed by llama-cpp-python today, so thinking-controlled requests are rendered locally by AbstractCore: `thinking="none"` places the Qwen hard-switch marker at the generation boundary, and a declared effort level is rendered through the model's own embedded template. If GGUF loading fails due to huge advertised context windows, AbstractCore will retry with smaller `n_ctx` values (best-effort); you can also pass `max_tokens=...` when constructing `HuggingFaceProvider()` to explicitly control llama.cpp `n_ctx`.
 - For **Ollama**, enabling thinking may consume a lot of output tokens in the thinking channel; consider using a larger `max_output_tokens` when `thinking` is enabled.
+- Effort **levels** (`thinking="low|medium|xhigh"`) are enforced for models whose registry entry declares an effort surface (for example Qwen3.8). Models exposing only an on/off switch treat a level as "thinking enabled" and warn. `response.metadata["thinking_handled_level"]` tells you which happened. See [Reasoning Control](docs/reasoning-control.md).
 
 For server usage (OpenAI-compatible HTTP), see [Server](server.md) and [Generation Parameters](generation-parameters.md).
 

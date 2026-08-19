@@ -99,18 +99,21 @@ AbstractCore implements a layered approach for `thinking=...` on Qwen3/Qwen3.5:
      renderer for Qwen-family cached generation.
    - HuggingFace GGUF exact-renderer paths do not mutate canonical history. The control-plane
      renderer inserts the empty think block at the final assistant generation prompt, so durable
-     prompt-cache prefixes and live suffixes serialize consistently.
+     prompt-cache prefixes and live suffixes serialize consistently. Because that renderer owns
+     the control, thinking-controlled GGUF requests are routed through it whether or not a
+     `prompt_cache_key` is in play.
 
-3) **Robust fallback for `thinking="off"/"none"` (LM Studio + generic OpenAI-compatible paths)**
-   Some local runtimes either:
-   - do not expose template kwargs via API (e.g. `llama-cpp-python` today), or
-   - may ignore `chat_template_kwargs` for some model formats (observed in some LM Studio builds)
-
-   In those cases, AbstractCore uses Qwen’s **stateless hard switch** by appending a final assistant “prefill” message containing the empty think block:
+3) **Robust fallback for `thinking="off"/"none"` (LM Studio)**
+   Some LM Studio builds ignore `chat_template_kwargs` for certain model formats. For that
+   path AbstractCore also uses Qwen’s **stateless hard switch**, appending a final assistant
+   “prefill” message containing the empty think block:
 
    - Implemented in `abstractcore/providers/base.py` (Qwen hard-switch marker injection).
-   - Used for Qwen3/Qwen3.5 on providers that do not report provider-native handling for the
-     request.
+   - Both artifacts express the same off state, so sending the template kwarg and the prefill
+     together is consistent.
+   - Providers that render prompts locally (MLX, HuggingFace transformers and GGUF) place the
+     marker themselves at the generation boundary, which is where the model's own chat template
+     puts it; they do not use this message-level fallback.
 
    Note: this fallback adds an extra assistant turn **in the outbound request only**. Callers should not persist that marker message as part of the canonical chat history.
 

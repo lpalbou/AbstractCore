@@ -32,6 +32,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 - **[Session Management](session.md)** — conversation state, persistence, compaction
 - **[Prompt Caching](prompt-caching.md)** — `prompt_cache_key`, KV/prefix caches, persistence, durable memory bloc bindings, and the measured cold-vs-warm prefill matrix for the MLX, transformers and GGUF lanes
 - **[Generation Parameters](generation-parameters.md)** — unified parameter vocabulary, default hierarchy, caller overrides, and provider quirks
+- **[Reasoning Control](reasoning-control.md)** — the unified `thinking=` parameter, what each provider sends for on/off and effort levels, model requirements, and how to verify a request took effect
 - **[HuggingFace Model Compatibility](huggingface-model-compatibility.md)** — Transformers/GGUF loading rules, quantized checkpoint caveats, and trusted proof targets
 - **[Memory Blocs](memory-blocs.md)** — persistent extracted text snapshots + per-model KV artifacts
 - **Model/architecture registries (source of truth)** — `abstractcore/assets/model_capabilities.json`, `abstractcore/assets/model_capabilities.schema.json`, and `abstractcore/assets/architecture_formats.json` (see `abstractcore/assets/README.md`)

@@ -28,7 +28,13 @@ THINKING_CONTROL_SURFACE_KEYS = {
     "budget_template_kwarg",
     "low_effort_template_kwarg",
     "request_param",
+    "effort_template_kwarg",
 }
+
+# Mapping-valued surfaces: level -> template instruction text (empty string allowed:
+# "level supported, template renders no text").
+THINKING_CONTROL_MAPPING_SURFACE_KEYS = {"effort_system_lines"}
+THINKING_LEVEL_NAMES = {"minimal", "low", "medium", "high", "xhigh"}
 
 
 def _validate_thinking_control(label: str, value: Any) -> None:
@@ -38,9 +44,22 @@ def _validate_thinking_control(label: str, value: Any) -> None:
         f"(e.g. {{'template_kwarg': 'enable_thinking'}}); legacy string form is forbidden"
     )
     assert value, f"{label}.thinking_control must declare at least one control surface"
-    extra = set(value) - THINKING_CONTROL_SURFACE_KEYS
+    extra = set(value) - THINKING_CONTROL_SURFACE_KEYS - THINKING_CONTROL_MAPPING_SURFACE_KEYS
     assert not extra, f"{label}.thinking_control contains unknown surface keys: {sorted(extra)}"
     for key, surface in value.items():
+        if key in THINKING_CONTROL_MAPPING_SURFACE_KEYS:
+            assert isinstance(surface, dict) and surface, (
+                f"{label}.thinking_control[{key!r}] must be a non-empty level->text object"
+            )
+            for level, text in surface.items():
+                assert level in THINKING_LEVEL_NAMES, (
+                    f"{label}.thinking_control[{key!r}] has unknown level {level!r} "
+                    f"(expected one of {sorted(THINKING_LEVEL_NAMES)})"
+                )
+                assert isinstance(text, str), (
+                    f"{label}.thinking_control[{key!r}][{level!r}] must be a string (empty allowed)"
+                )
+            continue
         assert isinstance(surface, str) and surface.strip(), (
             f"{label}.thinking_control[{key!r}] must be a non-empty string"
         )
@@ -218,6 +237,16 @@ def test_architecture_entries_conform_to_v0_template():
         thinking_control = cfg.get("thinking_control")
         if thinking_control is not None:
             _validate_thinking_control(f"architectures[{arch_name}]", thinking_control)
+            # effort_system_lines and reasoning_levels must agree: a level in
+            # reasoning_levels but not in the lines map lets providers forward it
+            # to a chat template that raise_exception()s on unknown efforts.
+            lines = thinking_control.get("effort_system_lines") if isinstance(thinking_control, dict) else None
+            declared_levels = cfg.get("reasoning_levels")
+            if isinstance(lines, dict) and isinstance(declared_levels, list):
+                assert set(lines) == set(declared_levels), (
+                    f"architectures[{arch_name}]: effort_system_lines keys {sorted(lines)} must equal "
+                    f"reasoning_levels {sorted(declared_levels)}"
+                )
 
         reasoning_support = cfg.get("reasoning_support")
         if reasoning_support is not None:

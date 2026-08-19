@@ -1511,8 +1511,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
         messages: Optional[List[Dict[str, str]]],
         system_prompt: Optional[str],
         kwargs: Dict[str, Any],
+        request_shape: Optional[Dict[str, Any]] = None,
     ) -> Tuple[str, Optional[List[Dict[str, str]]], Optional[str], Dict[str, Any], Optional[Dict[str, Any]]]:
-        """Apply unified thinking controls to the request."""
+        """Apply unified thinking controls to the request.
+
+        `request_shape` carries facts about the request that decide which internal
+        lane will serve it (`has_response_model`, `has_media`) — provider hooks that
+        declare the parameter use it to DECLINE a claim when the serving lane cannot
+        carry the control artifact, so the metadata honesty contract holds per shape
+        (adversarial find 2026-08-19: metadata was computed before lane selection).
+        """
         enabled, requested_level = self._normalize_thinking_request(thinking)
         requested_enabled = enabled
         if enabled is None and requested_level is None:
@@ -1605,6 +1613,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 "kwargs": kwargs,
                 "requested_level": requested_level,
                 "supported_levels": reasoning_levels,
+                "request_shape": dict(request_shape) if isinstance(request_shape, dict) else {},
             }
             filtered_kwargs: Dict[str, Any] = {"enabled": enabled, "level": effective_level, "kwargs": kwargs}
             try:
@@ -1642,20 +1651,25 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # OpenAI-compatible providers don't append an extra user turn after it.
         thinking_surfaces = self._thinking_control_surfaces()
         provider_id = str(getattr(self, "provider", "") or "").strip().lower()
-        is_hf_gguf = provider_id == "huggingface" and str(getattr(self, "model_type", "") or "").strip().lower() == "gguf"
         # LM Studio: apply the prefill hard switch even when the provider hook already
         # claimed the disable via `chat_template_kwargs.enable_thinking` — LM Studio's
         # OpenAI-compatible endpoint does not document that field and IGNORES it for
         # some model formats (live-verified: qwen3-0.6b GGUF kept reasoning while the
         # kwarg-only path reported thinking_effective=off). Both artifacts express the
         # same off state, so sending both is consistent; skipping the prefill turned
-        # the report dishonest. HF-GGUF keeps the handled gate: its renderers place
-        # the marker themselves and a second copy would duplicate it.
+        # the report dishonest.
+        #
+        # HF-GGUF is deliberately NOT in this branch (removed 2026-08-20): its
+        # control-plane renderer places the marker itself at the true generation
+        # boundary, and for the shapes its hook DECLINES (response_model /
+        # multimodal → create_chat_completion), a message-form marker renders as a
+        # CLOSED assistant turn and does not disable thinking (live-verified on
+        # three Qwen GGUFs). Re-adding it here would convert an honest decline
+        # back into a false "off" claim.
         if (
             enabled is False
-            and (provider_id == "lmstudio" or is_hf_gguf)
+            and provider_id == "lmstudio"
             and thinking_surfaces.assistant_prefill_disable
-            and (provider_id == "lmstudio" or not provider_handling.handled_enable_disable)
         ):
             marker = thinking_surfaces.assistant_prefill_disable
             new_messages: List[Dict[str, Any]] = []
@@ -3167,6 +3181,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
             messages=messages,
             system_prompt=system_prompt,
             kwargs=kwargs,
+            request_shape={
+                "has_response_model": response_model is not None,
+                "has_media": bool(media),
+                "messages": messages,
+            },
         )
         if thinking_meta is None and carried_thinking_meta is not None:
             thinking_meta = carried_thinking_meta
@@ -7856,6 +7875,11 @@ Please provide a structured response."""
             messages=messages,
             system_prompt=system_prompt,
             kwargs=kwargs,
+            request_shape={
+                "has_response_model": kwargs.get("response_model") is not None,
+                "has_media": bool(media),
+                "messages": messages,
+            },
         )
 
         response = await self._agenerate_internal(

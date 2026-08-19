@@ -548,6 +548,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Truncated reasoning leak**: unterminated thinking blocks (e.g. `finish_reason=length` before the closing tag) are auto-closed and captured into `metadata["reasoning"]` with a `(...)` truncation marker (#TRUNCATION logged) instead of leaking raw reasoning and tag markup into visible content — in both non-streaming and streaming paths.
 - **Streaming latency with thinking off**: architectures with `thinking_tags` no longer buffer the whole stream waiting for a possible reasoning-first block when thinking is effectively disabled; visible content now streams incrementally.
 
+## [2.13.39] - 2026-08-20
+
+### Added
+- **Reasoning effort levels are enforced on local providers.** `thinking="low|medium|xhigh"`
+  now reaches models that expose a reasoning-effort control, instead of being reduced to
+  "thinking enabled". Two registry surfaces drive it: `thinking_control.effort_template_kwarg`
+  names the chat-template variable for backends that render the template (LM Studio,
+  OpenAI-compatible servers, vLLM, HuggingFace transformers, GGUF builds with an embedded
+  template), and `thinking_control.effort_system_lines` carries the template's per-level
+  instruction text so providers that serialize prompts locally (MLX, and the HuggingFace
+  cached and ChatML renderers) reproduce it exactly. `Qwen3.8-27B` and `Qwen3.8-27B-FP8`
+  declare both and accept `low`, `medium`, and `xhigh`. Adding a model needs registry entries
+  only, no provider code. See the new [Reasoning Control](docs/reasoning-control.md) guide.
+- **`reasoning_effort` compatibility net for OpenAI-compatible servers.** A server that
+  rejects the field gets one automatic retry without it, and the request succeeds with a
+  `RuntimeWarning` stating that the requested level was not applied. Subsequent calls on the
+  same provider instance skip the field.
+
+### Changed
+- **LM Studio effort transport.** Levels are sent as the OpenAI-standard `reasoning_effort`
+  request field, which LM Studio maps into the model's chat template on every request shape,
+  including multi-turn conversations with tools. `chat_template_kwargs` is still sent for
+  builds that consume it, and `thinking="off"` keeps the empty-think-block hard switch.
+- **HuggingFace GGUF thinking control.** Requests that set a thinking control are served by
+  AbstractCore's local renderer whether or not a `prompt_cache_key` is supplied, so the
+  no-think marker lands at the generation boundary the model's own template uses.
+- **Reasoning metadata reports enforcement, not intent.** `thinking_effective` and
+  `thinking_handled_level` describe the control that actually reached the model. Requests
+  served by a path that carries no control artifact — structured output, media, tool-role or
+  content-part histories on GGUF, a prefilled system bloc in KV cache mode, or a stripped
+  `reasoning_effort` field — report the control as unhandled and warn. Callers reading these
+  fields will see fewer `"off"`/level claims and more explicit warnings where the underlying
+  path could not honor the request.
+
+### Fixed
+- **`thinking="off"` on HuggingFace GGUF without a `prompt_cache_key`.** The disable marker
+  was appended as a completed assistant turn, which chat templates render as history rather
+  than as a generation prefill, so models continued to emit reasoning. The local renderer now
+  serves these requests and the marker takes effect.
+- **Reasoning controls on secondary generation paths.** Structured output on MLX and
+  HuggingFace transformers, and the HuggingFace vision paths, built their prompts without the
+  requested thinking controls; they now carry them. A chat-template render that fails and
+  falls back to the plain text format now warns when thinking controls were riding on it.
+
 ## [2.13.38] - 2026-06-14
 
 ### Added

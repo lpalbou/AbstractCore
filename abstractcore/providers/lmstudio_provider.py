@@ -349,7 +349,46 @@ class LMStudioProvider(OpenAICompatibleProvider):
 
         surfaces = self._thinking_control_surfaces()
         if surfaces.prompt_disable_token or surfaces.assistant_prefill_disable or surfaces.budget_template_kwarg:
-            return new_kwargs, handling
+            # Template-level disable/budget semantics keep priority (prefill hard-switch,
+            # /no_think, thinking_budget) — EXCEPT for effort LEVELS on models declaring
+            # an effort surface. LM Studio's OpenAI-compat endpoint ignores
+            # chat_template_kwargs.reasoning_effort (live-verified 2026-08-19 on
+            # qwen/qwen3.8-27b: the rendered prompt kept the template's default xhigh
+            # sentence while the request asked for low), so the superclass's ctk-based
+            # level claim is not a real artifact here. The TOP-LEVEL OpenAI-standard
+            # `reasoning_effort` request param IS mapped into the chat template by
+            # LM Studio, on every request shape (live-verified 2026-08-19: low and
+            # xhigh both rendered their template sentences on plain AND on
+            # messages+tools+tool_call-history requests — unlike the native REST
+            # `reasoning` field, which rejects xhigh with HTTP 400 and cannot carry
+            # conversation history at all). A build that validates the param and
+            # rejects an extended value is caught by the 400 retry net in
+            # `OpenAICompatibleProvider._single_generate`, which strips the param,
+            # retries once, and warns.
+            if not (
+                surfaces.effort_template_kwarg
+                and enabled is not False
+                and isinstance(level, str)
+                and level.strip()
+            ):
+                return new_kwargs, handling
+
+            lvl = level.strip().lower()
+            declared = self._model_reasoning_levels()
+            level_ok = not declared or lvl in declared
+            # A build that 400-rejected the param earlier this session will reject it
+            # again: honor the latch, decline the claim (base warns), and skip the
+            # reject+retry round-trip on every subsequent call.
+            if getattr(self, "_reasoning_effort_unsupported", False):
+                level_ok = False
+            out_kwargs = dict(new_kwargs)
+            if level_ok:
+                # setdefault: an explicit caller-provided reasoning_effort= wins.
+                out_kwargs.setdefault("reasoning_effort", lvl)
+            return out_kwargs, ThinkingControlHandling(
+                handled_enable_disable=True,
+                handled_level=level_ok,
+            )
 
         levels = self._model_reasoning_levels()
         handled_level = False

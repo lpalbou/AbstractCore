@@ -66,7 +66,13 @@ THINKING_CONTROL_SURFACE_KEYS = {
     "budget_template_kwarg",
     "low_effort_template_kwarg",
     "request_param",
+    "effort_template_kwarg",
 }
+
+# Mapping-valued surfaces: level -> template instruction text (empty string allowed:
+# "level supported, template renders no text").
+THINKING_CONTROL_MAPPING_SURFACE_KEYS = {"effort_system_lines"}
+THINKING_LEVEL_NAMES = {"minimal", "low", "medium", "high", "xhigh"}
 
 
 def _validate_thinking_control(label: str, value: Any) -> None:
@@ -76,9 +82,22 @@ def _validate_thinking_control(label: str, value: Any) -> None:
         f"(e.g. {{'template_kwarg': 'enable_thinking'}}); legacy string form is forbidden"
     )
     assert value, f"{label}.thinking_control must declare at least one control surface"
-    extra = set(value) - THINKING_CONTROL_SURFACE_KEYS
+    extra = set(value) - THINKING_CONTROL_SURFACE_KEYS - THINKING_CONTROL_MAPPING_SURFACE_KEYS
     assert not extra, f"{label}.thinking_control contains unknown surface keys: {sorted(extra)}"
     for key, surface in value.items():
+        if key in THINKING_CONTROL_MAPPING_SURFACE_KEYS:
+            assert isinstance(surface, dict) and surface, (
+                f"{label}.thinking_control[{key!r}] must be a non-empty level->text object"
+            )
+            for level, text in surface.items():
+                assert level in THINKING_LEVEL_NAMES, (
+                    f"{label}.thinking_control[{key!r}] has unknown level {level!r} "
+                    f"(expected one of {sorted(THINKING_LEVEL_NAMES)})"
+                )
+                assert isinstance(text, str), (
+                    f"{label}.thinking_control[{key!r}][{level!r}] must be a string (empty allowed)"
+                )
+            continue
         assert isinstance(surface, str) and surface.strip(), (
             f"{label}.thinking_control[{key!r}] must be a non-empty string"
         )

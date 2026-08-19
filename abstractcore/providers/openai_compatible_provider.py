@@ -506,6 +506,25 @@ class OpenAICompatibleProvider(BaseProvider):
             if surfaces.low_effort_template_kwarg and enabled is not False and level in {"minimal", "low"}:
                 ctk_dict[surfaces.low_effort_template_kwarg] = True
                 handled_level = True
+
+            # String effort template variable (Qwen3.8 `reasoning_effort`). Without this
+            # the template branch forwarded ONLY the enable/disable boolean and every
+            # requested level was silently dropped for models that declare a template
+            # surface — the `reasoning_effort` request-param branch above is gated on
+            # having NO template surface, so it never caught them. Gated on the level
+            # being one the model advertises (base already nearest-maps into
+            # `reasoning_levels`) so a template that raises on unknown efforts — Qwen3.8's
+            # does — never sees an invalid value.
+            if (
+                surfaces.effort_template_kwarg
+                and enabled is not False
+                and isinstance(level, str)
+                and level
+            ):
+                supported = self._model_reasoning_levels()
+                if not supported or level in supported:
+                    ctk_dict[surfaces.effort_template_kwarg] = level
+                    handled_level = True
             new_kwargs["chat_template_kwargs"] = ctk_dict
 
             # LM Studio's OpenAI-compatible endpoint does not document `chat_template_kwargs`,
@@ -531,6 +550,12 @@ class OpenAICompatibleProvider(BaseProvider):
                 tv_dict.setdefault(template_kwarg, bool(requested))
                 if camel_kwarg != template_kwarg:
                     tv_dict.setdefault(camel_kwarg, bool(requested))
+                # Deliberately NOT mirroring the effort level here: template vars are
+                # copied to the TOP LEVEL of the OpenAI-compat payload, where
+                # `reasoning_effort` is the standard request param with a low|medium|high
+                # enum on validating servers — a template-only value like "xhigh" there
+                # risks an HTTP 400 (adversarial find 2026-08-19). The namespaced
+                # chat_template_kwargs + extra_body mirrors above carry the level.
                 new_kwargs["lmstudio_template_vars"] = tv_dict
             return new_kwargs, ThinkingControlHandling(handled_enable_disable=True, handled_level=handled_level)
 
@@ -768,6 +793,44 @@ class OpenAICompatibleProvider(BaseProvider):
             self.logger.warning(
                 "#FALLBACK: server rejected 'prompt_cache_key'; retrying without it "
                 "(prompt caching disabled for this provider instance)"
+            )
+
+    def _is_reasoning_effort_rejection(self, response: Optional[httpx.Response], payload: Dict[str, Any]) -> bool:
+        """True when the server 400-rejected the request BECAUSE of `reasoning_effort`.
+
+        `reasoning_effort` is the OpenAI-standard effort param, but model families like
+        Qwen3.8 declare extended values ("xhigh") that a strictly-validating server build
+        may reject even though the model's own chat template accepts them (LM Studio's
+        current build maps the param per-model and accepts xhigh — live-verified
+        2026-08-19 — but its native REST enum rejects it, so validating builds
+        plausibly exist). Same drop-and-retry-once treatment as `prompt_cache_key`:
+        the request must never fail over an effort hint, and the retry is warned so
+        the degradation is never silent (ADR-0001).
+        """
+        if "reasoning_effort" not in payload:
+            return False
+        status = getattr(response, "status_code", None)
+        try:
+            if status is None or int(status) != 400:
+                return False
+        except Exception:
+            return False
+        detail = self._extract_error_detail(response) or ""
+        return "reasoning_effort" in detail
+
+    def _mark_reasoning_effort_unsupported(self) -> None:
+        self._reasoning_effort_unsupported = True
+        warnings.warn(
+            "server rejected 'reasoning_effort'; retrying without it — the requested "
+            "reasoning level was NOT applied and the model/server default effort "
+            "remains in effect.",
+            RuntimeWarning,
+            stacklevel=4,
+        )
+        if hasattr(self, "logger"):
+            self.logger.warning(
+                "#FALLBACK: server rejected 'reasoning_effort'; retrying without it "
+                "(requested reasoning level not applied for this request)"
             )
 
     def _is_stream_options_rejection(self, response: Optional[httpx.Response], payload: Dict[str, Any]) -> bool:
@@ -1197,6 +1260,10 @@ class OpenAICompatibleProvider(BaseProvider):
                 self._mark_prompt_cache_key_unsupported()
                 payload = {k: v for k, v in payload.items() if k != "prompt_cache_key"}
                 response = self.client.post(request_url, json=payload, headers=self._get_headers())
+            if self._is_reasoning_effort_rejection(response, payload):
+                self._mark_reasoning_effort_unsupported()
+                payload = {k: v for k, v in payload.items() if k != "reasoning_effort"}
+                response = self.client.post(request_url, json=payload, headers=self._get_headers())
             repaired = self._render_400_repaired_payload(response, payload)
             if repaired is not None:
                 # Reactive template-render repair (LM Studio lane): ONE retry;
@@ -1299,6 +1366,11 @@ class OpenAICompatibleProvider(BaseProvider):
                 if self._is_prompt_cache_key_rejection(response, payload):
                     self._mark_prompt_cache_key_unsupported()
                     retry_payload = {k: v for k, v in payload.items() if k != "prompt_cache_key"}
+                    yield from self._stream_generate(retry_payload)
+                    return
+                if self._is_reasoning_effort_rejection(response, payload):
+                    self._mark_reasoning_effort_unsupported()
+                    retry_payload = {k: v for k, v in payload.items() if k != "reasoning_effort"}
                     yield from self._stream_generate(retry_payload)
                     return
                 if self._is_stream_options_rejection(response, payload):
@@ -1620,6 +1692,10 @@ class OpenAICompatibleProvider(BaseProvider):
                 self._mark_prompt_cache_key_unsupported()
                 payload = {k: v for k, v in payload.items() if k != "prompt_cache_key"}
                 response = await self.async_client.post(request_url, json=payload, headers=self._get_headers())
+            if self._is_reasoning_effort_rejection(response, payload):
+                self._mark_reasoning_effort_unsupported()
+                payload = {k: v for k, v in payload.items() if k != "reasoning_effort"}
+                response = await self.async_client.post(request_url, json=payload, headers=self._get_headers())
             repaired = self._render_400_repaired_payload(response, payload)
             if repaired is not None:
                 # Reactive template-render repair (LM Studio lane) — sync parity.
@@ -1711,6 +1787,12 @@ class OpenAICompatibleProvider(BaseProvider):
                 if self._is_prompt_cache_key_rejection(response, payload):
                     self._mark_prompt_cache_key_unsupported()
                     retry_payload = {k: v for k, v in payload.items() if k != "prompt_cache_key"}
+                    async for chunk in self._async_stream_generate(retry_payload):
+                        yield chunk
+                    return
+                if self._is_reasoning_effort_rejection(response, payload):
+                    self._mark_reasoning_effort_unsupported()
+                    retry_payload = {k: v for k, v in payload.items() if k != "reasoning_effort"}
                     async for chunk in self._async_stream_generate(retry_payload):
                         yield chunk
                     return

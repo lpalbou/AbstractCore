@@ -255,12 +255,16 @@ class MLXProvider(BaseProvider):
         mlx-lm local generation takes an already-serialized prompt. For Qwen reasoning
         templates, the robust local disable control is to serialize the assistant
         generation prompt in no-thinking mode (`<think>\n\n</think>\n\n`) before
-        generation. The actual serialization happens in `_build_prompt_fragment`.
+        generation. Effort levels are enforced the same way the model's own chat
+        template does it: the per-level instruction sentence declared in assets as
+        `thinking_control.effort_system_lines` is rendered into the system block.
+        The actual serialization happens in `_build_prompt_fragment`.
         """
         new_kwargs = dict(kwargs or {})
+        surfaces = self._thinking_control_surfaces()
         # Asset-driven: MLX serializes prompts locally, so the robust disable control is the
         # assistant-prefill marker declared as `thinking_control.assistant_prefill_disable`.
-        if self._thinking_control_surfaces().assistant_prefill_disable:
+        if surfaces.assistant_prefill_disable:
             if enabled is False:
                 new_kwargs["_acore_mlx_enable_thinking"] = False
                 return new_kwargs, ThinkingControlHandling(
@@ -269,9 +273,30 @@ class MLXProvider(BaseProvider):
                 )
             if enabled is True or level is not None:
                 new_kwargs["_acore_mlx_enable_thinking"] = True
+                handled_level = False
+                # The effort artifact lives in the SYSTEM block. When the caller
+                # feeds a prefilled system bloc (KV-mode CachedSession passes
+                # prompt_cache_prefilled_modules=("system", ...)), that bloc was
+                # serialized WITHOUT the line and the fragment renderer must not
+                # reopen the system region — so no artifact can be applied.
+                # Claiming handled_level there would report an effort level with
+                # no control in the prompt (ADR-0001); decline instead so the
+                # base warning ladder reports the honest degradation.
+                prefilled = new_kwargs.get("prompt_cache_prefilled_modules")
+                if isinstance(prefilled, str):
+                    prefilled = [prefilled]
+                system_prefilled = isinstance(prefilled, (list, tuple)) and any(
+                    str(item or "").strip().lower() == "system" for item in prefilled
+                )
+                effort_lines = surfaces.effort_system_lines or {}
+                if isinstance(level, str) and level in effort_lines and not system_prefilled:
+                    # Claimed handled even for a level whose declared line is empty
+                    # (Qwen3.8 "medium"): the template renders nothing for it too.
+                    new_kwargs["_acore_mlx_reasoning_effort"] = level
+                    handled_level = True
                 return new_kwargs, ThinkingControlHandling(
                     handled_enable_disable=True,
-                    handled_level=False,
+                    handled_level=handled_level,
                 )
         return new_kwargs, ThinkingControlHandling()
 
@@ -1291,6 +1316,7 @@ class MLXProvider(BaseProvider):
         add_generation_prompt: bool = False,
         prefilled_modules: Optional[List[str]] = None,
         enable_thinking: Optional[bool] = None,
+        reasoning_effort: Optional[str] = None,
         include_bos: bool = True,
     ) -> str:
         """Build a prompt fragment intended to be appended to an existing prompt_cache."""
@@ -1347,6 +1373,46 @@ class MLXProvider(BaseProvider):
         if base_system_prompt and "system" not in prefilled and tool_system_prompt:
             base_system_prompt = f"{base_system_prompt}\n\n{tool_system_prompt}"
             tool_system_prompt = None
+
+        # Reasoning-effort instruction (Qwen3.8-style): the model's own chat template
+        # controls effort by prepending a per-level sentence to the FIRST system block
+        # (declared in assets as `thinking_control.effort_system_lines`; an empty value
+        # means the level renders no text). Rendered only when this fragment owns the
+        # system region — a prefilled system bloc was serialized without the line, and
+        # injecting it elsewhere would corrupt the planned cut. NOTE: an explicit level
+        # therefore changes the system-block bytes, so bloc plans rendered without it
+        # will prefix-miss and recompute (correct, just uncached).
+        if isinstance(reasoning_effort, str) and reasoning_effort and "system" not in prefilled:
+            effort_lines = self._thinking_control_surfaces().effort_system_lines or {}
+            effort_line = effort_lines.get(reasoning_effort)
+            if isinstance(effort_line, str) and effort_line.strip():
+                effort_line = effort_line.strip()
+                if base_system_prompt:
+                    base_system_prompt = f"{effort_line}\n\n{base_system_prompt}"
+                elif tool_system_prompt:
+                    tool_system_prompt = f"{effort_line}\n\n{tool_system_prompt}"
+                elif (
+                    messages
+                    and isinstance(messages[0], dict)
+                    and str(messages[0].get("role") or "").strip().lower() == "system"
+                ):
+                    # The conversation carries its own leading system turn: merge the
+                    # line into it. A standalone effort block here would render TWO
+                    # consecutive system blocks — the out-of-distribution shape this
+                    # renderer's single-system-block rule exists to prevent
+                    # (adversarial find 2026-08-19). Non-str content gets the same
+                    # json coercion `_as_text` applies at render time.
+                    first = dict(messages[0])
+                    content = first.get("content")
+                    if not isinstance(content, str):
+                        try:
+                            content = json.dumps(content, ensure_ascii=False)
+                        except Exception:
+                            content = str(content)
+                    first["content"] = f"{effort_line}\n\n{content}"
+                    messages = [first, *messages[1:]]
+                else:
+                    base_system_prompt = effort_line
 
         def _as_text(val: Any) -> str:
             if val is None:
@@ -1489,6 +1555,7 @@ class MLXProvider(BaseProvider):
                 tools=tools,
                 add_generation_prompt=bool(add_generation_prompt),
                 enable_thinking=kwargs.get("_acore_mlx_enable_thinking"),
+                reasoning_effort=kwargs.get("_acore_mlx_reasoning_effort"),
                 include_bos=not (isinstance(existing_tokens, int) and int(existing_tokens) > 0),
             )
             fragment_ids = self._encode_prompt_token_ids(fragment) if fragment else None
@@ -2355,6 +2422,7 @@ class MLXProvider(BaseProvider):
         if not isinstance(prompt_cache_prefilled_modules, list):
             prompt_cache_prefilled_modules = None
         mlx_enable_thinking = kwargs.get("_acore_mlx_enable_thinking")
+        mlx_reasoning_effort = kwargs.get("_acore_mlx_reasoning_effort")
 
         # Native structured output via Outlines (if configured and available)
         should_use_outlines = (
@@ -2381,9 +2449,20 @@ class MLXProvider(BaseProvider):
                         self.logger.debug("Creating Outlines MLX model wrapper for native structured output")
                         self._outlines_model = outlines.from_mlxlm(self.llm, self.tokenizer)
 
-                    # Build full prompt (same as normal generation)
+                    # Build full prompt (same as normal generation, thinking controls
+                    # included — this lane used to drop them entirely, so a structured
+                    # request claimed a level/off with no artifact in the Outlines
+                    # prompt; adversarial find V2-F1, 2026-08-20)
                     processed_prompt = prompt
-                    full_prompt = self._build_prompt(processed_prompt, messages, system_prompt, tools)
+                    full_prompt = self._build_prompt(
+                        processed_prompt,
+                        messages,
+                        system_prompt,
+                        tools,
+                        prefilled_modules=prompt_cache_prefilled_modules,
+                        enable_thinking=mlx_enable_thinking if isinstance(mlx_enable_thinking, bool) else None,
+                        reasoning_effort=mlx_reasoning_effort if isinstance(mlx_reasoning_effort, str) else None,
+                    )
 
                     # Create constrained generator with JSON schema
                     self.logger.debug(f"Using Outlines native structured output for {response_model.__name__}")
@@ -2466,6 +2545,7 @@ class MLXProvider(BaseProvider):
             tools,
             prefilled_modules=prompt_cache_prefilled_modules,
             enable_thinking=mlx_enable_thinking if isinstance(mlx_enable_thinking, bool) else None,
+            reasoning_effort=mlx_reasoning_effort if isinstance(mlx_reasoning_effort, str) else None,
         )
 
         # MLX generation parameters using unified system
@@ -2578,6 +2658,7 @@ class MLXProvider(BaseProvider):
         *,
         prefilled_modules: Optional[List[str]] = None,
         enable_thinking: Optional[bool] = None,
+        reasoning_effort: Optional[str] = None,
     ) -> str:
         """Build prompt for MLX model with tool support."""
         return self._build_prompt_fragment(
@@ -2588,6 +2669,7 @@ class MLXProvider(BaseProvider):
             add_generation_prompt=True,
             prefilled_modules=prefilled_modules,
             enable_thinking=enable_thinking,
+            reasoning_effort=reasoning_effort,
         )
 
     def _build_mlx_sampler(self, temperature: float, top_p: float, top_k: Optional[int] = None) -> Optional[Any]:
