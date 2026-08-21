@@ -2,7 +2,7 @@
 
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
-Last updated: 2026-08-20
+Last updated: 2026-08-21
 Package version: 2.13.39
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
@@ -1194,7 +1194,40 @@ Then import from `abstractcore.tools.common_tools`:
 - `skim_websearch` vs `web_search`: compact/filtered links vs full results
 - `skim_url` vs `fetch_url`: fast URL triage (small output) vs full fetch + parsing for web documents and feeds (HTML/JSON/XML/RSS/Atom/PDF when supported)
 
-See [Tool Calling](tool-calling.md) for a recommended workflow and the full built-in tool list.
+Reading a page with `fetch_url`:
+
+- `content` is the payload: the document as structure-preserving markdown (headings, lists, links,
+  fenced code with a language hint, GFM pipe tables). `content_chars` gives its length.
+  `title` and `description` are first-class fields.
+- `raw_text`, `normalized_text` and `rendered_dom` are evidence. Above
+  `FETCH_URL_MAX_INLINE_EVIDENCE_CHARS` (2,000) they are withheld and replaced by a `*_withheld`
+  descriptor with size, sha256 and content type. The keys always exist.
+- Links stay inline in `content`. On a listing page they are kept even at `keep_links=False`;
+  `link_dominant` reports that.
+- `render_js` controls headless-browser rendering for client-rendered pages: `"auto"` (default,
+  render only when static extraction fails), `"always"`, `"never"`. Needs
+  `pip install "abstractcore[browser]"` and `python -m playwright install --only-shell chromium`.
+  `rendered_with_browser` and `render_note` report what happened.
+- A fetch that cannot produce content fails with an `error_class` (`js_required`, `empty_content`,
+  `empty_body`, `bot_challenge`, `rate_limited`, `auth_required`, `not_found`, `gone`,
+  `client_error`, `server_error`, `extraction_failed`, `blocked_ssrf`, `blocked_encoded_url`), a
+  `retryable` flag and concrete `suggestions` — never a silent empty success.
+- PDFs carry page anchors (`# Page 3`); the default backend is `pypdf` (BSD-3-Clause). Table
+  recovery via `pymupdf4llm` (dual AGPL-3.0/commercial) requires
+  `preferred_backend="pymupdf4llm"` explicitly.
+
+Search arguments: `time_range` accepts `h`/`d`/`w`/`m`/`y` and plain-English equivalents (`day`,
+`past week`, `30 days`); `require_in` accepts `snippet`, `title`, `title_snippet`, `all` and common
+synonyms. Anything unmappable is dropped or substituted **and reported** in `warnings` /
+`limitations`, never forwarded to the backend.
+
+Safety: all four tools screen destinations against the SSRF guard (loopback, private, link-local,
+cloud metadata) on the initial URL and every redirect, including inside a headless render. Opt a
+host in with `ABSTRACTCORE_FETCH_URL_ALLOW=127.0.0.1:8080`. `fetch_url` is `write`/`remote_write`
+tagged: `method` and `data` are caller-controlled.
+
+See [Web and Document Tools](web-tools.md) for the full reference, and [Tool Calling](tool-calling.md)
+for a recommended workflow and the built-in tool list.
 
 ## Structured output
 
@@ -5445,7 +5478,7 @@ graph TD
 
 ### 5. Error Handling & Resilience
 
-**Multi-Level Fallback Strategy:**
+**Multi-Level Processing Strategy:**
 1. **Specialized Processing**: Use configured specialized libraries (pypdf, Unstructured)
 2. **Basic Processing**: Fall back to simple text extraction
 3. **Metadata Only**: If all else fails, provide file metadata
@@ -5484,9 +5517,9 @@ except PDFProcessingError:
 
 ### Audio (policy-driven; optional STT fallback)
 - **Formats**: common `audio/*` types (WAV, MP3, M4A, …) as attachments via `media=[...]`
-- **Default behavior**: `audio_policy="auto"` uses native audio when supported and otherwise requires the configured `input.voice` route
-- **Speech-to-text**: `audio_policy="speech_to_text"` runs STT via the capability plugin layer (`llm.audio.transcribe(...)`) and injects a transcript into the main request; normal defaults should route this through `input.voice`
-- **Auto**: `audio_policy="auto"` uses native audio when supported, otherwise the `input.voice` route, otherwise errors
+- **Default behavior**: `audio_policy="native_only"` (fails loudly unless the model supports native audio input)
+- **Speech-to-text**: `audio_policy="speech_to_text"` runs STT via the capability plugin layer (`llm.audio.transcribe(...)`; typically install `abstractvoice`) and injects a transcript into the main request
+- **Auto**: `audio_policy="auto"` uses native audio when supported, otherwise STT when configured, otherwise errors
 - **Reserved**: `audio_policy="caption"` is not configured in v0 (must error; non-speech audio analysis needs an explicit capability)
 
 Transparency:
@@ -5494,16 +5527,16 @@ Transparency:
 
 Requirements:
 - **Native audio** requires an audio-capable model.
-- **STT fallback** requires installing an STT capability plugin (typically `pip install abstractvoice`) and configuring `input.voice`; `abstractcore --set-audio-strategy auto` only chooses the policy.
+- **STT fallback** requires installing an STT capability plugin (typically `pip install "abstractcore[voice]"`) and using `audio_policy="auto"`/`"speech_to_text"` (or setting a default via `abstractcore --set-audio-strategy ...`).
 
 ### Video (policy-driven; native or frames fallback)
 - **Formats**: common `video/*` types as attachments via `media=[...]`
-- **Default behavior**: `video_policy="auto"` (native video when supported; otherwise sample frames and route through visual support on `input.text` or an explicit `input.video` route)
+- **Default behavior**: `video_policy="auto"` (native video when supported; otherwise sample frames and route through the vision pipeline)
 - **Budgets**: frame count and downscale are explicit and logged (see `abstractcore/providers/base.py`)
 
 Requirements:
 - Frame sampling fallback requires **`ffmpeg`/`ffprobe`** available on `PATH`.
-- For the sampled-frame path, you also need visual handling: either a vision-capable main model, an `input.text` route that supports frames/images, or an explicit `input.video` route; for local frame attachments, install `abstractcore[media]` so Pillow-based image processing is available.
+- For the sampled-frame path, you also need **image/vision handling**: either a vision-capable main model or configured vision fallback, and (for local frame attachments) `pip install "abstractcore[media]"` so Pillow-based image processing is available.
 
 ### Processing Features
 - **Intelligent Detection**: Automatic file type recognition and processor selection
@@ -5546,6 +5579,7 @@ For large files that exceed model context limits, use `BasicSummarizer` or imple
 | **Anthropic** | Claude 3.5 Sonnet, Claude 4 series | Supported: Up to 20 images | Supported: All formats |
 | **Ollama** | qwen2.5vl:7b, gemma3:4b, llama3.2-vision:11b | Supported: Single image | Supported: All formats |
 | **LMStudio** | qwen2.5-vl-7b, gemma-3n-e4b, magistral-small-2509 | Supported: Multiple images | Supported: All formats |
+| **MLX** | Vision-capable MLX checkpoints (`qwen3_5`, `qwen3_5_moe`, `qwen3_vl`, `gemma4`) | Supported: Single image, requires `abstractcore[mlx-vision]` | Supported: All formats |
 
 ### Text-Only Providers
 
@@ -5556,6 +5590,41 @@ All providers support document processing even without vision capabilities:
 | **HuggingFace** | Supported: All formats | Supported: Embedded in prompt |
 | **MLX** | Supported: All formats | Supported: Embedded in prompt |
 | **Any Provider** | Supported: Automatic fallback | Supported: Text extraction |
+
+MLX appears in both tables: it reads images natively for vision-capable checkpoints when
+`abstractcore[mlx-vision]` is installed, and embeds documents as text on every checkpoint. See
+[Vision Capabilities](vision-capabilities.md#1b-native-image-input-on-the-mlx-provider-apple-silicon).
+
+### Knowing whether media reached the model
+
+Providers that participate in the delivery contract report what actually reached the model:
+
+```python
+resp = llm.generate("What is in this image?", media=["photo.png"])
+resp.metadata["media_delivered"]
+# [{"index": 0, "kind": "image", "sha256": "3da0b68c…",
+#   "tokens": 1024, "transport": "mlx_vision_addon"}]
+```
+
+- `media_delivered` is written only after the media entered the model's forward pass, and
+  `tokens` is measured rather than intended.
+- `media_dropped` names why a part was not carried, using stable reason literals such as
+  `vision_family_unsupported`, `vision_multi_image_unsupported` or `media_processing_unavailable`.
+- Streamed responses carry the same record; read it from the final chunk as you would usage.
+
+For a single answer, use the shared helper:
+
+```python
+from abstractcore.media.delivery import media_delivery_verdict
+
+verdict = media_delivery_verdict(resp, provider="mlx")
+verdict.state    # "delivered" | "not_delivered" | "unverified"
+verdict.reasons  # reason literals when not delivered
+```
+
+`unverified` means that provider does not report delivery yet, so treat it as "no evidence either
+way" rather than a failure. This is what the vision fallback uses to decide whether a caption can
+be attributed to an actual observation.
 
 ### ⚠️ Model Compatibility Notes (Updated: 2025-10-17)
 
@@ -5986,6 +6055,10 @@ these are the main libraries AbstractCore uses:
 - `unstructured[docx,pptx,xlsx,odt,rtf]` (Office docs)
 - `pandas` (tabular helpers)
 
+Optional commercial-license PDF backend:
+
+- `pymupdf4llm` + `pymupdf-layout` via `abstractcore[pdf-pymupdf-commercial]`
+
 ## Troubleshooting
 
 ### Common Issues
@@ -6079,8 +6152,6 @@ from abstractcore.media.processors import (
 ---
 
 The media handling system makes AbstractCore multimodal while maintaining the same "write once, run everywhere" philosophy. Focus on your application logic while AbstractCore handles the complexity of different provider APIs and media formats.
-
----
 
 ### Inlined: `docs/embeddings.md`
 

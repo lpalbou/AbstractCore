@@ -27,6 +27,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 
 - **[Tool Calling](tool-calling.md)** — native + prompted tools; passthrough vs execution
 - **[Tool Syntax Rewriting](tool-syntax-rewriting.md)** — normalize tool-call markup for different runtimes/clients
+- **[Web and Document Tools](web-tools.md)** — `fetch_url`, `skim_url`, `web_search`, `skim_websearch`: extraction, result contract, optional JavaScript rendering, and safety
 - **[Structured Output](structured-output.md)** — `response_model=...` strategies and limitations
 - **[Request and Output](request-output.md)** — canonical `request=` + `output=` shape, structural task inference, and route-inspection basics
 - **[Session Management](session.md)** — conversation state, persistence, compaction
@@ -46,7 +47,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 ## Media, embeddings, and MCP (optional subsystems)
 
 - **[Media Handling System](media-handling-system.md)** — images/audio/video + documents (policies + fallbacks)
-- **[Vision Capabilities](vision-capabilities.md)** — image/video input, vision fallback, and how this differs from generative vision
+- **[Vision Capabilities](vision-capabilities.md)** — image/video input, native MLX image input, vision fallback, and how this differs from generative vision
 - **[Glyph Visual-Text Compression](glyphs.md)** — optional vision-based document compression (experimental)
 - **[Embeddings](embeddings.md)** — `EmbeddingManager` and local embedding models (opt-in)
 - **[MCP (Model Context Protocol)](mcp.md)** — consume MCP tool servers (HTTP/stdio) as tool sources

@@ -15,11 +15,24 @@ import inspect
 import threading
 from collections import deque, OrderedDict
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional, Union, Iterator, AsyncIterator, Type, TYPE_CHECKING, Tuple, Sequence
+from typing import (
+    List,
+    Dict,
+    Any,
+    Optional,
+    Union,
+    Iterator,
+    AsyncIterator,
+    Type,
+    TYPE_CHECKING,
+    Tuple,
+    Sequence,
+)
 from abc import ABC, abstractmethod
 
 try:
     from pydantic import BaseModel
+
     PYDANTIC_AVAILABLE = True
 except ImportError:
     PYDANTIC_AVAILABLE = False
@@ -27,7 +40,11 @@ except ImportError:
 
 from ..core.interface import AbstractCoreInterface
 from ..core.types import GenerateResponse
-from ..core.multimodal_generation import GeneratedItem, GeneratedResource, MultimodalGenerateResponse
+from ..core.multimodal_generation import (
+    GeneratedItem,
+    GeneratedResource,
+    MultimodalGenerateResponse,
+)
 from ..core.output_specs import (
     is_output_request,
     normalize_output_spec,
@@ -52,7 +69,7 @@ from ..exceptions import (
     RateLimitError,
     InvalidRequestError,
     UnsupportedFeatureError,
-    ModelNotFoundError
+    ModelNotFoundError,
 )
 from ..architectures import detect_architecture, get_architecture_format, get_model_capabilities
 from ..architectures.response_postprocessing import (
@@ -100,8 +117,13 @@ class PromptCacheStore:
     - Callers should treat prompt caches as potentially sensitive (they contain user prompt state).
     """
 
-    def __init__(self, *, max_entries: int = 32, default_ttl_s: Optional[float] = None,
-                 on_evict: Optional[Any] = None):
+    def __init__(
+        self,
+        *,
+        max_entries: int = 32,
+        default_ttl_s: Optional[float] = None,
+        on_evict: Optional[Any] = None,
+    ):
         self._max_entries = int(max_entries) if max_entries and int(max_entries) > 0 else 32
         self._default_ttl_s = default_ttl_s if default_ttl_s is None else float(default_ttl_s)
         self._entries: "OrderedDict[str, _PromptCacheEntry]" = OrderedDict()
@@ -288,7 +310,11 @@ class PromptCacheModule:
 
     def normalized(self) -> "PromptCacheModule":
         module_id = str(self.module_id or "").strip()
-        system_prompt = str(self.system_prompt).strip() if isinstance(self.system_prompt, str) and self.system_prompt else None
+        system_prompt = (
+            str(self.system_prompt).strip()
+            if isinstance(self.system_prompt, str) and self.system_prompt
+            else None
+        )
         prompt = str(self.prompt).strip() if isinstance(self.prompt, str) and self.prompt else None
         messages = None
         if isinstance(self.messages, list) and self.messages:
@@ -372,7 +398,10 @@ class PromptCacheModule:
         try:
             raw = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         except TypeError as e:
-            def _first_issue(obj: Any, path: str = "$", seen: Optional[set[int]] = None) -> Optional[str]:
+
+            def _first_issue(
+                obj: Any, path: str = "$", seen: Optional[set[int]] = None
+            ) -> Optional[str]:
                 if seen is None:
                     seen = set()
                 try:
@@ -558,7 +587,9 @@ class PromptCacheError(RuntimeError):
         capabilities: Optional[PromptCacheCapabilities] = None,
     ) -> None:
         super().__init__(message)
-        self.operation = _PROMPT_CACHE_OPERATION_ALIASES.get(str(operation or "").strip().lower(), str(operation or ""))
+        self.operation = _PROMPT_CACHE_OPERATION_ALIASES.get(
+            str(operation or "").strip().lower(), str(operation or "")
+        )
         self.provider = str(provider or "").strip() or None
         self.model = str(model or "").strip() or None
         self.code = str(code or "prompt_cache_error").strip() or "prompt_cache_error"
@@ -589,7 +620,9 @@ class PromptCacheUnsupportedError(PromptCacheError):
         capabilities: Optional[PromptCacheCapabilities] = None,
         detail: Optional[str] = None,
     ) -> None:
-        op = _PROMPT_CACHE_OPERATION_ALIASES.get(str(operation or "").strip().lower(), str(operation or "prompt_cache"))
+        op = _PROMPT_CACHE_OPERATION_ALIASES.get(
+            str(operation or "").strip().lower(), str(operation or "prompt_cache")
+        )
         msg = detail or f"Prompt cache operation '{op}' is not supported by this provider."
         super().__init__(
             msg,
@@ -705,7 +738,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # present-but-useless). None = no read-idle bound (current behavior),
         # so every consumer that does not opt in is byte-unchanged; the runtime
         # factory sets it per-lane. Non-positive → None.
-        read_idle_value = kwargs.get("read_idle_timeout_s", None) if "read_idle_timeout_s" in kwargs else None
+        read_idle_value = (
+            kwargs.get("read_idle_timeout_s", None) if "read_idle_timeout_s" in kwargs else None
+        )
         try:
             if isinstance(read_idle_value, (int, float)) and float(read_idle_value) <= 0:
                 read_idle_value = None
@@ -716,7 +751,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # Setup tool execution mode
         # execute_tools: True = AbstractCore executes tools (legacy mode)
         #                False = Pass-through mode (default - for API server / agentic CLI)
-        self.execute_tools = kwargs.get('execute_tools', False)
+        self.execute_tools = kwargs.get("execute_tools", False)
         if self.execute_tools:
             warnings.warn(
                 "execute_tools=True is deprecated. Prefer passing tools explicitly to generate() "
@@ -726,7 +761,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             )
 
         # Setup retry manager with optional configuration
-        retry_config = kwargs.get('retry_config', None)
+        retry_config = kwargs.get("retry_config", None)
         if retry_config is None:
             # Use default retry configuration
             retry_config = RetryConfig()
@@ -735,7 +770,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # retries — 3 × a 600s client timeout wedged an entity visit for 30
         # minutes). Interactive lanes pass e.g.
         # create_llm(..., retry_wall_clock_budget_s=180).
-        budget_kwarg = kwargs.get('retry_wall_clock_budget_s', None)
+        budget_kwarg = kwargs.get("retry_wall_clock_budget_s", None)
         if budget_kwarg is not None:
             try:
                 budget_value = float(budget_kwarg)
@@ -751,27 +786,33 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # Per-endpoint retry damping (C3, opt-in): resolved LAZILY at first generate
         # because base_url is set by subclass __init__ AFTER this runs. Default off —
         # single-instance behavior is unchanged unless the host opts the fleet in.
-        self._endpoint_damping_requested = bool(kwargs.get('endpoint_damping', False))
+        self._endpoint_damping_requested = bool(kwargs.get("endpoint_damping", False))
 
         # Create provider key for circuit breaker tracking
         self.provider_key = f"{self.__class__.__name__}:{self.model}"
 
         # Setup Glyph compression configuration
-        self.glyph_config = kwargs.get('glyph_config', None)
+        self.glyph_config = kwargs.get("glyph_config", None)
 
         # Setup interaction tracing
-        self.enable_tracing = kwargs.get('enable_tracing', False)
-        self._traces = deque(maxlen=kwargs.get('max_traces', 100))  # Ring buffer for memory efficiency
+        self.enable_tracing = kwargs.get("enable_tracing", False)
+        self._traces = deque(
+            maxlen=kwargs.get("max_traces", 100)
+        )  # Ring buffer for memory efficiency
 
         # Prompt caching (best-effort; provider-specific behavior).
         #
         # - Remote providers (OpenAI): supports `prompt_cache_key` pass-through (server-managed caching).
         # - Local runtimes (MLX / llama.cpp): can store KV/prefix caches in-process keyed by `prompt_cache_key`.
         self._default_prompt_cache_key: Optional[str] = None
-        prompt_cache_max_entries = kwargs.get("prompt_cache_max_entries", kwargs.get("prompt_cache_max_items", 32))
+        prompt_cache_max_entries = kwargs.get(
+            "prompt_cache_max_entries", kwargs.get("prompt_cache_max_items", 32)
+        )
         prompt_cache_ttl_s = kwargs.get("prompt_cache_ttl_s", None)
         self._prompt_cache_store = PromptCacheStore(
-            max_entries=int(prompt_cache_max_entries) if prompt_cache_max_entries is not None else 32,
+            max_entries=(
+                int(prompt_cache_max_entries) if prompt_cache_max_entries is not None else 32
+            ),
             default_ttl_s=prompt_cache_ttl_s,
             # Implicit evictions (LRU capacity / TTL expiry) must reach the
             # provider so per-key side state (snapshots, device pools) can be
@@ -791,7 +832,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
         Model-specific capabilities override architecture defaults.
         """
         merged: Dict[str, Any] = {}
-        for source in (getattr(self, "architecture_config", None), getattr(self, "model_capabilities", None)):
+        for source in (
+            getattr(self, "architecture_config", None),
+            getattr(self, "model_capabilities", None),
+        ):
             if not isinstance(source, dict):
                 continue
             params = source.get("inference_parameters")
@@ -827,9 +871,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 "Providers must implement unload_model(model_name) and must not provide any other unload entrypoint."
             )
 
-    def _track_generation(self, prompt: str, response: Optional[GenerateResponse],
-                         start_time: float, success: bool = True,
-                         error: Optional[Exception] = None, stream: bool = False):
+    def _track_generation(
+        self,
+        prompt: str,
+        response: Optional[GenerateResponse],
+        start_time: float,
+        success: bool = True,
+        error: Optional[Exception] = None,
+        stream: bool = False,
+    ):
         """
         Track generation with telemetry and events.
 
@@ -849,10 +899,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
         cost_usd = None
 
         if response and response.usage:
-            tokens_input = response.usage.get('prompt_tokens') or response.usage.get('input_tokens')
-            tokens_output = response.usage.get('completion_tokens') or response.usage.get('output_tokens')
+            tokens_input = response.usage.get("prompt_tokens") or response.usage.get("input_tokens")
+            tokens_output = response.usage.get("completion_tokens") or response.usage.get(
+                "output_tokens"
+            )
             # Calculate cost if possible (simplified - could be enhanced)
-            total_tokens = response.usage.get('total_tokens', 0)
+            total_tokens = response.usage.get("total_tokens", 0)
             if total_tokens > 0:
                 # Very rough cost estimation - should be provider-specific
                 cost_usd = total_tokens * 0.00002  # ~$0.02 per 1K tokens average
@@ -869,10 +921,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
             "duration_ms": latency_ms,
             "tokens_input": tokens_input,
             "tokens_output": tokens_output,
-            "cost_usd": cost_usd
+            "cost_usd": cost_usd,
         }
 
         from ..events import emit_global
+
         emit_global(EventType.GENERATION_COMPLETED, event_data, source=self.__class__.__name__)
 
         # Track with structured logging (using formatted strings)
@@ -881,17 +934,26 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if isinstance(error, ModelNotFoundError):
                 self.logger.debug(f"Model not found: {self.model}")
             else:
-                self.logger.error(f"Generation failed for {self.model}: {error} (latency: {latency_ms:.2f}ms)")
+                self.logger.error(
+                    f"Generation failed for {self.model}: {error} (latency: {latency_ms:.2f}ms)"
+                )
         else:
             tokens_info = ""
             if response and response.usage:
                 tokens_info = f" (tokens: {response.usage.get('total_tokens', 0)})"
 
-            self.logger.info(f"Generation completed for {self.model}: {latency_ms:.2f}ms{tokens_info}")
+            self.logger.info(
+                f"Generation completed for {self.model}: {latency_ms:.2f}ms{tokens_info}"
+            )
 
-    def _track_tool_call(self, tool_name: str, arguments: Dict[str, Any],
-                        result: Optional[Any] = None, success: bool = True,
-                        error: Optional[Exception] = None):
+    def _track_tool_call(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        result: Optional[Any] = None,
+        success: bool = True,
+        error: Optional[Exception] = None,
+    ):
         """
         Track tool call with telemetry and events.
 
@@ -909,7 +971,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             "arguments": arguments,
             "result": preview_text(result, max_chars=100) if result else None,
             "error": str(error) if error else None,
-            "success": success
+            "success": success,
         }
 
         # Add model and provider to event data
@@ -917,6 +979,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         event_data["provider"] = self.__class__.__name__
 
         from ..events import emit_global
+
         emit_global(event_type, event_data, source=self.__class__.__name__)
 
         # Track with structured logging (using formatted strings)
@@ -926,9 +989,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
             result_info = f" (result length: {len(str(result))})" if result else ""
             self.logger.info(f"Tool call completed: {tool_name}{result_info}")
 
-    def _capture_trace(self, prompt: str, messages: Optional[List[Dict[str, str]]],
-                       system_prompt: Optional[str], tools: Optional[List[Dict[str, Any]]],
-                       response: GenerateResponse, kwargs: Dict[str, Any]) -> str:
+    def _capture_trace(
+        self,
+        prompt: str,
+        messages: Optional[List[Dict[str, str]]],
+        system_prompt: Optional[str],
+        tools: Optional[List[Dict[str, Any]]],
+        response: GenerateResponse,
+        kwargs: Dict[str, Any],
+    ) -> str:
         """
         Capture interaction trace for observability.
 
@@ -952,48 +1021,48 @@ class BaseProvider(AbstractCoreInterface, ABC):
             return trace_id
 
         # Extract generation parameters
-        temperature = kwargs.get('temperature', self.temperature)
+        temperature = kwargs.get("temperature", self.temperature)
         if temperature is None:
             temperature = self.temperature
-        max_tokens = kwargs.get('max_tokens', self.max_tokens)
-        max_output_tokens = kwargs.get('max_output_tokens', self.max_output_tokens)
-        seed = self._normalize_seed(kwargs.get('seed', self.seed))
-        top_p = kwargs.get('top_p', getattr(self, 'top_p', None))
-        top_k = kwargs.get('top_k', getattr(self, 'top_k', None))
+        max_tokens = kwargs.get("max_tokens", self.max_tokens)
+        max_output_tokens = kwargs.get("max_output_tokens", self.max_output_tokens)
+        seed = self._normalize_seed(kwargs.get("seed", self.seed))
+        top_p = kwargs.get("top_p", getattr(self, "top_p", None))
+        top_k = kwargs.get("top_k", getattr(self, "top_k", None))
 
         # Build parameters dict
         parameters = {
-            'temperature': temperature,
-            'max_tokens': max_tokens,
-            'max_output_tokens': max_output_tokens,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "max_output_tokens": max_output_tokens,
         }
         if seed is not None:
-            parameters['seed'] = seed
+            parameters["seed"] = seed
         if top_p is not None:
-            parameters['top_p'] = top_p
+            parameters["top_p"] = top_p
         if top_k is not None:
-            parameters['top_k'] = top_k
+            parameters["top_k"] = top_k
 
         # Create trace record
         trace = {
-            'trace_id': trace_id,
-            'timestamp': datetime.now().isoformat(),
-            'provider': self.__class__.__name__,
-            'model': self.model,
-            'system_prompt': system_prompt,
-            'prompt': prompt,
-            'messages': messages,
-            'tools': tools,
-            'parameters': parameters,
-            'response': {
-                'content': response.content,
-                'raw_response': None,  # Omit raw_response to save memory and avoid logging sensitive data
-                'tool_calls': response.tool_calls,
-                'finish_reason': response.finish_reason,
-                'usage': response.usage,
-                'generation_time_ms': response.gen_time,
+            "trace_id": trace_id,
+            "timestamp": datetime.now().isoformat(),
+            "provider": self.__class__.__name__,
+            "model": self.model,
+            "system_prompt": system_prompt,
+            "prompt": prompt,
+            "messages": messages,
+            "tools": tools,
+            "parameters": parameters,
+            "response": {
+                "content": response.content,
+                "raw_response": None,  # Omit raw_response to save memory and avoid logging sensitive data
+                "tool_calls": response.tool_calls,
+                "finish_reason": response.finish_reason,
+                "usage": response.usage,
+                "generation_time_ms": response.gen_time,
             },
-            'metadata': kwargs.get('trace_metadata', {})
+            "metadata": kwargs.get("trace_metadata", {}),
         }
 
         # Store trace in ring buffer
@@ -1001,7 +1070,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         return trace_id
 
-    def get_traces(self, trace_id: Optional[str] = None, last_n: Optional[int] = None) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
+    def get_traces(
+        self, trace_id: Optional[str] = None, last_n: Optional[int] = None
+    ) -> Union[Dict[str, Any], List[Dict[str, Any]]]:
         """
         Retrieve interaction traces.
 
@@ -1015,13 +1086,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if trace_id:
             # Find specific trace by ID
             for trace in self._traces:
-                if trace['trace_id'] == trace_id:
+                if trace["trace_id"] == trace_id:
                     return trace
             return None
 
         if last_n:
             # Return last N traces
-            return list(self._traces)[-last_n:] if len(self._traces) >= last_n else list(self._traces)
+            return (
+                list(self._traces)[-last_n:] if len(self._traces) >= last_n else list(self._traces)
+            )
 
         # Return all traces
         return list(self._traces)
@@ -1036,6 +1109,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         Returns:
             Custom exception
         """
+
         def _provider_label() -> str:
             raw = getattr(self, "provider", None)
             if isinstance(raw, str) and raw.strip():
@@ -1139,7 +1213,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 return ProviderAPIError(_timeout_message())
             return error
 
-        if isinstance(error, (ModelNotFoundError, AuthenticationError, RateLimitError, InvalidRequestError)):
+        if isinstance(
+            error, (ModelNotFoundError, AuthenticationError, RateLimitError, InvalidRequestError)
+        ):
             return error
 
         # Central timeout normalization for all providers (httpx/requests/SDKs).
@@ -1157,15 +1233,21 @@ class BaseProvider(AbstractCoreInterface, ABC):
         wrapped_retry_after = self._retry_after_from_exception(error)
 
         if "rate" in error_str and "limit" in error_str:
-            return RateLimitError(f"Rate limit exceeded: {error}",
-                                  status_code=wrapped_status, retry_after_s=wrapped_retry_after)
+            return RateLimitError(
+                f"Rate limit exceeded: {error}",
+                status_code=wrapped_status,
+                retry_after_s=wrapped_retry_after,
+            )
         elif "auth" in error_str or "api key" in error_str or "unauthorized" in error_str:
-            return AuthenticationError(f"Authentication failed: {error}", status_code=wrapped_status)
+            return AuthenticationError(
+                f"Authentication failed: {error}", status_code=wrapped_status
+            )
         elif "invalid" in error_str or "bad request" in error_str:
             return InvalidRequestError(f"Invalid request: {error}", status_code=wrapped_status)
         else:
-            return ProviderAPIError(f"API error: {error}",
-                                    status_code=wrapped_status, retry_after_s=wrapped_retry_after)
+            return ProviderAPIError(
+                f"API error: {error}", status_code=wrapped_status, retry_after_s=wrapped_retry_after
+            )
 
     @staticmethod
     def _status_code_from_exception(error: Exception) -> Optional[int]:
@@ -1255,7 +1337,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         )
 
     @staticmethod
-    def _normalize_thinking_request(thinking: Optional[Union[bool, str]]) -> Tuple[Optional[bool], Optional[str]]:
+    def _normalize_thinking_request(
+        thinking: Optional[Union[bool, str]],
+    ) -> Tuple[Optional[bool], Optional[str]]:
         """Normalize `thinking=` into (enabled, level).
 
         - enabled: True/False/None (None == "auto")
@@ -1342,7 +1426,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
             return None
 
     @classmethod
-    def _nearest_supported_thinking_level(cls, requested_level: str, supported_levels: List[str]) -> Optional[str]:
+    def _nearest_supported_thinking_level(
+        cls, requested_level: str, supported_levels: List[str]
+    ) -> Optional[str]:
         """Map a requested thinking level to the nearest supported level (best-effort)."""
         if not isinstance(requested_level, str) or not requested_level.strip():
             return None
@@ -1373,7 +1459,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
         best_rank: Optional[int] = None
         for r, s in ranked:
             dist = abs(r - req_rank)
-            if best_dist is None or dist < best_dist or (dist == best_dist and best_rank is not None and r < best_rank):
+            if (
+                best_dist is None
+                or dist < best_dist
+                or (dist == best_dist and best_rank is not None and r < best_rank)
+            ):
                 best = s
                 best_dist = dist
                 best_rank = r
@@ -1384,7 +1474,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         caps = self.model_capabilities if isinstance(self.model_capabilities, dict) else {}
         arch = self.architecture_config if isinstance(self.architecture_config, dict) else {}
 
-        resp_fmt = str((caps.get("response_format") or arch.get("response_format") or "")).strip().lower()
+        resp_fmt = (
+            str((caps.get("response_format") or arch.get("response_format") or "")).strip().lower()
+        )
         if resp_fmt == "harmony":
             return True
         msg_fmt = str((arch.get("message_format") or "")).strip().lower()
@@ -1393,18 +1485,30 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         if caps.get("thinking_support") is True:
             return True
-        if isinstance(caps.get("thinking_tags"), (list, tuple)) and len(caps.get("thinking_tags")) == 2:
+        if (
+            isinstance(caps.get("thinking_tags"), (list, tuple))
+            and len(caps.get("thinking_tags")) == 2
+        ):
             return True
-        if isinstance(caps.get("thinking_output_field"), str) and caps.get("thinking_output_field").strip():
+        if (
+            isinstance(caps.get("thinking_output_field"), str)
+            and caps.get("thinking_output_field").strip()
+        ):
             return True
         if self._model_reasoning_levels():
             return True
 
         if arch.get("reasoning_support") is True:
             return True
-        if isinstance(arch.get("thinking_tags"), (list, tuple)) and len(arch.get("thinking_tags")) == 2:
+        if (
+            isinstance(arch.get("thinking_tags"), (list, tuple))
+            and len(arch.get("thinking_tags")) == 2
+        ):
             return True
-        if isinstance(arch.get("thinking_output_field"), str) and arch.get("thinking_output_field").strip():
+        if (
+            isinstance(arch.get("thinking_output_field"), str)
+            and arch.get("thinking_output_field").strip()
+        ):
             return True
         if isinstance(arch.get("reasoning_levels"), list) and arch.get("reasoning_levels"):
             return True
@@ -1417,7 +1521,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         arch = self.architecture_config if isinstance(self.architecture_config, dict) else {}
 
         # Harmony response format implies a request-side Reasoning control via system prompt injection.
-        resp_fmt = str((caps.get("response_format") or arch.get("response_format") or "")).strip().lower()
+        resp_fmt = (
+            str((caps.get("response_format") or arch.get("response_format") or "")).strip().lower()
+        )
         if resp_fmt == "harmony":
             return True
         msg_fmt = str((arch.get("message_format") or "")).strip().lower()
@@ -1456,10 +1562,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     arch_sources.append(resolved)
             except Exception:
                 pass
-        if isinstance(self.architecture_config, dict) and self.architecture_config not in arch_sources:
+        if (
+            isinstance(self.architecture_config, dict)
+            and self.architecture_config not in arch_sources
+        ):
             arch_sources.append(self.architecture_config)
         return resolve_thinking_control_surfaces(
-            model_capabilities=self.model_capabilities if isinstance(self.model_capabilities, dict) else None,
+            model_capabilities=(
+                self.model_capabilities if isinstance(self.model_capabilities, dict) else None
+            ),
             architecture_format=arch_sources,
         )
 
@@ -1512,7 +1623,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         system_prompt: Optional[str],
         kwargs: Dict[str, Any],
         request_shape: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[str, Optional[List[Dict[str, str]]], Optional[str], Dict[str, Any], Optional[Dict[str, Any]]]:
+    ) -> Tuple[
+        str, Optional[List[Dict[str, str]]], Optional[str], Dict[str, Any], Optional[Dict[str, Any]]
+    ]:
         """Apply unified thinking controls to the request.
 
         `request_shape` carries facts about the request that decide which internal
@@ -1529,7 +1642,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
         reasoning_levels = self._model_reasoning_levels()
         effective_level = requested_level
 
-        if requested_level is not None and reasoning_levels and requested_level not in reasoning_levels:
+        if (
+            requested_level is not None
+            and reasoning_levels
+            and requested_level not in reasoning_levels
+        ):
             mapped = self._nearest_supported_thinking_level(requested_level, reasoning_levels)
             if mapped:
                 warnings.warn(
@@ -1615,11 +1732,17 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 "supported_levels": reasoning_levels,
                 "request_shape": dict(request_shape) if isinstance(request_shape, dict) else {},
             }
-            filtered_kwargs: Dict[str, Any] = {"enabled": enabled, "level": effective_level, "kwargs": kwargs}
+            filtered_kwargs: Dict[str, Any] = {
+                "enabled": enabled,
+                "level": effective_level,
+                "kwargs": kwargs,
+            }
             try:
                 sig = inspect.signature(hook)
                 params = sig.parameters
-                accepts_var_kw = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
+                accepts_var_kw = any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+                )
                 if accepts_var_kw:
                     filtered_kwargs = call_kwargs
                 else:
@@ -1760,7 +1883,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         continue
                     new_messages.append(dict(m))
                 for m in reversed(new_messages):
-                    if m.get("role") == "user" and isinstance(m.get("content"), str) and m["content"].strip():
+                    if (
+                        m.get("role") == "user"
+                        and isinstance(m.get("content"), str)
+                        and m["content"].strip()
+                    ):
                         m["content"] = _append_control(m["content"])
                         appended = True
                         break
@@ -1787,7 +1914,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 stacklevel=3,
             )
 
-        handled_enable_disable = handled_model_enable_disable or provider_handling.handled_enable_disable
+        handled_enable_disable = (
+            handled_model_enable_disable or provider_handling.handled_enable_disable
+        )
         handled_level = handled_model_level or provider_handling.handled_level
 
         if requesting_level and not handled_level and effective_level is not None:
@@ -1883,7 +2012,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if effective_enabled is None:
             if enabled is False and handled_enable_disable:
                 effective_enabled = False
-            elif (enabled is True or effective_level is not None) and (handled_enable_disable or handled_level):
+            elif (enabled is True or effective_level is not None) and (
+                handled_enable_disable or handled_level
+            ):
                 effective_enabled = True
 
         if effective_level_meta is None and effective_level is not None and handled_level:
@@ -2051,9 +2182,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
     ) -> Tuple[Any, bool]:
         """Attach top-level generated-media progress callbacks to output specs."""
         effective_callbacks = {
-            str(key): value
-            for key, value in callbacks.items()
-            if value is not None
+            str(key): value for key, value in callbacks.items() if value is not None
         }
         if not effective_callbacks or not cls._is_acore_output_request(output):
             return output, False
@@ -2164,7 +2293,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
             raw = item.get("media_type", item.get("mediaType"))
             if raw is None:
                 raw = item.get("type")
-            if isinstance(raw, str) and raw.strip().lower() in {"image", "audio", "video", "document", "text"}:
+            if isinstance(raw, str) and raw.strip().lower() in {
+                "image",
+                "audio",
+                "video",
+                "document",
+                "text",
+            }:
                 return raw.strip().lower()
             mime = item.get("mime_type", item.get("mimeType", item.get("mime")))
             if mime is None:
@@ -2239,7 +2374,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if hasattr(item, "file_path") and getattr(item, "file_path", None):
             return getattr(item, "file_path")
         if hasattr(item, "content"):
-            return _maybe_decode_base64(getattr(item, "content"), getattr(item, "content_format", None))
+            return _maybe_decode_base64(
+                getattr(item, "content"), getattr(item, "content_format", None)
+            )
         return item
 
     def _context_media_for_text_generation(self, media: Any) -> Any:
@@ -2251,7 +2388,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         return context_items or None
 
     @staticmethod
-    def _output_plugin_kwargs(spec: Dict[str, Any], *, exclude: Optional[set[str]] = None) -> Dict[str, Any]:
+    def _output_plugin_kwargs(
+        spec: Dict[str, Any], *, exclude: Optional[set[str]] = None
+    ) -> Dict[str, Any]:
         return output_plugin_kwargs(spec, exclude=exclude)
 
     @staticmethod
@@ -2291,7 +2430,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         return seeds
 
     @staticmethod
-    def _artifact_or_data(value: Any) -> tuple[Optional[bytes], Optional[Dict[str, Any]], Dict[str, Any]]:
+    def _artifact_or_data(
+        value: Any,
+    ) -> tuple[Optional[bytes], Optional[Dict[str, Any]], Dict[str, Any]]:
         if isinstance(value, (bytes, bytearray)):
             return bytes(value), None, {}
         if is_artifact_ref(value):
@@ -2331,9 +2472,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             data, artifact_ref, metadata = self._artifact_or_data(raw)
             fmt = str(spec.get("format") or default_format).strip().lower() or default_format
             content_type = str(
-                metadata.get("content_type")
-                or metadata.get("mime_type")
-                or f"{modality}/{fmt}"
+                metadata.get("content_type") or metadata.get("mime_type") or f"{modality}/{fmt}"
             )
             if artifact_ref is None:
                 data, stored_ref = self._store_generated_data(
@@ -2390,7 +2529,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
             content_type=content_type,
             run_id=spec.get("run_id"),
             tags=spec.get("tags") if isinstance(spec.get("tags"), dict) else None,
-            artifact_id=spec.get("artifact_id") if isinstance(spec.get("artifact_id"), str) else None,
+            artifact_id=(
+                spec.get("artifact_id") if isinstance(spec.get("artifact_id"), str) else None
+            ),
         )
         ref = BaseProvider._artifact_ref_from_store_result(stored)
         if ref is not None:
@@ -2431,27 +2572,45 @@ class BaseProvider(AbstractCoreInterface, ABC):
         text_generation_kwargs: Dict[str, Any],
     ) -> MultimodalGenerateResponse:
         specs = self._normalize_output_specs(output)
-        if any(s.get("modality") == "text" and not s.get("task") for s in specs) and not str(prompt or "").strip():
+        if (
+            any(s.get("modality") == "text" and not s.get("task") for s in specs)
+            and not str(prompt or "").strip()
+        ):
             audio_items = [
                 item
                 for item in self._coerce_media_items(media)
-                if self._media_type(item, fallback="audio" if isinstance(item, (bytes, bytearray)) else None) == "audio"
+                if self._media_type(
+                    item, fallback="audio" if isinstance(item, (bytes, bytearray)) else None
+                )
+                == "audio"
             ]
             if audio_items:
                 for spec in specs:
                     if spec.get("modality") == "text" and not spec.get("task"):
                         spec["task"] = "transcription"
         if stream:
-            raise ValueError("generate(..., output=...) does not support stream=True for non-text outputs yet.")
+            raise ValueError(
+                "generate(..., output=...) does not support stream=True for non-text outputs yet."
+            )
         if response_model is not None and any(s.get("modality") != "text" for s in specs):
             raise ValueError("response_model cannot be combined with non-text multimodal outputs.")
 
-        text_specs = [s for s in specs if s.get("modality") == "text" and s.get("task") != "transcription"]
-        non_text_specs = [s for s in specs if not (s.get("modality") == "text" and s.get("task") != "transcription")]
+        text_specs = [
+            s for s in specs if s.get("modality") == "text" and s.get("task") != "transcription"
+        ]
+        non_text_specs = [
+            s
+            for s in specs
+            if not (s.get("modality") == "text" and s.get("task") != "transcription")
+        ]
         if len(text_specs) > 1 and any("source" not in s for s in non_text_specs):
-            raise ValueError("Multiple text outputs require explicit source binding for non-text outputs.")
+            raise ValueError(
+                "Multiple text outputs require explicit source binding for non-text outputs."
+            )
 
-        result = MultimodalGenerateResponse(metadata={"model": self.model, "provider": self.__class__.__name__})
+        result = MultimodalGenerateResponse(
+            metadata={"model": self.model, "provider": self.__class__.__name__}
+        )
 
         generated_text: Optional[GenerateResponse] = None
         if text_specs and len(specs) > 1:
@@ -2466,7 +2625,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 raise ValueError("Text output generation did not return GenerateResponse.")
             result.text = generated_text
 
-        if len(specs) == 1 and specs[0].get("modality") == "text" and specs[0].get("task") != "transcription":
+        if (
+            len(specs) == 1
+            and specs[0].get("modality") == "text"
+            and specs[0].get("task") != "transcription"
+        ):
             generated_text = self.generate_with_telemetry(
                 prompt=prompt,
                 stream=False,
@@ -2483,7 +2646,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 if not source_text:
                     source = spec.get("source")
                     if source and generated_text is None:
-                        raise ValueError(f"Unknown text source {source!r}; no generated text output is available.")
+                        raise ValueError(
+                            f"Unknown text source {source!r}; no generated text output is available."
+                        )
                     if generated_text is not None:
                         source_text = str(generated_text.content or "")
                     else:
@@ -2522,22 +2687,34 @@ class BaseProvider(AbstractCoreInterface, ABC):
     ) -> None:
         modality = str(spec.get("modality") or "").lower()
         if modality == "image":
-            self._run_image_output(result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store)
+            self._run_image_output(
+                result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store
+            )
             return
         if modality == "video":
-            self._run_video_output(result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store)
+            self._run_video_output(
+                result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store
+            )
             return
         if modality == "voice":
-            self._run_voice_output(result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store)
+            self._run_voice_output(
+                result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store
+            )
             return
         if modality == "music":
-            self._run_music_output(result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store)
+            self._run_music_output(
+                result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store
+            )
             return
         if modality == "scene3d":
-            self._run_scene3d_output(result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store)
+            self._run_scene3d_output(
+                result=result, spec=spec, prompt=prompt, media=media, artifact_store=artifact_store
+            )
             return
         if modality == "text" and spec.get("task") == "transcription":
-            self._run_transcription_output(result=result, spec=spec, media=media, artifact_store=artifact_store)
+            self._run_transcription_output(
+                result=result, spec=spec, media=media, artifact_store=artifact_store
+            )
             return
         raise ValueError(f"Unsupported multimodal output modality: {modality!r}")
 
@@ -2551,7 +2728,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
         artifact_store: Optional[Any],
     ) -> None:
         items = self._coerce_media_items(media)
-        images = [item for item in items if self._media_type(item, fallback="image" if isinstance(item, (bytes, bytearray)) else None) == "image"]
+        images = [
+            item
+            for item in items
+            if self._media_type(
+                item, fallback="image" if isinstance(item, (bytes, bytearray)) else None
+            )
+            == "image"
+        ]
         roles = [(item, self._media_role(item)) for item in images]
         source_items = [item for item, role in roles if role == "source"]
         mask_items = [item for item, role in roles if role == "mask"]
@@ -2582,13 +2766,24 @@ class BaseProvider(AbstractCoreInterface, ABC):
             if source is None:
                 raise ValueError("Image upscale requires one source image.")
             if mask_items or reference_like:
-                raise ValueError("Image upscale accepts one source image and no mask/reference images.")
+                raise ValueError(
+                    "Image upscale accepts one source image and no mask/reference images."
+                )
             if len(source_items) + len(unroled) != 1:
                 raise ValueError("Image upscale requires exactly one source image.")
 
         kwargs = self._output_plugin_kwargs(
             spec,
-            exclude={"format", "content_type", "mime_type", "provider", "response_format", "count", "n", "seeds"},
+            exclude={
+                "format",
+                "content_type",
+                "mime_type",
+                "provider",
+                "response_format",
+                "count",
+                "n",
+                "seeds",
+            },
         )
         if spec.get("provider") is not None:
             kwargs["provider"] = spec.get("provider")
@@ -2673,7 +2868,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
         artifact_store: Optional[Any],
     ) -> None:
         items = self._coerce_media_items(media)
-        images = [item for item in items if self._media_type(item, fallback="image" if isinstance(item, (bytes, bytearray)) else None) == "image"]
+        images = [
+            item
+            for item in items
+            if self._media_type(
+                item, fallback="image" if isinstance(item, (bytes, bytearray)) else None
+            )
+            == "image"
+        ]
         roles = [(item, self._media_role(item)) for item in images]
         source_items = [item for item, role in roles if role == "source"]
         mask_items = [item for item, role in roles if role == "mask"]
@@ -2695,11 +2897,22 @@ class BaseProvider(AbstractCoreInterface, ABC):
             elif len(unroled) == 1 and not reference_like:
                 should_i2v = True
             elif len(unroled) > 1:
-                raise ValueError("Multiple image media items require explicit roles for image-to-video.")
+                raise ValueError(
+                    "Multiple image media items require explicit roles for image-to-video."
+                )
 
         kwargs = self._output_plugin_kwargs(
             spec,
-            exclude={"format", "content_type", "mime_type", "provider", "response_format", "count", "n", "seeds"},
+            exclude={
+                "format",
+                "content_type",
+                "mime_type",
+                "provider",
+                "response_format",
+                "count",
+                "n",
+                "seeds",
+            },
         )
         if spec.get("provider") is not None:
             kwargs["provider"] = spec.get("provider")
@@ -2752,15 +2965,26 @@ class BaseProvider(AbstractCoreInterface, ABC):
         artifact_store: Optional[Any],
     ) -> None:
         items = self._coerce_media_items(media)
-        audio_items = [item for item in items if self._media_type(item, fallback="audio" if isinstance(item, (bytes, bytearray)) else None) == "audio"]
+        audio_items = [
+            item
+            for item in items
+            if self._media_type(
+                item, fallback="audio" if isinstance(item, (bytes, bytearray)) else None
+            )
+            == "audio"
+        ]
         task = str(spec.get("task") or "").lower()
         voice_id = spec.get("voice_id", spec.get("voice"))
         if task in {"voice_clone", "clone"} or (audio_items and not task):
             if voice_id:
-                raise ValueError("Voice output with audio media and voice/voice_id is ambiguous; set task='tts' or omit voice/voice_id.")
+                raise ValueError(
+                    "Voice output with audio media and voice/voice_id is ambiguous; set task='tts' or omit voice/voice_id."
+                )
             if len(audio_items) != 1:
                 raise ValueError("Voice cloning requires exactly one audio media item in v1.")
-            kwargs = self._output_plugin_kwargs(spec, exclude={"voice", "voice_id", "format", "provider"})
+            kwargs = self._output_plugin_kwargs(
+                spec, exclude={"voice", "voice_id", "format", "provider"}
+            )
             if spec.get("provider") is not None:
                 kwargs["provider"] = spec.get("provider")
             reference_text = kwargs.pop("reference_text", None)
@@ -2774,7 +2998,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 **kwargs,
             )
             resource_id, metadata = self._resource_id_from_clone_result(raw)
-            voice_provider = str(spec.get("provider") or spec.get("tts_provider") or getattr(self.voice, "backend_id", None) or self.__class__.__name__)
+            voice_provider = str(
+                spec.get("provider")
+                or spec.get("tts_provider")
+                or getattr(self.voice, "backend_id", None)
+                or self.__class__.__name__
+            )
             voice_model = spec.get("model") or spec.get("tts_model")
             result.add_resource(
                 "voice",
@@ -2793,7 +3022,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
             return
 
         fmt = str(spec.get("format") or "wav")
-        kwargs = self._output_plugin_kwargs(spec, exclude={"voice", "voice_id", "format", "provider"})
+        kwargs = self._output_plugin_kwargs(
+            spec, exclude={"voice", "voice_id", "format", "provider"}
+        )
         if spec.get("provider") is not None:
             kwargs["provider"] = spec.get("provider")
         kwargs["voice"] = str(voice_id) if voice_id is not None else None
@@ -2806,12 +3037,26 @@ class BaseProvider(AbstractCoreInterface, ABC):
             kwargs["artifact_store"] = artifact_store
         raw = self.voice.tts(prompt, **kwargs)
         data, artifact_ref, metadata = self._artifact_or_data(raw)
-        content_type = str(metadata.get("content_type") or metadata.get("mime_type") or f"audio/{fmt}")
-        voice_provider = str(spec.get("provider") or spec.get("tts_provider") or getattr(self.voice, "backend_id", None) or self.__class__.__name__)
-        voice_model = spec.get("model") or spec.get("tts_model") or metadata.get("model") or metadata.get("model_id")
+        content_type = str(
+            metadata.get("content_type") or metadata.get("mime_type") or f"audio/{fmt}"
+        )
+        voice_provider = str(
+            spec.get("provider")
+            or spec.get("tts_provider")
+            or getattr(self.voice, "backend_id", None)
+            or self.__class__.__name__
+        )
+        voice_model = (
+            spec.get("model")
+            or spec.get("tts_model")
+            or metadata.get("model")
+            or metadata.get("model_id")
+        )
         tts_meta = metadata.get("abstractvoice_tts")
         if voice_model is None and isinstance(tts_meta, dict):
-            voice_model = tts_meta.get("model") or tts_meta.get("model_id") or tts_meta.get("tts_model")
+            voice_model = (
+                tts_meta.get("model") or tts_meta.get("model_id") or tts_meta.get("tts_model")
+            )
         if voice_model is None and voice_id is not None:
             voice_model = voice_id
         if artifact_ref is None:
@@ -2851,15 +3096,24 @@ class BaseProvider(AbstractCoreInterface, ABC):
         audio_items = [
             item
             for item in items
-            if self._media_type(item, fallback="audio" if isinstance(item, (bytes, bytearray)) else None) == "audio"
+            if self._media_type(
+                item, fallback="audio" if isinstance(item, (bytes, bytearray)) else None
+            )
+            == "audio"
         ]
         if audio_items:
-            raise ValueError("Music generation does not accept audio media in v1; pass lyrics/text fields instead.")
+            raise ValueError(
+                "Music generation does not accept audio media in v1; pass lyrics/text fields instead."
+            )
 
         if spec.get("backend") is not None or spec.get("music_backend") is not None:
-            raise ValueError("Music output routing uses `provider` as the backend selector; `backend` and `music_backend` are not supported.")
+            raise ValueError(
+                "Music output routing uses `provider` as the backend selector; `backend` and `music_backend` are not supported."
+            )
 
-        fmt = str(spec.get("format") or spec.get("response_format") or "wav").strip().lower() or "wav"
+        fmt = (
+            str(spec.get("format") or spec.get("response_format") or "wav").strip().lower() or "wav"
+        )
         kwargs = self._output_plugin_kwargs(
             spec,
             exclude={"lyrics", "format", "response_format", "provider", "backend", "music_backend"},
@@ -2869,10 +3123,26 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if artifact_store is not None:
             kwargs["artifact_store"] = artifact_store
 
-        provider_task = str(spec.get("task") or "music_generation").strip().lower().replace("-", "_") or "music_generation"
-        if provider_task in {"music", "song", "t2m", "music_generation", "text_to_music", "lyrics_to_music"}:
+        provider_task = (
+            str(spec.get("task") or "music_generation").strip().lower().replace("-", "_")
+            or "music_generation"
+        )
+        if provider_task in {
+            "music",
+            "song",
+            "t2m",
+            "music_generation",
+            "text_to_music",
+            "lyrics_to_music",
+        }:
             provider_task = "text_to_music"
-        elif provider_task in {"sound", "sfx", "sound_generation", "audio_generation", "text_to_audio"}:
+        elif provider_task in {
+            "sound",
+            "sfx",
+            "sound_generation",
+            "audio_generation",
+            "text_to_audio",
+        }:
             provider_task = "text_to_audio"
         result_task = "sound_generation" if provider_task == "text_to_audio" else "music_generation"
         result_modality = "sound" if result_task == "sound_generation" else "music"
@@ -2885,15 +3155,36 @@ class BaseProvider(AbstractCoreInterface, ABC):
             **kwargs,
         )
         data, artifact_ref, metadata = self._artifact_or_data(raw)
-        content_type = str(metadata.get("content_type") or metadata.get("mime_type") or f"audio/{fmt}")
-        backend_id = metadata.get("backend_id") or metadata.get("backend") or getattr(self.music, "backend_id", None)
-        backend_id = str(backend_id).strip() if isinstance(backend_id, str) and str(backend_id).strip() else None
+        content_type = str(
+            metadata.get("content_type") or metadata.get("mime_type") or f"audio/{fmt}"
+        )
+        backend_id = (
+            metadata.get("backend_id")
+            or metadata.get("backend")
+            or getattr(self.music, "backend_id", None)
+        )
+        backend_id = (
+            str(backend_id).strip()
+            if isinstance(backend_id, str) and str(backend_id).strip()
+            else None
+        )
 
         # Provider/model should reflect the invoked backend/result when possible
         # (not a blind echo of request selectors).
-        music_provider = metadata.get("provider") or metadata.get("provider_id") or backend_id or getattr(self.music, "backend_id", None) or self.__class__.__name__
+        music_provider = (
+            metadata.get("provider")
+            or metadata.get("provider_id")
+            or backend_id
+            or getattr(self.music, "backend_id", None)
+            or self.__class__.__name__
+        )
         music_provider = str(music_provider)
-        music_model = metadata.get("model") or metadata.get("model_id") or metadata.get("modelId") or spec.get("model")
+        music_model = (
+            metadata.get("model")
+            or metadata.get("model_id")
+            or metadata.get("modelId")
+            or spec.get("model")
+        )
         if artifact_ref is None:
             data, stored_ref = self._store_generated_data(
                 data,
@@ -2927,7 +3218,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
         artifact_store: Optional[Any],
     ) -> None:
         items = self._coerce_media_items(media)
-        audio_items = [item for item in items if self._media_type(item, fallback="audio" if isinstance(item, (bytes, bytearray)) else None) == "audio"]
+        audio_items = [
+            item
+            for item in items
+            if self._media_type(
+                item, fallback="audio" if isinstance(item, (bytes, bytearray)) else None
+            )
+            == "audio"
+        ]
         if len(audio_items) != 1:
             raise ValueError("Transcription requires exactly one audio media item in v1.")
         kwargs: Dict[str, Any] = {}
@@ -2959,14 +3257,21 @@ class BaseProvider(AbstractCoreInterface, ABC):
         images = [
             item
             for item in items
-            if self._media_type(item, fallback="image" if isinstance(item, (bytes, bytearray)) else None) == "image"
+            if self._media_type(
+                item, fallback="image" if isinstance(item, (bytes, bytearray)) else None
+            )
+            == "image"
         ]
         roles = [(item, self._media_role(item)) for item in images]
         source_items = [item for item, role in roles if role == "source"]
         unroled = [item for item, role in roles if role is None]
-        reference_like = [item for item, role in roles if role in {"reference", "style", "context", "mask"}]
+        reference_like = [
+            item for item, role in roles if role in {"reference", "style", "context", "mask"}
+        ]
         if reference_like:
-            raise ValueError("scene3d generation supports at most one source image and no reference/mask images in v1.")
+            raise ValueError(
+                "scene3d generation supports at most one source image and no reference/mask images in v1."
+            )
         if len(source_items) > 1:
             raise ValueError("scene3d generation supports at most one source image in v1.")
 
@@ -2978,12 +3283,23 @@ class BaseProvider(AbstractCoreInterface, ABC):
             elif len(unroled) == 1:
                 should_i23d = True
             elif len(unroled) > 1:
-                raise ValueError("Multiple image media items require explicit roles for image_to_scene3d.")
+                raise ValueError(
+                    "Multiple image media items require explicit roles for image_to_scene3d."
+                )
 
         fmt = str(spec.get("format") or "glb").strip().lower() or "glb"
         kwargs = self._output_plugin_kwargs(
             spec,
-            exclude={"format", "content_type", "mime_type", "provider", "response_format", "count", "n", "seeds"},
+            exclude={
+                "format",
+                "content_type",
+                "mime_type",
+                "provider",
+                "response_format",
+                "count",
+                "n",
+                "seeds",
+            },
         )
         if spec.get("provider") is not None:
             kwargs["provider"] = spec.get("provider")
@@ -3011,11 +3327,32 @@ class BaseProvider(AbstractCoreInterface, ABC):
             default_content_type = "application/zip"
         else:
             default_content_type = "model/obj"
-        content_type = str(metadata.get("content_type") or metadata.get("mime_type") or default_content_type)
-        backend_id = metadata.get("backend_id") or metadata.get("backend") or getattr(self.scene3d, "backend_id", None)
-        backend_id = str(backend_id).strip() if isinstance(backend_id, str) and str(backend_id).strip() else None
-        provider = metadata.get("provider") or metadata.get("provider_id") or backend_id or getattr(self.scene3d, "backend_id", None) or self.__class__.__name__
-        model_id = metadata.get("model") or metadata.get("model_id") or metadata.get("modelId") or spec.get("model")
+        content_type = str(
+            metadata.get("content_type") or metadata.get("mime_type") or default_content_type
+        )
+        backend_id = (
+            metadata.get("backend_id")
+            or metadata.get("backend")
+            or getattr(self.scene3d, "backend_id", None)
+        )
+        backend_id = (
+            str(backend_id).strip()
+            if isinstance(backend_id, str) and str(backend_id).strip()
+            else None
+        )
+        provider = (
+            metadata.get("provider")
+            or metadata.get("provider_id")
+            or backend_id
+            or getattr(self.scene3d, "backend_id", None)
+            or self.__class__.__name__
+        )
+        model_id = (
+            metadata.get("model")
+            or metadata.get("model_id")
+            or metadata.get("modelId")
+            or spec.get("model")
+        )
         if artifact_ref is None:
             data, stored_ref = self._store_generated_data(
                 data,
@@ -3040,20 +3377,22 @@ class BaseProvider(AbstractCoreInterface, ABC):
             ),
         )
 
-    def generate_with_telemetry(self,
-                               prompt: str = "",
-                               messages: Optional[List[Dict[str, str]]] = None,
-                               system_prompt: Optional[str] = None,
-                               tools: Optional[List] = None,  # Accept both ToolDefinition and Dict
-                               media: Optional[List[Union[str, Dict[str, Any], 'MediaContent']]] = None,  # Media files
-                               stream: bool = False,
-                               response_model: Optional[Type[BaseModel]] = None,
-                               retry_strategy=None,  # Custom retry strategy for structured output
-                               tool_call_tags: Optional[str] = None,  # Tool call tag rewriting
-                               execute_tools: Optional[bool] = None,  # Tool execution control
-                               glyph_compression: Optional[str] = None,  # Glyph compression preference
-                               thinking: Optional[Union[bool, str]] = None,  # Unified reasoning/thinking control
-                               **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse], BaseModel]:
+    def generate_with_telemetry(
+        self,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, str]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List] = None,  # Accept both ToolDefinition and Dict
+        media: Optional[List[Union[str, Dict[str, Any], "MediaContent"]]] = None,  # Media files
+        stream: bool = False,
+        response_model: Optional[Type[BaseModel]] = None,
+        retry_strategy=None,  # Custom retry strategy for structured output
+        tool_call_tags: Optional[str] = None,  # Tool call tag rewriting
+        execute_tools: Optional[bool] = None,  # Tool execution control
+        glyph_compression: Optional[str] = None,  # Glyph compression preference
+        thinking: Optional[Union[bool, str]] = None,  # Unified reasoning/thinking control
+        **kwargs,
+    ) -> Union[GenerateResponse, Iterator[GenerateResponse], BaseModel]:
         """
         Generate with integrated telemetry and error handling.
         Providers should override _generate_internal instead of generate.
@@ -3089,7 +3428,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         output_request = kwargs.get("output", None)
         is_acore_output = self._is_acore_output_request(output_request)
-        route_output_request = output_request if is_acore_output else {"modality": "text", "task": "text_generation"}
+        route_output_request = (
+            output_request if is_acore_output else {"modality": "text", "task": "text_generation"}
+        )
         resolved_generate_route = self._resolve_generate_route(
             request=generate_request,
             output=route_output_request,
@@ -3162,7 +3503,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
         #
         # AbstractRuntime (and some hosts) may still emit `max_tokens` in effect payloads.
         # That translation is a provider integration concern, so keep it in AbstractCore.
-        if "max_output_tokens" not in kwargs and "max_tokens" in kwargs and kwargs.get("max_tokens") is not None:
+        if (
+            "max_output_tokens" not in kwargs
+            and "max_tokens" in kwargs
+            and kwargs.get("max_tokens") is not None
+        ):
             kwargs["max_output_tokens"] = kwargs.pop("max_tokens")
 
         carried_thinking_meta = kwargs.pop("_acore_thinking_meta", None)
@@ -3198,6 +3543,21 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     "Install with: pip install pydantic>=2.0.0"
                 )
 
+            # Structured output returns a validated model, not a GenerateResponse,
+            # so there is no metadata channel on which a provider could report that
+            # it dropped the media. A lane that cannot carry pixels and cannot say
+            # so must fail closed (ADR 0001) rather than answer from text alone.
+            if media and not self._structured_output_carries_media():
+                from ..media.delivery import STRUCTURED_OUTPUT_UNSUPPORTED
+
+                raise ValueError(
+                    f"{STRUCTURED_OUTPUT_UNSUPPORTED}: provider "
+                    f"'{getattr(self, 'provider_name', type(self).__name__)}' cannot carry "
+                    "media through structured output (response_model=). Drop "
+                    "response_model= and parse the text, or caption the image with a "
+                    "vision-capable route first."
+                )
+
             # Handle hybrid case: tools + structured output.
             #
             # NOTE: `tools=[]` should behave like "no tools". Treating an empty list as
@@ -3215,7 +3575,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     tool_call_tags=tool_call_tags,
                     execute_tools=execute_tools,
                     stream=stream,
-                    **kwargs
+                    **kwargs,
                 )
 
             # Structured output is validate-then-return; a token stream cannot
@@ -3231,6 +3591,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
             # Standard structured output (no tools)
             from ..structured import StructuredOutputHandler
+
             handler = StructuredOutputHandler(retry_strategy=retry_strategy)
             return handler.generate_structured(
                 provider=self,
@@ -3241,7 +3602,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 tools=None,  # No tools in this path
                 media=media,
                 stream=False,
-                **kwargs
+                **kwargs,
             )
 
         # Process media content if provided
@@ -3249,14 +3610,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
         media_metadata = None
         media_enrichment = None
         if media:
-            compression_pref = glyph_compression or kwargs.get('glyph_compression', 'auto')
+            compression_pref = glyph_compression or kwargs.get("glyph_compression", "auto")
             processed_media = self._process_media_content(media, compression_pref)
 
             # Extract metadata from processed media for response
             if processed_media:
                 media_metadata = []
                 for media_content in processed_media:
-                    if hasattr(media_content, 'metadata') and media_content.metadata:
+                    if hasattr(media_content, "metadata") and media_content.metadata:
                         media_metadata.append(media_content.metadata)
 
         def _configured_capability_default(kind: str, modality: str) -> Dict[str, Any]:
@@ -3268,7 +3629,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 if isinstance(route, dict):
                     if route.get("source") == "not_configured":
                         return {}
-                    if route.get("provider") or route.get("model") or route.get("base_url") or route.get("options"):
+                    if (
+                        route.get("provider")
+                        or route.get("model")
+                        or route.get("base_url")
+                        or route.get("options")
+                    ):
                         return dict(route)
 
             resolver = getattr(self, "resolve_capability_default", None)
@@ -3280,7 +3646,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 if isinstance(route, dict):
                     if route.get("source") == "not_configured":
                         return {}
-                    if route.get("provider") or route.get("model") or route.get("base_url") or route.get("options"):
+                    if (
+                        route.get("provider")
+                        or route.get("model")
+                        or route.get("base_url")
+                        or route.get("options")
+                    ):
                         return dict(route)
 
             try:
@@ -3288,7 +3659,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 if isinstance(config_file, str) and config_file.strip():
                     from ..config.manager import ConfigurationManager
 
-                    route = ConfigurationManager(config_file=config_file.strip(), apply_env=False).get_capability_default(kind, modality)
+                    route = ConfigurationManager(
+                        config_file=config_file.strip(), apply_env=False
+                    ).get_capability_default(kind, modality)
                 else:
                     from ..config.manager import get_config_manager
 
@@ -3299,7 +3672,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 return {}
             if route.get("source") == "not_configured":
                 return {}
-            if not (route.get("provider") or route.get("model") or route.get("base_url") or route.get("options")):
+            if not (
+                route.get("provider")
+                or route.get("model")
+                or route.get("base_url")
+                or route.get("options")
+            ):
                 return {}
             return route
 
@@ -3345,7 +3723,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 CapabilityUnavailableError = Exception  # type: ignore[assignment]
 
             if MediaType is not None:
-                audio_items = [mc for mc in processed_media if getattr(mc, "media_type", None) == MediaType.AUDIO]
+                audio_items = [
+                    mc
+                    for mc in processed_media
+                    if getattr(mc, "media_type", None) == MediaType.AUDIO
+                ]
             else:
                 audio_items = []
 
@@ -3365,7 +3747,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         policy_raw = "native_only"
 
                 policy = str(policy_raw or "native_only").strip().lower()
-                model_supports_audio = bool(getattr(self, "model_capabilities", {}).get("audio_support", False))
+                model_supports_audio = bool(
+                    getattr(self, "model_capabilities", {}).get("audio_support", False)
+                )
                 stt_route_default = _configured_capability_default("input", "voice")
 
                 if policy in ("native_only", "native", "disabled"):
@@ -3408,18 +3792,28 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     for idx, mc in enumerate(audio_items):
                         name = None
                         try:
-                            name = mc.metadata.get("file_name") if hasattr(mc, "metadata") and isinstance(mc.metadata, dict) else None
+                            name = (
+                                mc.metadata.get("file_name")
+                                if hasattr(mc, "metadata") and isinstance(mc.metadata, dict)
+                                else None
+                            )
                         except Exception:
                             name = None
                         if not isinstance(name, str) or not name.strip():
-                            name = mc.file_path if getattr(mc, "file_path", None) else f"audio_{idx+1}"
+                            name = (
+                                mc.file_path if getattr(mc, "file_path", None) else f"audio_{idx+1}"
+                            )
 
                         # Prefer a file path when available.
                         audio_input: Any = None
                         try:
                             if getattr(mc, "file_path", None):
                                 audio_input = str(mc.file_path)
-                            elif getattr(mc, "content_format", None) == ContentFormat.FILE_PATH and isinstance(getattr(mc, "content", None), str):
+                            elif getattr(
+                                mc, "content_format", None
+                            ) == ContentFormat.FILE_PATH and isinstance(
+                                getattr(mc, "content", None), str
+                            ):
                                 audio_input = str(mc.content)
                             elif isinstance(getattr(mc, "content", None), (bytes, bytearray)):
                                 audio_input = bytes(mc.content)
@@ -3427,10 +3821,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             audio_input = None
 
                         if audio_input is None:
-                            raise UnsupportedFeatureError("Audio STT fallback requires a file path or raw bytes for the audio input.")
+                            raise UnsupportedFeatureError(
+                                "Audio STT fallback requires a file path or raw bytes for the audio input."
+                            )
 
                         try:
-                            transcript = self.audio.transcribe(audio_input, language=stt_language, **stt_route_params)
+                            transcript = self.audio.transcribe(
+                                audio_input, language=stt_language, **stt_route_params
+                            )
                         except CapabilityUnavailableError as e:  # type: ignore[misc]
                             raise UnsupportedFeatureError(str(e))
 
@@ -3456,7 +3854,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             )
 
                     # Remove audio media from the provider call (we injected text context instead).
-                    processed_media = [mc for mc in processed_media if getattr(mc, "media_type", None) != MediaType.AUDIO]
+                    processed_media = [
+                        mc
+                        for mc in processed_media
+                        if getattr(mc, "media_type", None) != MediaType.AUDIO
+                    ]
 
                     # Inject audio context into the prompt (similar recency semantics as vision fallback).
                     original_prompt = prompt.strip() if isinstance(prompt, str) else ""
@@ -3482,7 +3884,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                 f"Audio input is not supported by model '{self.model}', and input.voice is not configured. "
                                 "Configure the input.voice capability default for STT fallback, or choose an audio-capable model."
                             )
-                        stt_language = kwargs.pop("audio_language", None) or kwargs.pop("stt_language", None)
+                        stt_language = kwargs.pop("audio_language", None) or kwargs.pop(
+                            "stt_language", None
+                        )
                         stt_route_params = _pop_stt_route_params(stt_route_default)
                         audio_context_parts: List[str] = []
                         enrichments: List[Dict[str, Any]] = []
@@ -3493,25 +3897,41 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         for idx, mc in enumerate(audio_items):
                             name = None
                             try:
-                                name = mc.metadata.get("file_name") if hasattr(mc, "metadata") and isinstance(mc.metadata, dict) else None
+                                name = (
+                                    mc.metadata.get("file_name")
+                                    if hasattr(mc, "metadata") and isinstance(mc.metadata, dict)
+                                    else None
+                                )
                             except Exception:
                                 name = None
                             if not isinstance(name, str) or not name.strip():
-                                name = mc.file_path if getattr(mc, "file_path", None) else f"audio_{idx+1}"
+                                name = (
+                                    mc.file_path
+                                    if getattr(mc, "file_path", None)
+                                    else f"audio_{idx+1}"
+                                )
                             audio_input: Any = None
                             try:
                                 if getattr(mc, "file_path", None):
                                     audio_input = str(mc.file_path)
-                                elif getattr(mc, "content_format", None) == ContentFormat.FILE_PATH and isinstance(getattr(mc, "content", None), str):
+                                elif getattr(
+                                    mc, "content_format", None
+                                ) == ContentFormat.FILE_PATH and isinstance(
+                                    getattr(mc, "content", None), str
+                                ):
                                     audio_input = str(mc.content)
                                 elif isinstance(getattr(mc, "content", None), (bytes, bytearray)):
                                     audio_input = bytes(mc.content)
                             except Exception:
                                 audio_input = None
                             if audio_input is None:
-                                raise UnsupportedFeatureError("Audio STT fallback requires a file path or raw bytes for the audio input.")
+                                raise UnsupportedFeatureError(
+                                    "Audio STT fallback requires a file path or raw bytes for the audio input."
+                                )
                             try:
-                                transcript = self.audio.transcribe(audio_input, language=stt_language, **stt_route_params)
+                                transcript = self.audio.transcribe(
+                                    audio_input, language=stt_language, **stt_route_params
+                                )
                             except CapabilityUnavailableError as e:  # type: ignore[misc]
                                 raise UnsupportedFeatureError(str(e))
                             transcript = str(transcript or "").strip()
@@ -3534,7 +3954,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                         injected_text=transcript,
                                     )
                                 )
-                        processed_media = [mc for mc in processed_media if getattr(mc, "media_type", None) != MediaType.AUDIO]
+                        processed_media = [
+                            mc
+                            for mc in processed_media
+                            if getattr(mc, "media_type", None) != MediaType.AUDIO
+                        ]
                         original_prompt = prompt.strip() if isinstance(prompt, str) else ""
                         parts: List[str] = []
                         parts.append(
@@ -3554,7 +3978,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         "Use audio_policy='speech_to_text' for speech, or configure a future audio caption backend."
                     )
                 else:
-                    raise ValueError(f"Unknown audio_policy '{policy}'. Expected one of: native_only, speech_to_text, auto, caption.")
+                    raise ValueError(
+                        f"Unknown audio_policy '{policy}'. Expected one of: native_only, speech_to_text, auto, caption."
+                    )
 
         # Video input policy (v0): allow native video where supported; otherwise fall back to sampled frames.
         # Note: most providers do not accept native video inputs; frame sampling provides a portable path.
@@ -3567,7 +3993,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 build_enrichment_item = None  # type: ignore[assignment]
 
             if MediaType is not None:
-                video_items = [mc for mc in processed_media if getattr(mc, "media_type", None) == MediaType.VIDEO]
+                video_items = [
+                    mc
+                    for mc in processed_media
+                    if getattr(mc, "media_type", None) == MediaType.VIDEO
+                ]
             else:
                 video_items = []
 
@@ -3591,12 +4021,19 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     and isinstance(getattr(self, "model_capabilities", None), dict)
                     and getattr(self, "model_capabilities", {}).get("video_support", False)
                 )
-                model_caps = getattr(self, "model_capabilities", {}) if isinstance(getattr(self, "model_capabilities", None), dict) else {}
+                model_caps = (
+                    getattr(self, "model_capabilities", {})
+                    if isinstance(getattr(self, "model_capabilities", None), dict)
+                    else {}
+                )
                 video_input_mode = str(model_caps.get("video_input_mode") or "").strip().lower()
                 model_supports_frame_video = bool(
                     model_supports_native_video
                     or video_input_mode == "frames"
-                    or (video_input_mode == "native" and bool(model_caps.get("video_support", False)))
+                    or (
+                        video_input_mode == "native"
+                        and bool(model_caps.get("video_support", False))
+                    )
                     or bool(model_caps.get("vision_support", False))
                 )
                 video_route_default = _configured_capability_default("input", "video")
@@ -3615,13 +4052,20 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 if max_frames_raw is None:
                     max_frames_raw = kwargs.get("max_video_frames", None)
                 if max_frames_raw is None:
-                    fallback_default = getattr(cfg_video, "max_frames", 3) if cfg_video is not None else 3
-                    native_default = getattr(cfg_video, "max_frames_native", None) if cfg_video is not None else None
+                    fallback_default = (
+                        getattr(cfg_video, "max_frames", 3) if cfg_video is not None else 3
+                    )
+                    native_default = (
+                        getattr(cfg_video, "max_frames_native", None)
+                        if cfg_video is not None
+                        else None
+                    )
                     if native_default is None:
                         native_default = fallback_default
 
                     use_native_default = bool(
-                        model_supports_native_video and policy in ("native_only", "native", "disabled", "auto")
+                        model_supports_native_video
+                        and policy in ("native_only", "native", "disabled", "auto")
                     )
                     max_frames_raw = native_default if use_native_default else fallback_default
                 try:
@@ -3659,9 +4103,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 if max_frame_side_raw is None:
                     max_frame_side_raw = kwargs.get("video_frame_max_side", None)
                 if max_frame_side_raw is None:
-                    max_frame_side_raw = getattr(cfg_video, "max_frame_side", 1024) if cfg_video is not None else 1024
+                    max_frame_side_raw = (
+                        getattr(cfg_video, "max_frame_side", 1024)
+                        if cfg_video is not None
+                        else 1024
+                    )
                 try:
-                    max_frame_side = int(max_frame_side_raw) if max_frame_side_raw is not None else None
+                    max_frame_side = (
+                        int(max_frame_side_raw) if max_frame_side_raw is not None else None
+                    )
                 except Exception:
                     max_frame_side = 1024
                 if isinstance(max_frame_side, int) and max_frame_side <= 0:
@@ -3677,7 +4127,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     route_provider = str(route.get("provider") or "").strip().lower()
                     route_model = str(route.get("model") or "").strip()
                     current_model = str(getattr(self, "model", "") or "").strip()
-                    return bool(route_provider and route_model and route_provider == provider_name and route_model == current_model)
+                    return bool(
+                        route_provider
+                        and route_model
+                        and route_provider == provider_name
+                        and route_model == current_model
+                    )
 
                 def _route_llm_kwargs(route: Dict[str, Any]) -> Dict[str, Any]:
                     out: Dict[str, Any] = {}
@@ -3689,7 +4144,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         out["base_url"] = base_url.strip()
                     return out
 
-                def _resolve_endpoint_route_provider(provider_id: str, route: Dict[str, Any]) -> tuple[str, Dict[str, Any], Optional[Dict[str, Any]]]:
+                def _resolve_endpoint_route_provider(
+                    provider_id: str, route: Dict[str, Any]
+                ) -> tuple[str, Dict[str, Any], Optional[Dict[str, Any]]]:
                     provider_s = str(provider_id or "").strip()
                     route_kwargs = _route_llm_kwargs(route)
                     if not provider_s.startswith("endpoint:"):
@@ -3711,12 +4168,20 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     try:
                         resolved = resolver(provider_s)
                     except Exception as e:
-                        raise UnsupportedFeatureError(f"Failed to resolve Gateway endpoint profile {provider_s!r}: {e}") from e
+                        raise UnsupportedFeatureError(
+                            f"Failed to resolve Gateway endpoint profile {provider_s!r}: {e}"
+                        ) from e
                     if not isinstance(resolved, dict):
-                        raise UnsupportedFeatureError(f"Gateway endpoint profile {provider_s!r} is not configured or is disabled.")
-                    resolved_provider = str(resolved.get("provider") or resolved.get("provider_family") or "").strip()
+                        raise UnsupportedFeatureError(
+                            f"Gateway endpoint profile {provider_s!r} is not configured or is disabled."
+                        )
+                    resolved_provider = str(
+                        resolved.get("provider") or resolved.get("provider_family") or ""
+                    ).strip()
                     if not resolved_provider:
-                        raise UnsupportedFeatureError(f"Gateway endpoint profile {provider_s!r} did not provide a concrete provider family.")
+                        raise UnsupportedFeatureError(
+                            f"Gateway endpoint profile {provider_s!r} did not provide a concrete provider family."
+                        )
                     resolved_kwargs = dict(route_kwargs)
                     base_url = resolved.get("base_url")
                     if isinstance(base_url, str) and base_url.strip():
@@ -3739,11 +4204,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         return content.strip()
                     return str(value or "").strip()
 
-                def _caption_videos_with_route(route: Dict[str, Any]) -> tuple[List[Any], List[Dict[str, Any]]]:
+                def _caption_videos_with_route(
+                    route: Dict[str, Any],
+                ) -> tuple[List[Any], List[Dict[str, Any]]]:
                     route_provider = str(route.get("provider") or "").strip()
                     route_model = str(route.get("model") or "").strip()
                     if not route_provider or not route_model:
-                        raise UnsupportedFeatureError("input.video fallback requires both provider and model.")
+                        raise UnsupportedFeatureError(
+                            "input.video fallback requires both provider and model."
+                        )
 
                     try:
                         from pathlib import Path
@@ -3752,13 +4221,20 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         from ..core.factory import create_llm
                         from ..media import AutoMediaHandler
                         from ..media.types import ContentFormat, MediaContent
-                        from ..media.utils.video_frames import extract_video_frames, probe_duration_s
+                        from ..media.utils.video_frames import (
+                            extract_video_frames,
+                            probe_duration_s,
+                        )
                     except Exception as e:
                         raise UnsupportedFeatureError(f"Video route fallback is not available: {e}")
 
-                    routed_provider, route_kwargs, endpoint_profile = _resolve_endpoint_route_provider(route_provider, route)
+                    routed_provider, route_kwargs, endpoint_profile = (
+                        _resolve_endpoint_route_provider(route_provider, route)
+                    )
                     try:
-                        fallback_llm = create_llm(routed_provider, model=route_model, **route_kwargs)
+                        fallback_llm = create_llm(
+                            routed_provider, model=route_model, **route_kwargs
+                        )
                         resolver = getattr(self, "resolve_provider_endpoint_profile", None)
                         if not callable(resolver):
                             # Propagate the ambient (host-scoped contextvar)
@@ -3787,9 +4263,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             continue
 
                         video_group_index += 1
-                        video_path_raw = getattr(mc, "file_path", None) or getattr(mc, "content", None)
+                        video_path_raw = getattr(mc, "file_path", None) or getattr(
+                            mc, "content", None
+                        )
                         if not isinstance(video_path_raw, str) or not video_path_raw.strip():
-                            raise UnsupportedFeatureError("Video route fallback requires a video file path.")
+                            raise UnsupportedFeatureError(
+                                "Video route fallback requires a video file path."
+                            )
                         video_path = Path(video_path_raw)
                         if not video_path.exists():
                             raise UnsupportedFeatureError(f"Video file not found: {video_path}")
@@ -3805,7 +4285,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             output_dir=out_dir,
                         )
                         if not frames:
-                            raise UnsupportedFeatureError("Video route fallback failed: no frames extracted.")
+                            raise UnsupportedFeatureError(
+                                "Video route fallback failed: no frames extracted."
+                            )
 
                         handler = AutoMediaHandler(enable_glyph_compression=False)
                         frame_paths: List[str] = []
@@ -3820,11 +4302,17 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                 glyph_compression="never",
                                 max_resolution=max_res,
                             )
-                            if res and getattr(res, "success", False) and getattr(res, "media_content", None) is not None:
+                            if (
+                                res
+                                and getattr(res, "success", False)
+                                and getattr(res, "media_content", None) is not None
+                            ):
                                 frame_paths.append(str(fp))
 
                         if not frame_paths:
-                            raise UnsupportedFeatureError("Video route fallback failed: extracted frames could not be processed as images.")
+                            raise UnsupportedFeatureError(
+                                "Video route fallback failed: extracted frames could not be processed as images."
+                            )
 
                         caption_prompt = (
                             "Provide grounded observations from these sampled video frames to help answer the user's request.\n"
@@ -3835,7 +4323,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             f"User request: {prompt.strip() if isinstance(prompt, str) and prompt.strip() else 'Describe the video.'}"
                         )
                         try:
-                            fallback_response = fallback_llm.generate(caption_prompt, media=frame_paths, stream=False)
+                            fallback_response = fallback_llm.generate(
+                                caption_prompt, media=frame_paths, stream=False
+                            )
                         except Exception as e:
                             raise UnsupportedFeatureError(
                                 f"input.video fallback {route_provider}/{route_model} failed: {e}"
@@ -3883,7 +4373,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                         "model": route_model,
                                         "source": "capability_default",
                                         **(
-                                            {"endpoint_profile": str(endpoint_profile.get("virtual_provider") or endpoint_profile.get("id") or "")}
+                                            {
+                                                "endpoint_profile": str(
+                                                    endpoint_profile.get("virtual_provider")
+                                                    or endpoint_profile.get("id")
+                                                    or ""
+                                                )
+                                            }
                                             if isinstance(endpoint_profile, dict)
                                             else {}
                                         ),
@@ -3915,7 +4411,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         from ..media.utils.video_frames import probe_duration_s
 
                         for idx, mc in enumerate(video_items):
-                            video_path_raw = getattr(mc, "file_path", None) or getattr(mc, "content", None)
+                            video_path_raw = getattr(mc, "file_path", None) or getattr(
+                                mc, "content", None
+                            )
                             if not isinstance(video_path_raw, str) or not video_path_raw.strip():
                                 continue
                             vp = Path(video_path_raw)
@@ -3928,7 +4426,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
                             avg_gap_s = None
                             try:
-                                if isinstance(duration_s, (int, float)) and duration_s > 0 and max_frames > 0:
+                                if (
+                                    isinstance(duration_s, (int, float))
+                                    and duration_s > 0
+                                    and max_frames > 0
+                                ):
                                     avg_gap_s = float(duration_s) / float(max_frames + 1)
                             except Exception:
                                 avg_gap_s = None
@@ -3990,13 +4492,19 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                 continue
 
                             video_group_index += 1
-                            video_path_raw = getattr(mc, "file_path", None) or getattr(mc, "content", None)
+                            video_path_raw = getattr(mc, "file_path", None) or getattr(
+                                mc, "content", None
+                            )
 
                             video_name = f"video_{video_group_index}"
                             duration_s = None
                             file_bytes = None
                             try:
-                                if Path is not None and isinstance(video_path_raw, str) and video_path_raw.strip():
+                                if (
+                                    Path is not None
+                                    and isinstance(video_path_raw, str)
+                                    and video_path_raw.strip()
+                                ):
                                     vp = Path(video_path_raw)
                                     video_name = vp.name or video_name
                                     try:
@@ -4046,7 +4554,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         import tempfile
 
                         from ..media import AutoMediaHandler
-                        from ..media.utils.video_frames import extract_video_frames, probe_duration_s
+                        from ..media.utils.video_frames import (
+                            extract_video_frames,
+                            probe_duration_s,
+                        )
                     except Exception as e:
                         raise UnsupportedFeatureError(f"Video frame fallback is not available: {e}")
 
@@ -4060,9 +4571,13 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             continue
 
                         video_group_index += 1
-                        video_path_raw = getattr(mc, "file_path", None) or getattr(mc, "content", None)
+                        video_path_raw = getattr(mc, "file_path", None) or getattr(
+                            mc, "content", None
+                        )
                         if not isinstance(video_path_raw, str) or not video_path_raw.strip():
-                            raise UnsupportedFeatureError("Video frame fallback requires a video file path.")
+                            raise UnsupportedFeatureError(
+                                "Video frame fallback requires a video file path."
+                            )
                         video_path = Path(video_path_raw)
                         if not video_path.exists():
                             raise UnsupportedFeatureError(f"Video file not found: {video_path}")
@@ -4083,7 +4598,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             output_dir=out_dir,
                         )
                         if not frames:
-                            raise UnsupportedFeatureError("Video frame fallback failed: no frames extracted.")
+                            raise UnsupportedFeatureError(
+                                "Video frame fallback failed: no frames extracted."
+                            )
 
                         handler = AutoMediaHandler(enable_glyph_compression=False)
                         frame_media: List[Any] = []
@@ -4098,15 +4615,25 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                 glyph_compression="never",
                                 max_resolution=max_res,
                             )
-                            if res and getattr(res, "success", False) and getattr(res, "media_content", None) is not None:
+                            if (
+                                res
+                                and getattr(res, "success", False)
+                                and getattr(res, "media_content", None) is not None
+                            ):
                                 frame_media.append(res.media_content)
 
                         if not frame_media:
-                            raise UnsupportedFeatureError("Video frame fallback failed: extracted frames could not be processed as images.")
+                            raise UnsupportedFeatureError(
+                                "Video frame fallback failed: extracted frames could not be processed as images."
+                            )
 
                         avg_gap_s = None
                         try:
-                            if isinstance(duration_s, (int, float)) and duration_s > 0 and max_frames > 0:
+                            if (
+                                isinstance(duration_s, (int, float))
+                                and duration_s > 0
+                                and max_frames > 0
+                            ):
                                 avg_gap_s = float(duration_s) / float(max_frames + 1)
                         except Exception:
                             avg_gap_s = None
@@ -4200,9 +4727,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             media_enrichment.extend(enrichments)
 
                 elif policy == "auto":
-                    explicit_video_route = bool(video_route_default and not video_route_default.get("covered_by"))
-                    if explicit_video_route and (not _video_route_matches_current(video_route_default) or not model_supports_frame_video):
-                        routed_media, routed_enrichments = _caption_videos_with_route(video_route_default)
+                    explicit_video_route = bool(
+                        video_route_default and not video_route_default.get("covered_by")
+                    )
+                    if explicit_video_route and (
+                        not _video_route_matches_current(video_route_default)
+                        or not model_supports_frame_video
+                    ):
+                        routed_media, routed_enrichments = _caption_videos_with_route(
+                            video_route_default
+                        )
                         processed_media = routed_media
                         if routed_enrichments:
                             if media_enrichment is None:
@@ -4241,22 +4775,25 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         )
 
                 else:
-                    raise ValueError(f"Unknown video_policy '{policy}'. Expected one of: native_only, frames_caption, auto.")
+                    raise ValueError(
+                        f"Unknown video_policy '{policy}'. Expected one of: native_only, frames_caption, auto."
+                    )
 
         # Convert tools to ToolDefinition objects first (outside retry loop)
         converted_tools = None
         if tools:
             converted_tools = []
             for tool in tools:
-                if hasattr(tool, 'to_dict'):  # ToolDefinition object
+                if hasattr(tool, "to_dict"):  # ToolDefinition object
                     converted_tools.append(tool.to_dict())
                 elif callable(tool):  # Function - check for enhanced metadata
-                    if hasattr(tool, '_tool_definition'):
+                    if hasattr(tool, "_tool_definition"):
                         # Use the enhanced tool definition from @tool decorator
                         converted_tools.append(tool._tool_definition.to_dict())
                     else:
                         # Fall back to basic conversion
                         from ..tools.core import ToolDefinition
+
                         tool_def = ToolDefinition.from_function(tool)
                         converted_tools.append(tool_def.to_dict())
                 elif isinstance(tool, dict):  # Already a dict
@@ -4293,9 +4830,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 "has_tools": bool(tools),
                 "stream": stream,
                 "model": self.model,
-                "provider": self.__class__.__name__
+                "provider": self.__class__.__name__,
             }
             from ..events import emit_global
+
             emit_global(EventType.GENERATION_STARTED, event_data, source=self.__class__.__name__)
 
             try:
@@ -4310,7 +4848,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     execute_tools=should_execute_tools,
                     tool_call_tags=tool_call_tags,
                     media_metadata=media_metadata,
-                    **kwargs
+                    **kwargs,
                 )
 
             except Exception as e:
@@ -4340,6 +4878,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if self._endpoint_damping_requested and self.retry_manager.damping_domain is None:
             try:
                 from ..core.endpoint_damping import get_endpoint_damping_registry
+
                 self.retry_manager.damping_domain = get_endpoint_damping_registry().domain_for(
                     base_url=str(getattr(self, "base_url", "") or self.__class__.__name__),
                     model=str(self.model),
@@ -4347,18 +4886,21 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 )
             except Exception as damping_err:
                 # Damping is a fleet optimization; its failure must never block a call.
-                self.logger.warning(f"#FALLBACK: endpoint damping unavailable ({damping_err}); "
-                                    "continuing with per-instance retry state")
+                self.logger.warning(
+                    f"#FALLBACK: endpoint damping unavailable ({damping_err}); "
+                    "continuing with per-instance retry state"
+                )
                 self._endpoint_damping_requested = False
         try:
             response, start_time, start_perf = self.retry_manager.execute_with_retry(
                 _execute_generation,
                 provider_key=self.provider_key,
-                cancel_event=cancel_event if isinstance(cancel_event, threading.Event) else None
+                cancel_event=cancel_event if isinstance(cancel_event, threading.Event) else None,
             )
 
             # Handle streaming with unified processor
             if stream:
+
                 def unified_stream():
                     try:
                         # Import and create unified stream processor
@@ -4371,7 +4913,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             model_name=self.model,
                             execute_tools=actual_execute_tools,  # Default: False (pass-through mode)
                             tool_call_tags=tool_call_tags,
-                            default_target_format="qwen3"  # Always rewrite to qwen3 format
+                            default_target_format="qwen3",  # Always rewrite to qwen3 format
                         )
 
                         # Process stream with incremental tool detection and execution
@@ -4379,7 +4921,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         # With thinking effectively off, the reasoning-first "closing-only" case
                         # cannot occur; stream visible content immediately instead of buffering.
                         thinking_effectively_off = bool(
-                            isinstance(thinking_meta, dict) and thinking_meta.get("thinking_effective") == "off"
+                            isinstance(thinking_meta, dict)
+                            and thinking_meta.get("thinking_effective") == "off"
                         )
                         # LM Studio's native REST route (engaged via the `reasoning` kwarg set by
                         # `_apply_thinking_request`) separates reasoning into typed events/items,
@@ -4393,16 +4936,33 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         thinking_stripper = maybe_create_incremental_thinking_tag_stripper(
                             architecture_format=self.architecture_config,
                             model_capabilities=self.model_capabilities,
-                            assume_visible_start=thinking_effectively_off or native_separated_reasoning,
+                            assume_visible_start=thinking_effectively_off
+                            or native_separated_reasoning,
                         )
                         last_chunk: Optional[GenerateResponse] = None
                         last_seen_usage: Optional[Dict[str, Any]] = None
+                        # The media-delivery record is a per-REQUEST fact, and the
+                        # trailing finalize chunk below is built from scratch. Carry
+                        # it forward like usage, or a delivered image reads as
+                        # `not_delivered` to any consumer that keeps only the last
+                        # chunk -- which is the documented convention two screens
+                        # down.
+                        # The media-delivery record is a per-REQUEST fact, and the
+                        # trailing finalize chunk below is built from scratch. Carry
+                        # it forward like usage, or a delivered image reads as
+                        # `not_delivered` to any consumer that keeps only the last
+                        # chunk -- which is the convention documented there.
+                        media_meta: Dict[str, Any] = {}
                         reasoning_delta_parts: List[str] = []
                         for processed_chunk in processor.process_stream(response, converted_tools):
                             last_chunk = processed_chunk
                             if isinstance(processed_chunk.usage, dict) and processed_chunk.usage:
                                 last_seen_usage = processed_chunk.usage
-
+                            _cm = getattr(processed_chunk, "metadata", None)
+                            if isinstance(_cm, dict):
+                                for _mk in ("media_delivered", "media_dropped"):
+                                    if _mk in _cm:
+                                        media_meta[_mk] = _cm[_mk]
                             # Channel-separated reasoning arrives as per-chunk deltas
                             # (`metadata["reasoning_delta"]`: Ollama `thinking`, LM Studio native
                             # `reasoning.delta`, OpenAI-compatible `reasoning_content`, Anthropic
@@ -4411,7 +4971,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             # that persist reasoning (runtime rehydration) read the final
                             # aggregate, not the deltas. A bare `reasoning` key on an
                             # intermediate chunk is tolerated as a legacy delta spelling.
-                            chunk_meta = processed_chunk.metadata if isinstance(processed_chunk.metadata, dict) else None
+                            chunk_meta = (
+                                processed_chunk.metadata
+                                if isinstance(processed_chunk.metadata, dict)
+                                else None
+                            )
                             if chunk_meta:
                                 delta_r = chunk_meta.get("reasoning_delta")
                                 if not (isinstance(delta_r, str) and delta_r):
@@ -4422,12 +4986,24 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             # TTFT: measure "time to first token" from the provider stream,
                             # independent of downstream post-processing (wrapper/thinking stripping).
                             if ttft_ms is None:
-                                raw_has_content = isinstance(processed_chunk.content, str) and bool(processed_chunk.content)
-                                raw_has_tools = isinstance(processed_chunk.tool_calls, list) and bool(processed_chunk.tool_calls)
+                                raw_has_content = isinstance(processed_chunk.content, str) and bool(
+                                    processed_chunk.content
+                                )
+                                raw_has_tools = isinstance(
+                                    processed_chunk.tool_calls, list
+                                ) and bool(processed_chunk.tool_calls)
                                 if raw_has_content or raw_has_tools:
                                     ttft_ms = round((time.perf_counter() - start_perf) * 1000, 1)
-                                    meta = processed_chunk.metadata if isinstance(processed_chunk.metadata, dict) else {}
-                                    timing = meta.get("_timing") if isinstance(meta.get("_timing"), dict) else {}
+                                    meta = (
+                                        processed_chunk.metadata
+                                        if isinstance(processed_chunk.metadata, dict)
+                                        else {}
+                                    )
+                                    timing = (
+                                        meta.get("_timing")
+                                        if isinstance(meta.get("_timing"), dict)
+                                        else {}
+                                    )
                                     merged = dict(timing)
                                     merged.setdefault("source", "client_wall")
                                     merged["ttft_ms"] = ttft_ms
@@ -4441,16 +5017,26 @@ class BaseProvider(AbstractCoreInterface, ABC):
                                     model_capabilities=self.model_capabilities,
                                 )
                                 if thinking_stripper is not None:
-                                    processed_chunk.content = thinking_stripper.process(processed_chunk.content)
+                                    processed_chunk.content = thinking_stripper.process(
+                                        processed_chunk.content
+                                    )
                             if thinking_meta and isinstance(thinking_meta, dict):
-                                meta = processed_chunk.metadata if isinstance(processed_chunk.metadata, dict) else {}
+                                meta = (
+                                    processed_chunk.metadata
+                                    if isinstance(processed_chunk.metadata, dict)
+                                    else {}
+                                )
                                 meta.update(thinking_meta)
                                 meta["_resolved_generate_route"] = resolved_generate_route_summary
                                 processed_chunk.metadata = meta
                             elif isinstance(processed_chunk.metadata, dict):
-                                processed_chunk.metadata["_resolved_generate_route"] = resolved_generate_route_summary
+                                processed_chunk.metadata["_resolved_generate_route"] = (
+                                    resolved_generate_route_summary
+                                )
                             else:
-                                processed_chunk.metadata = {"_resolved_generate_route": resolved_generate_route_summary}
+                                processed_chunk.metadata = {
+                                    "_resolved_generate_route": resolved_generate_route_summary
+                                }
                             # Streamed truncation must not be silent either (ADR 0001):
                             # the terminal chunk carries finish_reason, so annotate +
                             # warn on a length stop BEFORE it reaches the consumer. The
@@ -4467,13 +5053,17 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         # Complete reasoning for the trailing chunk: inline <think> capture
                         # (stripper) and/or accumulated channel deltas. In practice a model
                         # produces one or the other; join defensively when both exist.
-                        channel_reasoning = "".join(reasoning_delta_parts) if reasoning_delta_parts else ""
+                        channel_reasoning = (
+                            "".join(reasoning_delta_parts) if reasoning_delta_parts else ""
+                        )
                         reasoning_text_parts = [
                             p.strip()
                             for p in (stripper_reasoning, channel_reasoning)
                             if isinstance(p, str) and p.strip()
                         ]
-                        reasoning_text = "\n\n".join(reasoning_text_parts) if reasoning_text_parts else None
+                        reasoning_text = (
+                            "\n\n".join(reasoning_text_parts) if reasoning_text_parts else None
+                        )
 
                         if (isinstance(tail, str) and tail) or reasoning_text:
                             meta: Dict[str, Any] = {}
@@ -4482,6 +5072,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
                             if reasoning_text:
                                 meta["reasoning"] = reasoning_text
                             meta["_resolved_generate_route"] = resolved_generate_route_summary
+                            # The media-delivery record is a per-REQUEST fact and
+                            # this chunk is built from scratch, so carry it forward
+                            # like usage above. Without it a delivered image reads
+                            # as `not_delivered` to any consumer that keeps only
+                            # the terminal chunk -- the convention this very
+                            # comment block documents.
+                            if media_meta:
+                                meta.update(media_meta)
 
                             # The LAST chunk of a stream is where consumers read the
                             # accounting (OpenAI convention). This trailing finalize
@@ -4500,7 +5098,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
                     except Exception as e:
                         # Track error
-                        self._track_generation(prompt, None, start_time, success=False, error=e, stream=True)
+                        self._track_generation(
+                            prompt, None, start_time, success=False, error=e, stream=True
+                        )
                         raise
 
                 return unified_stream()
@@ -4515,7 +5115,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
                     # Optional: rewrite tool-call tags in content for downstream clients that parse tags.
                     # Note: when tool_call_tags is None (default), we return cleaned content.
-                    if tool_call_tags and response.content and not self._should_clean_tool_call_markup(tool_call_tags):
+                    if (
+                        tool_call_tags
+                        and response.content
+                        and not self._should_clean_tool_call_markup(tool_call_tags)
+                    ):
                         response = self._apply_non_streaming_tag_rewriting(response, tool_call_tags)
 
                 # Normalize provider output (wrapper tokens, Harmony transcripts, think tags).
@@ -4532,7 +5136,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         existing = response.metadata.get("reasoning")
                         if isinstance(existing, str) and existing.strip():
                             if reasoning.strip() not in existing:
-                                response.metadata["reasoning"] = f"{existing.strip()}\n\n{reasoning.strip()}"
+                                response.metadata["reasoning"] = (
+                                    f"{existing.strip()}\n\n{reasoning.strip()}"
+                                )
                         else:
                             response.metadata["reasoning"] = reasoning.strip()
 
@@ -4540,11 +5146,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 if media_enrichment and response:
                     from ..media.enrichment import merge_enrichment_metadata
 
-                    response.metadata = merge_enrichment_metadata(response.metadata, media_enrichment)
+                    response.metadata = merge_enrichment_metadata(
+                        response.metadata, media_enrichment
+                    )
 
                 # Add visual token calculation if media metadata is available
                 if media_metadata and response:
-                    self.logger.debug(f"Enhancing response with visual tokens from {len(media_metadata)} media items")
+                    self.logger.debug(
+                        f"Enhancing response with visual tokens from {len(media_metadata)} media items"
+                    )
                     response = self._enhance_response_with_visual_tokens(response, media_metadata)
 
                 # Capture interaction trace if enabled
@@ -4555,12 +5165,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         system_prompt=system_prompt,
                         tools=converted_tools,
                         response=response,
-                        kwargs=kwargs
+                        kwargs=kwargs,
                     )
                     # Attach trace_id to response metadata
                     if not response.metadata:
                         response.metadata = {}
-                    response.metadata['trace_id'] = trace_id
+                    response.metadata["trace_id"] = trace_id
 
                 if thinking_meta and response:
                     if response.metadata is None or not isinstance(response.metadata, dict):
@@ -4584,32 +5194,51 @@ class BaseProvider(AbstractCoreInterface, ABC):
             # This exception comes from the retry manager after all attempts failed
             # Track final error (start_time may not be available, use current time)
             current_time = time.time()
-            self._track_generation(prompt, None, current_time, success=False, error=e, stream=stream)
+            self._track_generation(
+                prompt, None, current_time, success=False, error=e, stream=stream
+            )
 
             # Emit error event
             from ..events import emit_global
-            emit_global(EventType.ERROR, {
-                "error": str(e),
-                "error_type": type(e).__name__,
-                "prompt": preview_text(prompt, max_chars=100),
-                "model": self.model,
-                "provider": self.__class__.__name__
-            }, source=self.__class__.__name__)
+
+            emit_global(
+                EventType.ERROR,
+                {
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                    "prompt": preview_text(prompt, max_chars=100),
+                    "model": self.model,
+                    "provider": self.__class__.__name__,
+                },
+                source=self.__class__.__name__,
+            )
 
             # Re-raise the exception
             raise e
 
-    def _generate_internal(self,
-                          prompt: str,
-                          messages: Optional[List[Dict[str, str]]] = None,
-                          system_prompt: Optional[str] = None,
-                          tools: Optional[List[Dict[str, Any]]] = None,
-                          media: Optional[List['MediaContent']] = None,
-                          stream: bool = False,
-                          response_model: Optional[Type[BaseModel]] = None,
-                          execute_tools: Optional[bool] = None,
-                          media_metadata: Optional[List[Dict[str, Any]]] = None,
-                          **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
+    def _structured_output_carries_media(self) -> bool:
+        """Can this provider's structured-output lane transport media to the model?
+
+        Provider-owned truth, in the shape ADR 0008 accepted for residency.
+        Defaults to True: an HTTP provider sends the same multimodal body with a
+        response_format attached. Override to False where the structured lane
+        re-renders the prompt through a text-only encoder.
+        """
+        return True
+
+    def _generate_internal(
+        self,
+        prompt: str,
+        messages: Optional[List[Dict[str, str]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        media: Optional[List["MediaContent"]] = None,
+        stream: bool = False,
+        response_model: Optional[Type[BaseModel]] = None,
+        execute_tools: Optional[bool] = None,
+        media_metadata: Optional[List[Dict[str, Any]]] = None,
+        **kwargs,
+    ) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """
         Internal generation method to be implemented by subclasses.
         This is called by generate_with_telemetry.
@@ -4627,15 +5256,19 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """
         raise NotImplementedError("Subclasses must implement _generate_internal")
 
-    def _enhance_response_with_visual_tokens(self, response: GenerateResponse, media_metadata: List[Dict[str, Any]]) -> GenerateResponse:
+    def _enhance_response_with_visual_tokens(
+        self, response: GenerateResponse, media_metadata: List[Dict[str, Any]]
+    ) -> GenerateResponse:
         """
         Enhance the response with visual token calculations for Glyph compression.
         This method is called automatically by BaseProvider for all providers.
         """
         try:
             # Calculate visual tokens using VLM token calculator
-            provider_name = self.provider or self.__class__.__name__.lower().replace('provider', '')
-            self.logger.debug(f"Calculating visual tokens for provider={provider_name}, model={self.model}")
+            provider_name = self.provider or self.__class__.__name__.lower().replace("provider", "")
+            self.logger.debug(
+                f"Calculating visual tokens for provider={provider_name}, model={self.model}"
+            )
 
             visual_tokens = self._calculate_visual_tokens(media_metadata, provider_name, self.model)
             self.logger.debug(f"Calculated visual tokens: {visual_tokens}")
@@ -4646,20 +5279,22 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     response.metadata = {}
 
                 # Add visual token information to metadata
-                response.metadata['visual_tokens'] = visual_tokens
+                response.metadata["visual_tokens"] = visual_tokens
 
                 # Ensure response has usage dict
                 if not response.usage:
                     response.usage = {}
 
                 # Add visual tokens to usage
-                response.usage['visual_tokens'] = visual_tokens
+                response.usage["visual_tokens"] = visual_tokens
 
                 # Update total tokens to include visual tokens
-                original_total = response.usage.get('total_tokens', 0)
-                response.usage['total_tokens'] = original_total + visual_tokens
+                original_total = response.usage.get("total_tokens", 0)
+                response.usage["total_tokens"] = original_total + visual_tokens
 
-                self.logger.info(f"Enhanced response with {visual_tokens} visual tokens (new total: {response.usage['total_tokens']})")
+                self.logger.info(
+                    f"Enhanced response with {visual_tokens} visual tokens (new total: {response.usage['total_tokens']})"
+                )
             else:
                 self.logger.debug("No visual tokens calculated - skipping enhancement")
 
@@ -4668,7 +5303,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         return response
 
-    def _calculate_visual_tokens(self, media_metadata: List[Dict[str, Any]], provider: str, model: str) -> int:
+    def _calculate_visual_tokens(
+        self, media_metadata: List[Dict[str, Any]], provider: str, model: str
+    ) -> int:
         """Calculate visual tokens from media metadata using VLM token calculator."""
         try:
             from ..utils.vlm_token_calculator import VLMTokenCalculator
@@ -4680,14 +5317,18 @@ class BaseProvider(AbstractCoreInterface, ABC):
             self.logger.debug(f"Processing {len(media_metadata)} media metadata items")
 
             for i, metadata in enumerate(media_metadata):
-                self.logger.debug(f"Metadata {i}: processing_method={metadata.get('processing_method')}")
+                self.logger.debug(
+                    f"Metadata {i}: processing_method={metadata.get('processing_method')}"
+                )
 
                 # Check if this is Glyph compression
-                if metadata.get('processing_method') == 'direct_pdf_conversion':
-                    glyph_cache_dir = metadata.get('glyph_cache_dir')
-                    total_images = metadata.get('total_images', 0)
+                if metadata.get("processing_method") == "direct_pdf_conversion":
+                    glyph_cache_dir = metadata.get("glyph_cache_dir")
+                    total_images = metadata.get("total_images", 0)
 
-                    self.logger.debug(f"Glyph metadata found: cache_dir={glyph_cache_dir}, total_images={total_images}")
+                    self.logger.debug(
+                        f"Glyph metadata found: cache_dir={glyph_cache_dir}, total_images={total_images}"
+                    )
 
                     if glyph_cache_dir and Path(glyph_cache_dir).exists():
                         # Get actual image paths
@@ -4699,22 +5340,28 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         if image_paths:
                             # Calculate tokens for all images
                             token_analysis = calculator.calculate_tokens_for_images(
-                                image_paths=image_paths,
-                                provider=provider,
-                                model=model
+                                image_paths=image_paths, provider=provider, model=model
                             )
-                            total_visual_tokens += token_analysis['total_tokens']
+                            total_visual_tokens += token_analysis["total_tokens"]
 
-                            self.logger.debug(f"Calculated {token_analysis['total_tokens']} visual tokens for {len(image_paths)} Glyph images")
+                            self.logger.debug(
+                                f"Calculated {token_analysis['total_tokens']} visual tokens for {len(image_paths)} Glyph images"
+                            )
                         else:
                             # Fallback: estimate based on total_images
-                            base_tokens = calculator.PROVIDER_CONFIGS.get(provider, {}).get('base_tokens', 512)
+                            base_tokens = calculator.PROVIDER_CONFIGS.get(provider, {}).get(
+                                "base_tokens", 512
+                            )
                             estimated_tokens = total_images * base_tokens
                             total_visual_tokens += estimated_tokens
 
-                            self.logger.debug(f"Estimated {estimated_tokens} visual tokens for {total_images} Glyph images (fallback)")
+                            self.logger.debug(
+                                f"Estimated {estimated_tokens} visual tokens for {total_images} Glyph images (fallback)"
+                            )
                     else:
-                        self.logger.debug(f"Cache directory not found or doesn't exist: {glyph_cache_dir}")
+                        self.logger.debug(
+                            f"Cache directory not found or doesn't exist: {glyph_cache_dir}"
+                        )
 
             self.logger.debug(f"Total visual tokens calculated: {total_visual_tokens}")
             return total_visual_tokens
@@ -4735,7 +5382,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # requires a bound (see _requires_output_cap). When the caller
         # explicitly set the cap, honor it verbatim (never overwrite with the
         # registry default, even if they happened to pass 2048).
-        if not getattr(self, "_max_output_tokens_explicit", False) and self.max_output_tokens == 2048:
+        if (
+            not getattr(self, "_max_output_tokens_explicit", False)
+            and self.max_output_tokens == 2048
+        ):
             default_max_output = self._get_default_max_output_tokens()
             if default_max_output != 2048:  # If we found a different default
                 self.max_output_tokens = default_max_output
@@ -4753,16 +5403,21 @@ class BaseProvider(AbstractCoreInterface, ABC):
         try:
             warnings_list = self.validate_token_constraints()
             for warning in warnings_list[:3]:  # Limit to first 3 warnings to avoid spam
-                warnings.warn(f"Token configuration warning for {self.model}: {warning}",
-                             UserWarning, stacklevel=4)
+                warnings.warn(
+                    f"Token configuration warning for {self.model}: {warning}",
+                    UserWarning,
+                    stacklevel=4,
+                )
 
             # Also log warnings for debugging
-            if warnings_list and hasattr(self, 'logger'):
-                self.logger.debug(f"Token configuration warnings for {self.model}: {'; '.join(warnings_list)}")
+            if warnings_list and hasattr(self, "logger"):
+                self.logger.debug(
+                    f"Token configuration warnings for {self.model}: {'; '.join(warnings_list)}"
+                )
 
         except Exception as e:
             # Don't fail provider initialization due to validation warnings
-            if hasattr(self, 'logger'):
+            if hasattr(self, "logger"):
                 self.logger.debug(f"Error checking token configuration warnings: {e}")
 
     def _get_default_max_output_tokens(self) -> int:
@@ -4773,9 +5428,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
         capabilities = get_model_capabilities(self.model)
 
         if capabilities:
-            max_output_tokens = capabilities.get('max_output_tokens')
+            max_output_tokens = capabilities.get("max_output_tokens")
             if max_output_tokens:
-                self.logger.debug(f"Using max_output_tokens {max_output_tokens} from model capabilities for {self.model}")
+                self.logger.debug(
+                    f"Using max_output_tokens {max_output_tokens} from model capabilities for {self.model}"
+                )
                 return max_output_tokens
 
         # If no exact match, try model family/generation fallback
@@ -4783,28 +5440,33 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Family-based fallback patterns (same as context window)
         family_patterns = {
-            'gpt-4': ['gpt-4', 'gpt4'],
-            'gpt-3.5': ['gpt-3.5', 'gpt3.5'],
-            'claude-3': ['claude-3'],
-            'claude-3.5': ['claude-3.5'],
-            'llama': ['llama'],
-            'qwen': ['qwen'],
-            'mistral': ['mistral']
+            "gpt-4": ["gpt-4", "gpt4"],
+            "gpt-3.5": ["gpt-3.5", "gpt3.5"],
+            "claude-3": ["claude-3"],
+            "claude-3.5": ["claude-3.5"],
+            "llama": ["llama"],
+            "qwen": ["qwen"],
+            "mistral": ["mistral"],
         }
 
         for family, patterns in family_patterns.items():
             if any(pattern in model_lower for pattern in patterns):
                 family_caps = get_model_capabilities(family)
-                if family_caps and family_caps.get('max_output_tokens'):
-                    max_output_tokens = family_caps['max_output_tokens']
-                    self.logger.debug(f"Using max_output_tokens {max_output_tokens} from family {family} for {self.model}")
+                if family_caps and family_caps.get("max_output_tokens"):
+                    max_output_tokens = family_caps["max_output_tokens"]
+                    self.logger.debug(
+                        f"Using max_output_tokens {max_output_tokens} from family {family} for {self.model}"
+                    )
                     return max_output_tokens
 
         # Use JSON capabilities as single source of truth for defaults
         from ..architectures import get_context_limits
+
         limits = get_context_limits(self.model)
-        max_output_tokens = limits['max_output_tokens']
-        self.logger.debug(f"Using default max_output_tokens {max_output_tokens} from model_capabilities.json for {self.model}")
+        max_output_tokens = limits["max_output_tokens"]
+        self.logger.debug(
+            f"Using default max_output_tokens {max_output_tokens} from model_capabilities.json for {self.model}"
+        )
         return max_output_tokens
 
     def _get_default_context_window(self) -> int:
@@ -4815,9 +5477,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
         capabilities = get_model_capabilities(self.model)
 
         if capabilities:
-            max_tokens = capabilities.get('max_tokens')
+            max_tokens = capabilities.get("max_tokens")
             if max_tokens:
-                self.logger.debug(f"Using max_tokens {max_tokens} from model capabilities for {self.model}")
+                self.logger.debug(
+                    f"Using max_tokens {max_tokens} from model capabilities for {self.model}"
+                )
                 return max_tokens
 
         # If no exact match, try model family/generation fallback
@@ -4825,28 +5489,33 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Family-based fallback patterns
         family_patterns = {
-            'gpt-4': ['gpt-4', 'gpt4'],
-            'gpt-3.5': ['gpt-3.5', 'gpt3.5'],
-            'claude-3': ['claude-3'],
-            'claude-3.5': ['claude-3.5'],
-            'llama': ['llama'],
-            'qwen': ['qwen'],
-            'mistral': ['mistral']
+            "gpt-4": ["gpt-4", "gpt4"],
+            "gpt-3.5": ["gpt-3.5", "gpt3.5"],
+            "claude-3": ["claude-3"],
+            "claude-3.5": ["claude-3.5"],
+            "llama": ["llama"],
+            "qwen": ["qwen"],
+            "mistral": ["mistral"],
         }
 
         for family, patterns in family_patterns.items():
             if any(pattern in model_lower for pattern in patterns):
                 family_caps = get_model_capabilities(family)
-                if family_caps and family_caps.get('max_tokens'):
-                    max_tokens = family_caps['max_tokens']
-                    self.logger.debug(f"Using max_tokens {max_tokens} from family {family} for {self.model}")
+                if family_caps and family_caps.get("max_tokens"):
+                    max_tokens = family_caps["max_tokens"]
+                    self.logger.debug(
+                        f"Using max_tokens {max_tokens} from family {family} for {self.model}"
+                    )
                     return max_tokens
 
         # Use JSON capabilities as single source of truth for defaults
         from ..architectures import get_context_limits
+
         limits = get_context_limits(self.model)
-        max_tokens = limits['max_tokens']
-        self.logger.debug(f"Using default max_tokens {max_tokens} from model_capabilities.json for {self.model}")
+        max_tokens = limits["max_tokens"]
+        self.logger.debug(
+            f"Using default max_tokens {max_tokens} from model_capabilities.json for {self.model}"
+        )
         return max_tokens
 
     def _prepare_generation_kwargs(self, **kwargs) -> Dict[str, Any]:
@@ -4871,9 +5540,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # lets the provider resolver (_resolve_output_token_cap) decide
         # omit-vs-registry-max per its API (no silent budget; ADR 0001).
         caller_specified = (
-            ("max_output_tokens" in kwargs and kwargs.get("max_output_tokens") is not None)
-            or getattr(self, "_max_output_tokens_explicit", False)
-        )
+            "max_output_tokens" in kwargs and kwargs.get("max_output_tokens") is not None
+        ) or getattr(self, "_max_output_tokens_explicit", False)
         if caller_specified:
             # Safety clamp: never exceed the provider/model's configured
             # max_output_tokens. Upstream callers may request large budgets from
@@ -5181,7 +5849,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """
         return self._resolve_output_token_cap(kwargs)
 
-    def _handle_prompted_tool_execution(self, response: GenerateResponse, tools: List[Dict[str, Any]], execute_tools_param: bool = None) -> GenerateResponse:
+    def _handle_prompted_tool_execution(
+        self,
+        response: GenerateResponse,
+        tools: List[Dict[str, Any]],
+        execute_tools_param: bool = None,
+    ) -> GenerateResponse:
         """Handle tool execution for prompted responses (shared implementation)"""
         if not response.content:
             return response
@@ -5196,10 +5869,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # Execute with events and return result
         return self._execute_tools_with_events(response, tool_calls, execute_tools_param)
 
-    def _execute_tools_with_events(self, response: GenerateResponse, tool_calls: List, execute_tools_param: bool = None) -> GenerateResponse:
+    def _execute_tools_with_events(
+        self, response: GenerateResponse, tool_calls: List, execute_tools_param: bool = None
+    ) -> GenerateResponse:
         """Core tool execution with event emission (shared implementation)"""
         # Check if tool execution is enabled
-        should_execute = execute_tools_param if execute_tools_param is not None else self.execute_tools
+        should_execute = (
+            execute_tools_param if execute_tools_param is not None else self.execute_tools
+        )
 
         if not should_execute:
             # Tool execution disabled - return response with tool calls but don't execute
@@ -5211,16 +5888,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Emit tool started event
         event_data = {
-            "tool_calls": [{
-                "name": call.name,
-                "arguments": call.arguments
-            } for call in tool_calls],
+            "tool_calls": [{"name": call.name, "arguments": call.arguments} for call in tool_calls],
             "tool_count": len(tool_calls),
             "model": self.model,
-            "provider": self.__class__.__name__
+            "provider": self.__class__.__name__,
         }
 
         from ..events import emit_global
+
         emit_global(EventType.TOOL_STARTED, event_data, source=self.__class__.__name__)
 
         # Execute tools
@@ -5228,15 +5903,18 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         # Emit tool completed event
         after_event_data = {
-            "tool_results": [{
-                "name": call.name,
-                "success": result.success,
-                "error": str(result.error) if result.error else None
-            } for call, result in zip(tool_calls, tool_results)],
+            "tool_results": [
+                {
+                    "name": call.name,
+                    "success": result.success,
+                    "error": str(result.error) if result.error else None,
+                }
+                for call, result in zip(tool_calls, tool_results)
+            ],
             "successful_count": sum(1 for r in tool_results if r.success),
             "failed_count": sum(1 for r in tool_results if not r.success),
             "model": self.model,
-            "provider": self.__class__.__name__
+            "provider": self.__class__.__name__,
         }
 
         emit_global(EventType.TOOL_COMPLETED, after_event_data, source=self.__class__.__name__)
@@ -5247,7 +5925,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 tool_name=call.name,
                 arguments=call.arguments,
                 success=result.success,
-                error=result.error if not result.success else None
+                error=result.error if not result.success else None,
             )
 
         # Format tool results and append to response
@@ -5272,7 +5950,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         results_text = "\n\nTool Results:\n"
         for call, result in zip(tool_calls, tool_results):
             # Format parameters for display (limit size)
-            params_str = preview_text(str(call.arguments) if call.arguments else "{}", max_chars=100)
+            params_str = preview_text(
+                str(call.arguments) if call.arguments else "{}", max_chars=100
+            )
 
             # Show tool name and parameters for transparency
             results_text += f"🔧 Tool: {call.name}({params_str})\n"
@@ -5286,25 +5966,25 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         return results_text
 
-    def _convert_native_tool_calls_to_standard(self, native_tool_calls: List[Dict[str, Any]]) -> List:
+    def _convert_native_tool_calls_to_standard(
+        self, native_tool_calls: List[Dict[str, Any]]
+    ) -> List:
         """Convert native API tool calls to standard ToolCall objects (shared implementation)"""
         from ..tools.core import ToolCall
         import json
 
         tool_calls = []
         for call in native_tool_calls:
-            arguments = call.get('arguments', {})
+            arguments = call.get("arguments", {})
             if isinstance(arguments, str):
                 try:
                     arguments = json.loads(arguments)
                 except json.JSONDecodeError:
                     arguments = {}
 
-            tool_calls.append(ToolCall(
-                name=call.get('name', ''),
-                arguments=arguments,
-                call_id=call.get('id')
-            ))
+            tool_calls.append(
+                ToolCall(name=call.get("name", ""), arguments=arguments, call_id=call.get("id"))
+            )
         return tool_calls
 
     # Timeout management methods
@@ -5368,17 +6048,27 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if not supported:
             return PromptCacheCapabilities()
 
-        create_overridden = type(self)._prompt_cache_backend_create is not BaseProvider._prompt_cache_backend_create
-        clone_overridden = type(self)._prompt_cache_backend_clone is not BaseProvider._prompt_cache_backend_clone
-        append_overridden = type(self)._prompt_cache_backend_append is not BaseProvider._prompt_cache_backend_append
+        create_overridden = (
+            type(self)._prompt_cache_backend_create is not BaseProvider._prompt_cache_backend_create
+        )
+        clone_overridden = (
+            type(self)._prompt_cache_backend_clone is not BaseProvider._prompt_cache_backend_clone
+        )
+        append_overridden = (
+            type(self)._prompt_cache_backend_append is not BaseProvider._prompt_cache_backend_append
+        )
         set_overridden = type(self).prompt_cache_set is not BaseProvider.prompt_cache_set
         save_overridden = type(self).prompt_cache_save is not BaseProvider.prompt_cache_save
         load_overridden = type(self).prompt_cache_load is not BaseProvider.prompt_cache_load
 
         supports_update = bool(create_overridden and append_overridden)
         supports_fork = bool(create_overridden and clone_overridden)
-        supports_prepare_modules = bool(create_overridden and clone_overridden and append_overridden)
-        supports_ttl = bool(supports_prepare_modules or supports_update or supports_fork or set_overridden)
+        supports_prepare_modules = bool(
+            create_overridden and clone_overridden and append_overridden
+        )
+        supports_ttl = bool(
+            supports_prepare_modules or supports_update or supports_fork or set_overridden
+        )
         mode = "local_control_plane" if supports_prepare_modules else "keyed"
 
         notes: List[str] = []
@@ -5657,6 +6347,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         Depends on `union` ONLY — that is what makes the derived cut
         successor-independent (C2).
         """
+
         def _render(**over: Any) -> Optional[str]:
             args = dict(union)
             args.update(over)
@@ -5676,7 +6367,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if not union.get("tools"):
             candidates.append({"tools": _BLOC_PROBE_TOOLS})
         if not union.get("prompt"):
-            candidates.append({"messages": list(union.get("messages") or []) + _BLOC_PROBE_MESSAGES})
+            candidates.append(
+                {"messages": list(union.get("messages") or []) + _BLOC_PROBE_MESSAGES}
+            )
             candidates.append({"prompt": _BLOC_PROBE_PROMPT})
         if not union.get("add_generation_prompt"):
             candidates.append({"add_generation_prompt": True})
@@ -5786,7 +6479,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     unsound_at=k - 1,
                     reason=reason,
                 )
-            fragments.append(list(ids[len(prev_ids):]))
+            fragments.append(list(ids[len(prev_ids) :]))
             boundaries.append(len(ids))
             stable_texts.append(text)
             prev_ids = list(ids)
@@ -5800,7 +6493,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # that it actually worked, run against the FULL single-shot render — the
         # bytes `generate()` will really send.
         full_render = self.prompt_cache_render_bloc_text(**self._bloc_union(mods))
-        full_ids = self.prompt_cache_encode_bloc_text(full_render) if full_render is not None else None
+        full_ids = (
+            self.prompt_cache_encode_bloc_text(full_render) if full_render is not None else None
+        )
         chain_ids = [t for frag in fragments for t in frag]
         failure = ""
         if full_ids is None:
@@ -5837,7 +6532,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
             )
 
         self._warn_bloc_tools_missing(mods, full_render)
-        return PromptCacheBlocPlan(fragments=fragments, boundaries=boundaries, stable_texts=stable_texts)
+        return PromptCacheBlocPlan(
+            fragments=fragments, boundaries=boundaries, stable_texts=stable_texts
+        )
 
     @staticmethod
     def _bloc_tool_names(tools: Optional[Sequence[Any]]) -> List[str]:
@@ -5886,7 +6583,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     missing.append(f"{mod.module_id}:{name}")
         if not missing:
             return
-        shown = ", ".join(missing[:8]) + (f" (+{len(missing) - 8} more)" if len(missing) > 8 else "")
+        shown = ", ".join(missing[:8]) + (
+            f" (+{len(missing) - 8} more)" if len(missing) > 8 else ""
+        )
         message = (
             f"Prompt-cache bloc chain carries {len(missing)} tool(s) that do NOT appear in the "
             f"rendered prompt: {shown}. The bloc is cached faithfully, but the model will not see "
@@ -6007,7 +6706,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         return {"key": normalized, "meta": meta}
 
-    def _apply_prompt_cache_binding_request(self, kwargs: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _apply_prompt_cache_binding_request(
+        self, kwargs: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         binding = kwargs.pop("expected_prompt_cache_binding", None)
         second = kwargs.pop("prompt_cache_binding", None)
         if binding is None:
@@ -6066,7 +6767,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
             )
         if isinstance(binding_key, str) and binding_key.strip():
             binding_key_s = binding_key.strip()
-            if isinstance(current_key, str) and current_key.strip() and current_key.strip() != binding_key_s:
+            if (
+                isinstance(current_key, str)
+                and current_key.strip()
+                and current_key.strip() != binding_key_s
+            ):
                 provider, model = self._prompt_cache_error_context()
                 raise PromptCacheOperationError(
                     "prompt_cache_key and prompt_cache_binding.key must match.",
@@ -6147,7 +6852,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
     def _apply_default_prompt_cache_key(self, kwargs: Dict[str, Any]) -> None:
         # Explicit caller override wins (even if None / empty to disable).
         if "prompt_cache_key" in kwargs:
-            kwargs["prompt_cache_key"] = self._normalize_prompt_cache_key(kwargs.get("prompt_cache_key"))
+            kwargs["prompt_cache_key"] = self._normalize_prompt_cache_key(
+                kwargs.get("prompt_cache_key")
+            )
             return
 
         if self._default_prompt_cache_key and self.supports_prompt_cache():
@@ -6200,7 +6907,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         if not self.supports_prompt_cache():
             return None
 
-        normalized = self._default_prompt_cache_key if key is None else self._normalize_prompt_cache_key(key)
+        normalized = (
+            self._default_prompt_cache_key if key is None else self._normalize_prompt_cache_key(key)
+        )
         if normalized is None:
             return None
 
@@ -6365,7 +7074,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         effective_ttl = self._prompt_cache_store.ttl_s(normalized)
                     except Exception:
                         effective_ttl = None
-                self._prompt_cache_store.set(normalized, cache_value, ttl_s=effective_ttl, meta=meta)
+                self._prompt_cache_store.set(
+                    normalized, cache_value, ttl_s=effective_ttl, meta=meta
+                )
         except Exception:
             pass
         return True
@@ -6517,7 +7228,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
             )
 
         # Derive deterministic prefix keys per module boundary.
-        prefix_hash = hashlib.sha256(f"acore-prompt-cache:{int(version)}".encode("utf-8")).hexdigest()
+        prefix_hash = hashlib.sha256(
+            f"acore-prompt-cache:{int(version)}".encode("utf-8")
+        ).hexdigest()
         derived: List[Dict[str, Any]] = []
         keys: List[str] = []
         for mod, fp in zip(normalized_modules, fingerprints):
@@ -6544,11 +7257,21 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 # handing back the full list would name intermediate keys a
                 # caller could fork from and get nothing.
                 "modules": (
-                    [{"module_id": str(warm_meta.get("module_id") or derived[-1]["module_id"]),
-                      "cache_key": keys[-1],
-                      "module_hash": derived[-1].get("module_hash")}]
+                    [
+                        {
+                            "module_id": str(
+                                warm_meta.get("module_id") or derived[-1]["module_id"]
+                            ),
+                            "cache_key": keys[-1],
+                            "module_hash": derived[-1].get("module_hash"),
+                        }
+                    ]
                     if warm_meta.get("bloc_collapsed")
-                    else [d for d in derived if self._prompt_cache_store.get(d["cache_key"]) is not None]
+                    else [
+                        d
+                        for d in derived
+                        if self._prompt_cache_store.get(d["cache_key"]) is not None
+                    ]
                     or derived
                 ),
                 "final_cache_key": keys[-1],
@@ -6570,7 +7293,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
         try:
             plan = self.prompt_cache_plan_bloc_chain(normalized_modules)
         except Exception as e:
-            logger.warning(f"#FALLBACK prompt-cache bloc planning failed ({e}); per-module appends.")
+            logger.warning(
+                f"#FALLBACK prompt-cache bloc planning failed ({e}); per-module appends."
+            )
             plan = None
         if plan is not None and plan.unsound_at is not None and plan.unsound_at <= start_idx + 1:
             # The first module we actually have to build is the one that
@@ -6953,8 +7678,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         return warnings_list
 
-    def calculate_token_budget(self, input_text: str, desired_output_tokens: int,
-                              safety_margin: float = 0.1) -> tuple[int, List[str]]:
+    def calculate_token_budget(
+        self, input_text: str, desired_output_tokens: int, safety_margin: float = 0.1
+    ) -> tuple[int, List[str]]:
         """Helper to estimate required max_tokens given input and desired output"""
         return super().calculate_token_budget(input_text, desired_output_tokens, safety_margin)
 
@@ -6962,8 +7688,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
         """Rough estimation of token count for given text"""
         return super().estimate_tokens(text)
 
-    def _process_media_content(self, media: List[Union[str, Dict[str, Any], 'MediaContent']], 
-                              glyph_compression: str = "auto") -> List['MediaContent']:
+    def _process_media_content(
+        self,
+        media: List[Union[str, Dict[str, Any], "MediaContent"]],
+        glyph_compression: str = "auto",
+    ) -> List["MediaContent"]:
         """
         Process media content from various input formats into standardized MediaContent objects.
 
@@ -6988,7 +7717,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
         except ImportError as e:
             raise ImportError(
                 f"Media processing requires additional dependencies. "
-                f"Install with: pip install \"abstractcore[media]\". Error: {e}"
+                f'Install with: pip install "abstractcore[media]". Error: {e}'
             )
 
         processed_media = []
@@ -7000,21 +7729,23 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     # File path - process with auto media handler
                     handler = AutoMediaHandler(
                         enable_glyph_compression=True,
-                        glyph_config=getattr(self, 'glyph_config', None)
+                        glyph_config=getattr(self, "glyph_config", None),
                     )
                     result = handler.process_file(
                         media_item,
                         provider=self.provider,
                         model=self.model,
-                        glyph_compression=glyph_compression
+                        glyph_compression=glyph_compression,
                     )
                     if result.success:
                         processed_media.append(result.media_content)
                     else:
-                        self.logger.warning(f"Failed to process media file {media_item}: {result.error_message}")
+                        self.logger.warning(
+                            f"Failed to process media file {media_item}: {result.error_message}"
+                        )
                         continue
 
-                elif hasattr(media_item, 'media_type'):
+                elif hasattr(media_item, "media_type"):
                     # Already a MediaContent object
                     processed_media.append(media_item)
 
@@ -7025,26 +7756,39 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     if file_path_raw is None:
                         file_path_raw = media_item.get("path")
                     has_inline_content = media_item.get("content") is not None
-                    if isinstance(file_path_raw, str) and file_path_raw.strip() and not has_inline_content:
+                    if (
+                        isinstance(file_path_raw, str)
+                        and file_path_raw.strip()
+                        and not has_inline_content
+                    ):
                         handler = AutoMediaHandler(
                             enable_glyph_compression=True,
-                            glyph_config=getattr(self, 'glyph_config', None)
+                            glyph_config=getattr(self, "glyph_config", None),
                         )
                         result = handler.process_file(
                             file_path_raw.strip(),
                             provider=self.provider,
                             model=self.model,
-                            glyph_compression=glyph_compression
+                            glyph_compression=glyph_compression,
                         )
                         if result.success:
                             media_content = result.media_content
                             metadata = dict(getattr(media_content, "metadata", None) or {})
-                            for key in ("artifact_id", "$artifact", "filename", "role", "purpose", "kind"):
+                            for key in (
+                                "artifact_id",
+                                "$artifact",
+                                "filename",
+                                "role",
+                                "purpose",
+                                "kind",
+                            ):
                                 value = media_item.get(key)
                                 if value is not None and str(value).strip():
                                     metadata[key] = str(value).strip()
                             media_content.metadata = metadata
-                            content_type = media_item.get("content_type") or media_item.get("mime_type")
+                            content_type = media_item.get("content_type") or media_item.get(
+                                "mime_type"
+                            )
                             if isinstance(content_type, str) and content_type.strip():
                                 media_content.mime_type = content_type.strip()
                             processed_media.append(media_content)
@@ -7175,7 +7919,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
             original_timeout = None
             timeout_changed = False
 
-            if timeout is not None and hasattr(self, '_timeout'):
+            if timeout is not None and hasattr(self, "_timeout"):
                 original_timeout = self._timeout
                 if original_timeout != timeout:
                     self.set_timeout(timeout)
@@ -7196,7 +7940,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     "models": models,
                     "model_count": len(models) if models else 0,
                     "error": None,
-                    "latency_ms": round(latency_ms, 2)
+                    "latency_ms": round(latency_ms, 2),
                 }
 
             except Exception as e:
@@ -7222,7 +7966,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 "models": None,
                 "model_count": 0,
                 "error": error_message,
-                "latency_ms": round(latency_ms, 2)
+                "latency_ms": round(latency_ms, 2),
             }
 
     def _needs_tag_rewriting(self, tool_call_tags) -> bool:
@@ -7232,9 +7976,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
             if isinstance(tool_call_tags, str):
                 # String format - handle comma-separated format
-                if ',' in tool_call_tags:
+                if "," in tool_call_tags:
                     # Comma-separated format like '<function_call>,</function_call>'
-                    parts = tool_call_tags.split(',')
+                    parts = tool_call_tags.split(",")
                     if len(parts) == 2:
                         opening_tag = parts[0].strip()
                         closing_tag = parts[1].strip()
@@ -7246,9 +7990,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         return False
             elif isinstance(tool_call_tags, ToolCallTags):
                 # ToolCallTags object - check if it contains standard tags
-                if (hasattr(tool_call_tags, 'start_tag') and hasattr(tool_call_tags, 'end_tag')):
+                if hasattr(tool_call_tags, "start_tag") and hasattr(tool_call_tags, "end_tag"):
                     # Only standard if exactly matches the standard format
-                    if (tool_call_tags.start_tag == "<function_call>" and tool_call_tags.end_tag == "</function_call>"):
+                    if (
+                        tool_call_tags.start_tag == "<function_call>"
+                        and tool_call_tags.end_tag == "</function_call>"
+                    ):
                         return False
 
             # Any other format or non-standard tags need rewriting
@@ -7258,7 +8005,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
             # If we can't determine, err on the side of applying rewriting
             return True
 
-    def _apply_non_streaming_tag_rewriting(self, response: GenerateResponse, tool_call_tags: Optional[str] = None) -> GenerateResponse:
+    def _apply_non_streaming_tag_rewriting(
+        self, response: GenerateResponse, tool_call_tags: Optional[str] = None
+    ) -> GenerateResponse:
         """Apply tag rewriting to non-streaming response content."""
         try:
             from .streaming import UnifiedStreamProcessor
@@ -7268,7 +8017,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 model_name=self.model,
                 execute_tools=False,  # No execution, just rewriting
                 tool_call_tags=tool_call_tags,
-                default_target_format="qwen3"  # Always rewrite to qwen3 format
+                default_target_format="qwen3",  # Always rewrite to qwen3 format
             )
 
             # Apply tag rewriting to the content
@@ -7325,8 +8074,14 @@ class BaseProvider(AbstractCoreInterface, ABC):
             response.tool_calls = normalized_existing
 
             # Clean any echoed tool syntax from content unless the caller explicitly requested tag passthrough.
-            if self._should_clean_tool_call_markup(tool_call_tags) and isinstance(response.content, str) and response.content.strip():
-                cleaned = self._clean_content_using_tool_calls(response.content, normalized_existing)
+            if (
+                self._should_clean_tool_call_markup(tool_call_tags)
+                and isinstance(response.content, str)
+                and response.content.strip()
+            ):
+                cleaned = self._clean_content_using_tool_calls(
+                    response.content, normalized_existing
+                )
                 response.content = cleaned
 
             return response
@@ -7436,10 +8191,18 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
                     name_matches = False
                     raw_name = current.get("name")
-                    if isinstance(raw_name, str) and expected_tool_name and raw_name.strip() == expected_tool_name:
+                    if (
+                        isinstance(raw_name, str)
+                        and expected_tool_name
+                        and raw_name.strip() == expected_tool_name
+                    ):
                         name_matches = True
 
-                    wrapperish = keys.issubset(wrapper_keys) or name_matches or bool(keys & {"call_id", "id"})
+                    wrapperish = (
+                        keys.issubset(wrapper_keys)
+                        or name_matches
+                        or bool(keys & {"call_id", "id"})
+                    )
                     if not wrapperish:
                         break
 
@@ -7524,7 +8287,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
             if not isinstance(name, str) or not name:
                 continue
-            if isinstance(allowed_tool_names, set) and allowed_tool_names and name not in allowed_tool_names:
+            if (
+                isinstance(allowed_tool_names, set)
+                and allowed_tool_names
+                and name not in allowed_tool_names
+            ):
                 # Wire-safe alias first: native declarations alias namespaced
                 # names (mcp::server::tool) for strict endpoints, so the model
                 # answers with the ALIAS — deterministic recomputation maps it
@@ -7590,7 +8357,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         return unique or None
 
-    def _clean_content_using_tool_calls(self, content: str, tool_calls: List[Dict[str, Any]]) -> str:
+    def _clean_content_using_tool_calls(
+        self, content: str, tool_calls: List[Dict[str, Any]]
+    ) -> str:
         """Strip tool-call markup from assistant content using known tool calls."""
         try:
             from ..tools.core import ToolCall as CoreToolCall
@@ -7605,7 +8374,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     continue
                 args = tc.get("arguments")
                 args_dict = dict(args) if isinstance(args, dict) else {}
-                core_calls.append(CoreToolCall(name=name.strip(), arguments=args_dict, call_id=tc.get("call_id")))
+                core_calls.append(
+                    CoreToolCall(name=name.strip(), arguments=args_dict, call_id=tc.get("call_id"))
+                )
 
             if not core_calls:
                 return content
@@ -7613,17 +8384,19 @@ class BaseProvider(AbstractCoreInterface, ABC):
         except Exception:
             return content
 
-    def _handle_tools_with_structured_output(self,
-                                           prompt: str,
-                                           messages: Optional[List[Dict[str, str]]] = None,
-                                           system_prompt: Optional[str] = None,
-                                           tools: Optional[List] = None,
-                                           response_model: Optional[Type[BaseModel]] = None,
-                                           retry_strategy=None,
-                                           tool_call_tags: Optional[str] = None,
-                                           execute_tools: Optional[bool] = None,
-                                           stream: bool = False,
-                                           **kwargs) -> BaseModel:
+    def _handle_tools_with_structured_output(
+        self,
+        prompt: str,
+        messages: Optional[List[Dict[str, str]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List] = None,
+        response_model: Optional[Type[BaseModel]] = None,
+        retry_strategy=None,
+        tool_call_tags: Optional[str] = None,
+        execute_tools: Optional[bool] = None,
+        stream: bool = False,
+        **kwargs,
+    ) -> BaseModel:
         """
         Handle the hybrid case: tools + structured output.
 
@@ -7657,10 +8430,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
             )
 
         # Step 1: Generate response with tools (normal tool execution flow)
-        self.logger.info("Hybrid mode: Executing tools first, then structured output",
-                        model=self.model,
-                        response_model=response_model.__name__,
-                        num_tools=len(tools) if tools else 0)
+        self.logger.info(
+            "Hybrid mode: Executing tools first, then structured output",
+            model=self.model,
+            response_model=response_model.__name__,
+            num_tools=len(tools) if tools else 0,
+        )
 
         # Force tool execution for hybrid mode
         should_execute_tools = execute_tools if execute_tools is not None else True
@@ -7675,12 +8450,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
             response_model=None,  # No structured output in first pass
             tool_call_tags=tool_call_tags,
             execute_tools=should_execute_tools,
-            **kwargs
+            **kwargs,
         )
 
         # Step 2: Generate structured output using tool results as context
         # Create enhanced prompt with tool execution context
-        if hasattr(tool_response, 'content') and tool_response.content:
+        if hasattr(tool_response, "content") and tool_response.content:
             enhanced_prompt = f"""{prompt}
 
 Based on the following tool execution results:
@@ -7690,13 +8465,16 @@ Please provide a structured response."""
         else:
             enhanced_prompt = prompt
 
-        self.logger.info("Hybrid mode: Generating structured output with tool context",
-                        model=self.model,
-                        response_model=response_model.__name__,
-                        has_tool_context=bool(hasattr(tool_response, 'content') and tool_response.content))
+        self.logger.info(
+            "Hybrid mode: Generating structured output with tool context",
+            model=self.model,
+            response_model=response_model.__name__,
+            has_tool_context=bool(hasattr(tool_response, "content") and tool_response.content),
+        )
 
         # Generate structured output using the enhanced prompt
         from ..structured import StructuredOutputHandler
+
         handler = StructuredOutputHandler(retry_strategy=retry_strategy)
 
         structured_result = handler.generate_structured(
@@ -7707,24 +8485,28 @@ Please provide a structured response."""
             system_prompt=system_prompt,
             tools=None,  # No tools in structured output pass
             stream=False,
-            **kwargs
+            **kwargs,
         )
 
-        self.logger.info("Hybrid mode: Successfully completed tools + structured output",
-                        model=self.model,
-                        response_model=response_model.__name__,
-                        success=True)
+        self.logger.info(
+            "Hybrid mode: Successfully completed tools + structured output",
+            model=self.model,
+            response_model=response_model.__name__,
+            success=True,
+        )
 
         return structured_result
 
-    def generate(self,
-                prompt: str = "",
-                messages: Optional[List[Dict[str, str]]] = None,
-                system_prompt: Optional[str] = None,
-                tools: Optional[List[Dict[str, Any]]] = None,
-                media: Optional[List[Union[str, Dict[str, Any], 'MediaContent']]] = None,
-                stream: bool = False,
-                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse], BaseModel]:
+    def generate(
+        self,
+        prompt: str = "",
+        messages: Optional[List[Dict[str, str]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        media: Optional[List[Union[str, Dict[str, Any], "MediaContent"]]] = None,
+        stream: bool = False,
+        **kwargs,
+    ) -> Union[GenerateResponse, Iterator[GenerateResponse], BaseModel]:
         """
         Generate response from the LLM.
 
@@ -7748,17 +8530,19 @@ Please provide a structured response."""
             tools=tools,
             media=media,
             stream=stream,
-            **kwargs
+            **kwargs,
         )
 
-    async def agenerate(self,
-                       prompt: str = "",
-                       messages: Optional[List[Dict]] = None,
-                       system_prompt: Optional[str] = None,
-                       tools: Optional[List] = None,
-                       media: Optional[List] = None,
-                       stream: bool = False,
-                       **kwargs) -> Union[GenerateResponse, AsyncIterator[GenerateResponse], BaseModel]:
+    async def agenerate(
+        self,
+        prompt: str = "",
+        messages: Optional[List[Dict]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List] = None,
+        media: Optional[List] = None,
+        stream: bool = False,
+        **kwargs,
+    ) -> Union[GenerateResponse, AsyncIterator[GenerateResponse], BaseModel]:
         """
         Async generation - works with all providers.
 
@@ -7795,7 +8579,9 @@ Please provide a structured response."""
 
         output_request = kwargs.get("output", None)
         is_acore_output = self._is_acore_output_request(output_request)
-        route_output_request = output_request if is_acore_output else {"modality": "text", "task": "text_generation"}
+        route_output_request = (
+            output_request if is_acore_output else {"modality": "text", "task": "text_generation"}
+        )
         resolved_generate_route = self._resolve_generate_route(
             request=generate_request,
             output=route_output_request,
@@ -7861,7 +8647,11 @@ Please provide a structured response."""
         # Async boundary parity with the sync lane (adversarial find 2026-07-13:
         # agenerate silently IGNORED max_tokens and thinking — identical
         # arguments produced different requests than generate()).
-        if "max_output_tokens" not in kwargs and "max_tokens" in kwargs and kwargs.get("max_tokens") is not None:
+        if (
+            "max_output_tokens" not in kwargs
+            and "max_tokens" in kwargs
+            and kwargs.get("max_tokens") is not None
+        ):
             kwargs["max_output_tokens"] = kwargs.pop("max_tokens")
 
         self._apply_default_prompt_cache_key(kwargs)
@@ -7899,19 +8689,24 @@ Please provide a structured response."""
 
         # Capture interaction trace if enabled (match sync generate_with_telemetry behavior)
         # Only for non-streaming responses that are GenerateResponse objects
-        if not stream and self.enable_tracing and response and isinstance(response, GenerateResponse):
+        if (
+            not stream
+            and self.enable_tracing
+            and response
+            and isinstance(response, GenerateResponse)
+        ):
             trace_id = self._capture_trace(
                 prompt=prompt,
                 messages=messages,
                 system_prompt=system_prompt,
                 tools=tools,
                 response=response,
-                kwargs=kwargs
+                kwargs=kwargs,
             )
             # Attach trace_id to response metadata
             if not response.metadata:
                 response.metadata = {}
-            response.metadata['trace_id'] = trace_id
+            response.metadata["trace_id"] = trace_id
 
         if not stream and response and isinstance(response, GenerateResponse):
             if response.metadata is None or not isinstance(response.metadata, dict):
@@ -7931,7 +8726,9 @@ Please provide a structured response."""
 
         return response
 
-    async def _annotate_async_stream(self, source: "AsyncIterator[GenerateResponse]") -> "AsyncIterator[GenerateResponse]":
+    async def _annotate_async_stream(
+        self, source: "AsyncIterator[GenerateResponse]"
+    ) -> "AsyncIterator[GenerateResponse]":
         """Annotate output truncation on each chunk of an async stream (F1).
 
         `_annotate_output_truncation` no-ops on non-length finish reasons and is
@@ -7944,14 +8741,16 @@ Please provide a structured response."""
                 pass
             yield chunk
 
-    async def _agenerate_internal(self,
-                                   prompt: str,
-                                   messages: Optional[List[Dict]],
-                                   system_prompt: Optional[str],
-                                   tools: Optional[List],
-                                   media: Optional[List],
-                                   stream: bool,
-                                   **kwargs) -> Union[GenerateResponse, AsyncIterator[GenerateResponse], BaseModel]:
+    async def _agenerate_internal(
+        self,
+        prompt: str,
+        messages: Optional[List[Dict]],
+        system_prompt: Optional[str],
+        tools: Optional[List],
+        media: Optional[List],
+        stream: bool,
+        **kwargs,
+    ) -> Union[GenerateResponse, AsyncIterator[GenerateResponse], BaseModel]:
         """
         Internal async generation method.
 
@@ -7988,26 +8787,28 @@ Please provide a structured response."""
                 **kwargs,
             )
 
-    async def _async_stream_generate(self,
-                                     prompt: str,
-                                     messages: Optional[List[Dict]],
-                                     system_prompt: Optional[str],
-                                     tools: Optional[List],
-                                     media: Optional[List],
-                                     **kwargs) -> AsyncIterator[GenerateResponse]:
+    async def _async_stream_generate(
+        self,
+        prompt: str,
+        messages: Optional[List[Dict]],
+        system_prompt: Optional[str],
+        tools: Optional[List],
+        media: Optional[List],
+        **kwargs,
+    ) -> AsyncIterator[GenerateResponse]:
         """
         Async streaming generator.
 
         Wraps sync streaming in async iterator, yielding control to event loop.
         """
+
         # Get sync generator in thread pool
         def get_sync_stream():
             # media MUST ride along (adversarial find 2026-07-13: it was
             # dropped here, so async streamed calls silently answered
             # without ever seeing the caller's images/documents).
             return self.generate(
-                prompt, messages, system_prompt, tools, media,
-                stream=True, **kwargs
+                prompt, messages, system_prompt, tools, media, stream=True, **kwargs
             )
 
         sync_gen = await asyncio.to_thread(get_sync_stream)

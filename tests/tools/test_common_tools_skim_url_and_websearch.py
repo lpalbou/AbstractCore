@@ -49,6 +49,15 @@ class _FakeSession:
     def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
         return False
 
+    def mount(self, *args: object, **kwargs: object) -> None:
+
+        # skim_url mounts the SSRF-guard adapter on its session;
+
+        # the double must accept it or every skim test fails.
+
+        return None
+
+
     def request(self, *args: object, **kwargs: object) -> _FakeResponse:
         return self._response
 
@@ -63,6 +72,15 @@ class _SequenceSession:
 
     def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
         return False
+
+    def mount(self, *args: object, **kwargs: object) -> None:
+
+        # skim_url mounts the SSRF-guard adapter on its session;
+
+        # the double must accept it or every skim test fails.
+
+        return None
+
 
     def request(self, *args: object, **kwargs: object) -> _FakeResponse:
         assert self._responses, "No fake responses left"

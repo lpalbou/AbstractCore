@@ -27,6 +27,7 @@ class ToolDetectionState(Enum):
     Note: This is kept for backward compatibility with older tests.
     The current implementation doesn't use explicit state transitions.
     """
+
     SCANNING = "scanning"  # Looking for tool call start
     IN_TOOL_CALL = "in_tool_call"  # Inside a tool call
     COMPLETE = "complete"  # Tool call completed
@@ -54,40 +55,40 @@ class IncrementalToolDetector:
 
         # Define patterns for different tool call formats
         self.patterns = {
-            'qwen': {
-                'start': r'<\|tool_call\|>',
-                'end': r'</\|tool_call\|>',
+            "qwen": {
+                "start": r"<\|tool_call\|>",
+                "end": r"</\|tool_call\|>",
             },
             # Gemma4 special-token tool blocks:
             #   <|tool_call>call:tool_name{...}<tool_call|>
-            'gemma4': {
-                'start': r'<\|tool_call>',
-                'end': r'<tool_call\|>',
+            "gemma4": {
+                "start": r"<\|tool_call>",
+                "end": r"<tool_call\|>",
             },
             # Liquid LFM2.5 special-token tool blocks:
             #   <|tool_call_start|>[tool_name(arg="value")]<|tool_call_end|>
-            'liquid': {
-                'start': r'<\|tool_call_start\|>',
-                'end': r'<\|tool_call_end\|>',
+            "liquid": {
+                "start": r"<\|tool_call_start\|>",
+                "end": r"<\|tool_call_end\|>",
             },
             # Harmony/ChatML-style tool transcript (no explicit closing tag; ends at end of JSON after <|message|>).
-            'harmony': {
-                'start': r'<\|channel\|>',
-                'end': None,
-                'kind': 'harmony',
+            "harmony": {
+                "start": r"<\|channel\|>",
+                "end": None,
+                "kind": "harmony",
             },
-            'llama': {
-                'start': r'<function_call>',
-                'end': r'</function_call>',
+            "llama": {
+                "start": r"<function_call>",
+                "end": r"</function_call>",
             },
-            'xml': {
-                'start': r'<tool_call>',
-                'end': r'</tool_call>',
+            "xml": {
+                "start": r"<tool_call>",
+                "end": r"</tool_call>",
             },
-            'gemma': {
-                'start': r'```tool_code',
-                'end': r'```',
-            }
+            "gemma": {
+                "start": r"```tool_code",
+                "end": r"```",
+            },
         }
 
         self.active_patterns = self._get_patterns_for_model(model_name)
@@ -129,7 +130,9 @@ class IncrementalToolDetector:
             return [self.patterns["gemma"]]
 
         # Special-token tools (Qwen-style). Some "prompted" models share this convention.
-        if tool_format == "special_token" or (tool_format == "prompted" and message_format == "im_start_end"):
+        if tool_format == "special_token" or (
+            tool_format == "prompted" and message_format == "im_start_end"
+        ):
             return [
                 self.patterns["qwen"],
                 self.patterns["gemma4"],
@@ -180,7 +183,7 @@ class IncrementalToolDetector:
 
         # Check for tool start patterns
         for pattern_info in self.active_patterns:
-            start_pattern = pattern_info['start']
+            start_pattern = pattern_info["start"]
             match = re.search(start_pattern, self.accumulated_content, re.IGNORECASE)
 
             if match:
@@ -195,12 +198,14 @@ class IncrementalToolDetector:
                     streamable_content = ""  # Don't stream partial content yet
                 else:
                     # Normal mode - stream content before tool call
-                    streamable_content = self.accumulated_content[:self.tool_start_pos]
+                    streamable_content = self.accumulated_content[: self.tool_start_pos]
 
                 # Start collecting tool content
-                self.current_tool_content = self.accumulated_content[match.end():]
+                self.current_tool_content = self.accumulated_content[match.end() :]
 
-                logger.debug(f"Tool call start detected: {start_pattern} for model {self.model_name}")
+                logger.debug(
+                    f"Tool call start detected: {start_pattern} for model {self.model_name}"
+                )
                 logger.debug(f"Accumulated content: {repr(self.accumulated_content[:100])}")
 
                 # Immediately check if tool is already complete (if end tag is in current content)
@@ -232,16 +237,16 @@ class IncrementalToolDetector:
         self.current_tool_content += chunk_content
 
         # Harmony/ChatML tool transcript: detect completion by balanced JSON after <|message|>.
-        if self.current_pattern and self.current_pattern.get('kind') == 'harmony':
+        if self.current_pattern and self.current_pattern.get("kind") == "harmony":
             return self._collect_harmony_tool_content()
 
         # Check for tool end pattern
-        end_pattern = self.current_pattern['end']
+        end_pattern = self.current_pattern["end"]
         end_match = re.search(end_pattern, self.current_tool_content, re.IGNORECASE)
 
         if end_match:
             # Tool call is complete
-            tool_json_content = self.current_tool_content[:end_match.start()].strip()
+            tool_json_content = self.current_tool_content[: end_match.start()].strip()
 
             # Try to parse the tool call
             tool_call = self._parse_tool_json(tool_json_content)
@@ -252,14 +257,16 @@ class IncrementalToolDetector:
             if self.rewrite_tags:
                 # When rewriting, stream the complete accumulated content including tool call
                 streamable_content = self.accumulated_content
-                logger.debug(f"Tool complete, streaming accumulated content for rewriting: {streamable_content[:200]}")
+                logger.debug(
+                    f"Tool complete, streaming accumulated content for rewriting: {streamable_content[:200]}"
+                )
                 self.accumulated_content = ""
             else:
                 # Normal mode - don't stream the tool call itself
                 pass
 
             # Reset for next tool
-            remaining_content = self.current_tool_content[end_match.end():]
+            remaining_content = self.current_tool_content[end_match.end() :]
             self.reset()
 
             # Continue processing remaining content
@@ -375,17 +382,56 @@ class IncrementalToolDetector:
     def _might_have_partial_tool_call(self) -> bool:
         """Check if accumulated content might contain start of a tool call."""
         # Check for partial tool tags more aggressively to handle character-by-character streaming
-        tail = self.accumulated_content[-20:] if len(self.accumulated_content) > 20 else self.accumulated_content
+        tail = (
+            self.accumulated_content[-20:]
+            if len(self.accumulated_content) > 20
+            else self.accumulated_content
+        )
 
         # Expanded list of potential partial starts to catch character-by-character streaming
         potential_partial_starts = [
-            '<', '<|', '<f', '</', '<t', '`', '``',
-            '<fu', '<fun', '<func', '<funct', '<functi', '<functio', '<function',  # <function_call>
-            '<tool', '<tool_', '<tool_c', '<tool_ca', '<tool_cal',  # <tool_call>
-            '<|t', '<|to', '<|too', '<|tool', '<|tool_', '<|tool_c',  # <|tool_call|>
-            '<|tool_call_s', '<|tool_call_sta', '<|tool_call_start',  # <|tool_call_start|>
-            '<|c', '<|ch', '<|cha', '<|chan', '<|chann', '<|channe', '<|channel',  # <|channel|>
-            '<|m', '<|me', '<|mes', '<|mess', '<|messa', '<|messag', '<|message',  # <|message|>
+            "<",
+            "<|",
+            "<f",
+            "</",
+            "<t",
+            "`",
+            "``",
+            "<fu",
+            "<fun",
+            "<func",
+            "<funct",
+            "<functi",
+            "<functio",
+            "<function",  # <function_call>
+            "<tool",
+            "<tool_",
+            "<tool_c",
+            "<tool_ca",
+            "<tool_cal",  # <tool_call>
+            "<|t",
+            "<|to",
+            "<|too",
+            "<|tool",
+            "<|tool_",
+            "<|tool_c",  # <|tool_call|>
+            "<|tool_call_s",
+            "<|tool_call_sta",
+            "<|tool_call_start",  # <|tool_call_start|>
+            "<|c",
+            "<|ch",
+            "<|cha",
+            "<|chan",
+            "<|chann",
+            "<|channe",
+            "<|channel",  # <|channel|>
+            "<|m",
+            "<|me",
+            "<|mes",
+            "<|mess",
+            "<|messa",
+            "<|messag",
+            "<|message",  # <|message|>
         ]
 
         # Check if tail ends with any potential partial start
@@ -394,16 +440,22 @@ class IncrementalToolDetector:
                 return True
 
         # Also check if we have the start of any tag pattern in the middle
-        for pattern_partial in ['<function', '<tool_call', '<|tool', '<|tool_call_start', '```tool']:
+        for pattern_partial in [
+            "<function",
+            "<tool_call",
+            "<|tool",
+            "<|tool_call_start",
+            "```tool",
+        ]:
             if pattern_partial in tail:
                 return True
-        if '<|channel' in tail or '<|message' in tail:
+        if "<|channel" in tail or "<|message" in tail:
             return True
 
         # Check if we have an incomplete tool call (start tag but no end tag)
         for pattern_info in self.active_patterns:
-            start_pattern = pattern_info['start']
-            end_pattern = pattern_info['end']
+            start_pattern = pattern_info["start"]
+            end_pattern = pattern_info["end"]
 
             if re.search(start_pattern, self.accumulated_content, re.IGNORECASE):
                 # Has start tag - check if also has end tag
@@ -416,9 +468,13 @@ class IncrementalToolDetector:
     def _extract_streamable_content(self) -> str:
         """Extract streamable content, buffering partial tool tags."""
         # Check if accumulated content might contain partial tool tag at the end
-        tail = self.accumulated_content[-20:] if len(self.accumulated_content) > 20 else self.accumulated_content
+        tail = (
+            self.accumulated_content[-20:]
+            if len(self.accumulated_content) > 20
+            else self.accumulated_content
+        )
 
-        tag_starters = ('<', '<|', '</', '<|t', '<|to', '<|tool', '<function', '<tool', '``', '```')
+        tag_starters = ("<", "<|", "</", "<|t", "<|to", "<|tool", "<function", "<tool", "``", "```")
         might_be_partial = any(starter in tail for starter in tag_starters)
 
         if might_be_partial and len(self.accumulated_content) > 20:
@@ -464,7 +520,7 @@ class IncrementalToolDetector:
 
         # Gemma4-style tool-call payloads:
         #   call:tool_name{...json args...}
-        call_match = re.search(r'(?is)\bcall\s*:\s*(?P<name>\w+)\s*(?P<arguments>\{.*\})', cleaned)
+        call_match = re.search(r"(?is)\bcall\s*:\s*(?P<name>\w+)\s*(?P<arguments>\{.*\})", cleaned)
         if call_match:
             name = call_match.group("name")
             args_raw = call_match.group("arguments")
@@ -505,7 +561,9 @@ class IncrementalToolDetector:
         call_id: Any = tool_data.get("call_id") or tool_data.get("id")
 
         # OpenAI-style wrapper payload: {"id":"...","type":"function","function":{"name":...,"arguments":"{...}"}}
-        function = tool_data.get("function") if isinstance(tool_data.get("function"), dict) else None
+        function = (
+            tool_data.get("function") if isinstance(tool_data.get("function"), dict) else None
+        )
         if function:
             if not isinstance(name, str) or not name.strip():
                 name = function.get("name")
@@ -554,7 +612,9 @@ class IncrementalToolDetector:
                     try:
                         from ..tools.parser import _parse_xmlish_parameter_tool_calls
 
-                        completed_tools.extend(_parse_xmlish_parameter_tool_calls(self.current_tool_content))
+                        completed_tools.extend(
+                            _parse_xmlish_parameter_tool_calls(self.current_tool_content)
+                        )
                     except Exception:
                         pass
                     if completed_tools:
@@ -576,15 +636,15 @@ class IncrementalToolDetector:
         json_start = -1
 
         for i, char in enumerate(content):
-            if char == '{':
+            if char == "{":
                 if brace_count == 0:
                     json_start = i
                 brace_count += 1
-            elif char == '}':
+            elif char == "}":
                 brace_count -= 1
                 if brace_count == 0 and json_start >= 0:
                     # Found complete JSON object
-                    json_content = content[json_start:i+1]
+                    json_content = content[json_start : i + 1]
                     tool_call = self._parse_tool_json(json_content)
                     if tool_call:
                         return tool_call
@@ -600,9 +660,13 @@ class UnifiedStreamProcessor:
     then rewrites them BEFORE yielding.
     """
 
-    def __init__(self, model_name: str, execute_tools: bool = False,
-                 tool_call_tags: Optional[object] = None,
-                 default_target_format: str = "qwen3"):
+    def __init__(
+        self,
+        model_name: str,
+        execute_tools: bool = False,
+        tool_call_tags: Optional[object] = None,
+        default_target_format: str = "qwen3",
+    ):
         """Initialize the stream processor."""
         self.model_name = model_name
         # Note: execute_tools is kept for backward compatibility and introspection,
@@ -632,18 +696,24 @@ class UnifiedStreamProcessor:
                     # It's a predefined format - use default rewriter
                     self._initialize_default_rewriter(tool_call_tags)
                     logger.debug(f"Treating tool_call_tags '{tool_call_tags}' as predefined format")
-                elif ',' in tool_call_tags:
+                elif "," in tool_call_tags:
                     # It contains comma - likely custom tags like "START,END"
                     self._initialize_tag_rewriter(tool_call_tags)
-                    logger.debug(f"Treating tool_call_tags '{tool_call_tags}' as custom comma-separated tags")
+                    logger.debug(
+                        f"Treating tool_call_tags '{tool_call_tags}' as custom comma-separated tags"
+                    )
                 else:
                     # Single string that's not a predefined format - could be custom single tag
                     # Try as custom first, fall back to treating as predefined format
                     try:
                         self._initialize_tag_rewriter(tool_call_tags)
-                        logger.debug(f"Treating tool_call_tags '{tool_call_tags}' as custom single tag")
+                        logger.debug(
+                            f"Treating tool_call_tags '{tool_call_tags}' as custom single tag"
+                        )
                     except Exception as e:
-                        logger.debug(f"Failed to initialize as custom tag, trying as predefined format: {e}")
+                        logger.debug(
+                            f"Failed to initialize as custom tag, trying as predefined format: {e}"
+                        )
                         self._initialize_default_rewriter(tool_call_tags)
         else:
             # No explicit format conversion requested - no text rewriting.
@@ -658,12 +728,14 @@ class UnifiedStreamProcessor:
         preserve_for_rewriting = bool(self.convert_to_openai_json or tool_call_tags)
 
         self.detector = IncrementalToolDetector(
-            model_name=model_name,
-            rewrite_tags=preserve_for_rewriting
+            model_name=model_name, rewrite_tags=preserve_for_rewriting
         )
 
-    def process_stream(self, response_stream: Iterator[GenerateResponse],
-                      converted_tools: Optional[List[Dict[str, Any]]] = None) -> Iterator[GenerateResponse]:
+    def process_stream(
+        self,
+        response_stream: Iterator[GenerateResponse],
+        converted_tools: Optional[List[Dict[str, Any]]] = None,
+    ) -> Iterator[GenerateResponse]:
         """
         Process a response stream with tag rewriting and tool detection.
 
@@ -674,7 +746,13 @@ class UnifiedStreamProcessor:
         Yields:
             GenerateResponse: Processed chunks with rewritten tags
         """
+        # Per-REQUEST metadata that must survive onto the finalize chunks below,
+        # which are constructed from scratch and would otherwise drop it. Only
+        # request-scoped keys travel; per-chunk keys (ttft, reasoning deltas) do
+        # not.
+        request_metadata: Dict[str, Any] = {}
         try:
+
             def _canonical_tool_call_key(call: Dict[str, Any]) -> Optional[tuple]:
                 """Best-effort key for deduplicating canonical tool-call payloads."""
                 name = call.get("name")
@@ -734,6 +812,15 @@ class UnifiedStreamProcessor:
                         streamable_content = self._apply_tag_rewriting_direct(streamable_content)
                         logger.debug(f"After tag rewriting: {streamable_content[:100]}")
 
+                # Per-REQUEST metadata (currently the media-delivery record) has
+                # to survive onto the finalize chunks below, which are built from
+                # scratch. Per-CHUNK keys (ttft, reasoning deltas) deliberately do
+                # not travel.
+                if isinstance(chunk.metadata, dict):
+                    for _k in ("media_delivered", "media_dropped"):
+                        if _k in chunk.metadata:
+                            request_metadata[_k] = chunk.metadata[_k]
+
                 # Yield streamable content
                 if streamable_content:
                     yield GenerateResponse(
@@ -764,7 +851,9 @@ class UnifiedStreamProcessor:
 
                 # Yield tool calls for server processing
                 if completed_tools:
-                    logger.debug(f"Detected {len(completed_tools)} tools - yielding for server processing")
+                    logger.debug(
+                        f"Detected {len(completed_tools)} tools - yielding for server processing"
+                    )
                     tool_payload = [
                         {
                             "name": tc.name,
@@ -810,7 +899,8 @@ class UnifiedStreamProcessor:
                 yield GenerateResponse(
                     content=remaining_content,
                     model=self.model_name,
-                    finish_reason="stop"
+                    finish_reason="stop",
+                    metadata=dict(request_metadata) or None,
                 )
 
             if final_tools:
@@ -828,7 +918,8 @@ class UnifiedStreamProcessor:
                     content="",
                     tool_calls=tool_payload,
                     model=self.model_name,
-                    finish_reason="tool_calls"
+                    finish_reason="tool_calls",
+                    metadata=dict(request_metadata) or None,
                 )
 
         except Exception as e:
@@ -842,15 +933,15 @@ class UnifiedStreamProcessor:
 
             if isinstance(tool_call_tags, str):
                 # Parse string format: either "start,end" or just "start"
-                if ',' in tool_call_tags:
+                if "," in tool_call_tags:
                     # Comma-separated: User specified both start and end tags
                     # Store as plain tags, rewriter will wrap with angle brackets
-                    parts = tool_call_tags.split(',')
+                    parts = tool_call_tags.split(",")
                     if len(parts) == 2:
                         tags = ToolCallTags(
                             start_tag=parts[0].strip(),
                             end_tag=parts[1].strip(),
-                            auto_format=False  # Don't auto-format, keep plain tags
+                            auto_format=False,  # Don't auto-format, keep plain tags
                         )
                     else:
                         logger.warning(f"Invalid tool_call_tags format: {tool_call_tags}")
@@ -860,7 +951,7 @@ class UnifiedStreamProcessor:
                     tags = ToolCallTags(
                         start_tag=tool_call_tags.strip(),
                         end_tag=tool_call_tags.strip(),
-                        auto_format=True  # Enable auto-formatting for single tags
+                        auto_format=True,  # Enable auto-formatting for single tags
                     )
                 self.tag_rewriter = ToolCallTagRewriter(tags)
             elif isinstance(tool_call_tags, ToolCallTags):
@@ -879,26 +970,30 @@ class UnifiedStreamProcessor:
             from ..tools.tag_rewriter import ToolCallTagRewriter, ToolCallTags
 
             # Check if target_format contains custom tags (comma-separated)
-            if ',' in target_format:
+            if "," in target_format:
                 # Custom tag format: "START,END"
-                parts = target_format.split(',')
+                parts = target_format.split(",")
                 if len(parts) == 2:
                     target_tags = ToolCallTags(
                         start_tag=parts[0].strip(),
                         end_tag=parts[1].strip(),
-                        auto_format=False  # Use exact custom tags
+                        auto_format=False,  # Use exact custom tags
                     )
                     self.tag_rewriter = ToolCallTagRewriter(target_tags)
-                    logger.debug(f"Initialized custom tag rewriter '{parts[0].strip()}...{parts[1].strip()}' for model {self.model_name}")
+                    logger.debug(
+                        f"Initialized custom tag rewriter '{parts[0].strip()}...{parts[1].strip()}' for model {self.model_name}"
+                    )
                 else:
-                    logger.warning(f"Invalid custom tag format '{target_format}' - expected 'START,END'")
+                    logger.warning(
+                        f"Invalid custom tag format '{target_format}' - expected 'START,END'"
+                    )
                     return
             elif target_format == "qwen3":
                 # Qwen3 format: <|tool_call|>...JSON...</|tool_call|>
                 target_tags = ToolCallTags(
                     start_tag="<|tool_call|>",
                     end_tag="</|tool_call|>",
-                    auto_format=False  # Use exact tags
+                    auto_format=False,  # Use exact tags
                 )
                 self.tag_rewriter = ToolCallTagRewriter(target_tags)
                 logger.debug(f"Initialized qwen3 tag rewriter for model {self.model_name}")
@@ -911,32 +1006,28 @@ class UnifiedStreamProcessor:
                 # 3. Wrap in OpenAI's structured format with id, type, function fields
                 self.tag_rewriter = None  # No text rewriting
                 self.convert_to_openai_json = True  # Enable JSON conversion
-                logger.debug(f"OpenAI format selected - will convert text-based tool calls to OpenAI JSON format")
+                logger.debug(
+                    f"OpenAI format selected - will convert text-based tool calls to OpenAI JSON format"
+                )
                 return
             elif target_format == "llama3":
                 # LLaMA3/Crush CLI format: <function_call>...JSON...</function_call>
                 target_tags = ToolCallTags(
-                    start_tag="<function_call>",
-                    end_tag="</function_call>",
-                    auto_format=False
+                    start_tag="<function_call>", end_tag="</function_call>", auto_format=False
                 )
                 self.tag_rewriter = ToolCallTagRewriter(target_tags)
                 logger.debug(f"Initialized llama3 tag rewriter for model {self.model_name}")
             elif target_format == "xml":
                 # XML/Gemini CLI format: <tool_call>...JSON...</tool_call>
                 target_tags = ToolCallTags(
-                    start_tag="<tool_call>",
-                    end_tag="</tool_call>",
-                    auto_format=False
+                    start_tag="<tool_call>", end_tag="</tool_call>", auto_format=False
                 )
                 self.tag_rewriter = ToolCallTagRewriter(target_tags)
                 logger.debug(f"Initialized xml tag rewriter for model {self.model_name}")
             elif target_format == "gemma":
                 # Gemma format: ```tool_code...JSON...```
                 target_tags = ToolCallTags(
-                    start_tag="```tool_code\n",
-                    end_tag="\n```",
-                    auto_format=False
+                    start_tag="```tool_code\n", end_tag="\n```", auto_format=False
                 )
                 self.tag_rewriter = ToolCallTagRewriter(target_tags)
                 logger.debug(f"Initialized gemma tag rewriter for model {self.model_name}")
@@ -946,12 +1037,16 @@ class UnifiedStreamProcessor:
                     target_tags = ToolCallTags(
                         start_tag=target_format.strip(),
                         end_tag=target_format.strip(),
-                        auto_format=True  # Auto-wrap with angle brackets
+                        auto_format=True,  # Auto-wrap with angle brackets
                     )
                     self.tag_rewriter = ToolCallTagRewriter(target_tags)
-                    logger.debug(f"Initialized auto-formatted tag rewriter '<{target_format.strip()}>...</{target_format.strip()}>' for model {self.model_name}")
+                    logger.debug(
+                        f"Initialized auto-formatted tag rewriter '<{target_format.strip()}>...</{target_format.strip()}>' for model {self.model_name}"
+                    )
                 else:
-                    logger.warning(f"Unknown or empty target format: '{target_format}' - no tag rewriting will be applied")
+                    logger.warning(
+                        f"Unknown or empty target format: '{target_format}' - no tag rewriting will be applied"
+                    )
 
         except Exception as e:
             logger.error(f"Failed to initialize default rewriter: {e}")
@@ -974,7 +1069,9 @@ class UnifiedStreamProcessor:
                     f"Tag rewriting successful: {preview_text(content, max_chars=50)} -> {preview_text(rewritten, max_chars=50)}"
                 )
             else:
-                logger.debug(f"Tag rewriting had no effect on: {preview_text(content, max_chars=50)}")
+                logger.debug(
+                    f"Tag rewriting had no effect on: {preview_text(content, max_chars=50)}"
+                )
             return rewritten
         except Exception as e:
             logger.debug(f"Tag rewriting failed: {e}")
@@ -997,10 +1094,10 @@ class UnifiedStreamProcessor:
 
         # Patterns for different tool call formats
         patterns = [
-            (r'<\|tool_call\|>\s*(.*?)\s*</\|tool_call\|>', 'qwen3'),
-            (r'<function_call>\s*(.*?)\s*</function_call>', 'llama'),
-            (r'<tool_call>\s*(.*?)\s*</tool_call>', 'xml'),
-            (r'```tool_code\s*\n(.*?)\n```', 'gemma'),
+            (r"<\|tool_call\|>\s*(.*?)\s*</\|tool_call\|>", "qwen3"),
+            (r"<function_call>\s*(.*?)\s*</function_call>", "llama"),
+            (r"<tool_call>\s*(.*?)\s*</tool_call>", "xml"),
+            (r"```tool_code\s*\n(.*?)\n```", "gemma"),
         ]
 
         converted_content = content
@@ -1034,7 +1131,11 @@ class UnifiedStreamProcessor:
                             "function": {
                                 "name": tool_data["name"],
                                 "arguments": json.dumps(
-                                    (tool_data.get("arguments") if isinstance(tool_data.get("arguments"), dict) else None)
+                                    (
+                                        tool_data.get("arguments")
+                                        if isinstance(tool_data.get("arguments"), dict)
+                                        else None
+                                    )
                                     or (
                                         loads_dict_like(tool_data.get("arguments"))
                                         if isinstance(tool_data.get("arguments"), str)
@@ -1042,14 +1143,20 @@ class UnifiedStreamProcessor:
                                     )
                                     or {}
                                 ),
-                            }
+                            },
                         }
 
                         # Replace the text-based tool call with OpenAI JSON format
                         openai_json = json.dumps(openai_tool_call)
-                        converted_content = converted_content[:match.start()] + openai_json + converted_content[match.end():]
+                        converted_content = (
+                            converted_content[: match.start()]
+                            + openai_json
+                            + converted_content[match.end() :]
+                        )
 
-                        logger.debug(f"Converted {format_type} tool call to OpenAI format: {openai_json[:100]}")
+                        logger.debug(
+                            f"Converted {format_type} tool call to OpenAI format: {openai_json[:100]}"
+                        )
 
                     except Exception as e:
                         logger.error(f"Error converting tool call to OpenAI format: {e}")

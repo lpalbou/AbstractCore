@@ -45,6 +45,11 @@ class _FakeSession:
     def __exit__(self, exc_type: object, exc: object, tb: object) -> bool:
         return False
 
+    def mount(self, *args: object, **kwargs: object) -> None:
+        # fetch_url mounts a retry adapter on the session; the double must
+        # accept it or every fetch_url test fails on an AttributeError.
+        return None
+
     def request(self, *args: object, **kwargs: object) -> _FakeResponse:
         self.calls.append(dict(kwargs))
         return self._response

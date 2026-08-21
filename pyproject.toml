@@ -154,6 +154,14 @@ apple = [
     "outlines>=0.1.0",
 ]
 
+mlx-vision = [
+    # Native image input on the MLX provider. Deliberately separate from `mlx`
+    # and `apple`: mlx-vlm pulls a web framework (fastapi/starlette/uvicorn),
+    # opencv-python, datasets and an audio stack, and raises the transformers
+    # floor to >=5.5.0 -- none of which belong in a text-only local LLM install.
+    "mlx-vlm>=0.6.3,<0.7.0",
+]
+
 mlx-bench = [
     # Used by `examples/performance/mlx_concurrency_benchmark.py` to generate the PNG graph.
     "matplotlib>=3.8.0,<4.0.0",

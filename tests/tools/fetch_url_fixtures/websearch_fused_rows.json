@@ -1,0 +1,279 @@
+{
+  "_README": "Labeled web-search result rows for the fused/space-starved-text defect (W3). The four transcript payloads are VERBATIM production output captured 2026-08-21; the fifth is a clearly-marked synthetic false-positive probe. Per-row `fused` is the adversarial agent's ground-truth label, read from the row text itself. `expect_fused_payload` applies the payload-level gate (>=2 fused rows AND >=30% of rows) that a detector must reproduce.",
+  "payloads": [
+    {
+      "id": "transcript_0",
+      "provenance": "verbatim from abstractcode-export-0462a33d-20260821-062250.md (production run, 2026-08-21)",
+      "backend_used": "duckduckgo.html",
+      "query": "today's news August 21 2026 world top headlines",
+      "notes": "duckduckgo.html FALLBACK backend. _html_fragment_to_text replaces tags with a space, so no row is fused. Ground truth: 0/8 fused.",
+      "expect_fused_payload": false,
+      "rows": [
+        {
+          "rank": 1,
+          "title": "World News Today Live Updates on August 21, 2026 - Mint",
+          "url": "https://www.livemint.com/news/world/total-world-latest-news-on-august-21-2026-live-updates-11787275931511.html",
+          "snippet": "World News Today Live Updates on August 21 , 2026 : Stay informed on global events with our in-depth world news coverage, bringing you the latest developments across politics, economy, and culture ...",
+          "fused": false
+        },
+        {
+          "rank": 2,
+          "title": "Today's Cover - Aug 21, 2026 - The New York Times - Front Pages",
+          "url": "https://www.frontpages.com/the-new-york-times/",
+          "snippet": "View today's The New York Times newspaper cover. Get the latest breaking headlines updated Friday, August 21 , 2026 . Read the news !",
+          "fused": false
+        },
+        {
+          "rank": 3,
+          "title": "Today's WORLD Newspaper Front Pages",
+          "url": "https://www.frontpages.com/world-newspapers/",
+          "snippet": "Explore today's World newspaper front pages and covers. Discover the latest headlines and news from today's papers in World .",
+          "fused": false
+        },
+        {
+          "rank": 4,
+          "title": "School Assembly News Headlines, August 21, 2026: Top national ...",
+          "url": "https://economictimes.indiatimes.com/news/new-updates/school-assembly-news-headlines-august-21-2026-top-national-international-business-sports-updates-and-thought-of-the-day/articleshow/133375689.cms",
+          "snippet": "School Assembly News Headlines : On September twenty-ninth, the Delhi High Court is set to review appeals concerning Prime Minister Modi's academic records. In a move to enhance efficiency, Haryana is leveraging GIS technology to rapidly assess infrastructure initiatives. Meanwhile, Nor… (truncated)",
+          "fused": false
+        },
+        {
+          "rank": 5,
+          "title": "Top 10 Headlines Today | ABP LIVE Morning Bulletin: Top News Headlines ...",
+          "url": "https://news.abplive.com/news/top-10-abp-live-morning-bulletin-top-news-headlines-from-21-august-2026-to-start-your-day-morning-1863080",
+          "snippet": "ABP News bring you the top 10 headlines to kick start your day and stay on top of the most important news updates from India and around the World . Here are the top news and stories in entertainment, sports, technology, gadgets genre from 21 August 2026 :",
+          "fused": false
+        },
+        {
+          "rank": 6,
+          "title": "School Assembly News Headlines Today (Aug 21): Top National ...",
+          "url": "https://www.timesnownews.com/education/school-assembly-news-headlines-today-aug-21-top-national-international-sports-updates-thought-of-the-day-article-155908507",
+          "snippet": "Here are the School Assembly News Headlines Today for students, covering the latest developments from India, the world , sports and other important areas. From key Supreme Court observations and major national policy updates to international developments and sporting achievements, these… (truncated)",
+          "fused": false
+        },
+        {
+          "rank": 7,
+          "title": "Latest News Today, Top Headlines & Live Updates - News24",
+          "url": "https://news24online.com/latest-news",
+          "snippet": "Stay informed with the latest news today . Get breaking news , live updates, and top headlines from India and around the world on News24",
+          "fused": false
+        },
+        {
+          "rank": 8,
+          "title": "World news headlines and analysis for August 2026",
+          "url": "https://multipluralworld.com/world-news-headlines-and-analysis-for-august-2026/",
+          "snippet": "World news headlines for the preceding month of July 2026 are archived here; all previous months of 'World news headlines and analysis' (since March 2024) are archived here. The 'World news' page of The Multiplural World website is the most active page on the website, updated daily by w… (truncated)",
+          "fused": false
+        }
+      ]
+    },
+    {
+      "id": "transcript_1",
+      "provenance": "verbatim from abstractcode-export-0462a33d-20260821-062250.md (production run, 2026-08-21)",
+      "backend_used": "ddgs.text",
+      "query": "August 21 2026 breaking news business politics technology",
+      "notes": "ddgs.text PRIMARY backend, unfiltered (required_terms=[]). Every row has words fused at stripped-<b> boundaries. Ground truth: 8/8 fused.",
+      "expect_fused_payload": true,
+      "rows": [
+        {
+          "rank": 1,
+          "title": "Top 10 APAC Technology News Headlines Today (August 21, 2026 ...",
+          "url": "https://www.secondtalent.com/news/tech/",
+          "snippet": "6 hours ago ·The top 10 APAC technewsstories today,August21,2026. A daily roundup of big tech, hardware and policy across Asia Pacific, archived for the past week.",
+          "fused": true
+        },
+        {
+          "rank": 2,
+          "title": "World News: Latest International Headlines, Trending ...",
+          "url": "https://www.businesstoday.in/world",
+          "snippet": "6 hours ago ·Get the latest worldnewsand international headlines frompolitics, economy, entertainment,technology, sports, trending worldnewsat businesstoday.in.",
+          "fused": true
+        },
+        {
+          "rank": 3,
+          "title": "Bloomberg News Now",
+          "url": "https://link.podtrac.com/vdimgcgu",
+          "snippet": "1 day ago ·Listen for a comprehensive audio report on today's top stories. Bloomberg News Now harnesses the power of Bloomberg's 3,000 journalists and analysts in more than 100 bureaus around the world, bringing younewsonpolitics, foreign relations, financial markets,technology, global… (truncated)",
+          "fused": true
+        },
+        {
+          "rank": 4,
+          "title": "Daily AI News for August 21, 2026 | Third Run Time",
+          "url": "https://thirdruntime.com/",
+          "snippet": "6 hours ago ·All the major AInewsforAugust21,2026. A daily roundup of the latest developments, research, and trends in artificial intelligence from top sources around the world.",
+          "fused": true
+        },
+        {
+          "rank": 5,
+          "title": "World news headlines and analysis for August 2026",
+          "url": "https://multipluralworld.com/world-news-headlines-and-analysis-for-august-2026/",
+          "snippet": "Aug 3,2026·This is the website page in The Multiplural World of current worldnewsheadlines and analysis for the months ofAugust2026. Items with red headlines indicate they were published in full on the home page of the website; notices of these published items are emailed to website sub… (truncated)",
+          "fused": true
+        },
+        {
+          "rank": 6,
+          "title": "The Source with Kaitlan Collins 8/19/26 | CNNBreakingNewsToday...",
+          "url": "https://www.youtube.com/watch?v=CboaMw8VHk4",
+          "snippet": "Kaitlan Collins goes straight to the source for the best reporting on the day's biggest stories. This episode featuresbreakingpoliticalcoverage, exclusive reporting, expert commentary, and detailed investigations into the biggest stories shaping American democracy.",
+          "fused": true
+        },
+        {
+          "rank": 7,
+          "title": "TOI -BreakingNews, LatestNews, IndiaNews... | The Times of India",
+          "url": "https://timesofindia.indiatimes.com/",
+          "snippet": "August17,2026, Birthday Forecast: Discover what the next 12 months hold for you Mercury Combust2026: What Should You Manifest When Mercury Loses Strength? UGC-NET June2026: NTA orders re-test for English, Commerce and Sociology after flawed papers.",
+          "fused": true
+        },
+        {
+          "rank": 8,
+          "title": "BreakingChina, Asia, HKNews, Opinions and Insights | South China...",
+          "url": "https://www.scmp.com/",
+          "snippet": "News, opinions, infographics and videos on China issues: geopolitics, diplomacy, economy,technologyand lifestyle.August21,2026. More Opinion.",
+          "fused": true
+        }
+      ]
+    },
+    {
+      "id": "transcript_2",
+      "provenance": "verbatim from abstractcode-export-0462a33d-20260821-062250.md (production run, 2026-08-21)",
+      "backend_used": "ddgs.text",
+      "query": "today tech AI news August 21 2026 latest headlines",
+      "notes": "ddgs.text PRIMARY backend. Ground truth: 4/5 fused (row 5 is clean).",
+      "expect_fused_payload": true,
+      "rows": [
+        {
+          "rank": 1,
+          "title": "Top 10AINewsJuly212026: OpenAI Hits Pause",
+          "url": "https://unrot.co/blogs/top-10-ai-news-july-21-2026-openai-hits-pause",
+          "snippet": "AINewsTodayJuly212026: Top 10 Stories.An announcement is expected beforeAugust1. The tests used to check the models are classified, and Meta is notably not part of the deal. The word voluntary is doing a lot of work here.",
+          "fused": true
+        },
+        {
+          "rank": 2,
+          "title": "BBCTechnology|Technology, Health, Environment, AI",
+          "url": "https://www.bbc.com/technology",
+          "snippet": "BBCTechnologybrings you thelatestinTechnologynewsand coverage from around the world, including health, environment, AI, and more.Howtoday's biggest blockbuster films are made. Football andtech.",
+          "fused": true
+        },
+        {
+          "rank": 9,
+          "title": "BreakingNews,LatestNewsand Videos | CNN",
+          "url": "https://www.cnn.com/",
+          "snippet": "View thelatestnewsand breakingnewstodayfor U.S., world, weather, entertainment, politics and health at CNN.com.",
+          "fused": true
+        },
+        {
+          "rank": 10,
+          "title": "Latestheadlines|Today's topnewspaperand... | Daily Mail Online",
+          "url": "https://www.dailymail.com/home/latest/index.html",
+          "snippet": "Check out thelatestUK and worldnewsheadlineson sports, entertainment, celebrities, health, science, TV and more from MailOnline.LatestNews. UK Edition Drop Down Arrow Icon.",
+          "fused": true
+        },
+        {
+          "rank": 14,
+          "title": "AI News | Latest News | Insights Powering AI-Driven Business Growth",
+          "url": "https://www.artificialintelligence-news.com/",
+          "snippet": "7 hours ago -July 21, 2026 · AI in Action · June 8, 2026 · Environment & Sustainability · May 22, 2026 · AI Market Trends · August 11, 2023 · All our premium content and latest tech news delivered straight to your inbox · Subscribe · View All Resources · AI and Us, Human-AI Relationships ·",
+          "fused": false
+        }
+      ]
+    },
+    {
+      "id": "transcript_3",
+      "provenance": "verbatim from abstractcode-export-0462a33d-20260821-062250.md (production run, 2026-08-21)",
+      "backend_used": "ddgs.text",
+      "query": "today technology news August 21 2026 latest headlines AI",
+      "notes": "ddgs.text PRIMARY backend, MOSTLY CLEAN - the same backend on a different query. Ground truth: 1/5 fused ('Marvell Technologythat'). A payload-level detector must NOT flag this one.",
+      "expect_fused_payload": false,
+      "rows": [
+        {
+          "rank": 1,
+          "title": "Reuters AI News | Latest Headlines and Developments | Reuters",
+          "url": "https://www.reuters.com/technology/artificial-intelligence/",
+          "snippet": "13 hours ago -Explore the latest artificial intelligence news with Reuters - from AI breakthroughs and technology trends to regulation, ethics, business and global impact.",
+          "fused": false
+        },
+        {
+          "rank": 2,
+          "title": "AI News | Latest News | Insights Powering AI-Driven Business Growth",
+          "url": "https://www.artificialintelligence-news.com/",
+          "snippet": "7 hours ago -April 21, 2026 · Resource · January 8, 2026 · Resource · January 6, 2026 · Resource · December 11, 2025 · Resource · December 11, 2025 · View All Events · 19 October 2026 8:30 am · to · 20 October 2026 4:00 pm · RAI, Amsterdam · 19 October 2026 9:00 am · to · 20 October 2026 5:00 pm · RAI, Amsterdam · in · Amsterdam · 19 October 2026 8:30 am · to · 20 October 2026 4:00 pm · RAI · in · Amsterdam · Telecoms Tech News · August 20, 2026 ·",
+          "fused": false
+        },
+        {
+          "rank": 4,
+          "title": "Top Tech News Today, August 20, 2026: Amazon, Google, OpenAI, OpenRouter, Siemens, Stripe, TDK & More - Tech Startups",
+          "url": "https://techstartups.com/2026/08/20/top-tech-news-today-august-20-2026-amazon-google-openai-openrouter-siemens-stripe-tdk-more/",
+          "snippet": "16 hours ago -Google is deepening its bet on custom AI silicon through a major agreement with Marvell Technologythat could give the search giant a stake worth as much as $12.2 billion in the chipmaker.",
+          "fused": true
+        },
+        {
+          "rank": 6,
+          "title": "Tech News, Latest Technology News Today, New Gadgets, Phones, Laptops | The Indian Express",
+          "url": "https://indianexpress.com/section/technology/",
+          "snippet": "16 hours ago -( As on - August 20, 2026 07:32 PM IST ) Tech · Reviews · AI · Mobile & Tabs · Science · Artificial Intelligence · Stripe’s purchase of OpenRouter highlights the rise of ‘AI model gateway’ platforms as companies look to cut down on internal token spend.",
+          "fused": false
+        },
+        {
+          "rank": 7,
+          "title": "Decrypt: AI, Bitcoin, Culture, Gaming, and Crypto News - Decrypt",
+          "url": "https://decrypt.co/",
+          "snippet": "Technology · Aug 20, 2026 · 3 min read · Aug 20, 2026 · 3 min read · Coins · Opinion · Coins · The most likely headlines, according to prediction markets. Iranian Regime not to fall before October · 96% probability· resolves Sep 30 · Fear and Greed Index to hit 57 or higher on August 21 ·",
+          "fused": false
+        }
+      ]
+    },
+    {
+      "id": "synthetic_long_word_probe",
+      "provenance": "SYNTHETIC - written by the adversarial agent as a false-positive probe, not from any transcript",
+      "backend_used": "n/a",
+      "query": "long legitimate words that must not be mistaken for fused text",
+      "notes": "Every row is CLEAN. These are the shapes that broke the first prototype detector: very long single English words, and CamelCase identifiers.",
+      "expect_fused_payload": false,
+      "rows": [
+        {
+          "rank": 1,
+          "title": "Internationalization and localization - Wikipedia",
+          "url": "https://en.wikipedia.org/wiki/Internationalization_and_localization",
+          "snippet": "Internationalization is the process of designing software so it can be adapted to various languages without engineering changes.",
+          "fused": false
+        },
+        {
+          "rank": 2,
+          "title": "Electrochemical impedance spectroscopy explained",
+          "url": "https://example.org/eis",
+          "snippet": "The electrochemical characterization of interfaces relies on electrochemical impedance spectroscopy and chronoamperometry measurements.",
+          "fused": false
+        },
+        {
+          "rank": 3,
+          "title": "Deinstitutionalization in twentieth-century psychiatry",
+          "url": "https://example.org/deinst",
+          "snippet": "Deinstitutionalization describes the counterrevolutionary replacement of long-stay psychiatric hospitals with community services.",
+          "fused": false
+        },
+        {
+          "rank": 4,
+          "title": "Otorhinolaryngology residency requirements 2026",
+          "url": "https://example.org/ent",
+          "snippet": "Otorhinolaryngology and gastroenterology fellowships require electroencephalography experience; see the accreditation handbook.",
+          "fused": false
+        },
+        {
+          "rank": 5,
+          "title": "PostgreSQL JSONB indexing with GiST and GIN",
+          "url": "https://example.org/pg",
+          "snippet": "Use jsonb_path_ops for smaller indexes; see pg_stat_statements and auto_explain for troubleshooting query plans.",
+          "fused": false
+        },
+        {
+          "rank": 6,
+          "title": "CamelCase identifiers in the Java standard library",
+          "url": "https://example.org/java",
+          "snippet": "Classes such as ByteArrayOutputStream and ConcurrentHashMap follow the CamelCase convention used throughout java.util.concurrent.",
+          "fused": false
+        }
+      ]
+    }
+  ]
+}

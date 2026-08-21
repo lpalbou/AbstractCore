@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -9,6 +10,7 @@ import pytest
 @pytest.mark.integration
 def test_fetch_url_local_html_normalization_strips_tags_and_scripts() -> None:
     from abstractcore.tools.common_tools import fetch_url
+    from abstractcore.tools.fetch_url_ssrf import reset_fetch_url_allowlist_cache
 
     html_doc = (
         "<html><head><title>Local</title></head><body>"
@@ -65,6 +67,12 @@ def test_fetch_url_local_html_normalization_strips_tags_and_scripts() -> None:
     port = server.server_address[1]
     base_url = f"http://127.0.0.1:{port}"
 
+    # The SSRF guard refuses loopback destinations by default; this test SERVES
+    # its own fixture from 127.0.0.1, so it must opt that one host:port in
+    # explicitly (the guard's documented escape hatch) instead of being blocked.
+    os.environ["ABSTRACTCORE_FETCH_URL_ALLOW"] = f"127.0.0.1:{port}"
+    reset_fetch_url_allowlist_cache()
+
     try:
         out_html = fetch_url(f"{base_url}/html", timeout=10, include_full_content=False)
         assert out_html.get("success") is True
@@ -90,6 +98,8 @@ def test_fetch_url_local_html_normalization_strips_tags_and_scripts() -> None:
         assert "console.log" not in norm_xml
         assert "Force pod, wave cannon." in norm_xml
     finally:
+        os.environ.pop("ABSTRACTCORE_FETCH_URL_ALLOW", None)
+        reset_fetch_url_allowlist_cache()
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)

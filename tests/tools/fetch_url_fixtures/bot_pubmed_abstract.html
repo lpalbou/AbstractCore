@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>pubmed.ncbi.nlm.nih.gov</title>
+  <style>
+    html, body {
+      min-height: 100%;
+      margin: 0;
+      background: rgba(255, 255, 255, 0);
+      color: transparent;
+    }
+    body { visibility: hidden; }
+    body.cookies-required {
+      visibility: visible;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+      background: #fff;
+      color: #202124;
+      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
+    }
+    .cookie-required-message {
+      max-width: 520px;
+      line-height: 1.45;
+      text-align: center;
+    }
+    .cookie-required-message h1 {
+      margin: 0 0 10px;
+      font-size: 22px;
+      line-height: 1.2;
+    }
+    .cookie-required-message p {
+      margin: 0;
+      color: #555;
+      font-size: 15px;
+    }
+  </style>
+</head>
+<body>
+<div id="cookie-required" class="cookie-required-message" hidden>
+  <h1>Cookies must be enabled</h1>
+  <p>Enable cookies for <span id="cookie-domain">pubmed.ncbi.nlm.nih.gov</span> and reload this page to continue.</p>
+</div>
+<script>
+const challengeId = "E8MiDGY2ubaqf4ZWgYKOwA";
+const challengeDomain = "pubmed.ncbi.nlm.nih.gov";
+const bits = 8;
+const maxMs = Math.max(30000, 50 * 100);
+const diagnosticMode = false;
+
+function normalizedHostname(value) {
+  return String(value || "").trim().replace(/^\.+/, "").toLowerCase();
+}
+
+function cookieDomainForCurrentHost(domain) {
+  const host = normalizedHostname(window.location.hostname);
+  const target = normalizedHostname(domain);
+  if (!target || !host) return null;
+  return host === target || host.endsWith(`.${target}`) ? target : null;
+}
+
+function cookieString(name, value, maxAge) {
+  const domain = cookieDomainForCurrentHost(challengeDomain);
+  if (domain === null) return "";
+  const parts = [
+    `${encodeURIComponent(name)}=${encodeURIComponent(value)}`,
+    `Max-Age=${maxAge}`,
+    "Path=/",
+    "SameSite=Lax"
+  ];
+  parts.push(`Domain=${domain}`);
+  if (window.location.protocol === "https:") parts.push("Secure");
+  return parts.join("; ");
+}
+
+function cookieHasValue(name, value) {
+  const expected = `${encodeURIComponent(name)}=${encodeURIComponent(value)}`;
+  return document.cookie.split(";").some(part => part.trim() === expected);
+}
+
+function browserAcceptsCookies() {
+  if (navigator.cookieEnabled === false) return false;
+  const suffix = String(challengeId).replace(/[^A-Za-z0-9]/g, "").slice(0, 32) || "probe";
+  const name = `__identity_pow_cookie_check_${suffix}`;
+  const value = String(Date.now());
+  const setCookie = cookieString(name, value, 60);
+  const clearCookie = cookieString(name, "", 0);
+  if (!setCookie || !clearCookie) return false;
+  try {
+    document.cookie = setCookie;
+    const accepted = cookieHasValue(name, value);
+    document.cookie = clearCookie;
+    return accepted;
+  } catch (_error) {
+    return false;
+  }
+}
+
+function showCookiesRequired() {
+  const message = document.getElementById("cookie-required");
+  if (message) message.hidden = false;
+  document.body.classList.add("cookies-required");
+}
+
+function leadingZeroBits(bytes) {
+  let total = 0;
+  for (const byte of bytes) {
+    if (byte === 0) {
+      total += 8;
+      continue;
+    }
+    for (let bit = 7; bit >= 0; bit--) {
+      if ((byte & (1 << bit)) === 0) total += 1;
+      else return total;
+    }
+  }
+  return total;
+}
+
+async function sha256Bytes(text) {
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)));
+}
+
+async function submitSolve(nonce) {
+  const redirectUrl = diagnosticMode
+    ? `${window.location.href.split("#", 1)[0]}#pow-complete`
+    : window.location.href;
+  const response = await fetch("/_pow/solve", {
+    method: "POST",
+    cache: "no-store",
+    credentials: "same-origin",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      challenge_id: challengeId,
+      nonce: String(nonce),
+      redirect_url: redirectUrl
+    })
+  });
+  const result = await response.json();
+  if (result.success) {
+    if (diagnosticMode || result.diagnostic === true) {
+      window.location.hash = "pow-complete";
+    } else {
+      finishNavigation(result.redirect_url || window.location.href);
+    }
+    return true;
+  }
+  return false;
+}
+
+function finishNavigation(targetUrl) {
+  try {
+    const current = new URL(window.location.href);
+    const target = new URL(targetUrl || current.href, current.href);
+    if (target.origin === current.origin && target.pathname === current.pathname && target.search === current.search) {
+      if (target.hash && target.hash !== current.hash) {
+        window.location.hash = target.hash;
+      }
+      window.location.reload();
+      return;
+    }
+    window.location.replace(target.href);
+  } catch (_error) {
+    window.location.reload();
+  }
+}
+
+async function run() {
+  if (!browserAcceptsCookies()) {
+    showCookiesRequired();
+    return;
+  }
+  const started = Date.now();
+  for (let nonce = 0; Date.now() - started < maxMs; nonce++) {
+    const digest = await sha256Bytes(`${challengeId}:${nonce}`);
+    if (leadingZeroBits(digest) >= bits) {
+      if (await submitSolve(nonce)) return;
+      break;
+    }
+    if (nonce % 100 === 0) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+  }
+  if (diagnosticMode) return;
+  window.location.reload();
+}
+
+run().catch(() => {
+  if (!diagnosticMode) window.location.reload();
+});
+</script>
+</body>
+</html>

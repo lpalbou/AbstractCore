@@ -53,18 +53,47 @@ def routed(monkeypatch):
     return {"provider": "endpoint:test", "model": "sees-1"}
 
 
-def test_a_focused_reading_says_it_was_focused(image, routed):
+def test_the_footer_echoes_the_question_that_shaped_the_reading(image, routed):
+    """Generic advice is unusable: the caller decides its next move from what
+    this reading was actually pointed at, so the question comes back verbatim."""
     out = analyze_media(file_path=image, question="what token is on the card?", _session_route=routed)
     assert "(observed by endpoint:test/sees-1)" in out, "provenance is unchanged"
-    assert "one bounded reading, focused on your question" in out
-    assert "call analyze_media again with a different question" in out
+    assert 'asked: "what token is on the card?"' in out
+    assert "card.png" in out, "and which file it read"
+
+
+def test_the_next_call_is_written_out_not_described(image, routed):
+    """A hint the caller has to translate into a call is half a hint — and it
+    echoes the PATH THIS CALL USED, so it is re-callable even when a host
+    rewrote file_path (a materialized attachment copy). Naming the pretty
+    basename there would suggest a call that resolves to nothing."""
+    out = analyze_media(file_path=image, question="what token?", _session_route=routed)
+    assert f'analyze_media(file_path="{image}", question="<what you need>")' in out
+
+
+def test_core_never_offers_attaching(image, routed):
+    """Whether these bytes CAN be attached is a session fact core lacks.
+    `open_attachment` resolves session attachments only, so offering it for a
+    plain disk file would be exactly the dead-end advice this work removed.
+    The HOST appends that call when it is real (runtime test covers it)."""
+    out = analyze_media(file_path=image, question="what token?", _session_route=routed)
+    assert "open_attachment" not in out
+    assert "attach the image" not in out.lower()
+
+
+def test_a_long_question_is_bounded_in_the_echo(image, routed):
+    """The echo is the caller's own text and could be arbitrarily long."""
+    q = "x" * 400
+    out = analyze_media(file_path=image, question=q, _session_route=routed)
+    assert q not in out, "the full 400-char question must not ride the footer"
+    assert "x" * 99 + "…" in out, "it is cut at 100 with the cut marked"
 
 
 def test_an_unfocused_reading_points_at_the_question_parameter(image, routed):
     out = analyze_media(file_path=image, _session_route=routed)
     assert "(observed by endpoint:test/sees-1)" in out
-    assert "unfocused" in out
-    assert "`question=`" in out, "the blind case must name the parameter that fixes it"
+    assert "no question asked" in out
+    assert f'analyze_media(file_path="{image}", question="<what you need>")' in out
 
 
 def test_a_refusal_carries_no_reading_footer(image, routed, tmp_path):
@@ -79,4 +108,4 @@ def test_when_to_use_states_the_case_for_NOT_calling_it():
     spent a nested vision call on analyze_media. The metadata never said not to."""
     hint = str(analyze_media.tool_definition.when_to_use or "")
     assert "NOT for an image already attached to this call" in hint
-    assert "one nested vision call" in hint
+    assert "One nested vision call per use" in hint

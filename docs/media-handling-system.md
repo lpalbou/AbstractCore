@@ -255,6 +255,7 @@ For large files that exceed model context limits, use `BasicSummarizer` or imple
 | **Anthropic** | Claude 3.5 Sonnet, Claude 4 series | Supported: Up to 20 images | Supported: All formats |
 | **Ollama** | qwen2.5vl:7b, gemma3:4b, llama3.2-vision:11b | Supported: Single image | Supported: All formats |
 | **LMStudio** | qwen2.5-vl-7b, gemma-3n-e4b, magistral-small-2509 | Supported: Multiple images | Supported: All formats |
+| **MLX** | Vision-capable MLX checkpoints (`qwen3_5`, `qwen3_5_moe`, `qwen3_vl`, `gemma4`) | Supported: Single image, requires `abstractcore[mlx-vision]` | Supported: All formats |
 
 ### Text-Only Providers
 
@@ -265,6 +266,41 @@ All providers support document processing even without vision capabilities:
 | **HuggingFace** | Supported: All formats | Supported: Embedded in prompt |
 | **MLX** | Supported: All formats | Supported: Embedded in prompt |
 | **Any Provider** | Supported: Automatic fallback | Supported: Text extraction |
+
+MLX appears in both tables: it reads images natively for vision-capable checkpoints when
+`abstractcore[mlx-vision]` is installed, and embeds documents as text on every checkpoint. See
+[Vision Capabilities](vision-capabilities.md#1b-native-image-input-on-the-mlx-provider-apple-silicon).
+
+### Knowing whether media reached the model
+
+Providers that participate in the delivery contract report what actually reached the model:
+
+```python
+resp = llm.generate("What is in this image?", media=["photo.png"])
+resp.metadata["media_delivered"]
+# [{"index": 0, "kind": "image", "sha256": "3da0b68c…",
+#   "tokens": 1024, "transport": "mlx_vision_addon"}]
+```
+
+- `media_delivered` is written only after the media entered the model's forward pass, and
+  `tokens` is measured rather than intended.
+- `media_dropped` names why a part was not carried, using stable reason literals such as
+  `vision_family_unsupported`, `vision_multi_image_unsupported` or `media_processing_unavailable`.
+- Streamed responses carry the same record; read it from the final chunk as you would usage.
+
+For a single answer, use the shared helper:
+
+```python
+from abstractcore.media.delivery import media_delivery_verdict
+
+verdict = media_delivery_verdict(resp, provider="mlx")
+verdict.state    # "delivered" | "not_delivered" | "unverified"
+verdict.reasons  # reason literals when not delivered
+```
+
+`unverified` means that provider does not report delivery yet, so treat it as "no evidence either
+way" rather than a failure. This is what the vision fallback uses to decide whether a caption can
+be attributed to an actual observation.
 
 ### ⚠️ Model Compatibility Notes (Updated: 2025-10-17)
 

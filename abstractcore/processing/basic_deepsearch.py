@@ -797,7 +797,18 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
                         if not bool(content.get("success")):
                             logger.debug(f"⚠️ Skipping URL due to fetch error: {url}")
                             continue
-                        extracted_text = str(content.get("normalized_text") or content.get("raw_text") or "")
+                        # `content` FIRST: fetch_url's canonical payload is the
+                        # structure-preserving markdown under `content`, and it
+                        # withholds `raw_text`/`normalized_text` once they get
+                        # big (they are evidence mirrors of the same page). A
+                        # consumer that reads only those two sees a 29KB article
+                        # as empty and skips the URL it just fetched.
+                        extracted_text = str(
+                            content.get("content")
+                            or content.get("normalized_text")
+                            or content.get("raw_text")
+                            or ""
+                        )
                         if not extracted_text.strip():
                             logger.debug(f"⚠️ Skipping URL because fetch returned no extracted text: {url}")
                             continue
@@ -815,7 +826,9 @@ Avoid generic terms like "qubit" alone (which returns lab instruments) - be spec
                         relevant_content = self._extract_relevant_content_full_text(content, query, url)
                     else:
                         # Standard mode with structured parsing
-                        relevant_content = self._extract_relevant_content(content, query)
+                        relevant_content = self._extract_relevant_content(
+                            content, query, search_snippet=search_snippet
+                        )
 
                     if relevant_content and search_snippet:
                         relevant_content = self._merge_search_snippet(relevant_content, search_snippet)
@@ -1391,15 +1404,29 @@ BE GENEROUS with relevance assessment - when in doubt, mark as relevant.
             return relevant_content
         return f"**Search Snippet:** {snippet}\n{content}"
 
-    def _extract_relevant_content(self, content: Union[str, Dict[str, Any]], query: str) -> str:
-        """Extract relevant content from fetched web page using structured parsing"""
+    def _extract_relevant_content(
+        self,
+        content: Union[str, Dict[str, Any]],
+        query: str,
+        search_snippet: str = "",
+    ) -> str:
+        """Extract relevant content from fetched web page using structured parsing.
+
+        `search_snippet` is the backend's own evidence that this URL answers the
+        query. It is passed IN rather than merged afterwards because the
+        relevance gate below runs before the merge: a page the search engine
+        returned for this query was being discarded for not repeating the query
+        words in its own prose.
+        """
 
         # First, try to parse the structured output from fetch_url
         structured_content = self._parse_fetch_url_output(content)
 
         if structured_content:
             # Use structured data for more efficient extraction
-            return self._extract_from_structured_content(structured_content, query)
+            return self._extract_from_structured_content(
+                structured_content, query, search_snippet=search_snippet
+            )
         else:
             # Fallback to LLM-based extraction for unstructured content
             return self._extract_with_llm(content, query)
@@ -1410,7 +1437,7 @@ BE GENEROUS with relevance assessment - when in doubt, mark as relevant.
             if isinstance(content, dict):
                 structured: Dict[str, Any] = {}
                 rendered = str(content.get("rendered") or "")
-                normalized_text = str(content.get("normalized_text") or "")
+                normalized_text = str(content.get("content") or content.get("normalized_text") or "")
                 raw_text = str(content.get("raw_text") or "")
                 if rendered:
                     for line in rendered.split("\n"):
@@ -1478,11 +1505,17 @@ BE GENEROUS with relevance assessment - when in doubt, mark as relevant.
             logger.debug(f"Failed to parse fetch_url output: {e}")
             return None
 
-    def _extract_from_structured_content(self, structured: Dict[str, Any], query: str) -> str:
+    def _extract_from_structured_content(
+        self, structured: Dict[str, Any], query: str, search_snippet: str = ""
+    ) -> str:
         """Extract relevant information from structured content"""
 
         # Build content summary from structured data
         content_parts = []
+
+        snippet = str(search_snippet or "").strip()
+        if snippet:
+            content_parts.append(f"**Search Snippet:** {snippet}")
 
         # Add title if relevant
         title = structured.get('title', '')
@@ -1528,9 +1561,18 @@ BE GENEROUS with relevance assessment - when in doubt, mark as relevant.
         # Combine and validate relevance
         combined_content = '\n'.join(content_parts)
 
-        # Quick relevance check - if query words appear in the content
+        # Quick relevance check - if query words appear in the content.
+        # Scored against the FULL extracted text, not the truncated preview that
+        # goes into `combined_content`: a 29k-char article whose only mention of
+        # the query sits past the preview cut is not irrelevant, and dropping it
+        # here made the gate a function of the preview limit rather than of the
+        # page.
         query_words_lower = [word.lower() for word in query.split() if len(word) > 2]
-        content_lower = combined_content.lower()
+        if not query_words_lower:
+            return combined_content
+        content_lower = "\n".join(
+            [combined_content, str(structured.get('_full_text') or '')]
+        ).lower()
 
         relevance_score = sum(1 for word in query_words_lower if word in content_lower) / len(query_words_lower)
 
@@ -1542,7 +1584,12 @@ BE GENEROUS with relevance assessment - when in doubt, mark as relevant.
     def _extract_full_text_from_fetch_output(self, raw_content: Union[str, Dict[str, Any]]) -> str:
         """Extract full clean text content from fetch_url output"""
         if isinstance(raw_content, dict):
-            direct_text = str(raw_content.get("normalized_text") or raw_content.get("raw_text") or "").strip()
+            direct_text = str(
+                raw_content.get("content")
+                or raw_content.get("normalized_text")
+                or raw_content.get("raw_text")
+                or ""
+            ).strip()
             if direct_text:
                 return direct_text
             raw_content = str(raw_content.get("rendered") or "")
@@ -1675,7 +1722,13 @@ If the content is not relevant to the query, respond with "NOT_RELEVANT".
 
         # Limit content length for processing
         if isinstance(content, dict):
-            content_text = str(content.get("normalized_text") or content.get("raw_text") or content.get("rendered") or "")
+            content_text = str(
+                content.get("content")
+                or content.get("normalized_text")
+                or content.get("raw_text")
+                or content.get("rendered")
+                or ""
+            )
         else:
             content_text = str(content or "")
         content = preview_text(content_text, max_chars=8000)

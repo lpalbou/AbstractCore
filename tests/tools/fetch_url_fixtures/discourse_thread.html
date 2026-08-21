@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>PEP 703 (Making the Global Interpreter Lock Optional in CPython) acceptance - Core Development - Discussions on Python.org</title>
+    <meta name="description" content="(Posted for the whole Steering Council.) 
+As we’ve announced before, the Steering Council has decided to accept PEP 703 (Making the Global Interpreter Lock Optional in CPython) . We want to make it clear why, and under w…">
+    <meta name="generator" content="Discourse 2026.8.0-latest.1 - https://github.com/discourse/discourse version 5b3af347813aafb0da903ec36187f10e2bccefc9">
+<link rel="icon" type="image/png" href="https://us1.discourse-cdn.com/flex002/uploads/python1/optimized/1X/9997f0605d56c4bfecd63594f52f42cdafd6b06a_2_32x32.png">
+<link rel="apple-touch-icon" type="image/png" href="https://us1.discourse-cdn.com/flex002/uploads/python1/optimized/1X/4c06143de7870c35963b818b15b395092a434991_2_180x180.png">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fff">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#111111">
+
+<meta name="color-scheme" content="light dark">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, viewport-fit=cover">
+<link rel="canonical" href="https://discuss.python.org/t/pep-703-making-the-global-interpreter-lock-optional-in-cpython-acceptance/37075" />
+
+<meta name="discourse-track-view-session-id" content="ABZHNtNyuJRh3kL4ljqaF8oulxoeQRg8"><meta name="discourse-beacon-pageview-enabled" content="true"><meta name="discourse-engagement-tracking-enabled" content="true">
+<link rel="search" type="application/opensearchdescription+xml" href="https://discuss.python.org/opensearch.xml" title="Discussions on Python.org Search">
+
+    
+    <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/color_definitions_light-default_-1_2_f45b91141576136d67d9b70ce70ef08405d77060.css?__ws=discuss.python.org" media="(prefers-color-scheme: light)" rel="stylesheet" class="light-scheme"/><link href="https://sea2.discourse-cdn.com/flex002/stylesheets/color_definitions_dark_1_2_5f884c875d83959cddcecd036f3ffefabefbfaad.css?__ws=discuss.python.org" media="(prefers-color-scheme: dark)" rel="stylesheet" class="dark-scheme" data-scheme-id="1"/>
+
+<link href="https://sea2.discourse-cdn.com/flex002/stylesheets/common_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="common"  />
+
+
+
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/automation_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="automation"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/checklist_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="checklist"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-ai_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-ai"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-chat-integration_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-chat-integration"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-data-explorer_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-data-explorer"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-details_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-details"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-github_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-github"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-lazy-videos_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-lazy-videos"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-local-dates_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-local-dates"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-math_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-math"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-narrative-bot_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-narrative-bot"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-policy_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-policy"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-presence_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-presence"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-reactions_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-reactions"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-solved_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-solved"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-templates_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-templates"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-topic-voting_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-topic-voting"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-user-notes_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="discourse-user-notes"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/footnote_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="footnote"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/hosted-site_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="hosted-site"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/poll_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="poll"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/spoiler-alert_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="spoiler-alert"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-ai_mobile_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="(width < 40rem)" rel="stylesheet" data-target="discourse-ai_mobile"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-reactions_mobile_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="(width < 40rem)" rel="stylesheet" data-target="discourse-reactions_mobile"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-ai_desktop_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="(width >= 40rem)" rel="stylesheet" data-target="discourse-ai_desktop"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/discourse-reactions_desktop_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="(width >= 40rem)" rel="stylesheet" data-target="discourse-reactions_desktop"  />
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/poll_desktop_886fbb534e275c38a3207e54936e554eca155188.css?__ws=discuss.python.org" media="(width >= 40rem)" rel="stylesheet" data-target="poll_desktop"  />
+
+  <link href="https://sea2.discourse-cdn.com/flex002/stylesheets/common_theme_4_2796bc9bed6d73c9503c07cb3309f406d5dfde2b.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="common_theme" data-theme-id="4" data-theme-name="unformatted code detector"/>
+<link href="https://sea2.discourse-cdn.com/flex002/stylesheets/common_theme_2_0647a305b468963290347331d67735530ef03c70.css?__ws=discuss.python.org" media="all" rel="stylesheet" data-target="common_theme" data-theme-id="2" data-theme-name="light"/>
+  
+  
+
+    
+    
+        <link rel="alternate nofollow" type="application/rss+xml" title="RSS feed of &#39;PEP 703 (Making the Global Interpreter Lock Optional in CPython) acceptance&#39;" href="https://discuss.python.org/t/pep-703-making-the-global-interpreter-lock-optional-in-cpython-acceptance/37075.rss" />
+    <meta property="og:site_name" content="Discussions on Python.org" />
+<meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary" />
+<meta name="twitter:image" content="https://us1.discourse-cdn.com/flex002/uploads/python1/original/1X/f93ff97c4f381b5e8add5a0c163b4ded29f20ed7.png" />
+<meta property="og:image" content="https://us1.discourse-cdn.com/flex002/uploads/python1/original/1X/f93ff97c4f381b5e8add5a0c163b4ded29f20ed7.png" />
+<meta property="og:url" content="https://discuss.python.org/t/pep-703-making-the-global-interpreter-lock-optional-in-cpython-acceptance/37075" />
+<meta name="twitter:url" content="https://discuss.python.org/t/pep-703-making-the-global-interpreter-lock-optional-in-cpython-acceptance/37075" />
+<meta property="og:title" content="PEP 703 (Making the Global Interpreter Lock Optional in CPython) acceptance" />
+<meta name="twitter:title" content="PEP 703 (Making the Global Interpreter Lock Optional in CPython) acceptance" />
+<meta property="og:description" content="(Posted for the whole Steering Council.)  As we’ve announced before, the Steering Council has decided to accept PEP 703 (Making the Global Interpreter Lock Optional in CPython) . We want to make it clear why, and under what expectations we’re doing so.  It is clear to the Steering Council that theoretically, a no-GIL (or free-threaded) Python would be of great benefit, and the majority of the community seems in agreement. Threads have significant downsides and caveats, but they are widely adopte..." />
+<meta name="twitter:description" content="(Posted for the whole Steering Council.)  As we’ve announced before, the Steering Council has decided to accept PEP 703 (Making the Global Interpreter Lock Optional in CPython) . We want to make it clear why, and under what expectations we’re doing so.  It is clear to the Steering Council that theoretically, a no-GIL (or free-threaded) Python would be of great benefit, and the majority of the community seems in agreement. Threads have significant downsides and caveats, but they are widely adopte..." />
+<meta property="og:article:section" content="Core Development" />
+<meta property="og:article:section:color" content="25AAE2" />
+<meta name="twitter:label1" value="Reading time" />
+<meta name="twitter:data1" value="10 mins 🕑" />
+<meta name="twitter:label2" value="Likes" />
+<meta name="twitter:data2" value="193 ❤" />
+<meta property="article:published_time" content="2023-10-24T21:47:57+00:00" />
+<meta property="og:ignore_canonical" content="true" />
+
+        <link rel="next" href="/t/pep-703-making-the-global-interpreter-lock-optional-in-cpython-acceptance/37075?page=2">
+
+    
+  </head>
+  <body class="crawler ">
+    
+    <header>
+  <a href="/">Discussions on Python.org</a>
+</header>
+
+    <div id="main-outlet" class="wrap" role="main">
+        <div id="topic-title">
+    <h1>
+      <a href="/t/pep-703-making-the-global-interpreter-lock-optional-in-cpython-acceptance/37075">PEP 703 (Making the Global Interpreter Lock Optional in CPython) acceptance</a>
+    </h1>
+
+      <div class="topic-category" itemscope itemtype="http://schema.org/BreadcrumbList">
+          <span itemprop="itemListElement" itemscope itemtype="http://schema.org/ListItem">
+            <a href="/c/core-dev/23" class="badge-wrapper bullet" itemprop="item">
+              <span class='badge-category-bg' style='background-color: #25AAE2'></span>
+              <span class='badge-category clear-badge'>
+                <span class='category-name' itemprop='name'>Core Development</span>
+              </span>
+            </a>
+            <meta itemprop="position" content="1" />
+          </span>
+      </div>
+
+  </div>
+
+  
+
+    <div itemscope="itemscope" itemtype="http://schema.org/DiscussionForumPosting">
+      <meta itemprop='headline' content='PEP 703 (Making the Global Interpreter Lock Optional in CPython) acceptance'>
+      <link itemprop='url' href='https://discuss.python.org/t/pep-703-making-the-global-interpreter-lock-optional-in-cpython-acceptance/37075'>
+      <meta itemprop='datePublished' content='2023-10-24T21:47:57Z'>
+      <meta itemprop='keywords' content=''>
+          <meta itemprop='articleSection' content='Core Development'>
+        <div itemprop='publisher' itemscope itemtype="http://schema.org/Organization">
+          <meta itemprop='name' content='Python Software Foundation'>
+            <div itemprop='logo' itemscope itemtype="http://schema.org/ImageObject">
+              <meta itemprop='url' content='https://us1.discourse-cdn.com/flex002/uploads/python1/original/1X/c7591c98caf3b31d4d9c6f322f41ed9d80a50800.png'>
+            </div>
+        </div>
+
+
+
+          <div id='post_1'  class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/thomas'><span itemprop="name">thomas</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/thomas'>
+                (Thomas Wouters)
+              </span>
+
+                <link itemprop="mainEntityOfPage" href="https://discuss.python.org/t/pep-703-making-the-global-interpreter-lock-optional-in-cpython-acceptance/37075">
+
+
+              <span class="crawler-post-infos">
+                  <time  datetime='2023-10-24T21:47:57Z' class='post-time'>
+                    October 24, 2023,  9:47pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-10-25T00:00:58Z'>
+              <span itemprop="position">1</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <p>(Posted for the whole Steering Council.)</p>
+<p>As we’ve <a href="https://discuss.python.org/t/a-steering-council-notice-about-pep-703-making-the-global-interpreter-lock-optional-in-cpython/30474">announced before</a>, the Steering Council has decided to accept <a href="https://peps.python.org/pep-0703/">PEP 703 (Making the Global Interpreter Lock Optional in CPython)</a> . We want to make it clear why, and under what expectations we’re doing so.</p>
+<p>It is clear to the Steering Council that theoretically, a no-GIL (or free-threaded) Python would be of great benefit, and the majority of the community seems in agreement. Threads have significant downsides and caveats, but they are widely adopted, both by software and hardware, and they do enable more scalable solutions to problems. The GIL clearly inhibits CPython in this, and removing that barrier would be a good thing.</p>
+<p>At the same time we’re not sure if it’s possible to remove the GIL without fundamentally breaking all extension modules out there, or significantly reducing the performance or maintainability of CPython. The third-party/PyPI package ecosystem is one of Python’s strengths, and the tight, efficient integration with C libraries is one of CPython’s. It has enabled the existence of a diverse selection of packages that’s a unique selling point for Python. We need to be careful that we do not destroy those benefits, or discard decades worth of package development.</p>
+<p>Assessing the practical impact, and the practicality of adapting third-party packages to the new free-threaded situation, is difficult without a finished implementation. The unpredictable nature of thread-related issues makes it extra difficult, as some issues won’t show up until put under significant load. The changes necessary to remove the GIL are substantive enough, and require so much coordination with other CPython development happening at the same time, that we can’t reasonably do these experiments in a fork of CPython. We also want to avoid the risk of ecosystem fragmentation and unnecessarily diverging changes because of the work being done in a fork. For PEP 703 to move forward, it has to be included in CPython’s main, and released as part of regular releases (albeit not necessarily by default).</p>
+<p>But while we think removal of the GIL is a worthy and necessary goal, and PEP 703 is the best proposal for it so far, we can’t at this stage guarantee that it will work out. We have to, as we develop PEP 703’s implementation and the necessary user-visible changes to semantics, APIs and ABIs, continually evaluate the feasibility, and be prepared to change course – or reverse it, if that turns out to be necessary.</p>
+<p>As mentioned before, we see this as a rollout in roughly three stages:</p>
+<ul>
+<li>Phase I: Experimental phase, which can start immediately, in which the free-threaded build is enabled through a build-time option. This should not be the default install anywhere. At least one major Python release should include this experimental free-threaded build, to allow third-party packages to test and do their own experimentation. In this stage we should make it clear the build is experimental, not supported for “production use”, and may be reverted.</li>
+<li>Phase II: Supported-but-not-default phase, which would start when the API and ABI changes have sufficiently settled, and there is sufficient community support. Exact criteria for this phase are hard to pin down at this stage, so this will have to involve some discussion among Core Devs and the community, and a decision by the SC at the time. At this point reverting should still be possible (so for example preprocessor guards should remain in place) although obviously we aren’t expecting it.</li>
+<li>Phase III: Default phase, at which point the free-threaded build becomes the default (but can initially still be disabled). Again, the exact criteria are hard to pin down this far ahead, but the aim is to make this as seamless and painless a default flip as possible. Like the previous phase, the SC at the time will need to make a decision as to when this occurs. Some time after the default flip, when we have a good indication it’s no longer widely used, we should start the discussion on removing the GIL build entirely.</li>
+</ul>
+<p>The details of the phases are deliberately vague, simply because we can’t know all the ecosystem impact details yet, and we don’t want to set conservative standards now and then hold people to them when in practice we’re being too cautious. (We don’t want to set overly ambitious goals and break too many things, either.)</p>
+<p>For some of the changes necessary for the free-threaded build, like switching to <a href="https://github.com/microsoft/mimalloc">mimalloc</a> or significant changes to the GC, it may be useful to make these separately build-time opt-ins, and perhaps make them the default before the free-threaded build becomes the default build (but not before it becomes fully supported). Having them separately enableable allows for experimentation, performance measurements and debugging focusing on the isolated set of changes. We don’t want a complex matrix of build flags, so this should probably be limited to one or two.</p>
+<p>Regarding the expected performance impact of the free-threaded build, the SC thinks a significant performance penalty is expected in a free-threaded build, and the benefit is probably worth that price. At this point we’re expecting a (worst case) performance penalty of 10-15%. We don’t want to set strict limits on acceptable performance, partly because we don’t want to get stuck in arguments about how to measure performance and partly because it will depend on user expectations and, for example, how much performance work is invalidated and how much we can expect to see recuperated over time. Solutions for the free-threaded build that are fundamentally problematic for performance improvements going forward, are less acceptable than solutions that are currently suboptimal but have room for improvement.</p>
+<p>The performance impact should be isolated to a free-threaded build; a GIL build should not see any performance impact in existing code. For API and ABI changes necessary to support both GIL and free-threaded builds (e.g. avoiding APIs that return borrowed references or that rely on the GIL to protect shared data), it’s reasonable for the new interfaces to be slightly less performant, but we expect this to be very limited and usually lost in the noise.</p>
+<p>In a similar vein, it’s important that as the free-threaded build lands in main, so that its implementation is considered in other development work that’s going on. New features can’t land without proper support for the free-threaded build, when the two intersect. It may seem tempting to ignore free-threaded when developing thread-adjacent changes, but in the end someone will have to make it work, and it’s neither fair nor particularly forward-thinking to expect the free-threaded maintainers to do all the work. We also need to be mindful of the cohesiveness of the language, the implementation and the C API. We have to assume the free-threaded build will be the only build in the reasonable future, and like other fundamental changes to CPython internals, we all have to learn the new way of approaching these problems. This may be a bit of a jump in terms of complexity – the GIL implicitly simplified so much – but it is a necessary step. We do expect, at least initially, the free-threaded build experts to help others ramp up here. The experimental phase is there for CPython and the Core Devs to get used to the free-threaded build as much as it is for users.</p>
+<p>We do need a few specific things resolved before PEP 703 can leave the experimental phase. For starters, we need a solution for the ABI. The SC believes strongly that a single ABI serving both with-GIL and free-threaded builds should be possible, should be made possible, and should be required before leaving the experimental phase. If this turns out to be an unreasonable requirement, we’ll have to look at alternative solutions to ease the pressure on package maintainers (e.g. building two extension modules in the same wheel, or providing a compatibility layer through a separate library).</p>
+<p>We also need to consider the testing matrix, both for CPython and for third-party packages. Even with a stable ABI we still need to multiply the test matrix. We probably don’t need complete coverage on all supported platforms, but we do want at least one free-threaded buildbot for each of the T1/T2 platforms, as well as some way to test the validity of the unified ABI (a way to build things in one build mode and test against an interpreter built in the other build mode). We currently rely on the stable ABI check and third-party testing of the stable ABI, but that will probably not be good enough to ensure the compatibility between the GIL and free-threaded builds. To get to the supported phase we also expect CI checks on GitHub for free-threaded builds on each of the major platforms.</p>
+<p>There are a few specific things we want to avoid. We do not want the free-threaded build to be used as the default Python anywhere until the Core Devs and the Python community are ready for that. Obviously we can’t stop users and distributors from installing a free-threaded build by default, but we think at this stage it would be a mistake to do so for anything besides end-to-end experimentation. We also want to avoid labelling the free-threaded build “experimental” after the experimental phase. Build-time flags, defines, comments in the code should avoid the word. We want to avoid negatives in terms and flags and such, so we won’t get into double-negative terrain (like we do when we talk about ‘non no-GIL’). We’d like a positive, clear term to talk about the no-GIL build, and we’re suggesting ‘free-threaded’. (Relatedly, that’s why the build mode/ABI letter is ‘t’ and not ‘n’; that change was already made.)</p>
+<p>In short, the SC accepts PEP 703, but with clear provisio: that the rollout be gradual and break as little as possible, and that we can roll back any changes that turn out to be too disruptive – which includes potentially rolling back all of PEP 703 entirely if necessary (however unlikely or undesirable we expect that to be).</p>
+<p>For the whole SC,<br>
+Thomas.</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="92" />
+                <span class='post-likes'>92 Likes</span>
+              </div>
+
+                <div class='crawler-linkback-list'>
+                    <div>
+                      <a href="https://discuss.python.org/t/pep-703-making-the-global-interpreter-lock-optional/22606/123">PEP 703: Making the Global Interpreter Lock Optional</a>
+                    </div>
+                    <div>
+                      <a href="https://discuss.python.org/t/will-the-free-threading-python-build-become-the-default/60036/2">Will the free threading Python build become the default?</a>
+                    </div>
+                    <div>
+                      <a href="https://discuss.python.org/t/is-it-time-to-promote-free-threaded-ci-and-buildbots/39064/4">Is it time to promote &quot;free threaded&quot; CI and buildbots?</a>
+                    </div>
+                    <div>
+                      <a href="https://discuss.python.org/t/pep-779-criteria-for-supported-status-for-free-threaded-python/84319">PEP 779: Criteria for supported status for free-threaded Python</a>
+                    </div>
+                    <div>
+                      <a href="https://discuss.python.org/t/how-to-get-an-extension-module-working-w-free-threading/63653/25">How to get an extension module working w/ free threading?</a>
+                    </div>
+                    <div>
+                      <a href="https://discuss.python.org/t/an-announcement-from-the-steering-council-regarding-the-jit-project/107638/3">An announcement from the Steering Council regarding the JIT project</a>
+                    </div>
+                    <div>
+                      <a href="https://discuss.python.org/t/free-threading-trove-classifier/62406/50">Free-Threading Trove Classifier?</a>
+                    </div>
+                    <div>
+                      <a href="https://discuss.python.org/t/stable-abi-limited-api-for-free-threaded-builds/86458/34">Stable ABI/Limited API for free-threaded builds</a>
+                    </div>
+                    <div>
+                      <a href="https://discuss.python.org/t/pep-803-stable-abi-for-free-threaded-builds/103628/10">PEP 803: Stable ABI for Free-Threaded Builds</a>
+                    </div>
+                    <div>
+                      <a href="https://discuss.python.org/t/stable-abi-limited-api-for-free-threaded-builds/86458/49">Stable ABI/Limited API for free-threaded builds</a>
+                    </div>
+                    <div>
+                      <a href="https://discuss.python.org/t/is-it-time-to-promote-free-threaded-ci-and-buildbots/39064">Is it time to promote &quot;free threaded&quot; CI and buildbots?</a>
+                    </div>
+                </div>
+
+            
+
+
+          </div>
+          <div id='post_2' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/pitrou'><span itemprop="name">pitrou</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/pitrou'>
+                (Antoine Pitrou)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-10-25T09:01:41Z' class='post-time'>
+                    October 25, 2023,  9:01am
+                  </time>
+                  <meta itemprop='dateModified' content='2023-10-25T09:01:41Z'>
+              <span itemprop="position">2</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <aside class="quote group-committers" data-username="thomas" data-post="1" data-topic="37075">
+<div class="title">
+<div class="quote-controls"></div>
+<img loading="lazy" alt="" width="24" height="24" src="https://sea2.discourse-cdn.com/flex016/user_avatar/discuss.python.org/thomas/48/5492_2.png" class="avatar"> Thomas Wouters:</div>
+<blockquote>
+<p>Phase I: Experimental phase, which can start immediately, in which the free-threaded build is enabled through a build-time option.</p>
+</blockquote>
+</aside>
+<p>Do you have a more specific timeline than “immediately” for the integration of free-threaded builds in git main?<br>
+(I ask quite egoistically, because I may have to rework <a href="https://github.com/python/cpython/pull/110848" class="inline-onebox">GH-110829: Ensure Thread.join() joins the OS thread by pitrou · Pull Request #110848 · python/cpython · GitHub</a> if the nogil work lands before that PR <img src="https://emoji.discourse-cdn.com/apple/slight_smile.png?v=12" title=":slight_smile:" class="emoji" alt=":slight_smile:" loading="lazy" width="20" height="20"> )</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="2" />
+                <span class='post-likes'>2 Likes</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_3' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/thomas'><span itemprop="name">thomas</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/thomas'>
+                (Thomas Wouters)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-10-25T12:42:38Z' class='post-time'>
+                    October 25, 2023, 12:42pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-10-25T12:42:38Z'>
+              <span itemprop="position">3</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <aside class="quote group-committers" data-username="pitrou" data-post="2" data-topic="37075">
+<div class="title">
+<div class="quote-controls"></div>
+<img loading="lazy" alt="" width="24" height="24" src="https://sea2.discourse-cdn.com/flex016/user_avatar/discuss.python.org/pitrou/48/28_2.png" class="avatar"> Antoine Pitrou:</div>
+<blockquote>
+<p>Do you have a more specific timeline than “immediately” for the integration of free-threaded builds in git main?</p>
+</blockquote>
+</aside>
+<p>That’s not really a SC question (it’s not like we can force people to merge or even send in PRs on a specific schedule <img src="https://emoji.discourse-cdn.com/apple/slight_smile.png?v=12" title=":slight_smile:" class="emoji" alt=":slight_smile:" loading="lazy" width="20" height="20"> but maybe <a class="mention" href="/u/colesbury">@colesbury</a> or <a class="mention" href="/u/ambv">@ambv</a> have an idea when the bulk of things would be ready?</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="1" />
+                <span class='post-likes'>1 Like</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_4' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/colesbury'><span itemprop="name">colesbury</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/colesbury'>
+                (Sam Gross)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-10-25T13:08:06Z' class='post-time'>
+                    October 25, 2023,  1:08pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-10-25T13:08:06Z'>
+              <span itemprop="position">4</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <p>The integration into git main has already started. There will be a bit of a bottleneck on two PRs: <a href="https://github.com/python/cpython/pull/110764" rel="noopener nofollow ugc">gh-110764 biased reference counting</a>, which is under review, and the per-object locking PR, which will come next. Those two are prerequisites for the bulk of the other library changes.</p>
+<p>I expect your <code>Thread.join()</code> PR will land before the free-threading work touches the <code>_thread</code> module. There were some changes necessary in the <code>nogil-3.12</code> fork to make <code>Thread.join()</code> thread-safe, but I think your PR will make those changes easier if they are still necessary.</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="8" />
+                <span class='post-likes'>8 Likes</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_5' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/smontanaro'><span itemprop="name">smontanaro</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/smontanaro'>
+                (Skip Montanaro)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-10-25T15:42:33Z' class='post-time'>
+                    October 25, 2023,  3:42pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-10-25T15:42:33Z'>
+              <span itemprop="position">5</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <blockquote>
+<p>I expect your <code>Thread.join()</code> PR will land before the free-threading work touches the <code>_thread</code> module.</p>
+</blockquote>
+<p>I am naive in the ways of git/github, but if it’s desirable that Antoine’s PR land first, would it be possible to make your <code>_thread</code> changes dependent on it?</p>
+<p>Skip</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="1" />
+                <span class='post-likes'>1 Like</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_6' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/colesbury'><span itemprop="name">colesbury</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/colesbury'>
+                (Sam Gross)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-10-25T16:43:30Z' class='post-time'>
+                    October 25, 2023,  4:43pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-10-25T16:43:30Z'>
+              <span itemprop="position">6</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <aside class="quote group-committers quote-modified" data-username="smontanaro" data-post="5" data-topic="37075">
+<div class="title">
+<div class="quote-controls"></div>
+<img loading="lazy" alt="" width="24" height="24" src="https://sea2.discourse-cdn.com/flex016/user_avatar/discuss.python.org/smontanaro/48/1389_2.png" class="avatar"> Skip Montanaro:</div>
+<blockquote>
+<p>…if it’s desirable that Antoine’s PR land first, would it be possible to make your <code>_thread</code> changes dependent on it?</p>
+</blockquote>
+</aside>
+<p>Yes, that’s what I plan to do.</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="1" />
+                <span class='post-likes'>1 Like</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_7' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/ItsCubeTime'><span itemprop="name">ItsCubeTime</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/ItsCubeTime'>
+                (ItsCubeTime)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-11-02T04:45:30Z' class='post-time'>
+                    November 2, 2023,  4:45am
+                  </time>
+                  <meta itemprop='dateModified' content='2023-11-02T04:45:30Z'>
+              <span itemprop="position">7</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <p><img src="https://emoji.discourse-cdn.com/apple/gift_heart.png?v=12" title=":gift_heart:" class="emoji" alt=":gift_heart:" loading="lazy" width="20" height="20">This is the single most wanted feature Ive had since starting out with Python some 3 years ago (pure Python threads w/o gil), it will benefit several of my compute heavy projects.</p>
+<p>Thank you for this effort!</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="2" />
+                <span class='post-likes'>2 Likes</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_8' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/waleedmebane'><span itemprop="name">waleedmebane</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/waleedmebane'>
+                (Waleed Mebane)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-11-02T22:45:23Z' class='post-time'>
+                    November 2, 2023, 10:45pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-11-02T22:45:23Z'>
+              <span itemprop="position">8</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <p>In case it is useful to know and not already known, OCaml went through a similar transition recently to get to its “multicore” version.  In previous versions there was the equivalent of a GIL.<br>
+Their approach to backward compatibility was:<br>
+The unit of parallelism is something new called a “domain”.  At startup there is a single domain and any thread created using the standard library’s Thread module works just as before, as though there were a GIL.  When there are multiple domains, domains run in parallel, but threads running in each domain have the equivalent of an inside-of-domain GIL.  When there is a single thread per domain, that is like what I understand to be called “free-threading” here.</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="3" />
+                <span class='post-likes'>3 Likes</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_9' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/eric.snow'><span itemprop="name">eric.snow</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/eric.snow'>
+                (Eric Snow)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-11-02T23:08:25Z' class='post-time'>
+                    November 2, 2023, 11:08pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-11-02T23:08:25Z'>
+              <span itemprop="position">9</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <p>You just described subinterpreters with a per-interpreter GIL (PEP 684), which landed in 3.12. <img src="https://emoji.discourse-cdn.com/apple/smile.png?v=12" title=":smile:" class="emoji" alt=":smile:" loading="lazy" width="20" height="20"></p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="17" />
+                <span class='post-likes'>17 Likes</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_10' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/barry-scott'><span itemprop="name">barry-scott</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/barry-scott'>
+                (Barry Scott)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-11-02T23:11:38Z' class='post-time'>
+                    November 2, 2023, 11:11pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-11-02T23:11:38Z'>
+              <span itemprop="position">10</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <p>Can ocaml freely exchange objects between domains?<br>
+Python free thread is able to this.</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="3" />
+                <span class='post-likes'>3 Likes</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_12' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/waleedmebane'><span itemprop="name">waleedmebane</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/waleedmebane'>
+                (Waleed Mebane)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-11-03T01:33:01Z' class='post-time'>
+                    November 3, 2023,  1:33am
+                  </time>
+                  <meta itemprop='dateModified' content='2023-11-03T01:47:41Z'>
+              <span itemprop="position">12</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <p>I believe so, yes.<br>
+I have not personally written any programs using domains, yet.<br>
+I think I did not explain it well in my previous comment.  A domain is a context in which a single system thread at a time may run OCaml code.</p>
+<p>From the documentation (<a href="https://v2.ocaml.org/manual/parallelism.html" class="inline-onebox" rel="noopener nofollow ugc">OCaml - Parallel programming</a>):</p>
+<blockquote>
+<p>5.1 Interaction with systhreads</p>
+</blockquote>
+<blockquote>
+<p>How do systhreads interact with domains? The systhreads created on a particular domain remain pinned to that domain. Only one systhread at a time is allowed to run OCaml code on a particular domain. However, systhreads belonging to a particular domain may run C library or system code in parallel. Systhreads belonging to different domains may execute in parallel.</p>
+</blockquote>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="0" />
+                <span class='post-likes'></span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_13' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/guido'><span itemprop="name">guido</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/guido'>
+                (Guido van Rossum)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-11-03T03:11:39Z' class='post-time'>
+                    November 3, 2023,  3:11am
+                  </time>
+                  <meta itemprop='dateModified' content='2023-11-03T03:11:39Z'>
+              <span itemprop="position">13</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <p>Also, this seems crucial:</p>
+<blockquote>
+<p>While the user may observe non sequentially consistent behaviours, there are no crashes.</p>
+</blockquote>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="1" />
+                <span class='post-likes'>1 Like</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_14' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/guido'><span itemprop="name">guido</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/guido'>
+                (Guido van Rossum)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-11-09T18:15:09Z' class='post-time'>
+                    November 9, 2023,  6:15pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-11-09T18:15:09Z'>
+              <span itemprop="position">14</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <p>Since the discussion about naming the new feature is still undecided, I propose “<a href="https://github.com/python/steering-council/issues/214#issuecomment-1804321893">multicore</a>”.</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="6" />
+                <span class='post-likes'>6 Likes</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_16' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/bluetech'><span itemprop="name">bluetech</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/bluetech'>
+                (Ran Benita)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-11-09T20:20:14Z' class='post-time'>
+                    November 9, 2023,  8:20pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-11-09T21:07:12Z'>
+              <span itemprop="position">16</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <aside class="quote group-committers" data-username="pitrou" data-post="15" data-topic="37075">
+<div class="title">
+<div class="quote-controls"></div>
+<img loading="lazy" alt="" width="24" height="24" src="https://sea2.discourse-cdn.com/flex016/user_avatar/discuss.python.org/pitrou/48/28_2.png" class="avatar"> Antoine Pitrou:</div>
+<blockquote>
+<p>Python already works on multicore setups.</p>
+</blockquote>
+</aside>
+<p>First I want to distinguish between Python the language and the (cpython) implementation. The nogil/multicore work is an implementation detail, AFAIK it should have no effect on the language definition (except maybe clarifying the memory model). So technically speaking it is really “Multicore CPython”.</p>
+<p>You say that cpython already works on multicore setups, but… it doesn’t? When running the Python language, cpython runs on a single core. If you’re referring to multiprocess, I’d say it doesn’t count; the language as implemented by cpython is single-core.</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="0" />
+                <span class='post-likes'></span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_17' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/pitrou'><span itemprop="name">pitrou</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/pitrou'>
+                (Antoine Pitrou)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-11-09T20:41:30Z' class='post-time'>
+                    November 9, 2023,  8:41pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-11-09T21:19:46Z'>
+              <span itemprop="position">17</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <aside class="quote no-group" data-username="bluetech" data-post="16" data-topic="37075">
+<div class="title">
+<div class="quote-controls"></div>
+<img loading="lazy" alt="" width="24" height="24" src="https://sea2.discourse-cdn.com/flex016/user_avatar/discuss.python.org/bluetech/48/8859_2.png" class="avatar"> Ran Benita:</div>
+<blockquote>
+<p>When running the Python language, cpython runs on a single core</p>
+</blockquote>
+</aside>
+<p>What does “running the Python language” mean exactly?</p>
+<p>If I add two Python integers, it invokes a C function that implements the addition of two Python integers. If I add two NumPy arrays, it invokes a C function that implements the addition of two NumPy arrays.</p>
+<p>If adding two Python integers is “running the Python language”, why wouldn’t adding two NumPy arrays also be “running the language” as well?</p>
+<p>Use Numpy, Pandas, Numba, Cython, Dask… and you can easily get the benefits of several CPU cores. You may not relate to that ecosystem, but it exists and is an essential part of Python’s growing popularity.</p>
+<aside class="quote no-group" data-username="bluetech" data-post="16" data-topic="37075">
+<div class="title">
+<div class="quote-controls"></div>
+<img loading="lazy" alt="" width="24" height="24" src="https://sea2.discourse-cdn.com/flex016/user_avatar/discuss.python.org/bluetech/48/8859_2.png" class="avatar"> Ran Benita:</div>
+<blockquote>
+<p>If you’re referring to multiprocess, I’d say it doesn’t count</p>
+</blockquote>
+</aside>
+<p>Why doesn’t it? <code>multiprocessing</code> has been part of the standard library for 10+ years, and is widely used. So is its cousin <code>concurrent.futures</code>.</p>
+<p>You don’t get to choose what is “Python” and what is “not Python”. There’s nothing special about the <code>multiprocessing</code> module that makes it less Python than the <code>threading</code> module. There’s nothing special about NumPy or Dask that makes it less Python than Pillow, Django or SQLAlchemy.</p>
+<p>Yes, removing the GIL is a big leap forward and will help exploit CPU parallelism in more workloads. No, it doesn’t mean that previously CPython was “monocore”. Saying so is just misrepresenting the current state of the CPython implementation.</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="2" />
+                <span class='post-likes'>2 Likes</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_18' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/davidism'><span itemprop="name">davidism</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/davidism'>
+                (David Lord)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-11-09T21:10:14Z' class='post-time'>
+                    November 9, 2023,  9:10pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-11-09T21:10:14Z'>
+              <span itemprop="position">18</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <p>I’m not sure why that suggestion struck such a cord, but this is a warning to check the language you use when you respond. You can express that you disagree with something without suggesting that someone is deliberately misinforming, lying to, or insulting others.</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="2" />
+                <span class='post-likes'>2 Likes</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_19' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/pitrou'><span itemprop="name">pitrou</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/pitrou'>
+                (Antoine Pitrou)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-11-09T21:11:59Z' class='post-time'>
+                    November 9, 2023,  9:11pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-11-09T21:11:59Z'>
+              <span itemprop="position">19</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <p><a class="mention" href="/u/davidism">@davidism</a> Since you’ve edited my post, can I ask you to make it clear that you’ve edited it?</p>
+<p>(I don’t think this is the first time that such a mention is requested on this forum, by the way)</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="3" />
+                <span class='post-likes'>3 Likes</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_20' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/davidism'><span itemprop="name">davidism</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/davidism'>
+                (David Lord)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-11-09T21:13:50Z' class='post-time'>
+                    November 9, 2023,  9:13pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-11-09T21:13:50Z'>
+              <span itemprop="position">20</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <p>There is an edit icon on every post that has been edited that shows the diff of each edit. Please get back on topic.</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="2" />
+                <span class='post-likes'>2 Likes</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_21' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/elis.byberi'><span itemprop="name">elis.byberi</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/elis.byberi'>
+                (Elis Byberi)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-11-09T21:17:36Z' class='post-time'>
+                    November 9, 2023,  9:17pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-11-09T22:52:01Z'>
+              <span itemprop="position">21</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <p>I am already confused by calling Python ‘Multicore’. I just did a test with a simple TCP server, and I can make use of each CPU core, at least by 50%, despite the Global Interpreter Lock (GIL). My assumption has been that Python already runs on multiple CPU cores.</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="1" />
+                <span class='post-likes'>1 Like</span>
+              </div>
+
+
+            
+
+
+          </div>
+          <div id='post_22' itemprop="comment" itemscope="itemscope" itemtype="http://schema.org/Comment" class='topic-body crawler-post'>
+            <div class='crawler-post-meta'>
+              <span class="creator" itemprop="author" itemscope="itemscope" itemtype="http://schema.org/Person">
+                <a rel='nofollow' href='https://discuss.python.org/u/notatallshaw'><span itemprop="name">notatallshaw</span></a>
+                  <meta itemprop='url' content='https://discuss.python.org/u/notatallshaw'>
+                (Damian Shaw)
+              </span>
+
+
+
+              <span class="crawler-post-infos">
+                  <time itemprop="datePublished" datetime='2023-11-09T21:31:02Z' class='post-time'>
+                    November 9, 2023,  9:31pm
+                  </time>
+                  <meta itemprop='dateModified' content='2023-11-09T21:31:02Z'>
+              <span itemprop="position">22</span>
+              </span>
+            </div>
+            <div class='post' itemprop="text">
+              <aside class="quote group-committers" data-username="pitrou" data-post="17" data-topic="37075">
+<div class="title">
+<div class="quote-controls"></div>
+<img loading="lazy" alt="" width="24" height="24" src="https://sea2.discourse-cdn.com/flex016/user_avatar/discuss.python.org/pitrou/48/28_2.png" class="avatar"> Antoine Pitrou:</div>
+<blockquote>
+<p>Yes, removing the GIL is a big leap forward and will help exploit CPU parallelism in more workloads. No, it doesn’t mean that previously CPython was “monocore”. Saying so is just misrepresenting the current state of the CPython implementation.</p>
+</blockquote>
+</aside>
+<p>Isn’t any non-dry term, i.e. something with branding appeal, for GIL removal going to be some level of technically inaccurate?</p>
+<p>And I would push back on the idea that CPython can’t be associated with being “monocore”. In my experience as of Python 3.12, without spawning subprocces, any pure Python code will almost certainly perform no worse, if not in fact better, if you reserve and pin it to a single core on your CPU.</p>
+<p>Maybe I’m missing some obvious example where this isn’t the case though.</p>
+            </div>
+
+              <div itemprop="interactionStatistic" itemscope="itemscope" itemtype="http://schema.org/InteractionCounter">
+                  <meta itemprop="interactionType" content="http://schema.org/LikeAction"/>
+                  <meta itemprop="userInteractionCount" content="0" />
+                <span class='post-likes'></span>
+              </div>
+
+
+            
+
+
+          </div>
+
+    </div>
+
+      <div role='navigation' itemscope itemtype='http://schema.org/SiteNavigationElement' class="topic-body crawler-post">
+            <span itemprop='name'><b><a rel="next" itemprop="url" href="/t/pep-703-making-the-global-interpreter-lock-optional-in-cpython-acceptance/37075?page=2">next page →</a></b></span>
+      </div>
+
+    
+
+
+
+
+    </div>
+    <footer class="container wrap">
+  <nav class='crawler-nav'>
+    <ul>
+      <li itemscope itemtype='http://schema.org/SiteNavigationElement'>
+        <span itemprop='name'>
+          <a href='/' itemprop="url">Home </a>
+        </span>
+      </li>
+      <li itemscope itemtype='http://schema.org/SiteNavigationElement'>
+        <span itemprop='name'>
+          <a href='/categories' itemprop="url">Categories </a>
+        </span>
+      </li>
+      <li itemscope itemtype='http://schema.org/SiteNavigationElement'>
+        <span itemprop='name'>
+          <a href='/guidelines' itemprop="url">Guidelines </a>
+        </span>
+      </li>
+        <li itemscope itemtype='http://schema.org/SiteNavigationElement'>
+          <span itemprop='name'>
+            <a href='/tos' itemprop="url">Terms of Service </a>
+          </span>
+        </li>
+        <li itemscope itemtype='http://schema.org/SiteNavigationElement'>
+          <span itemprop='name'>
+            <a href='/privacy' itemprop="url">Privacy Policy </a>
+          </span>
+        </li>
+    </ul>
+  </nav>
+  <p class='powered-by-link'>Powered by <a href="https://www.discourse.org">Discourse</a>, best viewed with JavaScript enabled</p>
+</footer>
+
+    
+    
+  </body>
+  
+</html>

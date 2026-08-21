@@ -27,13 +27,14 @@
       "Rinn network"
     ],
     "junk": [
-      "Science X editorial",
+      "The most comprehensive sci-tech news coverage on the web",
       "Your feedback is important to us",
-      "Get weekly and/or daily updates",
+      "Use this form if you have come across a typo",
       "E-mail newsletter",
       "Explore further",
       "This site uses cookies to assist with navigation"
-    ]
+    ],
+    "notes": "2026-08-21 round 3: five junk strings in the four original fixtures did not occur in the fixture bytes at all, so those assertions could never fire. Replaced with verified boilerplate from the same page."
   },
   "budgyapp": {
     "url": "https://budgyapp.com/anthropic-claude-writes-own-code-global-ai-pause/",
@@ -52,9 +53,10 @@
       "POPULAR",
       "Trending",
       "Leave a Reply",
-      "Related Posts",
-      "Brian is a"
-    ]
+      "Reproduction without permission is prohibited",
+      "Click to comment"
+    ],
+    "notes": "2026-08-21 round 3: five junk strings in the four original fixtures did not occur in the fixture bytes at all, so those assertions could never fire. Replaced with verified boilerplate from the same page."
   },
   "newsletter": {
     "url": "https://newsletter.theconsciouschurch.co.uk/p/anthropic-s-bombshell-claude-is-now-writing-its-own-code",
@@ -108,10 +110,835 @@
     "junk": [
       "Brian Wang is a Futurist Thought Leader",
       "Recent Posts",
-      "Leave a Comment",
+      "High Gear Moonbase Program Kicks Off",
       "2 thoughts on",
-      "Home \u00bb Artificial intelligence",
+      "Home » Artificial intelligence",
       "Next Big Future"
+    ],
+    "notes": "2026-08-21 round 3: five junk strings in the four original fixtures did not occur in the fixture bytes at all, so those assertions could never fire. Replaced with verified boilerplate from the same page."
+  },
+  "pydocs_json": {
+    "url": "https://docs.python.org/3/library/json.html",
+    "fixture": "pydocs_json.html",
+    "kind": "html",
+    "shape": "technical documentation (Sphinx): code blocks + conversion tables + sidebar TOC",
+    "title_contains": "JSON encoder and decoder",
+    "facts": [
+      "JSON (JavaScript Object Notation)",
+      "lightweight data interchange format inspired by JavaScript object literal syntax",
+      "Be cautious when parsing JSON data from untrusted sources",
+      "A malicious JSON string may cause the decoder to consume considerable CPU and memory resources",
+      "This module exposes an API familiar to users of the standard library",
+      "JSON is a subset of YAML 1.2",
+      "number (real)",
+      "int- & float-derived Enums",
+      "json.dumps([1, 2, 3, {'4': 5, '6': 7}], separators=(',', ':'))",
+      "raise TypeError(f'Cannot serialize object of {type(obj)}')",
+      "json.loads('1.1', parse_float=decimal.Decimal)",
+      "keys that are not of a basic type",
+      "circular reference will result in a",
+      "Repeated Names Within an Object",
+      "JSONDecodeError",
+      "Command-line interface",
+      "U+2028 (LINE SEPARATOR)",
+      "Deserialize fp to a Python object using the JSON-to-Python conversion table",
+      "Infinite and NaN Number Values",
+      "the default separators value"
+    ],
+    "structural_facts": [
+      {
+        "fact": "number (real)",
+        "kind": "table"
+      },
+      {
+        "fact": "int- & float-derived Enums",
+        "kind": "table"
+      },
+      {
+        "fact": "json.dumps([1, 2, 3, {'4': 5, '6': 7}], separators=(',', ':'))",
+        "kind": "code"
+      },
+      {
+        "fact": "raise TypeError(f'Cannot serialize object of {type(obj)}')",
+        "kind": "code"
+      }
+    ],
+    "junk": [
+      "Theme Auto Light Dark",
+      "Navigation index",
+      "Previous topic",
+      "Next topic",
+      "Report a bug",
+      "Improve this page",
+      "Created using Sphinx",
+      "The Python Software Foundation is a non-profit corporation",
+      "Please donate",
+      "This page is licensed under the Python Software Foundation License",
+      "Table of Contents",
+      "mailbox — Manipulate mailboxes in various formats"
+    ]
+  },
+  "github_readme": {
+    "url": "https://github.com/psf/requests",
+    "fixture": "github_readme.html",
+    "kind": "html",
+    "shape": "GitHub repo landing page: README article buried under mega-nav + file-listing table",
+    "title_contains": "requests",
+    "facts": [
+      "Requests is a simple, yet elegant, HTTP library",
+      "Requests allows you to send HTTP/1.1 requests extremely easily",
+      "no need to manually add query strings to your URLs",
+      "form-encode your PUT & POST data",
+      "pulling in around 300M downloads / week",
+      "depended upon by 4,000,000+ repositories",
+      "Requests is available on PyPI",
+      "Requests officially supports Python 3.10+",
+      "Keep-Alive & Connection Pooling",
+      "International Domains and URLs",
+      "Sessions with Cookie Persistence",
+      "Automatic honoring of .netrc",
+      "Chunked HTTP Requests",
+      "SOCKS Proxy Support",
+      "python -m pip install requests",
+      "git clone -c fetch.fsck.badTimezone=ignore https://github.com/psf/requests.git",
+      "git config --global fetch.fsck.badTimezone ignore",
+      "you may need to add the -c fetch.fsck.badTimezone=ignore flag",
+      "Cloning the repository",
+      "r.headers['content-type']"
+    ],
+    "structural_facts": [
+      {
+        "fact": "Keep-Alive & Connection Pooling",
+        "kind": "list"
+      },
+      {
+        "fact": "Automatic honoring of .netrc",
+        "kind": "list"
+      },
+      {
+        "fact": "git config --global fetch.fsck.badTimezone ignore",
+        "kind": "code"
+      },
+      {
+        "fact": "python -m pip install requests",
+        "kind": "code"
+      }
+    ],
+    "junk": [
+      "Skip to content",
+      "Navigation Menu",
+      "Appearance settings",
+      "Write better code with AI",
+      "Instant dev environments",
+      "Find and fix vulnerabilities",
+      "View all use cases",
+      "You signed in with another tab or window",
+      "Reload to refresh your session",
+      "Dismiss alert",
+      "You must be signed in to change notification settings",
+      "Enterprise-grade 24/7 support",
+      "Uh oh! There was an error while loading",
+      "Fund open source developers",
+      "Latest commit"
+    ]
+  },
+  "wikipedia_bert": {
+    "url": "https://en.wikipedia.org/wiki/BERT_(language_model)",
+    "fixture": "wikipedia_bert.html",
+    "kind": "html",
+    "shape": "Wikipedia article: infobox table, [edit] section links, refs, category footer, sidebar TOC",
+    "title_contains": "BERT",
+    "facts": [
+      "Bidirectional encoder representations from transformers",
+      "is a language model introduced in October 2018 by researchers at Google",
+      "It uses the encoder-only transformer architecture",
+      "masked token prediction and next sentence prediction",
+      "BERTology",
+      "110 million parameters",
+      "340 million parameters",
+      "Toronto BookCorpus",
+      "2,500M words",
+      "WordPiece",
+      "Its vocabulary size is 30,000",
+      "24 smaller models were released",
+      "self-supervised learning",
+      "Original author",
+      "Google AI",
+      "Apache 2.0",
+      "October 31, 2018",
+      "coreference resolution",
+      "token type embeddings, position embeddings, and segment type embeddings",
+      "sub-word strategy like byte-pair encoding"
+    ],
+    "structural_facts": [
+      {
+        "fact": "Original author",
+        "kind": "table"
+      },
+      {
+        "fact": "Apache 2.0",
+        "kind": "table"
+      }
+    ],
+    "junk": [
+      "Jump to content",
+      "move to sidebar",
+      "Toggle the table of contents",
+      "Create account",
+      "Learn to edit",
+      "Community portal",
+      "Recent changes",
+      "What links here",
+      "Permanent link",
+      "Cite this page",
+      "Get shortened URL",
+      "Download as PDF",
+      "Hidden categories",
+      "Text is available under the Creative Commons Attribution-ShareAlike",
+      "Wikipedia® is a registered trademark of the Wikimedia Foundation",
+      "Cookie statement",
+      "Mobile view"
+    ]
+  },
+  "arxiv_abs": {
+    "url": "https://arxiv.org/abs/1706.03762",
+    "fixture": "arxiv_abs.html",
+    "kind": "html",
+    "shape": "academic abstract page: metadata-heavy dl/table, huge arXivLabs toggle rail",
+    "title_contains": "Attention Is All You Need",
+    "facts": [
+      "Attention Is All You Need",
+      "Ashish Vaswani",
+      "Illia Polosukhin",
+      "Aidan N. Gomez",
+      "The dominant sequence transduction models are based on complex recurrent or convolutional neural networks",
+      "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms",
+      "dispensing with recurrence and convolutions entirely",
+      "28.4 BLEU on the WMT 2014 English-to-German translation task",
+      "41.8 after training for 3.5 days on eight GPUs",
+      "English constituency parsing",
+      "15 pages, 5 figures",
+      "Computation and Language (cs.CL)",
+      "Machine Learning (cs.LG)",
+      "arXiv:1706.03762",
+      "https://doi.org/10.48550/arXiv.1706.03762",
+      "Submitted on 12 Jun 2017",
+      "last revised 2 Aug 2023",
+      "Submission history",
+      "From: Llion Jones",
+      "Mon, 12 Jun 2017 17:57:34 UTC"
+    ],
+    "structural_facts": [
+      {
+        "fact": "15 pages, 5 figures",
+        "kind": "table"
+      },
+      {
+        "fact": "Computation and Language (cs.CL)",
+        "kind": "table"
+      },
+      {
+        "fact": "https://doi.org/10.48550/arXiv.1706.03762",
+        "kind": "link"
+      }
+    ],
+    "junk": [
+      "arXivLabs is a framework that allows collaborators",
+      "Have an idea for a project that will add value for arXiv's community",
+      "We gratefully acknowledge support from our major funders",
+      "Operational Status",
+      "Which authors of this paper are endorsers?",
+      "Disable MathJax",
+      "Bibliographic Explorer",
+      "Connected Papers Toggle",
+      "Litmaps Toggle",
+      "CatalyzeX Code Finder for Papers",
+      "Core recommender toggle",
+      "What is the Explorer?",
+      "BibTeX formatted citation",
+      "Influence Flower",
+      "ScienceCast Toggle"
+    ]
+  },
+  "hn_thread": {
+    "url": "https://news.ycombinator.com/item?id=49383326",
+    "fixture": "hn_thread.html",
+    "kind": "html",
+    "shape": "forum thread on a pure <table> layout: nested comments + vote/action chrome",
+    "title_contains": "Codex on AWS bedrock",
+    "facts": [
+      "Codex on AWS bedrock bug causing 10x charges",
+      "88 points by TheP1000",
+      "26 comments",
+      "Wow, that whole thread is borderline incoherent",
+      "presumably generated by an AI without adequate oversight",
+      "5.6 is using linear attention or LSTM or another recurrent scheme",
+      "Our codex on AWS Bedrock read / write cache ratio was less than 5%",
+      "web_search = \"disabled\"",
+      "already mentioned in the issue",
+      "Way to bury the lede",
+      "Nemotron was using hybrid with recurrence via mamba layers",
+      "burning usage like crazy lately",
+      "related to Codex wearing out SSDs",
+      "Noone opens an issue when they were billed too low",
+      "would an openrouter or similar solution caught this before",
+      "github.com/openai",
+      "https://developers.openai.com/api/docs/guides/prompt-caching",
+      "amluto",
+      "geysersam",
+      "What is the proof?",
+      "Maybe preparing for their IPO?"
+    ],
+    "structural_facts": [
+      {
+        "fact": "github.com/openai",
+        "kind": "link"
+      },
+      {
+        "fact": "https://developers.openai.com/api/docs/guides/prompt-caching",
+        "kind": "link"
+      }
+    ],
+    "junk": [
+      "new | past | comments | ask | show | jobs | submit",
+      "Guidelines | FAQ | Lists | API | Security | Legal | Apply to YC | Contact",
+      "Apply to YC",
+      "hide | past | favorite",
+      "Search:",
+      "[–]"
+    ]
+  },
+  "mdn_http_status": {
+    "url": "https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Status",
+    "fixture": "mdn_http_status.html",
+    "kind": "html",
+    "shape": "MDN reference: definition lists, mega-nav, in-page TOC, sidebar, footer",
+    "title_contains": "HTTP response status codes",
+    "facts": [
+      "HTTP response status codes indicate whether a specific HTTP request has been successfully completed",
+      "Responses are grouped in five classes",
+      "The status codes listed below are defined by RFC 9110",
+      "Informational responses (100 - 199)",
+      "Server error responses (500 - 599)",
+      "100 Continue",
+      "This interim response indicates that the client should continue the request",
+      "103 Early Hints",
+      "204 No Content",
+      "There is no content to send for this request, but the headers are useful",
+      "226 IM Used",
+      "421 Misdirected Request",
+      "425 Too Early",
+      "428 Precondition Required",
+      "451 Unavailable For Legal Reasons",
+      "such as a web page censored by a government",
+      "506 Variant Also Negotiates",
+      "508 Loop Detected",
+      "511 Network Authentication Required",
+      "Indicates that the client needs to authenticate to gain network access"
+    ],
+    "structural_facts": [
+      {
+        "fact": "Informational responses (100 - 199)",
+        "kind": "list"
+      },
+      {
+        "fact": "Server error responses (500 - 599)",
+        "kind": "list"
+      }
+    ],
+    "junk": [
+      "Skip to main content",
+      "Skip to search",
+      "MDN Plus",
+      "Mozilla careers",
+      "Advertise with us",
+      "Community Participation Guidelines",
+      "Website Privacy Notice",
+      "Telemetry Settings",
+      "Your blueprint for a better internet",
+      "Check out the video course from Scrimba, our partner",
+      "Frontend developer course",
+      "Hacks blog",
+      "MDN on GitHub",
+      "Help improve MDN",
+      "Report a problem with this content"
+    ]
+  },
+  "do_pricing": {
+    "url": "https://www.digitalocean.com/pricing/droplets",
+    "fixture": "do_pricing.html",
+    "kind": "html",
+    "shape": "marketing pricing page: real <table> price grids + mega-nav + mega-footer + FAQ",
+    "title_contains": "Droplet Pricing",
+    "facts": [
+      "Simple, predictable pricing for virtual machines",
+      "Stay on budget with monthly caps and flat pricing",
+      "Basic Droplets have the most efficient CPU usage at a lower cost",
+      "CPU-Optimized Droplets provide a 2:1 ratio of memory to CPU",
+      "Memory-optimized Droplets provide 8 GiB RAM for each vCPU",
+      "Storage-Optimized Droplets use NVMe",
+      "Effective January 1, 2026",
+      "per-second billing",
+      "512 MiB",
+      "$0.00595",
+      "$0.14286",
+      "$1.55952",
+      "4,690 GiB",
+      "Droplet Snapshots",
+      "$0.06/GB per month",
+      "A DigitalOcean Droplet is a Linux-based virtual machine",
+      "Infrastructure-as-a-Service (IaaS)",
+      "starting from 500 GiB/month",
+      "1-Click Apps for LAMP, Docker, WordPress",
+      "high-performance Solid State Drives (SSDs)"
+    ],
+    "structural_facts": [
+      {
+        "fact": "$0.00595",
+        "kind": "table"
+      },
+      {
+        "fact": "$1.55952",
+        "kind": "table"
+      },
+      {
+        "fact": "4,690 GiB",
+        "kind": "table"
+      }
+    ],
+    "junk": [
+      "Browse all products",
+      "See all solutions",
+      "Become a Partner",
+      "Report Abuse",
+      "System Status",
+      "Share your ideas",
+      "Write for DOnations",
+      "Shop Swag",
+      "Newsletter Signup",
+      "Investor Relations",
+      "Sitemap",
+      "Contact Sales",
+      "Referral Program",
+      "Affiliate Program",
+      "View all Solutions"
+    ]
+  },
+  "sqlite_datefunc": {
+    "url": "https://www.sqlite.org/lang_datefunc.html",
+    "fixture": "sqlite_datefunc.html",
+    "kind": "html",
+    "shape": "small table-heavy reference: three tables incl. the strftime() substitution grid",
+    "title_contains": "Date And Time Functions",
+    "facts": [
+      "SQLite supports seven scalar date and time functions",
+      "SQLite does not have a dedicated date/time datatype",
+      "Julian day number",
+      "The number of days including fractional days since",
+      "Unix timestamp",
+      "day of year: 001-366",
+      "day of month without leading zero: 1-31",
+      "ISO 8601 year corresponding to %V",
+      "CAST(strftime('%J', ...) as REAL)",
+      "2460825.09444444",
+      "every day is exactly 86400 seconds in duration",
+      "no leap seconds are incorporated",
+      "1721059.5 through 5373484.5",
+      "Non-Vista Windows platforms only support one set of DST rules",
+      "All internal computations assume the Gregorian calendar system",
+      "2025-05-29 14:16:00",
+      "Caveats And Bugs",
+      "fractional seconds: SS.SSS",
+      "hour for 12-hour clock: 01-12",
+      "Julian day number (fractional)"
+    ],
+    "structural_facts": [
+      {
+        "fact": "day of year: 001-366",
+        "kind": "table"
+      },
+      {
+        "fact": "CAST(strftime('%J', ...) as REAL)",
+        "kind": "table"
+      },
+      {
+        "fact": "ISO 8601 year corresponding to %V",
+        "kind": "table"
+      }
+    ],
+    "junk": [
+      "Small. Fast. Reliable.",
+      "Choose any three.",
+      "Table Of Contents",
+      "Documentation Search",
+      "This page was last updated on"
+    ]
+  },
+  "ja_wikipedia": {
+    "url": "https://ja.wikipedia.org/wiki/%E6%B7%B1%E5%B1%A4%E5%AD%A6%E7%BF%92",
+    "fixture": "ja_wikipedia.html",
+    "kind": "html",
+    "shape": "non-English (Japanese) Wikipedia article: CJK text, no word spaces, heavy Unicode",
+    "title_contains": "ディープラーニング",
+    "facts": [
+      "ディープラーニング",
+      "（しんそうがくしゅう）",
+      "ジェフリー・ヒントン",
+      "オートエンコーダ",
+      "バックプロパゲーション",
+      "勾配消失",
+      "ブラックボックス",
+      "畳み込みニューラルネットワーク",
+      "敵対的生成ネットワーク",
+      "ボルツマンマシン",
+      "ネオコグニトロン",
+      "LeNet-5",
+      "Transformer",
+      "MLP-mixer",
+      "拡散モデル",
+      "大規模言語モデル",
+      "回帰型ニューラルネットワーク",
+      "過学習",
+      "Residual network",
+      "パターン認識"
+    ],
+    "structural_facts": [],
+    "junk": [
+      "コンテンツにスキップ",
+      "メインメニュー",
+      "サイドバーに移動",
+      "アカウント作成",
+      "おまかせ表示",
+      "ウィキペディアに関するお問い合わせ",
+      "プライバシー・ポリシー",
+      "免責事項",
+      "モバイルビュー",
+      "Cookieに関する声明",
+      "話題を追加",
+      "隠しカテゴリ",
+      "最終更新",
+      "特別ページ"
+    ]
+  },
+  "spa_shell": {
+    "url": "https://excalidraw.com/",
+    "fixture": "spa_shell.html",
+    "kind": "spa",
+    "shape": "JS-only SPA shell: a <noscript> line and nothing else — the unrenderable detector must fire",
+    "title_contains": "Excalidraw",
+    "expect": "unrenderable",
+    "expect_error_class": "js_required",
+    "facts": [],
+    "structural_facts": [],
+    "junk": [
+      "You need to enable JavaScript to run this app"
+    ]
+  },
+  "arxiv_paper_pdf": {
+    "url": "https://arxiv.org/pdf/1409.0473v1",
+    "fixture": "arxiv_paper.pdf",
+    "kind": "pdf",
+    "shape": "15-page academic PDF: two-column-free LaTeX, a results table, references",
+    "title_contains": "",
+    "facts": [
+      "Neural Machine Translation",
+      "by Jointly Learning to Align and Translate",
+      "Dzmitry Bahdanau",
+      "KyungHyun Cho",
+      "Jacobs University, Germany",
+      "CIFAR Senior Fellow",
+      "Neural machine translation is a recently proposed approach to machine transla",
+      "bottleneck in improving the performance",
+      "English-to-French translation",
+      "RNNsearch-50",
+      "RNNenc-30",
+      "30,000 most frequent words",
+      "1000 hidden units",
+      "Adadelta",
+      "approximately 5 days",
+      "beam search",
+      "Learning statistics and relevant information",
+      "Quadro K-6000",
+      "TITAN BLACK",
+      "the size of a hidden layer"
+    ],
+    "structural_facts": [
+      {
+        "fact": "Quadro K-6000",
+        "kind": "table"
+      },
+      {
+        "fact": "TITAN BLACK",
+        "kind": "table"
+      }
+    ],
+    "junk": [],
+    "notes": "Two extra probes live in test_fetch_url_adv_extraction.py, not in `facts`, because they are known extraction defects and would permanently depress recall: 'Yoshua Bengio' (pypdf emits 'Y oshua Bengio') and 'fixed-length vector' (pypdf emits the U+FB01 ligature 'ﬁxed-length')."
+  },
+  "bbc_tech_hub": {
+    "url": "https://www.bbc.com/technology",
+    "fixture": "bbc_tech_hub.html",
+    "kind": "html",
+    "shape": "news HUB/index page: ~60 headline cards, visually-duplicated timestamps, mega-footer",
+    "title_contains": "Technology",
+    "facts": [
+      "How landscape gardening is being electrified",
+      "The switch to quieter electric equipment is not going as fast as some would like",
+      "Robots are asking for tips",
+      "Short-form video-sharing app Divine opens to public",
+      "OpenAI slows down training after its AI carried out hack",
+      "The secret codewords that scammers hate",
+      "Deepfake scams might use your voice",
+      "hidden fix for motion sickness",
+      "Is tech ruining the World Cup?",
+      "New Yorkers weigh in on social media",
+      "designed its platforms to be addictive to young people",
+      "The million-dollar global spectacle of Esports World Cup",
+      "How AI-powered drones are transforming warfare",
+      "The ambitious mission preparing for human life underwater",
+      "The insect farm raising millions of flies beneath London",
+      "On the hunt for fatbergs beneath our streets",
+      "Apple at 50: Devices that defined a generation",
+      "The video game bringing medieval Europe back to life",
+      "The tactile tech giving deaf runners a fair start",
+      "These futuristic screens help you navigate Tokyo"
+    ],
+    "structural_facts": [
+      {
+        "fact": "OpenAI slows down training after its AI carried out hack",
+        "kind": "link"
+      },
+      {
+        "fact": "The secret codewords that scammers hate",
+        "kind": "link"
+      },
+      {
+        "fact": "Is tech ruining the World Cup?",
+        "kind": "link"
+      }
+    ],
+    "junk": [
+      "Skip to content",
+      "British Broadcasting Corporation",
+      "Site search",
+      "BBC in other languages",
+      "BBC News Brasil",
+      "BBC News Mundo (Spanish)",
+      "Do not share or sell my info",
+      "Advertise with us",
+      "Subscription Terms",
+      "Accessibility Help",
+      "Copyright 2026 BBC. All rights reserved",
+      "The BBC is not responsible for the content of external sites",
+      "Read about our approach to external linking",
+      "Help & FAQs",
+      "BritBox",
+      "BBC Shop",
+      "Set Preferred Source"
+    ],
+    "notes": "BBC's 'Explore More' rail is client-hydrated: ~40 of the ~60 headline cards carry NO <a href> in the server HTML (data-indexcard div + tabindex, click handler in JS). Those headlines are therefore gold facts but NOT gold link facts - the URL is not present in the raw bytes to recover."
+  },
+  "techstartups": {
+    "url": "https://techstartups.com/2026/08/20/top-tech-news-today-august-20-2026/",
+    "fixture": "techstartups.html",
+    "kind": "html",
+    "shape": "WordPress article with ad rails, HTML build comments, Trending/Read-Next rail, share chrome",
+    "title_contains": "Top Tech News Today",
+    "facts": [
+      "the past 24 hours just rewrote the map of global tech power",
+      "Google Strikes $12.2 Billion Marvell Deal to Expand Its Custom AI Chip Push",
+      "warrants to purchase nearly 59 million Marvell shares at $206.58 each",
+      "tensor processing units, or TPUs",
+      "Stripe Acquires AI Token Routing Startup OpenRouter for $7.5 Billion",
+      "OpenAI Pauses Major AI Training Run After Experimental Models Breach Security Boundaries",
+      "Amazon Is Expanding Prime Air Drone Delivery to Nearly 500 U.S. Cities and Towns",
+      "U.S. Warns Hackers Are Targeting Siemens Controllers",
+      "Bitcoin Miner Ionic Digital Says AI Infrastructure Now Generates 90% of Its Revenue",
+      "Former Nvidia AI Research Chief Sanja Fidler Launches Veeda AI",
+      "Munich Re Buys Cybersecurity Startup At-Bay for $575 Million",
+      "roughly $278 million in gross written premiums",
+      "about 5% of the U.S. cyber-insurance market",
+      "expected to close in the first quarter of 2027",
+      "Why It Matters",
+      "Source: Reuters",
+      "Nickie Louise",
+      "TDK Launches Edge AI Sensor",
+      "X Square Robot Brings Foundation-Model AI Into Real-World Logistics",
+      "Commerce AI Startup Queen One Raises $25 Million"
+    ],
+    "structural_facts": [],
+    "junk": [
+      "Begin each blog post",
+      "End each blog post",
+      "Begin mobile menu",
+      "End side menu sidebar",
+      "Begin template wrapper",
+      "336x280Ad",
+      "theme-junkie-custom-css",
+      "All in One SEO",
+      "Trending Now",
+      "Read Next",
+      "MIT spinoff Apollo Atomics raises $31M",
+      "Top Tech News Today, August 13, 2026",
+      "- Advertisement -",
+      "No Comment",
+      "Press enter/return to begin your search",
+      "Copyright TechStartups.com 2024",
+      "Submit Your Startup",
+      "Free Startup Valuation Calculator",
+      "Share On Facebook",
+      "Tweet It"
+    ]
+  },
+  "discourse_thread": {
+    "url": "https://discuss.python.org/t/pep-703-making-the-global-interpreter-lock-optional-in-cpython-acceptance/37075",
+    "fixture": "discourse_thread.html",
+    "kind": "html",
+    "shape": "Discourse forum thread: server-rendered OP + 21 replies under [itemprop=comment], suggested-topics rail, site footer",
+    "title_contains": "PEP 703",
+    "facts": [
+      "Posted for the whole Steering Council",
+      "the Steering Council has decided to accept PEP 703",
+      "a no-GIL (or free-threaded) Python would be of great benefit",
+      "The GIL clearly inhibits CPython in this",
+      "package ecosystem is one of Python",
+      "Phase I: Experimental phase",
+      "Phase II: Supported-but-not-default phase",
+      "Phase III: Default phase",
+      "the free-threaded build is enabled through a build-time option",
+      "This should not be the default install anywhere",
+      "mimalloc",
+      "announced before",
+      "performance penalty of 10-15%",
+      "Thomas Wouters",
+      "Antoine Pitrou",
+      "Damian Shaw",
+      "misrepresenting the current state of the CPython implementation",
+      "I just did a test with a simple TCP server",
+      "Do you have a more specific timeline than",
+      "Core Development",
+      "October 24, 2023"
+    ],
+    "structural_facts": [
+      {
+        "fact": "mimalloc",
+        "kind": "link"
+      },
+      {
+        "fact": "announced before",
+        "kind": "link"
+      }
+    ],
+    "junk": [
+      "Powered by Discourse",
+      "best viewed with JavaScript enabled",
+      "Terms of Service",
+      "Home Categories Guidelines",
+      "next page",
+      "Free-Threading Trove Classifier?",
+      "Is it time to promote",
+      "PEP 803: Stable ABI for Free-Threaded Builds",
+      "How to get an extension module working w/"
+    ]
+  },
+  "github_issue": {
+    "url": "https://github.com/psf/requests/issues/2690",
+    "fixture": "github_issue.html",
+    "kind": "html",
+    "shape": "GitHub issue page: issue body under the same mega-nav as github_readme, plus a metadata sidebar",
+    "title_contains": "Broken commit",
+    "facts": [
+      "Broken commit 5e6ecdad9f69b1ff789a17733b8edc6fd7091bd8",
+      "anatolyborodin",
+      "opened on Jul 24, 2015",
+      "thinks this commit is broken",
+      "invalid author/committer line - bad time zone",
+      "tree 0d1971c86d047f9530aee85a50b8fc1ca12723ba",
+      "parent 9471b0ab889a4684f87952cb951f7f4dc3f59dda",
+      "Shrikant Sharat Kandula",
+      "1313584730 +051800",
+      "Would it be possible to repair the history?",
+      "#2690"
+    ],
+    "structural_facts": [],
+    "junk": [
+      "Skip to content",
+      "Navigation Menu",
+      "Write better code with AI",
+      "Instant dev environments",
+      "Find and fix vulnerabilities",
+      "You signed in with another tab or window",
+      "Reload to refresh your session",
+      "Dismiss alert",
+      "Enterprise-grade 24/7 support",
+      "Uh oh! There was an error while loading",
+      "You must be signed in to change notification settings",
+      "Fund open source developers",
+      "Open in GitHub Copilot app",
+      "Footer navigation",
+      "Reactions are currently unavailable"
+    ],
+    "notes": "GitHub's issue UI is client-hydrated: the server HTML carries the issue BODY only. The replies on this issue are NOT in the raw bytes, so they are not gold facts - same category as the BBC Explore-More cards. What this fixture tests is the shape: a discussion page whose real content is a few hundred chars buried under ~2,000 chars of mega-nav."
+  },
+  "supabase_pricing": {
+    "url": "https://supabase.com/pricing",
+    "fixture": "supabase_pricing.html",
+    "kind": "html",
+    "shape": "pricing page with real compute <table>s and a mega-footer, styled with semantically-empty Tailwind utility classes (no keyword a blacklist can key on)",
+    "title_contains": "Pricing",
+    "facts": [
+      "Predictable pricing, designed to scale",
+      "Start building for free, collaborate with your team",
+      "50,000 monthly active users",
+      "500 MB database size",
+      "Free projects are paused after 1 week of inactivity",
+      "Everything in the Free Plan, plus",
+      "100,000 monthly active users",
+      "$0.00325 per MAU",
+      "Daily backups stored for 7 days",
+      "SOC2 & ISO 27001",
+      "HIPAA available as paid add-on",
+      "2-core ARM",
+      "16-core ARM",
+      "$1,870",
+      "Connections: Pooler",
+      "Add Log Drains",
+      "7-day log retention",
+      "First project included",
+      "Limit of 2 active projects",
+      "First instance is free on paid plans"
+    ],
+    "structural_facts": [
+      {
+        "fact": "$1,870",
+        "kind": "table"
+      },
+      {
+        "fact": "16-core ARM",
+        "kind": "table"
+      },
+      {
+        "fact": "Connections: Pooler",
+        "kind": "table"
+      }
+    ],
+    "junk": [
+      "Skip to content",
+      "Open main menu",
+      "Request a demo",
+      "Become a Partner",
+      "Brand Assets",
+      "Humans.txt",
+      "Lawyers.txt",
+      "Security.txt",
+      "SupaSquad",
+      "Launch Week",
+      "Switch from Firebase",
+      "Privacy Settings",
+      "Acceptable Use Policy",
+      "Get product updates and news from Supabase",
+      "Build in a weekend, scale to millions",
+      "Copy as Markdown"
     ]
   }
 }

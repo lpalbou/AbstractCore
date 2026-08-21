@@ -78,8 +78,46 @@ def _extract_json_object(text: str) -> Optional[dict[str, Any]]:
     return None
 
 
+# Typographic ligatures a PDF text layer emits as single code points. They read
+# identically to a human and are INVISIBLE to search: a reader looking for
+# "fixed-length vector" finds nothing in a paper that spells it "ﬁxed-length
+# vector", and so does an LLM asked to quote the passage. Decomposing them is
+# lossless — the glyphs mean exactly the ASCII letters they are made of.
+_PDF_LIGATURES = {
+    "ﬀ": "ff",
+    "ﬁ": "fi",
+    "ﬂ": "fl",
+    "ﬃ": "ffi",
+    "ﬄ": "ffl",
+    "ﬅ": "st",
+    "ﬆ": "st",
+    "Ĳ": "IJ",
+    "ĳ": "ij",
+    "Œ": "OE",
+    "œ": "oe",
+    "Æ": "AE",
+    "æ": "ae",
+    # Soft hyphen: a rendering hint, never part of the word.
+    "­": "",
+    # Zero-width joiners PDF producers sprinkle between glyph runs.
+    "​": "",
+    "‌": "",
+    "‍": "",
+    "﻿": "",
+}
+_PDF_LIGATURE_RE = re.compile("|".join(map(re.escape, _PDF_LIGATURES)))
+
+
+def _fold_pdf_ligatures(text: str) -> str:
+    """Expand typographic ligatures so extracted PDF text stays searchable."""
+    if not text:
+        return ""
+    return _PDF_LIGATURE_RE.sub(lambda m: _PDF_LIGATURES[m.group(0)], str(text))
+
+
 def _normalize_text(text: str) -> str:
-    lines = [line.rstrip() for line in str(text or "").replace("\r\n", "\n").replace("\r", "\n").split("\n")]
+    folded = _fold_pdf_ligatures(str(text or ""))
+    lines = [line.rstrip() for line in folded.replace("\r\n", "\n").replace("\r", "\n").split("\n")]
     while lines and not lines[0].strip():
         lines.pop(0)
     while lines and not lines[-1].strip():
@@ -159,9 +197,52 @@ def _local_backend_candidates(requested_backend: str) -> list[str]:
         return ["pymupdf4llm", "pymupdf", "pypdf"]
     if requested == "pymupdf":
         return ["pymupdf", "pypdf"]
-    if requested == "native_llm":
-        return ["pymupdf", "pypdf"]
-    return ["pymupdf", "pypdf"]
+    # "auto" (and the native_llm text fallback) stay on the PERMISSIVELY LICENSED
+    # backend. PyMuPDF, pymupdf4llm and pymupdf-layout are AGPL-3.0/commercial;
+    # only `pypdf` (BSD-3-Clause) ships in the default install profiles, and
+    # docs/backlog/completed/0805 deliberately keeps it that way. An earlier
+    # revision of this line promoted pymupdf4llm here because it recovers tables
+    # — measured on tests/tools/fetch_url_fixtures/arxiv_paper.pdf:
+    #     pypdf        49,049 chars, 15 page anchors,  0 table rows
+    #     pymupdf      49,096 chars, 15 page anchors,  0 table rows
+    #     pymupdf4llm  52,470 chars, 15 page anchors, 27 table rows
+    # Note pymupdf buys nothing over pypdf on text, so `auto` has no reason to
+    # reach for an AGPL backend on its own. Table recovery remains available,
+    # but only as an EXPLICIT choice: preferred_backend="pymupdf4llm".
+    return ["pypdf", "pymupdf"]
+
+
+def _pymupdf4llm_pages_to_markdown(path: Path) -> Optional[str]:
+    """Per-page markdown from pymupdf4llm, with `# Page N` anchors.
+
+    `to_markdown()` returns one undivided blob, which loses the page boundaries
+    the pypdf/pymupdf paths emit — and a model asked "what does page 12 say"
+    then has nothing to cite. `page_chunks=True` gives one entry per page, so
+    the structure-preserving backend can keep BOTH the tables and the anchors.
+    Returns None if the chunked call is unavailable, so the caller falls back to
+    the ordinary processor path.
+    """
+    try:
+        import pymupdf4llm  # type: ignore
+
+        chunks = pymupdf4llm.to_markdown(str(path), page_chunks=True)
+    except Exception:
+        return None
+    if not isinstance(chunks, list) or not chunks:
+        return None
+    sections: list[str] = []
+    for index, chunk in enumerate(chunks):
+        if isinstance(chunk, dict):
+            body = str(chunk.get("text") or "").strip()
+        else:
+            body = str(chunk or "").strip()
+        page_no = index + 1
+        if isinstance(chunk, dict):
+            meta = chunk.get("metadata")
+            if isinstance(meta, dict) and isinstance(meta.get("page"), int):
+                page_no = int(meta["page"])
+        sections.append(f"# Page {page_no}\n\n{body}".rstrip())
+    return "\n\n".join(sections).strip() or None
 
 
 def _extract_local_pdf_bytes(
@@ -176,6 +257,14 @@ def _extract_local_pdf_bytes(
         with tempfile.NamedTemporaryFile(prefix="abstractcore_pdf_route_", suffix=suffix, delete=False) as tmp:
             tmp.write(pdf_bytes)
             temp_path = Path(tmp.name)
+
+        if backend == "pymupdf4llm":
+            paged = _pymupdf4llm_pages_to_markdown(temp_path)
+            if paged:
+                content = _normalize_text(paged)
+                if not include_full_content and content:
+                    content = preview_text(content, max_chars=4_800)
+                return {"backend": backend, "content": content, "metadata": {}}
 
         processor = PDFProcessor(
             pdf_backend=backend,
@@ -533,9 +622,17 @@ def route_pdf_bytes(
         lines.append("🔎 Key Facts:")
         lines.extend([f"  • {preview_text(item, max_chars=240)}" for item in key_facts[:8]])
     if raw_text:
-        lines.append("📄 Extracted Text:" if include_full_content else "📄 Extracted Text Preview:")
-        lines.append(raw_text if include_full_content else preview_text(raw_text, max_chars=2_400))
+        # ALWAYS a bounded preview: this string is the human/LLM-facing HEADER,
+        # and the untruncated text ships under `normalized_text` (which the
+        # caller surfaces as `content`). Inlining the whole document here meant
+        # a 15-page paper was paid for twice in one result.
+        lines.append("📄 Extracted Text Preview:")
+        lines.append(preview_text(raw_text, max_chars=2_400))
         lines.append(f"📊 Extracted text length: {len(raw_text):,} characters")
+        if len(raw_text) > 2_400:
+            lines.append(
+                "↪ Full extracted text (untruncated) is in this result's `content` field — not repeated here."
+            )
     if warnings:
         lines.append("⚠️  Notes:")
         lines.extend([f"  • {preview_text(item, max_chars=240)}" for item in warnings[:8]])

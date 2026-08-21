@@ -226,6 +226,12 @@ def _parse_viewport(viewport: Any) -> Any:
 # parent can enforce the wall-clock guarantee with a process-group kill.
 # --------------------------------------------------------------------------
 
+# The rendered DOM crosses a subprocess pipe as JSON, so it is bounded. Chosen
+# well above any real article (the largest fixture in the corpus is 668 KB of
+# raw HTML) and well below a size that would stall the pipe.
+_MAX_CAPTURED_HTML_CHARS = 4_000_000
+
+
 def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Execute the probe per config; returns a JSON-serializable result.
 
@@ -264,6 +270,7 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "title": None,
         "visible_text_len": None,
         "text_excerpt": None,
+        "html": None,  # rendered DOM, only when cfg["capture_html"] is set
         "visual_elements": None,
         "frame_count": None,  # >1 ⇒ iframes present (nonblank sees TOP frame only)
         "screenshot": None,
@@ -285,6 +292,50 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
         },
     }
 
+    def _guarded_route(route: Any, request: Any) -> None:
+        """Abort any request whose destination the SSRF guard refuses.
+
+        Screening only the URL we were handed is not enough: the page can
+        navigate itself (`location.href`, `<meta http-equiv=refresh>`, a form
+        post) and every hop after the first would be unscreened. This runs on
+        the DOCUMENT navigations and on every subresource, so the render path
+        enforces exactly what the static path enforces.
+        """
+        target = ""
+        try:
+            target = str(request.url or "")
+            verdict = _guard_cached(target)
+            if verdict is not None:
+                _blocked_by_guard.append(f"{target[:200]} ({verdict})")
+                route.abort()
+                return
+            route.continue_()
+        except Exception:
+            try:
+                route.abort()
+            except Exception:
+                pass
+
+    _guard_cache: Dict[str, Optional[str]] = {}
+    _blocked_by_guard: List[str] = []
+
+    def _guard_cached(target: str) -> Optional[str]:
+        """Cached SSRF verdict for a URL: reason string, or None if allowed."""
+        key = target.split("#", 1)[0]
+        if key in _guard_cache:
+            return _guard_cache[key]
+        verdict: Optional[str] = None
+        try:
+            from .fetch_url_ssrf import fetch_url_guard_destination
+
+            blocked = fetch_url_guard_destination(key)
+            if blocked is not None:
+                verdict = str(blocked.get("error") or "non-public destination")
+        except Exception as exc:
+            verdict = f"could not screen destination: {type(exc).__name__}"
+        _guard_cache[key] = verdict
+        return verdict
+
     with sync_playwright() as pw:
         try:
             browser = pw.chromium.launch(headless=True)
@@ -297,6 +348,11 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
         deadline = time.monotonic() + timeout_s
         try:
             context = browser.new_context(viewport=cfg["viewport"])
+            if cfg.get("guard_destinations"):
+                try:
+                    context.route("**/*", _guarded_route)
+                except Exception:
+                    return {"error": {"kind": "guard_install_failed", "message": "SSRF route guard could not be installed"}}
             page = context.new_page()
 
             console_errors: List[str] = result["console_errors"]
@@ -471,6 +527,23 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 result["text_excerpt"] = excerpt
             except Exception:
                 pass
+            # RENDERED DOM CAPTURE. `fetch_url` escalates here when its static
+            # fetch produced no usable text — a client-rendered page. It needs
+            # the DOM AFTER scripts have run so it can put it through exactly
+            # the same extraction pipeline as ordinary HTML; without this the
+            # probe can only report that something rendered, not what.
+            if cfg.get("guard_destinations"):
+                result["guard_blocked"] = list(_blocked_by_guard[:20])
+            if cfg.get("capture_html"):
+                try:
+                    html = page.content()
+                    if isinstance(html, str) and len(html) <= _MAX_CAPTURED_HTML_CHARS:
+                        result["html"] = html
+                    elif isinstance(html, str):
+                        result["html"] = html[:_MAX_CAPTURED_HTML_CHARS]
+                        result["html_truncated"] = True
+                except Exception as e:
+                    result["html_error"] = f"{type(e).__name__}: {str(e)[:200]}"
             try:
                 result["visual_elements"] = page.evaluate(
                     "() => document.querySelectorAll('canvas, svg, img, video, embed, object').length"
@@ -572,6 +645,167 @@ def _spawn_probe(cfg: Dict[str, Any], hard_budget_s: float) -> Dict[str, Any]:
         return json.loads(stdout or "")
     except Exception:
         return {"error": {"kind": "probe_crashed", "message": f"worker returned non-JSON output: {(stdout or '')[:200]!r}; stderr: {(stderr or '')[-300:]}"}}
+
+
+# --------------------------------------------------------------------------
+# Rendered-DOM capture for fetch_url (client-side-rendered pages)
+# --------------------------------------------------------------------------
+
+# Escalation budget. Deliberately short: this runs ONLY after a static fetch
+# already failed, so it is a second attempt on a page we know is awkward, not a
+# cost every fetch pays. The parent adds its own launch grace on top.
+RENDER_DEFAULT_TIMEOUT_S = 20.0
+_RENDER_LAUNCH_GRACE_S = 15.0
+
+
+def render_url_html(url: str, *, timeout_s: float = RENDER_DEFAULT_TIMEOUT_S) -> Dict[str, Any]:
+    """Return the DOM of `url` AFTER its JavaScript has run.
+
+    The answer to "fetch_url came back empty on a client-rendered page". It
+    reuses `browser_probe`'s worker-subprocess machinery verbatim, so it
+    inherits the guarantees that machinery already provides and that a
+    hand-rolled Playwright call would not:
+
+      * NEVER HANGS — one hard wall-clock budget enforced by the PARENT, with a
+        process-TREE kill. A page whose main thread is wedged in an infinite JS
+        loop cannot be stopped from inside (Playwright's `evaluate` has no
+        timeout parameter), so the bound has to live outside the process.
+      * NEVER LEAKS A BROWSER — chrome-headless-shell escapes the worker's
+        process group via setsid(), so the kill walks the whole tree.
+      * DEGRADES WITH A HINT — a missing package or a missing browser binary
+        returns an actionable install message, never a traceback.
+
+    Returns {"ok": True, "html": str, "final_url": str, "status": int|None,
+    "title": str, "elapsed_s": float} or {"ok": False, "error_class": str,
+    "message": str, "hint": str}. NEVER raises.
+
+    SECURITY: rendering EXECUTES the page's JavaScript, and page JS can issue
+    requests anywhere. Callers must screen the destination themselves (fetch_url
+    runs its SSRF guard on the URL before escalating) and must never render a
+    non-public destination.
+    """
+    target = str(url or "").strip()
+    if not target:
+        return {"ok": False, "error_class": "render_bad_target", "message": "no url", "hint": ""}
+    # SCHEME. Without this the renderer happily executes `data:` documents and
+    # READS `file://` — a local-file disclosure reachable from any caller that
+    # passes a model-supplied string.
+    scheme = urlparse(target).scheme.lower()
+    if scheme not in ("http", "https"):
+        return {
+            "ok": False,
+            "error_class": "render_bad_target",
+            "message": f"refusing to render scheme {scheme or '(none)'!r}; only http/https are renderable",
+            "hint": "",
+        }
+    if not _ensure_playwright():
+        return {
+            "ok": False,
+            "error_class": "render_unavailable",
+            "message": "playwright is not installed",
+            "hint": 'pip install "abstractcore[browser]" && python -m playwright install --only-shell chromium',
+        }
+
+    budget = max(1.0, min(float(timeout_s or RENDER_DEFAULT_TIMEOUT_S), 120.0))
+    cfg: Dict[str, Any] = {
+        "url": target,
+        "is_local": False,
+        "require_nonblank": False,
+        "expect_selector": None,
+        "expect_text": None,
+        "timeout_s": budget,
+        # `domcontentloaded` + the probe's content-signal readiness, never
+        # `networkidle`: a page with background polling or a websocket never
+        # goes idle, so networkidle is flaky by construction (see this module's
+        # docstring).
+        "wait_until": "domcontentloaded",
+        "allow_network": True,
+        "viewport": None,
+        "screenshot_dir": None,
+        "screenshot_name": None,
+        "capture_html": True,
+        # Every navigation and subresource is screened in the worker, so a page
+        # cannot redirect or script its way to a destination the static path
+        # refuses. See `_guarded_route`.
+        "guard_destinations": True,
+    }
+    started = time.monotonic()
+    res = _spawn_probe(cfg, budget + _RENDER_LAUNCH_GRACE_S)
+    elapsed = round(time.monotonic() - started, 2)
+
+    err = res.get("error") if isinstance(res, dict) else None
+    if isinstance(err, dict):
+        kind = str(err.get("kind") or "render_failed")
+        hint = ""
+        if kind == "browser_missing":
+            hint = _BROWSER_HINT if os.name != "posix" or sys.platform == "darwin" else _LINUX_HINT
+        return {
+            "ok": False,
+            "error_class": {"browser_missing": "render_unavailable", "hard_timeout": "render_timeout"}.get(
+                kind, "render_failed"
+            ),
+            "message": str(err.get("message") or kind)[:400],
+            "hint": hint,
+            "elapsed_s": elapsed,
+        }
+
+    guard_blocked = list(res.get("guard_blocked") or []) if isinstance(res, dict) else []
+    html = res.get("html") if isinstance(res, dict) else None
+    if guard_blocked and (not isinstance(html, str) or len(html.strip()) < 200):
+        # The guard aborted the navigation itself, so there is no document to
+        # extract. Say THAT, rather than "the page produced no DOM" — the two
+        # have opposite remedies.
+        return {
+            "ok": False,
+            "error_class": "render_blocked_destination",
+            "message": f"the SSRF guard refused this render: {guard_blocked[0]}",
+            "hint": "",
+            "guard_blocked": guard_blocked,
+            "elapsed_s": elapsed,
+        }
+    if not isinstance(html, str) or not html.strip():
+        return {
+            "ok": False,
+            "error_class": "render_empty",
+            "message": str(res.get("html_error") or "the rendered page produced no DOM")[:400],
+            "hint": "",
+            "elapsed_s": elapsed,
+        }
+    # WHERE IT ACTUALLY LANDED. The route guard blocks a hop to a refused
+    # destination, but the landed URL is also the thing an audit needs, and the
+    # caller was previously told only the URL it asked for.
+    landed = str(res.get("final_url") or target)
+    if landed != target:
+        from .fetch_url_ssrf import fetch_url_guard_destination
+
+        try:
+            blocked = fetch_url_guard_destination(landed)
+        except Exception:
+            blocked = {"error": "could not screen the landed destination"}
+        if blocked is not None:
+            return {
+                "ok": False,
+                "error_class": "render_blocked_destination",
+                "message": (
+                    f"the page navigated to {landed[:200]} which the SSRF guard refuses "
+                    f"({blocked.get('error') or 'non-public destination'})"
+                ),
+                "hint": "",
+                "final_url": landed,
+                "elapsed_s": elapsed,
+            }
+
+    return {
+        "ok": True,
+        "html": html,
+        "guard_blocked": list(res.get("guard_blocked") or []),
+        "html_truncated": bool(res.get("html_truncated")),
+        "final_url": landed,
+        "status": res.get("http_status"),
+        "title": str(res.get("title") or ""),
+        "visible_text_len": res.get("visible_text_len"),
+        "elapsed_s": elapsed,
+    }
 
 
 def _install_message(kind: str, detail: str = "") -> str:

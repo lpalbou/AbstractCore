@@ -9,13 +9,13 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 22
-- Proposed: 26
+- Planned: 21
+- Proposed: 27
 - Completed: 30
 - Deprecated: 3
 - Recurrent: 0
 
-(2026-08-21: MLX vision investigation added `0840`–`0842` (planned) and `0843` (proposed).
+(2026-08-21: MLX vision investigation added `0840` and `0842` (planned), `0841` and `0843` (proposed).
 Root finding: `MLXProvider` loads via `mlx_lm`, whose `qwen3_5.Model.sanitize` discards every
 `vision_tower.*` weight — so 6 of 9 local `mlx-community` checkpoints ship a vision tower that
 AbstractCore downloads, stores, and throws away at load. `0840` gives it sight by keeping mlx-lm

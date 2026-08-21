@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html><head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<link href="sqlite.css" rel="stylesheet">
+<title>Date And Time Functions</title>
+<!-- path= -->
+</head>
+<body>
+<div class=nosearch>
+<a href="index.html">
+<img class="logo" src="images/sqlite370_banner.svg" alt="SQLite" border="0">
+</a>
+<div><!-- IE hack to prevent disappearing logo --></div>
+<div class="tagline desktoponly">
+Small. Fast. Reliable.<br>Choose any three.
+</div>
+<div class="menu mainmenu">
+<ul>
+<li><a href="index.html">Home</a>
+<li class='mobileonly'><a href="javascript:void(0)" onclick='toggle_div("submenu")'>Menu</a>
+<li class='wideonly'><a href='about.html'>About</a>
+<li class='desktoponly'><a href="docs.html">Documentation</a>
+<li class='desktoponly'><a href="download.html">Download</a>
+<li class='wideonly'><a href='copyright.html'>License</a>
+<li class='desktoponly'><a href="support.html">Support</a>
+<li class='desktoponly'><a href="prosupport.html">Purchase</a>
+<li class='search' id='search_menubutton'>
+<a href="javascript:void(0)" onclick='toggle_search()'>Search</a>
+</ul>
+</div>
+<div class="menu submenu" id="submenu">
+<ul>
+<li><a href='about.html'>About</a>
+<li><a href='docs.html'>Documentation</a>
+<li><a href='download.html'>Download</a>
+<li><a href='support.html'>Support</a>
+<li><a href='prosupport.html'>Purchase</a>
+</ul>
+</div>
+<div class="searchmenu" id="searchmenu">
+<form method="GET" action="search">
+<select name="s" id="searchtype">
+<option value="d">Search Documentation</option>
+<option value="c">Search Changelog</option>
+</select>
+<input type="text" name="q" id="searchbox" value="">
+<input type="submit" value="Go">
+</form>
+</div>
+</div>
+<script>
+function toggle_div(nm) {
+var w = document.getElementById(nm);
+if( w.style.display=="block" ){
+w.style.display = "none";
+}else{
+w.style.display = "block";
+}
+}
+function toggle_search() {
+var w = document.getElementById("searchmenu");
+if( w.style.display=="block" ){
+w.style.display = "none";
+} else {
+w.style.display = "block";
+setTimeout(function(){
+document.getElementById("searchbox").focus()
+}, 30);
+}
+}
+function div_off(nm){document.getElementById(nm).style.display="none";}
+window.onbeforeunload = function(e){div_off("submenu");}
+/* Disable the Search feature if we are not operating from CGI, since */
+/* Search is accomplished using CGI and will not work without it. */
+if( !location.origin || !location.origin.match || !location.origin.match(/http/) ){
+document.getElementById("search_menubutton").style.display = "none";
+}
+/* Used by the Hide/Show button beside syntax diagrams, to toggle the */
+function hideorshow(btn,obj){
+var x = document.getElementById(obj);
+var b = document.getElementById(btn);
+if( x.style.display!='none' ){
+x.style.display = 'none';
+b.innerHTML='show';
+}else{
+x.style.display = '';
+b.innerHTML='hide';
+}
+return false;
+}
+var antiRobot = 0;
+function antiRobotGo(){
+if( antiRobot!=3 ) return;
+antiRobot = 7;
+var j = document.getElementById("mtimelink");
+if(j && j.hasAttribute("data-href")) j.href=j.getAttribute("data-href");
+}
+function antiRobotDefense(){
+document.body.onmousedown=function(){
+antiRobot |= 2;
+antiRobotGo();
+document.body.onmousedown=null;
+}
+document.body.onmousemove=function(){
+antiRobot |= 2;
+antiRobotGo();
+document.body.onmousemove=null;
+}
+setTimeout(function(){
+antiRobot |= 1;
+antiRobotGo();
+}, 100)
+antiRobotGo();
+}
+antiRobotDefense();
+</script>
+<div class=fancy>
+<div class=nosearch>
+<div class="fancy_title">
+Date And Time Functions
+</div>
+<details class="fancy_toc">
+<summary>Table Of Contents</summary>
+<div id="toc_sub"><div class="fancy-toc1"><a href="#overview">1. Overview</a></div>
+<div class="fancy-toc1"><a href="#time_values">2. Time Values</a></div>
+<div class="fancy-toc1"><a href="#modifiers">3. Modifiers</a></div>
+<div class="fancy-toc1"><a href="#examples">4. Examples</a></div>
+<div class="fancy-toc1"><a href="#caveats_and_bugs">5. Caveats And Bugs</a></div>
+</div>
+</details>
+</div>
+
+
+
+
+<h1 id="overview"><span>1. </span>Overview</h1>
+
+<p>
+SQLite supports seven <a href="lang_corefunc.html">scalar</a> date and time functions as follows:
+</p>
+
+<p>
+</p><ol>
+<li> <b>date(</b><i>time-value, modifier, modifier, ...</i><b>)</b> </li>
+<li> <b>time(</b><i>time-value, modifier, modifier, ...</i><b>)</b> </li>
+<li> <b>datetime(</b><i>time-value, modifier, modifier, ...</i><b>)</b> </li>
+<li> <b>julianday(</b><i>time-value, modifier, modifier, ...</i><b>)</b> </li>
+<li> <b>unixepoch(</b><i>time-value, modifier, modifier, ...</i><b>)</b> </li>
+<li> <b>strftime(</b><i>format, time-value, modifier, modifier, ...</i><b>)</b> </li>
+<li> <b>timediff(</b><i>time-value, time-value</i><b>)</b> </li>
+</ol>
+
+<p>
+The first six date and time functions take an optional <a href="lang_datefunc.html#tmval">time-value</a> as an argument, followed
+by zero or more <a href="lang_datefunc.html#dtmods">modifiers</a>.
+The strftime() function also takes a format string as its first argument.
+The timediff() function takes exactly two arguments which are both <a href="lang_datefunc.html#tmval">time-values</a>.
+</p>
+
+<p>
+SQLite does not have a dedicated date/time datatype.  Instead,
+date and time values can be stored as any of the following:
+
+</p><p></p><blockquote>
+<table border="0" cellspacing="0" cellpadding="0">
+<tr>
+<td><a href="http://en.wikipedia.org/wiki/ISO_8601">ISO-8601</a>
+</td><td>A text string that is one of the ISO 8601 date/time values
+shown in <a href="#tmval">items 1 through 10 below</a>.
+Example: <tt>'2025-05-29 14:16:00'</tt>
+</td></tr><tr>
+<td><a href="http://en.wikipedia.org/wiki/Julian_day">Julian&nbsp;day&nbsp;number</a>
+</td><td>The number of days including fractional days since -4713-11-24 12:00:00
+Example: <tt>2460825.09444444</tt>
+</td></tr><tr>
+<td><a href="https://en.wikipedia.org/wiki/Unix_time">Unix timestamp</a>
+</td><td>The number of seconds including fractional seconds since 1970-01-01 00:00:00
+Example: <tt>1748528160</tt>
+</td></tr></table>
+</blockquote>
+
+<p>
+These three formats are collectively known as <a href="lang_datefunc.html#tmval">time-values</a>.
+All of the date time functions accept time-values as either ISO-8601 text or
+as Julian day numbers.  They can also be made to accept unix timestamps by
+adding optional modifier arguments <a href="lang_datefunc.html#automod">'auto'</a> or
+<a href="lang_datefunc.html#jdmod">'unixepoch'</a>.
+Since the timediff() function does not accept modifiers,
+it can only use ISO-8601 and julian day number time-values.
+
+<a name="dttm"></a>
+
+</p><p>
+The <b>date()</b> function returns the date as text in this format: YYYY-MM-DD.
+
+<a name="dttm"></a>
+
+</p><p>
+The <b>time()</b> function returns the time as text in formatted as HH:MM:SS or as HH:MM:SS.SSS if
+the <a href="lang_datefunc.html#subsec">subsec modifier</a> is used.
+
+<a name="dttm"></a>
+
+</p><p>
+The <b>datetime()</b> function returns the date and time formatted as YYYY-MM-DD HH:MM:SS or
+as YYYY-MM-DD HH:MM:SS.SSS if the <a href="lang_datefunc.html#subsec">subsec modifier</a> is used.
+
+<a name="jlndy"></a>
+
+</p><p>
+The <b>julianday()</b> function returns the
+<a href="http://en.wikipedia.org/wiki/Julian_day">Julian day</a> - the
+fractional number of days since noon in Greenwich on November 24, 4714 B.C.
+(<a href="http://en.wikipedia.org/wiki/Proleptic_Gregorian_calendar">Proleptic Gregorian calendar</a>).
+
+<a name="uepch"></a>
+
+</p><p>
+The <b>unixepoch()</b> function returns a unix timestamp - the number of seconds
+since 1970-01-01 00:00:00 UTC.  The unixepoch() function normally returns
+an integer number of seconds, but with the optional <a href="lang_datefunc.html#subsec">subsec modifier</a> it
+will return a floating point number which is the fractional number of seconds.
+
+<a name="strftm"></a>
+
+</p><p>
+The <b>strftime()</b> function returns the date formatted according to
+the format string specified as the first argument.
+The format string supports the most common substitutions found in the
+<a href="https://pubs.opengroup.org/onlinepubs/9799919799/functions/strftime.html">strftime() function</a>
+from the standard C library plus two new substitutions, %f and %J.
+The following is a complete list of valid strftime() substitutions
+as of version 3.46.0 (2024-05-23).  Earlier versions of SQLite
+might not support all substitutions.  If an undefined or unsupported
+substitution is seen, the result is NULL.
+</p>
+
+<blockquote>
+<table border="0" cellpadding="0" cellspacing="0">
+<tr><td></td><td width="10"></td><td></td></tr>
+
+<tr><td> %d </td><td></td><td> day of month: 01-31
+</td></tr><tr><td> %e </td><td></td><td> day of month without leading zero: 1-31
+</td></tr><tr><td> %f </td><td></td><td> fractional seconds: SS.SSS
+</td></tr><tr><td> %F </td><td></td><td> ISO 8601 date: YYYY-MM-DD
+</td></tr><tr><td> %G </td><td></td><td> ISO 8601 year corresponding to %V
+</td></tr><tr><td> %g </td><td></td><td> 2-digit ISO 8601 year corresponding to %V
+</td></tr><tr><td> %H </td><td></td><td> hour: 00-24
+</td></tr><tr><td> %I </td><td></td><td> hour for 12-hour clock: 01-12
+</td></tr><tr><td> %j </td><td></td><td> day of year: 001-366
+</td></tr><tr><td> %J </td><td></td><td> Julian day number (fractional)
+</td></tr><tr><td> %k </td><td></td><td> hour without leading zero: 0-24
+</td></tr><tr><td> %l </td><td></td><td> %I without leading zero: 1-12
+</td></tr><tr><td> %m </td><td></td><td> month: 01-12
+</td></tr><tr><td> %M </td><td></td><td> minute: 00-59
+</td></tr><tr><td> %p </td><td></td><td> "AM" or "PM" depending on the hour
+</td></tr><tr><td> %P </td><td></td><td> "am" or "pm" depending on the hour
+</td></tr><tr><td> %R </td><td></td><td> ISO 8601 time: HH:MM
+</td></tr><tr><td> %s </td><td></td><td> seconds since 1970-01-01
+</td></tr><tr><td> %S </td><td></td><td> seconds: 00-59
+</td></tr><tr><td> %T </td><td></td><td> ISO 8601 time: HH:MM:SS
+</td></tr><tr><td> %U </td><td></td><td> week of year (00-53) - week 01 starts on the first Sunday
+</td></tr><tr><td> %u </td><td></td><td> day of week 1-7 with Monday==1
+</td></tr><tr><td> %V </td><td></td><td> ISO 8601 week of year
+</td></tr><tr><td> %w </td><td></td><td> day of week 0-6 with Sunday==0
+</td></tr><tr><td> %W </td><td></td><td> week of year (00-53) - week 01 starts on the first Monday
+</td></tr><tr><td> %Y </td><td></td><td> year: 0000-9999
+</td></tr><tr><td> %% </td><td></td><td> %
+</td></tr></table>
+</blockquote>
+
+<p>
+Other date and time functions can be expressed
+in terms of strftime():
+</p>
+
+<blockquote>
+<table border="0" cellpadding="0" cellspacing="0">
+<tr><td><b>Function</b></td><td width="30"></td><td><b>Equivalent strftime()</b>
+</td></tr><tr><td>   date(...)      </td><td></td><td>  strftime('%F', ...)
+</td></tr><tr><td>   time(...)      </td><td></td><td>  strftime('%T', ...)
+</td></tr><tr><td>   datetime(...)  </td><td></td><td>  strftime('%F %T', ...)
+</td></tr><tr><td>   julianday(...) </td><td></td><td>  <nobr>CAST(strftime('%J', ...) as REAL)</nobr>
+</td></tr><tr><td>   unixepoch(...) </td><td></td><td>  <nobr>CAST(strftime('%s', ...) as INT)</nobr>
+</td></tr></table>
+</blockquote>
+
+<p>
+The date(), time(), and datetime() functions all return text, and so their
+strftime() equivalents are exact.  However, the julianday()
+and unixepoch() functions return numeric values.  Their strftime() equivalents
+return a string that is the text representation of the corresponding number.
+</p>
+
+<p>
+The main reasons for providing functions other than strftime() are
+for convenience and for efficiency. The julianday() and unixepoch()
+functions return real and integer values respectively, and do not
+incur the format conversion costs or inexactitude resulting from use
+of the '%J' or '%s' format specifiers with the strftime() function.
+</p>
+
+<a name="tmdif"></a>
+
+<p>
+The <b>timediff(A,B)</b> function returns a string that describes the amount
+of time that must be added to B in order to reach time A.  The format of
+the timediff() result is designed to be human-readable.  The format is:
+</p><blockquote>
+(+|-)YYYY-MM-DD HH:MM:SS.SSS
+</blockquote>
+<p>
+This time difference string is also an allowed modifier for the other
+date/time functions.  The following invariant holds for time-values A
+and B:
+</p><blockquote>
+datetime(A) = datetime(B, timediff(A,B))
+</blockquote>
+
+<p>
+The length of months and years vary.  February is shorter than March.
+Leap years are longer than non-leap years.  The output from timediff()
+takes this all into account.  The timediff() function is intended to provide
+a human-friendly description of the time span.  If you want to know the
+number of days or seconds between two dates, A and B, then you can always do
+one of these:
+</p><blockquote>
+SELECT julianday(B) - julianday(A);<br>
+SELECT unixepoch(B) - unixepoch(A);
+</blockquote>
+
+<p>
+The timediff(A,B) might return the same result even for values A and B
+that span a different number of days - depending on the starting date.
+For example, both of the following two timediff() calls return the
+same result ("-0000-01-00 00:00:00.000") even though the first timespan
+is 28 days and the second is 31 days:
+</p><blockquote>
+SELECT timediff('2023-02-15','2023-03-15');<br>
+SELECT timediff('2023-03-15','2023-04-15');
+</blockquote>
+<p>
+Summary:  If you want a human-friendly time span, use timediff().  If you
+want a precise time difference (in days or seconds) use the difference
+between two julianday() or unixepoch() calls.
+</p>
+
+
+<a name="tmval"></a>
+
+<h1 id="time_values"><span>2. </span>Time Values</h1>
+
+<p>A time-value can be in any of the following formats shown below.
+The value is usually a string, though it can be an integer or floating
+point number in the case of format 12.
+
+</p><ol>
+<li> <i>YYYY-MM-DD</i>
+</li><li> <i>YYYY-MM-DD HH:MM</i>
+</li><li> <i>YYYY-MM-DD HH:MM:SS</i>
+</li><li> <i>YYYY-MM-DD HH:MM:SS.SSS</i>
+</li><li> <i>YYYY-MM-DD</i><b>T</b><i>HH:MM</i>
+</li><li> <i>YYYY-MM-DD</i><b>T</b><i>HH:MM:SS</i>
+</li><li> <i>YYYY-MM-DD</i><b>T</b><i>HH:MM:SS.SSS</i>
+</li><li> <i>HH:MM</i>
+</li><li> <i>HH:MM:SS</i>
+</li><li> <i>HH:MM:SS.SSS</i>
+</li><li> <b>now</b>
+</li><li> <i>DDDDDDDDDD</i>
+</li></ol>
+
+<p>
+In formats 5 through 7, the "T" is a literal character separating 
+the date and the time, as required by 
+<a href="http://www.w3c.org/TR/NOTE-datetime">ISO-8601</a>. 
+Formats 8 through 10 that specify only a time assume a date of 
+2000-01-01. Format 11, the string 'now', is converted into the 
+current date and time as obtained from the xCurrentTime method
+of the <a href="c3ref/vfs.html">sqlite3_vfs</a> object in use.
+The 'now' argument to date and time functions always returns exactly the
+same value for multiple invocations within the same <a href="c3ref/step.html">sqlite3_step()</a> call.
+<a href="http://en.wikipedia.org/wiki/Coordinated_Universal_Time">Universal Coordinated Time (UTC)</a> is used. 
+Format 12 is the 
+<a href="http://en.wikipedia.org/wiki/Julian_day">Julian day number</a>
+expressed as an integer or floating point value.
+Format 12 might also be interpreted as a unix timestamp if it is immediately followed
+either the <a href="lang_datefunc.html#automod">'auto'</a> or <a href="lang_datefunc.html#jdmod">'unixepoch'</a> modifier.
+</p>
+
+<p>
+Formats 2 through 10 may be optionally followed by a timezone indicator of the form
+"<i>&#91;+-&#93;HH:MM</i>" or just "<i>Z</i>".  The date and time functions use UTC or "zulu"
+time internally, and so the "Z" suffix is a no-op.  Any non-zero "HH:MM" suffix is
+subtracted from the indicated date and time in order to compute zulu time.
+For example, all of the following time-values are equivalent:
+</p>
+
+<blockquote>
+2013-10-07 08:23:19.120<br>
+2013-10-07T08:23:19.120Z<br>
+2013-10-07 04:23:19.120-04:00<br>
+2456572.84952685
+</blockquote>
+
+<p>
+In formats 4, 7, and 10, the fractional seconds value SS.SSS can have
+one or more digits following the decimal point.  Exactly three digits are
+shown in the examples because only the first three digits are significant
+to the result, but the input string can have fewer or more than three digits
+and the date/time functions will still operate correctly.
+Similarly, format 12 is shown with 10 significant digits, but the date/time
+functions will really accept as many or as few digits as are necessary to
+represent the Julian day number.
+</p>
+
+<p>
+<a href="http://www.w3c.org/TR/NOTE-datetime">ISO-8601</a> supports a wide variety of
+alternative date/time formats, but SQLite only supports the ones specifically
+enumerated above.
+
+</p><p>
+In all functions other than timediff(),
+the time-value (and all modifiers) may be omitted, in which case a time
+value of 'now' is assumed.
+
+<a name="dtmods"></a>
+
+</p><h1 id="modifiers"><span>3. </span>Modifiers</h1>
+
+<p>For all date/time functions other than timediff(),
+the time-value argument can be followed by zero or more modifiers that 
+alter date and/or time. Each modifier
+is a transformation that is applied to the time-value to its left.
+Modifiers are applied from left to right; order is important.
+The available modifiers are as follows.</p>
+
+<ol>
+<li value="1"> NNN days
+</li><li value="2"> NNN hours
+</li><li value="3"> NNN minutes
+</li><li value="4"> NNN seconds
+</li><li value="5"> NNN months
+</li><li value="6"> NNN years
+</li><li value="7"> &plusmn;HH:MM
+</li><li value="8"> &plusmn;HH:MM:SS
+</li><li value="9"> &plusmn;HH:MM:SS.SSS
+</li><li value="10"> &plusmn;YYYY-MM-DD
+</li><li value="11"> &plusmn;YYYY-MM-DD HH:MM
+</li><li value="12"> &plusmn;YYYY-MM-DD HH:MM:SS
+</li><li value="13"> &plusmn;YYYY-MM-DD HH:MM:SS.SSS
+</li><li value="14"> ceiling
+</li><li value="15"> floor
+</li><li value="16"> start of month
+</li><li value="17"> start of year
+</li><li value="18"> start of day
+</li><li value="19"> weekday N
+</li><li value="20"> unixepoch
+</li><li value="21"> julianday
+</li><li value="22"> auto
+</li><li value="23"> localtime
+</li><li value="24"> utc
+</li><li value="25"> subsec
+</li><li value="26"> subsecond
+</li></ol>
+
+<p>The first thirteen modifiers (1 through 13) 
+add the specified amount of time to the date and time 
+specified by the arguments to its left.
+The 's' character at the end of the modifier names in 1 through 6 is optional.
+The NNN value can be any floating point number, with an optional '+' or '-' prefix.
+
+<a name="tmshf"></a>
+
+</p><p>The <b>time shift modifiers</b> (7 through 13) move the time-value by the
+number of years, months, days, hours, minutes, and/or seconds specified.
+An initial "+" or "-" is required for formats 10 through 13 but is optional
+for formats 7, 8, and 9.  The changes are applied from left to right.
+First the year is shifted by YYYY, then the month by MM, and then day
+by DD, and so forth.  The
+timediff(A,B) function returns a time shift in format 13 that shifts
+the time-value B into A.</p>
+
+<a name="dtambg"></a>
+
+<p>Because the length of a month or year changes from one month or year
+to the next, ambiguities can arise when shifting a date by months and/or years.
+For example, what is the date one year after 2024-02-29?  Is it 2025-02-28 
+or 2025-03-01? Or what is the date that is two months after 2023-12-31?
+Is it 2024-02-29 or 2024-03-02?  There is no consensus on how to resolve
+this ambiguity, so the "<b>ceiling</b>" and "<b>floor</b>" modifiers
+(14 and 15) are available to
+let the programmer decide.  If the next modifier after a time shift is
+"ceiling", then any ambiguity in the date is resolved by choosing the
+later date.  The "floor" modifier resolves ambiguities
+by resolving to the last day of the previous month.  The default
+behavior is "ceiling".
+
+</p><p>The "<b>start of</b>" modifiers (16 through 18) shift the date backwards 
+to the beginning of the subject month, year or day.</p>
+
+<p>The "<b>weekday</b>" modifier advances the date forward, if necessary,
+to the next date where the weekday number is N. Sunday is 0, Monday is 1,
+and so forth.
+If the date is already on the desired weekday, the "weekday" modifier
+leaves the date unchanged.  </p>
+
+<a name="jdmod"></a>
+
+<p>The "<b>unixepoch</b>" modifier (20) only works if it immediately follows 
+a time-value in the DDDDDDDDDD format. 
+This modifier causes the DDDDDDDDDD to be interpreted not 
+as a Julian day number as it normally would be, but as
+<a href="http://en.wikipedia.org/wiki/Unix_time">Unix Time</a> - the 
+number of seconds since 1970.  If the "unixepoch" modifier does not
+follow a time-value of the form DDDDDDDDDD which expresses the number
+of seconds since 1970 or if other modifiers
+separate the "unixepoch" modifier from prior DDDDDDDDDD then the
+behavior is undefined.
+
+<a name="jdmod"></a>
+
+</p><p>The "<b>julianday</b>" modifier must immediately follow the initial
+time-value which must be of the form DDDDDDDDD.  Any other use of
+the 'julianday' modifier is an error and causes the function to return NULL.
+The 'julianday' modifier forces the time-value number to be interpreted
+as a julian-day number.  As this is the default behavior, the 'julianday'
+modifier is scarcely more than a no-op.  The only difference is that
+adding 'julianday' forces the DDDDDDDDD time-value format, and causes
+a NULL to be returned if any other time-value format is used.
+
+<a name="automod"></a>
+
+</p><p>The "<b>auto</b>" modifier must immediately follow the initial time-value.
+If the time-value is numeric (the DDDDDDDDDD format) then the 'auto'
+modifier causes the time-value to be interpreted as either a julian day
+number or a unix timestamp, depending on its magnitude.  If the value
+is between 0.0 and 5373484.499999, then it is interpreted as a julian
+day number (corresponding to dates between
+-4713-11-24 12:00:00 and 9999-12-31 23:59:59, inclusive).  For numeric
+values outside of the range of valid julian day numbers, but within 
+the range of -210866760000 to 253402300799, the 'auto' modifier causes
+the value to be interpreted as a unix timestamp.  Other numeric values
+are out of range and cause a NULL return.  The 'auto' modifier is a no-op 
+for ISO 8601 text time-values.
+The "auto" modifier is designed to work with time-values even in
+cases where it is not known which time-value format
+is stored in the database file, or in cases where the same column
+stores time-values in different formats on different rows.
+The 'auto' modifier will automatically select the
+appropriate format.  However, there is some ambiguity.  Unix
+timestamps for the first 63 days of 1970 will be interpreted as julian
+day numbers.  The 'auto' modifier is very useful when the dataset is
+guaranteed to contain no dates within that range, but should be
+avoided for applications that might make use of dates in the opening
+months of 1970.
+
+<a name="localtime"></a>
+
+</p><p>The "<b>localtime</b>" modifier assumes the time-value to its left is in
+Universal Coordinated Time (UTC) and adjusts that time
+value so that it is in localtime.  If "localtime"
+follows a time that is not UTC, then the behavior is undefined.
+The "<b>utc</b>" modifier is the opposite of "localtime".  
+"utc" assumes that the time-value
+to its left is in the local timezone and adjusts that time-value to be in UTC.
+If the time to the left is not in localtime, then the result of "utc" is
+undefined.</p>
+
+<a name="subsec"></a>
+
+<p>
+The "<b>subsecond</b>" modifier (which may be abbreviated as just
+"<b>subsec</b>") increases the resolution of the output for
+<a href="lang_datefunc.html#dttm">datetime()</a>, <a href="lang_datefunc.html#dttm">time()</a>, and <a href="lang_datefunc.html#uepch">unixepoch()</a>, and for the "%s"
+format string in <a href="lang_datefunc.html#strftm">strftime()</a>.  The "subsecond"
+modifier has no effect on other date/time functions.
+The current implemention increases the resolution from seconds
+to milliseconds, but this might increase to a higher resolution
+in future releases of SQLite.  When "subsec" is used with
+<a href="lang_datefunc.html#dttm">datetime()</a> or <a href="lang_datefunc.html#dttm">time()</a>, the seconds field at the end is
+followed by a decimal point and one or more digits to show
+fractional seconds.  When "subsec" is used with <a href="lang_datefunc.html#uepch">unixepoch()</a>,
+the result is a floating point value which is the number of
+seconds and fractional seconds since 1970-01-01.
+The "subsecond" and "subsec" modifiers have the special property
+that they can occur as the first argument to date/time functions
+(or as the first argument after the format string for strftime()).
+When this happens, the time-value that is normally in the first
+argument is understood to be "now".  For example, a short cut to
+get the current time in seconds since 1970 with millisecond
+precision is to say:
+
+</p><blockquote>
+  SELECT unixepoch('subsec');
+</blockquote>
+
+<h1 id="examples"><span>4. </span>Examples</h1>
+
+<p>Compute the current date.</p><p>
+
+</p><blockquote>SELECT date();</blockquote>
+
+<p>Compute the last day of the current month.</p>
+
+<blockquote>SELECT date('now','start of month','+1 month','-1 day');
+</blockquote>
+
+<p>Compute the date and time given a unix timestamp 1092941466.</p>
+
+<blockquote>
+    SELECT datetime(1092941466, 'unixepoch');<br>
+    SELECT datetime(1092941466, 'auto'); -- Does not work for early 1970!
+</blockquote>
+
+<p>Compute the date and time given a unix timestamp 1092941466, and 
+compensate for your local timezone.</p>
+
+<blockquote>
+  SELECT datetime(1092941466, 'unixepoch', 'localtime');
+</blockquote>
+
+<p>Compute the current unix timestamp.</p>
+
+<blockquote>
+  SELECT unixepoch();<br>
+  SELECT strftime('%s');
+</blockquote>
+
+<p>Compute the number of days since the signing of the US Declaration
+of Independence.</p>
+
+<blockquote>
+  SELECT julianday('now') - julianday('1776-07-04');
+</blockquote>
+
+<p>Compute the number of seconds since a particular moment in 2004:</p>
+
+<blockquote>
+  SELECT unixepoch() - unixepoch('2004-01-01 02:34:56');
+</blockquote>
+
+<p>
+Compute the date of the first Tuesday in October
+for the current year.
+</p>
+
+<blockquote>
+  SELECT date('now','start of year','+9 months','weekday 2');
+</blockquote>
+
+<p>Compute the time since the unix epoch in seconds with
+millisecond precision:</p>
+
+<blockquote>
+  SELECT (julianday('now') - 2440587.5)*86400.0;<br>
+  SELECT unixepoch('now','subsec');
+</blockquote>
+
+<p>Compute how old Abraham Lincoln would be if he were still alive today:</p>
+
+<blockquote>
+  SELECT timediff('now','1809-02-12');
+</blockquote>
+
+<h1 id="caveats_and_bugs"><span>5. </span>Caveats And Bugs</h1>
+
+<p>The computation of local time depends heavily on the whim 
+of politicians and is thus difficult to get correct for 
+all locales. In this implementation, the standard C library 
+function localtime_r() is used to assist in the calculation of 
+local time.  The 
+localtime_r() C function normally only works for years
+between 1970 and 2037. For dates outside this range, SQLite 
+attempts to map the year into an equivalent year within 
+this range, do the calculation, then map the year back.</p>
+
+<p>These functions only work for dates between 0000-01-01 00:00:00
+and 9999-12-31 23:59:59 (julian day numbers 1721059.5 through 5373484.5).
+For dates outside that range, the results of these
+functions are undefined.</p>
+
+<p>Non-Vista Windows platforms only support one set of DST rules. 
+Vista only supports two. Therefore, on these platforms, 
+historical DST calculations will be incorrect. 
+For example, in the US, in 2007 the DST rules changed. 
+Non-Vista Windows platforms apply the new 2007 DST rules 
+to all previous years as well. Vista does somewhat better
+getting results correct back to 1986, when the rules were also changed.</p>
+
+<p>All internal computations assume the 
+<a href="http://en.wikipedia.org/wiki/Gregorian_calendar">Gregorian calendar</a>
+system.  They also assume that every
+day is exactly 86400 seconds in duration; no leap seconds are incorporated.</p>
+<p align="center"><small><i>This page was last updated on 2026-07-11 15:07:16Z </small></i></p>
+

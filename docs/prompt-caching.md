@@ -857,6 +857,17 @@ AbstractCore therefore does not attempt a rollback on these architectures:
 The measured hybrid rows in [the matrix](#the-measured-matrix) are all snapshot-lane rows, and all of
 their correctness gates pass.
 
+## Turns that carry an image
+
+On the MLX provider, a turn that attaches an image does not reuse a keyed prompt cache, and does
+not extend one. Image placeholders expand to a fixed number of tokens per image geometry, so two
+different images of the same size produce identical token sequences — a cache keyed on tokens
+alone cannot tell them apart.
+
+Text-only turns in the same session are unaffected: they take the normal delta-feed path with the
+full cache, including the turns that follow an image in the same conversation. See
+[Vision Capabilities](vision-capabilities.md#1b-native-image-input-on-the-mlx-provider-apple-silicon).
+
 ## Prefill chunking (transformers lane)
 
 The transformers lane splits a long prefill into slices of query positions instead of running it in

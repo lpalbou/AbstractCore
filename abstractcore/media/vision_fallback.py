@@ -256,11 +256,21 @@ class VisionFallbackHandler:
             # `analyze_media` returned it stamped "(observed by ...)". The
             # decode gate upstream proves the file IS an image; this proves
             # the ROUTE actually took it. Structural, never prose-matching.
-            dropped = (getattr(response, "metadata", None) or {}).get("media_dropped")
-            if dropped:
+            # Gate on the POSITIVE record where the provider reports one. The
+            # old check read ABSENCE as success, so a streaming or structured
+            # request that lost its image was indistinguishable from one that
+            # delivered it — to the very gate built to catch that.
+            #
+            # Three-valued on purpose: a provider that does not participate in the
+            # contract yet reports `unverified` and still captions, so flipping
+            # this gate does not break every non-migrated route.
+            from .delivery import media_delivery_verdict
+
+            verdict = media_delivery_verdict(response, provider=provider, expected=1)
+            if verdict.state == "not_delivered":
                 raise VisionGenerationError(
                     f"{provider}/{model} did not transport the image "
-                    f"({len(dropped)} media part(s) dropped by the provider); "
+                    f"({', '.join(verdict.reasons) or 'no delivery evidence'}); "
                     "no observation was possible over this route"
                 )
             return self._extract_caption_text(response.content)

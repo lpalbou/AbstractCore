@@ -2,7 +2,7 @@
 
 > Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media handling (images/audio/video + documents), embeddings, and an optional OpenAI-compatible HTTP server. Default install stays lightweight; features are enabled via extras.
 
-Last reviewed against source: 2026-08-20. Package version in source: 2.13.39. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
+Last reviewed against source: 2026-08-21. Package version in source: 2.13.39. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 This is the curated, high-signal index for agents. For a self-contained handbook with the important details inlined, read `llms-full.txt`.
 
@@ -52,9 +52,11 @@ Quick start:
 - [HuggingFace model compatibility](docs/huggingface-model-compatibility.md): Transformers/GGUF loading rules, quantized checkpoint caveats, and trusted proof targets
 - [Memory blocs](docs/memory-blocs.md): text/file -> bloc -> provider/model durable cache artifacts with optional request-time binding
 - [Tool calling](docs/tool-calling.md): `@tool`, passthrough vs execution, built-in tools
+- [Web and document tools](docs/web-tools.md): `fetch_url`/`skim_url`/`web_search`/`skim_websearch` — extraction, result contract, optional JavaScript rendering, SSRF model
 - [Tool syntax rewriting](docs/tool-syntax-rewriting.md): preserve tool-call markup (`tool_call_tags`, server `agent_format`)
 - [Structured output](docs/structured-output.md): `response_model=...`, native vs prompted, validation/retry behavior
-- [Media handling](docs/media-handling-system.md): `media=[...]`, audio/video policies, vision fallback and plugins
+- [Media handling](docs/media-handling-system.md): `media=[...]`, audio/video policies, vision fallback and plugins, and the media-delivery contract (`metadata.media_delivered` with measured token counts and content hashes, `metadata.media_dropped` reason literals, and `media_delivery_verdict()` returning delivered/not_delivered/unverified)
+- [Vision capabilities](docs/vision-capabilities.md): image/video input, native image input on the MLX provider for vision-capable checkpoints (`abstractcore[mlx-vision]`; `qwen3_5`, `qwen3_5_moe`, `qwen3_vl`, `gemma4`), one image per request, `response_model=` with media refused rather than dropped, and how this differs from generative vision
 - [Centralized config](docs/centralized-config.md): `abstractcore --config`, `abstractcore config defaults|set-default|clear-default`, capability route defaults (`input.*`, `output.*`, `embedding.*`, `rerank.*`) including the `--reasoning` effort on the text route (`set-default` is a partial update: a flag you omit keeps its stored value, `""` clears one field), explicit `input.voice`/`input.video` fallback routing, provider keys, HTTP server auth/hardening, logging, vision/audio/video strategies. AbstractCore owns these values; AbstractGateway surfaces them and keeps no copy.
 - [Data-home registry](docs/data-registry.md): machine-level registry (`~/.abstractframework/data_registry.json`) of framework data directories — `register_data_home` at first write, `list_data_homes(include_sizes=...)`, owner-declared `safe_to_purge` enforced by `purge_data_home` (contents-only, nesting/symlink-swap guarded); kinds: model-cache|prompt-cache|runs|sessions|logs|entity-home|artifacts
 

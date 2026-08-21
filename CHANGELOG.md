@@ -8,6 +8,100 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **`fetch_url` returns one canonical copy of the document.** `content` is the payload —
+  structure-preserving markdown with headings, lists, links, fenced code blocks and GFM tables
+  intact — and `content_chars` reports its length so you can budget before reading it. The raw
+  source (`raw_text`), the flattened text (`normalized_text`) and, after a render, the DOM
+  (`rendered_dom`) are evidence: above `FETCH_URL_MAX_INLINE_EVIDENCE_CHARS` (2,000) they are
+  withheld and replaced by a `*_withheld` descriptor carrying the size, sha256 and content type.
+  The keys always exist, so consumers keep working. Raise the constant to inline the evidence.
+  See [Web and Document Tools](docs/web-tools.md).
+- **`fetch_url` can render JavaScript.** Pages that build their content client-side are re-fetched
+  in a headless browser and put through the same extraction pipeline. `render_js="auto"` (default)
+  renders only when the static fetch extracts nothing usable, `"always"` always renders and keeps
+  the static result if it is better, `"never"` disables it. `rendered_with_browser` and
+  `render_note` report what happened. Requires `pip install "abstractcore[browser]"` plus
+  `python -m playwright install --only-shell chromium`; without it, affected pages return their
+  normal error with the install hint attached. Pages that extract statically never launch a browser.
+- **Listing pages keep their links.** On a page whose links are its content — a news hub, a blog
+  index — link targets survive even at `keep_links=False`, and `link_dominant` reports when that
+  happened.
+- **PDF text carries page anchors** (`# Page 3`) so a model can cite a location, and typographic
+  ligatures are expanded so the text stays searchable.
+- **Search payloads report degraded results.** `warnings`, `limitations` and `degraded` describe a
+  dropped filter, a coerced argument, a fallback backend, or backend text with missing word
+  separators (`fused_result_text`).
+- **New documentation:** [Web and Document Tools](docs/web-tools.md) covers `fetch_url`, `skim_url`,
+  `web_search` and `skim_websearch` — extraction, the result contract, JavaScript rendering, and the
+  safety model.
+- **The MLX provider reads images natively.** Vision-capable MLX checkpoints previously answered
+  from text alone, because the MLX text runtime discards the vision weights at load. Install
+  `abstractcore[mlx-vision]` and `media=[...]` now reaches the model on `qwen3_5`, `qwen3_5_moe`,
+  `qwen3_vl` and `gemma4` checkpoints. Support is decided from the checkpoint on disk and the
+  capability registry rather than from the model name, and the vision stack is imported only when
+  an image is attached, so text-only sessions are unchanged. The extra is deliberately separate
+  from `abstractcore[mlx]` and `abstractcore[apple]`: it pulls a web framework, OpenCV and a
+  datasets stack. See [Vision Capabilities](docs/vision-capabilities.md).
+- **Responses now state positively what media reached the model.**
+  `response.metadata["media_delivered"]` records each delivered part with a content hash, the
+  measured token count and the transport used, and `abstractcore.media.delivery.media_delivery_verdict()`
+  turns that into a single `delivered` / `not_delivered` / `unverified` answer. The previous
+  contract could only report what was *dropped*, so any path that skipped that reporting read as
+  success. Streamed responses carry the same record, readable from the final chunk like usage.
+  Providers that do not yet report delivery return `unverified` and keep their existing behaviour.
+- **Precision trade-offs are annotated rather than absorbed.** Where a checkpoint is served with a
+  known approximation, the delivery record names it in `fidelity` (for example
+  `rope_1d_substituted`), so callers can tell when fine character-level detail may be affected.
+
+
+### Changed
+- **`skim_url`'s `max_bytes` is a memory safety net, not the skim.** It now defaults to the same
+  10 MB bound `fetch_url` uses rather than 200 KB. The download cap applied before parsing, so a
+  large page was extracted from truncated markup; the skimming is done by `max_preview_chars` on the
+  extracted text. Pass a smaller `max_bytes` for a deliberate cheap peek — the report then states
+  that the extraction, not merely the transfer, was partial.
+- **`skim_url` uses the same extraction as `fetch_url`,** so a skim and a fetch of the same URL
+  agree. The heading outline is harvested from the same markdown as the preview.
+- **`skim_url` enforces the SSRF guard,** on the initial URL and on every redirect hop, matching
+  `fetch_url`.
+- **`time_range` and `require_in` accept plain-English values.** `day`, `today`, `past week`,
+  `30 days` and similar normalize; `require_in` resolves `body`, `title,body`, `both`, `any` and
+  other common synonyms. A value that cannot be mapped is dropped or substituted **and reported** in
+  `warnings`/`limitations` — it is never forwarded to the search backend, so an unrecognised filter
+  cannot cost you the primary backend.
+- **`skim_websearch` and `web_search` publish their allowed values** as JSON-schema enums, so a
+  model sees them when choosing arguments.
+- **PDF extraction stays on a permissively licensed backend.** `auto` uses `pypdf` (BSD-3-Clause).
+  Table recovery through `pymupdf4llm` (dual AGPL-3.0/commercial) is available by requesting
+  `preferred_backend="pymupdf4llm"` explicitly.
+
+### Fixed
+- **`fetch_url` no longer returns an empty success.** A 2xx that yields no extractable text now
+  fails with `empty_content`, a zero-byte body with `empty_body`, and an internal extraction error
+  with `extraction_failed` (retryable). Set `ABSTRACTCORE_DEBUG_EXTRACTION=1` for the traceback.
+- **Listing pages extract the whole list.** A hub page previously returned a single card because
+  container selection stopped at the highest-scoring `<article>`.
+- **HTML comments, empty list items and duplicated layout lines no longer reach `content`.**
+- **Headless rendering honours the SSRF guard on every navigation and subresource,** so a page
+  cannot redirect or script its way to a destination the static fetch refuses. `final_url` reports
+  where the browser landed, and `render_url_html` accepts only `http`/`https`.
+- **`response_model=` no longer drops attached media silently on MLX.** Structured output returns a
+  validated model with no metadata channel, so the combination now raises with
+  `structured_output_unsupported` instead of answering from text as though the image had been
+  seen. Parse the text yourself, or caption the image first.
+- **Streaming responses carry media metadata.** `media_delivered` and `media_dropped` were attached
+  only to non-streamed responses, so a streamed request that lost its image was indistinguishable
+  from one that delivered it.
+- **Images with uncommon extensions are recognised by content.** `.jfif`, `.jpe`, `.heic`,
+  `.heif`, `.avif`, `.jp2` and `.pjpeg` files are classified by their bytes rather than their
+  suffix, so a genuine image with one of these names now reaches a vision model instead of being
+  embedded as text.
+- **Reasoning controls apply to image requests on MLX.** `thinking=` and reasoning effort were
+  applied to text requests only, so an image request could spend its whole output budget reasoning
+  and return empty content.
+- **`unload_model()` releases the vision encoder and the structured-output wrapper on MLX**, both
+  of which previously kept the model resident after unload.
+
 - **A total output budget backs up the per-section cap.** A cap on each section cannot
   bound a file with many sections: four sections each just under the cap produced a
   26k-token outline for a 45k-token file. Sections are now funded in emission order, so

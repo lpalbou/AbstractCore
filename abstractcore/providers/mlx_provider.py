@@ -13,6 +13,7 @@ from typing import List, Dict, Any, Optional, Union, Iterator, Type, TYPE_CHECKI
 
 try:
     from pydantic import BaseModel
+
     PYDANTIC_AVAILABLE = True
 except ImportError:
     PYDANTIC_AVAILABLE = False
@@ -21,6 +22,7 @@ except ImportError:
 # Try to import Outlines (native structured output for MLX models)
 try:
     import outlines
+
     OUTLINES_AVAILABLE = True
 except ImportError:
     OUTLINES_AVAILABLE = False
@@ -39,13 +41,18 @@ if TYPE_CHECKING:
 class MLXProvider(BaseProvider):
     """MLX provider for Apple Silicon models with full integration"""
 
-    def __init__(self, model: str = "mlx-community/Mistral-7B-Instruct-v0.1-4bit",
-                 structured_output_method: str = "auto", **kwargs):
+    def __init__(
+        self,
+        model: str = "mlx-community/Mistral-7B-Instruct-v0.1-4bit",
+        structured_output_method: str = "auto",
+        **kwargs,
+    ):
         super().__init__(model, **kwargs)
         self.provider = "mlx"
 
         # Register-at-first-write: MLX model loads write into the HF hub cache.
         from ..utils.data_registry import ensure_core_data_homes
+
         ensure_core_data_homes()
 
         # Handle timeout parameter for local models
@@ -63,6 +70,16 @@ class MLXProvider(BaseProvider):
         self.llm = None
         self.tokenizer = None
         self._resolved_model_id: Optional[str] = None
+        # Vision add-on state. Set at load from config.json; the encoder itself is
+        # built lazily on the first image so a text-only session never imports
+        # mlx-vlm. Initialised here so harnesses that build the provider via
+        # __new__ (the prompt-cache unit tests) see the attributes.
+        self._vision_addon = None
+        self._vision_side: Dict[str, Any] = {}
+        self._vision_addon_lock = threading.Lock()
+        self._vision_usable: bool = False
+        self._vision_reason: Optional[str] = None
+        self._vision_info: Dict[str, Any] = {}
         # Delta-feed bookkeeping (see _prepare_cache_delta_feed): keys that
         # already warned about unknown-composition warm caches, and the last
         # fragment fed by _prompt_cache_backend_append (consumed by
@@ -200,7 +217,11 @@ class MLXProvider(BaseProvider):
         )
         if not serialized:
             return None
-        msg_fmt = str((getattr(self, "architecture_config", {}) or {}).get("message_format") or "").strip().lower()
+        msg_fmt = (
+            str((getattr(self, "architecture_config", {}) or {}).get("message_format") or "")
+            .strip()
+            .lower()
+        )
         model = str(getattr(self, "model", "") or "").strip().lower()
         if msg_fmt == "gemma_turn":
             fmt = "gemma-turn"
@@ -614,7 +635,7 @@ class MLXProvider(BaseProvider):
                         if not bool(layer.empty()):
                             return None  # warm but uncountable
                     except Exception:
-                        return None      # unknowable — never report cold
+                        return None  # unknowable — never report cold
                 return 0
         except Exception:
             pass
@@ -725,9 +746,7 @@ class MLXProvider(BaseProvider):
         out.sort(key=len, reverse=True)
         return out
 
-    def _generation_prompt_boundary(
-        self, full_prompt: str, full_ids: List[int]
-    ) -> Optional[int]:
+    def _generation_prompt_boundary(self, full_prompt: str, full_ids: List[int]) -> Optional[int]:
         """Token POSITION where this call's generation-prompt scaffolding begins.
 
         That scaffolding is PER-CALL VOLATILE by construction: it asks the model to
@@ -811,7 +830,9 @@ class MLXProvider(BaseProvider):
         if not ids:
             return
         try:
-            self.prompt_cache_update_key_meta(key, **{self._FED_TOKEN_IDS_META: [int(t) for t in ids]})
+            self.prompt_cache_update_key_meta(
+                key, **{self._FED_TOKEN_IDS_META: [int(t) for t in ids]}
+            )
         except Exception:
             pass
 
@@ -912,13 +933,18 @@ class MLXProvider(BaseProvider):
             raw_count = self._prompt_cache_backend_token_count(cache_value)
         except Exception:
             raw_count = None
-        cache_len: Optional[int] = raw_count if isinstance(raw_count, int) and raw_count >= 0 else None
+        cache_len: Optional[int] = (
+            raw_count if isinstance(raw_count, int) and raw_count >= 0 else None
+        )
 
         new_ids = self._encode_prompt_token_ids(full_prompt)
         if not new_ids:
             if full_context and (cache_len is None or cache_len > 0):
                 # Cannot tokenize deterministically: never risk the double prefill.
-                _note("bypassed", reason="prompt could not be tokenized deterministically; warm cache bypassed")
+                _note(
+                    "bypassed",
+                    reason="prompt could not be tokenized deterministically; warm cache bypassed",
+                )
                 return None, full_prompt, None
             _note("append" if not full_context else "cold", cached=cache_len)
             return cache_value, full_prompt, None
@@ -974,9 +1000,7 @@ class MLXProvider(BaseProvider):
         def _is_artifact_backed() -> bool:
             meta = self.prompt_cache_key_meta(key) or {}
             if not (
-                meta.get("loaded_from")
-                or meta.get("binding_id")
-                or meta.get("artifact_sha256")
+                meta.get("loaded_from") or meta.get("binding_id") or meta.get("artifact_sha256")
             ):
                 return False
             # A FORKED key is a private COPY of an artifact, not the artifact.
@@ -1220,7 +1244,9 @@ class MLXProvider(BaseProvider):
                         f"artifact caches."
                     )
                 _note(
-                    "bypassed", cached=0, fed=len(new_ids),
+                    "bypassed",
+                    cached=0,
+                    fed=len(new_ids),
                     reason="loaded artifact without a fed-token record; bypassed to protect the artifact",
                 )
                 return None, full_prompt, None
@@ -1232,7 +1258,9 @@ class MLXProvider(BaseProvider):
                     f"delta-tracked."
                 )
             _note(
-                "rebuilt", cached=0, fed=len(new_ids),
+                "rebuilt",
+                cached=0,
+                fed=len(new_ids),
                 reason="warm cache of unknown token composition; rebuilt fresh",
             )
             return _fresh_full_feed()
@@ -1242,7 +1270,8 @@ class MLXProvider(BaseProvider):
             # trim arithmetic is impossible. Same lattice as trim refusal.
             if _is_artifact_backed():
                 _note(
-                    "bypassed", fed=len(new_ids),
+                    "bypassed",
+                    fed=len(new_ids),
                     reason="artifact cache state is not countable for this architecture; bypassed",
                 )
                 return None, full_prompt, None
@@ -1271,7 +1300,9 @@ class MLXProvider(BaseProvider):
                     f"for this call rather than trimming the shared artifact cache."
                 )
             _note(
-                "bypassed", cached=0, fed=len(new_ids),
+                "bypassed",
+                cached=0,
+                fed=len(new_ids),
                 reason="prompt diverges from the artifact's recorded prefix; bypassed to protect the shared cache",
             )
             return None, full_prompt, None
@@ -1289,7 +1320,8 @@ class MLXProvider(BaseProvider):
             # cold prefill on a fresh cache — loudly, once per key (P1-6).
             if _is_artifact_backed():
                 _note(
-                    "bypassed", fed=len(new_ids),
+                    "bypassed",
+                    fed=len(new_ids),
                     reason="artifact cache type is not trimmable for this architecture; bypassed",
                 )
                 return None, full_prompt, None
@@ -1337,7 +1369,9 @@ class MLXProvider(BaseProvider):
             include_tool_list = True
             if base_system_prompt and "## Tools (session)" in base_system_prompt:
                 include_tool_list = False
-            tool_prompt = self.tool_handler.format_tools_prompt(tools, include_tool_list=include_tool_list)
+            tool_prompt = self.tool_handler.format_tools_prompt(
+                tools, include_tool_list=include_tool_list
+            )
             if tool_prompt:
                 tool_system_prompt = tool_prompt
 
@@ -1424,7 +1458,11 @@ class MLXProvider(BaseProvider):
             except Exception:
                 return str(val)
 
-        arch_cfg = getattr(self, "architecture_config", None) if isinstance(getattr(self, "architecture_config", None), dict) else {}
+        arch_cfg = (
+            getattr(self, "architecture_config", None)
+            if isinstance(getattr(self, "architecture_config", None), dict)
+            else {}
+        )
         msg_fmt = str((arch_cfg or {}).get("message_format") or "").strip().lower()
         # ChatML (`<|im_start|>…<|im_end|>`) is driven by the REGISTRY's
         # message_format ("im_start_end"), NOT a model-name substring. The old
@@ -1467,7 +1505,9 @@ class MLXProvider(BaseProvider):
                 if is_chatml:
                     parts.append(f"<|im_start|>{role}\n{content}<|im_end|>\n")
                 elif is_gemma_turn:
-                    role_name = "model" if role.strip().lower() == "assistant" else role.strip().lower()
+                    role_name = (
+                        "model" if role.strip().lower() == "assistant" else role.strip().lower()
+                    )
                     if role_name in {"system", "user", "model"}:
                         parts.append(f"<|turn>{role_name}\n{content.strip()}<turn|>\n")
                 else:
@@ -1499,7 +1539,11 @@ class MLXProvider(BaseProvider):
             architecture_format=getattr(self, "architecture_config", None),
             model_capabilities=getattr(self, "model_capabilities", None),
         )
-        msg_fmt = str((getattr(self, "architecture_config", {}) or {}).get("message_format") or "").strip().lower()
+        msg_fmt = (
+            str((getattr(self, "architecture_config", {}) or {}).get("message_format") or "")
+            .strip()
+            .lower()
+        )
         if msg_fmt == "gemma_turn":
             stop_candidates = []
             cfg = getattr(self, "architecture_config", None)
@@ -1812,7 +1856,7 @@ class MLXProvider(BaseProvider):
             from mlx_lm.models.cache import save_prompt_cache
         except Exception as e:
             raise ImportError(
-                "MLX prompt cache saving requires mlx-lm (install: `pip install \"abstractcore[mlx]\"`)."
+                'MLX prompt cache saving requires mlx-lm (install: `pip install "abstractcore[mlx]"`).'
             ) from e
 
         out_meta: Dict[str, Any] = dict(meta or {})
@@ -1869,7 +1913,13 @@ class MLXProvider(BaseProvider):
             try:
                 cache_to_save = [layer.to_quantized(group_size=64, bits=8) for layer in cache_obj]
             except AttributeError as e:
-                unsupported = sorted({type(layer).__name__ for layer in cache_obj if not callable(getattr(layer, "to_quantized", None))})
+                unsupported = sorted(
+                    {
+                        type(layer).__name__
+                        for layer in cache_obj
+                        if not callable(getattr(layer, "to_quantized", None))
+                    }
+                )
                 raise ValueError(
                     "q8 prompt-cache storage is not supported for this model's cache stack: "
                     f"layer cache type(s) {unsupported or ['unknown']} expose no to_quantized "
@@ -1891,7 +1941,9 @@ class MLXProvider(BaseProvider):
                 pass
             return str(value)
 
-        out_meta_str: Dict[str, str] = {str(k): _meta_value(v) for k, v in out_meta.items() if isinstance(k, str) and k}
+        out_meta_str: Dict[str, str] = {
+            str(k): _meta_value(v) for k, v in out_meta.items() if isinstance(k, str) and k
+        }
 
         save_prompt_cache(str(filename), cache_to_save, metadata=out_meta_str)
 
@@ -1922,7 +1974,7 @@ class MLXProvider(BaseProvider):
             from mlx_lm.models.cache import load_prompt_cache
         except Exception as e:
             raise ImportError(
-                "MLX prompt cache loading requires mlx-lm (install: `pip install \"abstractcore[mlx]\"`)."
+                'MLX prompt cache loading requires mlx-lm (install: `pip install "abstractcore[mlx]"`).'
             ) from e
 
         loaded_cache, meta = load_prompt_cache(str(filename), return_metadata=True)
@@ -2082,7 +2134,9 @@ class MLXProvider(BaseProvider):
         # the record stay unrecorded) and the LCP/trim arithmetic handles the
         # tail. Uncountable caches keep the record inert — the delta lattice
         # already bypasses artifact-backed uncountable caches.
-        parsed_record = self._parse_persisted_fed_token_ids(store_meta.get(self._FED_TOKEN_IDS_META))
+        parsed_record = self._parse_persisted_fed_token_ids(
+            store_meta.get(self._FED_TOKEN_IDS_META)
+        )
         store_meta.pop(self._FED_TOKEN_IDS_META, None)
         if parsed_record is not None:
             if live_count is not None and len(parsed_record) > live_count:
@@ -2141,7 +2195,11 @@ class MLXProvider(BaseProvider):
             # Upstream compatibility: mlx-lm may call `mx.metal.device_info()` which is deprecated in recent MLX.
             # Patch the deprecated entrypoint to the supported API so the warning is fixed (not silenced).
             try:
-                if hasattr(mx, "device_info") and hasattr(mx, "metal") and hasattr(mx.metal, "device_info"):
+                if (
+                    hasattr(mx, "device_info")
+                    and hasattr(mx, "metal")
+                    and hasattr(mx.metal, "device_info")
+                ):
                     mx.metal.device_info = mx.device_info  # type: ignore[attr-defined]
             except Exception:
                 pass
@@ -2183,9 +2241,13 @@ class MLXProvider(BaseProvider):
             if explicit_path.is_dir():
                 load_dir = explicit_path
             else:
-                load_dir = resolve_lmstudio_model_dir(clean_model_name, base_dirs=default_lmstudio_model_dirs())
+                load_dir = resolve_lmstudio_model_dir(
+                    clean_model_name, base_dirs=default_lmstudio_model_dirs()
+                )
                 if load_dir is None:
-                    snap = resolve_hf_snapshot_dir(clean_model_name, cache_dirs=default_hf_hub_cache_dirs())
+                    snap = resolve_hf_snapshot_dir(
+                        clean_model_name, cache_dirs=default_hf_hub_cache_dirs()
+                    )
                     if snap is not None and _has_weights(snap):
                         load_dir = snap
 
@@ -2204,7 +2266,9 @@ class MLXProvider(BaseProvider):
                         try:
                             raw = manifest_path.read_text(encoding="utf-8")
                             manifest = json.loads(raw) if raw.strip() else {}
-                            deps = manifest.get("dependencies") if isinstance(manifest, dict) else None
+                            deps = (
+                                manifest.get("dependencies") if isinstance(manifest, dict) else None
+                            )
                             if isinstance(deps, list) and deps:
                                 for dep in deps:
                                     if not isinstance(dep, dict):
@@ -2212,7 +2276,10 @@ class MLXProvider(BaseProvider):
                                     for src in dep.get("sources") or []:
                                         if not isinstance(src, dict):
                                             continue
-                                        if str(src.get("type") or "").strip().lower() != "huggingface":
+                                        if (
+                                            str(src.get("type") or "").strip().lower()
+                                            != "huggingface"
+                                        ):
                                             continue
                                         user = str(src.get("user") or "").strip()
                                         repo = str(src.get("repo") or "").strip()
@@ -2225,7 +2292,9 @@ class MLXProvider(BaseProvider):
                                         if lm_dir is None:
                                             continue
                                         try:
-                                            ggufs = sorted([p for p in lm_dir.glob("*.gguf") if p.is_file()])
+                                            ggufs = sorted(
+                                                [p for p in lm_dir.glob("*.gguf") if p.is_file()]
+                                            )
                                         except Exception:
                                             ggufs = []
                                         if ggufs:
@@ -2264,6 +2333,20 @@ class MLXProvider(BaseProvider):
 
             load_target = str(load_dir)
             self._resolved_model_id = load_target
+            # config.json ONLY: no mlx_vlm import, no tensor scan, no network.
+            # The transport-actual answer comes from the real add-on load at the
+            # first image; this cheap flag only decides whether to try.
+            try:
+                from .mlx_vision_addon import vision_status
+
+                usable, reason, info = vision_status(load_target)
+                self._vision_usable = usable
+                self._vision_reason = reason
+                self._vision_info = info
+            except Exception:
+                self._vision_usable = False
+                self._vision_reason = None
+                self._vision_info = {}
 
             # Silence the "Fetching" progress bar by redirecting stdout/stderr
             with open(os.devnull, "w") as devnull:
@@ -2280,7 +2363,9 @@ class MLXProvider(BaseProvider):
                                 if cfg_path.is_file():
                                     raw = cfg_path.read_text(encoding="utf-8", errors="ignore")
                                     cfg = json.loads(raw) if raw.strip() else {}
-                                    model_type = cfg.get("model_type") if isinstance(cfg, dict) else None
+                                    model_type = (
+                                        cfg.get("model_type") if isinstance(cfg, dict) else None
+                                    )
                             except Exception:
                                 model_type = None
 
@@ -2320,7 +2405,11 @@ class MLXProvider(BaseProvider):
         except Exception as e:
             # Check if it's a model not found error
             error_str = str(e).lower()
-            if "not found" in error_str or "does not exist" in error_str or "failed to load" in error_str:
+            if (
+                "not found" in error_str
+                or "does not exist" in error_str
+                or "failed to load" in error_str
+            ):
                 available_models = self.list_available_models()
                 error_message = format_model_error("MLX", self.model, available_models)
                 raise ModelNotFoundError(error_message)
@@ -2334,28 +2423,40 @@ class MLXProvider(BaseProvider):
         to free GPU/CPU memory immediately.
         """
         import gc
+
         try:
-            if hasattr(self, 'llm') and self.llm is not None:
+            if hasattr(self, "llm") and self.llm is not None:
                 # Clear MLX model
                 del self.llm
                 self.llm = None
 
-            if hasattr(self, 'tokenizer') and self.tokenizer is not None:
+            if hasattr(self, "tokenizer") and self.tokenizer is not None:
                 # Clear tokenizer
                 del self.tokenizer
                 self.tokenizer = None
 
-            if hasattr(self, 'generate_fn'):
+            if hasattr(self, "generate_fn"):
                 self.generate_fn = None
 
-            if hasattr(self, 'stream_generate_fn'):
+            if hasattr(self, "stream_generate_fn"):
                 self.stream_generate_fn = None
 
             # Force garbage collection to free memory immediately
+            # The add-on holds the mlx-vlm wrapper, its processor and the tower;
+            # `_outlines_model` holds a live reference to self.llm and defeats the
+            # unload entirely for any provider that ran a structured request.
+            self._vision_addon = None
+            self._outlines_model = None
             gc.collect()
+            try:
+                import mlx.core as mx
+
+                mx.clear_cache()
+            except Exception:
+                pass
         except Exception as e:
             # Log but don't raise - unload should be best-effort
-            if hasattr(self, 'logger'):
+            if hasattr(self, "logger"):
                 self.logger.warning(f"Error during unload: {e}")
 
     def _handle_timeout_parameter(self, kwargs: Dict[str, Any]) -> None:
@@ -2369,14 +2470,15 @@ class MLXProvider(BaseProvider):
         Args:
             kwargs: Initialization kwargs that may contain timeout
         """
-        timeout_value = kwargs.get('timeout')
+        timeout_value = kwargs.get("timeout")
         if timeout_value is not None:
             import warnings
+
             warnings.warn(
                 f"MLX provider runs models locally on Apple Silicon and does not support timeout parameters. "
                 f"Provided timeout={timeout_value} will be ignored and treated as None (unlimited).",
                 UserWarning,
-                stacklevel=3
+                stacklevel=3,
             )
             # Force timeout to None for local models
             self._timeout = None
@@ -2396,22 +2498,71 @@ class MLXProvider(BaseProvider):
         """Public generate method that includes telemetry"""
         return self.generate_with_telemetry(*args, **kwargs)
 
-    def _generate_internal(self,
-                          prompt: str,
-                          messages: Optional[List[Dict[str, str]]] = None,
-                          system_prompt: Optional[str] = None,
-                          tools: Optional[List[Dict[str, Any]]] = None,
-                          media: Optional[List['MediaContent']] = None,
-                          stream: bool = False,
-                          response_model: Optional[Type[BaseModel]] = None,
-                          **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
+    def _structured_output_carries_media(self) -> bool:
+        """False: Outlines' MLX adapter accepts a prompt STRING and re-encodes it
+        with the plain tokenizer, so an image's expanded placeholder tokens cannot
+        survive that path, and the prompted lane returns a validated model with no
+        metadata channel either. Refusing loudly is the honest outcome.
+        """
+        return False
+
+    def _generate_internal(
+        self,
+        prompt: str,
+        messages: Optional[List[Dict[str, str]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        media: Optional[List["MediaContent"]] = None,
+        stream: bool = False,
+        response_model: Optional[Type[BaseModel]] = None,
+        **kwargs,
+    ) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
+        """Provider seam. Owns one thing: no return escapes the media report.
+
+        The body lives in `_generate_core`, which may return from any of its
+        branches. Every one of those returns funnels through `attach_media_report`
+        here, so a NEW branch cannot forget the record — it has no way to return
+        past this line. The honesty contract was previously attached at one of six
+        return sites, which is exactly why `response_model=` and `stream=True`
+        both lost images silently.
+        """
+        from ..media.delivery import MediaReport, attach_media_report
+
+        report = MediaReport.for_request(media, provider="mlx", model=self.model)
+        out = self._generate_core(
+            prompt,
+            messages=messages,
+            system_prompt=system_prompt,
+            tools=tools,
+            media=media,
+            stream=stream,
+            response_model=response_model,
+            report=report,
+            **kwargs,
+        )
+        return attach_media_report(out, report)
+
+    def _generate_core(
+        self,
+        prompt: str,
+        messages: Optional[List[Dict[str, str]]] = None,
+        system_prompt: Optional[str] = None,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        media: Optional[List["MediaContent"]] = None,
+        stream: bool = False,
+        response_model: Optional[Type[BaseModel]] = None,
+        report: Optional[Any] = None,
+        **kwargs,
+    ) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Internal generation with MLX and optional Outlines native structured output"""
+        from ..media.delivery import MediaReport
+
+        if report is None:  # direct callers (tests) keep working
+            report = MediaReport.for_request(media, provider="mlx", model=self.model)
 
         if not self.llm or not self.tokenizer:
             return GenerateResponse(
-                content="Error: MLX model not loaded",
-                model=self.model,
-                finish_reason="error"
+                content="Error: MLX model not loaded", model=self.model, finish_reason="error"
             )
 
         prompt_cache_prefilled_modules = kwargs.pop("prompt_cache_prefilled_modules", None)
@@ -2426,10 +2577,10 @@ class MLXProvider(BaseProvider):
 
         # Native structured output via Outlines (if configured and available)
         should_use_outlines = (
-            response_model and
-            PYDANTIC_AVAILABLE and
-            not stream and
-            self.structured_output_method != "prompted"  # Skip if explicitly prompted
+            response_model
+            and PYDANTIC_AVAILABLE
+            and not stream
+            and self.structured_output_method != "prompted"  # Skip if explicitly prompted
         )
 
         if should_use_outlines:
@@ -2438,15 +2589,17 @@ class MLXProvider(BaseProvider):
                 return GenerateResponse(
                     content="Error: structured_output_method='native_outlines' requires Outlines library. Install with: pip install \"abstractcore[mlx]\"",
                     model=self.model,
-                    finish_reason="error"
+                    finish_reason="error",
                 )
 
             # Try Outlines if available (auto or native_outlines mode)
             if OUTLINES_AVAILABLE:
                 try:
                     # Cache Outlines MLX model wrapper to avoid re-initialization
-                    if not hasattr(self, '_outlines_model') or self._outlines_model is None:
-                        self.logger.debug("Creating Outlines MLX model wrapper for native structured output")
+                    if not hasattr(self, "_outlines_model") or self._outlines_model is None:
+                        self.logger.debug(
+                            "Creating Outlines MLX model wrapper for native structured output"
+                        )
                         self._outlines_model = outlines.from_mlxlm(self.llm, self.tokenizer)
 
                     # Build full prompt (same as normal generation, thinking controls
@@ -2460,12 +2613,18 @@ class MLXProvider(BaseProvider):
                         system_prompt,
                         tools,
                         prefilled_modules=prompt_cache_prefilled_modules,
-                        enable_thinking=mlx_enable_thinking if isinstance(mlx_enable_thinking, bool) else None,
-                        reasoning_effort=mlx_reasoning_effort if isinstance(mlx_reasoning_effort, str) else None,
+                        enable_thinking=(
+                            mlx_enable_thinking if isinstance(mlx_enable_thinking, bool) else None
+                        ),
+                        reasoning_effort=(
+                            mlx_reasoning_effort if isinstance(mlx_reasoning_effort, str) else None
+                        ),
                     )
 
                     # Create constrained generator with JSON schema
-                    self.logger.debug(f"Using Outlines native structured output for {response_model.__name__}")
+                    self.logger.debug(
+                        f"Using Outlines native structured output for {response_model.__name__}"
+                    )
                     # Output cap: after the boundary rename callers pass
                     # max_output_tokens (max_tokens here is the CONTEXT
                     # WINDOW, never the output cap — adversarial find
@@ -2490,7 +2649,7 @@ class MLXProvider(BaseProvider):
                         content=validated_obj.model_dump_json(),
                         model=self.model,
                         finish_reason="stop",
-                        validated_object=validated_obj
+                        validated_object=validated_obj,
                     )
                 except Exception as e:
                     # If native_outlines was explicitly requested, don't fall back
@@ -2498,7 +2657,7 @@ class MLXProvider(BaseProvider):
                         return GenerateResponse(
                             content=f"Error: Outlines native structured output failed: {str(e)}",
                             model=self.model,
-                            finish_reason="error"
+                            finish_reason="error",
                         )
                     # Otherwise fall back to prompted approach
                     self.logger.debug(f"Outlines generation failed, falling back to prompted: {e}")
@@ -2516,11 +2675,23 @@ class MLXProvider(BaseProvider):
         # "there is no image in this conversation" as an observation, complete
         # with provenance (measured on a live run, 2026-08-21). Dropping is
         # still the behavior; claiming it did not happen is what stops here.
-        dropped_media: List[str] = []
+        dropped_media: List[str] = report.dropped
+        input_embeddings = None
+        vision_ids = None
         if media:
+            # Native sight first. Fills `report.delivered` and returns embeddings;
+            # on ANY failure it records a named reason and returns None, and we
+            # fall through to the delegated-sight/caption path below unchanged.
+            input_embeddings, vision_ids, processed_prompt = self._try_vision_addon(
+                prompt, media, report, messages, system_prompt, tools, kwargs
+            )
+        if media and input_embeddings is None:
             try:
                 from ..media.handlers import LocalMediaHandler
-                media_handler = LocalMediaHandler("mlx", self.model_capabilities, model_name=self.model)
+
+                media_handler = LocalMediaHandler(
+                    "mlx", self.model_capabilities, model_name=self.model
+                )
 
                 # Create multimodal message combining text and media
                 multimodal_message = media_handler.create_multimodal_message(prompt, media)
@@ -2540,26 +2711,52 @@ class MLXProvider(BaseProvider):
                                     text_content = item.get("text", "")
                                     break
                             processed_prompt = text_content or prompt
-                            dropped_media = [
+                            report.drop_parts(
                                 str(item.get("type"))
                                 for item in multimodal_message["content"]
                                 if isinstance(item, dict) and item.get("type") != "text"
-                            ]
+                            )
                         else:
                             processed_prompt = str(multimodal_message["content"])
+                # Non-image media (documents, PDFs) legitimately reach the model as
+                # TEXT on this lane. Record that positively: without it the report
+                # stays empty, and an empty report from a reporting provider reads
+                # as "a code path forgot", so a successful document request was
+                # being judged `not_delivered`.
+                if not report.delivered and not report.dropped:
+                    embedded = processed_prompt if isinstance(processed_prompt, str) else ""
+                    if embedded and embedded != prompt:
+                        for i, mc in enumerate(media or []):
+                            if self._is_image_part(mc):
+                                # An image that reached the text-embedded path was
+                                # NOT shown to the model. Claiming delivery here is
+                                # the exact inversion this module exists to stop.
+                                report.drop("vision_encode_failed")
+                                continue
+                            report.deliver(
+                                index=i,
+                                kind=str(
+                                    getattr(getattr(mc, "media_type", None), "value", "document")
+                                ),
+                                content=getattr(mc, "content", b""),
+                                tokens=max(2, len(embedded) // 4),
+                                transport="text_embedded",
+                            )
             except ImportError:
-                self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
-                dropped_media = ["media_processing_unavailable"]
+                self.logger.warning(
+                    'Media processing not available. Install with: pip install "abstractcore[media]"'
+                )
+                report.drop("media_processing_unavailable")
             except Exception as e:
                 self.logger.warning(f"Failed to process media content: {e}")
-                dropped_media = ["media_processing_failed"]
+                report.drop("media_processing_failed", detail=str(e))
             if dropped_media:
+                reasons = ", ".join(sorted(set(dropped_media)))
                 self.logger.warning(
-                    "mlx: %d media part(s) were NOT sent to the model (%s) — this transport "
-                    "generates from a text prompt. The answer is text-only; callers that need "
-                    "sight must read response.metadata['media_dropped'].",
-                    len(dropped_media),
-                    ", ".join(sorted(set(dropped_media))),
+                    f"mlx: {len(dropped_media)} media part(s) were NOT sent to the "
+                    f"model ({reasons}). The answer is text-only; callers that need "
+                    "sight must read response.metadata['media_delivered'] (absent "
+                    "here) or ['media_dropped']."
                 )
 
         # Build full prompt with tool support
@@ -2570,7 +2767,9 @@ class MLXProvider(BaseProvider):
             tools,
             prefilled_modules=prompt_cache_prefilled_modules,
             enable_thinking=mlx_enable_thinking if isinstance(mlx_enable_thinking, bool) else None,
-            reasoning_effort=mlx_reasoning_effort if isinstance(mlx_reasoning_effort, str) else None,
+            reasoning_effort=(
+                mlx_reasoning_effort if isinstance(mlx_reasoning_effort, str) else None
+            ),
         )
 
         # MLX generation parameters using unified system
@@ -2585,6 +2784,16 @@ class MLXProvider(BaseProvider):
         fed_ids_to_record: Optional[List[int]] = None
         cache_telemetry: Optional[Dict[str, Any]] = None
         prompt_cache_key = kwargs.get("prompt_cache_key")
+        # A turn whose prompt is fed as EMBEDDINGS must never enter key-mode delta
+        # feed. `_prepare_cache_delta_feed` matches by longest-common-prefix over
+        # TOKEN IDS, and an image turn's ids contain N identical placeholder tokens
+        # — so the same question with a DIFFERENT image of the same pixel size
+        # produces byte-identical ids, matches perfectly, and the cache serves KV
+        # built from the previous image. No exception, wrong answer. Nulling the
+        # local leaves the stored cache and its fed-id record untouched and
+        # mutually consistent. See backlog 0843.
+        if input_embeddings is not None:
+            prompt_cache_key = None
         if isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
             cache_key = prompt_cache_key.strip()
             prompt_cache = self._prompt_cache_store.get(cache_key)
@@ -2604,7 +2813,9 @@ class MLXProvider(BaseProvider):
             # `messages=[]` IS full-context ("empty so far" — key-mode turn
             # one); only `messages=None` means prompt-only (P2-8).
             prompt_cache, prompt_to_feed, fed_ids_to_record = self._prepare_cache_delta_feed(
-                cache_key, prompt_cache, full_prompt,
+                cache_key,
+                prompt_cache,
+                full_prompt,
                 full_context=messages is not None,
                 telemetry=cache_telemetry,
             )
@@ -2617,30 +2828,84 @@ class MLXProvider(BaseProvider):
             except Exception:
                 pass
 
+        # The encoder returned processor-expanded ids; they must be what the
+        # decoder consumes on BOTH branches, since generate_step requires
+        # len(prompt) == len(input_embeddings).
+        if vision_ids is not None:
+            prompt_to_feed = vision_ids
+
+        # Install the multi-scale visual residual for the duration of this
+        # generation, and always remove it afterwards -- the wrappers hold THIS
+        # request's features, so outliving the request would feed one image's
+        # detail into a later, different prompt.
+        from contextlib import ExitStack
+
+        from .mlx_vision_addon import deepstack_layers
+
+        _stack = ExitStack()
+        _side = getattr(self, "_vision_side", None) or {}
+        if input_embeddings is not None and _side.get("deepstack_visual_embeds") is not None:
+            _stack.enter_context(
+                deepstack_layers(
+                    self.llm,
+                    _side.get("deepstack_visual_embeds"),
+                    _side.get("visual_pos_masks"),
+                    int(_side.get("seq_len") or 0),
+                )
+            )
+
         try:
             if stream:
-                if fed_ids_to_record and isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
+                if (
+                    fed_ids_to_record
+                    and isinstance(prompt_cache_key, str)
+                    and prompt_cache_key.strip()
+                ):
                     # Recorded eagerly: the stream feeds lazily, but the ids are
                     # deterministic and a mid-stream failure self-heals at the
                     # next call through the min(lcp, cache_len) guard.
                     self._record_fed_token_ids(prompt_cache_key.strip(), fed_ids_to_record)
-                return self._stream_generate_with_tools(
+                _streamed = self._stream_generate_with_tools(
                     prompt_to_feed,
                     max_tokens,
                     temperature,
                     top_p,
                     top_k,
                     tools,
-                    kwargs.get('tool_call_tags'),
+                    kwargs.get("tool_call_tags"),
                     seed_value,
                     prompt_cache,
+                    input_embeddings=input_embeddings,
                 )
+
+                # The streamed generator is consumed AFTER this function returns,
+                # so the residual has to stay installed until it is exhausted --
+                # closing here would remove it before the prompt pass runs.
+                def _guarded_stream(_inner=_streamed, _st=_stack):
+                    try:
+                        for _chunk in _inner:
+                            yield _chunk
+                    finally:
+                        _st.close()
+
+                return _guarded_stream()
             else:
                 response = self._single_generate(
-                    prompt_to_feed, max_tokens, temperature, top_p, top_k, seed_value, prompt_cache,
+                    prompt_to_feed,
+                    max_tokens,
+                    temperature,
+                    top_p,
+                    top_k,
+                    seed_value,
+                    prompt_cache,
                     usage_prompt=full_prompt,
+                    input_embeddings=input_embeddings,
                 )
-                if fed_ids_to_record and isinstance(prompt_cache_key, str) and prompt_cache_key.strip():
+                if (
+                    fed_ids_to_record
+                    and isinstance(prompt_cache_key, str)
+                    and prompt_cache_key.strip()
+                ):
                     if response.finish_reason != "error":
                         # Deliberate: the record holds FED ids only, not the
                         # reply the model just generated — re-tokenized reply
@@ -2659,14 +2924,9 @@ class MLXProvider(BaseProvider):
                 if media_enrichment:
                     from ..media.enrichment import merge_enrichment_metadata
 
-                    response.metadata = merge_enrichment_metadata(response.metadata, media_enrichment)
-                if dropped_media:
-                    # Structural, not a log line: the caller that asked for
-                    # sight has to be able to TELL, and matching on the
-                    # model's prose ("I don't see an image") is the
-                    # error-substring class this codebase bans.
-                    response.metadata = dict(response.metadata or {})
-                    response.metadata["media_dropped"] = list(dropped_media)
+                    response.metadata = merge_enrichment_metadata(
+                        response.metadata, media_enrichment
+                    )
 
                 # Handle tool execution for prompted models
                 if tools and self.tool_handler.supports_prompted and response.content:
@@ -2675,11 +2935,15 @@ class MLXProvider(BaseProvider):
                 return response
 
         except Exception as e:
+            _stack.close()
             return GenerateResponse(
-                content=f"Error: {str(e)}",
-                model=self.model,
-                finish_reason="error"
+                content=f"Error: {str(e)}", model=self.model, finish_reason="error"
             )
+        finally:
+            # The sync path is done with the model by now; the streaming path
+            # closes its own stack when the generator is exhausted (above).
+            if not stream:
+                _stack.close()
 
     def _build_prompt(
         self,
@@ -2704,7 +2968,9 @@ class MLXProvider(BaseProvider):
             reasoning_effort=reasoning_effort,
         )
 
-    def _build_mlx_sampler(self, temperature: float, top_p: float, top_k: Optional[int] = None) -> Optional[Any]:
+    def _build_mlx_sampler(
+        self, temperature: float, top_p: float, top_k: Optional[int] = None
+    ) -> Optional[Any]:
         """Create an mlx-lm sampler from AbstractCore generation parameters."""
         try:
             from mlx_lm.sample_utils import make_sampler
@@ -2728,6 +2994,203 @@ class MLXProvider(BaseProvider):
             top_k=max(0, top_k_value),
         )
 
+    def _try_vision_addon(self, prompt, media, report, messages, system_prompt, tools, kwargs):
+        """Try native sight. Returns ``(embeddings, ids, processed_prompt)``.
+
+        Never raises: every failure records a named reason on the report and
+        returns ``(None, None, prompt)`` so the caller falls through to the
+        existing delegated-sight path, which produces a caption with provenance.
+        A hard exception here would throw away a subsystem this codebase already
+        built, to produce a worse outcome.
+        """
+        from pathlib import Path
+
+        from ..media.types import MediaType
+        from ..media.delivery import (
+            MLX_VLM_NOT_INSTALLED,
+            VISION_ENCODE_FAILED,
+            VISION_FAMILY_UNSUPPORTED,
+            VISION_MULTI_IMAGE_UNSUPPORTED,
+        )
+
+        # Select by CONTENT, not by file extension: `detect_media_type` classifies
+        # from the suffix and its table omits real image formats, so a genuine
+        # JPEG named `.jfif` was classified DOCUMENT, skipped this lane entirely,
+        # and got embedded as text -- while `analyze_media`'s decode gate, which
+        # sniffs content, let it through. See `_is_image_part`.
+        self._vision_side = {}
+        images = [mc for mc in (media or []) if self._is_image_part(mc)]
+        if not images:
+            return None, None, prompt  # documents/PDFs keep the existing path
+        # The capability registry is the source of truth for what the MODEL can
+        # do. A checkpoint the registry does not declare sighted is not served
+        # here, even if a vision tower is present on disk -- the registry is where
+        # that claim belongs, and disagreeing with it silently would create a
+        # second source of truth. The on-disk and runtime checks below answer a
+        # different question: whether this TRANSPORT can carry the pixels.
+        if not (self.model_capabilities or {}).get("vision_support", False):
+            report.drop(
+                "vision_not_declared",
+                detail=f"{self.model} is not declared vision-capable in the "
+                "model capability registry",
+            )
+            return None, None, prompt
+        if not getattr(self, "_vision_usable", False):
+            reason = getattr(self, "_vision_reason", None)
+            if reason:
+                report.drop(reason, detail=str(getattr(self, "_vision_info", {}).get("model_type")))
+            return None, None, prompt
+        if len(images) > 1:
+            report.drop(
+                VISION_MULTI_IMAGE_UNSUPPORTED,
+                detail=f"{len(images)} images; this lane carries one",
+            )
+            return None, None, prompt
+
+        try:
+            from .mlx_vision_addon import MLXVisionAddOn, VisionAddOnUnavailable
+
+            try:
+                from mlx_lm.utils import does_model_support_input_embeddings
+
+                if not does_model_support_input_embeddings(self.llm):
+                    report.drop(
+                        VISION_FAMILY_UNSUPPORTED,
+                        detail="loaded mlx-lm model does not accept input_embeddings",
+                    )
+                    return None, None, prompt
+            except ImportError:
+                pass
+
+            # Built once per loaded checkpoint, under a lock: the gateway serves
+            # requests from worker threads, and two concurrent first-image calls
+            # would otherwise each load a vision tower and race to publish it.
+            addon = getattr(self, "_vision_addon", None)
+            if addon is None:
+                with self._vision_addon_lock:
+                    addon = self._vision_addon
+                    if addon is None:
+                        addon = MLXVisionAddOn(
+                            self._resolved_model_id,
+                            self.tokenizer,
+                            self._vision_info,
+                            self.llm,
+                        )
+                        self._vision_addon = addon
+
+            processed = f"{addon.placeholder}{prompt}"
+            # Render with the SAME thinking controls the text path uses. The
+            # encoder tokenizes this string and its ids are what the decoder
+            # consumes, so rendering it differently would silently disable
+            # thinking control on the vision lane -- which measurably changed the
+            # answer (a model that reasons freely can talk itself out of a
+            # correct reading, and on a small budget spends the whole allowance
+            # thinking and returns empty content).
+            mlx_enable_thinking = kwargs.get("_acore_mlx_enable_thinking")
+            mlx_reasoning_effort = kwargs.get("_acore_mlx_reasoning_effort")
+            full = self._build_prompt(
+                processed,
+                messages,
+                system_prompt,
+                tools,
+                enable_thinking=(
+                    mlx_enable_thinking if isinstance(mlx_enable_thinking, bool) else None
+                ),
+                reasoning_effort=(
+                    mlx_reasoning_effort if isinstance(mlx_reasoning_effort, str) else None
+                ),
+            )
+            paths = [self._materialize_image(mc) for mc in images]
+            # Hash the bytes actually handed to the encoder. Hashing a parallel
+            # field lets the record attest to an image the model never saw.
+            encoded_bytes = Path(paths[0]).read_bytes()
+            ids, embeds, n_tokens, fidelity, side = addon.compute_embeddings(self.llm, full, paths)
+        except Exception as exc:
+            reason = getattr(exc, "reason", None) or VISION_ENCODE_FAILED
+            report.drop(reason, detail=str(exc))
+            self.logger.warning(f"mlx vision add-on unavailable ({reason}): {exc}")
+            return None, None, prompt
+
+        report.deliver(
+            index=0,
+            kind="image",
+            content=encoded_bytes,
+            tokens=n_tokens,
+            transport="mlx_vision_addon",
+            # ADR 0001: annotate best-effort behaviour rather than absorbing it.
+            # Only M-RoPE families lose positional fidelity here; `fidelity` adds
+            # any encoder side channel input_embeddings could not carry.
+            fidelity=(
+                (("rope_1d_substituted",) if self._vision_info.get("uses_mrope") else ())
+                + tuple(fidelity)
+            ),
+        )
+        self._vision_side = side
+        return embeds, ids, processed
+
+    @staticmethod
+    def _is_image_part(mc) -> bool:
+        """Is this media part an image, judged by its bytes?
+
+        The declared `media_type` is honoured when it already says IMAGE. When it
+        does not, the bytes are sniffed, because extension-based classification
+        misses several real image formats (.jfif, .jpe, .heic, .heif, .avif,
+        .jp2, .pjpeg) and would silently route them away from the vision lane
+        while `analyze_media`'s own decode gate -- which sniffs content -- lets
+        them through.
+        """
+        from pathlib import Path as _Path
+
+        from ..media.types import MediaType
+
+        if getattr(mc, "media_type", None) is MediaType.IMAGE:
+            return True
+        if str(getattr(mc, "mime_type", "") or "").startswith("image/"):
+            return True
+        try:
+            import base64 as _b64
+            import io
+
+            from PIL import Image
+
+            # The FILE first. When a part was misclassified as a document its
+            # `content` holds EXTRACTED TEXT, not the original bytes, so sniffing
+            # content would miss exactly the case this exists to catch.
+            path = getattr(mc, "file_path", None)
+            if path and _Path(str(path)).is_file():
+                Image.open(str(path)).verify()
+                return True
+            raw = getattr(mc, "content", None)
+            if isinstance(raw, str):
+                raw = _b64.b64decode(raw, validate=False)
+            if not isinstance(raw, (bytes, bytearray)) or not raw:
+                return False
+            Image.open(io.BytesIO(bytes(raw))).verify()
+            return True
+        except Exception:
+            return False
+
+    @staticmethod
+    def _materialize_image(mc) -> str:
+        """A filesystem path the vision processor can open."""
+        import base64 as _b64
+        import tempfile
+        from pathlib import Path as _Path
+
+        path = getattr(mc, "file_path", None)
+        if path and _Path(str(path)).is_file():
+            return str(path)
+        raw = getattr(mc, "content", None)
+        data = _b64.b64decode(raw) if isinstance(raw, str) else raw
+        suffix = ".png"
+        mime = str(getattr(mc, "mime_type", "") or "")
+        if "jpeg" in mime or "jpg" in mime:
+            suffix = ".jpg"
+        fd = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
+        fd.write(data)
+        fd.close()
+        return fd.name
+
     def _single_generate(
         self,
         prompt: Any,
@@ -2738,6 +3201,8 @@ class MLXProvider(BaseProvider):
         seed: Optional[int] = None,
         prompt_cache: Optional[Any] = None,
         usage_prompt: Optional[str] = None,
+        *,
+        input_embeddings: Optional[Any] = None,
     ) -> GenerateResponse:
         """Generate single response.
 
@@ -2750,6 +3215,7 @@ class MLXProvider(BaseProvider):
         # Handle seed parameter (MLX supports seed via mx.random.seed)
         if seed is not None:
             import mlx.core as mx
+
             mx.random.seed(seed)
             self.logger.debug(f"Set MLX random seed to {seed} for deterministic generation")
 
@@ -2761,6 +3227,11 @@ class MLXProvider(BaseProvider):
         # Try different MLX API signatures
         try:
             # Try new mlx-lm API
+            # Only pass the kwarg when we actually have embeddings, so a
+            # text-only call is byte-identical to the previous call site.
+            embed_kwargs = (
+                {"input_embeddings": input_embeddings} if input_embeddings is not None else {}
+            )
             response_text = self.generate_fn(
                 self.llm,
                 self.tokenizer,
@@ -2769,25 +3240,35 @@ class MLXProvider(BaseProvider):
                 verbose=False,
                 prompt_cache=prompt_cache,
                 **sampler_kwargs,
+                **embed_kwargs,
             )
         except TypeError:
+            if input_embeddings is not None:
+                # The legacy-signature retry below drops prompt_cache AND the
+                # embeddings and re-runs text-only, and the bare `except` under it
+                # substitutes a canned sentence. Either would answer from text
+                # while the lane had already claimed sight. Fail closed instead.
+                raise
             try:
                 # Try older API without parameters
-                response_text = self.generate_fn(
-                    self.llm,
-                    self.tokenizer,
-                    prompt
-                )
+                response_text = self.generate_fn(self.llm, self.tokenizer, prompt)
             except:
                 # Fallback to basic response
-                response_text = str(usage_prompt or prompt) + " I am an AI assistant powered by MLX on Apple Silicon."
+                response_text = (
+                    str(usage_prompt or prompt)
+                    + " I am an AI assistant powered by MLX on Apple Silicon."
+                )
 
         gen_time = round((time.time() - start_time) * 1000, 1)
 
         generated, reasoning = self._postprocess_generated_text(response_text.strip())
         metadata = {"reasoning": reasoning} if reasoning else None
 
-        usage_text = usage_prompt if isinstance(usage_prompt, str) else (prompt if isinstance(prompt, str) else "")
+        usage_text = (
+            usage_prompt
+            if isinstance(usage_prompt, str)
+            else (prompt if isinstance(prompt, str) else "")
+        )
         return GenerateResponse(
             content=generated,
             model=self.model,
@@ -2811,7 +3292,7 @@ class MLXProvider(BaseProvider):
             "total_tokens": total_tokens,
             # Keep legacy keys for backward compatibility
             "prompt_tokens": input_tokens,
-            "completion_tokens": output_tokens
+            "completion_tokens": output_tokens,
         }
 
     def _stream_generate(
@@ -2824,14 +3305,19 @@ class MLXProvider(BaseProvider):
         tool_call_tags: Optional[str] = None,
         seed: Optional[int] = None,
         prompt_cache: Optional[Any] = None,
+        *,
+        input_embeddings: Optional[Any] = None,
     ) -> Iterator[GenerateResponse]:
         """Generate real streaming response using MLX stream_generate with tool tag rewriting support"""
         try:
             # Handle seed parameter (MLX supports seed via mx.random.seed)
             if seed is not None:
                 import mlx.core as mx
+
                 mx.random.seed(seed)
-                self.logger.debug(f"Set MLX random seed to {seed} for deterministic streaming generation")
+                self.logger.debug(
+                    f"Set MLX random seed to {seed} for deterministic streaming generation"
+                )
 
             # Initialize tool tag rewriter if needed
             rewriter = None
@@ -2839,6 +3325,7 @@ class MLXProvider(BaseProvider):
             if tool_call_tags:
                 try:
                     from ..tools.tag_rewriter import create_tag_rewriter
+
                     rewriter = create_tag_rewriter(tool_call_tags)
                 except ImportError:
                     pass
@@ -2846,6 +3333,11 @@ class MLXProvider(BaseProvider):
             # Use MLX's native streaming with minimal parameters
             sampler = self._build_mlx_sampler(temperature, top_p, top_k)
             sampler_kwargs = {"sampler": sampler} if sampler is not None else {}
+            # Only pass the kwarg when we have embeddings, so a text-only stream
+            # is byte-identical to the previous call site.
+            embed_kwargs = (
+                {"input_embeddings": input_embeddings} if input_embeddings is not None else {}
+            )
             for response in self.stream_generate_fn(
                 self.llm,
                 self.tokenizer,
@@ -2853,6 +3345,7 @@ class MLXProvider(BaseProvider):
                 max_tokens=max_tokens,
                 prompt_cache=prompt_cache,
                 **sampler_kwargs,
+                **embed_kwargs,
             ):
                 # Each response has a .text attribute with the new token(s)
                 content = response.text
@@ -2866,21 +3359,21 @@ class MLXProvider(BaseProvider):
                     content=content,
                     model=self.model,
                     finish_reason=None,  # MLX doesn't provide finish reason in stream
-                    raw_response=response
+                    raw_response=response,
                 )
 
         except Exception as e:
             yield GenerateResponse(
-                content=f"Error: {str(e)}",
-                model=self.model,
-                finish_reason="error"
+                content=f"Error: {str(e)}", model=self.model, finish_reason="error"
             )
 
     def get_capabilities(self) -> List[str]:
         """Get MLX capabilities"""
         return ["streaming", "chat"]
 
-    def get_model_residency(self, *, task: str = "text_generation", model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
+    def get_model_residency(
+        self, *, task: str = "text_generation", model: Optional[str] = None, **kwargs
+    ) -> Dict[str, Any]:
         """Return Core-owned in-process residency truth for the loaded MLX provider."""
         _ = kwargs
         task_s = str(task or "text_generation").strip() or "text_generation"
@@ -2908,7 +3401,6 @@ class MLXProvider(BaseProvider):
         # For MLX, max_tokens is the max output tokens
         return kwargs.get("max_output_tokens", self.max_output_tokens)
 
-
     def _stream_generate_with_tools(
         self,
         full_prompt: Any,  # rendered string OR delta-feed token ids
@@ -2920,13 +3412,23 @@ class MLXProvider(BaseProvider):
         tool_call_tags: Optional[str] = None,
         seed: Optional[int] = None,
         prompt_cache: Optional[Any] = None,
+        *,
+        input_embeddings: Optional[Any] = None,
     ) -> Iterator[GenerateResponse]:
         """Stream generate with tool execution at the end"""
         collected_content = ""
 
         # Stream the response content
         for chunk in self._stream_generate(
-            full_prompt, max_tokens, temperature, top_p, top_k, tool_call_tags, seed, prompt_cache
+            full_prompt,
+            max_tokens,
+            temperature,
+            top_p,
+            top_k,
+            tool_call_tags,
+            seed,
+            prompt_cache,
+            input_embeddings=input_embeddings,
         ):
             collected_content += chunk.content or ""
             yield chunk
@@ -2935,9 +3437,7 @@ class MLXProvider(BaseProvider):
         if tools and self.tool_handler.supports_prompted and collected_content:
             # Create complete response for tool processing
             complete_response = GenerateResponse(
-                content=collected_content,
-                model=self.model,
-                finish_reason="stop"
+                content=collected_content, model=self.model, finish_reason="stop"
             )
 
             # Handle tool execution using base method
@@ -2945,11 +3445,9 @@ class MLXProvider(BaseProvider):
 
             # If tools were executed, yield the tool results as final chunk
             if final_response.content != collected_content:
-                tool_results_content = final_response.content[len(collected_content):]
+                tool_results_content = final_response.content[len(collected_content) :]
                 yield GenerateResponse(
-                    content=tool_results_content,
-                    model=self.model,
-                    finish_reason="stop"
+                    content=tool_results_content, model=self.model, finish_reason="stop"
                 )
 
     @classmethod
@@ -2994,7 +3492,10 @@ class MLXProvider(BaseProvider):
                     if not org_dir.is_dir():
                         continue
                     # These org folders are MLX by design (model names may not include "mlx")
-                    include_all_in_org = org_dir.name.lower() in {"mlx-community", "lmstudio-community"}
+                    include_all_in_org = org_dir.name.lower() in {
+                        "mlx-community",
+                        "lmstudio-community",
+                    }
                     for model_dir in org_dir.iterdir():
                         if not model_dir.is_dir():
                             continue
@@ -3005,18 +3506,17 @@ class MLXProvider(BaseProvider):
             models = sorted(model_set)
 
             # Apply new capability filtering if provided
-            input_capabilities = kwargs.get('input_capabilities')
-            output_capabilities = kwargs.get('output_capabilities')
-            capability_routes = kwargs.get('capability_routes')
+            input_capabilities = kwargs.get("input_capabilities")
+            output_capabilities = kwargs.get("output_capabilities")
+            capability_routes = kwargs.get("capability_routes")
 
             if input_capabilities or output_capabilities or capability_routes:
                 models = filter_models_by_capabilities(
-                    models, 
+                    models,
                     input_capabilities=input_capabilities,
                     output_capabilities=output_capabilities,
                     capability_routes=capability_routes,
                 )
-
 
             return models
 

@@ -20,6 +20,7 @@ import re
 import time
 import json
 import base64
+import hashlib
 import ast
 import textwrap
 from datetime import datetime
@@ -90,6 +91,27 @@ from abstractcore.utils.truncation import preview_text
 logger = get_logger(__name__)
 
 FETCH_URL_MAX_CONTENT_LENGTH_BYTES = 10 * 1024 * 1024  # 10MB
+
+# ---------------------------------------------------------------------------
+# fetch_url payload policy: ONE canonical copy of the page
+# ---------------------------------------------------------------------------
+# `content` is THE payload. `raw_text` and `normalized_text` are EVIDENCE — a
+# second and third rendering of the same page that a caller pays for on every
+# fetch. Measured on a 29k-char article the old envelope shipped
+# content + normalized_text + rendered + raw_text = 222k chars of JSON: 7.6x
+# amplification, and the third copy was the raw WordPress markup, <style> tags
+# and all.
+#
+# The rule: a secondary text field is inlined only while it is CHEAP. Above the
+# cap the key survives (consumers keep working) with value None, and a
+# descriptor (chars / bytes / sha256 / content_type) records exactly what was
+# withheld so an evidence recorder can still say what it did not get.
+# Embedders that genuinely want the old behaviour can raise this constant.
+FETCH_URL_MAX_INLINE_EVIDENCE_CHARS = 2000
+
+# The human/LLM-facing `rendered` header quotes at most this much of the
+# markdown; the untruncated text is in `content`.
+_HTML_RENDER_PREVIEW_CHARS = 600
 
 
 def _normalize_positive_int_tool_arg(
@@ -4256,6 +4278,206 @@ def write_file(file_path: str, content: str, mode: str = "w", create_dirs: bool 
         return f"❌ Unexpected error writing file: {str(e)}"
 
 
+# ---------------------------------------------------------------------------
+# Web-search argument normalization
+# ---------------------------------------------------------------------------
+# A model does not know a backend's private vocabulary; it guesses in English.
+# `ddgs` accepts exactly {h,d,w,m,y} for `timelimit` and raises KeyError on
+# anything else — in production one `time_range="day"` killed the PRIMARY
+# backend outright and the whole run silently degraded to the HTML scraper.
+# A filter value must never cost the primary backend, so unknown values are
+# mapped here or DROPPED, never forwarded.
+_SEARCH_TIME_RANGE_ALIASES: Dict[str, str] = {
+    # hour
+    "h": "h", "1h": "h", "24h": "h", "hour": "h", "hourly": "h",
+    "past hour": "h", "last hour": "h", "this hour": "h", "past 1 hour": "h",
+    # day
+    "d": "d", "1d": "d", "day": "d", "today": "d", "daily": "d",
+    "24 hours": "d", "24 hrs": "d", "24hrs": "d", "past day": "d",
+    "last day": "d", "this day": "d", "past 24 hours": "d", "last 24 hours": "d",
+    # week
+    "w": "w", "1w": "w", "7d": "w", "week": "w", "weekly": "w", "7 days": "w",
+    "past week": "w", "last week": "w", "this week": "w", "past 7 days": "w",
+    # month
+    "m": "m", "1m": "m", "30d": "m", "month": "m", "monthly": "m",
+    "30 days": "m", "past month": "m", "last month": "m", "this month": "m",
+    "past 30 days": "m",
+    # year
+    "y": "y", "1y": "y", "12m": "y", "year": "y", "yearly": "y",
+    "365 days": "y", "12 months": "y", "past year": "y", "last year": "y",
+    "this year": "y", "past 12 months": "y",
+}
+_SEARCH_TIME_RANGE_VALUES = ("h", "d", "w", "m", "y")
+
+
+def _normalize_search_time_range(value: Any) -> tuple[Optional[str], Optional[str]]:
+    """Map a time-range argument onto the backend vocabulary {h,d,w,m,y}.
+
+    Returns `(normalized, unmappable_original)`. A value that cannot be mapped
+    comes back as `(None, original)` so the caller can DROP the filter and say
+    so, instead of handing the backend a value it will raise on.
+    """
+    if value is None:
+        return None, None
+    raw = re.sub(r"\s+", " ", str(value)).strip()
+    if not raw:
+        return None, None
+    key = raw.strip(" \t\"'").lower()
+    mapped = _SEARCH_TIME_RANGE_ALIASES.get(key)
+    if mapped:
+        return mapped, None
+    # "<n> <unit>" shapes the table does not spell out ("3 days", "6 months").
+    match = re.fullmatch(r"(?:past|last|within(?:\s+the)?)?\s*(\d+)\s*(hour|day|week|month|year)s?", key)
+    if match:
+        return {"hour": "h", "day": "d", "week": "w", "month": "m", "year": "y"}[match.group(2)], None
+    return None, raw
+
+
+# `require_in` names WHERE the required terms must appear. The production model
+# sent "title,body" — an entirely reasonable guess — and it was silently
+# rewritten to "snippet", so the run searched the wrong field AND the payload
+# echoed a value the caller never sent.
+_REQUIRE_IN_VALUES = ("snippet", "title", "title_snippet", "all")
+# DOCUMENTED synonyms: spellings a model can use and get exactly what it asked
+# for, silently. Anything outside this table is still resolved as helpfully as
+# possible, but the substitution is REPORTED — a guess the caller cannot see is
+# how a run ends up searching a field nobody chose.
+_REQUIRE_IN_SYNONYMS: Dict[str, str] = {
+    "snippet": "snippet", "body": "snippet", "text": "snippet",
+    "title": "title",
+    "title_snippet": "title_snippet", "titlesnippet": "title_snippet",
+    "title snippet": "title_snippet", "title+snippet": "title_snippet",
+    "title,snippet": "title_snippet", "title,body": "title_snippet",
+    "title+body": "title_snippet", "title body": "title_snippet",
+    "title,text": "title_snippet", "title+text": "title_snippet",
+    "snippet,title": "title_snippet", "body,title": "title_snippet",
+    "both": "title_snippet", "title_and_snippet": "title_snippet",
+    "all": "all", "any": "all", "everything": "all",
+}
+# Field words used to READ an unrecognized scope as a set of fields.
+_REQUIRE_IN_FIELD_WORDS: Dict[str, str] = {
+    "title": "title", "headline": "title", "heading": "title", "name": "title",
+    "snippet": "snippet", "body": "snippet", "text": "snippet",
+    "description": "snippet", "summary": "snippet", "abstract": "snippet",
+    "url": "url", "link": "url", "href": "url", "everywhere": "url",
+}
+
+
+def _normalize_require_in(value: Any) -> tuple[str, Optional[str]]:
+    """Resolve a `require_in` scope, reporting anything that was not exact.
+
+    Returns `(scope, original_to_report)`. A documented synonym resolves
+    silently; an unrecognized value is still read as helpfully as it can be
+    (set-wise over its field words, else the safe default), and the original
+    comes back so the caller can be told what actually happened."""
+    raw = str(value if value is not None else "").strip()
+    if not raw:
+        return "snippet", None
+    key = re.sub(r"\s*([,+/])\s*", r"\1", raw.lower())
+    key = re.sub(r"\s+", " ", key).strip()
+    mapped = _REQUIRE_IN_SYNONYMS.get(key)
+    if mapped:
+        return mapped, None
+    # Best effort: read it as a delimited list of field names ("title / body").
+    parts = {p for p in re.split(r"[,+/|&_ ]| and ", key) if p}
+    fields = {_REQUIRE_IN_FIELD_WORDS[p] for p in parts if p in _REQUIRE_IN_FIELD_WORDS}
+    if "url" in fields:
+        return "all", raw
+    if fields == {"title"}:
+        return "title", raw
+    if fields and fields != {"snippet"}:
+        return "title_snippet", raw
+    return "snippet", raw
+
+
+# ---------------------------------------------------------------------------
+# Fused ("space-starved") backend text
+# ---------------------------------------------------------------------------
+# One of the engines `ddgs` aggregates strips its <b> highlight markup WITHOUT
+# substituting a separator, so words arrive glued: "thelatestnewsand",
+# "Top 10AINewsJuly212026". The text is still readable-ish to a model, which is
+# exactly the danger: it reads damaged prose as if it were clean, and quotes it.
+# The judgement is made at the PAYLOAD level because fusion is a property of the
+# BACKEND, never of one result — a single long real word ("Internationalization")
+# or one CamelCase identifier can therefore never trip it.
+_FUSED_TOKEN_STRIP = ".,:;|!?()[]\"'`·—–"
+_FUSED_GLUE_WORDS = (
+    "the", "and", "news", "latest", "today", "with", "for", "you", "that",
+    "this", "from", "about", "more", "here", "breaking", "world", "tech",
+)
+_FUSED_MIN_TOKEN_CHARS = 12
+_FUSED_MIN_FLAGGED_ROWS = 2
+_FUSED_MIN_ROW_SHARE = 0.30
+
+
+def _fused_case_transitions(token: str) -> int:
+    return sum(
+        1
+        for a, b in zip(token, token[1:])
+        if (a.islower() and b.isupper())
+        or (a.isalpha() and b.isdigit())
+        or (a.isdigit() and b.isalpha())
+    )
+
+
+def _row_text_looks_fused(text: str) -> bool:
+    """True when one result's text carries a token that cannot be a single word."""
+    for raw_token in str(text or "").split():
+        token = raw_token.strip(_FUSED_TOKEN_STRIP)
+        if len(token) < _FUSED_MIN_TOKEN_CHARS:
+            continue
+        if _fused_case_transitions(token) >= 2:
+            return True
+        if re.search(r"[A-Za-z]\d", token):
+            return True
+        if token.isalpha():
+            low = token.lower()
+            # A long all-alphabetic token is only suspicious when a common word
+            # is buried INSIDE it (offset > 0) — that is what a lost separator
+            # looks like, and it is what "electrochemical" does not do.
+            hits = sum(1 for glue in _FUSED_GLUE_WORDS if low.find(glue, 1) > 0)
+            if hits >= 2:
+                return True
+            if len(token) >= 13 and hits >= 1:
+                return True
+    return False
+
+
+def _rows_look_fused(rows: list) -> bool:
+    """Payload-level verdict: at least two flagged rows AND 30% of the payload."""
+    usable = [r for r in (rows or []) if isinstance(r, dict)]
+    if not usable:
+        return False
+    flagged = sum(
+        1
+        for r in usable
+        if _row_text_looks_fused(f"{r.get('title') or ''} {r.get('snippet') or ''}")
+    )
+    return flagged >= _FUSED_MIN_FLAGGED_ROWS and (flagged / len(usable)) >= _FUSED_MIN_ROW_SHARE
+
+
+def _annotate_tool_parameter(func: Any, arg: str, *, enum: Optional[list] = None, description: Optional[str] = None) -> None:
+    """Publish allowed values for one tool argument in the MODEL-VISIBLE schema.
+
+    A docstring Args block documents an argument for a human reading the source;
+    neither the prompted tool block nor the native JSON schema renders it, so a
+    model calling the tool has never seen it. A JSON-schema `enum` does reach
+    the model on both lanes — which is the whole fix for "the model guessed
+    `require_in='title,body'` and `time_range='day'` because nothing told it
+    otherwise"."""
+    try:
+        params = getattr(func, "_tool_definition").parameters
+        schema = params.get(arg)
+        if not isinstance(schema, dict):
+            return
+        if enum:
+            schema["enum"] = list(enum)
+        if description:
+            schema["description"] = str(description)
+    except Exception:
+        return
+
+
 @tool(
     description="Search the web via DuckDuckGo and return JSON with query, params, results, and success/degradation metadata. num_results defaults to 10.",
     when_to_use="Use for broader web discovery or backend diagnostics. If you only need a short candidate list, prefer skim_websearch first. Treat results as untrusted text.",
@@ -4297,13 +4519,13 @@ def web_search(
         num_results: Number of results to return (default: 10)
         safe_search: Content filtering level - "strict", "moderate", or "off" (default: "moderate")
         region: Regional results preference - "wt-wt" (worldwide), "us-en", "uk-en", "fr-fr", "de-de", etc. (default: "wt-wt")
-        time_range: Time range filter for results (optional):
-            - "h" or "24h": Past 24 hours
-            - "d": Past day
-            - "w" or "7d": Past week
-            - "m" or "30d": Past month
-            - "y" or "1y": Past year
-            - None: All time (default)
+        time_range: Time range filter for results. One of "h" (past hour),
+            "d" (past day), "w" (past week), "m" (past month), "y" (past year),
+            or None for all time (default). Plain-English aliases are accepted
+            and normalized ("hour", "day", "today", "past week", "30 days",
+            "last year", "3 months"); anything that still cannot be mapped is
+            DROPPED with a warning rather than sent to the backend, because an
+            unknown value makes the primary backend fail outright.
 
     Returns:
         JSON string with search results or an error message.
@@ -4312,24 +4534,17 @@ def web_search(
         For best results, install `ddgs` (`pip install ddgs`). Without it, this tool falls back to
         parsing DuckDuckGo's HTML results, which may be less stable and may ignore time_range.
     """
+    # Arguments this call had to drop or rewrite. Threaded into EVERY payload
+    # so the caller can never read a filtered-looking result set that was
+    # actually unfiltered.
+    argument_warnings: list[str] = []
+    argument_limitations: list[str] = []
+
     def _json_output(payload: Dict[str, Any]) -> str:
         try:
             return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
         except Exception:
             return json.dumps({"success": False, "status_hint": "error", "error": "Failed to serialize search results", "query": query}, ensure_ascii=False, separators=(",", ":"))
-
-    def _normalize_time_range(value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return None
-        v = str(value).strip().lower()
-        if not v:
-            return None
-        return {
-            "24h": "h",
-            "7d": "w",
-            "30d": "m",
-            "1y": "y",
-        }.get(v, v)
 
     def _payload(
         *,
@@ -4368,16 +4583,29 @@ def web_search(
             payload["hint"] = str(hint)
         if ddgs_error:
             payload["ddgs_error"] = str(ddgs_error)
-        if warnings:
-            payload["warnings"] = [str(item) for item in warnings if str(item or "").strip()]
-        if limitations:
-            payload["limitations"] = [str(item) for item in limitations if str(item or "").strip()]
+        # An argument this tool had to DROP is reported on every exit path, not
+        # only the ones that happened to build a warnings list: a silently
+        # ignored filter is how a caller ends up trusting results it never asked
+        # for.
+        merged_warnings = list(argument_warnings) + [str(item) for item in (warnings or [])]
+        merged_limitations = list(argument_limitations) + [str(item) for item in (limitations or [])]
+        if merged_warnings:
+            payload["warnings"] = [str(item) for item in merged_warnings if str(item or "").strip()]
+        if merged_limitations:
+            payload["limitations"] = [str(item) for item in merged_limitations if str(item or "").strip()]
         if backend_attempts:
             payload["backend_attempts"] = [dict(item) for item in backend_attempts if isinstance(item, dict)]
         return payload
 
     try:
-        normalized_time_range = _normalize_time_range(time_range)
+        normalized_time_range, dropped_time_range = _normalize_search_time_range(time_range)
+        if dropped_time_range:
+            argument_warnings.append(
+                f"time_range={dropped_time_range!r} is not a supported range and was IGNORED "
+                f"(supported: {', '.join(_SEARCH_TIME_RANGE_VALUES)}; aliases such as 'day', "
+                "'past week', '30 days' are accepted). Results are unfiltered by date."
+            )
+            argument_limitations.append("time_range_ignored_invalid")
         normalized_num_results, num_results_error = _normalize_positive_int_tool_arg(
             num_results,
             field_name="num_results",
@@ -4629,7 +4857,34 @@ def skim_websearch(
     require_in: str = "snippet",
     match: str = "any",
 ) -> str:
-    """Return a smaller, filtered subset of `web_search` results."""
+    """Return a smaller, filtered subset of `web_search` results.
+
+    Args:
+        query: Search query.
+        required_terms: Keywords a result must mention to be kept. Accepts a
+            list, or a comma/pipe/newline-delimited string.
+        num_results: How many results to return (default: 5, capped at 15).
+        safe_search: Content filtering level - "strict", "moderate" or "off"
+            (default: "moderate").
+        region: Regional results preference - "wt-wt" (worldwide), "us-en",
+            "uk-en", "fr-fr", "de-de", ... (default: "wt-wt").
+        time_range: Recency filter - "h" (past hour), "d" (past day), "w" (past
+            week), "m" (past month), "y" (past year), or None for all time
+            (default). Plain-English aliases ("day", "past week", "30 days")
+            are normalized; an unmappable value is dropped with a warning.
+        require_in: Where `required_terms` must appear - "snippet" (default),
+            "title", "title_snippet" (title OR snippet), or "all" (title,
+            snippet or url). Synonyms such as "body", "title,body" and "any"
+            are mapped onto those four; a value that cannot be mapped is
+            reported in `warnings` alongside the scope actually used.
+        match: How to combine multiple `required_terms` - "any" (default, keep a
+            result mentioning at least one term) or "all" (require every term).
+
+    Returns:
+        Compact JSON: query, params, filter (the scopes actually applied),
+        results, counts (fetched/matched/returned), and — when something was
+        degraded or ignored — `warnings`, `limitations` and `degraded`.
+    """
 
     def _snippet_cap_for_results(requested_count: int) -> int:
         # Keep 2-3 sentence snippets for small result sets so agents can make
@@ -4718,12 +4973,26 @@ def skim_websearch(
     requested = min(requested, 15)
 
     terms = [t.lower() for t in _parse_terms(required_terms) if str(t).strip()]
-    require_in_norm = str(require_in or "snippet").strip().lower()
-    if require_in_norm not in {"snippet", "title", "title_snippet", "all"}:
-        require_in_norm = "snippet"
+    argument_warnings: list[str] = []
+    argument_limitations: list[str] = []
+
+    require_in_norm, unmappable_require_in = _normalize_require_in(require_in)
+    if unmappable_require_in:
+        # NEVER a silent swap: the payload used to echo `require_in:"snippet"`
+        # while the tool call said "title,body", so the transcript contradicted
+        # itself and the model had no way to correct course.
+        argument_warnings.append(
+            f"require_in={unmappable_require_in!r} is not a supported scope; used "
+            f"{require_in_norm!r} instead (supported: {', '.join(_REQUIRE_IN_VALUES)})."
+        )
+        argument_limitations.append("require_in_coerced")
 
     match_norm = str(match or "any").strip().lower()
     if match_norm not in {"any", "all"}:
+        argument_warnings.append(
+            f"match={str(match)!r} is not a supported mode; used 'any' instead (supported: any, all)."
+        )
+        argument_limitations.append("match_coerced")
         match_norm = "any"
 
     # Fetch a few more results than requested so filtering doesn't usually zero out.
@@ -4880,9 +5149,28 @@ def skim_websearch(
         out_payload["warnings"] = [str(item) for item in payload.get("warnings") if str(item or "").strip()]
     if isinstance(payload.get("limitations"), list):
         out_payload["limitations"] = [str(item) for item in payload.get("limitations") if str(item or "").strip()]
+    for warning in argument_warnings:
+        out_payload.setdefault("warnings", []).append(warning)
+    for limitation in argument_limitations:
+        out_payload.setdefault("limitations", []).append(limitation)
     if requested_capped:
         out_payload.setdefault("warnings", []).append("num_results was capped at 15 for compact skim output.")
         out_payload.setdefault("limitations", []).append("num_results_capped_at_15")
+
+    # Fused backend text: judged on what the BACKEND returned (all fetched
+    # rows), not on the filtered slice, because fusion is a property of the
+    # backend and the filter can easily leave one row behind. Reported as a
+    # machine-readable degradation so a programmatic consumer — not just a
+    # human reading `note` — can tell the snippet prose is damaged.
+    if _rows_look_fused(results):
+        out_payload["degraded"] = True
+        out_payload.setdefault("limitations", []).append("fused_result_text")
+        out_payload.setdefault("warnings", []).append(
+            "Result text from the search backend has missing word separators "
+            "(words are run together, e.g. 'thelatestnewsand'); treat titles and "
+            "snippets as leads to verify by fetching, not as quotable prose, and "
+            "expect required_terms matching to under-match."
+        )
 
     if ws_fallback_matches:
         # Tell the model the matched text is degraded so it treats snippets
@@ -4926,6 +5214,82 @@ def skim_websearch(
     return _json(out_payload)
 
 
+# Teach the MODEL what these arguments accept. Both tools documented their
+# constrained arguments in a docstring Args block, and neither lane that reaches
+# a model renders a docstring — so the model was guessing. A JSON-schema `enum`
+# travels on the native tool payload, which is what closes the loop behind W1/W2:
+# `require_in="title,body"` and `time_range="day"` were reasonable guesses made
+# in the absence of any stated vocabulary.
+for _search_tool in (web_search, skim_websearch):
+    _annotate_tool_parameter(
+        _search_tool,
+        "time_range",
+        enum=list(_SEARCH_TIME_RANGE_VALUES),
+        description=(
+            "Recency filter: h=past hour, d=past day, w=past week, m=past month, "
+            "y=past year. Omit for all time. Plain-English aliases (\"day\", "
+            "\"past week\", \"30 days\") are normalized; anything unmappable is "
+            "dropped with a warning."
+        ),
+    )
+    _annotate_tool_parameter(
+        _search_tool,
+        "safe_search",
+        enum=["strict", "moderate", "off"],
+        description="Content filtering level: strict, moderate (default) or off.",
+    )
+    _annotate_tool_parameter(
+        _search_tool,
+        "region",
+        description="Regional preference, e.g. wt-wt (worldwide, default), us-en, uk-en, fr-fr, de-de.",
+    )
+_annotate_tool_parameter(
+    skim_websearch,
+    "require_in",
+    enum=list(_REQUIRE_IN_VALUES),
+    description=(
+        "Where required_terms must appear: snippet (default), title, "
+        "title_snippet (title OR snippet), or all (title, snippet or url). "
+        "Synonyms such as body, \"title,body\" and any are mapped onto these."
+    ),
+)
+_annotate_tool_parameter(
+    skim_websearch,
+    "match",
+    enum=["any", "all"],
+    description="Combine required_terms with any (default: at least one) or all (every term).",
+)
+_annotate_tool_parameter(
+    skim_websearch,
+    "required_terms",
+    description="Keywords a result must mention to be kept; list, or a comma/pipe-delimited string.",
+)
+
+
+
+# skim_url's DOWNLOAD bound — a memory safety net, NOT the skim.
+#
+# These are two different caps and conflating them was the bug: `max_bytes`
+# stops reading the response mid-stream BEFORE anything is parsed, while
+# `max_preview_chars` trims the EXTRACTED text afterwards. Only the second one
+# is "a skim". A byte cap truncates the MARKUP, which is not a sample of the
+# content — it hands the parser a broken DOM, and on a page whose article sits
+# after a large <head> and nav it can remove the article entirely. Measured at
+# the old 200 KB default: ja_wikipedia lost 92% of its extractable text,
+# bbc_tech_hub 76%, wikipedia_bert 38%.
+#
+# It bought nothing. Downloading those pages in full versus stopping at 200 KB:
+# ja_wikipedia 0.30s vs 0.23s, wikipedia_bert 0.21s vs 0.23s, bbc 0.23s vs 0.27s
+# — the truncated fetch was SLOWER twice, because the saving is one or two TCP
+# round trips and the cost is tearing the connection down early.
+#
+# So the bound is now the same safety net fetch_url uses, and the skimming is
+# done by `max_preview_chars` on the extracted text, where a percentage of the
+# content actually means something. A caller who wants a cheap peek can still
+# pass a small `max_bytes` explicitly.
+SKIM_URL_MAX_DOWNLOAD_BYTES = FETCH_URL_MAX_CONTENT_LENGTH_BYTES
+
+
 @tool(
     description="Quickly skim a URL (metadata + short text preview) without downloading the full page.",
     when_to_use="Use to decide whether a URL is worth fetching fully; for full parsing, use fetch_url.",
@@ -4944,7 +5308,7 @@ def skim_websearch(
 def skim_url(
     url: str,
     timeout: int = 15,
-    max_bytes: int = 200_000,
+    max_bytes: int = SKIM_URL_MAX_DOWNLOAD_BYTES,
     max_preview_chars: int = 2400,
     max_headings: int = 8,
     user_agent: str = "AbstractCore-SkimTool/1.0",
@@ -4983,11 +5347,11 @@ def skim_url(
     try:
         cap = int(max_bytes)
     except Exception:
-        cap = 200_000
+        cap = SKIM_URL_MAX_DOWNLOAD_BYTES
     if cap <= 0:
-        cap = 200_000
+        cap = SKIM_URL_MAX_DOWNLOAD_BYTES
     # Allow small values for ultra-fast “peek” usage, but keep a tiny floor to avoid empty reads.
-    cap = max(512, min(cap, 2_000_000))
+    cap = max(512, min(cap, FETCH_URL_MAX_CONTENT_LENGTH_BYTES))
 
     try:
         preview_cap = int(max_preview_chars)
@@ -5012,9 +5376,24 @@ def skim_url(
 
     started_at = datetime.utcnow().isoformat()
 
+    # SSRF. `skim_url` had NO destination screening while `fetch_url` — which
+    # this tool's own `when_to_use` tells the model to try FIRST — refuses
+    # loopback, link-local and cloud-metadata targets. A guard the cheaper
+    # sibling does not enforce is not a guard; it is a detour.
+    ssrf_block = fetch_url_guard_destination(u)
+    if ssrf_block is not None:
+        return str(
+            ssrf_block.get("rendered")
+            or f"⛔ Blocked (SSRF guard): {ssrf_block.get('error')}\nURL: {u}"
+        )
+
     try:
         with requests.Session() as session:
             session.headers.update(request_headers)
+            # Redirects are followed, so per-hop screening is required: the
+            # pre-flight check above only covers the first destination.
+            session.mount("http://", SSRFGuardAdapter())
+            session.mount("https://", SSRFGuardAdapter())
             with session.request(
                 method="GET",
                 url=u,
@@ -5120,44 +5499,55 @@ def skim_url(
                                     or _meta_content("name", "og:description")
                                 )
 
-                            _prune_html_soup_for_text(soup)
-                            container = _select_html_main_container(soup, final_url)
-                            try:
-                                _prune_html_container_for_readability(container)
-                            except Exception:
-                                pass
+                            # ONE EXTRACTION SOURCE. This used to re-run the
+                            # pipeline inline (prune -> select -> markdown), which
+                            # shares the helpers but NOT `_extract_main_content`'s
+                            # own decisions — so a skim silently disagreed with a
+                            # fetch of the same URL. Measured on the committed
+                            # fixtures: bbc_tech_hub extracted 8,296 chars via
+                            # fetch_url and 6,777 here, because the inline copy
+                            # missed the link-dominant override and dropped every
+                            # headline URL from a hub page — the one thing a skim
+                            # of a hub page exists to give you. Routing through the
+                            # same function makes the two agree by construction.
+                            main = _extract_main_content(html_text, final_url, keep_links=False)
+                            markdown = str(main.get("content") or "")
+                            if not title:
+                                title = str(main.get("title") or "")
+                            if not description:
+                                description = str(main.get("description") or "")
 
-                            if headings_cap > 0:
+                            # Headings come from the SAME markdown the preview is
+                            # cut from, so the outline can never describe content
+                            # the preview does not contain.
+                            if headings_cap > 0 and markdown:
                                 try:
-                                    scope = container if container is not None else soup
                                     seen: set[str] = set()
-                                    for level in ("h1", "h2", "h3"):
-                                        for tag in scope.find_all(level, limit=200):
-                                            text = str(tag.get_text(" ", strip=True) or "").strip()
-                                            text = " ".join(text.split())
-                                            if not text:
-                                                continue
-                                            lower = text.lower()
-                                            if lower in seen:
-                                                continue
-                                            seen.add(lower)
-                                            headings.append(f"{level.upper()}: {preview_text(text, max_chars=140)}")
-                                            if len(headings) >= headings_cap:
-                                                break
+                                    for line in markdown.splitlines():
+                                        match = re.match(r"^(#{1,3})\s+(.*\S)\s*$", line)
+                                        if match is None:
+                                            continue
+                                        text = " ".join(_strip_markdown_inline(match.group(2)).split())
+                                        if not text:
+                                            continue
+                                        lower = text.lower()
+                                        if lower in seen:
+                                            continue
+                                        seen.add(lower)
+                                        level = f"H{len(match.group(1))}"
+                                        headings.append(f"{level}: {preview_text(text, max_chars=140)}")
                                         if len(headings) >= headings_cap:
                                             break
                                 except Exception:
                                     headings = []
 
-                            markdown = _html_to_markdown(container, base_url=final_url, keep_links=False)
                             if markdown:
                                 preview = preview_text(markdown, max_chars=preview_cap)
                             else:
-                                try:
-                                    text_raw = (container if container is not None else soup).get_text("\n", strip=True)
-                                except Exception:
-                                    text_raw = soup.get_text("\n", strip=True)
-                                preview = preview_text(_normalize_extracted_text(text_raw), max_chars=preview_cap)
+                                preview = preview_text(
+                                    _normalize_extracted_text(str(main.get("text") or "")),
+                                    max_chars=preview_cap,
+                                )
 
                         except Exception:
                             title, description, extracted = _extract_clean_text_from_html(html_text, final_url)
@@ -5264,6 +5654,20 @@ def skim_url(
                 if truncated:
                     downloaded_line += f" (partial; limit {cap:,})"
                 out.append(downloaded_line)
+                if truncated and kind == "html":
+                    # The byte cap is applied BEFORE extraction, so a truncated
+                    # download means a truncated ARTICLE — not merely a truncated
+                    # transfer. Measured on the committed fixtures: ja_wikipedia
+                    # loses 92% of its extractable text at the default cap,
+                    # bbc_tech_hub 76%, wikipedia_bert 38%. Saying only
+                    # "Downloaded: … (partial)" invited the reader to treat the
+                    # preview and the heading outline as a view of the whole
+                    # page, when they are a view of its first 200 KB of markup.
+                    out.append(
+                        "⚠️ Extraction is PARTIAL: the page was cut at the byte cap before it was "
+                        "parsed, so the preview and the headings below cover only the downloaded "
+                        f"portion. For the whole document use fetch_url, or raise max_bytes above {cap:,}."
+                    )
                 if pdf_refetch_note:
                     out.append(pdf_refetch_note)
 
@@ -5494,6 +5898,132 @@ _UNRENDERABLE_SIGNATURES = (
 # content" (a legitimate article always exceeds this; a challenge/JS shell
 # does not).
 _MIN_REAL_CONTENT_CHARS = 200
+# Below this many extracted characters a 2xx HTML response is treated as having
+# produced NO content at all, regardless of how small the shell was. Deliberately
+# tiny: it must not reject a real one-sentence page, only a page that yielded
+# nothing. See `_detect_unrenderable_html`.
+_ZERO_TEXT_FLOOR_CHARS = 25
+
+
+# Error classes that a headless render can actually fix. A BOT CHALLENGE is
+# deliberately excluded by default: the block is on the request, not on the
+# rendering, so a browser carrying the same honest identity is usually blocked
+# too — escalating there burns seconds to arrive at the same refusal and, worse,
+# reports a bot block as if it were a rendering problem.
+_RENDERABLE_ERROR_CLASSES = frozenset({"js_required", "empty_content", "thin_content"})
+# A page that yielded almost no text from a LARGE document is a shell worth
+# rendering. Small pages are left alone: a short page that is genuinely short
+# must never cost a browser launch.
+_THIN_SHELL_MIN_RAW_CHARS = 50_000
+# A client-rendered page answers 200 (or 204). Anything else that still produced
+# a stub body is the server declining, and a browser does not change that.
+_RENDERABLE_STATUS_CODES = frozenset({200, 204})
+
+
+def _escalate_to_rendered_dom(
+    final_url: str,
+    err_class: str,
+    mode: str,
+    status_code: Optional[int] = None,
+    budget_s: Optional[float] = None,
+) -> tuple[Optional[Dict[str, Any]], str]:
+    """Re-fetch `final_url` in the headless browser and extract from the DOM.
+
+    Returns (extraction_dict_with_html, note) on success, or (None, note)
+    explaining why the escalation did not happen or did not help. The note is
+    surfaced to the caller either way — an escalation that silently did nothing
+    would be the silent-degradation failure this pipeline exists to avoid.
+    """
+    if status_code is not None and status_code not in _RENDERABLE_STATUS_CODES and mode != "always":
+        # A 202/203 with a stub body is bot mitigation answering the REQUEST;
+        # rendering re-sends the same request from the same host and gets the
+        # same answer. Free to detect, so do not pay a browser launch for it.
+        return None, (
+            f"not escalated to a headless render: HTTP {status_code} with a stub body is a "
+            "request-level block, not a rendering problem"
+        )
+    if err_class not in _RENDERABLE_ERROR_CLASSES and mode != "always":
+        return None, (
+            f"not escalated to a headless render: {err_class} is a request-level block, "
+            "not a rendering problem — a browser with the same identity is blocked too"
+        )
+
+    # SSRF: the static path screened the ORIGINAL url, but we are about to point
+    # a JavaScript-executing browser at wherever the request LANDED. Screen the
+    # final destination again; a redirect into loopback/link-local must not be
+    # reachable through the render path when it is refused on the static one.
+    try:
+        from .fetch_url_ssrf import fetch_url_guard_destination
+
+        blocked = fetch_url_guard_destination(str(final_url))
+        if blocked is not None:
+            return None, (
+                "not escalated to a headless render: the destination is refused by the "
+                f"SSRF guard ({blocked.get('error') or 'non-public destination'})"
+            )
+    except Exception:
+        return None, "not escalated to a headless render: the destination could not be screened"
+
+    try:
+        from .browser_tools import render_url_html
+    except Exception:
+        return None, "not escalated to a headless render: the browser tool is unavailable"
+
+    # HONOUR THE CALLER'S TIMEOUT. `fetch_url(timeout=5)` used to spend 35s here
+    # because the render budget was a module constant: the argument named
+    # "timeout" did not bound the slowest thing the call could do.
+    from .browser_tools import RENDER_DEFAULT_TIMEOUT_S
+
+    render_budget = float(budget_s) if budget_s else RENDER_DEFAULT_TIMEOUT_S
+    # `render_url_html` promises never to raise for page-level problems, but
+    # process creation itself can fail (fd/fork exhaustion when an agent runs
+    # many tools in parallel), and that would escape as an exception from a
+    # function whose contract is a (result, note) pair.
+    try:
+        result = render_url_html(str(final_url), timeout_s=render_budget)
+    except BaseException as exc:  # noqa: BLE001 - contract is "never raises"
+        return None, (
+            f"headless render could not be started ({type(exc).__name__}: {str(exc)[:160]}) — "
+            "the static result stands"
+        )
+    if not isinstance(result, dict):
+        return None, "headless render returned no usable result — the static result stands"
+    if not result.get("ok"):
+        hint = str(result.get("hint") or "")
+        note = f"headless render did not help ({result.get('error_class')}): {result.get('message')}"
+        if hint:
+            note += f" — install with: {hint}"
+        return None, note
+
+    html = str(result.get("html") or "")
+    main = _extract_main_content(html, str(final_url), keep_links=True)
+    content = str(main.get("content") or "")
+    # SAME FLOOR AS THE STATIC PATH. Accepting at the zero-text floor (25) while
+    # the static path rejects below `_MIN_REAL_CONTENT_CHARS` (200) meant a
+    # render could "succeed" on text the static path would have refused —
+    # excalidraw's 189-char browser-storage disclaimer came back as content, and
+    # a block notice hovering either side of 25 chars made the outcome flip from
+    # run to run. One floor, one meaning.
+    if len(content) < _MIN_REAL_CONTENT_CHARS:
+        status = result.get("status")
+        if isinstance(status, int) and status >= 400:
+            # The browser got a hard HTTP error. That is a definite answer and
+            # it was being discarded in favour of a vague "may be blocked".
+            return None, (
+                f"headless render did not help: the page answered HTTP {status} to the browser too "
+                "— this is a request-level block, not a rendering problem"
+            )
+        return None, (
+            f"headless render did not help: the page rendered but yielded only {len(content)} "
+            f"characters of text (below the {_MIN_REAL_CONTENT_CHARS}-char floor) — it may need "
+            "interaction, or be blocked"
+        )
+    main["_html"] = html
+    main["_final_url"] = str(result.get("final_url") or final_url)
+    return main, (
+        f"content extracted from the rendered DOM after JavaScript ran "
+        f"({result.get('elapsed_s')}s, {len(html):,} chars of DOM)"
+    )
 
 
 def _detect_unrenderable_html(raw_html: str, extracted: str) -> Optional[tuple[str, list[str]]]:
@@ -5530,6 +6060,23 @@ def _detect_unrenderable_html(raw_html: str, extracted: str) -> Optional[tuple[s
         return "empty_content", [
             "the server returned a large HTML shell with no extractable article text",
             "the page is most likely JavaScript-rendered (a client-side app)",
+            "try the site's RSS/API, an AMP/print variant, or a JavaScript-capable fetch",
+        ]
+    # ZERO-TEXT FLOOR. The 20 KB rule above exists so a genuinely short but valid
+    # page is never rejected — but it made the SIZE OF THE SHELL the test, and
+    # small anti-bot/JS shells slip under it: pubmed ships 5.5 KB, reddit 8.4 KB,
+    # and both used to return success=True with content="" and no error_class.
+    # That is the silent-empty failure the never-empty contract exists to
+    # prevent, just below the threshold. The honest discriminator is not how big
+    # the shell is, it is whether ANY readable text came out: a page with
+    # essentially zero extractable characters is never a legitimate success,
+    # however small its markup. A short page with even one real sentence still
+    # clears this floor and is returned as content.
+    if len(body) < _ZERO_TEXT_FLOOR_CHARS:
+        return "empty_content", [
+            "the response carried no extractable text at all (only markup/scripting)",
+            "this is usually a JavaScript-rendered page or a bot-protection shell",
+            "this tool does not execute JavaScript",
             "try the site's RSS/API, an AMP/print variant, or a JavaScript-capable fetch",
         ]
     return None
@@ -5638,6 +6185,80 @@ def _fetch_url_retry_after_seconds(retry_after: Optional[str], *, cap_s: float =
     return None
 
 
+def _text_descriptor(text: str, *, content_type: str, reason: str) -> Dict[str, Any]:
+    """A few dozen chars that stand in for a withheld evidence payload.
+
+    Keeps an evidence recorder honest: it can still report exactly which bytes
+    it did not receive (and re-fetch them) instead of silently recording
+    nothing."""
+    encoded = str(text or "").encode("utf-8", errors="replace")
+    return {
+        "chars": len(str(text or "")),
+        "bytes": len(encoded),
+        "sha256": hashlib.sha256(encoded).hexdigest(),
+        "content_type": str(content_type or ""),
+        "reason": reason,
+    }
+
+
+def _apply_fetch_url_payload_policy(result: Dict[str, Any]) -> Dict[str, Any]:
+    """Enforce ONE canonical copy of the page in a fetch_url result.
+
+    `content` is the payload. `raw_text` (the source bytes as text) and
+    `normalized_text` (a flat rendering of the same page) are evidence mirrors:
+    inlined only while they cost almost nothing, replaced by a descriptor once
+    they do not. The KEYS always survive with an explicit None so existing
+    consumers — `abstractruntime`'s EvidenceRecorder pops both, and
+    `basic_deepsearch` reads them — keep working on a dict that simply has less
+    in it. Callers that want the text should read `content`.
+
+    See FETCH_URL_MAX_INLINE_EVIDENCE_CHARS for the cap and how to raise it.
+    """
+    if not isinstance(result, dict):
+        return result
+    cap = int(FETCH_URL_MAX_INLINE_EVIDENCE_CHARS)
+    content_type = str(result.get("content_type") or "")
+    content_chars = len(str(result.get("content") or ""))
+    for field, reason in (
+        ("raw_text", "raw source is evidence, not payload"),
+        ("rendered_dom", "post-JavaScript DOM is evidence, not payload"),
+        ("normalized_text", "duplicate of `content`"),
+    ):
+        value = result.get(field)
+        if not isinstance(value, str) or len(value) <= cap:
+            continue
+        # Never withhold the only USABLE copy of the text. Extraction that came
+        # back empty — or below the module's own real-content floor, which is
+        # what "a few junk characters" looks like — leaves this field as the
+        # payload. But "keep it" must not mean "inline it whatever its size":
+        # airbnb.com extracts 59 characters from a 600 KB shell, and the blanket
+        # exemption shipped the entire shell, for an amplification of 10,801x —
+        # the exemption fired exactly when the payload was biggest. Keep a
+        # BOUNDED excerpt (so the caller still has whatever signal is in there)
+        # plus the descriptor, and record that it was cut.
+        if content_chars < _MIN_REAL_CONTENT_CHARS:
+            excerpt = value[:cap]
+            result[f"{field}_withheld"] = _text_descriptor(
+                value,
+                content_type=content_type if field == "raw_text" else "text/plain",
+                reason=(
+                    f"extraction yielded only {content_chars} chars, so this field is the best "
+                    f"remaining evidence — kept as a {len(excerpt)}-char excerpt of {len(value)} "
+                    f"(FETCH_URL_MAX_INLINE_EVIDENCE_CHARS={cap})"
+                ),
+            )
+            result[field] = excerpt
+            result[f"{field}_excerpted"] = True
+            continue
+        result[f"{field}_withheld"] = _text_descriptor(
+            value,
+            content_type=content_type if field == "raw_text" else "text/plain",
+            reason=f"{reason}; over FETCH_URL_MAX_INLINE_EVIDENCE_CHARS={cap}",
+        )
+        result[field] = None
+    return result
+
+
 @tool(
     description="Fetch a URL and parse common content types (HTML/JSON/text); supports previews and basic metadata.",
     when_to_use="Use to retrieve and analyze a URL after you know it is worth opening. Prefer skim_url first for a faster, smaller preview. For shorter outputs, set include_full_content=False or keep_links=False.",
@@ -5676,6 +6297,7 @@ def fetch_url(
     data: Optional[Union[Dict[str, Any], str]] = None,
     timeout: int = 45,
     include_binary_preview: bool = False,
+    render_js: str = "auto",
     keep_links: bool = True,
     user_agent: str = _FETCH_URL_DEFAULT_USER_AGENT,
     include_full_content: bool = True,
@@ -5693,6 +6315,18 @@ def fetch_url(
         data: Optional data to send with POST/PUT requests (dict or string)
         timeout: Request timeout in seconds (default: 45)
         include_binary_preview: Whether to include base64 preview for binary content (default: False)
+        render_js: What to do when a page's content is client-rendered and the
+            static fetch extracts nothing usable (default: "auto"):
+            - "auto":   re-fetch through the headless browser when it is
+                        available, then extract from the rendered DOM. If the
+                        browser is not installed, return the ordinary
+                        actionable error plus the install hint.
+            - "never":  never launch a browser; return the static result.
+            - "always": always render, even when the static extraction looks
+                        fine. For a caller that knows the page needs JavaScript.
+                        The static result is kept if the render does not help.
+            Escalation NEVER fires for a page that extracted fine statically, so
+            an ordinary fetch costs no browser launch.
         keep_links: Whether to preserve and extract links from HTML content (default: True)
         user_agent: User-Agent header to use (default: "AbstractCore-FetchTool/1.0")
         include_full_content: Whether to include full text/JSON/XML content (no preview truncation) (default: True)
@@ -5725,6 +6359,15 @@ def fetch_url(
             field_name="timeout",
             default_if_none=45.0,
         )
+        render_js_norm = str(render_js or "auto").strip().lower()
+        if render_js_norm not in {"auto", "never", "always"}:
+            render_js_norm = "auto"
+        render_applied: Optional[str] = None
+        render_failure_note: str = ""
+        extraction_error: Optional[str] = None
+        rendered_dom: Optional[str] = None
+        render_landed_url: str = ""
+
         include_binary_preview_norm, include_binary_preview_error = _normalize_bool_tool_arg(
             include_binary_preview,
             field_name="include_binary_preview",
@@ -5970,6 +6613,43 @@ def fetch_url(
                 content_bytes = b''.join(content_chunks)
                 actual_size = len(content_bytes)
 
+                # EMPTY BODY. A 2xx whose body is zero bytes carried nothing, and
+                # the sniffer classifies an empty payload as "binary" — so it used
+                # to return success=True with detected_as="binary", size_bytes=0
+                # and content="" (imdb answers a bot-suspected request exactly this
+                # way, with a 202). Nothing downstream can act on that, and a
+                # caller reading `content` cannot tell it apart from a page that
+                # genuinely says nothing. Fail loudly instead. A 204/304 is
+                # *supposed* to have no body, so it is not an error.
+                if actual_size == 0 and int(response.status_code) not in (204, 304):
+                    rendered = (
+                        f"⚠️ Empty response body\n"
+                        f"URL: {response.url}\n"
+                        f"Status: {int(response.status_code)} {response.reason}\n"
+                        "Suggested actions:\n"
+                        "  - the server accepted the request but returned no content\n"
+                        "  - a 202/203 with an empty body is usually bot mitigation; retry later\n"
+                        "  - try the site's RSS/API or a JavaScript-capable fetch"
+                    )
+                    return {
+                        "success": False,
+                        "error": "Empty response body",
+                        "error_class": "empty_body",
+                        "retryable": True,
+                        "suggestions": [
+                            "the server accepted the request but returned no content",
+                            "a 202/203 with an empty body is usually bot mitigation; retry later",
+                            "try the site's RSS/API or a JavaScript-capable fetch",
+                        ],
+                        "url": str(url),
+                        "final_url": str(response.url),
+                        "timestamp": str(fetch_timestamp),
+                        "status_code": int(response.status_code),
+                        "content_type": str(content_type or ""),
+                        "size_bytes": 0,
+                        "rendered": rendered,
+                    }
+
                 # Detect and follow meta-refresh redirects (used by privacy-focused services)
                 meta_refresh_url = _detect_meta_refresh(content_bytes, content_type)
                 if meta_refresh_url:
@@ -6116,6 +6796,11 @@ def fetch_url(
                 content_text: Optional[str] = None
                 page_title: Optional[str] = None
                 page_description: Optional[str] = None
+                # True when the selected container was a LISTING (index/hub/feed)
+                # and link targets were therefore kept even though the caller
+                # asked for keep_links=False. Surfaced so that override is
+                # inspectable rather than silent — see `_extract_main_content`.
+                link_dominant: bool = False
                 try:
                     if sniffed_kind in {"html", "json", "xml", "text"}:
                         raw_text = str(sniffed_text_content or "")
@@ -6131,6 +6816,7 @@ def fetch_url(
                             page_title = str(main.get("title") or "") or None
                             page_description = str(main.get("description") or "") or None
                             content_text = str(main.get("content") or "") or None
+                            link_dominant = bool(main.get("link_dominant"))
                             # Never-empty contract (maintainer: "never fail like
                             # that"): an HTML 200 that yielded no real content and
                             # looks like a JS/anti-bot challenge shell returns an
@@ -6140,8 +6826,96 @@ def fetch_url(
                             unrenderable = _detect_unrenderable_html(
                                 raw_text, str(main.get("content") or "")
                             )
+                            # THIN CONTENT IS ALSO A RENDER CANDIDATE. The
+                            # unrenderable detector only fires when extraction
+                            # produced essentially NOTHING, so a page that
+                            # yielded a handful of characters from a large shell
+                            # — airbnb.com gives 59 chars from 589 KB — slipped
+                            # through as a success with no attempt to render it.
+                            # Escalating here is safe: if the render does not
+                            # help we keep the static result and still return
+                            # success, so this can only add content.
+                            thin_shell = (
+                                unrenderable is None
+                                and len(str(content_text or "")) < _MIN_REAL_CONTENT_CHARS
+                                and len(raw_text or "") > _THIN_SHELL_MIN_RAW_CHARS
+                            )
+                            # "always" means ALWAYS. It used to mean "whenever
+                            # the static extraction came back empty", which is
+                            # what "auto" already does — leaving a caller who
+                            # KNOWS the page needs JavaScript no way to say so.
+                            if (
+                                unrenderable is not None or thin_shell or render_js_norm == "always"
+                            ) and render_js_norm != "never":
+                                err_class = unrenderable[0] if unrenderable is not None else "thin_content" 
+                                # RENDER ESCALATION. The static fetch produced no
+                                # usable text — for a client-rendered page that is
+                                # not a failure, it is the wrong tool. Run the page
+                                # in the headless browser this package already
+                                # ships (the optional `browser` extra) and put the
+                                # RENDERED DOM through the very same extraction
+                                # pipeline. Only here: a page that extracted fine
+                                # statically never pays for a browser launch.
+                                rendered_main, render_note = _escalate_to_rendered_dom(
+                                    str(response.url),
+                                    err_class,
+                                    render_js_norm,
+                                    status_code=int(response.status_code),
+                                    budget_s=timeout_s,
+                                )
+                                if rendered_main is not None and len(
+                                    str(rendered_main.get("content") or "")
+                                ) <= len(str(content_text or "")):
+                                    # The render ran but did not beat the static
+                                    # extraction. Keep the better text rather than
+                                    # replacing good content with worse.
+                                    render_failure_note = (
+                                        "headless render did not improve on the static extraction "
+                                        f"({len(str(rendered_main.get('content') or ''))} vs "
+                                        f"{len(str(content_text or ''))} chars) — static result kept"
+                                    )
+                                    rendered_main = None
+
+                                if rendered_main is not None:
+                                    # `raw_text` MEANS "the bytes the server
+                                    # sent". Overwriting it with the rendered DOM
+                                    # destroyed the one field that lets an auditor
+                                    # compare what was served against what was
+                                    # displayed — the exact comparison that
+                                    # matters when JavaScript rewrote the page.
+                                    # The DOM is real evidence too, so it gets its
+                                    # own field and the same withholding policy.
+                                    rendered_dom = str(rendered_main.get("_html") or "")
+                                    # WHERE THE CONTENT ACTUALLY CAME FROM. The
+                                    # page can navigate itself after the HTTP
+                                    # response (location.href, meta refresh), so
+                                    # `response.url` is the pre-render URL. A
+                                    # `final_url` that names the requested page
+                                    # while `content` came from another origin is
+                                    # a false receipt.
+                                    render_landed_url = str(rendered_main.get("_final_url") or "")
+                                    normalized_text = _normalize_text_for_evidence(
+                                        raw_text=rendered_dom,
+                                        content_type_header=content_type,
+                                        url=str(response.url),
+                                    )
+                                    page_title = str(rendered_main.get("title") or "") or page_title
+                                    page_description = (
+                                        str(rendered_main.get("description") or "") or page_description
+                                    )
+                                    content_text = str(rendered_main.get("content") or "") or None
+                                    unrenderable = None
+                                    render_applied = render_note
+                                elif not render_failure_note:
+                                    # Do not clobber a more specific note set
+                                    # just above (e.g. "did not improve on the
+                                    # static extraction").
+                                    render_failure_note = render_note
+
                             if unrenderable is not None:
                                 err_class, suggestions = unrenderable
+                                if render_failure_note:
+                                    suggestions = list(suggestions) + [render_failure_note]
                                 meta_bits = []
                                 if page_title:
                                     meta_bits.append(f"title={page_title!r}")
@@ -6170,6 +6944,8 @@ def fetch_url(
                                     "detected_as": "html",
                                     "title": page_title,
                                     "description": page_description,
+                                    "rendered_with_browser": bool(render_applied),
+                                    "render_note": render_applied or render_failure_note or None,
                                     "rendered": "\n".join(rendered_lines),
                                 }
                         else:
@@ -6180,16 +6956,73 @@ def fetch_url(
                         normalized_text = str(pdf_route.get("normalized_text") or "") or raw_text
                         content_text = normalized_text
                         page_title = str(pdf_route.get("title") or "") or None
-                except Exception:
+                except Exception as exc:
+                    # A failure INSIDE extraction used to be indistinguishable
+                    # from a page that genuinely had nothing: both produced
+                    # success=True with content=None and no explanation. Record
+                    # what went wrong so the caller (and the next maintainer)
+                    # can tell "extraction crashed" from "the page was empty".
                     raw_text = None
                     normalized_text = None
                     content_text = None
+                    extraction_error = f"{type(exc).__name__}: {str(exc)[:200]}"
+                    if os.environ.get("ABSTRACTCORE_DEBUG_EXTRACTION"):
+                        import traceback
+
+                        traceback.print_exc()
+                    link_dominant = False
+
+                # DISCLOSE THE RENDER WHERE A HUMAN READS. The envelope carries
+                # `rendered_with_browser`, but the model-visible header is what
+                # most callers actually show, and text that came out of a
+                # headless render can differ from what the server sent. This has
+                # to happen HERE, not where `rendered` is first joined — that
+                # runs before the escalation decides anything.
+                if render_applied:
+                    rendered = f"{rendered}\n🖥️ Rendered with a headless browser: {render_applied}"
+                elif render_failure_note:
+                    rendered = f"{rendered}\n🖥️ {render_failure_note}"
+
+                if extraction_error and not (content_text and str(content_text).strip()):
+                    # A crash inside extraction that left us with nothing is a
+                    # FAILURE. Returning success=True with content=None here made
+                    # an infrastructure error look like an empty page — the
+                    # silent-degradation shape this pipeline exists to refuse.
+                    rendered_lines = [
+                        "⚠️ Extraction failed after a successful fetch",
+                        f"URL: {str(response.url)}",
+                        f"Status: {int(response.status_code)} {response.reason}",
+                        f"Reason: {extraction_error}",
+                        "Suggested actions:",
+                        "  - retry: this is an internal extraction error, not a property of the page",
+                        "  - set ABSTRACTCORE_DEBUG_EXTRACTION=1 to print the traceback",
+                    ]
+                    return {
+                        "success": False,
+                        "error": f"Extraction failed after a successful fetch: {extraction_error}",
+                        "error_class": "extraction_failed",
+                        "retryable": True,
+                        "extraction_error": extraction_error,
+                        "suggestions": [
+                            "retry: this is an internal extraction error, not a property of the page",
+                            "set ABSTRACTCORE_DEBUG_EXTRACTION=1 to print the traceback",
+                        ],
+                        "url": str(url),
+                        "final_url": str(response.url),
+                        "timestamp": str(fetch_timestamp),
+                        "status_code": int(response.status_code),
+                        "content_type": str(content_type or ""),
+                        "detected_as": str(sniffed_kind or ""),
+                        "rendered_with_browser": bool(render_applied),
+                        "render_note": render_applied or render_failure_note or None,
+                        "rendered": "\n".join(rendered_lines),
+                    }
 
                 result: Dict[str, Any] = {
                     "success": True,
                     "error": None,
                     "url": str(url),
-                    "final_url": str(response.url),
+                    "final_url": render_landed_url or str(response.url),
                     "timestamp": str(fetch_timestamp),
                     "status_code": int(response.status_code),
                     "attempts": attempt + 1,
@@ -6204,8 +7037,30 @@ def fetch_url(
                     "title": page_title,
                     "description": page_description,
                     "content": content_text,
-                    # Evidence-only fields (large). Higher layers should persist these as artifacts and drop them from
-                    # tool outputs to keep run state/prompt size bounded.
+                    # Disclosed, never silent: a caller must be able to tell that
+                    # this text came from a headless render rather than the
+                    # server's own bytes — they can differ, and the render costs
+                    # seconds.
+                    "rendered_with_browser": bool(render_applied),
+                    # The post-JavaScript DOM `content` was extracted from, kept
+                    # separate from `raw_text` (the server's own bytes) and
+                    # withheld above the same cap.
+                    "rendered_dom": rendered_dom,
+                    # On a SUCCESS envelope this may carry the reason a render
+                    # was attempted and did not help — the caller is holding thin
+                    # content and deserves to know a browser already failed to
+                    # improve it, rather than being left to wonder.
+                    "render_note": render_applied or render_failure_note or None,
+                    "extraction_error": extraction_error,
+                    "content_chars": len(str(content_text or "")),
+                    # A listing page's links ARE its content, so they survive
+                    # keep_links=False. This flag is how a caller sees that.
+                    "link_dominant": bool(link_dominant),
+                    # Evidence-only fields. `_apply_fetch_url_payload_policy`
+                    # below withholds them once they stop being cheap, leaving a
+                    # `*_withheld` descriptor in their place — they are a second
+                    # and third copy of the text already in `content`, and the
+                    # caller pays for every one of them.
                     "raw_text": raw_text,
                     "normalized_text": normalized_text,
                     # LLM-visible / UI-friendly rendering.
@@ -6225,7 +7080,7 @@ def fetch_url(
                             "page_count": pdf_route.get("page_count"),
                         }
                     )
-                return result
+                return _apply_fetch_url_payload_policy(result)
 
     except FetchUrlSSRFBlocked as exc:
         return exc.payload
@@ -6847,6 +7702,87 @@ def _replace_with_reparsed_fragment(element: Any) -> None:
     element.decompose()
 
 
+# bs4 models comments, CDATA sections, processing instructions and the doctype
+# as SUBCLASSES of NavigableString. `get_text()` skips them, which is why the
+# flat text path was always clean — but a DOM walker that renders every
+# NavigableString verbatim (our structure-preserving markdown path) happily
+# emitted the author's private build comments as body text
+# ("<!-- Begin each blog post -->" -> a literal "Begin each blog post" line).
+# Matching on the TYPE NAME keeps this working across bs4 releases without
+# importing symbols that may not exist in every version.
+_NON_CONTENT_STRING_TYPES = frozenset(
+    {
+        "Comment",
+        "CData",
+        "ProcessingInstruction",
+        "XMLProcessingInstruction",
+        "Declaration",
+        "Doctype",
+        "Stylesheet",
+        "Script",
+    }
+)
+
+
+def _is_non_content_string(node: Any) -> bool:
+    """True for bs4 NavigableString subclasses that are markup, not content."""
+    if NavigableString is None:
+        return False
+    if not isinstance(node, NavigableString):
+        return False
+    return type(node).__name__ in _NON_CONTENT_STRING_TYPES
+
+
+def _strip_non_content_strings(soup: Any) -> None:
+    """Delete comments/CDATA/PIs/doctype so EVERY downstream path agrees.
+
+    Fixing this at the source (rather than only in the markdown walker) means
+    the flat-text extraction, the markdown extraction and the human render can
+    never disagree about what the page says."""
+    if soup is None:
+        return
+    try:
+        for node in list(soup.find_all(string=_is_non_content_string)):
+            node.extract()
+    except Exception:
+        pass
+
+
+_WRAPPER_COLLAPSE_TAGS = frozenset({"div", "span", "section", "center", "font"})
+
+
+def _collapse_anonymous_wrappers(soup: Any) -> None:
+    """Unwrap attribute-less containers whose only child is another element.
+
+    Lossless: the element has no id, class, role or aria-label for any
+    heuristic to key on, contributes no text of its own, and wraps exactly one
+    child. What it does contribute is DEPTH, which every subtree-walking pass
+    pays for quadratically."""
+    if soup is None:
+        return
+    try:
+        candidates = soup.find_all(list(_WRAPPER_COLLAPSE_TAGS), limit=20000)
+    except Exception:
+        return
+    for element in candidates:
+        attrs = getattr(element, "attrs", None)
+        if attrs is None or attrs:
+            continue
+        try:
+            children = list(element.children)
+        except Exception:
+            continue
+        tag_children = [c for c in children if isinstance(c, Tag)] if Tag is not None else []
+        if len(tag_children) != 1:
+            continue
+        if any(not isinstance(c, Tag) and str(c).strip() for c in children):
+            continue
+        try:
+            element.unwrap()
+        except Exception:
+            continue
+
+
 def _prune_html_soup_for_text(soup: BeautifulSoup, *, keep_hidden: bool = False) -> None:
     """Remove common non-content elements from an HTML soup.
 
@@ -6890,6 +7826,18 @@ def _prune_html_soup_for_text(soup: BeautifulSoup, *, keep_hidden: bool = False)
     except Exception:
         pass
 
+    # Flatten anonymous single-child wrapper chains. Container selection and
+    # every readability pass score containers by walking their subtree, so a
+    # tower of nested <div>s costs O(depth) per level — quadratic overall, and a
+    # generated (or hostile) page nests thousands deep: 90 seconds on a 108KB
+    # document, with `fetch_url`'s timeout covering only the HTTP fetch. A
+    # <div> with no attributes and one element child carries no information, so
+    # removing it is lossless as well as fast.
+    try:
+        _collapse_anonymous_wrappers(soup)
+    except Exception:
+        pass
+
     # Remove hidden elements.
     if not keep_hidden:
         try:
@@ -6905,6 +7853,11 @@ def _prune_html_soup_for_text(soup: BeautifulSoup, *, keep_hidden: bool = False)
     layout_tags = ["nav", "aside", "footer", "header"]
     for element in soup.find_all(layout_tags):
         if element.find_parent(list(protected_parents)) is not None:
+            continue
+        # A footnote/reference list parked in an <aside> is content, not
+        # layout: Sphinx-generated docs put the endnotes the body points at
+        # ("see [1]") inside `<aside class="footnote">`.
+        if _CITATION_HINT_RE.search(_element_attr_signature(element)):
             continue
         element.decompose()
 
@@ -6925,8 +7878,6 @@ def _prune_html_soup_for_text(soup: BeautifulSoup, *, keep_hidden: bool = False)
         "pagination",
         "social",
         "share",
-        "comment",
-        "comments",
         "related",
         "recommend",
         "promo",
@@ -6974,6 +7925,17 @@ def _prune_html_soup_for_text(soup: BeautifulSoup, *, keep_hidden: bool = False)
     # signature. We never accept consent — we REMOVE the banner so the article
     # underneath survives (GDPR-refusal by construction: no cookie is set).
     _strip_consent_banners(soup)
+
+
+# NOTE on comments: `comment`/`comments` are deliberately ABSENT from the
+# blacklists above. Whether a comment region is boilerplate is not decidable
+# from a class name — on an article the comments are furniture, on a forum
+# thread, an issue tracker or a link aggregator the discussion IS the article.
+# Hacker News puts every comment in `div.comment`, and the old unconditional
+# sweep left 282 chars of navigation behind where 6k chars of discussion had
+# been. Comment FORMS ("Leave a Reply") are already removed as form controls,
+# and comment RAILS are caught by the trailing-rail rule, so deleting the text
+# bought nothing and cost every discussion page its content.
 
 
 # Consent-banner text signatures (lowercase). A short block containing one of
@@ -7139,6 +8101,7 @@ def _select_html_main_container(soup: BeautifulSoup, url: str) -> Any:
                 best = candidate
         return best, best_score
 
+    group_winners: list[tuple[Any, float]] = []
     for selectors in selector_groups:
         candidates: list[Any] = []
         try:
@@ -7147,8 +8110,20 @@ def _select_html_main_container(soup: BeautifulSoup, url: str) -> Any:
             candidates = []
         candidates = _dedupe(candidates)
         best, score = _best_by_score(candidates)
-        if best is not None and score >= 0:
-            return best
+        group_winners.append((best, score))
+
+    for index, (best, score) in enumerate(group_winners):
+        if best is None or score < 0:
+            continue
+        # A LISTING page is a set of repeated sibling items, and `article` is in
+        # the selector list above — so on any hub/index the scorer picks ONE CARD
+        # and stops. Measured: arstechnica.com returned 204 chars (one card of
+        # ~30), stackoverflow.blog 462, nasa.gov/news 794 — 3-5% of the page.
+        # Nothing about the winning card is wrong; it is simply not the page. The
+        # tell is purely structural and needs no site knowledge: the winner has
+        # several same-shaped siblings, which only happens in a list.
+        best = _promote_repeated_item_to_its_list(best)
+        return _promote_fragment_to_enclosing_container(best, score, group_winners[index + 1 :])
 
     # Readability-style fallback (adversary B/C): no content selector matched
     # (e.g. beehiiv/Substack utility-class pages) — instead of returning the
@@ -7165,6 +8140,198 @@ def _select_html_main_container(soup: BeautifulSoup, url: str) -> Any:
     return soup.body or soup
 
 
+# A listing needs at least this many same-shaped siblings before we treat the
+# winner as one item OF a list rather than as the page itself. Two could be an
+# article plus a related-post teaser; three or more is a feed.
+_REPEATED_ITEM_MIN_SIBLINGS = 3
+
+
+def _promote_repeated_item_to_its_list(best: Any) -> Any:
+    """Widen a selected container that is one ITEM of a repeated list to the list.
+
+    Site-agnostic and shape-only: if `best` has >= _REPEATED_ITEM_MIN_SIBLINGS
+    siblings under the same parent with the same tag name AND a matching class
+    signature, then `best` is a card in a feed, not the page's main content —
+    return the parent that holds all of them. Walks up while the pattern keeps
+    holding (cards nested in a row nested in a grid), so a deeply wrapped feed
+    still resolves to the whole feed.
+
+    Guarded so it can never *shrink* or wildly overshoot: the parent must
+    actually carry more text than the item, and we stop as soon as the repeated
+    pattern stops. An article page (whose main container has no same-shaped
+    siblings) is untouched.
+    """
+    node = best
+    try:
+        for _ in range(6):
+            widened = _widen_once_if_repeated(node)
+            if widened is None:
+                # The node itself is not a repeated unit — but the card may be
+                # wrapped one level up (arstechnica gives every <article> its own
+                # <div class="col-span-2">, so the DIVS repeat, not the articles).
+                # Try the immediate parent as the repeated unit before giving up.
+                parent = getattr(node, "parent", None)
+                if parent is None or getattr(parent, "name", None) in (None, "html", "[document]", "body"):
+                    break
+                widened = _widen_once_if_repeated(parent)
+                if widened is None:
+                    break
+            node = widened
+    except Exception:
+        return best
+    return node
+
+
+def _widen_once_if_repeated(node: Any) -> Optional[Any]:
+    """Return `node`'s parent when `node` is one of >=3 same-shaped siblings."""
+    parent = getattr(node, "parent", None)
+    if parent is None or getattr(parent, "name", None) in (None, "html", "[document]"):
+        return None
+    name = getattr(node, "name", None)
+    if not name:
+        return None
+    signature = _repeated_item_signature(node)
+    siblings = [
+        child
+        for child in parent.find_all(name, recursive=False)
+        if _repeated_item_signature(child) == signature
+    ]
+    if len(siblings) < _REPEATED_ITEM_MIN_SIBLINGS:
+        return None
+    if len(parent.get_text(" ", strip=True)) <= len(node.get_text(" ", strip=True)):
+        return None
+    return parent
+
+
+# A class token carrying a long digit run is per-INSTANCE, not per-shape:
+# `post-2168051`, `card-2168051`, `item_49383326`. Feed cards are identical in
+# every way except these, so leaving them in the signature makes every card
+# unique and the repeated-item pattern invisible.
+_INSTANCE_CLASS_RE = re.compile(r"\d{4,}")
+
+
+def _repeated_item_signature(node: Any) -> tuple:
+    """Tag name + shape-bearing class set — what makes two feed cards 'the same'.
+
+    Class names are compared as a SET so ordering differences do not split a
+    pattern; ids are ignored, and so are per-instance class tokens (see
+    `_INSTANCE_CLASS_RE`) — every card in a feed carries a unique one, which is
+    exactly why they must not be part of the signature.
+    """
+    try:
+        classes = frozenset(
+            str(c) for c in (node.get("class") or []) if c and not _INSTANCE_CLASS_RE.search(str(c))
+        )
+    except Exception:
+        classes = frozenset()
+    return (getattr(node, "name", None), classes)
+
+# A selected block shorter than this MIGHT be a fragment rather than the page.
+# Size alone never decides — see `_promote_fragment_to_enclosing_container` —
+# it only bounds how far the widening can reach.
+_FRAGMENT_MAX_CHARS = 2000
+
+
+def _promote_fragment_to_enclosing_container(best: Any, score: float, later_winners: list) -> Any:
+    """Widen a HEADLESS selector hit to the enclosing standard container.
+
+    The same selector means different things on different pages: `.markdown-body`
+    is the whole content of a README and is one comment's body on a GitHub issue.
+    The tell is not size, it is that the block has no heading of its own — it
+    cannot say what it is about. The GitHub issue extracted to 445 clean chars
+    that never named the issue, its author or its date; its enclosing `<main>`
+    carries all three AND contains the block, so widening loses nothing.
+
+    Guarded four ways: the pick must be small, headless, and the replacement must
+    be an ANCESTOR (the body always survives) that scores better and does carry a
+    heading. A README, which opens with its own <h1>, is never touched.
+    """
+    try:
+        best_len = len(best.get_text(" ", strip=True))
+        # PROPORTION FIRST, SIZE SECOND. Being a small SLICE of an enclosing
+        # container is a fragment signal at any absolute size, so this test must
+        # not sit behind the `_FRAGMENT_MAX_CHARS` gate. spiegel.de's front page
+        # picked a 2,716-char <article> — over the 2,000-char gate, so the check
+        # never ran — while its <main> held 31,152 chars: we returned 8.7% of the
+        # page and called it the page.
+        if _is_minor_slice_of_an_ancestor(best, best_len, later_winners):
+            widened = _widest_containing_ancestor(best, later_winners)
+            if widened is not None:
+                return widened
+        if best_len >= _FRAGMENT_MAX_CHARS:
+            return best
+        if best.find(["h1", "h2", "h3", "h4", "h5", "h6"]) is not None:
+            # A FEED CARD has a heading of its own — its headline — so the
+            # headless test above cannot see it, and a card whose siblings carry
+            # per-instance utility classes (arstechnica's Tailwind `lg:order-N`
+            # wrappers) defeats the repeated-shape test too. The signal that
+            # still works is proportion: a container that holds a small SLICE of
+            # what an enclosing standard container holds was a fragment of that
+            # page, not the page. Measured: arstechnica's winning card is 204 of
+            # <main>'s 7,709 chars — 2.6%.
+            if not _is_minor_slice_of_an_ancestor(best, best_len, later_winners):
+                return best
+    except Exception:
+        return best
+    for candidate, candidate_score in later_winners:
+        if candidate is None or candidate is best:
+            continue
+        if candidate_score <= score:
+            continue
+        try:
+            if candidate.find(["h1", "h2", "h3"]) is None:
+                continue
+            if best not in candidate.descendants:
+                continue
+        except Exception:
+            continue
+        return candidate
+    return best
+
+
+# A selector hit holding no more than this share of an enclosing standard
+# container's text is a slice of that page, not the page. Deliberately low: a
+# real article is most of its own <main>, while a feed card is a few percent.
+_MINOR_SLICE_MAX_SHARE = 0.25
+
+
+def _is_minor_slice_of_an_ancestor(best: Any, best_len: int, later_winners: list) -> bool:
+    """True if `best` is a small fraction of an ANCESTOR container's text."""
+    for candidate, _candidate_score in later_winners:
+        if candidate is None or candidate is best:
+            continue
+        try:
+            if best not in candidate.descendants:
+                continue
+            candidate_len = len(candidate.get_text(" ", strip=True))
+        except Exception:
+            continue
+        if candidate_len <= 0:
+            continue
+        if float(best_len) / float(candidate_len) <= _MINOR_SLICE_MAX_SHARE:
+            return True
+    return False
+
+
+def _widest_containing_ancestor(best: Any, later_winners: list) -> Optional[Any]:
+    """The largest later-group winner that CONTAINS `best`, or None."""
+    widest: Optional[Any] = None
+    widest_len = 0
+    for candidate, _score in later_winners:
+        if candidate is None or candidate is best:
+            continue
+        try:
+            if best not in candidate.descendants:
+                continue
+            candidate_len = len(candidate.get_text(" ", strip=True))
+        except Exception:
+            continue
+        if candidate_len > widest_len:
+            widest_len = candidate_len
+            widest = candidate
+    return widest
+
+
 def _select_densest_container(soup: BeautifulSoup) -> Any:
     """Readability fallback: the highest-scoring div/section paragraph cluster.
 
@@ -7176,7 +8343,11 @@ def _select_densest_container(soup: BeautifulSoup) -> Any:
     if root is None:
         return None
     try:
-        blocks = root.find_all(["div", "section", "article", "main"], limit=4000)
+        # `table` is in the scan list because table-LAYOUT pages still exist
+        # (Hacker News wraps its entire thread in `<table id="hnmain">`), and
+        # excluding it made the densest-container fallback pick a single
+        # comment out of a 5k-char discussion.
+        blocks = root.find_all(["div", "section", "article", "main", "table"], limit=4000)
     except Exception:
         return None
 
@@ -7287,11 +8458,18 @@ def _extract_main_content(html_content: str, url: str, *, keep_links: bool = Tru
     serializes through the STRUCTURE-PRESERVING markdown renderer
     (`_html_to_markdown`) rather than the flat `get_text("\n")` path — so
     headings, lists, and links survive, and inline tags never split a
-    sentence. Returns a dict: {title, description, content, text} where
-    `content` is markdown (preferred) and `text` is the plain-text fallback.
+    sentence. Returns a dict: {title, description, content, text,
+    link_dominant} where `content` is markdown (preferred) and `text` is the
+    plain-text fallback.
     Never raises — a parse failure degrades to a tag-stripped best-effort.
     """
-    out: Dict[str, Any] = {"title": "", "description": "", "content": "", "text": ""}
+    out: Dict[str, Any] = {
+        "title": "",
+        "description": "",
+        "content": "",
+        "text": "",
+        "link_dominant": False,
+    }
     if not html_content:
         return out
 
@@ -7319,7 +8497,20 @@ def _extract_main_content(html_content: str, url: str, *, keep_links: bool = Tru
                 _prune_html_container_for_readability(container)
             except Exception:
                 pass
-            return _html_to_markdown(container, base_url=url, keep_links=keep_links)
+            # A LISTING page (index/hub/feed/search results) is mostly anchor
+            # text: the links ARE the content. `keep_links=False` means "drop
+            # decorative links from prose to save tokens", not "return forty
+            # headlines the reader has no way to open", so on a link-dominant
+            # container the targets are kept regardless. Signalled to callers
+            # via `link_dominant` so the choice is inspectable, not magic.
+            links_kept = keep_links
+            try:
+                if _container_link_density(container) >= _LINK_DOMINANT_DENSITY:
+                    out["link_dominant"] = True
+                    links_kept = True
+            except Exception:
+                links_kept = keep_links
+            return _html_to_markdown(container, base_url=url, keep_links=links_kept)
 
         markdown = _render(False)
         # Mirror the flat path's hidden-content retry so markdown never comes
@@ -7425,6 +8616,12 @@ def _prune_html_container_for_readability(container: Any) -> None:
         # opening paragraphs. Site/nav headers are handled by the soup-level
         # prune (role=banner + keyword scan) before container selection.
         for element in container.find_all(["nav", "aside", "footer"], limit=2500):
+            # ...and NOT removing an <aside> that is a footnote/reference list:
+            # Sphinx and other doc generators park real endnotes in
+            # `<aside class="footnote">`, and those notes carry facts the body
+            # only points at ("see [1]").
+            if _CITATION_HINT_RE.search(_element_attr_signature(element)):
+                continue
             element.decompose()
     except Exception:
         pass
@@ -7444,18 +8641,23 @@ def _prune_html_container_for_readability(container: Any) -> None:
         "sponsored",
         "subscribe",
         "newsletter",
-        "signup",
-        "signin",
-        "login",
-        "register",
         "cookie",
         "consent",
         "banner",
         "modal",
         "popup",
-        "comments",
-        "comment",
         "tags",
+        # NOTE: "login"/"signin"/"signup"/"register"/"ads" are NOT here — as
+        # substrings they fire inside ordinary words ("authorLoginLink",
+        # "threads", "downloads", "leads"). They live in
+        # `_EXACT_TOKEN_KEYWORDS`, which requires them to NAME the element.
+        # An ARIA tab strip / toolbar / menu bar is an interactive control, not
+        # text. ("footer"/"colophon" are in `_EXACT_TOKEN_KEYWORDS` instead: as
+        # a substring, "footer" fires on BEM element names like
+        # `ActivityHeader-module__footer__HD8mP`, which is a byline.)
+        "tablist",
+        "toolbar",
+        "menubar",
         # Author-bio boxes leak ~author blurbs into the article tail (adversary
         # D: WordPress `saboxplugin-wrap`, generic author-box/about-author).
         "author-box",
@@ -7479,6 +8681,37 @@ def _prune_html_container_for_readability(container: Any) -> None:
         "youmight",
         "up-next",
         "next-up",
+        # "Read next" / recirculation rails (adversary: techstartups
+        # `read_next_wrapper`). The underscore variants are covered by the
+        # separator normalization below, so only the canonical hyphen form is
+        # listed here.
+        "read-next",
+        "readnext",
+        "next-article",
+        "nextarticle",
+        "prev-next",
+        "more-stories",
+        "morestories",
+        "also-read",
+        "recirc",
+        # Third-party content-recommendation embeds (universal vendors, not a
+        # per-domain allowlist: these class names identify the WIDGET, and the
+        # widget is never article content on any site that embeds it).
+        "outbrain",
+        "taboola",
+        "zergnet",
+        # Screen-reader-only text: an a11y idiom for strings that are NOT
+        # visible on the page. They annotate controls ("Bibliographic Explorer
+        # Toggle", "opens in a new window") and are pure noise once the control
+        # they describe has been stripped.
+        "sr-only",
+        "screen-reader",
+        "screenreader",
+        "visually-hidden",
+        "visuallyhidden",
+        "hidden-visually",
+        "assistive-text",
+        "a11y-hidden",
     }
 
     try:
@@ -7491,7 +8724,7 @@ def _prune_html_container_for_readability(container: Any) -> None:
             # container selection falls back to broad scopes (body / soup).
             if element.name in {"html", "body"}:
                 continue
-            if element.name in {"p", "h1", "h2", "h3", "h4", "h5", "h6", "li"}:
+            if element.name in _CONTENT_LEAF_TAGS:
                 continue
 
             combined = " ".join(
@@ -7504,10 +8737,701 @@ def _prune_html_container_for_readability(container: Any) -> None:
             ).strip()
             if not combined:
                 continue
-            if any(k in combined for k in keywords):
+            # Themes disagree about the separator (`read_next_wrapper` vs
+            # `read-next-wrapper` vs `readNextWrapper`); normalize underscores
+            # and camelCase to hyphens so ONE keyword covers all spellings
+            # instead of three near-duplicate entries.
+            normalized = _normalize_attr_tokens(combined)
+            if _CITATION_HINT_RE.search(normalized):
+                continue
+            if any(k in combined or k in normalized for k in keywords):
+                element.decompose()
+                continue
+            if _names_a_ui_control(element):
                 element.decompose()
     except Exception:
         pass
+
+    # General structural rules (beyond keyword whack-a-mole).
+    # ORDER MATTERS: the edge pass reads a trailing block as a whole ("a strip
+    # of call-to-action buttons"), so it must run BEFORE the link-cluster pass
+    # takes the buttons out from under it and leaves an orphan tagline behind.
+    for rule in (
+        _strip_duplicate_sibling_blocks,
+        _strip_page_furniture,
+        _strip_edge_boilerplate,
+        _strip_link_clusters,
+    ):
+        try:
+            rule(container)
+        except Exception:
+            continue
+
+
+# Elements that CARRY meaning by existing: a second <p>, <li> or table row with
+# the same text is authored repetition (a refrain, a changelog of "No changes.",
+# an SLA table of zeros). Only an anonymous container can be a layout artefact.
+# BLOCK containers only. Duplicated INLINE elements are normal markup — a
+# syntax highlighter emits `<span>json</span>` on every line that mentions it,
+# and a browser renders adjacent inline elements fused anyway, so an inline
+# repeat is faithful rendering rather than a layout artefact.
+_ANONYMOUS_BLOCK_TAGS = frozenset({"div", "section"})
+_DUPLICATE_SIBLING_MAX_CHARS = 200
+
+
+def _strip_duplicate_sibling_blocks(container: Any) -> None:
+    """Collapse a block that repeats its immediate sibling's text verbatim.
+
+    Responsive layouts ship the same card twice — one copy for mobile, one for
+    desktop, with the hidden one selected in CSS this extractor never runs. Both
+    copies render, so a BBC hub page said "2 days ago / 2 days ago" under every
+    item. The DOM shows what the flattened text cannot: the duplicates are
+    ANONYMOUS containers, while genuine repetition lives in <p>/<li>/<tr>, which
+    this pass never touches.
+    """
+    if container is None or Tag is None or not isinstance(container, Tag):
+        return
+    for parent in [container] + container.find_all(["div", "section", "main", "article", "body"], limit=4000):
+        if getattr(parent, "attrs", None) is None:
+            continue
+        try:
+            children = [c for c in parent.children if isinstance(c, Tag)]
+        except Exception:
+            continue
+        if len(children) < 2:
+            continue
+        previous_text: Optional[str] = None
+        for child in children:
+            name = str(child.name or "").lower()
+            try:
+                text = re.sub(r"\s+", " ", child.get_text(" ", strip=True))
+            except Exception:
+                previous_text = None
+                continue
+            if not text or len(text) > _DUPLICATE_SIBLING_MAX_CHARS:
+                previous_text = text or None
+                continue
+            if name in _ANONYMOUS_BLOCK_TAGS and text == previous_text:
+                child.decompose()
+                continue
+            previous_text = text
+
+
+def _strip_page_furniture(container: Any) -> None:
+    """Drop short blocks that are the page signing itself off, anywhere in it.
+
+    Text signature, not class name: sqlite.org closes every page with a bare
+    `<p><small><i>This page was last updated on …`, which carries no attribute
+    to key on. The 200-char cap is what keeps an article that DISCUSSES
+    copyright or release dates intact — those blocks are paragraphs, not stamps.
+    """
+    if container is None or Tag is None or not isinstance(container, Tag):
+        return
+    for element in container.find_all(["p", "div", "span", "small", "li", "section"], limit=4000):
+        if getattr(element, "attrs", None) is None:
+            continue
+        if element is container:
+            continue
+        try:
+            # Cheap gate FIRST: a sign-off stamp is a leaf block. Anything that
+            # wraps another block is a container, and `find` returns at its first
+            # block descendant — which keeps this pass linear on deeply nested
+            # markup instead of O(depth^2) in `get_text`.
+            if element.find(list(_FLOW_BLOCK_TAGS)) is not None:
+                continue
+            text = element.get_text(" ", strip=True)
+        except Exception:
+            continue
+        if not text or len(text) > _PAGE_FURNITURE_MAX_CHARS:
+            continue
+        if _PAGE_FURNITURE_RE.match(text):
+            element.decompose()
+
+
+_LINK_CLUSTER_MIN_LINKS = 4
+_SITE_FOOTER_MIN_POLICY_LINKS = 2
+# A block whose visible text is ENTIRELY anchor labels — not a word of
+# connective prose between them — is a list of destinations, not a sentence.
+# Discourse's suggested-topics rail (`crawler-linkback-list`, nested inside the
+# first post's body) and Supabase's Tailwind CTA pair are both exactly this
+# shape, and no class-name blacklist can see either. An author byline does not
+# qualify: "Vaswani, Shazeer, Parmar" carries separators between the links.
+_PURE_LINK_CLUSTER_DENSITY = 0.97
+_PURE_LINK_CLUSTER_MIN_LINKS = 2
+# Any of these inside a candidate means it is a REGION, not a cluster of links:
+# a heading names a section, and a nested block container wraps content.
+_LINK_CLUSTER_DISQUALIFYING_TAGS = [
+    "ul", "ol", "table", "div", "section", "article", "p", "li", "pre", "blockquote",
+    "h1", "h2", "h3", "h4", "h5", "h6",
+]
+# The universal vocabulary of a SITE footer. Every site has these pages and no
+# article body links to four of them in one short block. Matched against the
+# link LABEL and the link PATH, so it survives translation of neither — which
+# is fine: it is a positive signal, and its absence only means "leave it alone".
+_SITE_POLICY_LINK_RE = re.compile(
+    r"(privacy|terms|legal|cookie|sitemap|imprint|impressum|dmca|copyright"
+    r"|accessibility|careers|about-?us|contact-?us|press(?:room)?|security"
+    r"|guidelines|advertise|affiliate|disclaimer|unsubscribe)",
+    re.IGNORECASE,
+)
+_COPYRIGHT_MARK_RE = re.compile(r"(©|\(c\)\s*\d{4}|copyright\s*(?:©|\d{4}))", re.IGNORECASE)
+
+
+def _looks_like_site_footer_cluster(element: Any, anchors: list) -> bool:
+    """Positive proof that a link cluster is the SITE footer, not editorial links.
+
+    Shape alone is not enough: arXiv's author byline is also a run of short
+    link labels with no prose, and deleting it loses the paper's authors. A
+    copyright mark, or two of the universal site-policy destinations, is the
+    evidence that separates chrome from content."""
+    try:
+        text = element.get_text(" ", strip=True)
+    except Exception:
+        return False
+    if _COPYRIGHT_MARK_RE.search(text):
+        return True
+    hits = 0
+    for anchor in anchors:
+        try:
+            probe = f"{anchor.get('href') or ''} {anchor.get_text(' ', strip=True)}"
+        except Exception:
+            continue
+        if _SITE_POLICY_LINK_RE.search(probe):
+            hits += 1
+    return hits >= _SITE_FOOTER_MIN_POLICY_LINKS
+
+
+def _strip_link_clusters(container: Any) -> None:
+    """Drop SITE-FOOTER link clusters anywhere in the body.
+
+    Styled-components sites ship hashed class names only — DigitalOcean's
+    footer is `Sectionstyles__StyledSectionInner-sc-4l5hhw-1 bMaVH` — so a
+    keyword blacklist can never see it and shape is the only signal left. Shape
+    is checked first (four-plus short-label links, no heading, no prose), then
+    `_looks_like_site_footer_cluster` must positively identify it, so an author
+    byline or a run of inline citations is never touched.
+
+    <ul>/<ol> are exempt on top of that: a bulleted list of links is an
+    editorial list ("See also", "References"), which is content.
+    """
+    if container is None or Tag is None or not isinstance(container, Tag):
+        return
+    if _container_link_density(container) >= _LINK_DOMINANT_DENSITY:
+        return  # a listing page is all links by definition
+    for element in container.find_all(["div", "section", "span", "p"], limit=4000):
+        if getattr(element, "attrs", None) is None:
+            continue
+        if element is container:
+            continue
+        try:
+            # Cheap gate FIRST (and it is also the semantic one): a link cluster
+            # holds links, not other blocks. `find` returns at the first block
+            # descendant, so a 2000-deep <div> chain costs O(1) per element here
+            # rather than a full subtree walk.
+            if element.find(_LINK_CLUSTER_DISQUALIFYING_TAGS) is not None:
+                continue
+            anchors = element.find_all("a")
+        except Exception:
+            continue
+        if len(anchors) < _PURE_LINK_CLUSTER_MIN_LINKS:
+            continue
+        total, link = _text_and_link_len(element)
+        if total <= 0 or total > _NAV_MAX_BLOCK_CHARS:
+            continue
+        density = float(link) / float(total)
+        if density < _RAIL_LINK_DENSITY:
+            continue
+        # "Pure" is measured in CHARACTERS OUTSIDE the links, not as a ratio:
+        # `get_text(" ")` inserts one space per element boundary, so a cluster of
+        # nothing but links still scores ~0.97, while an author byline
+        # ("Vaswani, Shazeer, Parmar") spends two characters per gap on real
+        # separators. One char per gap is markup; two is punctuation the author
+        # wrote.
+        non_link_chars = max(0, total - link)
+        is_pure = non_link_chars <= max(2, len(anchors))
+        if _CITATION_HINT_RE.search(_element_attr_signature(element)):
+            continue
+        try:
+            if any(len(p.get_text(" ", strip=True)) >= 100 for p in element.find_all(["p", "blockquote"])):
+                continue
+        except Exception:
+            continue
+
+        # Branch 1: a PURE link cluster — every visible character is a link
+        # label, so there is no sentence here at all, only destinations.
+        if is_pure and len(anchors) >= _PURE_LINK_CLUSTER_MIN_LINKS:
+            element.decompose()
+            continue
+
+        # Branch 2: a mixed block that positively identifies as the SITE FOOTER.
+        # Needs more links and short labels, because a byline or a run of inline
+        # citations has this shape too.
+        if len(anchors) < _LINK_CLUSTER_MIN_LINKS:
+            continue
+        try:
+            if any(len(a.get_text(" ", strip=True)) >= _NAV_MAX_LABEL_CHARS for a in anchors):
+                continue
+        except Exception:
+            continue
+        if not _looks_like_site_footer_cluster(element, anchors):
+            continue
+        element.decompose()
+
+
+# Elements whose class names describe the DATUM they hold, not a page region.
+# arXiv marks the paper's "Comments: 15 pages, 5 figures" cell `td.comments`,
+# and a region-keyword sweep that reaches into table cells eats the fact.
+_CONTENT_LEAF_TAGS = frozenset(
+    {
+        "p",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "li",
+        "td",
+        "th",
+        "dt",
+        "dd",
+        "caption",
+        "figcaption",
+        "pre",
+        "code",
+        "blockquote",
+    }
+)
+
+# Short, ambiguous UI words that are only safe as an EXACT class/id token:
+# `class="tab"` is a tab strip, but "table", "tabular" and "tab-content" are
+# not, so these never participate in the substring scan above.
+_EXACT_TOKEN_KEYWORDS = frozenset(
+    {
+        "tab",
+        "switch",
+        "toggle",
+        "dropdown",
+        "tooltip",
+        "sidebar",
+        "drawer",
+        "overlay",
+        "offcanvas",
+        "skip",
+        "skiplink",
+        # Action controls. A button is something the reader PRESSES; whatever
+        # label it carries ("Click to comment") is an instruction to the reader,
+        # never a statement the document is making.
+        "button",
+        "btn",
+        "cta",
+        # Auth/ad words that are common English SUBSTRINGS: "authorLoginLink"
+        # is a byline, "threads"/"downloads"/"leads" are prose. Only a plain
+        # name like `login-form`, `signin`, `ads` or `ad-slot` is chrome.
+        "login",
+        "signin",
+        "signup",
+        "register",
+        "ads",
+        # NOT bare "ad": Parsoid gives sections opaque ids like `mwAdA`, which
+        # camel-splits to `mw-ad-a`. Two letters are not evidence of anything.
+        "advert",
+        "advertisement",
+        # Page furniture named plainly: `div#footer`, `.site-footer`,
+        # `.article-footer`, `.colophon`.
+        "footer",
+        "colophon",
+        "masthead",
+    }
+)
+# How many hyphen components a class/id may have before the words above stop
+# identifying it. A control is named plainly; a long compound name describes a
+# LAYOUT that merely contains one.
+_UI_CONTROL_MAX_NAME_PARTS = 3
+
+def _names_a_ui_control(element: Any) -> bool:
+    """True when a class/id NAMES one of the UI-control words in `_EXACT_TOKEN_KEYWORDS`.
+
+    Each attribute value is tested on its own, and only when it is a SHORT
+    name. `sidebar`, `sidebar-list`, `article-footer__inner` and
+    `mvp-comments-button` name what they are. Long compound names do not:
+    `content-and-sidebar-wrapper` and `SidebarLayoutStyles__StyledSidebarLayout`
+    name a layout that HOLDS a sidebar beside the article, and matching those
+    deleted GitHub's issue metadata and DigitalOcean's entire price table along
+    with the sidebar they sat next to.
+    """
+    try:
+        values = [str(element.get("id") or ""), str(element.get("role") or "")]
+        values.extend(str(c) for c in (element.get("class") or []) if c)
+    except Exception:
+        return False
+    for value in values:
+        parts = [p for p in _normalize_attr_tokens(value).split("-") if p]
+        if not parts or len(parts) > _UI_CONTROL_MAX_NAME_PARTS:
+            continue
+        if _EXACT_TOKEN_KEYWORDS.intersection(parts):
+            return True
+    return False
+
+
+_ATTR_CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+
+
+def _element_attr_signature(element: Any) -> str:
+    """Normalized id + class + role text of one element, for keyword matching."""
+    try:
+        combined = " ".join(
+            [
+                str(element.get("id") or ""),
+                " ".join([str(c) for c in (element.get("class") or []) if c]),
+                str(element.get("role") or ""),
+            ]
+        )
+    except Exception:
+        return ""
+    return _normalize_attr_tokens(combined)
+
+
+def _normalize_attr_tokens(combined: str) -> str:
+    """Fold `_`/camelCase separators to `-` so one keyword matches all spellings."""
+    text = _ATTR_CAMEL_RE.sub("-", str(combined or ""))
+    return text.replace("_", "-").lower()
+
+
+# Tail-rail LABELS, matched against the TEXT of a trailing heading (not against
+# class names). A heading is only ever tested when it is the last thing left in
+# the container, so the risk of eating a real section is bounded to "the article
+# ends with a heading literally called 'Trending Now'".
+_RAIL_LABEL_RE = re.compile(
+    r"^(?:"
+    r"read\s*next|up\s*next|next\s*up|what\s*to\s*read\s*next"
+    r"|related(?:\s+(?:articles?|stories|posts?|reading|topics?|content))?"
+    r"|more\s+(?:from|on|in|stories|articles?|like\s+this)"
+    r"|(?:most\s+)?(?:trending|popular|read|viewed|shared)(?:\s+now)?"
+    r"|you\s+(?:may|might)\s+(?:also\s+)?like"
+    r"|recommended(?:\s+for\s+you)?|recommendations?"
+    r"|editors?[’']?\s*(?:picks?|choice)"
+    r"|don[’']?t\s+miss|around\s+the\s+web|from\s+our\s+partners"
+    r"|sponsored(?:\s+content)?|promoted(?:\s+stories)?"
+    r"|share\s+this|follow\s+us|advertisement"
+    r")\W*$",
+    re.IGNORECASE,
+)
+
+# An element whose id/class says "these links are the sources/notes of the
+# article" is NEVER a rail — reference lists are link-dense by nature and are
+# exactly the thing a rail heuristic must not eat.
+_CITATION_HINT_RE = re.compile(
+    r"(reference|footnote|endnote|citation|bibliograph|source|note[sy]?\b|further-reading)"
+)
+
+# Above this share of anchor text a container is a LISTING (index/hub/feed/
+# search results) rather than an article. Measured across the fixture corpus the
+# two populations are cleanly separated: articles and reference docs top out
+# around 0.33 (Wikipedia, with its dense inline links), listings start at 0.64.
+_LINK_DOMINANT_DENSITY = 0.5
+
+_RAIL_LINK_DENSITY = 0.65
+_RAIL_MAX_BLOCK_CHARS = 3000
+_RAIL_MAX_REMOVED_FRACTION = 0.25
+_RAIL_MAX_LABEL_CHARS = 48
+
+# Trailing PAGE FURNITURE identified by text signature rather than class name
+# (the sqlite.org docs sign off with a bare `<p><small><i>This page was last
+# updated on …`, which carries no attribute to key on). Only ever applied to a
+# SHORT block at the very end of the container, so an article that discusses
+# copyright is untouched.
+_PAGE_FURNITURE_RE = re.compile(
+    r"^(?:"
+    r"(?:this\s+)?page\s+(?:was\s+)?last\s+(?:updated|modified|reviewed|changed)"
+    r"|last\s+(?:updated|modified|reviewed|changed)\b"
+    r"|(?:©|\(c\)|copyright)\s*\d{4}"
+    r"|all\s+rights\s+reserved"
+    r"|powered\s+by\s+\w"
+    r"|generated\s+(?:by|on)\s+\w"
+    r")",
+    re.IGNORECASE,
+)
+_PAGE_FURNITURE_MAX_CHARS = 200
+
+# A trailing block whose every link is an action BUTTON is a call-to-action
+# strip, not content. Bounded so a genuine closing section is never eaten.
+_CTA_MAX_BLOCK_CHARS = 800
+_BUTTON_HINT_RE = re.compile(r"(button|btn|\bcta\b|cta-)")
+# Utility-CSS frameworks give a button no semantic class at all — Supabase's is
+# `relative inline-flex items-center justify-center cursor-pointer` — so the
+# only thing left that says "this is an action, not a reference" is the LABEL.
+# The call-to-action vocabulary is small, universal and unmistakable.
+_CTA_LABEL_RE = re.compile(
+    r"^(?:"
+    r"sign\s*up|sign\s*in|log\s*in|register|join\s+(?:now|free|us)"
+    r"|get\s+started(?:\s+free)?|start\s+(?:your\s+)?(?:project|free\s+trial|trial|building|now)"
+    r"|start\s+for\s+free|try\s+(?:it\s+)?(?:for\s+)?free|free\s+trial"
+    r"|request\s+a?\s*demo|book\s+a?\s*demo|schedule\s+a?\s*demo|get\s+a?\s*demo"
+    r"|talk\s+to\s+(?:sales|us)|contact\s+(?:sales|us)|get\s+in\s+touch"
+    r"|create\s+(?:an\s+)?account|get\s+a?\s*quote|buy\s+now|download\s+now"
+    r"|subscribe(?:\s+now)?|upgrade(?:\s+now)?|see\s+pricing|view\s+pricing"
+    r")\W*$",
+    re.IGNORECASE,
+)
+
+
+def _is_button_like(anchor: Any) -> bool:
+    """True when an <a> is presented as an action control rather than a reference."""
+    try:
+        if str(anchor.get("role") or "").strip().lower() == "button":
+            return True
+        label = anchor.get_text(" ", strip=True)
+    except Exception:
+        return False
+    if label and _CTA_LABEL_RE.match(label):
+        return True
+    return bool(_BUTTON_HINT_RE.search(_element_attr_signature(anchor)))
+
+
+def _text_and_link_len(element: Any) -> tuple[int, int]:
+    """(total visible chars, chars that sit inside <a>) for one element."""
+    try:
+        total = len(element.get_text(" ", strip=True))
+    except Exception:
+        return 0, 0
+    try:
+        link = sum(len(a.get_text(" ", strip=True)) for a in element.find_all("a"))
+    except Exception:
+        link = 0
+    return total, link
+
+
+def _container_link_density(container: Any) -> float:
+    """Share of a container's visible text that is link anchor text (0.0-1.0)."""
+    total, link = _text_and_link_len(container)
+    if total <= 0:
+        return 0.0
+    return min(1.0, float(link) / float(total))
+
+
+def _looks_like_rail_block(element: Any) -> bool:
+    """True when a trailing block is a recirculation rail rather than content.
+
+    The GENERAL rule the keyword list can never finish: at the end of an
+    article, a block that is mostly anchor text and carries no real prose is a
+    "read next / trending" rail, whatever its class name is. Three guards keep
+    it off legitimate content:
+      * a paragraph of real prose (>= 200 chars) inside the block vetoes it,
+      * ordered lists and blocks whose attributes say references/footnotes/
+        sources are never rails (citation lists are link-dense too),
+      * the block must be small — a 3k+ char block is an article section.
+    """
+    name = str(getattr(element, "name", "") or "").lower()
+    if name in {"html", "body"}:
+        return False
+
+    total, link = _text_and_link_len(element)
+    if total <= 0:
+        return False
+
+    combined = " ".join(
+        [
+            str(element.get("id") or ""),
+            " ".join([str(c) for c in (element.get("class") or []) if c]),
+        ]
+    ).lower()
+    if combined and _CITATION_HINT_RE.search(_normalize_attr_tokens(combined)):
+        return False
+
+    text = element.get_text(" ", strip=True)
+    if len(text) <= _PAGE_FURNITURE_MAX_CHARS and _PAGE_FURNITURE_RE.match(text):
+        # "This page was last updated on …", "© 2026 …", "Powered by …": the
+        # page signing itself off, not a sentence of the document.
+        return True
+
+    if name in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+        # A bare trailing heading is only a rail if its TEXT is a rail label.
+        return len(text) <= _RAIL_MAX_LABEL_CHARS and bool(_RAIL_LABEL_RE.match(text))
+
+    if total > _RAIL_MAX_BLOCK_CHARS:
+        return False
+
+    try:
+        # Real prose vetoes the rail classification.
+        for p in element.find_all(["p", "blockquote"]):
+            if len(p.get_text(" ", strip=True)) >= 200:
+                return False
+        # Numbered lists at the tail are references/steps, not rails.
+        if name == "ol" or element.find("ol") is not None:
+            return False
+        anchors = element.find_all("a")
+    except Exception:
+        return False
+
+    if float(link) / float(total) >= _RAIL_LINK_DENSITY:
+        return True
+
+    # Trailing call-to-action strip ("Still have questions? … Contact sales …
+    # Sign up"): low link density because the sales copy is prose-shaped, but
+    # every link in it is an action BUTTON rather than a reference. A block of
+    # buttons at the end of a document is the page asking the reader for
+    # something, never the document telling the reader something.
+    if anchors and total <= _CTA_MAX_BLOCK_CHARS and all(_is_button_like(a) for a in anchors):
+        return True
+    return False
+
+
+_NAV_MAX_BLOCK_CHARS = 600
+_NAV_MIN_LINKS = 3
+_NAV_MAX_LABEL_CHARS = 25
+
+
+def _looks_like_nav_block(element: Any) -> bool:
+    """True when a LEADING block is a navigation bar rather than the opening of the text.
+
+    The mirror image of `_looks_like_rail_block`. Deliberately stricter, because
+    the top of a document is where the title lives: a nav bar has MANY links, no
+    heading and no prose, so `<h1><a>Title</a></h1>` (link density 1.0, one
+    link, a heading) never qualifies."""
+    name = str(getattr(element, "name", "") or "").lower()
+    if name in {"html", "body"} or name.startswith("h"):
+        return False
+    total, link = _text_and_link_len(element)
+    if total <= 0 or total > _NAV_MAX_BLOCK_CHARS:
+        return False
+    if float(link) / float(total) < _RAIL_LINK_DENSITY:
+        return False
+    try:
+        if element.find(["h1", "h2", "h3"]) is not None:
+            return False
+        anchors = element.find_all("a")
+        if len(anchors) < _NAV_MIN_LINKS:
+            return False
+        # A navigation item is a word or two. One long link label means this is
+        # a headline/story row, not a menu — Hacker News' submission row is all
+        # links ("88 points by …| hide | past | favorite | 26 comments") yet it
+        # carries the story title and must survive.
+        if any(len(a.get_text(" ", strip=True)) >= _NAV_MAX_LABEL_CHARS for a in anchors):
+            return False
+        for p in element.find_all(["p", "blockquote"]):
+            if len(p.get_text(" ", strip=True)) >= 100:
+                return False
+    except Exception:
+        return False
+    return True
+
+
+def _strip_edge_boilerplate(container: Any) -> None:
+    """Drop navigation at the START and recirculation rails at the END.
+
+    Walks the "spine" — the container, then the child that holds most of its
+    text, and so on — because themes bury the article body several wrapper divs
+    deep, so the nav bar and the rail are siblings at some inner level, not at
+    the top. Disabled entirely when the container itself is link-dominant: on a
+    listing / hub page the links ARE the content and nothing here is furniture.
+    """
+    if container is None:
+        return
+    if Tag is None or not isinstance(container, Tag):
+        return
+    if _container_link_density(container) >= _LINK_DOMINANT_DENSITY:
+        return
+
+    node = container
+    for _ in range(8):
+        node_total = len(node.get_text(" ", strip=True))
+        if node_total <= 0:
+            return
+        budget = int(_RAIL_MAX_REMOVED_FRACTION * node_total)
+        removed = 0
+
+        kids = [k for k in node.children if isinstance(k, Tag)]
+        while kids:
+            last = kids[-1]
+            text_len = len(last.get_text(" ", strip=True))
+            if text_len == 0:
+                # Spacers (<br>, <hr>, emptied wrappers) never block the scan.
+                kids.pop()
+                continue
+            if not _looks_like_rail_block(last):
+                break
+            if removed + text_len > budget:
+                break
+            removed += text_len
+            last.decompose()
+            kids.pop()
+
+        kids = [k for k in node.children if isinstance(k, Tag)]
+        while kids:
+            first = kids[0]
+            text_len = len(first.get_text(" ", strip=True))
+            if text_len == 0:
+                kids.pop(0)
+                continue
+            if not _looks_like_nav_block(first):
+                break
+            if removed + text_len > budget:
+                break
+            removed += text_len
+            first.decompose()
+            kids.pop(0)
+
+        # Descend into the child that carries the body of the content.
+        kids = [k for k in node.children if isinstance(k, Tag)]
+        if not kids:
+            return
+        node_total = len(node.get_text(" ", strip=True))
+        dominant = max(kids, key=lambda k: len(k.get_text(" ", strip=True)))
+        if len(dominant.get_text(" ", strip=True)) < 0.6 * max(1, node_total):
+            return
+        node = dominant
+
+
+def _emphasize(inner: str, marker: str) -> str:
+    """Wrap text in emphasis markers — unless the text's own edges are markers.
+
+    `<em>*args</em>` naively becomes `**args*`, which every markdown reader
+    parses as bold-"args"-italic: the literal asterisk the docs were teaching is
+    gone, replaced by malformed markup. Docs prose is full of `*args`,
+    `**kwargs`, `*.py` and `*ptr` outside <code>, and the LITERAL text matters
+    more than the styling, so the styling is what gives way."""
+    text = str(inner or "")
+    if not text:
+        return ""
+    if text[0] in "*_" or text[-1] in "*_":
+        return text
+    return f"{marker}{text}{marker}"
+
+
+def _anchor_carries_information(label: str, resolved: Optional[str]) -> bool:
+    """False for anchors that are pure UI: no label, or a control with no words.
+
+    Two shapes, both pure token cost:
+      * an anchor with an EMPTY label — its content was an image or icon, which
+        this extractor already stripped, so only a naked URL would be left;
+      * a NON-navigating anchor (`href="#"`, `javascript:void(0)`) whose label
+        has no letters or digits — Hacker News' comment collapsers, which came
+        out as a column of "[-]" between every comment.
+    """
+    text = str(label or "").strip()
+    if not text:
+        return False
+    if resolved is None and not any(ch.isalnum() for ch in text):
+        return False
+    return True
+
+
+def _markdown_link_target(url: str) -> str:
+    """Percent-encode the characters that would TRUNCATE a markdown link.
+
+    Wikipedia hands out URLs like
+    `.../Transformer_(deep_learning_architecture)#encoder-only`; emitted raw,
+    the first `)` closes the link and every reader — human, renderer or model —
+    follows a URL that stops mid-path. The encoded form resolves identically."""
+    return (
+        str(url or "")
+        .replace(" ", "%20")
+        .replace("(", "%28")
+        .replace(")", "%29")
+        .replace("<", "%3C")
+        .replace(">", "%3E")
+    )
 
 
 def _normalize_inline_markdown(text: str) -> str:
@@ -7522,7 +9446,10 @@ def _inline_markdown_from_node(node: Any, *, base_url: str, keep_links: bool) ->
         return ""
 
     if isinstance(node, NavigableString):
-        if type(node).__name__ == "Doctype":
+        # Comments/CDATA/PIs/doctype are markup, never prose. They are already
+        # removed by `_strip_non_content_strings`; this is the defensive second
+        # line for callers that hand us a soup they pruned themselves.
+        if _is_non_content_string(node):
             return ""
         return str(node)
 
@@ -7541,23 +9468,23 @@ def _inline_markdown_from_node(node: Any, *, base_url: str, keep_links: bool) ->
         label = _normalize_inline_markdown(inner)
         href = node.get("href")
         resolved = _canonicalize_link_url(str(href or ""), base_url)
+        if not _anchor_carries_information(label, resolved):
+            return ""
         if keep_links and resolved:
-            if not label:
-                return resolved
-            return f"[{label}]({resolved})"
+            return f"[{label}]({_markdown_link_target(resolved)})"
         return label
 
     if name in {"strong", "b"}:
         inner = _normalize_inline_markdown(
             "".join(_inline_markdown_from_node(c, base_url=base_url, keep_links=keep_links) for c in node.children)
         )
-        return f"**{inner}**" if inner else ""
+        return _emphasize(inner, "**")
 
     if name in {"em", "i"}:
         inner = _normalize_inline_markdown(
             "".join(_inline_markdown_from_node(c, base_url=base_url, keep_links=keep_links) for c in node.children)
         )
-        return f"*{inner}*" if inner else ""
+        return _emphasize(inner, "*")
 
     if name == "code":
         inner = _normalize_inline_markdown(
@@ -7579,6 +9506,23 @@ def _list_to_markdown_lines(tag: Tag, *, base_url: str, keep_links: bool, indent
     for li in tag.find_all("li", recursive=False):
         prefix = f"{index}. " if ordered else "- "
         index += 1
+        indent = "  " * max(indent_level, 0)
+
+        # A list item that holds a TABLE, a code block or a nested list is a
+        # flow container, not a phrase. Flattening it inline glued adjacent
+        # table cells together ("JSONPythonnumber (real)float") and destroyed
+        # every conversion table in the Python docs.
+        if _contains_block_payload(li):
+            lines.extend(
+                _flow_list_item_lines(
+                    li,
+                    base_url=base_url,
+                    keep_links=keep_links,
+                    indent_level=indent_level,
+                    prefix=prefix,
+                )
+            )
+            continue
 
         text_chunks: list[str] = []
         nested_lines: list[str] = []
@@ -7597,7 +9541,14 @@ def _list_to_markdown_lines(tag: Tag, *, base_url: str, keep_links: bool, indent
             text_chunks.append(_inline_markdown_from_node(child, base_url=base_url, keep_links=keep_links))
 
         item_text = _normalize_inline_markdown("".join(text_chunks)).replace("\n", " ").strip()
-        indent = "  " * max(indent_level, 0)
+        # An EMPTY <li> is layout, not content: icon-only nav bullets, spacing
+        # items, and slots a client-side script fills in later all render as a
+        # bare "-" that says nothing and costs a line. lemonde.fr's front page
+        # emitted 31 of them in a row; arstechnica opened with four. Drop the
+        # item unless it carries text or a nested list of its own.
+        if not item_text and not any(l.strip() for l in nested_lines):
+            index -= 1  # the bullet was never emitted, so do not consume a number
+            continue
         lines.append(f"{indent}{prefix}{item_text}".rstrip())
         lines.extend([l.rstrip() for l in nested_lines])
 
@@ -7605,12 +9556,399 @@ def _list_to_markdown_lines(tag: Tag, *, base_url: str, keep_links: bool, indent
     return lines
 
 
+# Blocks that make a container a FLOW container: rendering them inline destroys
+# information (cell boundaries, line breaks, list nesting).
+_BLOCK_PAYLOAD_TAGS = ("table", "pre", "ul", "ol", "dl", "blockquote", "figure")
+
+
+def _contains_block_payload(element: Any) -> bool:
+    try:
+        return element.find(list(_BLOCK_PAYLOAD_TAGS)) is not None
+    except Exception:
+        return False
+
+
+def _flow_list_item_lines(
+    li: Any, *, base_url: str, keep_links: bool, indent_level: int, prefix: str
+) -> list[str]:
+    """Render one <li> whose content is block-level, keeping it in the list.
+
+    The first line carries the bullet; continuation blocks are indented two
+    spaces, which CommonMark reads as part of the list item and which leaves a
+    GFM pipe table intact."""
+    indent = "  " * max(indent_level, 0)
+    block_lines: list[str] = []
+    for child in li.children:
+        block_lines.extend(
+            _block_markdown_lines_from_node(
+                child, base_url=base_url, keep_links=keep_links, indent_level=indent_level + 1
+            )
+        )
+    while block_lines and not block_lines[0].strip():
+        block_lines.pop(0)
+    if not block_lines:
+        return []
+
+    out = [f"{indent}{prefix}{block_lines[0].strip()}".rstrip()]
+    for line in block_lines[1:]:
+        out.append(f"{indent}  {line}".rstrip() if line.strip() else "")
+    if out and out[-1].strip():
+        out.append("")
+    return out
+
+
+# Emphasis that wraps an ENTIRE heading is redundant markup, not meaning: a
+# heading is already emphatic, and "## **Title**" costs tokens while confusing
+# strict markdown renderers into bold-inside-heading.
+_FULL_EMPHASIS_RE = re.compile(r"^(\*\*\*|\*\*|__|\*|_)(.+?)\1$", re.DOTALL)
+
+
+def _strip_wrapping_emphasis(text: str) -> str:
+    """Drop emphasis markers spanning the WHOLE string ("**Title**" -> "Title").
+
+    Only a wrapper covering the entire string is removed, and only when the
+    inner text carries no marker of its own — so "**A** and **B**" (two separate
+    emphasised spans) is left exactly as it is."""
+    out = str(text or "").strip()
+    for _ in range(3):
+        match = _FULL_EMPHASIS_RE.match(out)
+        if not match:
+            break
+        marker, inner = match.group(1), match.group(2).strip()
+        if not inner or marker in inner:
+            break
+        out = inner
+    return out
+
+
+# Language hints a syntax highlighter leaves on <pre>/<code>: `language-python`,
+# `lang-py`, `highlight-source-js`, `brush: sql`, or the bare token (`python`).
+_CODE_LANG_CLASS_RE = re.compile(
+    r"^(?:language|lang|highlight|highlight-source|brush|syntax|code)[-:]?([a-z0-9+#]{1,15})$"
+)
+_CODE_BARE_LANGS = frozenset(
+    {
+        "bash", "sh", "shell", "zsh", "console", "python", "py", "javascript", "js",
+        "typescript", "ts", "jsx", "tsx", "json", "yaml", "yml", "toml", "ini", "xml",
+        "html", "css", "scss", "sql", "c", "cpp", "csharp", "java", "kotlin", "swift",
+        "go", "rust", "ruby", "php", "perl", "lua", "r", "scala", "haskell", "elixir",
+        "erlang", "clojure", "dart", "diff", "patch", "makefile", "dockerfile", "text",
+    }
+)
+
+
+def _code_language_hint(node: Any) -> str:
+    """Best-effort language for a <pre> block, from its own or its <code>'s class."""
+    candidates: list[Any] = [node]
+    try:
+        inner = node.find("code")
+        if inner is not None:
+            candidates.append(inner)
+    except Exception:
+        pass
+    for element in candidates:
+        try:
+            classes = [str(c).strip().lower() for c in (element.get("class") or []) if c]
+        except Exception:
+            classes = []
+        data_lang = ""
+        try:
+            data_lang = str(element.get("data-lang") or element.get("data-language") or "").strip().lower()
+        except Exception:
+            data_lang = ""
+        if data_lang and re.fullmatch(r"[a-z0-9+#]{1,15}", data_lang):
+            return data_lang
+        for cls in classes:
+            match = _CODE_LANG_CLASS_RE.match(cls)
+            if match and match.group(1) not in {"", "source"}:
+                return match.group(1)
+            if cls in _CODE_BARE_LANGS:
+                return cls
+    return ""
+
+
+def _fence_for(code: str) -> str:
+    """A fence long enough to survive backtick runs inside the code itself."""
+    longest = 0
+    for run in re.findall(r"`+", str(code or "")):
+        longest = max(longest, len(run))
+    return "`" * max(3, longest + 1)
+
+
+# Bounds for markdown table rendering: past these a <table> is a data dump or a
+# layout grid, and a pipe table stops being the readable representation.
+_TABLE_MAX_ROWS = 200
+_TABLE_MAX_COLS = 12
+
+
+_LAYOUT_ONLY_CELL_TAGS = ("div", "table", "pre", "ul", "ol", "blockquote", "section", "form")
+# A cell must hold at least this much text before its block child counts as
+# evidence that the cell is a page REGION rather than a value.
+_LAYOUT_CELL_MIN_REGION_CHARS = 300
+
+
+def _is_layout_table(node: Any) -> bool:
+    """True when a <table> is page scaffolding rather than tabular data.
+
+    Rendering a layout table as a pipe grid is worse than not rendering it at
+    all — Hacker News' nested indent tables came out as a wall of `| --- |`
+    separators with the discussion shredded between them. Three signals, all
+    from the markup's own vocabulary rather than from any site:
+      * ARIA says so (`role="presentation"` / `"none"`),
+      * it nests another <table> (data tables do not),
+      * it has no <th> anywhere AND a cell holds a block container carrying a
+        paragraph's worth of text — that cell is a REGION of the page, not a
+        value. (A short `<div>` wrapper inside a data cell is just markup, so
+        the size floor keeps arXiv's two-column metadata table a real table.)
+    """
+    try:
+        role = str(node.get("role") or "").strip().lower()
+        if role in {"presentation", "none"}:
+            return True
+        if node.find("table") is not None:
+            return True
+        if node.find(["th"]) is not None:
+            return False
+        for cell in node.find_all("td", limit=200):
+            if len(cell.get_text(" ", strip=True)) < _LAYOUT_CELL_MIN_REGION_CHARS:
+                continue
+            if cell.find(list(_LAYOUT_ONLY_CELL_TAGS)) is not None:
+                return True
+    except Exception:
+        return True
+    return False
+
+
+def _table_to_markdown_lines(node: Any, *, base_url: str, keep_links: bool) -> Optional[list[str]]:
+    """Render a <table> as a markdown pipe table, or None to fall back to blocks.
+
+    Returns None for layout tables (one column, a single row, or page
+    scaffolding — see `_is_layout_table`) and for tables past the size bounds:
+    those read better as ordinary blocks than as a malformed grid."""
+    if _is_layout_table(node):
+        return None
+    try:
+        rows_src = [
+            tr
+            for tr in node.find_all("tr")
+            if tr.find_parent("table") is node
+        ]
+    except Exception:
+        return None
+    if not rows_src or len(rows_src) > _TABLE_MAX_ROWS:
+        return None
+
+    rows: list[list[str]] = []
+    header_flags: list[bool] = []
+    for tr in rows_src:
+        try:
+            cells_src = [c for c in tr.find_all(["th", "td"]) if c.find_parent("tr") is tr]
+        except Exception:
+            cells_src = []
+        if not cells_src:
+            continue
+        cells: list[str] = []
+        for cell in cells_src:
+            text = _normalize_inline_markdown(
+                "".join(_inline_markdown_from_node(c, base_url=base_url, keep_links=keep_links) for c in cell.children)
+            )
+            # A pipe table is line-based: newlines and bare pipes would break it.
+            cells.append(text.replace("\n", " ").replace("|", "\\|").strip())
+        if not any(cells):
+            # An all-empty row is spacing, not data: emitting it costs a line of
+            # "|  |  |  |" and says nothing.
+            continue
+        rows.append(cells)
+        header_flags.append(any(str(c.name or "").lower() == "th" for c in cells_src))
+
+    if not rows:
+        return None
+    width = max(len(r) for r in rows)
+    if width < 2 or len(rows) < 2 or width > _TABLE_MAX_COLS:
+        return None
+    if not any(any(c for c in r) for r in rows):
+        return None
+
+    lines: list[str] = []
+    try:
+        caption = node.find("caption")
+        if caption is not None:
+            caption_text = _normalize_inline_markdown(caption.get_text(" ", strip=True))
+            if caption_text:
+                lines.extend([f"*{caption_text}*", ""])
+    except Exception:
+        pass
+
+    body_start = 1 if header_flags and header_flags[0] else 0
+    if body_start:
+        header = rows[0]
+    else:
+        # No <th> anywhere: markdown needs a header row, so synthesize a blank
+        # one rather than promoting real data into a header it does not belong in.
+        header = [""] * width
+
+    def _fmt(cells: list[str]) -> str:
+        padded = list(cells) + [""] * (width - len(cells))
+        return "| " + " | ".join(padded[:width]) + " |"
+
+    lines.append(_fmt(header))
+    lines.append("| " + " | ".join(["---"] * width) + " |")
+    for row in rows[body_start:]:
+        lines.append(_fmt(row))
+    lines.append("")
+    return lines
+
+
+# Tags that make a <dd> a full flow container rather than a phrase. An API
+# reference (`<dl class="py class">`) puts entire sections — paragraphs, code
+# blocks, tables — inside <dd>, and flattening those to one inline line
+# destroys exactly the structure this renderer exists to keep.
+_FLOW_BLOCK_TAGS = frozenset(
+    {
+        "p", "div", "section", "article", "table", "pre", "ul", "ol", "dl",
+        "blockquote", "figure", "aside", "details", "h1", "h2", "h3", "h4", "h5", "h6",
+    }
+)
+
+
+def _contains_flow_blocks(element: Any) -> bool:
+    try:
+        return element.find(list(_FLOW_BLOCK_TAGS)) is not None
+    except Exception:
+        return False
+
+
+def _definition_list_lines(node: Any, *, base_url: str, keep_links: bool) -> list[str]:
+    """Render <dl> so the term/definition PAIRING survives.
+
+    Markdown has no portable definition-list syntax, and the default container
+    walk flattens a <dl> into loose paragraphs where nothing says which text
+    defines which term. Two shapes, chosen per list:
+      * phrase definitions -> "- **term**: definition" (compact, one line each)
+      * flow definitions   -> a bold term paragraph followed by the definition's
+        own blocks, so nested tables/code survive intact."""
+    try:
+        children = [c for c in node.children if isinstance(c, Tag)]
+    except Exception:
+        return []
+    if not children:
+        return []
+
+    block_mode = any(
+        str(c.name or "").lower() == "dd" and _contains_flow_blocks(c) for c in children
+    )
+
+    lines: list[str] = []
+    pending_terms: list[str] = []
+
+    def _inline_of(element: Any) -> str:
+        return (
+            _normalize_inline_markdown(
+                "".join(
+                    _inline_markdown_from_node(c, base_url=base_url, keep_links=keep_links)
+                    for c in element.children
+                )
+            )
+            .replace("\n", " ")
+            .strip()
+        )
+
+    for child in children:
+        cname = str(child.name or "").lower()
+        if cname == "dt":
+            term = _strip_wrapping_emphasis(_inline_of(child))
+            if term:
+                pending_terms.append(term)
+            continue
+        if cname != "dd":
+            continue
+        term = " / ".join(pending_terms)
+        pending_terms = []
+        if block_mode:
+            if term:
+                lines.extend([f"**{term}**", ""])
+            for grandchild in child.children:
+                lines.extend(
+                    _block_markdown_lines_from_node(
+                        grandchild, base_url=base_url, keep_links=keep_links
+                    )
+                )
+            if lines and lines[-1].strip():
+                lines.append("")
+            continue
+        text = _inline_of(child)
+        if term and text:
+            lines.append(f"- **{term}**: {text}")
+        elif term:
+            lines.append(f"- **{term}**")
+        elif text:
+            lines.append(f"- {text}")
+
+    for term in pending_terms:
+        lines.append(f"**{term}**" if block_mode else f"- **{term}**")
+    if lines and lines[-1].strip():
+        lines.append("")
+    return lines
+
+
+def _link_first_block_line(lines: list[str], href: str) -> list[str]:
+    """Attach `href` to the first content line produced by a block-level <a>.
+
+    Card layouts wrap a whole heading in an anchor (`<a><h2>Headline</h2></a>`).
+    The block walker used to recurse straight past the anchor, so a listing page
+    came out as bare headlines with every URL dropped — the reader could see
+    what was published and had no way to open it."""
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("```") or stripped.startswith("|"):
+            continue
+        if "](" in stripped:  # already carries a link
+            return lines
+        match = re.match(r"^(#{1,6}\s+|[-*]\s+|>\s+|\d+\.\s+)?(.*)$", stripped)
+        if match is None:
+            return lines
+        prefix, body = match.group(1) or "", match.group(2).strip()
+        if not body:
+            return lines
+        lines[index] = f"{prefix}[{body}]({_markdown_link_target(href)})"
+        return lines
+    return lines
+
+
+# Phrasing-content tags: they style a run of text, they do not start a block.
+_INLINE_FLOW_TAGS = frozenset(
+    {
+        "span", "a", "em", "i", "strong", "b", "u", "s", "strike", "del", "ins",
+        "small", "big", "sub", "sup", "abbr", "acronym", "cite", "q", "time",
+        "mark", "data", "dfn", "kbd", "samp", "var", "code", "bdi", "bdo",
+        "ruby", "rt", "rp", "wbr", "font", "label", "output", "meter",
+    }
+)
+
+
+def _is_inline_flow(node: Any) -> bool:
+    """True for a child that belongs in the CURRENT paragraph, not a new one."""
+    if NavigableString is not None and isinstance(node, NavigableString):
+        return not _is_non_content_string(node)
+    if Tag is None or not isinstance(node, Tag):
+        return False
+    name = str(node.name or "").lower()
+    if name not in _INLINE_FLOW_TAGS:
+        return False
+    # An <a> (or <label>) wrapping a heading/table is a block in inline
+    # clothing — card layouts do exactly this — so it keeps the block path.
+    return not _contains_flow_blocks(node)
+
+
 def _block_markdown_lines_from_node(node: Any, *, base_url: str, keep_links: bool, indent_level: int = 0) -> list[str]:
     if node is None:
         return []
 
     if isinstance(node, NavigableString):
-        if type(node).__name__ == "Doctype":
+        # Comments/CDATA/PIs/doctype are markup, not prose (see
+        # `_strip_non_content_strings`); rendering them leaked the author's
+        # build comments into `content`.
+        if _is_non_content_string(node):
             return []
         raw = str(node)
         if not raw.strip():
@@ -7630,6 +9968,7 @@ def _block_markdown_lines_from_node(node: Any, *, base_url: str, keep_links: boo
         inner = _normalize_inline_markdown(
             "".join(_inline_markdown_from_node(c, base_url=base_url, keep_links=keep_links) for c in node.children)
         )
+        inner = _strip_wrapping_emphasis(inner)
         if not inner:
             return []
         return [f"{'#' * level} {inner}", ""]
@@ -7649,11 +9988,52 @@ def _block_markdown_lines_from_node(node: Any, *, base_url: str, keep_links: boo
             ordered=name == "ol",
         )
 
+    if name == "dl":
+        rendered_dl = _definition_list_lines(node, base_url=base_url, keep_links=keep_links)
+        if rendered_dl:
+            return rendered_dl
+
+    if name == "table":
+        rendered_table = _table_to_markdown_lines(node, base_url=base_url, keep_links=keep_links)
+        if rendered_table is not None:
+            return rendered_table
+        # Layout/oversized table: fall through to the container walk below so the
+        # cells still come out as ordinary blocks.
+
     if name == "pre":
-        code = str(node.get_text("\n", strip=False) or "").strip("\n")
+        # NO separator: a syntax highlighter wraps every token in its own
+        # <span>, and joining with "\n" (the old behaviour) put a line break
+        # between every token — `json.dumps(obj, separators=(',', ':'))` came
+        # out as a column of fragments. Inside <pre> the source whitespace is
+        # already the layout, so plain concatenation reproduces it exactly.
+        code = str(node.get_text("", strip=False) or "").strip("\n")
         if not code.strip():
             return []
-        return ["```", code, "```", ""]
+        fence = _fence_for(code)
+        return [f"{fence}{_code_language_hint(node)}", code, fence, ""]
+
+    if name == "figcaption":
+        inner = _normalize_inline_markdown(
+            "".join(_inline_markdown_from_node(c, base_url=base_url, keep_links=keep_links) for c in node.children)
+        ).replace("\n", " ").strip()
+        if not inner:
+            return []
+        # Italicised so the reader can tell a caption from body prose (images
+        # themselves are stripped, so an unmarked caption reads as a stray line).
+        return [f"*{_strip_wrapping_emphasis(inner)}*", ""]
+
+    if name == "a":
+        resolved = _canonicalize_link_url(str(node.get("href") or ""), base_url)
+        if not _anchor_carries_information(node.get_text(" ", strip=True), resolved):
+            return []
+        child_lines: list[str] = []
+        for child in node.children:
+            child_lines.extend(
+                _block_markdown_lines_from_node(child, base_url=base_url, keep_links=keep_links, indent_level=indent_level)
+            )
+        if not keep_links or not resolved:
+            return child_lines
+        return _link_first_block_line(child_lines, resolved)
 
     if name == "blockquote":
         inner_lines: list[str] = []
@@ -7668,11 +10048,43 @@ def _block_markdown_lines_from_node(node: Any, *, base_url: str, keep_links: boo
         quoted.append("")
         return quoted
 
-    # Default: treat as a container and emit its children.
+    # Default: treat as a container and emit its children — but INLINE children
+    # must be joined into one paragraph first. Styled-components sites (BBC,
+    # DigitalOcean, arXiv) wrap every phrase of a sentence in its own <span>;
+    # emitting each child separately turned "Version 3.14 released today." into
+    # three paragraphs, and the model then read three unrelated fragments.
     lines: list[str] = []
+    inline_run: list[Any] = []
+
+    def _flush() -> None:
+        if not inline_run:
+            return
+        text = _normalize_inline_markdown(
+            "".join(
+                _inline_markdown_from_node(c, base_url=base_url, keep_links=keep_links)
+                for c in inline_run
+            )
+        )
+        inline_run.clear()
+        if text:
+            lines.extend([text, ""])
+
     for child in node.children:
+        if _is_inline_flow(child):
+            inline_run.append(child)
+            continue
+        _flush()
         lines.extend(_block_markdown_lines_from_node(child, base_url=base_url, keep_links=keep_links, indent_level=indent_level))
+    _flush()
     return lines
+
+
+# NOTE: duplicate collapsing is NOT done here on the rendered lines. A line is
+# not enough evidence: "| 0 | 0 |" three times is an SLA table, "- No changes."
+# three times is a changelog, "Nevermore." three times is a refrain. What the
+# text loses and the DOM still has is WHICH ELEMENT produced each copy — see
+# `_strip_duplicate_sibling_blocks`, which collapses only the anonymous
+# containers a responsive layout duplicates, and never a <p>, <li> or <tr>.
 
 
 def _normalize_markdown(markdown: str) -> str:
@@ -7719,14 +10131,25 @@ def _normalize_markdown(markdown: str) -> str:
         if stripped.lower() in boilerplate_lines:
             continue
 
-        if prev_line == stripped:
-            continue
-
         out.append(line)
         prev_blank = False
         prev_line = stripped
 
     return "\n".join(out).strip()
+
+
+_MD_INLINE_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
+
+
+def _strip_markdown_inline(text: str) -> str:
+    """Plain text from an inline markdown run — link labels, no markers.
+
+    Used where a heading harvested from rendered markdown has to read like the
+    heading a human saw, not like its source."""
+    out = _MD_INLINE_LINK_RE.sub(r"\1", str(text or ""))
+    out = out.replace("`", "")
+    out = re.sub(r"(\*{1,3}|_{2,3})(.+?)\1", r"\2", out)
+    return out.strip()
 
 
 def _html_to_markdown(container: Any, *, base_url: str, keep_links: bool) -> str:
@@ -7847,46 +10270,50 @@ def _parse_html_content(
         content_soup = _select_html_main_container(soup, url)
         _prune_html_container_for_readability(content_soup)
 
-        # Extract links (main-content only) when links are preserved.
-        if keep_links:
-            links: list[str] = []
-            seen: set[str] = set()
-            for a in content_soup.find_all("a", href=True):
-                resolved = _canonicalize_link_url(str(a.get("href") or ""), url)
-                if not resolved:
-                    continue
+        # Extract links (main-content only). Collected regardless of `keep_links`:
+        # when links ARE kept the markdown carries them inline and this digest is
+        # suppressed as a duplicate; when they are NOT kept it is the only place
+        # a URL survives in the header, which is precisely when it is worth its
+        # characters. (Gating collection on `keep_links` made it available only
+        # in the case where it was redundant.)
+        links: list[str] = []
+        seen: set[str] = set()
+        for a in content_soup.find_all("a", href=True):
+            resolved = _canonicalize_link_url(str(a.get("href") or ""), url)
+            if not resolved:
+                continue
 
-                parsed_resolved = urlparse(resolved)
-                parsed_base = urlparse(url)
-                # Drop same-page anchors and other navigation noise.
-                if (
-                    parsed_resolved.scheme in {"http", "https"}
-                    and parsed_resolved.netloc == parsed_base.netloc
-                    and parsed_resolved.path == parsed_base.path
-                    and parsed_resolved.fragment
-                ):
-                    continue
+            parsed_resolved = urlparse(resolved)
+            parsed_base = urlparse(url)
+            # Drop same-page anchors and other navigation noise.
+            if (
+                parsed_resolved.scheme in {"http", "https"}
+                and parsed_resolved.netloc == parsed_base.netloc
+                and parsed_resolved.path == parsed_base.path
+                and parsed_resolved.fragment
+            ):
+                continue
 
-                label = str(a.get_text(" ", strip=True) or "").strip()
-                if not label:
-                    continue
-                label_lower = label.lower()
-                if label_lower.startswith("share on") or label_lower in {"share", "tags", "table of contents"}:
-                    continue
+            label = str(a.get_text(" ", strip=True) or "").strip()
+            if not label:
+                continue
+            label_lower = label.lower()
+            if label_lower.startswith("share on") or label_lower in {"share", "tags", "table of contents"}:
+                continue
 
-                if resolved in seen:
-                    continue
-                seen.add(resolved)
+            if resolved in seen:
+                continue
+            seen.add(resolved)
 
-                label = re.sub(r"\s+", " ", label)[:80]
-                links.append(f"{label} → {resolved}")
-                if len(links) >= 20:
-                    break
+            label = re.sub(r"\s+", " ", label)[:80]
+            links.append(f"{label} → {resolved}")
+            if len(links) >= 20:
+                break
 
-            if links:
-                result_parts.append("🔗 Links (first 20):")
-                for link in links:
-                    result_parts.append(f"  • {link}")
+        # The digest is appended AFTER the markdown is rendered, because
+        # whether it earns its place depends on what the markdown already
+        # carries — see below.
+        link_digest: list[str] = list(links)
 
         markdown = _html_to_markdown(content_soup, base_url=url, keep_links=keep_links)
         # Drop duplicate title lines if the first content line matches <title>.
@@ -7900,14 +10327,37 @@ def _parse_html_content(
                     md_lines.pop(0)
                 markdown = "\n".join(md_lines).strip()
 
+        # LINK DIGEST, only when it is not a second copy. `content` keeps its
+        # links inline as markdown whenever keep_links is on (and on a
+        # link-dominant listing page even when it is off), so on those pages this
+        # block repeats every URL the caller already has: on the BBC hub it was
+        # 3,386 of `rendered`'s 4,005 chars — 85% of the header — duplicating
+        # links that were all in `content`. It still earns its place when the
+        # markdown carries no links at all, where it is the ONLY place the URLs
+        # survive.
+        if link_digest and "](" not in (markdown or ""):
+            result_parts.append("🔗 Links (first 20):")
+            for link in link_digest:
+                result_parts.append(f"  • {link}")
+
         if markdown:
-            preview_length = None if include_full_content else 2000
-            md_preview = markdown if preview_length is None else markdown[:preview_length]
-            if preview_length is not None and len(markdown) > preview_length:
+            # ALWAYS a bounded preview, even at include_full_content=True: this
+            # string is the human/LLM-facing HEADER of the result, and the
+            # untruncated markdown already ships under the `content` key. Before
+            # this, a 29k article was inlined here a second time, so one fetch
+            # cost the caller the article twice over.
+            preview_length = _HTML_RENDER_PREVIEW_CHARS if include_full_content else 2000
+            md_preview = markdown[:preview_length]
+            truncated = len(markdown) > preview_length
+            if truncated:
                 md_preview += "\n\n... (truncated)"
-            result_parts.append("📄 Markdown Content:" if include_full_content else "📄 Markdown Content Preview:")
+            result_parts.append("📄 Markdown Content Preview:")
             result_parts.append(md_preview)
             result_parts.append(f"📊 Total markdown length: {len(markdown):,} characters")
+            if truncated:
+                result_parts.append(
+                    "↪ Full markdown (untruncated) is in this result's `content` field — not repeated here."
+                )
         else:
             text = _normalize_extracted_text(content_soup.get_text("\n", strip=True))
 
@@ -10680,8 +13130,8 @@ def _analyze_media_decodes_as_image(path) -> bool:
     ),
     when_to_use=(
         "See what an IMAGE FILE shows. NOT for an image already attached to this "
-        "call — look at that directly. Costs one nested vision call and returns one "
-        "bounded reading, not the image. Bytes leave for the vision route."
+        "call — look at that directly. One nested vision call per use; returns one "
+        "bounded reading, not the image. Re-call with a new question for other details."
     ),
     hide_args=["_session_route"],
     examples=[
@@ -10905,10 +13355,34 @@ def analyze_media(
         # Only reachable from the configured-fallback path: a blank SESSION
         # caption was already converted into a session failure above.
         return "Error: the configured vision model returned an empty observation."
-    if len(text) > _ANALYZE_MEDIA_MAX_CHARS:
+    # The re-call must be COPY-PASTEABLE, so it echoes the path this call
+    # actually used — not the basename. A host may have rewritten `file_path`
+    # (a session attachment materialized to a temp copy), and the pretty short
+    # name would then resolve to nothing: a hint the caller cannot act on is
+    # the dead-end class this tool has already paid for once.
+    #
+    # Built BEFORE the cap and charged to the SAME budget: the cap exists so a
+    # misbehaving vision model cannot flood the caller's context, and a footer
+    # that rode on top of it would quietly raise the ceiling every call.
+    where = str(path)
+    if cleaned_question:
+        asked = cleaned_question if len(cleaned_question) <= 100 else cleaned_question[:99] + "…"
+        footer = (
+            f"\n(1 bounded reading of {path.name} · asked: \"{asked}\" · other details → "
+            f'analyze_media(file_path="{where}", question="<what you need>"))'
+        )
+    else:
+        footer = (
+            f"\n(1 bounded reading of {path.name} · no question asked, so unfocused · aim it → "
+            f'analyze_media(file_path="{where}", question="<what you need>"))'
+        )
+    #[BOUND] observation + footer share _ANALYZE_MEDIA_MAX_CHARS; the floor
+    # keeps a pathological path from starving the observation itself.
+    observation_budget = max(500, _ANALYZE_MEDIA_MAX_CHARS - len(footer))
+    if len(text) > observation_budget:
         text = (
-            text[:_ANALYZE_MEDIA_MAX_CHARS]
-            + f"\n#TRUNCATION observation capped at {_ANALYZE_MEDIA_MAX_CHARS} chars"
+            text[:observation_budget]
+            + f"\n#TRUNCATION observation capped at {observation_budget} chars"
         )
     if session_failure is not None:
         # The configured fallback served AFTER a failed session attempt —
@@ -10935,16 +13409,17 @@ def analyze_media(
     # chars and already spend them on routing, so the honest place to say it is
     # here, at the point of use — and the line differs by case, because the
     # useful next step differs: focus a blind reading, or re-ask a focused one.
-    if cleaned_question:
-        text += (
-            "\n(one bounded reading, focused on your question — call analyze_media again "
-            "with a different question for details it did not cover)"
-        )
-    else:
-        text += (
-            "\n(one bounded reading, unfocused — call analyze_media again with "
-            "`question=` to have it look for something specific)"
-        )
+    # Echo the QUESTION, not a generic reminder: the caller decides its next
+    # move from what this reading was actually pointed at. Naming both exits —
+    # re-ask, or attach the image and look directly — matters because the
+    # second is usually the better one and nothing else says so. Compressed on
+    # purpose: this rides every observation, and prose is the caller's tokens.
+    text += footer
+    # NOTE: no "or attach the image" here. Whether these bytes CAN be attached
+    # is a session fact core does not have — `open_attachment` resolves session
+    # attachments only, so that advice is a dead end for a screenshot a tool
+    # wrote or any other plain file. The host appends the exact
+    # `open_attachment(...)` call when, and only when, it is actually available.
     return text
 
 

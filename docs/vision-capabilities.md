@@ -9,6 +9,8 @@ This document describes **vision as an input modality** in AbstractCore (images 
 - **Images**: install `pip install "abstractcore[media]"` and use either:
   - a **vision-capable model** (VLM/VL), or
   - a text-only model with **vision fallback** configured (`abstractcore --set-vision-provider PROVIDER MODEL`).
+  - On Apple silicon, add `abstractcore[mlx-vision]` for native image input on MLX checkpoints
+    (see [Native image input on the MLX provider](#1b-native-image-input-on-the-mlx-provider-apple-silicon)).
 - **Video**: native video input is model/provider dependent. For the portable frame-sampling path (`video_policy="frames_caption"` / `"auto"` fallback), you need:
   - `ffmpeg`/`ffprobe` available on `PATH`, and
   - image/vision handling (a vision-capable model or configured vision fallback).
@@ -45,6 +47,84 @@ abstractcore --set-video-strategy auto
 abstractcore --set-video-max-frames 6
 abstractcore --set-video-sampling-strategy keyframes
 ```
+
+## 1b) Native image input on the MLX provider (Apple silicon)
+
+The MLX provider reads images natively for vision-capable MLX checkpoints. Install the
+opt-in extra and pass `media=[...]` as usual:
+
+```bash
+pip install "abstractcore[apple,mlx-vision]"
+```
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm("mlx", model="mlx-community/Qwen3.5-4B-MLX-4bit")
+resp = llm.generate("Describe this image in one sentence.", media=["photo.png"])
+print(resp.content)
+```
+
+The extra is separate from `abstractcore[mlx]` and `abstractcore[apple]` on purpose: it pulls a
+web framework, OpenCV, a datasets stack, and raises the `transformers` floor, none of which belong
+in a text-only local LLM install.
+
+### Supported checkpoints
+
+Support is decided from the checkpoint on disk and from the capability registry, not from the
+model name. A checkpoint is served when:
+
+- the capability registry declares it vision-capable (`abstractcore/assets/model_capabilities.json`);
+- its `config.json` declares a `vision_config` and the vision weights are present;
+- it declares an image token so the image position can be rendered into the prompt; and
+- the encoder and decoder agree on the embedding convention (probed at load, and reconciled
+  automatically where the difference is a uniform scale).
+
+Verified families include `qwen3_5`, `qwen3_5_moe`, `qwen3_vl` and `gemma4`. Text-only checkpoints
+are unaffected and never load the vision stack — `mlx_vlm` is imported only when an image is
+actually attached.
+
+### What you get back
+
+A delivered image is reported positively in `response.metadata`:
+
+```python
+resp.metadata["media_delivered"]
+# [{"index": 0, "kind": "image", "sha256": "3da0b68c…",
+#   "tokens": 1024, "transport": "mlx_vision_addon"}]
+```
+
+- `tokens` is the measured number of image tokens the model actually consumed.
+- `sha256` identifies which image was delivered.
+- `fidelity`, when present, names any known precision trade-off for that checkpoint. For example
+  `rope_1d_substituted` appears on models whose positional encoding is approximated, which can
+  cost fine character-level detail in dense text.
+
+If the image could not be carried, `media_delivered` is absent and `response.metadata["media_dropped"]`
+names the reason. Use `abstractcore.media.delivery.media_delivery_verdict(response, provider="mlx")`
+when you need a single answer:
+
+```python
+from abstractcore.media.delivery import media_delivery_verdict
+
+verdict = media_delivery_verdict(resp, provider="mlx")
+verdict.state  # "delivered" | "not_delivered" | "unverified"
+```
+
+`unverified` means the provider does not participate in the delivery contract, not that the image
+was lost.
+
+### Current limits
+
+- **One image per request.** Multiple images in a single call are refused with
+  `vision_multi_image_unsupported`; the request still answers from text.
+- **Structured output does not carry images.** `response_model=` together with `media=[...]`
+  raises rather than dropping the image silently, because a validated model carries no metadata on
+  which the drop could be reported. Parse the text instead, or caption the image first.
+- **Prompt-cache reuse is skipped on turns that carry an image.** Text-only turns in the same
+  session keep the full prompt cache; see [Prompt caching](prompt-caching.md).
+- Checkpoints the lane cannot serve fall through to the vision fallback below, so an image still
+  produces a caption when one is configured.
 
 ## 2) Vision fallback for text-only models (optional; config-driven)
 
