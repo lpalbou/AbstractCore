@@ -2507,6 +2507,16 @@ class MLXProvider(BaseProvider):
         # Handle media content first if present
         processed_prompt = prompt
         media_enrichment = None
+        # Image parts this transport could not carry (delegated-sight honesty,
+        # 2026-08-21). This provider generates from a TEXT prompt: a structured
+        # multimodal message is reduced to its text part below, and every
+        # failure path here continues without the media. Both were silent, so
+        # `generate(media=[an image])` returned an ordinary success from a
+        # model that never saw it — and `analyze_media` stamped the resulting
+        # "there is no image in this conversation" as an observation, complete
+        # with provenance (measured on a live run, 2026-08-21). Dropping is
+        # still the behavior; claiming it did not happen is what stops here.
+        dropped_media: List[str] = []
         if media:
             try:
                 from ..media.handlers import LocalMediaHandler
@@ -2530,12 +2540,27 @@ class MLXProvider(BaseProvider):
                                     text_content = item.get("text", "")
                                     break
                             processed_prompt = text_content or prompt
+                            dropped_media = [
+                                str(item.get("type"))
+                                for item in multimodal_message["content"]
+                                if isinstance(item, dict) and item.get("type") != "text"
+                            ]
                         else:
                             processed_prompt = str(multimodal_message["content"])
             except ImportError:
                 self.logger.warning("Media processing not available. Install with: pip install \"abstractcore[media]\"")
+                dropped_media = ["media_processing_unavailable"]
             except Exception as e:
                 self.logger.warning(f"Failed to process media content: {e}")
+                dropped_media = ["media_processing_failed"]
+            if dropped_media:
+                self.logger.warning(
+                    "mlx: %d media part(s) were NOT sent to the model (%s) — this transport "
+                    "generates from a text prompt. The answer is text-only; callers that need "
+                    "sight must read response.metadata['media_dropped'].",
+                    len(dropped_media),
+                    ", ".join(sorted(set(dropped_media))),
+                )
 
         # Build full prompt with tool support
         full_prompt = self._build_prompt(
@@ -2635,6 +2660,13 @@ class MLXProvider(BaseProvider):
                     from ..media.enrichment import merge_enrichment_metadata
 
                     response.metadata = merge_enrichment_metadata(response.metadata, media_enrichment)
+                if dropped_media:
+                    # Structural, not a log line: the caller that asked for
+                    # sight has to be able to TELL, and matching on the
+                    # model's prose ("I don't see an image") is the
+                    # error-substring class this codebase bans.
+                    response.metadata = dict(response.metadata or {})
+                    response.metadata["media_dropped"] = list(dropped_media)
 
                 # Handle tool execution for prompted models
                 if tools and self.tool_handler.supports_prompted and response.content:

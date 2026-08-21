@@ -167,13 +167,49 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 - `fetch_url` - Fetch + parse HTML/JSON/XML/text plus feed summaries and PDF extraction. HTML results expose first-class `content` (structure-preserving markdown — headings/lists/links kept), `title`, and `description` alongside `normalized_text`/`raw_text`/`rendered`; read `content` for the article. Transient bot-challenge / rate-limit / 5xx statuses get a bounded same-profile retry (honest identified User-Agent, `Retry-After` honored — never browser impersonation). Persistent failures and unrenderable JS/anti-bot shells return an actionable `error_class` (`bot_challenge`/`rate_limited`/`auth_required`/`not_found`/`gone`/`server_error`/`js_required`/`empty_content`) with a `retryable` flag and concrete `suggestions` — never a silent empty success. Cookie/consent overlays are removed (never accepted) so the article underneath survives. PDF extraction carries explicit backend provenance (`pdf_text_backend`, `pdf_summary_backend`, `pdf_backend_attempts`, `pdf_native_transport`); non-text binaries still return metadata + optional previews. **Base64 URL screen (operator-directed, always on, no config, 2026-07-14):** `fetch_url` is deliberately fully functional — it **keeps URL query parameters** (they select the right page; stripping them breaks fetches) and passes model headers through. The one protection: if the URL carries a **base64-encoded payload** anywhere (path, query, or fragment), the fetch is refused with `error_class="blocked_encoded_url"` — the model-authored data-exfil signature. Detection is *decode-and-inspect*: a base64url-alphabet run (≥24 chars) is base64-decoded and flagged **only if it decodes to meaningful data** (high printable-ASCII ratio or valid UTF-8). Because base64 is reversible, this distinguishes an encoded secret (decodes to keys/JSON/text → blocked) from a legitimate opaque base64-format **identifier** (a Google Drive file id, git SHA, UUID, nonce → decodes to random noise → allowed). So Drive/Docs URLs, REST paths, UUIDs, hex digests, and hyphen/underscore slugs all fetch cleanly. Checked on the initial URL and the meta-refresh follower (and on `skim_url`, the sibling fetch). Honest residual: a gzipped/encrypted-then-base64 payload decodes to non-printable bytes and is not caught (the same-byte-shape limit) — the common text/JSON/key exfil case is. Deliberately the only screen.
 - `search_files` - Search for text patterns inside files using regex
 - `list_files` - Find and list files by names/paths using glob patterns
+- `skim_folders` - Get a quick directory map (tree + counts + notable files) for one or more folders; use `max_depth` to control how much is shown
+- `skim_files` - Get the quick general idea of one or more text files as line-numbered excerpts; control sampling with `target_percent` (default 8%)
 - `read_file` - Read file contents with optional line range selection
+- `analyze_code` - Outline a code file (declarations with line ranges) plus basic diagnostics, so you can jump straight to the block you want instead of re-reading the whole file. Run it before `read_file`/`edit_file` on any file you do not already know.
 - `write_file` - Write content to files with directory creation
 - `edit_file` - Edit files using pattern matching and replacement
 - `web_search` - Search the web using DuckDuckGo; numeric `num_results` is normalized from JSON-style strings when needed, while invalid values fail explicitly
 - `skim_websearch` - Smaller/filtered web search (compact result list); accepts string-like numeric `num_results` and surfaces its compact result cap
 - `execute_command` - Execute shell commands safely with security controls
 - `browser_probe` - Render a URL or local HTML file in a **headless browser** (Playwright) and verify it actually DISPLAYS — the blank-page class that passes `read_file` review (an agent writes an HTML/JS app, the source looks right, the page renders empty). Returns a `PASS`/`FAIL` verdict with navigation outcome, HTTP status, `readyState`, title, visible-text stats, per-check results (`require_nonblank`, `expect_selector`, `expect_text`), captured console errors + uncaught exceptions (a page can render and still be broken), and an optional screenshot path to feed `analyze_media` for a visual pass. Runs in a worker subprocess with a hard wall-clock kill (never hangs on an infinite-JS-loop page, never leaks a browser); readiness is a content signal, never `networkidle` (refused with teaching) or `sleep`. Local `file://` targets **block outbound network by default** (a generated page must not phone home; blocked requests are reported) and — a browser limitation the report detects and flags — **cannot load ES modules (`<script type="module">`) or `fetch()`** (CORS on the `null` origin), so a modern module/fetch app renders empty as a file: serve it (e.g. `python -m http.server`) and probe the `http://` URL. Requires the separate **`browser`** extra, NOT `[tools]`: `pip install "abstractcore[browser]"` then `python -m playwright install --only-shell chromium` (Linux also needs `python -m playwright install --with-deps chromium`); an absent dependency returns an actionable two-step install hint, never a traceback.
+- `analyze_media` - Answer a question about an image. Delegated sight: the session model's own vision when available, else the configured vision fallback. Returns bounded text — never raw image data into your context
+
+**`analyze_code` language coverage:**
+
+Four languages get a bespoke deep analyzer: **Python** (a real `ast` parse, plus ruff diagnostics
+when ruff is installed), **JavaScript/TypeScript**, **HTML**, and **R**.
+
+Thirty more ride a declarative outline engine: `c`, `cpp`, `csharp`, `css`, `dart`, `dockerfile`, `elixir`, `go`, `graphql`, `groovy`, `haskell`, `ini`, `java`, `json`, `kotlin`, `lua`, `makefile`, `markdown`, `objectivec`, `perl`, `php`, `powershell`, `proto`, `ruby`, `rust`, `scala`, `shell`, `sql`, `swift`, `terraform`, `toml`, `xml`, `yaml`, `zig`.
+
+Anything else readable gets a clearly labeled generic outline — metrics, top-level structure and
+TODO markers — so the tool never refuses a file it can read. Only binary content is an error.
+
+A few practical points:
+
+- **Detection.** Extension first, then a shebang for extensionless scripts, then a content sniff for
+  extensions that several languages share: `.m` is read as Objective-C only when the file shows
+  Objective-C markers (a MATLAB `.m` falls to the generic outline rather than being mislabeled), and
+  `.conf` resolves to INI or XML by what the file actually contains. Pass `language="rust"` to force
+  a specific lane for an odd extension.
+- **Outlines are heuristic, not parses.** Every result ends with a `notes:` line stating what that
+  language's outline does and does not list — for example that Objective-C `@interface` blocks carry
+  a line number rather than a range because they close with `@end`, or that Haskell entries carry no
+  ranges because its bodies are layout-scoped. Read it before trusting a range.
+- **Line numbers go stale.** They match `read_file(start_line=…)` at the moment of analysis and shift
+  after every successful edit. Re-run `analyze_code` or re-read before reusing them.
+- **Bounds, and what happens at them.** Files are read up to 4 MB and generated/minified files
+  are detected rather than outlined line by line. Sections are capped at 1000 entries, and a total
+  output budget backs that up so a file with many large sections cannot flood your context. Every
+  bound that actually bites is reported in a single `#TRUNCATION` block that CLOSES the answer,
+  naming each withheld item and a step you can run to get it — usually a `read_file` call over the
+  exact line range, sized to fit one call, with a continuation offset when there is more. A section
+  whose entries have no line anchors says so instead of inventing a range. Nothing is dropped
+  without a marker, so treating the absence of `#TRUNCATION` as "this is the whole picture" is safe.
 
 `edit_file` preserves each file's line-ending style: CRLF files stay CRLF and LF files stay
 LF (a mixed-endings file is normalized to its dominant style, with a note in the tool

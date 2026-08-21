@@ -29,15 +29,106 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Pattern, Tuple
 
-# Output bounds: outlines are prompt currency — cap list sections so a huge
-# file cannot flood the model context (labels are honest about elision).
-MAX_SECTION_ENTRIES = 50
+# Output bounds: outlines are prompt currency, so a pathological file must not
+# flood the model context. But a cap that hides data is a cost, not a feature:
+# measured over 2429 real files / 8997 sections, section sizes run p50=2,
+# p90=13, p99=57, p999=324, max=2293. A cap of 50 therefore truncated 1.3% of
+# ALL sections — including the ones that matter most, like a 463-heading
+# CHANGELOG whose whole point is navigation. At 500 that falls to 0.03%, and
+# the worst realistic outline costs ~4k tokens, which is far cheaper than the
+# re-reads a missing outline forces. Whenever this cap does bite, the section
+# must say so AND say how to reach what it hid (see _emit_section).
+MAX_SECTION_ENTRIES = 1000
 # Read bound: analysis is line-oriented; a multi-MB artifact (bundle, log,
 # generated code) is truncated with a label rather than freezing the tool.
 MAX_ANALYZE_BYTES = 4 * 1024 * 1024
 # A single enormous line (minified bundle) defeats line-anchored outlining;
 # detect and say so instead of burning CPU on regexes over megabyte lines.
 MAX_LINE_CHARS_FOR_OUTLINE = 5000
+# Per-entry text bound (a signature, a TODO message, a generic anchor line).
+# Unlike a section cap this one cannot lose a whole entry — the entry and its
+# LINE NUMBER are still printed, so the full text is one read_file away — but
+# it must still be visible when it bites, hence the ellipsis plus the notice
+# that names the recovery.
+MAX_ENTRY_TEXT_CHARS = 160
+# read_file refuses a range larger than this, so a recovery hint that names a
+# wider one is not a recovery at all. Kept in sync with read_file's own bound.
+READ_FILE_LINE_BUDGET = 2000
+# A per-section cap cannot bound N sections: four sections each just under the
+# cap produced a 26k-token outline for a 45k-token file, and one hand-written
+# module here reaches 16k tokens with NO section truncated. This is the
+# backstop — sections are served in _EMIT_KIND_ORDER, so the kinds a reader
+# navigates by (types, functions) are funded first, and whatever the budget
+# cannot fund is reported in the trailing block like any other omission.
+MAX_OUTLINE_CHARS = 60_000
+
+
+@dataclass
+class Truncation:
+    """One thing the outline did not show, and the way to get it."""
+
+    what: str
+    shown: int
+    total: int
+    recovery: str
+
+
+class TruncationLog:
+    """Collects every omission so the answer can END with one actionable block.
+
+    Scattering `notice:` lines and `(N more)` markers through a long outline
+    makes the reader reconstruct the damage from fragments, and each fragment
+    has to repeat the file path to stay runnable, which is neither concise nor
+    reliable. One log, rendered last, states in a single place what is missing
+    and the exact call that returns it.
+    """
+
+    __slots__ = ("_items", "_spent", "_budget")
+
+    def __init__(self, budget_chars: int = MAX_OUTLINE_CHARS) -> None:
+        self._items: List[Truncation] = []
+        self._spent = 0
+        self._budget = budget_chars
+
+    def allowance(self, entries: List[str]) -> int:
+        """How many of `entries` the remaining output budget can afford."""
+        left = self._budget - self._spent
+        if left <= 0:
+            return 0
+        taken = 0
+        for entry in entries[:MAX_SECTION_ENTRIES]:
+            cost = len(entry) + 1
+            if taken and left - cost < 0:
+                break
+            left -= cost
+            taken += 1
+        return taken
+
+    def spend(self, entries: List[str]) -> None:
+        self._spent += sum(len(e) + 1 for e in entries)
+
+    def add(self, what: str, recovery: str, *, shown: int = 0, total: int = 0) -> None:
+        self._items.append(Truncation(what, shown, total, recovery))
+
+    def __bool__(self) -> bool:
+        return bool(self._items)
+
+    def render(self) -> List[str]:
+        """The trailing block. Empty when nothing was withheld."""
+        if not self._items:
+            return []
+        out = [f"#TRUNCATION {len(self._items)} item(s) withheld — run these to see the rest:"]
+        for t in self._items:
+            count = f" ({t.shown} of {t.total} shown)" if t.total else ""
+            out.append(f"  - {t.what}{count}: {t.recovery}")
+        return out
+
+
+def _elide(text: str, limit: int = MAX_ENTRY_TEXT_CHARS) -> Tuple[str, bool]:
+    """Shorten one entry's text, reporting whether it was shortened."""
+    if len(text) <= limit:
+        return text, False
+    return text[: limit - 1].rstrip() + "…", True
 
 # Next-step guidance rendered at the top of EVERY outline (this module's
 # engine lanes AND common_tools.py's deep lanes — one constant, no drift).
@@ -93,21 +184,252 @@ class LanguageSpec:
     quote_chars: str = "'\"`"
     # Words that OPEN an end-delimited block (for block_style="end").
     end_block_openers: Tuple[str, ...] = ()
+    # `end`-family knobs. These used to be hardcoded ruby-isms inside
+    # EndKeywordExtentIndex, which is why lua/elixir could not be added as
+    # DATA (the module's rule 1). Each language declares its own shapes:
+    #   end_assigned_openers  words that open a block after `=`
+    #                         (ruby `x = case`, lua `f = function`)
+    #   end_inline_block_re   a trailing opener (ruby `do |x|`, elixir `fn ->`)
+    #   end_inline_close_re   an opener that CLOSES on its own line
+    #                         (ruby `def x; end`, lua `function f() return 1 end`)
+    #   end_bodyless_re       opener-SHAPED lines with no block at all
+    #                         (elixir `def foo, do: :ok`) — must not push
+    end_assigned_openers: Tuple[str, ...] = ()
+    end_inline_block_re: Optional[Pattern[str]] = None
+    end_inline_close_re: Optional[Pattern[str]] = None
+    end_bodyless_re: Optional[Pattern[str]] = None
+    #   end_openers_need_terminator
+    #                         an opener does not open a block until its
+    #                         terminator (`end_inline_block_re`, i.e. a
+    #                         trailing `do`) appears. Elixir declaration
+    #                         HEADS wrap: `mix format` routinely emits
+    #                         `def f(x)` / `when is_map(x) do`, and
+    #                         `def f(%{` / `}) do`. Counting the wrapped
+    #                         `do` as a SECOND block handed the function's
+    #                         `end` away and made it span to the end of the
+    #                         module. Holding the head pending until its
+    #                         `do` arrives handles every wrap shape, and
+    #                         lets a `, do:` on a later line cancel it.
+    #                         Ruby leaves this off: `def foo` opens on its
+    #                         own line, and its `each do |x|` really is a
+    #                         second block.
+    end_openers_need_terminator: bool = False
     # Whether the language has C-style /* */ block comments (drives the
     # string/comment-aware brace scanner; reviewer A, F1).
     c_block_comments: bool = True
     # Which bracket pairs the whole-file balance lint counts. Shell drops
     # parens (case arms `a)` are legal unbalanced parens; reviewer A, P2-11).
     balance_pairs: str = "{}()[]"
-    # Cross-line regions the line scanner must skip: "heredoc" (shell/ruby
-    # << tags), "fence" (markdown ``` blocks), "preproc_if0" (C-family
-    # `#if 0` disabled code). Reviewer A F3/P2-5/P2-11/P2-12.
-    skip_regions: Tuple[str, ...] = ()
+    # Cross-line regions every scanner reads as DATA: comments, long
+    # strings, heredocs, fences, `#if 0` blocks. See SkipRegion — one
+    # declarative type replaced a string enum whose three region kinds each
+    # had their detection regex baked into the engine, which is why a
+    # language needing a fourth kind (elixir `"""`, lua `[[ ]]`) could not
+    # be added as data. Reviewer A F3/P2-5/P2-11/P2-12.
+    skip_regions: Tuple[SkipRegion, ...] = ()
+    # Extensions shared with an UNRELATED language, claimed only when
+    # `sniff` matches the file head. `.m` is Objective-C or MATLAB/Octave
+    # depending on content; labelling a MATLAB file `objectivec` and listing
+    # nothing is a confident lie, while the generic lane at least surfaces
+    # its `function` lines.
+    sniff_extensions: Tuple[str, ...] = ()
+    sniff: Optional[Pattern[str]] = None
     notes: str = ""
 
 
 def _rx(p: str) -> Pattern[str]:
     return re.compile(p)
+
+
+@dataclass(frozen=True)
+class SkipRegion:
+    """A cross-line region every scanner must read as DATA, not as code.
+
+    Comments, long strings, heredocs, markdown fences and `#if 0` blocks are
+    all one shape — a line opens the region, the lines inside are inert, a
+    line closes it — and each used to be implemented separately. The heredoc
+    detection regex alone appeared THREE times, and the newer block-comment
+    skipper was a fourth mechanism with different matching rules. They
+    disagreed, which is a truth bug: a `<# … #>` powershell comment holding
+    `@{` was skipped by the outline and counted by the balance lint, so the
+    tool reported an unbalanced brace in the same breath as a note promising
+    it had ignored that comment.
+
+    Fields:
+      open   matched against the RAW line. ANCHOR IT YOURSELF: `^=begin` for
+             a column-0-only marker, `--\\[\\[` for one that may be indented.
+             Give it a boundary when a longer identifier could swallow it.
+      close  matched against the raw line. Omit when `close_group` applies.
+      close_group  names a group of the OPEN match whose text terminates the
+             region — a heredoc tag is only known once the region starts.
+      nest_open  when set the region counts depth: haskell's `{- {- -} -}`
+             genuinely nests, and a C `#if 0` block is ended by the `#endif`
+             matching its own nested `#if`, not the first one seen.
+      counts_todos  a TODO in a COMMENT is a real TODO and is still reported;
+             a TODO inside a heredoc body, a fenced sample or a disabled
+             `#if 0` block is data, matching long-standing behaviour.
+      after_line_comment  search for the opener in the line-comment-STRIPPED
+             text. A shell comment that merely mentions `<<EOF` must not
+             open a heredoc; only heredoc wants this, because every other
+             opener here IS comment syntax and must see the raw line.
+
+    Code OUTSIDE the region on the opening line is always returned to the
+    caller — the prefix before the opener, plus the suffix after the closer
+    when the region opens and closes on one line. Discarding those was a
+    single boolean away from deleting `function Get-Thing {` because it
+    carried a trailing `<# … #>` comment, taking its `{` with it and
+    inventing an unbalanced-brace lint on a well-formed file.
+    """
+
+    open: Pattern[str]
+    close: Optional[Pattern[str]] = None
+    close_group: Optional[str] = None
+    nest_open: Optional[Pattern[str]] = None
+    counts_todos: bool = True
+    after_line_comment: bool = False
+
+
+# Regions shared by several languages. Defined once so the three former
+# copies of the heredoc regex cannot drift apart again.
+HEREDOC_REGION = SkipRegion(
+    open=_rx(r"<<[~-]?(?P<q>[\"'`]?)(?P<tag>\w+)(?P=q)"),
+    close_group="tag",
+    counts_todos=False,
+    after_line_comment=True,
+)
+FENCE_REGION = SkipRegion(open=_rx(r"^\s*```"), close=_rx(r"^\s*```"), counts_todos=False)
+PREPROC_IF0_REGION = SkipRegion(
+    open=_rx(r"^\s*#\s*if\s+0\b"),
+    nest_open=_rx(r"^\s*#\s*if"),
+    close=_rx(r"^\s*#\s*endif"),
+    counts_todos=False,
+)
+
+
+class SkipRegionTracker:
+    """One line-at-a-time state machine over a spec's SkipRegions.
+
+    Every pass that walks lines owns one of these — the declaration loop,
+    BOTH extent indexes, and the balance lint — so they cannot disagree
+    about what counts as code.
+
+    `feed()` returns the CODE TEXT of a line, or None when the line is
+    inert. Callers that only need a yes/no can test `is None`.
+    """
+
+    __slots__ = (
+        "_regions", "_markers", "_active", "_tag", "_depth",
+        "_line_no", "_opened_at", "_line_comment",
+    )
+
+    def __init__(self, regions: Tuple[SkipRegion, ...], markers: Tuple[str, ...] = ()) -> None:
+        self._regions = regions
+        self._markers = markers
+        self._active: Optional[SkipRegion] = None
+        self._tag: Optional[str] = None
+        self._depth = 0
+        self._line_no = 0
+        self._opened_at = 0
+        self._line_comment = False
+
+    @property
+    def inside_comment(self) -> bool:
+        """Whether the line just fed sat in a region whose TODOs count.
+
+        Per-LINE, not per-state: a one-line `<!-- TODO … -->` opens and
+        closes within the same call, so asking whether a region is still
+        active afterwards misses exactly the comments TODOs live in.
+        """
+        return self._line_comment
+
+    @property
+    def unterminated_at(self) -> int:
+        """1-based line where a still-open region began, else 0.
+
+        An unclosed `--[[` or `=begin` swallows the rest of the file. That
+        is the correct reading of the source, but swallowing it SILENTLY
+        leaves the model with a short outline and no reason to doubt it.
+        """
+        return self._opened_at if self._active is not None else 0
+
+    def _closes_at(self, region: SkipRegion, text: str, start: int) -> Optional[int]:
+        """Walk `text` from `start` applying nest/close events in order.
+
+        Returns the offset just past the closer that ended the region, or
+        None if it is still open — the caller needs that offset to hand back
+        the code following a region that opened and closed on one line.
+        """
+        events = []
+        if region.close is not None:
+            events.extend((m.start(), -1, m.end()) for m in region.close.finditer(text, start))
+        if region.nest_open is not None:
+            events.extend((m.start(), +1, m.end()) for m in region.nest_open.finditer(text, start))
+        for _pos, delta, end in sorted(events):
+            self._depth += delta
+            if self._depth <= 0:
+                return end
+        return None
+
+    def feed(self, raw: str) -> Optional[str]:
+        self._line_no += 1
+        self._line_comment = False
+        if not self._regions:
+            return raw
+        if self._active is not None:
+            region = self._active
+            self._line_comment = region.counts_todos
+            if region.close_group is not None:
+                # A heredoc ends on a line that is EXACTLY its tag.
+                if raw.strip() == self._tag:
+                    self._active = None
+                    self._tag = None
+                return None
+            closed_at = self._closes_at(region, raw, 0)
+            if closed_at is None:
+                return None
+            self._active = None
+            self._depth = 0
+            # Code may follow the closer on the same line.
+            tail = raw[closed_at:]
+            return tail if tail.strip() else None
+
+        # Choose the region opening EARLIEST on the line: lua's `--[[`
+        # comment starts two characters before the `[[` long-string it
+        # contains, so position — not table order — picks the right one.
+        best: Optional[Tuple[int, SkipRegion, Any]] = None
+        for region in self._regions:
+            # Only heredoc looks past a line comment; every other opener here
+            # IS comment syntax, so it must see the raw line. A shell comment
+            # merely MENTIONING `<<EOF` must not open a heredoc and swallow
+            # the rest of the file.
+            hay = _strip_line_comment(raw, self._markers) if region.after_line_comment else raw
+            m = region.open.search(hay)
+            if m is not None and (best is None or m.start() < best[0]):
+                best = (m.start(), region, m)
+        if best is None:
+            return raw
+        _pos, region, match = best
+        self._line_comment = region.counts_todos
+        # Whatever precedes the opener is code: `sql = <<~SQL` declares
+        # `sql`, and `function f {  <# note #>` declares f.
+        head = raw[: match.start()]
+        if region.close_group is not None:
+            self._active = region
+            self._tag = match.group(region.close_group)
+            self._depth = 1
+            self._opened_at = self._line_no
+            return head if head.strip() else None
+        self._depth = 1
+        closed_at = self._closes_at(region, raw, match.end())
+        if closed_at is not None:
+            # A one-line region (`{-# LANGUAGE … #-}`, `x = [[a]]`): the code
+            # on BOTH sides of it survives.
+            self._depth = 0
+            merged = head + raw[closed_at:]
+            return merged if merged.strip() else None
+        self._active = region
+        self._opened_at = self._line_no
+        return head if head.strip() else None
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +507,7 @@ _SPECS: Tuple[LanguageSpec, ...] = (
             DeclPattern("functions", _rx(r"^(?!\s*(?:if|for|while|switch|return|else|do|sizeof)\b)\s*(?:[\w*]+\s+)+\**(?P<name>\w+)\s*\((?P<params>.*)\)\s*(?:\{|$)"), requires_brace=True),
             DeclPattern("macros", _rx(r"^\s*#\s*define\s+(?P<name>\w+)"), block=False),
         ),
-        skip_regions=("preproc_if0",),
+        skip_regions=(PREPROC_IF0_REGION,),
         notes="C outline is heuristic: function definitions need a brace on the same or next line (prototypes excluded); `#if 0` blocks are skipped.",
     ),
     LanguageSpec(
@@ -205,7 +527,7 @@ _SPECS: Tuple[LanguageSpec, ...] = (
             DeclPattern("functions", _rx(r"^(?!\s*(?:if|for|while|switch|return|else|do|sizeof|new|delete|catch|try)\b)\s*(?=((?:[\w:&<>,*~ ]+[\s*&]+)?))\1(?P<name>[\w:~]+)\s*\((?P<params>.*)\)\s*(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?::[^{;]*)?(?:\{|$)"), requires_brace=True),
             DeclPattern("macros", _rx(r"^\s*#\s*define\s+(?P<name>\w+)"), block=False),
         ),
-        skip_regions=("preproc_if0",),
+        skip_regions=(PREPROC_IF0_REGION,),
         notes="C++ outline is heuristic: function definitions need a brace on the same or next line (prototypes excluded); `#if 0` blocks are skipped.",
     ),
     LanguageSpec(
@@ -235,6 +557,57 @@ _SPECS: Tuple[LanguageSpec, ...] = (
         notes="Swift outline is heuristic (line-anchored declarations, brace extents).",
     ),
     LanguageSpec(
+        name="objectivec",
+        aliases=("objc", "objective-c"),
+        extensions=(".mm",),
+        sniff_extensions=(".m",),
+        sniff=_rx(r"(?m)^\s*(?:@(?:interface|implementation|protocol|end)\b|#\s*import\b)"),
+        import_patterns=(
+            _rx(r"^\s*#\s*(?:import|include)\s+[<\"](?P<name>[^>\"]+)[>\"]"),
+            _rx(r"^\s*@import\s+(?P<name>[\w.]+)"),
+        ),
+        decl_patterns=(
+            # @interface/@implementation close with `@end`, NOT `}` — a brace
+            # extent would point at the first ivar block and misdirect the
+            # follow-up read_file, so these carry a line number only.
+            DeclPattern("types", _rx(r"^\s*@(?:interface|implementation|protocol)\s+(?P<name>\w+)"), block=False),
+            DeclPattern("methods", _rx(r"^\s*(?P<name>[-+]\s*\([^()]*\)\s*\w+:?)")),
+            DeclPattern("functions", _rx(r"^(?!\s*(?:if|for|while|switch|return|else|do|sizeof)\b)\s*(?:[\w*]+\s+)+\**(?P<name>\w+)\s*\((?P<params>[^()]*)\)\s*(?:\{|$)"), requires_brace=True),
+            DeclPattern("macros", _rx(r"^\s*#\s*define\s+(?P<name>\w+)"), block=False),
+        ),
+        skip_regions=(PREPROC_IF0_REGION,),
+        notes="Objective-C outline lists @interface/@implementation (line only — they close with @end, not a brace), methods (first selector part), C functions and macros. `.h` headers analyse as C; `.m` is claimed only when the file shows Objective-C markers, so MATLAB/Octave `.m` falls to the generic outline.",
+    ),
+    LanguageSpec(
+        name="dart",
+        extensions=(".dart",),
+        import_patterns=(_rx(r"^\s*(?:import|export|part)\s+['\"](?P<name>[^'\"]+)['\"]"),),
+        decl_patterns=(
+            DeclPattern("types", _rx(r"^\s*(?:(?:abstract|base|final|interface|sealed|mixin)\s+)*(?:class|mixin|extension|enum)\s+(?P<name>\w+)")),
+            DeclPattern("types", _rx(r"^\s*typedef\s+(?P<name>\w+)"), block=False),
+            # Params are `[^()]*` on purpose: a widget-tree line such as
+            # `setState(() {` has a NESTED paren and must not read as a
+            # method definition. Cost: params holding a function type are
+            # missed — a miss, never a false positive (module rule).
+            DeclPattern("functions", _rx(r"^(?!\s*(?:if|for|while|switch|return|else|do|catch|assert|await|yield)\b)\s*(?:(?:static|final|const|external|abstract|factory|late)\s+)*(?=((?:[\w<>,\[\]?.]+\s+)?))\1(?P<name>[\w.]+)\s*(?:<[^>]*>\s*)?\((?P<params>[^()]*)\)"), requires_brace=True),
+            DeclPattern("constants", _rx(r"^[ \t]{0,2}(?:final|const)\s+(?:[\w<>,\[\]?]+\s+)?(?P<name>[A-Za-z_]\w*)\s*="), block=False),
+        ),
+        notes="Dart outline is heuristic; definitions need a brace on the same or next line, so abstract members and expression-bodied members list without extents; only declaration-level (<=2 space indent) constants are listed.",
+    ),
+    LanguageSpec(
+        name="zig",
+        extensions=(".zig",),
+        import_patterns=(_rx(r"^\s*(?:pub\s+)?const\s+\w+\s*=\s*@import\(\"(?P<name>[^\"]+)\"\)"),),
+        decl_patterns=(
+            DeclPattern("types", _rx(r"^\s*(?:pub\s+)?const\s+(?P<name>\w+)\s*=\s*(?:packed\s+|extern\s+)?(?:struct|enum|union|opaque)\b")),
+            DeclPattern("functions", _rx(r"^\s*(?:pub\s+)?(?:export\s+|inline\s+|noinline\s+|extern\s+(?:\"[^\"]*\"\s+)?)*fn\s+(?P<name>\w+)\s*\((?P<params>[^()]*)\)")),
+            DeclPattern("blocks", _rx(r"^\s*(?P<name>test\s+\"[^\"]*\")")),
+            DeclPattern("constants", _rx(r"^(?:pub\s+)?(?:const|var)\s+(?P<name>\w+)\s*[:=]"), block=False),
+        ),
+        quote_chars="\"'",
+        notes="Zig outline is heuristic; `@import` targets list as imports, `const X = struct {…}` reads as a type, and only column-0 (top-level) constants are listed.",
+    ),
+    LanguageSpec(
         name="kotlin",
         aliases=("kt",),
         extensions=(".kt", ".kts"),
@@ -244,6 +617,37 @@ _SPECS: Tuple[LanguageSpec, ...] = (
             DeclPattern("types", _rx(r"^\s*(?:public\s+|private\s+|internal\s+|open\s+|abstract\s+|sealed\s+|data\s+|inner\s+|annotation\s+|enum\s+)*(?:class|interface|object)\s+(?P<name>\w+)")),
         ),
         notes="Kotlin outline is heuristic (line-anchored declarations, brace extents).",
+    ),
+    LanguageSpec(
+        name="scala",
+        extensions=(".scala", ".sbt"),
+        import_patterns=(_rx(r"^\s*import\s+(?P<name>[\w.]+(?:\{[^}]*\})?)"),),
+        decl_patterns=(
+            DeclPattern("types", _rx(r"^\s*(?:(?:private|protected|final|sealed|abstract|implicit|case|open)(?:\[\w+\])?\s+)*(?:class|trait|object|enum)\s+(?P<name>\w+)")),
+            # Scala method names may be symbolic (`def +(x: Int)`), so the
+            # name is either a word or a run of operator characters.
+            DeclPattern("functions", _rx(r"^\s*(?:(?:private|protected|final|override|implicit|inline|abstract|lazy)(?:\[\w+\])?\s+)*def\s+(?P<name>\w+|[!#%&*+\-/:<=>?@^|~]+)\s*(?:\[[^\]]*\])?\s*(?:\((?P<params>[^()]*)\))?")),
+            DeclPattern("types", _rx(r"^\s*(?:(?:private|protected|final)\s+)*type\s+(?P<name>\w+)"), block=False),
+            DeclPattern("constants", _rx(r"^[ \t]{0,2}(?:(?:private|protected|final|lazy|implicit|override)\s+)*val\s+(?P<name>\w+)\s*[:=]"), block=False),
+        ),
+        notes="Scala outline is heuristic (line-anchored declarations, brace extents); Scala 3 indentation-only syntax lists declarations without extents.",
+    ),
+    LanguageSpec(
+        name="groovy",
+        aliases=("gradle",),
+        extensions=(".groovy", ".gradle"),
+        import_patterns=(_rx(r"^\s*import\s+(?P<name>[\w.*]+)"),),
+        decl_patterns=(
+            DeclPattern("types", _rx(r"^\s*(?:(?:public|private|protected|static|final|abstract)\s+)*(?:class|interface|trait|enum)\s+(?P<name>\w+)")),
+            # Balanced `(...)` params only (no nested parens): a Gradle DSL
+            # call like `exclude(group: foo(x)` must not read as a method.
+            DeclPattern("functions", _rx(r"^(?!\s*(?:if|for|while|switch|return|else|do|try|catch|new)\b)\s*(?:(?:public|private|protected|static|final|synchronized|abstract|def)\s+)*(?=((?:[\w.<>\[\]]+\s+)?))\1(?P<name>\w+)\s*\((?P<params>[^()]*)\)"), requires_brace=True),
+            # Gradle configuration blocks (`dependencies {`, `android {`) are
+            # the thing you actually navigate a build file by; column-0 only
+            # so nested DSL noise stays out.
+            DeclPattern("blocks", _rx(r"^(?!(?:if|for|while|switch|else|do|try|catch|finally|synchronized|static)\b)(?P<name>[a-zA-Z_][\w.]*)\s*\{\s*$")),
+        ),
+        notes="Groovy/Gradle outline lists classes, methods and column-0 configuration blocks (`dependencies {`); heuristic, brace extents.",
     ),
     LanguageSpec(
         name="ruby",
@@ -259,8 +663,25 @@ _SPECS: Tuple[LanguageSpec, ...] = (
         ),
         block_style="end",
         end_block_openers=("def", "class", "module", "if", "unless", "case", "while", "until", "for", "begin", "do"),
+        end_assigned_openers=("case", "if", "unless", "begin"),
+        end_inline_block_re=_rx(r"\bdo\s*(?:\|[^|]*\|)?\s*$"),
+        # A one-liner self-closes either as `…; end` or as a single
+        # statement ending in `end` (`def x; true end`, `if c then v end`).
+        # The tempered dot is load-bearing: `while begin …; l or r end`
+        # opens TWO blocks and its trailing `end` closes only the inner
+        # `begin`, so a second opener keyword must block the self-close.
+        end_inline_close_re=_rx(
+            r"(?:;\s*end\b\s*$)"
+            r"|(?:^\s*(?:def|if|unless|while|until|for|case|class|module|begin)\b"
+            r"(?:(?!\b(?:def|if|unless|while|until|for|case|class|module|begin|do)\b).)*"
+            r"\bend\b\s*$)"
+        ),
         c_block_comments=False,
-        skip_regions=("heredoc",),
+        skip_regions=(
+            HEREDOC_REGION,
+            # `=begin`/`=end` are COLUMN-0 only in ruby, hence `^`.
+            SkipRegion(open=_rx(r"^=begin(?![\w])"), close=_rx(r"^=end(?![\w])")),
+        ),
         notes="Ruby outline is heuristic; def/end extents handle one-liners, heredocs and =begin comments; multi-line strings stay approximate.",
     ),
     LanguageSpec(
@@ -275,6 +696,158 @@ _SPECS: Tuple[LanguageSpec, ...] = (
         notes="PHP outline is heuristic (line-anchored declarations, brace extents).",
     ),
     LanguageSpec(
+        name="lua",
+        extensions=(".lua",),
+        shebangs=("lua", "luajit"),
+        line_comment=("--",),
+        import_patterns=(_rx(r"^\s*(?:local\s+[\w{}\s,]+\s*=\s*)?require\s*\(?\s*['\"](?P<name>[^'\"]+)['\"]"),),
+        decl_patterns=(
+            DeclPattern("functions", _rx(r"^\s*(?:local\s+)?function\s+(?P<name>[\w.:]+)\s*\((?P<params>[^()]*)\)")),
+            DeclPattern("functions", _rx(r"^\s*(?:local\s+)?(?P<name>[\w.:]+)\s*=\s*function\s*\((?P<params>[^()]*)\)")),
+            DeclPattern("tables", _rx(r"^\s*local\s+(?P<name>\w+)\s*=\s*\{"), block=False),
+            DeclPattern("constants", _rx(r"^\s*local\s+(?P<name>[A-Z][A-Z0-9_]*)\s*="), block=False),
+        ),
+        block_style="end",
+        end_block_openers=("function", "local function", "if", "for", "while", "do"),
+        end_assigned_openers=("function",),
+        # `..., function()` at end of line opens an anonymous block that is
+        # closed by a bare `end)` — without this the `end)` would pop an
+        # OUTER opener and every range below it would be wrong. This shape
+        # is the norm in neovim/love2d config code.
+        end_inline_block_re=_rx(r"\bfunction\s*\([^()]*\)\s*$"),
+        end_inline_close_re=_rx(r"\bend\b\s*[,;)\]}]?\s*$"),
+        skip_regions=(
+            # Long-bracket COMMENTS, longest level first.
+            SkipRegion(open=_rx(r"--\[==\["), close=_rx(r"\]==\]")),
+            SkipRegion(open=_rx(r"--\[=\["), close=_rx(r"\]=\]")),
+            SkipRegion(open=_rx(r"--\[\["), close=_rx(r"\]\]")),
+            # Long-bracket STRINGS. A bare `end` or a `function` line inside
+            # an embedded SQL/help string is text: without these the string
+            # body closed the enclosing function and its contents were
+            # outlined as declarations that do not exist.
+            SkipRegion(open=_rx(r"\[==\["), close=_rx(r"\]==\]"), counts_todos=False),
+            SkipRegion(open=_rx(r"\[=\["), close=_rx(r"\]=\]"), counts_todos=False),
+            SkipRegion(open=_rx(r"\[\["), close=_rx(r"\]\]"), counts_todos=False),
+        ),
+        c_block_comments=False,
+        notes="Lua outline is heuristic; function/end extents cover `function`, `local function` and `f = function`; `repeat/until` blocks are not listed. Long brackets close at the first matching `]]` exactly as lua does — use `--[=[` for a comment containing `]]`.",
+    ),
+    LanguageSpec(
+        name="perl",
+        extensions=(".pl", ".pm"),
+        shebangs=("perl",),
+        line_comment=("#",),
+        import_patterns=(_rx(r"^\s*(?:use|no|require)\s+(?P<name>[\w:]+)"),),
+        decl_patterns=(
+            DeclPattern("functions", _rx(r"^\s*sub\s+(?P<name>\w+)\s*(?:\((?P<params>[^()]*)\))?")),
+            DeclPattern("modules", _rx(r"^\s*package\s+(?P<name>[\w:]+)"), block=False),
+            DeclPattern("constants", _rx(r"^\s*our\s+(?P<name>[$@%]\w+)"), block=False),
+        ),
+        c_block_comments=False,
+        skip_regions=(
+            HEREDOC_REGION,
+            # Perl's OWN rule: a column-0 `=` followed by a letter starts
+            # POD, and `=cut` ends it. The `^` anchor is load-bearing — an
+            # INDENTED `=` continues an expression (`my $x\n    =f($t);`
+            # is valid perl), and matching it as POD deleted the rest of a
+            # valid file from the outline.
+            SkipRegion(open=_rx(r"^=[a-zA-Z]"), close=_rx(r"^=cut(?![\w])")),
+        ),
+        notes="Perl outline lists subs, packages and `our` variables; POD (=pod…=cut) and heredoc bodies are skipped. Regex literals containing braces can confuse the balance lint.",
+    ),
+    LanguageSpec(
+        name="elixir",
+        extensions=(".ex", ".exs"),
+        line_comment=("#",),
+        import_patterns=(_rx(r"^\s*(?:import|alias|require|use)\s+(?P<name>[A-Z][\w.]*(?:\{[^}]*\})?)"),),
+        decl_patterns=(
+            DeclPattern("modules", _rx(r"^\s*defmodule\s+(?P<name>[\w.]+)")),
+            DeclPattern("functions", _rx(r"^\s*(?:def|defp|defmacro|defmacrop)\s+(?P<name>[\w?!]+)\s*(?:\((?P<params>[^()]*)\))?")),
+            DeclPattern("types", _rx(r"^\s*(?:defprotocol|defimpl|defstruct|defexception)\s*(?P<name>[\w.]*)"), block=False),
+        ),
+        block_style="end",
+        end_block_openers=(
+            "defmodule", "defp", "def", "defmacrop", "defmacro", "defprotocol", "defimpl",
+            "if", "unless", "case", "cond", "with", "for", "receive", "try", "quote",
+            "test", "describe", "setup", "fn",
+        ),
+        end_assigned_openers=("case", "if", "cond", "fn", "with", "try", "receive", "quote", "unless", "for"),
+        # A trailing `do` or a trailing `fn … ->` opens a block that a bare
+        # `end` / `end)` closes — `Enum.map(list, fn x ->` is neither
+        # line-anchored nor an assignment, and without this its `end)` would
+        # pop the enclosing `def`.
+        end_inline_block_re=_rx(r"(?:\bdo\s*$|\bfn\b[^>]*->\s*$)"),
+        end_inline_close_re=_rx(r"\bend\b\s*[,;)\]}]?\s*$"),
+        # `def foo, do: :ok` is opener-SHAPED with no block.
+        # `do:` may be reached with or without a preceding comma, and
+        # formatted multi-line comprehensions put it on its own line.
+        end_bodyless_re=_rx(r"(?:^|[\s,])do:\s*\S"),
+        end_openers_need_terminator=True,
+        skip_regions=(
+            # `"""` heredocs: a bare `end` inside a docstring or an
+            # embedded SQL string is TEXT, and closed the enclosing def.
+            SkipRegion(open=_rx(r'"""'), close=_rx(r'"""'), counts_todos=False),
+        ),
+        c_block_comments=False,
+        notes="Elixir outline is heuristic; do/end extents cover def/defmodule/case/fn blocks, and `, do:` one-liners list without extents.",
+    ),
+    LanguageSpec(
+        name="haskell",
+        aliases=("hs",),
+        extensions=(".hs",),
+        line_comment=("--",),
+        import_patterns=(_rx(r"^\s*import\s+(?:qualified\s+)?(?P<name>[\w.]+)"),),
+        decl_patterns=(
+            DeclPattern("modules", _rx(r"^\s*module\s+(?P<name>[\w.]+)"), block=False),
+            DeclPattern("types", _rx(r"^\s*instance\s+(?:.*?=>\s*)?(?P<name>[\w.']+(?:\s+(?!where\b)[\w.'\[\]()]+)*)"), block=False),
+            DeclPattern("types", _rx(r"^\s*(?:data|newtype|type|class)\s+(?P<name>[\w.']+)"), block=False),
+            # Top-level type signatures at column 0 are the real index of a
+            # Haskell module; equation bodies are layout-scoped and have no
+            # delimiter to measure, hence block_style="none".
+            # The signature rides in `params` so the entry renders as
+            # `area(Shape -> Double)`: the engine appends `()` to every
+            # "functions" entry anyway, and for haskell the TYPE is the
+            # information worth spending those characters on.
+            DeclPattern("functions", _rx(r"^(?P<name>[a-z_]\w*'?)\s*::\s*(?P<params>.*)"), block=False),
+        ),
+        block_style="none",
+        c_block_comments=False,
+        skip_regions=(
+            # Haskell block comments nest: `{- {- x -} -}` is ONE comment,
+            # so a single closer must not end the outer region.
+            SkipRegion(open=_rx(r"\{-"), nest_open=_rx(r"\{-"), close=_rx(r"-\}")),
+        ),
+        notes="Haskell outline lists the module, imports, data/class/instance heads and column-0 type signatures; layout-scoped bodies have no measurable extent, so entries carry a line number only.",
+    ),
+    LanguageSpec(
+        name="powershell",
+        aliases=("ps1", "pwsh"),
+        extensions=(".ps1", ".psm1", ".psd1"),
+        shebangs=("pwsh", "powershell"),
+        line_comment=("#",),
+        import_patterns=(
+            # `$`: real scripts dot-source and import via variable paths
+            # (`Import-Module $tools\sdktools.psm1`).
+            _rx(r"^\s*(?i:Import-Module|using\s+module|using\s+namespace)\s+(?P<name>[\w.$:/\\-]+)"),
+            _rx(r"^\s*\.\s+(?P<name>[\w.$:/\\-]+\.ps1)"),
+        ),
+        decl_patterns=(
+            DeclPattern("functions", _rx(r"^\s*(?i:function|filter|workflow)\s+(?P<name>[\w:-]+)")),
+            DeclPattern("types", _rx(r"^\s*(?i:class|enum)\s+(?P<name>\w+)")),
+            # A standalone SCRIPT (the common case — CPython's own build
+            # scripts, CI steps) declares no functions at all: its `param`
+            # block is its interface and its column-0 assignments are its
+            # structure. Without these such a file outlined to nothing,
+            # which is a useless answer rather than an honest one.
+            DeclPattern("blocks", _rx(r"^(?P<name>(?i:param))\s*\("), block=False),
+            DeclPattern("constants", _rx(r"^\s*\$(?i:script|global|env):(?P<name>\w+)\s*="), block=False),
+            DeclPattern("constants", _rx(r"^\$(?P<name>\w+)\s*="), block=False),
+        ),
+        c_block_comments=False,
+        skip_regions=(SkipRegion(open=_rx(r"<#"), close=_rx(r"#>")),),
+        notes="PowerShell outline lists functions/filters, classes, the script `param` block, and scoped or column-0 variables; <# … #> comment blocks are skipped.",
+    ),
+    LanguageSpec(
         name="shell",
         aliases=("bash", "sh", "zsh"),
         extensions=(".sh", ".bash", ".zsh"),
@@ -287,7 +860,7 @@ _SPECS: Tuple[LanguageSpec, ...] = (
         ),
         c_block_comments=False,
         balance_pairs="{}",
-        skip_regions=("heredoc",),
+        skip_regions=(HEREDOC_REGION,),
         notes="Shell outline is heuristic; only `name() {` style functions and UPPER_CASE assignments are listed; heredoc bodies are skipped.",
     ),
     LanguageSpec(
@@ -323,7 +896,7 @@ _SPECS: Tuple[LanguageSpec, ...] = (
         import_patterns=(),
         decl_patterns=(DeclPattern("headings", _rx(r"^(?P<name>#{1,6}\s+.+?)\s*$"), block=False),),
         block_style="heading",
-        skip_regions=("fence",),
+        skip_regions=(FENCE_REGION,),
         notes="Markdown outline lists headings; a heading's range ends where the next same-or-higher heading starts.",
     ),
     LanguageSpec(
@@ -379,6 +952,66 @@ _SPECS: Tuple[LanguageSpec, ...] = (
         notes="Protobuf outline lists messages/enums/services and rpc methods with brace extents.",
     ),
     LanguageSpec(
+        name="ini",
+        aliases=("cfg", "properties", "conf"),
+        extensions=(".ini", ".cfg", ".properties"),
+        sniff_extensions=(".conf",),
+        sniff=_rx(r"(?m)^\s*\[[^\]\n]+\]\s*$"),
+        filenames=("setup.cfg", "tox.ini", "pytest.ini", ".editorconfig", ".gitconfig", ".flake8"),
+        line_comment=("#", ";"),
+        decl_patterns=(
+            DeclPattern("tables", _rx(r"^\s*(?P<name>\[[^\]]+\])\s*$"), block=False),
+            # Column-0 keys only, mirroring the YAML lane: an indented line
+            # is a continuation of the value above it, not a new key.
+            DeclPattern("keys", _rx(r"^\s*(?P<name>[\w.$-]+)\s*[=:]"), block=False),
+        ),
+        block_style="none",
+        c_block_comments=False,
+        notes="INI/properties outline lists [sections] and `key = value` lines with line numbers; a wrapped continuation line carries no separator and is not listed. `.conf` is claimed only when the file shows a [section] header.",
+    ),
+    LanguageSpec(
+        name="xml",
+        extensions=(
+            ".xml", ".xsd", ".xsl", ".xslt", ".wsdl", ".plist",
+            ".csproj", ".vbproj", ".fsproj", ".props", ".targets",
+        ),
+        sniff_extensions=(".conf",),
+        sniff=_rx(r"(?m)^\s*<(?:\?xml|!DOCTYPE)"),
+        line_comment=(),
+        import_patterns=(
+            _rx(r"^\s*<(?:xs:|xsd:)?(?:import|include)\b[^>]*schemaLocation=[\"'](?P<name>[^\"']+)"),
+            _rx(r"^\s*<Import\b[^>]*Project=[\"'](?P<name>[^\"']+)"),
+            _rx(r"^\s*<\?xml-stylesheet[^>]*href=[\"'](?P<name>[^\"']+)"),
+            _rx(r"^\s*<!DOCTYPE\s+(?P<name>[^\s>\[]+)"),
+        ),
+        decl_patterns=(
+            # Identity-carrying elements are what you navigate an XML file
+            # by (a .csproj PackageReference, a spring bean, a plist key).
+            DeclPattern("blocks", _rx(r"^\s*<(?P<name>[A-Za-z_][\w:.-]*)\b[^>]*\s(?:id|name|key|Include)=[\"'](?P<params>[^\"']*)"), block=False),
+            # Everything else: only elements near the TOP of the tree, so a
+            # deeply nested document does not flood the outline with leaves.
+            DeclPattern("blocks", _rx(r"^[ \t]{0,4}<(?P<name>[A-Za-z_][\w:.-]*)"), block=False),
+        ),
+        block_style="none",
+        c_block_comments=False,
+        skip_regions=(SkipRegion(open=_rx(r"<!--"), close=_rx(r"-->")),),
+        notes="XML outline lists elements carrying an id/name/key/Include attribute plus elements indented by at most 4 characters — a depth cut-off that tracks the file's own indent unit, not a tree level; repeated sibling elements list individually. <!-- --> regions are skipped. `.conf` is claimed only when the file opens with an XML declaration or DOCTYPE.",
+    ),
+    LanguageSpec(
+        name="graphql",
+        aliases=("gql",),
+        extensions=(".graphql", ".gql"),
+        line_comment=("#",),
+        decl_patterns=(
+            DeclPattern("types", _rx(r"^\s*(?:extend\s+)?(?:type|input|interface|enum|union|scalar|schema)\s+(?P<name>\w+)")),
+            DeclPattern("blocks", _rx(r"^\s*(?P<name>(?:query|mutation|subscription|fragment)\s+\w+)")),
+            DeclPattern("blocks", _rx(r"^\s*(?P<name>directive\s+@\w+)"), block=False),
+        ),
+        c_block_comments=False,
+        quote_chars='"',
+        notes="GraphQL outline lists type/input/interface/enum/union definitions, named operations and fragments; brace-less forms (`scalar`, `union`) carry a line number only.",
+    ),
+    LanguageSpec(
         name="yaml",
         aliases=("yml",),
         extensions=(".yaml", ".yml"),
@@ -424,13 +1057,25 @@ for _spec in _SPECS:
     for _f in _spec.filenames:
         _FILENAME_TO_SPEC.setdefault(_f, _spec)
 
+# How much of a file's head a contested-extension sniff may read.
+SNIFF_BYTES = 65536
+_SNIFF_EXT_TO_SPECS: Dict[str, Tuple[LanguageSpec, ...]] = {}
+for _spec in _SPECS:
+    for _e in _spec.sniff_extensions:
+        _SNIFF_EXT_TO_SPECS[_e] = _SNIFF_EXT_TO_SPECS.get(_e, ()) + (_spec,)
+
 
 def known_language_names() -> List[str]:
     """Every language the ENGINE covers (the legacy lanes add their own)."""
     return sorted({s.name for s in _SPECS})
 
 
-def spec_for(language: Optional[str] = None, path: Optional[Path] = None, first_line: str = "") -> Optional[LanguageSpec]:
+def spec_for(
+    language: Optional[str] = None,
+    path: Optional[Path] = None,
+    first_line: str = "",
+    text: str = "",
+) -> Optional[LanguageSpec]:
     """Resolve a LanguageSpec from an explicit name, a path, or a shebang."""
     raw = str(language or "").strip().lower()
     if raw:
@@ -442,6 +1087,11 @@ def spec_for(language: Optional[str] = None, path: Optional[Path] = None, first_
         by_ext = _EXT_TO_SPEC.get(path.suffix.lower())
         if by_ext is not None:
             return by_ext
+        # Contested extension: claim it only on positive evidence, and fall
+        # through to the generic lane otherwise rather than mislabel.
+        for cand in _SNIFF_EXT_TO_SPECS.get(path.suffix.lower(), ()):
+            if cand.sniff is not None and text and cand.sniff.search(text[:SNIFF_BYTES]):
+                return cand
     if first_line.startswith("#!"):
         lowered = first_line.lower()
         for s in _SPECS:
@@ -559,9 +1209,20 @@ class BraceExtentIndex:
     per query. Unclosed braces simply never record a close.
     """
 
-    def __init__(self, lines: List[str], markers: Tuple[str, ...], *, c_block_comments: bool, quote_chars: str) -> None:
+    def __init__(
+        self,
+        lines: List[str],
+        markers: Tuple[str, ...],
+        *,
+        c_block_comments: bool,
+        quote_chars: str,
+        skip_regions: Tuple[SkipRegion, ...] = (),
+    ) -> None:
         self._lines = lines
         self._markers = markers
+        # This pass used to see NO skip regions at all: braces inside a
+        # heredoc body or a `<# … #>` comment moved every extent below them.
+        skipper = SkipRegionTracker(skip_regions, markers)
         # line index of first open event -> 1-based close line of THAT brace
         self._close_for_open_line: Dict[int, int] = {}
         # line index -> True if any open event occurs on it
@@ -569,6 +1230,10 @@ class BraceExtentIndex:
         stack: List[int] = []  # line indices of unmatched opens
         in_block_comment = False
         for j, raw in enumerate(lines):
+            code = skipper.feed(raw)
+            if code is None:
+                continue
+            raw = code
             events, in_block_comment = _code_brace_deltas(
                 raw,
                 markers,
@@ -616,55 +1281,81 @@ class BraceExtentIndex:
 class EndKeywordExtentIndex:
     """ONE pass over the file answering every `end`-block extent query.
 
-    Same P0-2 fix as BraceExtentIndex, ruby edition (reviewer C measured
-    2000 bodyless `def`s at 19.3s under the per-decl scan). Reviewer A (F3)
-    hardening carried over: one-line `def x; ...; end` self-closes;
+    Same P0-2 fix as BraceExtentIndex, keyword-block edition (reviewer C
+    measured 2000 bodyless `def`s at 19.3s under the per-decl scan). Reviewer
+    A (F3) hardening carried over: one-line `def x; ...; end` self-closes;
     assigned blocks (`label = case ... end`) open; heredoc bodies and
     `=begin/=end` comment blocks are skipped.
+
+    Every shape here used to be a hardcoded ruby-ism, which is why lua and
+    elixir could not be added as DATA (the module's rule 1). They are now
+    spec fields: ruby's data reproduces the old regexes exactly, and a new
+    keyword-block language stays a table entry.
     """
 
     def __init__(self, lines: List[str], spec: LanguageSpec) -> None:
-        opener_re = re.compile(r"^\s*(?:" + "|".join(re.escape(w) for w in spec.end_block_openers) + r")\b")
-        assigned_opener_re = re.compile(r"=\s*(?:case|if|unless|begin)\b")
-        inline_do_re = re.compile(r"\bdo\s*(?:\|[^|]*\|)?\s*$")
+        opener_re = (
+            re.compile(r"^\s*(?:" + "|".join(re.escape(w) for w in spec.end_block_openers) + r")\b")
+            if spec.end_block_openers
+            else None
+        )
+        assigned_opener_re = (
+            re.compile(r"=\s*(?:" + "|".join(re.escape(w) for w in spec.end_assigned_openers) + r")\b")
+            if spec.end_assigned_openers
+            else None
+        )
+        inline_block_re = spec.end_inline_block_re
+        inline_close_re = spec.end_inline_close_re
+        bodyless_re = spec.end_bodyless_re
+        needs_terminator = spec.end_openers_need_terminator
         end_re = re.compile(r"^\s*end\b")
-        inline_end_re = re.compile(r";\s*end\b\s*$")
-        heredoc_open_re = re.compile(r"<<[~-]?(?P<q>[\"'`]?)(?P<tag>\w+)(?P=q)")
         self._close_for_line: Dict[int, int] = {}
         stack: List[int] = []
-        heredoc_tag: Optional[str] = None
-        in_eq_comment = False
+        skipper = SkipRegionTracker(spec.skip_regions, spec.line_comment)
+        # Line index of a declaration head seen but not yet opened.
+        pending_head: Optional[int] = None
         for j, raw in enumerate(lines):
-            if heredoc_tag is not None:
-                if raw.strip() == heredoc_tag:
-                    heredoc_tag = None
+            region_code = skipper.feed(raw)
+            if region_code is None:
                 continue
-            if in_eq_comment:
-                if raw.startswith("=end"):
-                    in_eq_comment = False
-                continue
-            if raw.startswith("=begin"):
-                in_eq_comment = True
-                continue
-            code = _strip_line_comment(raw, spec.line_comment).rstrip()
+            code = _strip_line_comment(region_code, spec.line_comment).rstrip()
             stripped = code.strip()
             if not stripped:
                 continue
-            is_opener = bool(
-                opener_re.match(code) or assigned_opener_re.search(code) or inline_do_re.search(code)
-            )
-            if is_opener:
-                if inline_end_re.search(code):
+            # `def foo, do: :ok` is opener-SHAPED with no block at all.
+            # Pushing it would hand the next real `end` to it, and EVERY
+            # range below would be wrong — worse than listing no range.
+            # When it lands on a LATER line (`for x <- list,` … `do: x`)
+            # it also cancels the head still waiting to open.
+            if bodyless_re is not None and bodyless_re.search(code):
+                pending_head = None
+                continue
+            opens_here = opener_re is not None and opener_re.match(code) is not None
+            terminates = inline_block_re is not None and inline_block_re.search(code) is not None
+            if opens_here:
+                # A new declaration abandons any incomplete head above it.
+                pending_head = None
+                if needs_terminator and not terminates:
+                    pending_head = j
+                    continue
+                if inline_close_re is not None and inline_close_re.search(code):
                     # One-line `def name; body; end` self-closes.
+                    self._close_for_line[j] = j + 1
+                else:
+                    stack.append(j)
+            elif pending_head is not None and terminates:
+                # The wrapped head finally opened: the block belongs to the
+                # line the DECLARATION is on, not to this continuation.
+                stack.append(pending_head)
+                pending_head = None
+            elif (assigned_opener_re is not None and assigned_opener_re.search(code)) or terminates:
+                if inline_close_re is not None and inline_close_re.search(code):
                     self._close_for_line[j] = j + 1
                 else:
                     stack.append(j)
             if end_re.match(code) is not None and stack:
                 open_line = stack.pop()
                 self._close_for_line[open_line] = j + 1
-            m_heredoc = heredoc_open_re.search(code)
-            if m_heredoc:
-                heredoc_tag = m_heredoc.group("tag")
 
     def extent_from(self, start_idx: int) -> Optional[int]:
         return self._close_for_line.get(start_idx)
@@ -754,6 +1445,13 @@ def split_lines_like_read_file(text: str) -> List[str]:
     these numbers exist to feed read_file (reviewer C, P2 truth bug).
     """
     lines = text.split("\n")
+    # A trailing newline terminates the last line; it does not start a new
+    # one. Keeping the empty string after it made `lines=N` one MORE than
+    # read_file reports for the same file — for essentially every file, since
+    # almost all end in a newline — which is precisely the drift this helper
+    # exists to prevent.
+    if lines and lines[-1] == "":
+        lines.pop()
     return [l[:-1] if l.endswith("\r") else l for l in lines]
 
 
@@ -763,7 +1461,7 @@ def _scan_generic_delimiters(
     *,
     c_block_comments: bool = True,
     balance_pairs: str = "{}()[]",
-    skip_heredocs: bool = False,
+    skip_regions: Tuple[SkipRegion, ...] = (),
     quote_chars: str = "'\"`",
 ) -> List[str]:
     """Whole-file bracket balance (cheap sanity signal, not a parser).
@@ -775,18 +1473,12 @@ def _scan_generic_delimiters(
     """
     counts: Dict[str, int] = {ch: 0 for ch in balance_pairs}
     in_block_comment = False
-    heredoc_open_re = re.compile(r"<<[~-]?(?P<q>[\"'`]?)(?P<tag>\w+)(?P=q)") if skip_heredocs else None
-    heredoc_tag: Optional[str] = None
+    skipper = SkipRegionTracker(skip_regions, markers)
     for raw in lines:
-        if heredoc_tag is not None:
-            if raw.strip() == heredoc_tag:
-                heredoc_tag = None
+        code = skipper.feed(raw)
+        if code is None:
             continue
-        if heredoc_open_re is not None:
-            m_h = heredoc_open_re.search(raw)
-            if m_h:
-                heredoc_tag = m_h.group("tag")
-                raw = raw[: m_h.start()]  # the opener's prefix is still code
+        raw = code
         # Fast path (reviewer C, P2 perf): skip lines with no countable char.
         if not in_block_comment and not any(ch in raw for ch in balance_pairs):
             if not (c_block_comments and "/*" in raw):
@@ -843,6 +1535,7 @@ _EMIT_KIND_ORDER: Tuple[str, ...] = (
     "namespaces",
     "modules",
     "functions",
+    "methods",
     "constants",
     "macros",
     "rules",
@@ -856,8 +1549,36 @@ _EMIT_KIND_ORDER: Tuple[str, ...] = (
 )
 
 
+def _entry_line(entry: str) -> Optional[int]:
+    """The first line number an entry refers to, whatever its section shape.
+
+    Sections render differently — `  - 12-40: name` in the engine lanes,
+    `  - calls: a -> b (line 12)` in the python lane — and some (javascript
+    `refs`) carry no line at all. The recovery hint has to work for all of
+    them, so it asks here and degrades when the answer is None.
+    """
+    # The digits must sit in a POSITION that means "line": `- 12: name`,
+    # `- 12-40: name`, `- line 12: err`, or a trailing `(line 12)`. A bare
+    # `- 9000` is a JSON KEY, and reading it as a line produced a confident
+    # `start_line=9500` for a 703-line file. Sections whose entries lead with
+    # DATA must pass `entry_lines` rather than rely on this.
+    m = re.match(r"^\s*-\s*(?:line\s+)?(\d+)(?:-\d+)?:", entry)
+    if m:
+        return int(m.group(1))
+    m = re.search(r"\(line (\d+)\)", entry)
+    return int(m.group(1)) if m else None
+
+
 def _emit_section(
-    out: List[str], label: str, entries: List[str], *, total: Optional[int] = None
+    out: List[str],
+    label: str,
+    entries: List[str],
+    *,
+    total: Optional[int] = None,
+    path: str = "",
+    lines_total: int = 0,
+    log: Optional["TruncationLog"] = None,
+    entry_lines: Optional[List[Optional[int]]] = None,
 ) -> None:
     """Print up to MAX_SECTION_ENTRIES, and report the REAL remainder.
 
@@ -875,14 +1596,55 @@ def _emit_section(
     magnitude. Every other section here collects in full and was always honest;
     this function was correct and was being fed a pre-truncated list.
     """
+    # The section cap is the first limit; the output budget is the backstop.
+    cap = MAX_SECTION_ENTRIES if log is None else min(MAX_SECTION_ENTRIES, log.allowance(entries))
+    shown = entries[:cap]
+    if log is not None:
+        log.spend(shown)
     out.append(f"{label}:" if entries else f"{label}: []")
-    out.extend(entries[:MAX_SECTION_ENTRIES])
+    out.extend(shown)
     real_total = len(entries) if total is None else int(total)
-    if real_total > MAX_SECTION_ENTRIES:
-        # Recovery path, not just honesty: the agent can still reach entries
-        # beyond the cap (reviewer B, P2-4).
+    hidden = real_total - cap
+    if hidden <= 0:
+        return
+    # The recovery must be something the model can RUN, and a PRECISE hint
+    # that is wrong is worse than a vague one — the model has no reason to
+    # doubt it. So the range is derived defensively:
+    #
+    #  * over the ACTUAL hidden slice (min/max, not first/last), because not
+    #    every section is emitted in line order — the python lane walks
+    #    classes before functions;
+    #  * validated against the file's real length, because `_entry_line`
+    #    reads a leading integer and some sections lead with DATA (a JSON
+    #    file keyed "9000".. produced start_line=9500 for a 703-line file);
+    #  * clamped to read_file's own per-call budget, or the call it suggests
+    #    is refused outright.
+    if entry_lines is not None:
+        # Authoritative: the collector recorded these, no sniffing needed.
+        hidden_lines = [n for n in entry_lines[cap:] if n is not None]
+    else:
+        hidden_lines = [n for n in (_entry_line(e) for e in entries[cap:]) if n is not None]
+    if lines_total:
+        hidden_lines = [n for n in hidden_lines if 0 < n <= lines_total]
+    target = f'file_path="{path}"' if path else "this file"
+    if hidden_lines:
+        first_hidden, last_hidden = min(hidden_lines), max(hidden_lines)
+        stop = min(last_hidden, first_hidden + READ_FILE_LINE_BUDGET - 1)
+        more = f", then from {stop + 1}" if stop < last_hidden else ""
+        recovery = f"read_file({target}, start_line={first_hidden}, end_line={stop}){more}"
+    else:
+        recovery = (
+            f'no line anchors in this section — search_files(pattern="<name>", {target})'
+        )
+    if log is not None:
+        # Detail rides in the trailing block; the inline marker stays short so
+        # a long outline is not padded with a repeated sentence per section.
+        log.add(label, recovery, shown=cap, total=real_total)
+        out.append(f"  - ... ({hidden} more) #TRUNCATION")
+    else:
         out.append(
-            f"  - ... ({real_total - MAX_SECTION_ENTRIES} more) #TRUNCATION — use search_files('<name>') for entries beyond the cap"
+            f"  - ... ({hidden} more) #TRUNCATION — {hidden} further {label} entries exist "
+            f"and are NOT listed above: {recovery}."
         )
 
 
@@ -899,13 +1661,17 @@ def analyze_with_spec(
     lines = split_lines_like_read_file(text)
     total_lines = len(lines)
 
+    log = TruncationLog()
     out: List[str] = [
         f"Code Analysis: {display_path} (language={spec.name}, lines={total_lines})",
         ANALYZE_CODE_NEXT_STEP_HINT,
         f"language: {spec.name}",
     ]
     if truncated:
-        out.append(f"notice: #TRUNCATION analyzed only the first {MAX_ANALYZE_BYTES // (1024 * 1024)} MB of the file.")
+        log.add(
+            f"file body past line {total_lines} (only the first {MAX_ANALYZE_BYTES // (1024 * 1024)} MB was read)",
+            f'read_file(file_path="{display_path}", start_line={total_lines + 1})',
+        )
     if encoding_note:
         out.append(f"notice: {encoding_note}")
 
@@ -914,42 +1680,53 @@ def analyze_with_spec(
     # so a compact package-lock.json or a ledger JSONL with long records
     # still deserves its parse lane (reviewer B, P1-1).
     if spec.name == "json":
-        return _analyze_json(out, path, text, lines)
+        return _analyze_json(out, path, display_path, text, lines, log)
 
     # Minified/generated guard: line-anchored outlining is meaningless.
     longest = max((len(l) for l in lines), default=0)
     if longest > MAX_LINE_CHARS_FOR_OUTLINE:
+        # This skips the ENTIRE outline, which is the largest omission the
+        # tool can make — it must carry the same marker a section cap does,
+        # or a model scanning for #TRUNCATION concludes nothing was withheld.
         out.append(
             f"diagnostics: longest_line={longest} chars — file looks generated/minified; line-anchored outline skipped."
         )
+        log.add(
+            "all declarations (generated/minified file, no line-anchored outline)",
+            f'search_files(pattern="<name>", file_path="{display_path}")',
+        )
         out.append("notes: use search_files() for targeted lookups in generated files.")
+        out.extend(log.render())
         return "\n".join(out)
 
     imports: List[str] = []
     sections: Dict[str, List[str]] = {}
     todos: List[str] = []
+    elided_entries = 0
     # Every TODO seen, not just the ones kept for printing. The section cap is a
     # display limit; it must never become the reported count.
     todo_total = 0
-    todo_re = re.compile(r"\b(TODO|FIXME|XXX|HACK)\b[:\s]?(.{0,80})")
+    todo_re = re.compile(r"\b(TODO|FIXME|XXX|HACK)\b[:\s]?(.*)")
 
     # Cross-line skip state (reviewer A: heredoc bodies, markdown fences and
     # `#if 0` blocks are DATA, not declarations — a shell heredoc containing
-    # `inner() {` used to be outlined as a live function).
-    heredoc_open_re = re.compile(r"<<[~-]?(?P<q>[\"'`]?)(?P<tag>\w+)(?P=q)")
-    skip_heredoc = "heredoc" in spec.skip_regions
-    skip_fence = "fence" in spec.skip_regions
-    skip_if0 = "preproc_if0" in spec.skip_regions
-    heredoc_tag: Optional[str] = None
-    in_fence = False
-    if0_depth = 0
+    # `inner() {` used to be outlined as a live function). The same tracker
+    # drives both extent indexes and the balance lint, so all four passes
+    # agree on what is code.
+    skipper = SkipRegionTracker(spec.skip_regions, spec.line_comment)
 
     abort_patterns = tuple(d.pattern for d in spec.decl_patterns)
 
     # One-pass extent indexes (reviewer C, P0-2: per-decl forward scans were
     # quadratic when braces never close — 4000 unclosed decls took 91s).
     brace_index = (
-        BraceExtentIndex(lines, spec.line_comment, c_block_comments=spec.c_block_comments, quote_chars=spec.quote_chars)
+        BraceExtentIndex(
+            lines,
+            spec.line_comment,
+            c_block_comments=spec.c_block_comments,
+            quote_chars=spec.quote_chars,
+            skip_regions=spec.skip_regions,
+        )
         if spec.block_style == "brace"
         else None
     )
@@ -958,49 +1735,32 @@ def analyze_with_spec(
     for idx, raw in enumerate(lines):
         line_no = idx + 1
 
-        if heredoc_tag is not None:
-            if raw.strip() == heredoc_tag:
-                heredoc_tag = None
-            continue
-        if in_fence:
-            if raw.lstrip().startswith("```"):
-                in_fence = False
-            continue
-        if skip_fence and raw.lstrip().startswith("```"):
-            in_fence = True
-            continue
-        if skip_if0:
-            preproc = raw.strip()
-            if if0_depth > 0:
-                if preproc.startswith("#if"):
-                    if0_depth += 1
-                elif preproc.startswith("#endif"):
-                    if0_depth -= 1
-                continue
-            if preproc.startswith("#if 0"):
-                if0_depth = 1
-                continue
+        region_code = skipper.feed(raw)
 
-        code = _strip_line_comment(raw, spec.line_comment)
+        # TODO markers ride the RAW line and live in COMMENTS, so this scan
+        # must run before the skip: a `TODO:` inside ruby's `=begin` block or
+        # an XML `<!-- TODO … -->` is exactly where such a marker belongs,
+        # and skipping first silently dropped every one of them.
+        if region_code is not None or skipper.inside_comment:
+            m_todo = todo_re.search(raw)
+            if m_todo:
+                # Collect them ALL and cap at PRINT time, like every other
+                # section. A pre-truncated list once made both the count and
+                # the remainder wrong, and it cannot say where the hidden
+                # entries live — which the recovery hint now needs.
+                todo_total += 1
+                body, cut = _elide(m_todo.group(2).strip())
+                elided_entries += cut
+                todos.append(f"  - {line_no}: {m_todo.group(1)} {body}".rstrip())
+
+        if region_code is None:
+            continue
+
+        code = _strip_line_comment(region_code, spec.line_comment)
         stripped = code.strip()
-
-        # TODO markers ride the RAW line (they live in comments).
-        m_todo = todo_re.search(raw)
-        if m_todo:
-            # COUNT every match; COLLECT only what we will print. Conflating the
-            # two is what made both the diagnostic count and the remainder wrong.
-            todo_total += 1
-            if len(todos) < MAX_SECTION_ENTRIES:
-                todos.append(f"  - {line_no}: {m_todo.group(1)} {m_todo.group(2).strip()}".rstrip())
 
         if not stripped:
             continue
-        if skip_heredoc:
-            m_heredoc = heredoc_open_re.search(code)
-            if m_heredoc:
-                heredoc_tag = m_heredoc.group("tag")
-                # The opener line itself is still code: fall through so a
-                # declaration on it (rare) is not lost; the BODY is skipped.
 
         matched_import = False
         for pat in spec.import_patterns:
@@ -1036,6 +1796,9 @@ def analyze_with_spec(
                 if not opens_next:
                     continue
             params = (m.groupdict().get("params") or "").strip() if "params" in (m.groupdict() or {}) else ""
+            if params:
+                params, cut = _elide(params)
+                elided_entries += cut
             recv = (m.groupdict().get("recv") or "").strip() if "recv" in (m.groupdict() or {}) else ""
             end_line: Optional[int] = None
             # A `;`-terminated declaration has NO body (trait/interface
@@ -1078,12 +1841,29 @@ def analyze_with_spec(
             spec.line_comment,
             c_block_comments=spec.c_block_comments,
             balance_pairs=spec.balance_pairs,
-            skip_heredocs="heredoc" in spec.skip_regions,
+            skip_regions=spec.skip_regions,
             quote_chars=spec.quote_chars,
         )
         if spec.block_style == "brace"
         else []
     )
+
+    shown_elided = sum(
+        1
+        for kind in sections
+        for entry in sections[kind][:MAX_SECTION_ENTRIES]
+        if entry.endswith("…)") or entry.endswith("…")
+    ) + sum(1 for entry in todos[:MAX_SECTION_ENTRIES] if entry.endswith("…"))
+    if shown_elided:
+        log.add(
+            f"{shown_elided} over-long entry text(s), shortened with '…'",
+            "read_file on the line number shown beside each one",
+        )
+    if skipper.unterminated_at:
+        out.append(
+            f"notice: #TRUNCATION an unterminated comment/string region opens at line "
+            f"{skipper.unterminated_at}; declarations after it were read as data, not code."
+        )
 
     diagnostics: List[str] = []
     if spec.block_style == "brace":
@@ -1102,28 +1882,37 @@ def analyze_with_spec(
         else:
             out.append("lint: []")
 
-    _emit_section(out, "imports", imports)
+    _emit_section(out, "imports", imports, path=display_path, lines_total=total_lines, log=log)
     # NOTE: every DeclPattern.kind used by any LanguageSpec must appear here
     # or its section silently vanishes from the output (truth bug) — pinned
     # by tests against the live spec table.
     for kind in _EMIT_KIND_ORDER:
         if kind in sections:
-            _emit_section(out, kind, sections[kind])
+            _emit_section(out, kind, sections[kind], path=display_path, lines_total=total_lines, log=log)
     if todos:
-        _emit_section(out, "todo_markers", todos, total=todo_total)
+        _emit_section(out, "todo_markers", todos, total=todo_total, path=display_path, lines_total=total_lines, log=log)
 
     if spec.notes:
         out.append(f"notes: {spec.notes}")
+    out.extend(log.render())
     return "\n".join(out)
 
 
-def _analyze_json(out: List[str], path: Path, text: str, lines: List[str]) -> str:
+def _analyze_json(
+    out: List[str], path: Path, display_path: str, text: str, lines: List[str], log: "TruncationLog"
+) -> str:
     import json as _json
 
     is_jsonl = path.suffix.lower() in {".jsonl", ".ndjson"}
     if is_jsonl:
         bad: List[str] = []
         n_records = 0
+        # COUNT every failure, COLLECT for printing. Conflating the two is the
+        # bug _emit_section's docstring describes: `bad` was capped at 10, and
+        # `invalid=len(bad)` then reported a 500-record file in which EVERY
+        # record was malformed as `invalid=10` — a file 100% broken described
+        # as 98% healthy, with no marker and no way to tell.
+        n_invalid = 0
         for i, raw in enumerate(lines, 1):
             s = raw.strip()
             if not s:
@@ -1132,29 +1921,34 @@ def _analyze_json(out: List[str], path: Path, text: str, lines: List[str]) -> st
             try:
                 _json.loads(s)
             except Exception as e:
-                if len(bad) < 10:
-                    bad.append(f"  - line {i}: {e}")
-        out.append(f"diagnostics: jsonl_records={n_records}; invalid={len(bad)}")
-        out.append("summary: " + (f"{n_records} records, {len(bad)} invalid" if bad else f"{n_records} records, all parse"))
+                n_invalid += 1
+                bad.append(f"  - line {i}: {e}")
+        out.append(f"diagnostics: jsonl_records={n_records}; invalid={n_invalid}")
+        out.append(
+            "summary: "
+            + (f"{n_records} records, {n_invalid} invalid" if n_invalid else f"{n_records} records, all parse")
+        )
         if bad:
-            out.append("invalid_lines:")
-            out.extend(bad)
+            _emit_section(out, "invalid_lines", bad, total=n_invalid, path=display_path, lines_total=len(lines), log=log)
+        out.extend(log.render())
         return "\n".join(out)
 
     try:
         doc = _json.loads(text)
     except Exception as e:
         out.append(f"diagnostics: parse=error ({e})")
+        out.extend(log.render())
         return "\n".join(out)
     out.append("diagnostics: parse=ok")
     if isinstance(doc, dict):
         keys = list(doc.keys())
         out.append(f"summary: object with {len(keys)} top-level key(s)")
-        _emit_section(out, "keys", [f"  - {k}" for k in keys])
+        _emit_section(out, "keys", [f"  - {k}" for k in keys], path=display_path, lines_total=len(lines), log=log)
     elif isinstance(doc, list):
         out.append(f"summary: array with {len(doc)} element(s)")
     else:
         out.append(f"summary: top-level {type(doc).__name__}")
+    out.extend(log.render())
     return "\n".join(out)
 
 
@@ -1164,6 +1958,7 @@ def analyze_generic(
     """Never-refuse fallback: an honest structural sample for unknown text."""
     lines = split_lines_like_read_file(text)
     total_lines = len(lines)
+    log = TruncationLog()
     out: List[str] = [
         f"Code Analysis: {display_path} (language=unknown, lines={total_lines})",
         "notice: language not recognized — this is a GENERIC text outline (structure sample + metrics), not a parsed code outline.",
@@ -1173,7 +1968,10 @@ def analyze_generic(
             f"notice: requested language '{language_hint}' is not in the analyzer's vocabulary; falling back to the generic outline. #FALLBACK"
         )
     if truncated:
-        out.append(f"notice: #TRUNCATION analyzed only the first {MAX_ANALYZE_BYTES // (1024 * 1024)} MB of the file.")
+        log.add(
+            f"file body past line {total_lines} (only the first {MAX_ANALYZE_BYTES // (1024 * 1024)} MB was read)",
+            f'read_file(file_path="{display_path}", start_line={total_lines + 1})',
+        )
     if encoding_note:
         out.append(f"notice: {encoding_note}")
 
@@ -1183,27 +1981,41 @@ def analyze_generic(
 
     if longest > MAX_LINE_CHARS_FOR_OUTLINE:
         out.append("notes: file looks generated/minified; use search_files() for targeted lookups.")
+        log.add(
+            "all structure (generated/minified file, no line-anchored outline)",
+            f'search_files(pattern="<name>", file_path="{display_path}")',
+        )
+        out.extend(log.render())
         return "\n".join(out)
 
     # Structure sample: column-0 lines that look like section anchors.
     anchors: List[str] = []
+    generic_elided = 0
     for i, raw in enumerate(lines, 1):
         if not raw or raw[0].isspace():
             continue
         s = raw.strip()
         if len(s) < 3:
             continue
-        anchors.append(f"  - {i}: {s[:120]}")
-    _emit_section(out, "top_level_lines", anchors)
+        text_, cut = _elide(s)
+        generic_elided += cut
+        anchors.append(f"  - {i}: {text_}")
+    _emit_section(out, "top_level_lines", anchors, path=display_path, lines_total=total_lines, log=log)
 
-    todo_re = re.compile(r"\b(TODO|FIXME|XXX|HACK)\b[:\s]?(.{0,80})")
+    todo_re = re.compile(r"\b(TODO|FIXME|XXX|HACK)\b[:\s]?(.*)")
     todos = [
         f"  - {i}: {m.group(1)} {m.group(2).strip()}".rstrip()
         for i, raw in enumerate(lines, 1)
         if (m := todo_re.search(raw))
     ]
     if todos:
-        _emit_section(out, "todo_markers", todos)
+        _emit_section(out, "todo_markers", todos, path=display_path, lines_total=total_lines, log=log)
 
+    if generic_elided:
+        log.add(
+            f"{generic_elided} over-long line(s), shortened with '…'",
+            "read_file on the line number shown beside each one",
+        )
     out.append("notes: pass language=<name> to force a specific analyzer; supported names are listed in the tool description.")
+    out.extend(log.render())
     return "\n".join(out)

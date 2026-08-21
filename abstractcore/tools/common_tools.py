@@ -309,8 +309,12 @@ def _collect_self_attributes(fn: Union[ast.FunctionDef, ast.AsyncFunctionDef]) -
             self.generic_visit(node.value)
 
         def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+            # `x: int` with no assignment has value=None — 7 of this package's
+            # own modules hit it, and analyze_code raised AttributeError
+            # instead of returning an outline.
             _handle_target(node.target)
-            self.generic_visit(node.value)
+            if node.value is not None:
+                self.generic_visit(node.value)
 
         def visit_AugAssign(self, node: ast.AugAssign) -> None:
             _handle_target(node.target)
@@ -491,10 +495,32 @@ def _brace_match_end_line_r(lines: list[str], *, start_line_index: int, start_co
     return None
 
 
+class ScanResult(list):
+    """A lint-issue list that knows how many issues it did NOT keep.
+
+    A plain list cannot be told apart from a complete one, and putting a
+    marker INSIDE it corrupts `len()` — which is exactly what
+    `diagnostics: delimiters=N issues` reports. `total` is the real number
+    found; the list holds a bounded sample of them.
+    """
+
+    __slots__ = ("total",)
+
+    def __init__(self, *args) -> None:
+        super().__init__(*args)
+        self.total = 0
+
+
 def _scan_js_delimiter_issues(lines: list[str], *, max_issues: int = 10) -> list[str]:
     """Best-effort delimiter balance checks for JS/TS (strings/comments-aware)."""
     stack: list[tuple[str, int, int]] = []
-    issues: list[str] = []
+    issues = ScanResult()
+
+    def _record(msg: str) -> None:
+        """Count every issue; keep only the first `max_issues` for printing."""
+        issues.total += 1
+        if len(issues) < max_issues:
+            issues.append(msg)
 
     in_single = False
     in_double = False
@@ -569,21 +595,17 @@ def _scan_js_delimiter_issues(lines: list[str], *, max_issues: int = 10) -> list
             elif ch in "})]":
                 expected = closer_to_opener.get(ch)
                 if not stack:
-                    issues.append(f"  - unmatched_closing {ch!r} at {i}:{j + 1}")
+                    _record(f"  - unmatched_closing {ch!r} at {i}:{j + 1}")
                 else:
                     opener, oi, oj = stack.pop()
                     if expected and opener != expected:
-                        issues.append(
+                        _record(
                             f"  - mismatched_delimiter: opened {opener!r} at {oi}:{oj}, closed {ch!r} at {i}:{j + 1}"
                         )
-            if len(issues) >= max_issues:
-                return issues
             j += 1
 
     for opener, oi, oj in reversed(stack):
-        issues.append(f"  - unclosed_delimiter: opened {opener!r} at {oi}:{oj} (reached EOF)")
-        if len(issues) >= max_issues:
-            break
+        _record(f"  - unclosed_delimiter: opened {opener!r} at {oi}:{oj} (reached EOF)")
 
     return issues
 
@@ -591,7 +613,13 @@ def _scan_js_delimiter_issues(lines: list[str], *, max_issues: int = 10) -> list
 def _scan_r_delimiter_issues(lines: list[str], *, max_issues: int = 10) -> list[str]:
     """Best-effort delimiter balance checks for R (strings/comments-aware)."""
     stack: list[tuple[str, int, int]] = []
-    issues: list[str] = []
+    issues = ScanResult()
+
+    def _record(msg: str) -> None:
+        """Count every issue; keep only the first `max_issues` for printing."""
+        issues.total += 1
+        if len(issues) < max_issues:
+            issues.append(msg)
 
     in_single = False
     in_double = False
@@ -652,28 +680,30 @@ def _scan_r_delimiter_issues(lines: list[str], *, max_issues: int = 10) -> list[
             elif ch in "})]":
                 expected = closer_to_opener.get(ch)
                 if not stack:
-                    issues.append(f"  - unmatched_closing {ch!r} at {i}:{j + 1}")
+                    _record(f"  - unmatched_closing {ch!r} at {i}:{j + 1}")
                 else:
                     opener, oi, oj = stack.pop()
                     if expected and opener != expected:
-                        issues.append(
+                        _record(
                             f"  - mismatched_delimiter: opened {opener!r} at {oi}:{oj}, closed {ch!r} at {i}:{j + 1}"
                         )
-            if len(issues) >= max_issues:
-                return issues
             j += 1
 
     for opener, oi, oj in reversed(stack):
-        issues.append(f"  - unclosed_delimiter: opened {opener!r} at {oi}:{oj} (reached EOF)")
-        if len(issues) >= max_issues:
-            break
+        _record(f"  - unclosed_delimiter: opened {opener!r} at {oi}:{oj} (reached EOF)")
 
     return issues
 
 
-def _scan_html_lint_issues(lines: list[str], *, max_issues: int = 10) -> list[str]:
+def _scan_html_lint_issues(lines: list[str], *, max_issues: int = 10) -> "ScanResult":
     """Best-effort HTML lint checks (line-based, avoids embedded script/style bodies)."""
-    lint: list[str] = []
+    lint = ScanResult()
+
+    def _record(msg: str) -> None:
+        """Count every issue; keep only the first `max_issues` for printing."""
+        lint.total += 1
+        if len(lint) < max_issues:
+            lint.append(msg)
     ids: dict[str, list[int]] = {}
 
     id_re = re.compile(r"\bid\s*=\s*(?P<q>[\"'])(?P<val>[^\"']+)(?P=q)", re.IGNORECASE)
@@ -714,7 +744,7 @@ def _scan_html_lint_issues(lines: list[str], *, max_issues: int = 10) -> list[st
         if not saw_html_tag and re.search(r"<html\b", raw, flags=re.IGNORECASE):
             saw_html_tag = True
             if not lang_re.search(raw):
-                lint.append(f"  - html_missing_lang at line {i}")
+                _record(f"  - html_missing_lang at line {i}")
                 if len(lint) >= max_issues:
                     return lint
 
@@ -733,7 +763,7 @@ def _scan_html_lint_issues(lines: list[str], *, max_issues: int = 10) -> list[st
 
         if re.search(r"<img\b", raw, flags=re.IGNORECASE):
             if not alt_re.search(raw):
-                lint.append(f"  - img_missing_alt at line {i}")
+                _record(f"  - img_missing_alt at line {i}")
                 if len(lint) >= max_issues:
                     return lint
             continue
@@ -744,9 +774,7 @@ def _scan_html_lint_issues(lines: list[str], *, max_issues: int = 10) -> list[st
                 rel_m = rel_re.search(raw)
                 rel_val = (rel_m.group("val") if rel_m else "").lower()
                 if "noopener" not in rel_val and "noreferrer" not in rel_val:
-                    lint.append(f"  - target_blank_missing_noopener at line {i}")
-                    if len(lint) >= max_issues:
-                        return lint
+                    _record(f"  - target_blank_missing_noopener at line {i}")
             continue
 
     # Duplicate id checks.
@@ -754,10 +782,8 @@ def _scan_html_lint_issues(lines: list[str], *, max_issues: int = 10) -> list[st
         if len(locs) <= 1:
             continue
         loc_str = ", ".join(str(n) for n in locs[:10])
-        more = f", …(+{len(locs) - 10})" if len(locs) > 10 else ""
-        lint.append(f"  - duplicate_id {id_val!r} at lines {loc_str}{more}")
-        if len(lint) >= max_issues:
-            break
+        more = f", …(+{len(locs) - 10} more locations, see the id in the source)" if len(locs) > 10 else ""
+        _record(f"  - duplicate_id {id_val!r} at lines {loc_str}{more}")
 
     return lint
 
@@ -989,7 +1015,10 @@ def _lint_notice_for_content(path: Path, content: str) -> Optional[str]:
         messages = [str(m) for m in (ruff.get("messages") or []) if str(m).strip()]
         body = "\n".join(messages).rstrip() if messages else ""
         if total > len(messages) and len(messages) > 0:
-            body = (body + "\n" if body else "") + f"  - ... ({total - len(messages)} more)"
+            body = (body + "\n" if body else "") + (
+                f"  - ... ({total - len(messages)} more) #TRUNCATION — "
+                f"{total - len(messages)} further findings exist; run: ruff check {path}"
+            )
         return f"{header}\n{body}".rstrip() if body else header
 
     lines = str(content or "").splitlines()
@@ -1041,7 +1070,10 @@ def _lint_notice_for_path(path: Path) -> Optional[str]:
         messages = [str(m) for m in (ruff.get("messages") or []) if str(m).strip()]
         body = "\n".join(messages).rstrip() if messages else ""
         if total > len(messages) and len(messages) > 0:
-            body = (body + "\n" if body else "") + f"  - ... ({total - len(messages)} more)"
+            body = (body + "\n" if body else "") + (
+                f"  - ... ({total - len(messages)} more) #TRUNCATION — "
+                f"{total - len(messages)} further findings exist; run: ruff check {path}"
+            )
         return f"{header}\n{body}".rstrip() if body else header
 
     try:
@@ -1053,7 +1085,7 @@ def _lint_notice_for_path(path: Path) -> Optional[str]:
 
 
 @tool(
-    description="Return a compact outline + diagnostics for a code file (20+ languages incl. Python/JS/Rust/Go/Java/C/C++; unknown text gets a generic outline) to guide precise edits.",
+    description="Return a compact outline + diagnostics for a code file (30+ languages incl. Python/JS/Rust/Go/Java/C/C++; unknown text gets a generic outline) to guide precise edits.",
     when_to_use="Use before editing to locate the right block quickly; then read_file(start_line/end_line) around that block instead of re-reading the whole file. Works on any readable text file — unknown languages degrade to a labeled generic outline.",
     examples=[
         {"description": "Outline a Python file", "arguments": {"file_path": "src/app.py"}},
@@ -1073,9 +1105,11 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
         file_path: required; Path to the file to analyze (required; relative or absolute)
         language: Optional override for language detection. Deep analyzers: "python",
             "javascript"/"typescript", "html", "r". Outline engine: "rust", "go", "java",
-            "c", "cpp", "csharp", "swift", "kotlin", "ruby", "php", "shell", "sql", "css",
-            "markdown", "yaml", "toml", "json". Anything else falls back to a labeled
-            generic text outline (never a refusal).
+            "c", "cpp", "csharp", "objectivec", "swift", "kotlin", "scala", "groovy",
+            "dart", "zig", "ruby", "php", "perl", "lua", "elixir", "haskell", "shell",
+            "powershell", "sql", "css", "markdown", "graphql", "proto", "terraform",
+            "dockerfile", "makefile", "xml", "yaml", "toml", "ini", "json". Anything
+            else falls back to a labeled generic text outline (never a refusal).
 
     Returns:
         A formatted outline including imports/classes/functions/types (where relevant),
@@ -1125,7 +1159,7 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
                 lang = "python"
         if lang is None:
             raw_hint = str(language or "").strip()
-            spec = _ca.spec_for(language, path, first_line)
+            spec = _ca.spec_for(language, path, first_line, text2)
             if spec is None and raw_hint:
                 # "text"/"plaintext"/"txt"/"log" mean the GENERIC lane on
                 # purpose — no #FALLBACK label for asking for exactly what
@@ -1135,7 +1169,7 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
                 # Unknown hint but the PATH is unambiguous (e.g.
                 # language="rust-lang" on main.rs): honor the file over the
                 # misspelled hint, with a notice.
-                spec = _ca.spec_for(None, path, first_line)
+                spec = _ca.spec_for(None, path, first_line, text2)
                 if spec is not None:
                     result = _ca.analyze_with_spec(path, display_path, text2, spec, truncated=truncated, encoding_note=encoding_note)
                     return result.replace(
@@ -1148,27 +1182,68 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
                 return _ca.analyze_with_spec(path, display_path, text2, spec, truncated=truncated, encoding_note=encoding_note)
             return _ca.analyze_generic(display_path, text2, language_hint=raw_hint, truncated=truncated, encoding_note=encoding_note)
 
-    try:
-        text = path.read_text(encoding="utf-8")
-    except UnicodeDecodeError:
+    # The deep lanes used `path.read_text()` — no byte bound, no minified
+    # guard, no truncation notice. A 3 MB generated .py therefore returned
+    # ~944k TOKENS while its summary reported four zeros, because the section
+    # doing the emitting was uncapped AND uncounted. The engine lane has had
+    # these bounds since it was written; there is no reason the deep lanes
+    # should not share them.
+    text, read_err, read_truncated, encoding_note = _ca.read_text_bounded(path)
+    if read_err == "binary":
         return f"Error: Cannot read '{display_path}' - file appears to be binary"
-    except Exception as e:
-        return f"Error reading file: {str(e)}"
+    if read_err:
+        return read_err
+    text = text or ""
 
-    lines = text.splitlines()
+    # NOT str.splitlines(): it breaks on \x0c/\x0b/\x85/U+2028, which `ast`
+    # and read_file do not, so every line number after a form feed drifted.
+    lines = _ca.split_lines_like_read_file(text)
     total_lines = len(lines)
 
+    log = _ca.TruncationLog()
     out: list[str] = [
         f"Code Analysis: {display_path} (language={lang}, lines={total_lines})",
         _ca.ANALYZE_CODE_NEXT_STEP_HINT,
     ]
+    if read_truncated:
+        log.add(
+            f"file body past line {total_lines} "
+            f"(only the first {_ca.MAX_ANALYZE_BYTES // (1024 * 1024)} MB was read)",
+            f'read_file(file_path="{display_path}", start_line={total_lines + 1})',
+        )
+    if encoding_note:
+        out.append(f"notice: {encoding_note}")
+
+    longest_line = max((len(l) for l in lines), default=0)
+    if longest_line > _ca.MAX_LINE_CHARS_FOR_OUTLINE:
+        out.append(
+            f"diagnostics: longest_line={longest_line} chars — file looks generated/minified; "
+            f"line-anchored outline skipped."
+        )
+        log.add(
+            "all declarations (generated/minified file, no line-anchored outline)",
+            f'search_files(pattern="<name>", file_path="{display_path}")',
+        )
+        out.extend(log.render())
+        return "\n".join(out)
 
     if lang == "python":
         try:
             tree = ast.parse(text, filename=str(display_path))
         except SyntaxError as e:
             loc = f"line {getattr(e, 'lineno', '?')}"
-            return f"Error: Python syntax error in '{display_path}' ({loc}): {str(e).strip()}"
+            msg = [f"Error: Python syntax error in '{display_path}' ({loc}): {str(e).strip()}"]
+            if read_truncated:
+                # The parse failed on text THIS TOOL cut at the byte bound, so
+                # the error is very likely ours, not the file's. Saying only
+                # "syntax error" blames the user for our truncation.
+                msg.append(
+                    "notice: the file was cut at "
+                    f"{_ca.MAX_ANALYZE_BYTES // (1024 * 1024)} MB by this tool before parsing, "
+                    "so this error may be an artifact of that cut rather than a defect in the file."
+                )
+            msg.extend(log.render())
+            return "\n".join(msg)
 
         imports: list[str] = []
         module_assigns: list[str] = []
@@ -1224,17 +1299,31 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
         local_classes = {c["name"] for c in classes}
 
         relationships: list[str] = []
+        # Index every function node ONCE. Re-walking the tree per method was
+        # quadratic: 1000 classes / 8000 methods took ~47s, and a generated
+        # *_pb2.py would simply hang.
+        _fn_nodes: list[tuple[str, int, Any]] = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                ns, _ne = _node_line_range(node)
+                _fn_nodes.append((node.name, ns or 0, node))
+        _fn_by_name: dict[str, list[tuple[int, Any]]] = {}
+        for name, ns, node in _fn_nodes:
+            _fn_by_name.setdefault(name, []).append((ns, node))
+        _top_fn_by_name = {
+            n.name: n
+            for n in tree.body
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+
         for c in classes:
             for m in c["methods"]:
                 fn_node = None
-                # Re-walk AST to find the matching node (cheap; file already parsed).
-                for node in ast.walk(tree):
-                    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and getattr(node, "name", None) == m["name"]:
-                        # Best-effort: ensure we're inside the class range.
-                        ns, ne = _node_line_range(node)
-                        if ns and c["start"] and c["end"] and c["start"] <= ns <= c["end"]:
-                            fn_node = node
-                            break
+                for ns, node in _fn_by_name.get(m["name"], ()):
+                    # Best-effort: ensure we're inside the class range.
+                    if ns and c["start"] and c["end"] and c["start"] <= ns <= c["end"]:
+                        fn_node = node
+                        break
                 if fn_node is None:
                     continue
                 rel = _collect_calls(fn_node, local_functions=local_functions, local_classes=local_classes)
@@ -1244,11 +1333,7 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
                     relationships.append(f"  - calls: {c['name']}.{m['name']} -> {name} (line {ln})")
 
         for f in functions:
-            fn_node = None
-            for node in tree.body:
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == f["name"]:
-                    fn_node = node
-                    break
+            fn_node = _top_fn_by_name.get(f["name"])
             if fn_node is None:
                 continue
             rel = _collect_calls(fn_node, local_functions=local_functions, local_classes=local_classes)
@@ -1268,7 +1353,15 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
             diagnostics.append(f"ruff={total_issues}")
             codes = [str(c) for c in (ruff.get("codes") or []) if str(c).strip()]
             if codes:
-                diagnostics.append(f"ruff_codes={','.join(codes[:8])}{'…' if len(codes) > 8 else ''}")
+                # A bare `…` hid how many code kinds were dropped; say the number.
+                shown_codes = ",".join(codes[:8])
+                extra = f" (+{len(codes) - 8} more codes)" if len(codes) > 8 else ""
+                diagnostics.append(f"ruff_codes={shown_codes}{extra}")
+                if len(codes) > 8:
+                    log.add(
+                        "ruff rule codes", f"ruff check {display_path}",
+                        shown=8, total=len(codes),
+                    )
             fixable = int(ruff.get("fixable") or 0)
             if fixable:
                 diagnostics.append(f"ruff_fixable={fixable}")
@@ -1282,6 +1375,9 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
                     f"imports={len(imports)}",
                     f"classes={len(classes)}",
                     f"functions={len(functions)}",
+                    # Counted because it is emitted: an uncounted section is
+                    # a section whose size nobody can see.
+                    f"module_assignments={len(module_assigns)}",
                     f"relationships={len(relationships)}",
                 ]
             )
@@ -1301,34 +1397,51 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
                 out.append("lint:")
                 out.extend(msgs)
                 if total_issues > len(msgs) and len(msgs) > 0:
-                    out.append(f"  - ... ({total_issues - len(msgs)} more)")
+                    # `msgs` arrives pre-truncated from the ruff helper, so the
+                    # remainder cannot be recovered from this list — name the
+                    # command that prints all of them.
+                    out.append(f"  - ... ({total_issues - len(msgs)} more) #TRUNCATION")
+                    log.add(
+                        "ruff findings",
+                        f"ruff check {display_path}",
+                        shown=len(msgs),
+                        total=total_issues,
+                    )
                 if int(ruff.get("fixable") or 0) > 0:
                     out.append(f"lint_hint: ruff check --fix {display_path}")
 
-        out.append("imports:" if imports else "imports: []")
-        out.extend(imports)
-        out.append("module_assignments:" if module_assigns else "module_assignments: []")
-        out.extend(module_assigns)
+        _ca._emit_section(out, "imports", imports, path=display_path, lines_total=total_lines, log=log)
+        _ca._emit_section(out, "module_assignments", module_assigns, path=display_path, lines_total=total_lines, log=log)
 
-        out.append("classes:" if classes else "classes: []")
+        # One ENTRY per class, its methods folded in, so the cap counts
+        # classes rather than lines and a 5000-method class cannot slip
+        # through as a single uncapped "entry".
+        class_entries, class_lines = [], []
         for c in classes:
             bases = f" bases=[{', '.join(c['bases'])}]" if c["bases"] else ""
-            out.append(f"  - {c['name']} (lines {_format_line_range(c['start'], c['end'])}){bases}")
+            rows = [f"  - {c['name']} (lines {_format_line_range(c['start'], c['end'])}){bases}"]
             if c["methods"]:
-                out.append("    methods:")
-                for m in c["methods"]:
-                    out.append(f"      - {_format_line_range(m['start'], m['end'])}: {m['sig']}")
+                rows.append("    methods:")
+                rows.extend(
+                    f"      - {_format_line_range(m['start'], m['end'])}: {m['sig']}" for m in c["methods"]
+                )
             if c["self_attrs"]:
-                out.append("    self_attributes_set: " + ", ".join(c["self_attrs"]))
+                rows.append("    self_attributes_set: " + ", ".join(c["self_attrs"]))
+            class_entries.append("\n".join(rows))
+            class_lines.append(c["start"])
+        _ca._emit_section(
+            out, "classes", class_entries, path=display_path,
+            lines_total=total_lines, log=log, entry_lines=class_lines,
+        )
+        _ca._emit_section(
+            out,
+            "functions",
+            [f"  - {_format_line_range(f['start'], f['end'])}: {f['sig']}" for f in functions],
+            path=display_path, lines_total=total_lines, log=log,
+            entry_lines=[f["start"] for f in functions],
+        )
 
-        out.append("functions:" if functions else "functions: []")
-        for f in functions:
-            out.append(f"  - {_format_line_range(f['start'], f['end'])}: {f['sig']}")
-
-        out.append("relationships:" if relationships else "relationships: []")
-        out.extend(relationships[:50])
-        if len(relationships) > 50:
-            out.append(f"  - ... ({len(relationships) - 50} more)")
+        _ca._emit_section(out, "relationships", relationships, path=display_path, lines_total=total_lines, log=log)
 
     elif lang == "javascript":
         # JavaScript/TypeScript (best-effort heuristic parsing).
@@ -1336,7 +1449,7 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
         out.append("language: javascript")
         out.append(
             "diagnostics: "
-            + ("delimiters=ok" if not delimiter_issues else f"delimiters={len(delimiter_issues)} issues")
+            + ("delimiters=ok" if not delimiter_issues else f"delimiters={delimiter_issues.total} issues")
         )
         imports: list[str] = []
         classes: list[dict[str, Any]] = []
@@ -1471,29 +1584,40 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
         if delimiter_issues:
             out.append("lint:")
             out.extend(delimiter_issues)
+            if getattr(delimiter_issues, "total", 0) > len(delimiter_issues):
+                out.append(f"  - ... ({delimiter_issues.total - len(delimiter_issues)} more) #TRUNCATION")
+                log.add(
+                    "delimiter issues",
+                    f're-run analyze_code(file_path="{display_path}") after fixing these',
+                    shown=len(delimiter_issues),
+                    total=delimiter_issues.total,
+                )
         else:
             out.append("lint: []")
 
-        out.append("imports:" if imports else "imports: []")
-        out.extend(imports)
-        out.append("module_assignments:" if module_assigns else "module_assignments: []")
-        out.extend(module_assigns[:50])
-        if len(module_assigns) > 50:
-            out.append(f"  - ... ({len(module_assigns) - 50} more)")
+        _ca._emit_section(out, "imports", imports, path=display_path, lines_total=total_lines, log=log)
+        _ca._emit_section(out, "module_assignments", module_assigns, path=display_path, lines_total=total_lines, log=log)
 
-        out.append("classes:" if classes else "classes: []")
-        for c in classes:
-            base = f" extends {c['base']}" if c["base"] else ""
-            out.append(f"  - {c['name']} (lines {_format_line_range(c['start'], c['end'])}){base}")
+        _ca._emit_section(
+            out,
+            "classes",
+            [
+                f"  - {c['name']} (lines {_format_line_range(c['start'], c['end'])})"
+                + (f" extends {c['base']}" if c["base"] else "")
+                for c in classes
+            ],
+            path=display_path, lines_total=total_lines, log=log,
+            entry_lines=[c["start"] for c in classes],
+        )
+        _ca._emit_section(
+            out,
+            "functions",
+            [f"  - {_format_line_range(f['start'], f['end'])}: {f['sig']}" for f in functions],
+            path=display_path, lines_total=total_lines, log=log,
+            entry_lines=[f["start"] for f in functions],
+        )
 
-        out.append("functions:" if functions else "functions: []")
-        for f in functions:
-            out.append(f"  - {_format_line_range(f['start'], f['end'])}: {f['sig']}")
-
-        out.append("references:" if refs else "references: []")
-        out.extend(refs[:50])
-        if len(refs) > 50:
-            out.append(f"  - ... ({len(refs) - 50} more)")
+        _ca._emit_section(out, "references", refs, path=display_path, lines_total=total_lines, log=log)
         out.append("notes: JavaScript parsing is best-effort (heuristic, not a full AST).")
 
     elif lang == "html":
@@ -1658,38 +1782,40 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
             )
         )
 
-        if lint:
-            out.append("lint:")
-            out.extend(lint[:20])
-            if len(lint) > 20:
-                out.append(f"  - ... ({len(lint) - 20} more)")
-        else:
-            out.append("lint: []")
+        _ca._emit_section(out, "lint", lint, path=display_path, lines_total=total_lines, log=log)
+        if getattr(lint, "total", len(lint)) > len(lint):
+            out.append(f"  - ... ({lint.total - len(lint)} more) #TRUNCATION")
+            log.add(
+                "html lint findings",
+                f're-run analyze_code(file_path="{display_path}") after fixing these',
+                shown=len(lint), total=lint.total,
+            )
 
         if title:
             out.append(f"title: {title}")
 
-        out.append("ids:" if ids else "ids: []")
-        for id_val, locs in list(sorted(ids.items(), key=lambda kv: kv[0].lower()))[:50]:
-            loc_str = ", ".join(str(n) for n in locs[:8])
-            out.append(f"  - {id_val}: {loc_str}{'…' if len(locs) > 8 else ''}")
-        if len(ids) > 50:
-            out.append(f"  - ... ({len(ids) - 50} more)")
+        _sorted_ids = sorted(ids.items(), key=lambda kv: kv[0].lower())
+        _ca._emit_section(
+            out,
+            "ids",
+            [
+                f"  - {id_val}: {', '.join(str(n) for n in locs[:8])}"
+                + (f" (+{len(locs) - 8} more locations)" if len(locs) > 8 else "")
+                for id_val, locs in _sorted_ids
+            ],
+            path=display_path,
+            lines_total=total_lines,
+            log=log,
+            # The id is DATA; its line is the first location. Sniffing the
+            # entry text read the id itself as a line number.
+            entry_lines=[(locs[0] if locs else None) for _id, locs in _sorted_ids],
+        )
 
-        out.append("scripts:" if scripts else "scripts: []")
-        out.extend(scripts[:50])
-        if len(scripts) > 50:
-            out.append(f"  - ... ({len(scripts) - 50} more)")
+        _ca._emit_section(out, "scripts", scripts, path=display_path, lines_total=total_lines, log=log)
 
-        out.append("links:" if links else "links: []")
-        out.extend(links[:50])
-        if len(links) > 50:
-            out.append(f"  - ... ({len(links) - 50} more)")
+        _ca._emit_section(out, "links", links, path=display_path, lines_total=total_lines, log=log)
 
-        out.append("references:" if refs else "references: []")
-        out.extend(refs[:50])
-        if len(refs) > 50:
-            out.append(f"  - ... ({len(refs) - 50} more)")
+        _ca._emit_section(out, "references", refs, path=display_path, lines_total=total_lines, log=log)
 
         out.append("notes: HTML analysis is best-effort (regex; multi-line tags may have approximate line numbers).")
 
@@ -1699,7 +1825,7 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
         delimiter_issues = _scan_r_delimiter_issues(lines)
         out.append(
             "diagnostics: "
-            + ("delimiters=ok" if not delimiter_issues else f"delimiters={len(delimiter_issues)} issues")
+            + ("delimiters=ok" if not delimiter_issues else f"delimiters={delimiter_issues.total} issues")
         )
 
         file_dir = path.parent.absolute()
@@ -1837,32 +1963,35 @@ def analyze_code(file_path: str, language: Optional[str] = None) -> str:
         if delimiter_issues:
             out.append("lint:")
             out.extend(delimiter_issues)
+            if getattr(delimiter_issues, "total", 0) > len(delimiter_issues):
+                out.append(f"  - ... ({delimiter_issues.total - len(delimiter_issues)} more) #TRUNCATION")
+                log.add(
+                    "delimiter issues",
+                    f're-run analyze_code(file_path="{display_path}") after fixing these',
+                    shown=len(delimiter_issues),
+                    total=delimiter_issues.total,
+                )
         else:
             out.append("lint: []")
 
-        out.append("libraries:" if libraries else "libraries: []")
-        out.extend(libraries[:50])
-        if len(libraries) > 50:
-            out.append(f"  - ... ({len(libraries) - 50} more)")
+        _ca._emit_section(out, "libraries", libraries, path=display_path, lines_total=total_lines, log=log)
 
-        out.append("sources:" if sources else "sources: []")
-        out.extend(sources[:50])
-        if len(sources) > 50:
-            out.append(f"  - ... ({len(sources) - 50} more)")
+        _ca._emit_section(out, "sources", sources, path=display_path, lines_total=total_lines, log=log)
 
-        out.append("functions:" if functions else "functions: []")
-        for f in functions[:100]:
-            out.append(f"  - {_format_line_range(f['start'], f['end'])}: {f['sig']}")
-        if len(functions) > 100:
-            out.append(f"  - ... ({len(functions) - 100} more)")
+        _ca._emit_section(
+            out,
+            "functions",
+            [f"  - {_format_line_range(f['start'], f['end'])}: {f['sig']}" for f in functions],
+            path=display_path,
+            lines_total=total_lines,
+            log=log,
+        )
 
-        out.append("module_assignments:" if module_assigns else "module_assignments: []")
-        out.extend(module_assigns[:50])
-        if len(module_assigns) > 50:
-            out.append(f"  - ... ({len(module_assigns) - 50} more)")
+        _ca._emit_section(out, "module_assignments", module_assigns, path=display_path, lines_total=total_lines, log=log)
 
         out.append("notes: R analysis is best-effort (regex; delimiter-based ranges).")
 
+    out.extend(log.render())
     return "\n".join(out).rstrip()
 
 
@@ -2397,6 +2526,7 @@ def skim_folders(
 
         lines: list[str] = []
         notable: list[str] = []
+        notable_total = 0
         truncated = False
 
         dirs_shown = 0
@@ -2477,14 +2607,18 @@ def skim_folders(
 
                 if notable_names:
                     show_notables = ", ".join(notable_names[:3])
-                    line += f" — notable: {show_notables}"
+                    extra = f" (+{len(notable_names) - 3} more)" if len(notable_names) > 3 else ""
+                    line += f" — notable: {show_notables}{extra}"
                 elif sample_names:
                     line += f" — samples: {', '.join(sample_names)}"
 
                 lines.append(line)
                 dirs_shown += 1
 
-                # Accumulate notable file paths (bounded).
+                # Accumulate notable file paths (bounded), but COUNT them all:
+                # the collected list stopping at the cap is exactly what made
+                # the omission invisible to the caller.
+                notable_total += len(notable_names)
                 if notable_names and len(notable) < MAX_NOTABLE_FILES_PER_FOLDER:
                     for name in notable_names:
                         if len(notable) >= MAX_NOTABLE_FILES_PER_FOLDER:
@@ -2515,6 +2649,12 @@ def skim_folders(
                 seen_n.add(p)
                 uniq_notable.append(p)
             body += "\n\nNotable files:\n" + "\n".join([f"- {p}" for p in uniq_notable])
+            if notable_total > len(uniq_notable):
+                body += (
+                    f"\n- ... ({notable_total - len(uniq_notable)} more) #TRUNCATION — "
+                    f"{len(uniq_notable)} of {notable_total} notable files shown. Call "
+                    f"skim_folders on a subfolder, or list_files on this one, to see the rest."
+                )
 
         if truncated:
             # RESTORED 2026-08-08 from memory after `git checkout --` destroyed the
@@ -2545,9 +2685,25 @@ def skim_folders(
 _SEARCH_MAX_MULTILINE_BYTES = 16 * 1024 * 1024
 
 
+_SEARCH_OUTPUT_MODE_SYNONYMS = {
+    # -> "content" (line-numbered matches, the default)
+    "lines": "content",
+    "line": "content",
+    "context": "content",
+    "context_lines": "content",
+    "matches": "content",
+    "text": "content",
+    # -> "files_with_matches" (paths only)
+    "files": "files_with_matches",
+    "paths": "files_with_matches",
+    "filenames": "files_with_matches",
+    "files_only": "files_with_matches",
+}
+
+
 @tool(
     description="Search inside file contents for a regex pattern (case-insensitive by default) and return matching lines with line numbers; supports context_lines and files_with_matches/count output modes.",
-    when_to_use="Locate where something appears across files (max_hits files, head_limit lines each). Options: context_lines=N (surrounding lines), case_sensitive, output_mode=files_with_matches|count, multiline for cross-line regex.",
+    when_to_use="Locate where something appears across files (max_hits files, head_limit lines each). Options: output_mode=content|files_with_matches|count (content is the default), context_lines=N, case_sensitive, multiline for cross-line regex.",
     examples=[
         {
             "description": "Find TODO/FIXME across Python files (up to 8 files, 10 lines per file)",
@@ -2635,6 +2791,16 @@ def search_files(
         except Exception:
             context_n = 0
         output_mode = str(output_mode or "content").strip().lower()
+        # CLOSED synonym set (2026-08-21). Two live sessions refused on
+        # `output_mode='lines'` and `output_mode='context_lines'`, both meaning
+        # the default mode — and the second is this tool's own doing: the
+        # `when_to_use` string lists "context_lines=N ... output_mode=
+        # files_with_matches|count" in one comma-separated run and never names
+        # `content`, so the model bound the neighbouring PARAMETER as a mode
+        # VALUE. Closed on purpose: `count_files` is genuinely ambiguous
+        # between two modes and must keep refusing. Widening this to a
+        # catch-all would trade a loud refusal for a silent wrong mode.
+        output_mode = _SEARCH_OUTPUT_MODE_SYNONYMS.get(output_mode, output_mode)
         if output_mode not in ("content", "files_with_matches", "count"):
             return (
                 f"Error: output_mode must be one of content|files_with_matches|count "
@@ -10513,9 +10679,9 @@ def _analyze_media_decodes_as_image(path) -> bool:
         "text — never raw image data into your context."
     ),
     when_to_use=(
-        "Use to see what an image file shows (images only): the session model's own "
-        "vision when it can see, else the configured vision fallback. Image bytes are "
-        "sent to that route — possibly a different provider."
+        "See what an IMAGE FILE shows. NOT for an image already attached to this "
+        "call — look at that directly. Costs one nested vision call and returns one "
+        "bounded reading, not the image. Bytes leave for the vision route."
     ),
     hide_args=["_session_route"],
     examples=[
@@ -10762,6 +10928,23 @@ def analyze_media(
         # provenance entirely (adversary P2).
         provider = str(backend.get("provider") or "local")
         text += f"\n\n(observed by {provider}/{backend['model']})"
+    # What the caller CANNOT tell from the text alone (2026-08-21): this is one
+    # model's bounded reading, not the image. A detail nobody asked about is
+    # simply absent, and the caller has no way to know that from prose that
+    # reads like a description. The metadata strings are capped at 200/240
+    # chars and already spend them on routing, so the honest place to say it is
+    # here, at the point of use — and the line differs by case, because the
+    # useful next step differs: focus a blind reading, or re-ask a focused one.
+    if cleaned_question:
+        text += (
+            "\n(one bounded reading, focused on your question — call analyze_media again "
+            "with a different question for details it did not cover)"
+        )
+    else:
+        text += (
+            "\n(one bounded reading, unfocused — call analyze_media again with "
+            "`question=` to have it look for something specific)"
+        )
     return text
 
 

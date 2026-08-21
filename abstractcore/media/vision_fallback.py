@@ -249,6 +249,20 @@ class VisionFallbackHandler:
                 prompt,
                 media=[image_path]
             )
+            # DELIVERY check (2026-08-21). A provider that cannot carry image
+            # parts may still answer — from the text alone — and that answer
+            # reads like an observation. On a live run the caption was "No
+            # image or visual content is present in this conversation", and
+            # `analyze_media` returned it stamped "(observed by ...)". The
+            # decode gate upstream proves the file IS an image; this proves
+            # the ROUTE actually took it. Structural, never prose-matching.
+            dropped = (getattr(response, "metadata", None) or {}).get("media_dropped")
+            if dropped:
+                raise VisionGenerationError(
+                    f"{provider}/{model} did not transport the image "
+                    f"({len(dropped)} media part(s) dropped by the provider); "
+                    "no observation was possible over this route"
+                )
             return self._extract_caption_text(response.content)
         except Exception as e:
             logger.debug(f"Failed to generate description with {provider}/{model}: {e}")

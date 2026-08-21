@@ -185,7 +185,13 @@ def test_sql_ddl_statements(tmp_path: Path) -> None:
 
 
 def test_unknown_language_falls_back_generic_never_refuses(tmp_path: Path) -> None:
-    f = tmp_path / "program.zig"
+    # The extension must be one the table does NOT claim, or this pin stops
+    # testing the fallback and starts testing whichever spec adopted it —
+    # which is exactly what happened when `.zig` gained a spec. Assert the
+    # premise so the next language addition fails loudly here instead of
+    # silently gutting the test.
+    f = tmp_path / "program.qqlang"
+    assert ca.spec_for(path=f) is None, "test premise: .qqlang must stay unclaimed"
     f.write_text('const std = @import("std");\n\npub fn main() void {\n    // TODO: wire up\n}\n')
     out = analyze_code(file_path=str(f))
     assert not out.startswith("Error"), "readable text must never be refused"
@@ -217,12 +223,14 @@ def test_minified_file_says_so_instead_of_scanning(tmp_path: Path) -> None:
 
 
 def test_section_caps_are_labeled(tmp_path: Path) -> None:
-    body = "\n".join(f"fn f{i}() {{}}" for i in range(80))
+    # Derived from the live cap, not a hardcoded 80: raising the cap must not
+    # quietly turn this pin into a test of nothing.
+    n = ca.MAX_SECTION_ENTRIES + 30
     f = tmp_path / "many.rs"
-    f.write_text(body + "\n")
+    f.write_text("\n".join(f"fn f{i}() {{}}" for i in range(n)) + "\n")
     out = analyze_code(file_path=str(f))
     assert "#TRUNCATION" in out
-    assert f"({80 - ca.MAX_SECTION_ENTRIES} more)" in out
+    assert "(30 more)" in out
 
 
 def test_legacy_lanes_unchanged(tmp_path: Path) -> None:

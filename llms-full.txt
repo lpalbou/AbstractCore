@@ -3431,12 +3431,40 @@ directory_listing = list_files(".", pattern="*.py", recursive=True)
 - `fetch_url` - Fetch + parse HTML/JSON/XML/text plus feed summaries and PDF text extraction when `pypdf` is available; non-text binaries still return metadata + optional previews
 - `search_files` - Search for text patterns inside files using regex
 - `list_files` - Find and list files by names/paths using glob patterns
+- `skim_folders` - Get a quick directory map (tree + counts + notable files) for one or more folders; use `max_depth` to control how much is shown
+- `skim_files` - Get the quick general idea of one or more text files as line-numbered excerpts; control sampling with `target_percent` (default 8%)
 - `read_file` - Read file contents with optional line range selection
+- `analyze_code` - Outline a code file (declarations with line ranges) plus basic diagnostics, so you can jump straight to the block you want instead of re-reading the whole file. Run it before `read_file`/`edit_file` on any file you do not already know.
 - `write_file` - Write content to files with directory creation
 - `edit_file` - Edit files using pattern matching and replacement
 - `web_search` - Search the web using DuckDuckGo; numeric `num_results` is normalized from JSON-style strings when needed, while invalid values fail explicitly
 - `skim_websearch` - Smaller/filtered web search (compact result list); accepts string-like numeric `num_results` and surfaces its compact result cap
 - `execute_command` - Execute shell commands safely with security controls
+- `analyze_media` - Answer a question about an image. Delegated sight: the session model's own vision when available, else the configured vision fallback. Returns bounded text — never raw image data into your context
+
+**`analyze_code` language coverage:**
+
+Four languages get a bespoke deep analyzer: **Python** (a real `ast` parse, plus ruff diagnostics
+when ruff is installed), **JavaScript/TypeScript**, **HTML**, and **R**.
+
+Thirty more ride a declarative outline engine: `c`, `cpp`, `csharp`, `css`, `dart`, `dockerfile`, `elixir`, `go`, `graphql`, `groovy`, `haskell`, `ini`, `java`, `json`, `kotlin`, `lua`, `makefile`, `markdown`, `objectivec`, `perl`, `php`, `powershell`, `proto`, `ruby`, `rust`, `scala`, `shell`, `sql`, `swift`, `terraform`, `toml`, `xml`, `yaml`, `zig`.
+
+Anything else readable gets a clearly labeled generic outline — metrics, top-level structure and
+TODO markers — so the tool never refuses a file it can read. Only binary content is an error.
+
+Detection is by extension, then a shebang for extensionless scripts, then a content sniff for
+extensions several languages share: `.m` is read as Objective-C only when the file shows
+Objective-C markers, and `.conf` resolves to INI or XML by what the file actually contains. Pass
+`language="rust"` to force a lane for an odd extension. Outlines are heuristic rather than parses,
+and every result ends with a `notes:` line stating what that language's outline does and does not
+list. Line numbers match `read_file(start_line=...)` at the moment of analysis and go stale after
+every successful edit.
+
+Files are read up to 4 MB, generated/minified files are detected rather than outlined line by
+line, and sections are capped at 1000 entries with a total output budget behind that. Every bound that bites is reported in one `#TRUNCATION`
+block that closes the answer, naming each withheld item plus a step you can run to get it —
+usually a `read_file` call naming the exact line range, sized to fit one call. Nothing is dropped
+without a marker.
 
 **Suggested web workflow (agent-friendly):**
 1. `skim_websearch(...)` → get a small set of candidate URLs

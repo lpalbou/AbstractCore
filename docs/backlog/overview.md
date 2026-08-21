@@ -9,11 +9,28 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 17
-- Proposed: 24
+- Planned: 22
+- Proposed: 26
 - Completed: 30
 - Deprecated: 3
 - Recurrent: 0
+
+(2026-08-21: MLX vision investigation added `0840`–`0842` (planned) and `0843` (proposed).
+Root finding: `MLXProvider` loads via `mlx_lm`, whose `qwen3_5.Model.sanitize` discards every
+`vision_tower.*` weight — so 6 of 9 local `mlx-community` checkpoints ship a vision tower that
+AbstractCore downloads, stores, and throws away at load. `0840` gives it sight by keeping mlx-lm
+as the decoder and using mlx-vlm purely as a vision encoder (measured: +0.869 GB on the 27B, the
+correct 48x ArraysCache + 16x KVCache hybrid preserved, text path token-identical). `0841` fixes
+the second, independent defect — capability is keyed on model name alone, so discovery advertises
+image input for transports that cannot carry it; ADR 0008 already decided this shape for
+residency, so that ADR should be extended rather than duplicated. `0842` closes three honesty
+holes that exist TODAY and are not vision-specific: `response_model=` drops media with no marker
+at all, streaming attaches no media metadata, and the vision-fallback gate reads absence as
+success. `0843` records the deliberately-deferred media-aware cache reuse. Evidence (22 measured
+probes, two adversarial review rounds): `untracked/investigation-vision-mlx/EVIDENCE.md`;
+strategy and rejected alternatives: `untracked/investigation/mlx-native-vision-strategy.md`.
+Upstream: ml-explore/mlx-lm#1768 opened to add `position_ids` for M-RoPE — nothing in these items
+depends on it.)
 
 (2026-07-25 hygiene pass — counts reconciled to on-disk reality (prior overview drifted:
 said 15/26/24, disk had 17/22/30). Tools-audit items now in their true lifecycle state:
@@ -52,6 +69,11 @@ warn on truncation). Added `proposed/0823_native_tool_declaration_for_capable_mo
 Tier-1 tool-placement + MLX-rendering fixes that resolved the reported
 abstractcode issue landed in-tree, see CHANGELOG.)
 
+(2026-08-21 addition: `0839` import-cycle investigation added to planned/. Counts
+reconciled to on-disk reality: planned 17 -> 19 (disk held 18 before this addition,
+so the stated 17 had drifted by one), proposed 24 -> 25 (disk holds 25). completed 30
+and deprecated 3 verified correct.
+
 (Count repair 2026-07-13: proposed/ held 15 files while the overview said 12 —
 `0816` was also missing from the proposed ledger. Corrected during the 0817/0818
 addition pass; `0816` is IMPLEMENTED per its own status and awaits a move to
@@ -59,27 +81,38 @@ completed/ in a hygiene pass.)
 
 ## Next recommended work
 
-1. `planned/0817_kv_artifact_invalidation_key_audit.md`
+1. `planned/0839_import_cycle_architectures_utils_media.md`
+   Found 2026-08-21: a real dependency cycle
+   `tools → architectures → utils → media → architectures`, latent only because
+   `abstractcore/__init__.py:30` imports `.utils.version` first and so fixes the
+   order. Surfaces as a partially-initialized `ImportError` whenever the package
+   root is skipped (verified: namespace-package shadowing when running Python
+   from the framework root). Invisible to CI because `tests/conftest.py` imports
+   the package root at collection. Decide whether the cycle is intended, then
+   break it or make the invariant explicit and tested — the project's stated
+   intent is no circular imports, so this needs clarifying rather than papering
+   over with another import in `__init__.py`.
+2. `planned/0817_kv_artifact_invalidation_key_audit.md`
    Operator mandate (2026-07-13): enumerate the full KV-artifact validity key
    (model/quant/engine/tokenizer-template/position/attention-arch) against what
    save/load actually checks; close the silently-wrong-cache class (adversary
    confirmed the gap list: tokenizer fingerprint, config hash, engine version,
    cache dtype, position; plus has_kv_cache validity tiering and resolved-id
    path keying). Gates the bloc-composability lane (0818).
-2. `planned/0810_resolved_generate_route_object_and_temporary_override_contract.md`
+3. `planned/0810_resolved_generate_route_object_and_temporary_override_contract.md`
    The first route-object implementation is landed. The next step is the second-wave parity pass:
    direct Core, Runtime, and server entrypoints must all consume the same resolved-route semantics
    and denial behavior before more topology-specific routing code grows back.
-3. `planned/0809_generate_request_object_and_output_contract.md`
+4. `planned/0809_generate_request_object_and_output_contract.md`
    The first `request=` implementation is landed. The next step is to extend docs/examples and
    finish broader parity coverage without breaking prompt-first compatibility.
-4. `planned/789_server-auth-rate-limits.md`
+5. `planned/789_server-auth-rate-limits.md`
    The server now sits on real credentials (remote providers, media endpoints). Tightening inbound
    auth and limiting is the next practical safety boundary for shared or public deployments.
-5. `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md`
+6. `planned/2026-05-07_multimodal-generation-and-deterministic-inference-cache.md`
    Optional, opt-in response caching is now the highest-leverage server performance/cost feature,
    but it must be done with strict keying and tenant/auth namespace rules.
-6. `planned/2026-05-18_mlx-provider-continuous-batching.md`
+7. `planned/2026-05-18_mlx-provider-continuous-batching.md`
    Improve local text throughput and latency via continuous batching/scheduler safety for MLX.
 ## Planned ledger
 

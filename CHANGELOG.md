@@ -8,6 +8,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **A total output budget backs up the per-section cap.** A cap on each section cannot
+  bound a file with many sections: four sections each just under the cap produced a
+  26k-token outline for a 45k-token file. Sections are now funded in emission order, so
+  the kinds you navigate by are served first, and anything the budget cannot fund is
+  reported in the trailing block like any other omission.
+- **`analyze_code` withholds far less, and ends with an actionable account of whatever it
+  did withhold.** The per-section display cap rises from 50 to 1000 entries. Measured
+  across 2429 real files and 8997 sections, section sizes run p50=2, p90=13, p99=57: a
+  cap of 50 sat below the 99th percentile and truncated 1.3% of all sections, including
+  the files whose outline is most worth having — a 463-heading changelog previously
+  showed 50 headings and hid 413. A cap of 1000 sits above any ordinary code file, and
+  the largest realistic outline costs roughly 5k tokens, well below what re-reading the
+  file to recover the same information would cost.
+- **One consolidated truncation block closes the answer.** Every omission — a capped
+  section, the 4 MB read bound, a skipped generated file, shortened entry text, capped
+  ruff findings — is reported once, at the end, in the form
+  `#TRUNCATION N item(s) withheld — run these to see the rest:` followed by one line per
+  item naming what is missing and the exact call that returns it. Sections stay marked
+  inline with a short `... (N more) #TRUNCATION`, so a partial section is visible where
+  you are reading, while the detail and the file path are stated once rather than
+  repeated per section.
+- **Recovery steps are runnable, not illustrative.** A capped section previously
+  suggested `search_files('<name>')`, where the names worth searching for were the ones
+  the cap had removed. Each item now gives a concrete `read_file(...)` call over the line
+  range the withheld entries actually occupy, bounded to what `read_file` accepts and
+  carrying a continuation offset when the range is wider than one call. A section whose
+  entries have no line anchors says so instead of inventing a range.
+- **Every place output is withheld is now marked.** Sections in the JavaScript, HTML, R
+  and Python lanes each carried their own cap with a bare `(N more)` line, no marker and
+  no recovery; the lint scanners stopped at their issue cap and returned a result
+  indistinguishable from a complete one; `skim_folders` dropped notable files silently;
+  and over-long entry text was cut mid-string with no ellipsis. All of these are now
+  recorded, and a test enforces the pattern so a new one cannot be added without it.
+- **`analyze_code` covers 13 more languages (21 → 34 in the outline engine).** New
+  `LanguageSpec` rows for `scala` (.scala/.sbt), `groovy` (.groovy/.gradle), `objectivec`
+  (.m/.mm), `dart`, `zig`, `lua`, `perl` (.pl/.pm), `elixir` (.ex/.exs), `haskell`,
+  `powershell` (.ps1/.psm1/.psd1), `ini` (plus `setup.cfg`, `tox.ini`, `.editorconfig`,
+  `.gitconfig`), `xml` (plus `.xsd`, `.plist`, `.csproj` and the other MSBuild project
+  formats), and `graphql`. With the four deep-analyzer lanes (Python, JavaScript/TypeScript,
+  HTML, R) the tool now names 38 languages; anything else readable still degrades to a labeled
+  generic outline rather than an error.
+- **Contested file extensions are resolved by content.** `.m` is analyzed as Objective-C only
+  when the file shows Objective-C markers, so a MATLAB/Octave `.m` gets the generic outline
+  instead of an Objective-C label and an empty result. `.conf` resolves to INI when the file has
+  a `[section]` header and to XML when it opens with a tag, and otherwise falls to the generic
+  lane. Detection order is extension, then shebang, then this content sniff.
+- **Unterminated comment and string regions are reported.** A file whose `--[[`, `=begin` or
+  `<!--` is never closed now carries a `#TRUNCATION` notice naming the opening line, instead of
+  silently returning a short outline.
 - **Poolside Laguna support: `laguna` architecture + `laguna-s-2.1` capability
   entry.** `architecture_formats.json` gains a `laguna` entry (60 → 61) and
   `model_capabilities.json` a `laguna-s-2.1` entry, every fact verified against
@@ -49,6 +98,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CapabilityUnavailableError` naming the method and minimum version.
 
 ### Changed
+- **One `SkipRegion` type now describes every cross-line region the outline engine must read as
+  data** — comments, long strings, heredocs, Markdown fences and `#if 0` blocks — and one tracker
+  serves all four passes (declarations, both extent indexes, and the bracket-balance lint).
+  These were previously separate mechanisms, so the passes could disagree: a PowerShell
+  `<# ... #>` comment containing an opening brace was excluded from the outline and counted by
+  the lint, producing an unbalanced-brace report next to a note promising that comment had been
+  ignored. A region also hands back the code around it — the text before the opener and after a
+  one-line closer — so a declaration carrying a trailing comment survives; and only heredoc looks
+  for its opener in line-comment-stripped text, so a comment merely mentioning `<<EOF` opens
+  nothing. Adding a language that needs a new kind of region is now a table entry rather than an
+  engine change.
+- **Keyword-block (`do`/`end`) languages are described by data.** The extent index previously
+  hardcoded Ruby's grammar, which is what prevented Lua and Elixir from being added as table
+  entries. Ruby's behavior is unchanged; its shapes are now spec fields
+  (`end_assigned_openers`, `end_inline_block_re`, `end_inline_close_re`, `end_bodyless_re`,
+  `end_continuation_re`).
+- **Objective-C selectors render without a trailing `()`.** A new `methods` section keeps
+  `- (void)layoutSubviews` from being printed as a call.
+- The `analyze_code` docstring lists every engine language, and a test pins that list against the
+  live table so the two cannot drift.
 - **Media plugin floors raised: `abstractvoice>=0.11.0`, `abstractmusic>=0.1.15`**
   (base extras and the `[all-apple]`/`[all-gpu]` aggregate profiles).
   AbstractVoice 0.11.0 brings the local Qwen3-TTS engine — preset speakers,
@@ -65,6 +134,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unchanged.
 
 ### Fixed
+- **`analyze_code` no longer crashes on ordinary Python.** A bare annotation such as
+  `x: int` (no assignment) raised `AttributeError` and returned a traceback instead of an
+  outline — 7 of this package's own modules were affected.
+- **The largest Python and JavaScript sections are bounded.** `imports`, `classes` and
+  `functions` were emitted directly and so bypassed the section cap entirely: a generated
+  module with 60,000 definitions produced roughly 600,000 tokens with no marker anywhere.
+  All three now share the same cap, budget and reporting as every other section, and a
+  class is one entry with its methods folded in rather than an unbounded run of lines.
+- **A syntax error caused by this tool's own 4 MB read bound says so.** The parse ran on
+  text the tool had already cut, so a valid file was reported as having a syntax error,
+  and the early return discarded the notice that would have explained it.
+- **`lines=N` matches `read_file`.** The line count included the empty string after a
+  file's trailing newline, so it was one higher than `read_file` reports for the same
+  file — for essentially every file. These numbers exist to feed `read_file(start_line=)`.
+- **Line numbers in the Python, JavaScript, HTML and R outlines no longer drift.** Those
+  lanes split text with `str.splitlines()`, which breaks on form feeds and Unicode
+  separators where `ast` and `read_file` do not, so every line after a form feed was
+  wrong.
+- **Recovery ranges come from the collector, not from parsing the printed text.** Reading
+  a leading integer out of an entry treated a numeric JSON key or HTML id as a line
+  number, producing a confident, wrong `read_file` range; sections that lead with data now
+  supply their real line numbers, and a section that genuinely has none says so.
+- **Lint issue counts are the true counts.** The scanners stopped at their cap and the
+  truncation marker was stored inside the issue list, so `diagnostics: delimiters=N
+  issues` counted the marker as an issue and reported one more than existed. Scanners now
+  count every issue and keep a bounded sample, with the omission reported in the trailing
+  block.
+- **Shortened entry text is reported only when it is actually shown**, rather than
+  counting entries the section cap had already withheld — which double-counted the same
+  omission and pointed at line numbers that were not printed.
+- **Analyzing a large Python file is no longer quadratic.** Relationship extraction
+  re-walked the syntax tree once per method; 1000 classes with 8000 methods took about 47
+  seconds and now takes under one.
+- **A large file could return an outline far bigger than the file.** The Python,
+  JavaScript, HTML and R analyzers read the whole file with no byte bound, applied no
+  generated-file guard, and emitted `module_assignments` uncapped. A 3 MB generated
+  Python file returned roughly 944,000 tokens — while its summary reported
+  `imports=0; classes=0; functions=0; relationships=0`, because the section producing the
+  output was not counted. These lanes now share the engine's 4 MB read bound, its
+  generated-file guard and its section caps, and `module_assignments` is both capped and
+  counted. The same file now returns about 1,900 tokens with an accurate summary.
+- **JSONL validity counts were wrong on badly broken files.** The invalid-record list was
+  collected up to a limit and the diagnostic reported the length of that list, so a file
+  in which every record was malformed reported `invalid=10`. The count is now the true
+  count, and the listing carries the standard truncation notice.
+- **Recovery line ranges are no longer guessed.** They are derived from the entries that
+  were actually withheld rather than from two endpoints, so they remain correct for
+  sections not emitted in line order; they are validated against the file's real length,
+  so numeric JSON keys and HTML ids are no longer mistaken for line numbers (one such
+  hint pointed at line 9500 of a 703-line file); and they are clamped to `read_file`'s
+  per-call budget so the suggested call is accepted.
+- **`skim_folders` reports how many notable files it did not show**, both in the summary
+  list and in each directory's inline preview.
+- **A Perl file could lose most of its outline.** POD directives were matched against the
+  left-stripped line, so an indented expression continuation such as `=format_date($t)` matched
+  the `=for` directive and every declaration below it was read as documentation. POD is now
+  recognized at column 0 only, matching Perl's own rule.
+- **`TODO`/`FIXME` markers inside block comments are counted again.** Markers in a Ruby `=begin`
+  block or an XML `<!-- TODO ... -->` were dropped, reporting `diagnostics: none` for files that
+  contained them. Markers inside heredoc bodies and fenced samples remain data, as before.
+- **Wrong line ranges in several languages.** An Elixir guard split across lines by `mix format`,
+  a `quote do:` one-liner, a triple-quoted heredoc containing the word `end`, and a Lua
+  `[[ ... ]]` long string containing `end` or `function` each caused the enclosing declaration to
+  claim a range running to the end of the file — and the Lua case also listed declarations that
+  existed only inside the string. Ruby's `if x then y end` one-liner no longer extends its method
+  to the end of the class.
+- **Haskell block comments nest**, as GHC treats them, so an inner `-}` no longer ends an outer
+  `{- ... -}` and exposes commented-out code as live declarations.
+- **Braces inside heredocs no longer shift brace extents.** The extent index previously applied no
+  skip regions at all, and the bracket-balance lint counted the text following a heredoc tag.
+- **Ruby one-line definitions close on their own line in every form.** `def fu_windows?; true end`
+  and `def _do_nothing(*)end` — both from Ruby's own standard library — were read as multi-line
+  definitions and took their enclosing module's `end`, shifting every range below them. A
+  one-liner whose trailing `end` closes an inner block, such as
+  `while begin l = shift; r = shift; l or r end`, still correctly opens a block.
+- **C `#if 0` blocks are matched with real preprocessor spacing.** `#        if 0` was not
+  recognized, leaving disabled code in the outline, while `#if 0x030700A1 <= PY_VERSION_HEX` was
+  treated as disabled and hid live declarations.
+- **Elixir declaration heads wrapped by `mix format` keep their own extents.** A head continued by
+  a `when` guard, by `}) do`, or by `]) do`, and a comprehension whose `do:` lands on a later
+  line, each caused the declaration to claim the rest of the module.
+- **Apache-style `.conf` files are no longer labeled XML.** Container directives such as
+  `<Directory>` look like tags; the XML sniff now requires an XML declaration or DOCTYPE, so an
+  Apache config falls to the generic outline instead of listing two "elements" and missing every
+  directive.
+- **Fewer false declarations.** Groovy `try` and `static` blocks are no longer listed as Gradle
+  configuration blocks; Dart widget-tree calls such as `setState(() {` are not read as method
+  definitions; Zig and Dart list declaration-level constants rather than function-body locals.
+- **PowerShell scripts outline usefully.** A standalone `.ps1` declares no functions, so it
+  previously produced an empty outline; its `param` block and column-0 assignments are now
+  listed, and an `Import-Module` whose path is a variable is recognized as an import.
 - **`<arg_key>` / `<arg_value>` tool calls parsed to nothing.** The `glm_xml`
   tool format was routed to the XML-wrapped parser, but that parser only
   understood JSON-in-`<tool_call>` and `<function=name><parameter=k>` payloads —
