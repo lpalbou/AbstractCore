@@ -46,6 +46,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -184,9 +185,34 @@ def _resolve_target(target: str) -> Dict[str, Any]:
     return {"url": p.resolve().as_uri(), "is_local": True}
 
 
-def _parse_viewport(viewport: str) -> Any:
+def _parse_viewport(viewport: Any) -> Any:
+    """Parse a viewport spec into {'width', 'height'}, or None if unusable.
+
+    Deliberately permissive about SHAPE, strict about VALUES: callers write
+    the same two numbers a dozen different ways ('1440x900', '1440,900',
+    '1440 900', '1440×900', [1440, 900], {'width': 1440, 'height': 900}), and
+    refusing the notation instead of the numbers is a pointless round-trip.
+    Anything carrying exactly two integers in width-then-height order is
+    accepted; the 64..4096 bounds are the only real gate.
+    """
+    w_s: Any
+    h_s: Any
+    if isinstance(viewport, dict):
+        w_s = viewport.get("width", viewport.get("w"))
+        h_s = viewport.get("height", viewport.get("h"))
+    elif isinstance(viewport, (list, tuple)):
+        if len(viewport) != 2:
+            return None
+        w_s, h_s = viewport
+    else:
+        # Any non-digit run separates the two numbers: x, X, ×, ',', '*',
+        # whitespace, 'px' suffixes, 'width='/'height=' labels — all fine.
+        nums = re.findall(r"\d+", str(viewport))
+        if len(nums) != 2:
+            return None
+        w_s, h_s = nums
+
     try:
-        w_s, h_s = str(viewport).lower().replace(" ", "").split("x", 1)
         w, h = int(w_s), int(h_s)
     except Exception:
         return None
@@ -836,7 +862,9 @@ def browser_probe(
             network.
         capture_screenshot: Save a viewport PNG to a fresh temp dir and
             report its path (compose with analyze_media for a visual pass).
-        viewport: Browser viewport as 'WIDTHxHEIGHT' (default '1280x720').
+        viewport: Browser viewport, width then height (default '1280x720').
+            Any two-integer form is accepted: '1280x720', '1280,720',
+            '1280 720', or [1280, 720]. Each side must be 64..4096.
 
     Returns:
         A PASS/FAIL report: navigation outcome, HTTP status, readyState,
@@ -869,7 +897,10 @@ def browser_probe(
 
     vp = _parse_viewport(viewport)
     if vp is None:
-        return f"❌ Invalid viewport '{viewport}' — use 'WIDTHxHEIGHT' between 64x64 and 4096x4096 (e.g. '1280x720')"
+        return (
+            f"❌ Invalid viewport '{viewport}' — give exactly two integers, width then height, "
+            "each between 64 and 4096. Any separator works ('1280x720', '1280,720', '1280 720')."
+        )
 
     screenshot_dir: Optional[str] = None
     screenshot_name: Optional[str] = None

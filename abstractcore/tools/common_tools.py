@@ -6615,8 +6615,80 @@ def _normalize_extracted_text(text: str) -> str:
     return "\n".join(cleaned).strip()
 
 
-def _prune_html_soup_for_text(soup: BeautifulSoup) -> None:
-    """Remove common non-content elements from an HTML soup."""
+# React 18/19 streaming SSR (and every framework built on it — Next.js App
+# Router, Remix) ships a completed Suspense boundary as
+# `<div hidden id="S:1">…the real article…</div>` plus an inline script that
+# moves it into place on the client. The text is FULLY server-rendered; it is
+# just parked out of position. Dropping those holders with the generic hidden
+# sweep loses the entire page and makes a perfectly readable article look like
+# a JS-only shell. React ids are `<prefix><letter>:<n>` where letter is one of
+# B (boundary), F (form/error), P (placeholder), S (segment); the prefix is
+# empty unless the app sets `identifierPrefix`.
+_STREAMING_SHELL_ID_RE = re.compile(r"^[A-Za-z0-9_\-]*[BFPS]:[0-9]+$")
+# Only unwrap holders that actually carry prose — empty `<template id="P:1">`
+# placeholders stay noise.
+_STREAMING_SHELL_MIN_CHARS = 120
+
+
+def _unwrap_streaming_shells(soup: BeautifulSoup) -> None:
+    """Unwrap hidden streaming-SSR holders so their content survives pruning."""
+    try:
+        candidates = soup.find_all(["div", "template"], limit=2000)
+    except Exception:
+        return
+    for element in list(candidates):
+        if getattr(element, "attrs", None) is None:
+            continue
+        # `<template>` is inert by definition; a `<div>` only qualifies while
+        # it is hidden (that is what the client-side swap clears).
+        if element.name != "template" and element.get("hidden") is None:
+            continue
+        if not _STREAMING_SHELL_ID_RE.match(str(element.get("id") or "")):
+            continue
+        try:
+            if element.name == "template":
+                # bs4 classifies text inside <template> as TemplateString and
+                # excludes it from get_text(), and unwrapping does not change
+                # that — the fragment has to be re-parsed as ordinary markup.
+                _replace_with_reparsed_fragment(element)
+                continue
+            if len(element.get_text(" ", strip=True)) < _STREAMING_SHELL_MIN_CHARS:
+                continue
+            element.attrs.pop("hidden", None)
+            element.unwrap()
+        except Exception:
+            continue
+
+
+def _replace_with_reparsed_fragment(element: Any) -> None:
+    """Replace a <template> holder in place with its re-parsed contents."""
+    markup = element.decode_contents()
+    if not markup or len(markup) < _STREAMING_SHELL_MIN_CHARS:
+        return
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+        fragment = BeautifulSoup(markup, BS4_PARSER)
+    root = fragment.body or fragment
+    nodes = list(root.contents)
+    if not nodes:
+        return
+    if len(root.get_text(" ", strip=True)) < _STREAMING_SHELL_MIN_CHARS:
+        return
+    for node in nodes:
+        element.insert_before(node.extract())
+    element.decompose()
+
+
+def _prune_html_soup_for_text(soup: BeautifulSoup, *, keep_hidden: bool = False) -> None:
+    """Remove common non-content elements from an HTML soup.
+
+    `keep_hidden` skips the hidden-element sweep; callers use it as a second
+    pass when the first pass recovered nothing, so a page that parks its body
+    in a hidden container still yields content instead of a false
+    "no readable content" error.
+    """
     # Always remove script/style payloads and embedded media elements.
     noise_tags = [
         "script",
@@ -6644,12 +6716,23 @@ def _prune_html_soup_for_text(soup: BeautifulSoup) -> None:
     for element in soup(noise_tags):
         element.decompose()
 
-    # Remove hidden elements.
+    # Streaming-SSR holders carry the REAL article inside a hidden container,
+    # so they must be unwrapped BEFORE the hidden sweep below (see
+    # `_unwrap_streaming_shells`).
     try:
-        for element in soup.select('[aria-hidden="true"], [hidden]'):
-            element.decompose()
+        _unwrap_streaming_shells(soup)
     except Exception:
         pass
+
+    # Remove hidden elements.
+    if not keep_hidden:
+        try:
+            for element in soup.select('[aria-hidden="true"], [hidden]'):
+                if getattr(element, "attrs", None) is None:
+                    continue
+                element.decompose()
+        except Exception:
+            pass
 
     # Remove common layout containers, but keep those inside main/article when possible.
     protected_parents = {"article", "main"}
@@ -6997,7 +7080,26 @@ def _extract_clean_text_from_html(html_content: str, url: str) -> tuple[str, str
     except Exception:
         description = ""
 
-    _prune_html_soup_for_text(soup)
+    extracted = _extract_text_from_soup(soup, url)
+    if len(extracted) < _MIN_REAL_CONTENT_CHARS:
+        # Second pass keeping hidden elements: some pages park their whole body
+        # in a hidden container the first pass throws away. Only adopt it when
+        # it actually recovers more — a genuinely empty page stays empty.
+        try:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+                retry_soup = BeautifulSoup(html_content, parser)
+            retry = _extract_text_from_soup(retry_soup, url, keep_hidden=True)
+            if len(retry) > len(extracted):
+                extracted = retry
+        except Exception:
+            pass
+    return title, description, extracted
+
+
+def _extract_text_from_soup(soup: BeautifulSoup, url: str, *, keep_hidden: bool = False) -> str:
+    """Prune, select the main container, and flatten it to normalized text."""
+    _prune_html_soup_for_text(soup, keep_hidden=keep_hidden)
     container = _select_html_main_container(soup, url)
     try:
         _prune_html_container_for_readability(container)
@@ -7007,9 +7109,7 @@ def _extract_clean_text_from_html(html_content: str, url: str) -> tuple[str, str
         extracted_raw = container.get_text("\n", strip=True)
     except Exception:
         extracted_raw = soup.get_text("\n", strip=True)
-
-    extracted = _normalize_extracted_text(extracted_raw)
-    return title, description, extracted
+    return _normalize_extracted_text(extracted_raw)
 
 
 def _extract_main_content(html_content: str, url: str, *, keep_links: bool = True) -> Dict[str, Any]:
@@ -7043,16 +7143,28 @@ def _extract_main_content(html_content: str, url: str, *, keep_links: bool = Tru
         parser = _get_appropriate_parser(html_content)
         import warnings
 
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
-            soup = BeautifulSoup(html_content, parser)
-        _prune_html_soup_for_text(soup)
-        container = _select_html_main_container(soup, url)
-        try:
-            _prune_html_container_for_readability(container)
-        except Exception:
-            pass
-        markdown = _html_to_markdown(container, base_url=url, keep_links=keep_links)
+        def _render(keep_hidden: bool) -> str:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+                soup = BeautifulSoup(html_content, parser)
+            _prune_html_soup_for_text(soup, keep_hidden=keep_hidden)
+            container = _select_html_main_container(soup, url)
+            try:
+                _prune_html_container_for_readability(container)
+            except Exception:
+                pass
+            return _html_to_markdown(container, base_url=url, keep_links=keep_links)
+
+        markdown = _render(False)
+        # Mirror the flat path's hidden-content retry so markdown never comes
+        # back empty for a page whose body sits in a hidden container.
+        if len(markdown) < _MIN_REAL_CONTENT_CHARS:
+            try:
+                retry_md = _render(True)
+                if len(retry_md) > len(markdown):
+                    markdown = retry_md
+            except Exception:
+                pass
         # Drop a leading line that merely repeats the <title> (dedupe noise).
         if title and markdown:
             md_lines = markdown.splitlines()

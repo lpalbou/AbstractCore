@@ -102,6 +102,33 @@ def test_invalid_viewport_refused(tmp_path):
     assert "Invalid viewport" in out2
 
 
+def test_viewport_accepts_any_two_integer_form():
+    from abstractcore.tools.browser_tools import _parse_viewport
+
+    want = {"width": 1440, "height": 900}
+    for spec in (
+        "1440x900",
+        "1440X900",
+        "1440\u00d7900",
+        "1440,900",
+        "1440, 900",
+        "1440 900",
+        "1440*900",
+        "1440px x 900px",
+        [1440, 900],
+        (1440, 900),
+        {"width": 1440, "height": 900},
+    ):
+        assert _parse_viewport(spec) == want, spec
+
+
+def test_viewport_still_rejects_bad_values():
+    from abstractcore.tools.browser_tools import _parse_viewport
+
+    for spec in ("huge", "1440", "", "1280x720x3", "10x10", "5000x900", [1440]):
+        assert _parse_viewport(spec) is None, spec
+
+
 def test_empty_target_refused():
     out = browser_probe("   ")
     assert "target is empty" in out
