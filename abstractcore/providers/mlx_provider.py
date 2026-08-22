@@ -28,7 +28,10 @@ except ImportError:
     OUTLINES_AVAILABLE = False
 
 from .base import BaseProvider, PromptCacheRenderedFragment, ThinkingControlHandling
-from ..architectures.response_postprocessing import normalize_assistant_text
+from ..architectures.response_postprocessing import (
+    TRUNCATED_REASONING_MARKER,
+    normalize_assistant_text,
+)
 from ..core.types import GenerateResponse
 from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
@@ -2343,6 +2346,19 @@ class MLXProvider(BaseProvider):
                 self._vision_usable = usable
                 self._vision_reason = reason
                 self._vision_info = info
+                # Say it at LOAD, not at the first image. The extra is opt-in by
+                # design, so a sighted checkpoint on a runtime without mlx-vlm is
+                # an ordinary, silent, text-only session until someone attaches a
+                # picture -- and by then the answer is already wrong. An import
+                # check is cheap (no tower load) and turns a surprise into a note.
+                import importlib.util
+
+                if usable and importlib.util.find_spec("mlx_vlm") is None:
+                    self.logger.info(
+                        f"mlx: {self.model} ships a vision tower but mlx-vlm is not "
+                        'installed, so images will be dropped. Install with: pip '
+                        'install "abstractcore[mlx-vision]"'
+                    )
             except Exception:
                 self._vision_usable = False
                 self._vision_reason = None
@@ -2751,13 +2767,28 @@ class MLXProvider(BaseProvider):
                 self.logger.warning(f"Failed to process media content: {e}")
                 report.drop("media_processing_failed", detail=str(e))
             if dropped_media:
+                from ..media.delivery import remedy_for
+
                 reasons = ", ".join(sorted(set(dropped_media)))
+                fix = remedy_for(dropped_media)
                 self.logger.warning(
                     f"mlx: {len(dropped_media)} media part(s) were NOT sent to the "
                     f"model ({reasons}). The answer is text-only; callers that need "
                     "sight must read response.metadata['media_delivered'] (absent "
                     "here) or ['media_dropped']."
+                    + (f" To fix: {fix}." if fix else "")
                 )
+
+            # Tell the MODEL, not just the caller. `media_dropped` is a
+            # machine-readable record the model never sees, so a blind model kept
+            # answering "Yes, I can see it!" and inventing the picture. See
+            # `blind_notice` for the two measured runs this comes from.
+            from ..media.delivery import blind_notice
+
+            notice = blind_notice(report)
+            if notice:
+                base = processed_prompt if isinstance(processed_prompt, str) else prompt
+                processed_prompt = f"{notice}\n\n{base}"
 
         # Build full prompt with tool support
         full_prompt = self._build_prompt(
@@ -3020,6 +3051,10 @@ class MLXProvider(BaseProvider):
         # sniffs content, let it through. See `_is_image_part`.
         self._vision_side = {}
         images = [mc for mc in (media or []) if self._is_image_part(mc)]
+        # Recorded before any refusal below, so the report can tell "no image was
+        # asked for" apart from "an image was asked for and none landed" -- the
+        # difference between a normal text turn and a blind one.
+        report.note_images(len(images))
         if not images:
             return None, None, prompt  # documents/PDFs keep the existing path
         # The capability registry is the source of truth for what the MODEL can
@@ -3106,9 +3141,15 @@ class MLXProvider(BaseProvider):
             encoded_bytes = Path(paths[0]).read_bytes()
             ids, embeds, n_tokens, fidelity, side = addon.compute_embeddings(self.llm, full, paths)
         except Exception as exc:
+            from ..media.delivery import remedy_for
+
             reason = getattr(exc, "reason", None) or VISION_ENCODE_FAILED
             report.drop(reason, detail=str(exc))
-            self.logger.warning(f"mlx vision add-on unavailable ({reason}): {exc}")
+            fix = remedy_for([reason])
+            self.logger.warning(
+                f"mlx vision add-on unavailable ({reason}): {exc}"
+                + (f" — to fix: {fix}" if fix else "")
+            )
             return None, None, prompt
 
         report.deliver(
@@ -3261,7 +3302,8 @@ class MLXProvider(BaseProvider):
 
         gen_time = round((time.time() - start_time) * 1000, 1)
 
-        generated, reasoning = self._postprocess_generated_text(response_text.strip())
+        raw_text = response_text.strip()
+        generated, reasoning = self._postprocess_generated_text(raw_text)
         metadata = {"reasoning": reasoning} if reasoning else None
 
         usage_text = (
@@ -3269,14 +3311,62 @@ class MLXProvider(BaseProvider):
             if isinstance(usage_prompt, str)
             else (prompt if isinstance(prompt, str) else "")
         )
+        usage = self._calculate_usage(usage_text, raw_text)
+
+        # Count what the model EMITTED, not what survived post-processing.
+        # `generated` is the text left after the thinking block is stripped, so a
+        # response whose whole budget went to reasoning reported `output_tokens: 0`
+        # -- a caller watching for runaway reasoning saw a free call.
+        n_out = self._count_tokens(raw_text)
+        if n_out is not None:
+            usage["output_tokens"] = n_out
+            usage["completion_tokens"] = n_out
+
+        # The vision lane feeds expanded TOKEN IDS, and their length is the exact
+        # prompt size including the image's thousands of placeholder tokens. The
+        # text estimate below cannot see those -- an 11,844-token image was being
+        # reported as a 56-token prompt, which silently wrecks the context meter
+        # and every downstream cost figure.
+        if input_embeddings is not None and not isinstance(prompt, str):
+            try:
+                n_in = int(len(prompt))
+            except Exception:
+                n_in = 0
+            if n_in > 0:
+                usage["input_tokens"] = n_in
+                usage["prompt_tokens"] = n_in
+        usage["total_tokens"] = usage["input_tokens"] + usage["output_tokens"]
+
+        # A response cut off at `max_tokens` was indistinguishable from one the
+        # model chose to end. That is the difference between "the model answered"
+        # and "the model was interrupted mid-thought", and callers retry on one
+        # and not the other.
+        finish_reason = "stop"
+        if n_out is not None and isinstance(max_tokens, int) and max_tokens > 0:
+            if n_out >= max_tokens:
+                finish_reason = "length"
+        if reasoning and reasoning.endswith(TRUNCATED_REASONING_MARKER):
+            # An unterminated thinking block is proof of truncation even when the
+            # token count is off by the tokenizer's accounting of special tokens.
+            finish_reason = "length"
+
         return GenerateResponse(
             content=generated,
             model=self.model,
-            finish_reason="stop",
-            usage=self._calculate_usage(usage_text, generated),
+            finish_reason=finish_reason,
+            usage=usage,
             gen_time=gen_time,
             metadata=metadata,
         )
+
+    def _count_tokens(self, text: str) -> Optional[int]:
+        """Exact token count via the loaded tokenizer, or None if it cannot say."""
+        if not text:
+            return 0
+        try:
+            return int(len(self.tokenizer.encode(text)))
+        except Exception:
+            return None
 
     def _calculate_usage(self, prompt: str, response: str) -> Dict[str, int]:
         """Calculate token usage using centralized token utilities."""

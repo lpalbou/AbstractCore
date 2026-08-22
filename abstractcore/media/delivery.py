@@ -44,6 +44,57 @@ VISION_NOT_DECLARED = "vision_not_declared"
 # existing caller changes behaviour. Grow this set one audited provider at a time.
 REPORTING_PROVIDERS = frozenset({"mlx"})
 
+# What the OPERATOR should do about a named reason. A reason literal alone is a
+# diagnosis; without the remedy the reader has to go read provider source to
+# learn that one `pip install` separates them from working sight. Only reasons
+# with an action belong here -- an entry that says nothing is worse than none.
+REASON_REMEDIES: Dict[str, str] = {
+    MLX_VLM_NOT_INSTALLED: 'install the vision extra: pip install "abstractcore[mlx-vision]"',
+    MEDIA_PROCESSING_UNAVAILABLE: 'install the media extra: pip install "abstractcore[media]"',
+    VISION_MULTI_IMAGE_UNSUPPORTED: "send one image per request on this lane",
+    VISION_NOT_DECLARED: (
+        "the model capability registry does not declare this checkpoint sighted; "
+        "add it there if it genuinely has a vision tower"
+    ),
+}
+
+
+def remedy_for(reasons: Iterable[str]) -> Optional[str]:
+    """The first actionable remedy among `reasons`, or None."""
+    for reason in reasons:
+        fix = REASON_REMEDIES.get(str(reason))
+        if fix:
+            return fix
+    return None
+
+
+def blind_notice(report: "MediaReport") -> Optional[str]:
+    """Text telling the MODEL that the image it was promised never arrived.
+
+    The honesty contract (`media_dropped`) is machine-readable and was already
+    correct, but it only ever reached the CALLER. The model kept receiving the
+    user's "describe this image" with no image attached, and answered from the
+    only thing it had -- the words. Measured on two live runs (2026-08-21,
+    Qwen3.8-27B and Qwen3.6-35B-A3B via the mlx lane with mlx-vlm absent): both
+    replied "Yes, I can see it!" and invented a screenshot in full detail.
+
+    A dropped image is a degraded request, not a licence to confabulate. This
+    turns the drop into something the model is told about, so the honest answer
+    is available to it. Returns None when nothing was lost, so a healthy request
+    is byte-identical to before.
+    """
+    if not report.is_blind():
+        return None
+    n = report.images_requested
+    noun = "an image" if n == 1 else f"{n} images"
+    reasons = ", ".join(dict.fromkeys(str(r) for r in report.dropped)) or "unknown"
+    return (
+        f"[ATTACHMENT NOT DELIVERED] The user attached {noun}, but it could not be "
+        f"given to you (reason: {reasons}). You are answering BLIND: no image data "
+        "is present in this conversation. Tell the user plainly that you cannot see "
+        "the attachment and why. Do NOT describe, guess at, or invent its contents."
+    )
+
 
 def _as_bytes(content: Any) -> bytes:
     if isinstance(content, bytes):
@@ -70,6 +121,10 @@ class MediaReport:
     delivered: List[Dict[str, Any]] = field(default_factory=list)
     dropped: List[str] = field(default_factory=list)
     detail: Optional[str] = None
+    # How many of `requested` were IMAGES, once the provider has classified them.
+    # Kept separate from `requested` because a dropped document is an ordinary
+    # text-embedded delivery, while a dropped image leaves the model blind.
+    images_requested: int = 0
 
     @classmethod
     def for_request(cls, media: Any, *, provider: str, model: str) -> "MediaReport":
@@ -117,6 +172,16 @@ class MediaReport:
     def drop_parts(self, reasons: Iterable[str]) -> None:
         for r in reasons:
             self.dropped.append(str(r))
+
+    def note_images(self, n: int) -> None:
+        """Record how many of the requested parts are images."""
+        self.images_requested = max(self.images_requested, int(n))
+
+    def is_blind(self) -> bool:
+        """Images were asked for and NONE of them reached the forward pass."""
+        if self.images_requested <= 0:
+            return False
+        return not any(str(d.get("kind")) == "image" for d in self.delivered)
 
     def as_metadata(self) -> Dict[str, Any]:
         out: Dict[str, Any] = {}

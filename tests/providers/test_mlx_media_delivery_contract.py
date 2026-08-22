@@ -615,3 +615,73 @@ def test_mlx_vision_extra_is_opt_in():
     assert any(d.startswith("mlx-vlm") for d in extras["mlx-vision"])
     for name in ("mlx", "apple"):
         assert not any(d.startswith("mlx-vlm") for d in extras[name]), name
+
+
+# --------------------------------------------------------------------------- #
+# Blind-notice: the model is told when its sight was dropped
+# --------------------------------------------------------------------------- #
+
+
+def _blind_report(*reasons):
+    report = MediaReport.for_request([object()], provider="mlx", model="m")
+    report.note_images(1)
+    for r in reasons:
+        report.drop(r)
+    return report
+
+
+def test_dropped_image_produces_a_notice_for_the_model():
+    """`media_dropped` only ever reached the CALLER. Two live runs (2026-08-21,
+    Qwen3.8-27B and Qwen3.6-35B-A3B, mlx-vlm absent) show what the model does with
+    the caller's record: nothing. Both answered "Yes, I can see it!" and invented
+    a screenshot. The notice is what makes the drop visible to the answerer."""
+    from abstractcore.media.delivery import blind_notice
+
+    notice = blind_notice(_blind_report("mlx_vlm_not_installed"))
+    assert notice is not None
+    assert "mlx_vlm_not_installed" in notice
+    # The two instructions that matter: admit it, and do not invent.
+    assert "BLIND" in notice
+    assert "invent" in notice.lower()
+
+
+def test_no_media_produces_no_notice():
+    """A text-only turn must render exactly as it did before the notice existed."""
+    from abstractcore.media.delivery import blind_notice
+
+    assert blind_notice(MediaReport.for_request(None, provider="mlx", model="m")) is None
+
+
+def test_text_embedded_document_produces_no_notice():
+    """Documents legitimately reach this lane as text. That is a delivery, not a
+    blind turn, and warning about it would train callers to ignore the warning."""
+    from abstractcore.media.delivery import blind_notice
+
+    report = MediaReport.for_request([object()], provider="mlx", model="m")
+    report.note_images(0)
+    report.deliver(index=0, kind="document", content=b"x", tokens=64, transport="text_embedded")
+    assert blind_notice(report) is None
+
+
+def test_delivered_image_produces_no_notice_even_if_a_sibling_dropped():
+    """The notice keys off "no image landed", not off "something dropped": a
+    delivered image plus a dropped PDF is a sighted turn."""
+    from abstractcore.media.delivery import blind_notice
+
+    report = MediaReport.for_request([object(), object()], provider="mlx", model="m")
+    report.note_images(1)
+    report.deliver(index=0, kind="image", content=b"x", tokens=1200, transport="mlx_vision_addon")
+    report.drop("media_processing_failed")
+    assert blind_notice(report) is None
+
+
+def test_not_installed_reason_carries_the_install_command():
+    """A reason literal is a diagnosis; without the remedy the reader has to go
+    read provider source to learn that one pip install fixes it."""
+    from abstractcore.media.delivery import remedy_for
+
+    fix = remedy_for(["mlx_vlm_not_installed", "image_base64"])
+    assert fix and "abstractcore[mlx-vision]" in fix
+    # A part-type literal is not a remedy; inventing advice for it would be worse
+    # than saying nothing.
+    assert remedy_for(["image_base64"]) is None
