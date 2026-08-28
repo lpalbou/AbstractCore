@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`mlx-vlm` now ships with the MLX provider — image input is no longer an opt-in extra.**
+  It was previously held out of `mlx`/`apple` to keep a web framework, opencv and an audio
+  stack out of a text-only install. What that produced instead: the standard Apple install
+  path (`abstractframework[apple]` → `abstractgateway[apple]` → `AbstractRuntime[apple]` →
+  `abstractcore[all-apple]`) shipped a runtime that loaded sighted Qwen3.x checkpoints,
+  accepted images, and dropped every one of them with `mlx_vlm_not_installed` — and the
+  models described screenshots they had never received. `mlx-vlm>=0.6.3` is now in `mlx`,
+  `apple`, `all`, `all-apple` and `full-dev`, with the `mlx`/`mlx-lm` floors raised to
+  `0.31.2`/`0.31.3` (mlx-vlm 0.6.3 against mlx 0.31.1 dies at
+  `mx.new_thread_local_stream`). `abstractcore[mlx-vision]` is retained as a redundant
+  alias so existing install commands keep working.
+- **A dropped image is now stated to the model, not just recorded for the caller.**
+  `media_dropped` was correct and machine-readable, but nothing downstream read it and the
+  model was never told, so it answered "Yes, I can see it!" over an attachment it had never
+  received. When images are requested and none reach the forward pass, the MLX lane prepends
+  an explicit notice naming the reason and instructing the model not to invent contents.
+- **MLX `finish_reason` and token usage stopped under-reporting.** A response cut at
+  `max_tokens` reported `"stop"`, and `output_tokens` counted only the text left after
+  thinking-tag stripping — so a call that spent its whole budget reasoning reported
+  `finish_reason="stop"` with `output_tokens: 0`. Truncation now reports `"length"` and
+  usage counts what the model emitted. On the vision lane, `input_tokens` now includes the
+  image's expanded placeholder tokens (an 11,844-token image was reported as a 56-token
+  prompt).
+- **A crashing vision capability probe keeps a named reason.** It previously reset the reason
+  to `None`, which made the resulting drop reach the caller with no stated cause; it now
+  reports `vision_probe_failed`.
+
 ### Added
 - **`fetch_url` returns one canonical copy of the document.** `content` is the payload —
   structure-preserving markdown with headings, lists, links, fenced code blocks and GFM tables
@@ -801,6 +829,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Honest thinking metadata (ADR-0001)**: `thinking_effective` is only reported when a real control artifact was applied; unhandled requests now emit a RuntimeWarning stating that the model/server default thinking behavior remains in effect (reasoning may still be generated and billed) instead of silently claiming `off`.
 - **Truncated reasoning leak**: unterminated thinking blocks (e.g. `finish_reason=length` before the closing tag) are auto-closed and captured into `metadata["reasoning"]` with a `(...)` truncation marker (#TRUNCATION logged) instead of leaking raw reasoning and tag markup into visible content — in both non-streaming and streaming paths.
 - **Streaming latency with thinking off**: architectures with `thinking_tags` no longer buffer the whole stream waiting for a possible reasoning-first block when thinking is effectively disabled; visible content now streams incrementally.
+
+## [2.13.40] - 2026-08-27
+
+### Added
+- **Host memory snapshot.** `abstractcore.utils.memory.get_memory_snapshot()` reports system RAM,
+  process RSS, and device allocation (`metal` / `cuda` / `mps`) in one best-effort call that never
+  raises; unknown values stay `None`. Served over HTTP as `GET /acore/memory`. When verifying that
+  an unload freed memory, read `device.allocated_bytes`: on Metal hosts, process RSS behaves as a
+  high-water mark (freed device buffers return to the process allocator, not to the OS) and does
+  not drop after an in-process unload. See the new
+  [Memory and Model Residency](docs/memory-management.md) guide.
+- **Host-wide resident-model sweep.** `abstractcore.utils.residency.sweep_loaded_models()`
+  enumerates the models resident on the host's local model servers (Ollama `/api/ps`, LM Studio
+  loaded instances) without constructing model-bound providers; unreachable servers are silently
+  skipped and records are tagged `source: "provider_server"`. The module also exposes the matching
+  vocabulary as public API: `SWEEP_PROVIDERS`, `normalize_sweep_model()` (case + Ollama `:latest`
+  alias), and `sweep_models_match()` (per-provider alias rules, including LM Studio's substring key
+  resolution).
+- **Provider loaded-model listings.** `list_loaded_models(filters=None)` on every provider returns
+  the models the instance can verify as loaded; Ollama and LM Studio instances enumerate their
+  whole server, and MLX adds a best-effort `est_weights_bytes`. New classmethods
+  `OllamaProvider.list_server_loaded_models()` and `LMStudioProvider.list_server_loaded_models()`
+  answer the same server-wide question without a provider instance. Residency records carry
+  normalized `size_bytes` / `size_vram_bytes` where the backend reports sizes.
+- **`GET /acore/models/loaded` merges the host sweep.** Models resident on local model servers but
+  not loaded through the gateway appear as `source: "provider_server"` rows in unfiltered and
+  text-generation listings, deduplicated against gateway runtimes by the provider's own alias rules
+  (so a resident `qwen3:latest` also matches `?model=qwen3`). Sweep rows carry no `task` label —
+  server enumerations cannot classify what is resident. A sweep failure never fails the endpoint.
+- **Prompt-cache size visibility.** `get_prompt_cache_stats()` reports a best-effort per-key
+  `bytes` in `meta_by_key` where the backend can compute it (MLX KV arrays, HuggingFace
+  transformers KV tensors, GGUF cache state), and MLX stats add a top-level
+  `snapshots: {count, bytes}` entry for hybrid-architecture boundary snapshots.
+- **`GET /acore/prompt_cache/stats` without a selector** enumerates cache stats across every loaded
+  gateway runtime (previously a selector was required). Per-runtime failures are reported inline;
+  a runtime busy generating reports `error: "busy"` instead of stalling the listing.
+- **`POST /acore/prompt_cache/key_meta`.** Merge caller attribution metadata (for example
+  `session_id`, `run_id`, `workflow_id`, `node_id`, `namespace`) into an existing prompt-cache
+  key, visible in later stats. Provider-internal bookkeeping keys are rejected
+  (`prompt_cache_meta_reserved_key`), and payloads above 16 KB serialized are rejected
+  (`prompt_cache_meta_too_large`). The Python counterpart is
+  `BaseProvider.prompt_cache_update_key_meta(key, updates)`.
+- **Model locks on gateway runtimes.** `POST /acore/models/lock` and `POST /acore/models/unlock`
+  set or clear a registry-level lock on a text runtime whose model is provider-verified
+  **resident**, and `POST /acore/models/load` accepts `"lock": true` to lock in the same call.
+  Lock requires residency: a warm registry runtime alone is configuration, not memory, and
+  locking a non-resident model refuses with HTTP `409` (`error: "model_not_resident"`) —
+  load with `"lock": true` instead. A locked runtime refuses
+  `POST /acore/models/unload` with HTTP `409` (`error: "model_locked"`) unless `"force": true`
+  (which unlocks and unloads; a failed provider unload leaves the runtime registered and locked),
+  and `unload_after` cleanup skips locked runtimes — including requests that reach the same
+  server-resident model outside the managed runtime. Where the provider has a residency knob, the
+  lock also applies it best-effort and reports the outcome as `provider_side` (Ollama:
+  `keep_alive: -1` on lock, restored to `"5m"` on unlock; unlock skips the restore when the
+  model was since evicted so it is never loaded back as a side effect — locks are never
+  stranded); providers without one report `provider_side.supported: false`
+  while the gateway lock still enforces. Managed residency records carry `locked`, `lockable`,
+  and `locked_at`; sweep-only rows carry `lockable: false`.
+- **Context calibration and estimation.** GGUF loads that settle their context through the probe
+  ladder record the settled `n_ctx` to a per-machine calibration store
+  (`~/.abstractcore/calibration/`, directory overridable with `ABSTRACTCORE_CALIBRATION_DIR`;
+  atomic, capped) and seed later loads of the same model on the same hardware — the seeded rung is
+  still probed. Residency records carry `context_calibrated` / `calibrated_context_length` where
+  the ladder ran. New `abstractcore.utils.context_estimate.estimate_context_fit()` — served over
+  HTTP as `GET /acore/models/context_estimate` — answers how much context a provider/model can
+  sustain on this host without loading weights, labeling every answer `"calibrated"`,
+  `"estimated"`, or `"unknown"` (calibration wins; the function never raises). The memory
+  budget uses a real ceiling instead of a blanket fraction: on Metal/MPS the
+  `iogpu.wired_limit_mb` sysctl when set, else Metal's `max_recommended_working_set_size`
+  (mlx `device_info()`), else a labeled 75% fallback; on CUDA the `mem_get_info` free bytes —
+  minus a small `max(2 GiB, 5%)` reserve, with basis and reserve stated in `notes` and the
+  number in `budget_bytes`. The response splits weights-fit from context-fit with tri-state
+  `fits_weights` / `fits_requested_context`, and `predicted_max_context` is the context that
+  fits beside the weights (`(budget − est_weights_bytes) // kv_bytes_per_token`, clamped to the
+  model max; `null` when the weights alone exceed the budget). The f16-KV assumption stays
+  stated in `notes`; the estimate is advisory only — no load path gates on it. Geometry comes
+  from HF `config.json`
+  (`model_geometry_for()`), GGUF headers (`read_gguf_geometry()`), or Ollama `/api/show`;
+  LM Studio exposes no geometry source, and unknown stays unknown.
+- **Modalities and host identity on residency records.**
+  `abstractcore.providers.model_capabilities.modalities_for_model()` returns the
+  registry-declared modality routes for a model, or `None` on a registry miss — never a text-only
+  guess. Text-generation and sweep residency records carry `modalities` where declared; an MLX
+  runtime whose vision lane is unusable has `input.image` removed with
+  `modalities_note: "vision_unusable"`. New
+  `abstractcore.utils.hostinfo.get_host_identity()` names the observing machine (`host_id` is a
+  stable 12-hex hostname hash); every row served by `GET /acore/models/loaded` carries
+  `host_id` / `host_name`, and `get_memory_snapshot()` gains a top-level `host` block.
+
+### Changed
+- **Unload also frees session caches.** `unload_model()` on the in-process providers (MLX,
+  HuggingFace) now drops the instance's prompt-cache store — on MLX including hybrid KV boundary
+  snapshots — along with the weights. Session caches are only useful while the weights are
+  resident; unload means free the memory, including them.
+- **`pinned` on managed residency records is a truthful alias of `locked`.** Managed gateway
+  runtime rows previously reported `pinned: true` unconditionally; both fields now reflect the
+  gateway-managed lock state. Provider-side keep-alive residency (Ollama) shows through the
+  record's `expires_at` rather than through `locked`/`pinned`.
 
 ## [2.13.39] - 2026-08-20
 

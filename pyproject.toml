@@ -139,26 +139,47 @@ huggingface = [
     "outlines>=0.1.0",  # Optional native structured output support
 ]
 
+# MLX PROVIDER DEPENDENCY RULE
+# ----------------------------
+# `mlx-vlm` ships WITH `mlx-lm` in every profile that installs the MLX provider.
+# It is not optional and must never be split out again.
+#
+# It used to be a separate `mlx-vision` extra, on the reasoning that mlx-vlm
+# pulls a web framework, opencv and an audio stack that a text-only install does
+# not need. What that actually bought (measured 2026-08-21): the standard Apple
+# install path -- abstractframework[apple] -> abstractgateway[apple] ->
+# AbstractRuntime[apple] -> abstractcore[all-apple] -- produced a gateway that
+# loaded sighted Qwen3.x checkpoints, accepted images, and dropped every one of
+# them with `mlx_vlm_not_installed`. The models were vision-capable, the code was
+# correct, and the user got confident fabricated descriptions of screenshots the
+# model had never received. A saved dependency is not worth a provider that
+# silently cannot do what its checkpoints advertise.
+#
+# The floors are pinned to what mlx-vlm actually needs, not left to the resolver:
+# mlx-vlm 0.6.3 against mlx 0.31.1 imports and then dies at
+# `mx.new_thread_local_stream`, which reaches the user as a vision failure with
+# no mention of a version.
 mlx = [
     # The benchmark script relies on `mlx_lm.generate.BatchGenerator` (continuous batching).
-    "mlx>=0.30.0,<1.0.0",
-    "mlx-lm>=0.30.0,<1.0.0",
+    "mlx>=0.31.2,<1.0.0",
+    "mlx-lm>=0.31.3,<1.0.0",
+    "mlx-vlm>=0.6.3,<0.7.0",  # image input; see the MLX PROVIDER DEPENDENCY RULE
     "outlines>=0.1.0",  # Optional native structured output support
 ]
 
 apple = [
     # Hardware-profile alias for the native Apple local LLM stack.
     # Keep in sync with `mlx`.
-    "mlx>=0.30.0,<1.0.0",
-    "mlx-lm>=0.30.0,<1.0.0",
+    "mlx>=0.31.2,<1.0.0",
+    "mlx-lm>=0.31.3,<1.0.0",
+    "mlx-vlm>=0.6.3,<0.7.0",  # image input; see the MLX PROVIDER DEPENDENCY RULE
     "outlines>=0.1.0",
 ]
 
+# Retained as an alias so existing `abstractcore[mlx-vision]` install commands and
+# documentation keep working. It is now redundant: `mlx` and `apple` already
+# carry mlx-vlm, and nothing may depend on this extra to get sight.
 mlx-vision = [
-    # Native image input on the MLX provider. Deliberately separate from `mlx`
-    # and `apple`: mlx-vlm pulls a web framework (fastapi/starlette/uvicorn),
-    # opencv-python, datasets and an audio stack, and raises the transformers
-    # floor to >=5.5.0 -- none of which belong in a text-only local LLM install.
     "mlx-vlm>=0.6.3,<0.7.0",
 ]
 
@@ -264,9 +285,11 @@ all = [
     "sentencepiece>=0.1.99,<1.0.0",
     "llama-cpp-python>=0.3.23,<1.0.0",
     "outlines>=0.1.0",
-    # MLX provider deps
-    "mlx>=0.30.0,<1.0.0",
-    "mlx-lm>=0.30.0,<1.0.0",
+    # MLX provider deps (mlx-vlm is not optional -- see the MLX PROVIDER
+    # DEPENDENCY RULE above the `mlx` extra)
+    "mlx>=0.31.2,<1.0.0",
+    "mlx-lm>=0.31.3,<1.0.0",
+    "mlx-vlm>=0.6.3,<0.7.0",
     # vLLM provider deps
     "vllm>=0.6.0,<1.0.0",
     # Features
@@ -310,8 +333,13 @@ all-apple = [
     "llama-cpp-python>=0.3.23,<1.0.0",
     "accelerate>=1.0.0",
     "outlines>=0.1.0",
-    "mlx>=0.30.0,<1.0.0",
-    "mlx-lm>=0.30.0,<1.0.0",
+    # This is the profile the standard Apple install resolves to
+    # (abstractframework[apple] -> abstractgateway[apple] -> AbstractRuntime[apple]
+    # -> abstractcore[all-apple]). mlx-vlm missing HERE is what shipped a gateway
+    # that could not see. See the MLX PROVIDER DEPENDENCY RULE above `mlx`.
+    "mlx>=0.31.2,<1.0.0",
+    "mlx-lm>=0.31.3,<1.0.0",
+    "mlx-vlm>=0.6.3,<0.7.0",
     # Features
     "sentence-transformers>=5.1.0,<6.0.0",
     "numpy>=2.1.0,<3.0.0",
@@ -512,8 +540,10 @@ full-dev = [
     "sentencepiece>=0.1.99,<1.0.0",
     "llama-cpp-python>=0.3.23,<1.0.0",
     "outlines>=0.1.0",
-    "mlx>=0.30.0,<1.0.0",
-    "mlx-lm>=0.30.0,<1.0.0",
+    # See the MLX PROVIDER DEPENDENCY RULE above the `mlx` extra.
+    "mlx>=0.31.2,<1.0.0",
+    "mlx-lm>=0.31.3,<1.0.0",
+    "mlx-vlm>=0.6.3,<0.7.0",
     "vllm>=0.6.0,<1.0.0",
     "sentence-transformers>=5.1.0,<6.0.0",
     "numpy>=1.20.0,<2.0.0; python_version < '3.13'",

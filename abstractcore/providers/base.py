@@ -249,6 +249,14 @@ class PromptCacheStore:
         with self._lock:
             return list(self._entries.keys())
 
+    def peek(self, key: str) -> Optional[Any]:
+        """Return the entry value WITHOUT LRU/TTL side effects (introspection/stats)."""
+        if not isinstance(key, str) or not key.strip():
+            return None
+        with self._lock:
+            entry = self._entries.get(key.strip())
+            return entry.value if entry is not None else None
+
     def created_at_s(self, key: str) -> Optional[float]:
         """Unix timestamp the entry was created at (None for unknown keys)."""
         if not isinstance(key, str) or not key.strip():
@@ -6608,11 +6616,21 @@ class BaseProvider(AbstractCoreInterface, ABC):
         except Exception:
             return {}
 
-    def prompt_cache_update_key_meta(self, key: Any, **updates: Any) -> bool:
-        """Best-effort: merge metadata into an existing prompt-cache key."""
+    def prompt_cache_update_key_meta(
+        self, key: Any, updates: Optional[Dict[str, Any]] = None, **kwargs: Any
+    ) -> bool:
+        """Best-effort: merge metadata into an existing prompt-cache key.
+
+        Fields may ride as keyword arguments or in the positional `updates`
+        mapping — the latter exists so a meta field whose name collides with
+        this signature (e.g. a field literally named "key") can still be set.
+        None values are skipped either way.
+        """
         normalized = self._normalize_prompt_cache_key(key)
         if normalized is None:
             return False
+        merged: Dict[str, Any] = dict(updates) if isinstance(updates, dict) else {}
+        merged.update(kwargs)
         store = getattr(self, "_prompt_cache_store", None)
         lock = getattr(store, "_lock", None)
         entries = getattr(store, "_entries", None)
@@ -6624,7 +6642,7 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 if entry is None:
                     return False
                 meta = dict(getattr(entry, "meta", {}) or {})
-                for field_name, field_value in updates.items():
+                for field_name, field_value in merged.items():
                     if field_value is not None:
                         meta[str(field_name)] = field_value
                 entry.meta = meta
@@ -6843,6 +6861,15 @@ class BaseProvider(AbstractCoreInterface, ABC):
         _ = cache_value
         return None
 
+    def _prompt_cache_value_bytes(self, cache_value: Any) -> Optional[int]:
+        """Hook: best-effort byte size of one stored prompt-cache value.
+
+        Providers with introspectable KV state (MLX arrays, HF transformers
+        tensors) override this so `get_prompt_cache_stats()` can report per-key
+        `bytes`. None means unknown — never guess."""
+        _ = cache_value
+        return None
+
     def _normalize_prompt_cache_key(self, key: Any) -> Optional[str]:
         if not isinstance(key, str):
             return None
@@ -6887,6 +6914,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     created = self._prompt_cache_store.created_at_s(k)
                     if created is not None:
                         row["created_at_s"] = created
+                    # Best-effort per-key byte size (provider hook; peek avoids
+                    # LRU recency churn from a pure visibility call).
+                    try:
+                        value_bytes = self._prompt_cache_value_bytes(
+                            self._prompt_cache_store.peek(k)
+                        )
+                        if isinstance(value_bytes, int) and "bytes" not in row:
+                            row["bytes"] = value_bytes
+                    except Exception:
+                        pass
                     if row:
                         meta_by_key[str(k)] = row
                 if meta_by_key:
@@ -7651,11 +7688,61 @@ class BaseProvider(AbstractCoreInterface, ABC):
         Providers must implement this as a best-effort cleanup hook:
 
         - In-process providers (e.g. MLX, HuggingFace): free local model resources.
+          Unloading also drops the instance's session/prompt caches (KV caches,
+          snapshots): they are only useful with the weights resident, and they
+          are the memory hogs.
         - Some self-hosted servers (e.g. Ollama): may request server-side eviction/unload.
         - OpenAI-compatible servers (e.g. LMStudio, vLLM, openai-compatible): typically only close client
           connections; server-side model unloading may not be available and is controlled by the server (TTL/eviction).
         - Cloud APIs (e.g. OpenAI, Anthropic): usually a no-op (safe to call).
         """
+
+    def _clear_prompt_caches_for_unload(self) -> None:
+        """Drop this instance's prompt/session caches as part of `unload_model`.
+
+        Reuses the canonical `prompt_cache_clear()` path (which also releases
+        provider-side per-key state: MLX hybrid snapshots, HF device pools).
+        Falls back to the store's own clear when the capability gate refuses
+        (e.g. a lane without prompt-cache support that still holds a store).
+        Never raises — unload is best-effort."""
+        try:
+            self.prompt_cache_clear()
+            return
+        except Exception:
+            pass
+        try:
+            self._default_prompt_cache_key = None
+            store = getattr(self, "_prompt_cache_store", None)
+            if store is not None:
+                store.clear()
+        except Exception:
+            pass
+
+    def list_loaded_models(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """Best-effort list of models this provider instance can VERIFY as loaded.
+
+        Default: derived from `get_model_residency()` (ADR 0008 — residency is
+        provider-owned truth; unknown residency yields an empty list, never a
+        guess). Records keep the residency-record field style plus normalized
+        `size_bytes`/`size_vram_bytes` when the provider reports them.
+        Server-backed providers (Ollama, LM Studio) override this to enumerate
+        ALL models resident on their server via `list_server_loaded_models`.
+
+        `filters` is accepted-and-ignored: capability handlers duck-type this
+        name with a filters argument (capabilities/types.py `list_loaded_models`).
+        """
+        _ = filters
+        try:
+            residency = self.get_model_residency()
+        except Exception:
+            return []
+        if not isinstance(residency, dict) or residency.get("loaded") is not True:
+            return []
+        record = dict(residency)
+        for src, dst in (("size", "size_bytes"), ("size_vram", "size_vram_bytes")):
+            if dst not in record and record.get(src) is not None:
+                record[dst] = record[src]
+        return [record]
 
     # Token configuration helpers - expose interface methods for user convenience
     def get_token_configuration_summary(self) -> str:
@@ -8102,6 +8189,11 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
         parsed_calls = getattr(parsed, "tool_calls", None)
         if not isinstance(parsed_calls, list) or not parsed_calls:
+            # A response carrying explicit tool-call syntax that parsed to ZERO
+            # calls must not silently become a final answer (that is how one
+            # malformed `<function=functions.browser_probe>` call ended a whole
+            # ReAct run) — flag it so hosts/UIs can surface or feed it back.
+            self._warn_unrecognized_tool_syntax(response, content)
             return response
 
         normalized_parsed = self._normalize_tool_calls_payload(
@@ -8110,9 +8202,25 @@ class BaseProvider(AbstractCoreInterface, ABC):
         )
         if normalized_parsed:
             response.tool_calls = normalized_parsed
+        else:
+            # Calls parsed but every one was dropped (names outside the tool
+            # roster that no alias/wrapped-name mapping could recover).
+            dropped = [
+                str(getattr(c, "name", None) or (c.get("name") if isinstance(c, dict) else "") or "")
+                for c in parsed_calls
+            ]
+            self._warn_unrecognized_tool_syntax(
+                response,
+                content,
+                dropped_names=[d for d in dropped if d],
+                allowed_names=allowed_names,
+            )
 
-        # Always use the cleaned content from AbstractCore parsing when we are not explicitly preserving tags.
-        if self._should_clean_tool_call_markup(tool_call_tags):
+        # Use the cleaned content from AbstractCore parsing when we are not
+        # explicitly preserving tags — but ONLY when calls were actually
+        # recovered: when every parsed call was dropped, stripping the syntax
+        # would leave an empty final answer on top of the lost call.
+        if normalized_parsed and self._should_clean_tool_call_markup(tool_call_tags):
             cleaned_content = getattr(parsed, "content", None)
             if isinstance(cleaned_content, str):
                 response.content = cleaned_content
@@ -8126,6 +8234,52 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # OpenAI/Codex formats carry tool calls in structured fields, not in content.
         value = str(tool_call_tags).strip().lower()
         return value in {"openai", "codex"}
+
+    def _warn_unrecognized_tool_syntax(
+        self,
+        response: GenerateResponse,
+        content: str,
+        *,
+        dropped_names: Optional[List[str]] = None,
+        allowed_names: Optional[set[str]] = None,
+    ) -> None:
+        """Flag tool-call syntax that produced no usable structured calls.
+
+        Two shapes reach here: syntax that PARSED to zero calls (malformed), and
+        parsed calls whose every name fell outside the tool roster. Both are
+        logged and appended to `response.metadata["warnings"]` — the metadata
+        rides the existing response wire, so hosts/UIs choose whether to show it,
+        and agent hosts can feed it back to the model instead of concluding.
+        """
+        if dropped_names:
+            roster = ", ".join(sorted(allowed_names)) if allowed_names else ""
+            msg = (
+                "Tool call not recognized: the model called "
+                + ", ".join(f"'{n}'" for n in dropped_names[:4])
+                + " but no such tool is available"
+                + (f" (available: {roster})" if roster else "")
+                + ". The response was returned as plain content."
+            )
+        else:
+            from ..tools.parser import detect_unparsed_tool_intent
+
+            if not detect_unparsed_tool_intent(content):
+                return
+            msg = (
+                "Tool-call syntax detected in the response but no tool call could be "
+                "parsed (malformed block?). The response was returned as plain content."
+            )
+        try:
+            self.logger.warning(f"{msg} model={self.model}")
+        except Exception:
+            pass
+        meta = response.metadata if isinstance(response.metadata, dict) else {}
+        warnings_list = meta.get("warnings")
+        if not isinstance(warnings_list, list):
+            warnings_list = []
+        warnings_list.append(msg)
+        meta["warnings"] = warnings_list
+        response.metadata = meta
 
     def _get_allowed_tool_names(self, tools: List[Dict[str, Any]]) -> set[str]:
         """Extract allowed tool names from provider-normalized tool definitions."""
@@ -8228,30 +8382,12 @@ class BaseProvider(AbstractCoreInterface, ABC):
             detect an allowed tool name as a standalone token within the raw string, map it
             back to the exact allowed name so tool execution can proceed.
             """
-            s = str(raw or "").strip()
-            if not s:
-                return None
-            if s in allowed:
-                return s
+            # Shared with the streaming lane; whole-name readings (dots ->
+            # underscores, namespace-prefix stripping) outrank the token scan so
+            # `browser.probe` maps to `browser_probe`, never a shorter `probe`.
+            from ..tools.wire_naming import map_namespaced_tool_name
 
-            try:
-                import re
-
-                # Prefer exact token-boundary matches (tool names are usually snake_case).
-                candidates: List[str] = []
-                for name in allowed:
-                    if not isinstance(name, str) or not name:
-                        continue
-                    pat = r"(^|[^\w])" + re.escape(name) + r"([^\w]|$)"
-                    if re.search(pat, s):
-                        candidates.append(name)
-                if candidates:
-                    # Prefer the most specific (longest) match deterministically.
-                    return max(candidates, key=lambda n: (len(n), n))
-            except Exception:
-                return None
-
-            return None
+            return map_namespaced_tool_name(raw, allowed)
 
         normalized: List[Dict[str, Any]] = []
 

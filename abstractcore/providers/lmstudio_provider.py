@@ -6,6 +6,7 @@ This provider is a thin wrapper around `OpenAICompatibleProvider` with LM Studio
 """
 
 import json
+import os
 import time
 import warnings
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Union, Type, TYPE_CHECKING
@@ -302,12 +303,26 @@ class LMStudioProvider(OpenAICompatibleProvider):
         from ..utils.data_registry import ensure_core_data_homes
         ensure_core_data_homes()
 
+    @classmethod
+    def _native_rest_root_url(cls, base_url: Optional[str] = None) -> str:
+        """Derive the LM Studio native REST root from an OpenAI-compatible base_url.
+
+        Resolution mirrors provider construction: parameter > env var > default.
+        """
+        env_var = getattr(cls, "BASE_URL_ENV_VAR", None)
+        resolved = str(
+            base_url
+            or (os.getenv(env_var) if isinstance(env_var, str) and env_var else None)
+            or getattr(cls, "DEFAULT_BASE_URL", "")
+            or ""
+        ).strip().rstrip("/")
+        if resolved.endswith("/v1"):
+            resolved = resolved[: -len("/v1")]
+        return resolved.rstrip("/")
+
     def _native_rest_base_url(self) -> str:
         """Derive LM Studio native REST base URL from the OpenAI-compatible base_url."""
-        base = str(getattr(self, "base_url", "") or "").strip().rstrip("/")
-        if base.endswith("/v1"):
-            base = base[: -len("/v1")]
-        return base.rstrip("/")
+        return self._native_rest_root_url(str(getattr(self, "base_url", "") or "").strip() or None)
 
     def _apply_provider_thinking_kwargs(
         self,
@@ -815,6 +830,65 @@ class LMStudioProvider(OpenAICompatibleProvider):
 
         return True
 
+    @staticmethod
+    def _native_rest_model_items(data: Any) -> List[Dict[str, Any]]:
+        items: Any = None
+        if isinstance(data, dict):
+            items = data.get("models") or data.get("data") or data.get("items")
+        if not isinstance(items, list):
+            return []
+        return [item for item in items if isinstance(item, dict)]
+
+    @staticmethod
+    def _native_rest_coerce_str(value: Any) -> str:
+        return value.strip() if isinstance(value, str) else ""
+
+    @classmethod
+    def _native_rest_item_names(cls, item: Dict[str, Any]) -> List[str]:
+        """Candidate model identifiers for one `/api/v1/models` item (key/variant/display)."""
+        names: List[str] = []
+        for key in ("key", "id", "model", "name", "model_id", "modelId", "display_name", "selected_variant"):
+            value = cls._native_rest_coerce_str(item.get(key))
+            if value:
+                names.append(value)
+
+        variants = item.get("variants")
+        if isinstance(variants, list):
+            names.extend(v.strip() for v in variants if isinstance(v, str) and v.strip())
+
+        nested = item.get("model") if isinstance(item.get("model"), dict) else None
+        if isinstance(nested, dict):
+            for key in ("key", "id", "name", "identifier"):
+                value = cls._native_rest_coerce_str(nested.get(key))
+                if value:
+                    names.append(value)
+        return names
+
+    @classmethod
+    def _native_rest_item_instance_ids(cls, item: Dict[str, Any]) -> List[str]:
+        """Loaded-instance ids for one `/api/v1/models` item (empty = not loaded)."""
+        out: List[str] = []
+        seen: set[str] = set()
+        direct_instance_id = cls._native_rest_coerce_str(
+            item.get("instance_id") or item.get("instanceId") or item.get("instance")
+        )
+        if direct_instance_id and direct_instance_id not in seen:
+            out.append(direct_instance_id)
+            seen.add(direct_instance_id)
+
+        loaded_instances = item.get("loaded_instances") or item.get("loadedInstances")
+        if isinstance(loaded_instances, list):
+            for inst in loaded_instances:
+                if not isinstance(inst, dict):
+                    continue
+                instance_id = cls._native_rest_coerce_str(
+                    inst.get("id") or inst.get("instance_id") or inst.get("instanceId")
+                )
+                if instance_id and instance_id not in seen:
+                    out.append(instance_id)
+                    seen.add(instance_id)
+        return out
+
     def _native_rest_loaded_instance_ids_for_model(self, target: str) -> List[str]:
         """Resolve an LM Studio model key/variant/display id to currently loaded instance ids."""
         needle = str(target or "").strip().lower()
@@ -824,61 +898,66 @@ class LMStudioProvider(OpenAICompatibleProvider):
         url = f"{self._native_rest_base_url()}/api/v1/models"
         resp = httpx.get(url, headers=self._get_headers(), timeout=self._timeout)
         resp.raise_for_status()
-        data = resp.json()
-
-        items: Any = None
-        if isinstance(data, dict):
-            items = data.get("models") or data.get("data") or data.get("items")
-        if not isinstance(items, list):
-            return []
-
-        def _coerce_str(value: Any) -> str:
-            return value.strip() if isinstance(value, str) else ""
-
-        def _candidate_names(item: Dict[str, Any]) -> List[str]:
-            names: List[str] = []
-            for key in ("key", "id", "model", "name", "model_id", "modelId", "display_name", "selected_variant"):
-                value = _coerce_str(item.get(key))
-                if value:
-                    names.append(value)
-
-            variants = item.get("variants")
-            if isinstance(variants, list):
-                names.extend(v.strip() for v in variants if isinstance(v, str) and v.strip())
-
-            nested = item.get("model") if isinstance(item.get("model"), dict) else None
-            if isinstance(nested, dict):
-                for key in ("key", "id", "name", "identifier"):
-                    value = _coerce_str(nested.get(key))
-                    if value:
-                        names.append(value)
-            return names
 
         out: List[str] = []
         seen: set[str] = set()
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            names = [name.lower() for name in _candidate_names(item)]
+        for item in self._native_rest_model_items(resp.json()):
+            names = [name.lower() for name in self._native_rest_item_names(item)]
             if not any(needle == name or needle in name for name in names):
                 continue
-
-            direct_instance_id = _coerce_str(item.get("instance_id") or item.get("instanceId") or item.get("instance"))
-            if direct_instance_id and direct_instance_id not in seen:
-                out.append(direct_instance_id)
-                seen.add(direct_instance_id)
-
-            loaded_instances = item.get("loaded_instances") or item.get("loadedInstances")
-            if not isinstance(loaded_instances, list):
-                continue
-            for inst in loaded_instances:
-                if not isinstance(inst, dict):
-                    continue
-                instance_id = _coerce_str(inst.get("id") or inst.get("instance_id") or inst.get("instanceId"))
-                if instance_id and instance_id not in seen:
+            for instance_id in self._native_rest_item_instance_ids(item):
+                if instance_id not in seen:
                     out.append(instance_id)
                     seen.add(instance_id)
         return out
+
+    @classmethod
+    def list_server_loaded_models(
+        cls, base_url: Optional[str] = None, timeout_s: float = 2.0
+    ) -> List[Dict[str, Any]]:
+        """Return ALL models with loaded instances on an LM Studio server, normalized.
+
+        Class-level so callers can ask "what is loaded on this host's LM Studio"
+        without constructing a model-bound provider (ADR 0008: the server's own
+        loaded-instance list is the residency truth). Raises on transport errors;
+        best-effort sweeps catch them (see `abstractcore.utils.residency`).
+        """
+        url = f"{cls._native_rest_root_url(base_url)}/api/v1/models"
+        resp = httpx.get(url, timeout=timeout_s)
+        resp.raise_for_status()
+
+        out: List[Dict[str, Any]] = []
+        for item in cls._native_rest_model_items(resp.json()):
+            instance_ids = cls._native_rest_item_instance_ids(item)
+            if not instance_ids:
+                continue
+            names = cls._native_rest_item_names(item)
+            record: Dict[str, Any] = {
+                "provider": "lmstudio",
+                "model": names[0] if names else instance_ids[0],
+                "provider_instance_ids": instance_ids,
+                "resident": True,
+                "loaded": True,
+                "source": "abstractcore.provider.lmstudio.native_rest",
+            }
+            for src, dst in (
+                ("size_bytes", "size_bytes"),
+                ("size", "size_bytes"),
+                ("max_context_length", "context_length"),
+                ("context_length", "context_length"),
+            ):
+                value = item.get(src)
+                if value is not None and dst not in record:
+                    record[dst] = value
+            out.append(record)
+        return out
+
+    def list_loaded_models(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """ALL models with loaded instances on this instance's LM Studio server.
+
+        `filters` is accepted-and-ignored (capability-handler protocol compat)."""
+        _ = filters
+        return type(self).list_server_loaded_models(base_url=str(getattr(self, "base_url", "") or "").strip() or None)
 
     def get_model_residency(self, *, task: str = "text_generation", model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         """Return LM Studio loaded-instance truth through the Core provider boundary."""

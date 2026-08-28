@@ -134,6 +134,7 @@ completed/ in a hygiene pass.)
 | `planned/0801_rerank_manager.md` | First-class reranking manager (cross-encoder / hosted rerank APIs); linked to 0803/0804 for embedding/provider boundary decisions. |
 | `planned/0803_image_embedding_manager_and_multimodal_embeddings.md` | First-class image/multimodal embedding manager and server endpoint extension. |
 | `planned/0806_pdf_images_tables_and_extraction_strategy.md` | Richer PDF image/table/OCR strategy without reintroducing PyMuPDF-family packages into default profiles. |
+| `planned/0844_hybrid_kv_rewind_and_fork_checkpoints.md` | Checkpoint ring for hybrid (recurrent) models so `/rewind` and forking re-prefill from the nearest message-boundary checkpoint instead of zero; evaluates native `n_rs_seq` rollback as the upstream lever. |
 
 ## Proposed ledger
 

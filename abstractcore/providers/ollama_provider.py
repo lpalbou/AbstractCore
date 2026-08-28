@@ -102,12 +102,66 @@ class OllamaProvider(BaseProvider):
             )
         return self._async_client
 
+    @staticmethod
+    def _parse_running_model_entries(data: Any) -> List[Dict[str, Any]]:
+        models = data.get("models") if isinstance(data, dict) else None
+        return [m for m in models if isinstance(m, dict)] if isinstance(models, list) else []
+
     def _running_model_entries(self) -> List[Dict[str, Any]]:
         response = self.client.get(f"{self.base_url}/api/ps")
         response.raise_for_status()
-        data = response.json()
-        models = data.get("models") if isinstance(data, dict) else None
-        return [m for m in models if isinstance(m, dict)] if isinstance(models, list) else []
+        return self._parse_running_model_entries(response.json())
+
+    @classmethod
+    def list_server_loaded_models(
+        cls, base_url: Optional[str] = None, timeout_s: float = 2.0
+    ) -> List[Dict[str, Any]]:
+        """Return ALL models resident on an Ollama server (`GET /api/ps`), normalized.
+
+        Class-level so callers can ask "what is loaded on this host's Ollama"
+        without constructing a model-bound provider (ADR 0008: the server's own
+        running-model list is the residency truth). Raises on transport errors;
+        best-effort sweeps catch them (see `abstractcore.utils.residency`).
+        """
+        root = str(
+            base_url
+            or os.getenv("OLLAMA_BASE_URL")
+            or os.getenv("OLLAMA_HOST")
+            or "http://localhost:11434"
+        ).rstrip("/")
+        response = httpx.get(f"{root}/api/ps", timeout=timeout_s)
+        response.raise_for_status()
+        out: List[Dict[str, Any]] = []
+        for entry in cls._parse_running_model_entries(response.json()):
+            name = str(entry.get("name") or entry.get("model") or "").strip()
+            if not name:
+                continue
+            record: Dict[str, Any] = {
+                "provider": "ollama",
+                "model": name,
+                "resident": True,
+                "loaded": True,
+                "source": "abstractcore.provider.ollama.native_rest",
+            }
+            for src, dst in (
+                ("size", "size_bytes"),
+                ("size_vram", "size_vram_bytes"),
+                ("expires_at", "expires_at"),
+                ("context_length", "context_length"),
+                ("digest", "digest"),
+            ):
+                value = entry.get(src)
+                if value is not None:
+                    record[dst] = value
+            out.append(record)
+        return out
+
+    def list_loaded_models(self, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+        """ALL models resident on this instance's Ollama server (not just `self.model`).
+
+        `filters` is accepted-and-ignored (capability-handler protocol compat)."""
+        _ = filters
+        return type(self).list_server_loaded_models(base_url=self.base_url)
 
     def _matches_running_model(self, entry: Dict[str, Any], target: str) -> bool:
         target_s = str(target or "").strip()

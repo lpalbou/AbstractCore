@@ -38,6 +38,18 @@ def isolate_data_registry(tmp_path, monkeypatch):
     monkeypatch.setenv("ABSTRACTFRAMEWORK_DATA_REGISTRY", str(tmp_path / "test_data_registry.json"))
 
 
+@pytest.fixture(autouse=True)
+def isolate_context_calibration(tmp_path, monkeypatch):
+    """Point the context-calibration store at a per-test directory.
+
+    GGUF loads record where their n_ctx ladder settled as a side effect;
+    without isolation, unit tests constructing (fake) GGUF providers would
+    write the developer's real ~/.abstractcore/calibration store — and could
+    read seeds from it, breaking hermeticity both ways.
+    """
+    monkeypatch.setenv("ABSTRACTCORE_CALIBRATION_DIR", str(tmp_path / "test_calibration"))
+
+
 @pytest.fixture(scope="session")
 def vision_examples_dir():
     """Path to vision examples directory."""

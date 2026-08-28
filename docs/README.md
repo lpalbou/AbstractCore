@@ -36,6 +36,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 - **[Reasoning Control](reasoning-control.md)** — the unified `thinking=` parameter, what each provider sends for on/off and effort levels, model requirements, and how to verify a request took effect
 - **[HuggingFace Model Compatibility](huggingface-model-compatibility.md)** — Transformers/GGUF loading rules, quantized checkpoint caveats, and trusted proof targets
 - **[Memory Blocs](memory-blocs.md)** — persistent extracted text snapshots + per-model KV artifacts
+- **[Memory and Model Residency](memory-management.md)** — host memory snapshot (`get_memory_snapshot`), host-wide resident-model sweep (`sweep_loaded_models`), per-provider loaded-model listings, what `unload_model()` frees (weights + session caches) and how to verify it, gateway model locks (`/acore/models/lock`), and context calibration/estimation (`estimate_context_fit`)
 - **Model/architecture registries (source of truth)** — `abstractcore/assets/model_capabilities.json`, `abstractcore/assets/model_capabilities.schema.json`, and `abstractcore/assets/architecture_formats.json` (see `abstractcore/assets/README.md`)
 - **[Centralized Config](centralized-config.md)** — config file, config CLI (`abstractcore --config`), and capability route defaults (`input.*`, `output.*`, `embedding.*`, `rerank.*`)
 - **[Data-Home Registry](data-registry.md)** — machine-level registry of framework data directories (model/prompt caches, runs, sessions, logs, entity homes) with owner-declared safe-purge verbs

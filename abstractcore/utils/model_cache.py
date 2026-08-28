@@ -311,6 +311,85 @@ def _skip_gguf_value(f: BinaryIO, value_type: int) -> None:
     f.seek(fixed, os.SEEK_CUR)
 
 
+_GGUF_SCALAR_FORMATS: dict[int, str] = {
+    _GGUF_TYPE_UINT8: "<B",
+    _GGUF_TYPE_INT8: "<b",
+    _GGUF_TYPE_UINT16: "<H",
+    _GGUF_TYPE_INT16: "<h",
+    _GGUF_TYPE_UINT32: "<I",
+    _GGUF_TYPE_INT32: "<i",
+    _GGUF_TYPE_FLOAT32: "<f",
+    _GGUF_TYPE_UINT64: "<Q",
+    _GGUF_TYPE_INT64: "<q",
+    _GGUF_TYPE_FLOAT64: "<d",
+    _GGUF_TYPE_BOOL: "<B",
+}
+
+
+def _read_gguf_scalar(f: BinaryIO, value_type: int):
+    fmt = _GGUF_SCALAR_FORMATS.get(value_type)
+    if fmt is None:
+        raise ValueError(f"Not a scalar GGUF value type: {value_type}")
+    return struct.unpack(fmt, _read_exact(f, struct.calcsize(fmt)))[0]
+
+
+# `<arch>.`-prefixed header keys carrying KV-cache geometry, keyed by the
+# suffix (the architecture prefix varies per model family).
+_GGUF_GEOMETRY_SUFFIXES: dict[str, str] = {
+    ".block_count": "block_count",
+    ".attention.head_count": "head_count",
+    ".attention.head_count_kv": "head_count_kv",
+    ".attention.key_length": "key_length",
+    ".attention.value_length": "value_length",
+    ".embedding_length": "embedding_length",
+    ".context_length": "context_length",
+}
+
+
+def read_gguf_geometry(path: Path) -> Optional[dict]:
+    """Read KV-cache geometry keys from a GGUF header (best-effort, cache-only).
+
+    Same single-pass walk as `read_gguf_architecture`, additionally collecting
+    `<arch>.block_count`, `<arch>.attention.head_count[_kv]`,
+    `<arch>.attention.key_length` / `.value_length`, `<arch>.embedding_length`,
+    and `<arch>.context_length`. Returns a dict with `architecture` plus any
+    geometry keys found (values as ints), or None when the file isn't GGUF /
+    nothing was readable. Missing keys are absent, never guessed.
+    """
+    try:
+        out: dict = {}
+        with path.open("rb") as f:
+            if _read_exact(f, 4) != _GGUF_MAGIC:
+                return None
+            _ = _read_u32(f)  # version
+            _ = _read_u64(f)  # tensor_count
+            kv_count = _read_u64(f)
+
+            for _ in range(kv_count):
+                key = _read_gguf_string(f)
+                value_type = _read_u32(f)
+                if key == "general.architecture" and value_type == _GGUF_TYPE_STRING:
+                    v = _read_gguf_string(f).strip()
+                    if v:
+                        out["architecture"] = v
+                    continue
+                field = None
+                for suffix, name in _GGUF_GEOMETRY_SUFFIXES.items():
+                    if key.endswith(suffix):
+                        field = name
+                        break
+                if field is not None and value_type in _GGUF_SCALAR_FORMATS:
+                    try:
+                        out[field] = int(_read_gguf_scalar(f, value_type))
+                    except (ValueError, TypeError):
+                        pass
+                    continue
+                _skip_gguf_value(f, value_type)
+        return out or None
+    except Exception:
+        return None
+
+
 def read_gguf_architecture(path: Path) -> Optional[str]:
     """Read `general.architecture` from a GGUF file (best-effort, cache-only).
 

@@ -342,6 +342,26 @@ def get_model_capability_routes(model_name: str) -> List[str]:
     return _ordered_routes(_derive_route_compatibility(model_name, capabilities, explicit_routes))
 
 
+def modalities_for_model(model_name: str) -> Optional[List[str]]:
+    """Registry-declared modality routes for ``model_name``, or None on a miss.
+
+    Thin wrapper over :func:`get_model_capability_routes` with one honesty
+    guarantee (ADR 0008): when the registry has NO entry for the model
+    (``lookup_registry_model_capabilities`` returns None), this returns None —
+    never the architecture-default text-only fallback that
+    ``get_model_capabilities`` would fabricate. Callers stamping residency
+    records must OMIT the field on None rather than guess.
+    """
+    try:
+        from ..architectures.detection import lookup_registry_model_capabilities
+
+        if lookup_registry_model_capabilities(model_name) is None:
+            return None
+        return get_model_capability_routes(model_name)
+    except Exception:
+        return None
+
+
 def model_supports_capability_route(model_name: str, route: str) -> bool:
     """Return ``True`` when ``model_name`` supports the normalized route key."""
 

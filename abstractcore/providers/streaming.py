@@ -752,6 +752,72 @@ class UnifiedStreamProcessor:
         # not.
         request_metadata: Dict[str, Any] = {}
         try:
+            # Roster for recovering namespaced/decorated names on THIS lane too:
+            # the non-streaming passthrough maps `functions.browser_probe` ->
+            # `browser_probe`, and a host executing by name must see the same
+            # call regardless of stream mode.
+            allowed_tool_names: set = set()
+            for _tool in converted_tools or []:
+                if not isinstance(_tool, dict):
+                    continue
+                _name = _tool.get("name")
+                if isinstance(_name, str) and _name.strip():
+                    allowed_tool_names.add(_name.strip())
+                    continue
+                _func = _tool.get("function") if isinstance(_tool.get("function"), dict) else None
+                _fname = _func.get("name") if isinstance(_func, dict) else None
+                if isinstance(_fname, str) and _fname.strip():
+                    allowed_tool_names.add(_fname.strip())
+
+            def _mapped_tool_name(raw_name: str) -> tuple:
+                """(possibly-mapped name, warning or None) under the shared rules."""
+                name = str(raw_name or "").strip()
+                if not name or not allowed_tool_names or name in allowed_tool_names:
+                    return name, None
+                try:
+                    from ..tools.wire_naming import map_namespaced_tool_name, resolve_wire_tool_name
+
+                    resolved = resolve_wire_tool_name(name, allowed_tool_names)
+                    if not resolved:
+                        resolved = map_namespaced_tool_name(name, allowed_tool_names)
+                except Exception:
+                    resolved = None
+                if resolved:
+                    return resolved, None
+                return name, (
+                    f"Tool call '{name}' does not match any available tool "
+                    f"(available: {', '.join(sorted(allowed_tool_names))})."
+                )
+
+            def _mapped_tool_payload(tools_list) -> tuple:
+                payload = []
+                warnings: List[str] = []
+                for tc in tools_list:
+                    if not getattr(tc, "name", None):
+                        continue
+                    mapped_name, warning = _mapped_tool_name(tc.name)
+                    if warning:
+                        warnings.append(warning)
+                    payload.append(
+                        {
+                            "name": mapped_name,
+                            "arguments": tc.arguments,
+                            "call_id": tc.call_id,
+                        }
+                    )
+                return payload, warnings
+
+            def _with_warnings(metadata: Optional[Dict[str, Any]], warnings: List[str]) -> Optional[Dict[str, Any]]:
+                if not warnings:
+                    return metadata
+                meta = dict(metadata or {})
+                existing = meta.get("warnings")
+                merged = list(existing) if isinstance(existing, list) else []
+                merged.extend(warnings)
+                meta["warnings"] = merged
+                for w in warnings:
+                    logger.warning(w)
+                return meta
 
             def _canonical_tool_call_key(call: Dict[str, Any]) -> Optional[tuple]:
                 """Best-effort key for deduplicating canonical tool-call payloads."""
@@ -854,15 +920,7 @@ class UnifiedStreamProcessor:
                     logger.debug(
                         f"Detected {len(completed_tools)} tools - yielding for server processing"
                     )
-                    tool_payload = [
-                        {
-                            "name": tc.name,
-                            "arguments": tc.arguments,
-                            "call_id": tc.call_id,
-                        }
-                        for tc in completed_tools
-                        if getattr(tc, "name", None)
-                    ]
+                    tool_payload, name_warnings = _mapped_tool_payload(completed_tools)
                     if incoming_tool_call_keys:
                         tool_payload = [
                             call
@@ -880,7 +938,7 @@ class UnifiedStreamProcessor:
                             finish_reason=chunk.finish_reason,
                             usage=chunk.usage,
                             raw_response=chunk.raw_response,
-                            metadata=chunk.metadata,
+                            metadata=_with_warnings(chunk.metadata, name_warnings),
                         )
 
             # Finalize - get any remaining tools and handle remaining content
@@ -905,21 +963,13 @@ class UnifiedStreamProcessor:
 
             if final_tools:
                 logger.debug(f"Finalized {len(final_tools)} tools - yielding for server processing")
-                tool_payload = [
-                    {
-                        "name": tc.name,
-                        "arguments": tc.arguments,
-                        "call_id": tc.call_id,
-                    }
-                    for tc in final_tools
-                    if getattr(tc, "name", None)
-                ]
+                tool_payload, name_warnings = _mapped_tool_payload(final_tools)
                 yield GenerateResponse(
                     content="",
                     tool_calls=tool_payload,
                     model=self.model_name,
                     finish_reason="tool_calls",
-                    metadata=dict(request_metadata) or None,
+                    metadata=_with_warnings(dict(request_metadata) or None, name_warnings),
                 )
 
         except Exception as e:

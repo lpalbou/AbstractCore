@@ -935,6 +935,9 @@ class HuggingFaceProvider(BaseProvider):
 
         For GGUF models, calls llm.close() to free llama.cpp resources.
         For transformers models, clears model and tokenizer references.
+        Also drops this instance's session caches (prompt-cache store entries):
+        they are only useful with the weights resident, and they are the
+        memory hogs.
         """
         import gc
         try:
@@ -971,6 +974,10 @@ class HuggingFaceProvider(BaseProvider):
                          "_transformers_prefill_step_cached"):
                 if hasattr(self, attr):
                     delattr(self, attr)
+
+            # Session caches go with the weights: drop the prompt-cache store
+            # via the canonical clear path (never raises).
+            self._clear_prompt_caches_for_unload()
 
             # Force garbage collection to free memory immediately
             gc.collect()
@@ -1506,6 +1513,26 @@ class HuggingFaceProvider(BaseProvider):
             ),
         )
 
+    def _prompt_cache_value_bytes(self, cache_value: Any) -> Optional[int]:
+        """Best-effort bytes held by one transformers KV-cache store entry."""
+        cache = getattr(cache_value, "cache", None)
+        if cache is None:
+            return None
+        try:
+            total = 0
+            found = False
+            for attr in ("key_cache", "value_cache"):
+                tensors = getattr(cache, attr, None) or []
+                for tensor in tensors:
+                    numel = getattr(tensor, "numel", None)
+                    element_size = getattr(tensor, "element_size", None)
+                    if callable(numel) and callable(element_size):
+                        total += int(numel()) * int(element_size())
+                        found = True
+            return total if found else None
+        except Exception:
+            return None
+
     def get_prompt_cache_stats(self) -> Dict[str, Any]:
         """Return prompt cache stats, including GGUF cache sizing (best-effort)."""
         stats = super().get_prompt_cache_stats()
@@ -1584,6 +1611,18 @@ class HuggingFaceProvider(BaseProvider):
             ),
             "keys": per_key,
         }
+        # Mirror the GGUF byte accounting into the per-key meta rows so all
+        # lanes expose `bytes` in one place (additive; never raises).
+        try:
+            meta_by_key = stats.get("meta_by_key")
+            if isinstance(meta_by_key, dict):
+                for key_s, sizing in per_key.items():
+                    row = meta_by_key.get(key_s)
+                    total = sizing.get("cache_state_total_bytes")
+                    if isinstance(row, dict) and isinstance(total, int) and "bytes" not in row:
+                        row["bytes"] = total
+        except Exception:
+            pass
         return stats
 
     def _gguf_prompt_cache_export_state(self, cache_value: Any) -> Dict[str, Any]:
@@ -2475,6 +2514,39 @@ class HuggingFaceProvider(BaseProvider):
             return False
         return True
 
+    def _gguf_probe_decode(self, llm: Any) -> None:
+        """One real full-width decode on a fresh context; raises if unusable.
+
+        The probe feeds a FULL n_batch of tokens, not one: a near-budget Metal
+        context can survive a 1-token decode yet fail the first real prefill
+        ubatch, whose graph wires the worst-case compute buffer. Resets before
+        (hybrid memories need llama_memory_clear ahead of their first decode)
+        and after (probe tokens must not linger as live context). Engines
+        without eval/reset (test fakes, exotic backends) are not probed.
+        """
+        if not callable(getattr(llm, "eval", None)):
+            return
+        try:
+            llm.reset()
+        except Exception:
+            pass
+        probe_token = 0
+        try:
+            bos = int(llm.token_bos())
+            if bos >= 0:
+                probe_token = bos
+        except Exception:
+            pass
+        try:
+            width = int(getattr(llm, "n_batch", 512) or 512)
+        except Exception:
+            width = 512
+        llm.eval([probe_token] * max(1, min(width, 512)))
+        try:
+            llm.reset()
+        except Exception:
+            pass
+
     def _gguf_prefill_prompt_cache(
         self,
         cache_obj: Any,
@@ -2488,6 +2560,7 @@ class HuggingFaceProvider(BaseProvider):
         generation_boundary: Optional[int] = None,
         protect_snapshot_key: Sequence[int] = (),
         telemetry: Optional[Dict[str, Any]] = None,
+        _second_attempt: bool = False,
     ) -> bool:
         """Bring llama.cpp's context to `prompt_tokens`, reusing whatever is cheapest.
 
@@ -2650,7 +2723,81 @@ class HuggingFaceProvider(BaseProvider):
                 llm.eval(tail)
             if set_cache and hasattr(llm, "set_cache"):
                 llm.set_cache(cache_obj)
-        except Exception:
+        except Exception as prefill_err:
+            # Never swallow the engine's reason (ADR-0001): a bare False here
+            # surfaced upstream as "failed to prefill GGUF prompt cache" while the
+            # real cause (e.g. Metal kIOGPUCommandBufferCallbackErrorOutOfMemory
+            # under memory pressure with a near-budget model) stayed invisible.
+            self.logger.warning(
+                f"GGUF prompt-cache prefill failed for {self.model}: "
+                f"{type(prefill_err).__name__}: {prefill_err}"
+            )
+            _note(backend="gguf", outcome="error", error=f"{type(prefill_err).__name__}: {prefill_err}")
+            self._gguf_last_prefill_error = f"{type(prefill_err).__name__}: {prefill_err}"
+            def _recurse() -> bool:
+                return self._gguf_prefill_prompt_cache(
+                    cache_obj,
+                    prompt_tokens,
+                    save_state=save_state,
+                    save_state_on_live_reuse=save_state_on_live_reuse,
+                    set_cache=set_cache,
+                    snapshot_at_boundary=snapshot_at_boundary,
+                    prev_prompt_tokens=prev_prompt_tokens,
+                    generation_boundary=generation_boundary,
+                    protect_snapshot_key=protect_snapshot_key,
+                    telemetry=telemetry,
+                    _second_attempt=True,
+                )
+
+            if not _second_attempt:
+                # One cold retry after a full reset: a transient failure (Metal OOM
+                # spikes on near-budget models) should degrade to a slower full
+                # re-prefill, not a failed turn.
+                try:
+                    llm.reset()
+                except Exception:
+                    return False
+                self.logger.warning(
+                    f"Retrying GGUF prefill cold after reset for {self.model}."
+                )
+                return _recurse()
+
+            # The cold retry ALSO failed. Measured on Metal (2026-08-27, qwen4exp
+            # under memory pressure): one failed command buffer leaves the
+            # llama.cpp context permanently broken — every later decode returns -3
+            # instantly, reset() included, so a resident process would fail every
+            # turn from here on. A warm engine rebuild (weights still in page
+            # cache) takes seconds and is the only recovery that works. Guarded to
+            # one attempt per incident so a hard OOM cannot become a reload storm;
+            # the guard re-arms on the next successful prefill.
+            if not getattr(self, "_gguf_prefill_reload_attempted", False):
+                self._gguf_prefill_reload_attempted = True
+                self.logger.warning(
+                    f"GGUF context unrecoverable after failed prefill for {self.model}; "
+                    "rebuilding the llama.cpp engine (warm reload) and retrying cold."
+                )
+                # Free the broken engine BEFORE loading the new one: reloading
+                # first doubled residency (two ~90 GB models: measured 62 -> 123 GB
+                # RSS) and turned a transient OOM into a permanent one.
+                broken = getattr(self, "llm", None)
+                self.llm = None
+                try:
+                    if broken is not None and hasattr(broken, "close"):
+                        broken.close()
+                except Exception:
+                    pass
+                del broken
+                import gc as _gc
+                _gc.collect()
+                try:
+                    self._load_gguf_model()
+                except Exception as reload_err:
+                    self.logger.warning(
+                        f"GGUF engine rebuild failed for {self.model}: "
+                        f"{type(reload_err).__name__}: {reload_err}"
+                    )
+                    return False
+                return _recurse()
             return False
 
         fed = len(head) + len(tail)
@@ -2668,6 +2815,9 @@ class HuggingFaceProvider(BaseProvider):
             prompt_tokens=int(n_prompt),
             snapshot_boundary=int(stable_end),
         )
+        # Re-arm the one-shot engine-rebuild guard: a healthy prefill means any
+        # future decode failure is a NEW incident, entitled to its own recovery.
+        self._gguf_prefill_reload_attempted = False
         return True
 
     def _transformers_prompt_cache_state(self, cache_value: Any) -> Optional[_TransformersPromptCacheValue]:
@@ -5176,7 +5326,7 @@ class HuggingFaceProvider(BaseProvider):
             p = Path(head).expanduser()
             if p.is_file() and p.suffix.lower() == '.gguf':
                 return True
-            if p.is_dir() and any(p.glob("*.gguf")):
+            if p.is_dir() and any(p.rglob("*.gguf")):
                 return True
         except (OSError, ValueError):
             pass
@@ -5995,7 +6145,12 @@ class HuggingFaceProvider(BaseProvider):
             if candidate.is_file() and candidate.suffix.lower() == ".gguf":
                 return str(candidate)
             if candidate.is_dir():
-                picked = _pick_preferred_gguf(list(candidate.glob("*.gguf")))
+                # rglob: repos like unsloth's ship each quantization in its own
+                # subdirectory (UD-Q3_K_XL/model-00001-of-00003.gguf); mmproj
+                # files are vision adapters, never the model to load.
+                picked = _pick_preferred_gguf(
+                    [f for f in candidate.rglob("*.gguf") if not f.name.lower().startswith("mmproj")]
+                )
                 if picked:
                     return picked
         except ModelArtifactMismatchError:
@@ -6024,22 +6179,42 @@ class HuggingFaceProvider(BaseProvider):
                 try:
                     snapshot_dirs = [d for d in snapshots_dir.iterdir() if d.is_dir()]
                     if snapshot_dirs:
-                        # Use the most recent snapshot
-                        latest_snapshot = max(snapshot_dirs, key=lambda x: x.stat().st_mtime)
-                        if len(snapshot_dirs) > 1:
+                        # Try snapshots newest-first. With several cached revisions a
+                        # quant can live only in an OLDER snapshot (downloading a
+                        # different quant later creates a newer revision dir), so a
+                        # selector miss in the newest snapshot must fall through to
+                        # the others before it is allowed to fail.
+                        ordered_snapshots = sorted(
+                            snapshot_dirs, key=lambda x: x.stat().st_mtime, reverse=True
+                        )
+                        if len(ordered_snapshots) > 1:
                             # Same repository either way, so not a substitution — but the
                             # caller named no revision and we picked one, so say which.
                             _artifact_logger().warning(
-                                "huggingface: %r has %d cached snapshots (revisions); using the "
-                                "most recently modified one (%s).",
-                                model_name, len(snapshot_dirs), latest_snapshot.name,
+                                "huggingface: %r has %d cached snapshots (revisions); scanning "
+                                "newest-first (%s first).",
+                                model_name, len(ordered_snapshots), ordered_snapshots[0].name,
                             )
 
-                        # Look for GGUF files in the snapshot
-                        gguf_files = list(latest_snapshot.glob("*.gguf"))
-                        picked = _pick_preferred_gguf(gguf_files)
-                        if picked:
-                            return picked
+                        selector_mismatch: Optional[ModelArtifactMismatchError] = None
+                        for snapshot in ordered_snapshots:
+                            # Look for GGUF files in the snapshot (rglob: per-quant
+                            # subdirectories like UD-Q3_K_XL/; skip mmproj adapters)
+                            gguf_files = [
+                                f for f in snapshot.rglob("*.gguf")
+                                if not f.name.lower().startswith("mmproj")
+                            ]
+                            if not gguf_files:
+                                continue
+                            try:
+                                picked = _pick_preferred_gguf(gguf_files)
+                            except ModelArtifactMismatchError as mismatch_err:
+                                selector_mismatch = selector_mismatch or mismatch_err
+                                continue
+                            if picked:
+                                return picked
+                        if selector_mismatch is not None:
+                            raise selector_mismatch
 
                 except ModelArtifactMismatchError:
                     raise
@@ -6053,7 +6228,10 @@ class HuggingFaceProvider(BaseProvider):
             repo_id = _to_repo_id(model_name)
             lm_dir = resolve_lmstudio_model_dir(repo_id, base_dirs=default_lmstudio_model_dirs()) if repo_id else None
             if lm_dir is not None and lm_dir.is_dir():
-                gguf_files = list(lm_dir.glob("*.gguf"))
+                gguf_files = [
+                    f for f in lm_dir.rglob("*.gguf")
+                    if not f.name.lower().startswith("mmproj")
+                ]
                 picked = _pick_preferred_gguf(gguf_files)
                 if picked:
                     return picked
@@ -6261,10 +6439,43 @@ class HuggingFaceProvider(BaseProvider):
                 for fallback in (131072, 65536, 32768, 16384, 8192, 4096):
                     if fallback < requested_n_ctx_i:
                         candidate_ctxs.append(int(fallback))
+                # Calibration seed: if a previous load of this model on this
+                # hardware settled at a smaller context, try that rung right
+                # after the requested one so a re-load skips the known-failing
+                # rungs. The probe still gates it — memory conditions change,
+                # so the cached rung is a HINT, never a fact (ADR 0008).
+                try:
+                    from ..utils.context_calibration import (
+                        gguf_calibration_model_id,
+                        lookup_context_calibration,
+                    )
+                    from ..utils.memory import get_memory_snapshot
+
+                    _mem_snapshot = get_memory_snapshot()
+                    _cal_hit = lookup_context_calibration(
+                        "huggingface",
+                        gguf_calibration_model_id(model_path),
+                        (_mem_snapshot.get("device") or {}).get("total_bytes"),
+                        (_mem_snapshot.get("ram") or {}).get("total_bytes"),
+                    )
+                    _cal_ctx = (_cal_hit or {}).get("settled_context")
+                    if isinstance(_cal_ctx, int) and 0 < _cal_ctx < requested_n_ctx_i:
+                        # Keep the ladder strictly descending: rungs LARGER
+                        # than the calibrated settle already failed on this
+                        # hardware — retrying them after the seed would just
+                        # re-pay the failed allocations the seed exists to
+                        # skip.
+                        candidate_ctxs = [requested_n_ctx_i, int(_cal_ctx)] + [
+                            c for c in candidate_ctxs[1:] if c < int(_cal_ctx)
+                        ]
+                except Exception:
+                    pass
 
             last_error: Exception | None = None
             chosen_n_ctx: int | None = None
+            attempted_rungs: list[int] = []
             for n_ctx_i in candidate_ctxs:
+                attempted_rungs.append(int(n_ctx_i))
                 llama_kwargs = {
                     "model_path": model_path,
                     "n_ctx": int(n_ctx_i),
@@ -6280,8 +6491,6 @@ class HuggingFaceProvider(BaseProvider):
 
                 try:
                     self.llm = llama_cls(**llama_kwargs)
-                    chosen_n_ctx = int(n_ctx_i)
-                    break
                 except Exception as e:
                     # Common on macOS: Metal backend unavailable for the current process. Retry on CPU.
                     if isinstance(self.n_gpu_layers, int) and self.n_gpu_layers != 0:
@@ -6296,6 +6505,12 @@ class HuggingFaceProvider(BaseProvider):
                             self.llm = llama_cls(**llama_kwargs_cpu)
                             self.n_gpu_layers = 0
                             chosen_n_ctx = int(n_ctx_i)
+                            # Intentionally NO probe decode on the CPU retry:
+                            # the probe exists for Metal's overcommit failure
+                            # mode (allocation succeeds, first command buffer
+                            # bricks the backend). CPU allocations that don't
+                            # fit fail AT allocation, so a successful CPU
+                            # construction is already the settle signal.
                             break
                         except Exception as e_cpu:
                             e = e_cpu
@@ -6332,9 +6547,75 @@ class HuggingFaceProvider(BaseProvider):
                             f"Failed to load GGUF model (architecture: {gguf_arch}): {e}"
                         ) from e
                     raise
+                else:
+                    # Allocation succeeding does not prove the context is USABLE.
+                    # Metal overcommits: on a near-budget model a large n_ctx's
+                    # KV+compute buffers (measured: 8.4 GB KV + 18.4 GB compute at
+                    # n_ctx=262144 on Qwen3.8-Flash-Next Q3_K_XL, on top of 85.8 GB
+                    # of weights) only fail at the FIRST command buffer — decode
+                    # returns -3 and llama.cpp bricks the backend. Probe with one
+                    # decode so an unusable context takes the same ladder down as a
+                    # failed allocation, instead of shipping a poisoned engine.
+                    try:
+                        self._gguf_probe_decode(self.llm)
+                        chosen_n_ctx = int(n_ctx_i)
+                        break
+                    except Exception as probe_err:
+                        last_error = probe_err
+                        broken = self.llm
+                        self.llm = None
+                        try:
+                            if broken is not None and hasattr(broken, "close"):
+                                broken.close()
+                        except Exception:
+                            pass
+                        del broken
+                        # Actually reclaim the failed rung's engine before the
+                        # next allocation: llama.cpp buffers are freed by the
+                        # engine's finalizer, which CPython may defer. The
+                        # torch-MPS pool purge (_transformers_release_device_pool)
+                        # does not apply here — llama.cpp allocates its Metal
+                        # buffers outside torch's allocator.
+                        try:
+                            import gc
+
+                            gc.collect()
+                        except Exception:
+                            pass
+                        if getattr(self, "_user_provided_max_tokens", False):
+                            raise RuntimeError(
+                                f"GGUF context n_ctx={n_ctx_i} for {self.model} allocated but "
+                                f"failed its probe decode. Try lowering max_tokens=... . "
+                                f"Underlying error: {probe_err}"
+                            ) from probe_err
+                        if n_ctx_i != candidate_ctxs[-1]:
+                            self.logger.warning(
+                                f"GGUF context n_ctx={n_ctx_i} for {self.model} loaded but failed "
+                                f"its probe decode ({probe_err}); retrying with a smaller context window."
+                            )
+                            continue
+                        raise RuntimeError(
+                            f"GGUF model {self.model} failed its probe decode at every context "
+                            f"size tried ({candidate_ctxs}). Underlying error: {probe_err}"
+                        ) from probe_err
 
             if self.llm is None or chosen_n_ctx is None:
                 raise RuntimeError(f"Failed to load GGUF model {self.model}: {last_error}")
+
+            # Hybrid-memory models (Gated DeltaNet + attention: qwen35/qwen3next/
+            # qwen4exp) need llama_memory_clear before their FIRST decode —
+            # `Llama.reset()` does that when `_is_hybrid`. A bare `Llama.eval()` on a
+            # virgin context opens with `kv_cache_seq_rm(-1, 0, -1)` instead, which
+            # leaves the recurrent/indexer cells uninitialized: the first graph
+            # compute fails (`llama_decode returned -3`) and the context stays
+            # poisoned for every later call, even after reset. `Llama.generate()`
+            # resets first (masking this on the completion lane); the prompt-cache
+            # prefill lane feeds through `eval()` directly, so reset here, once,
+            # while the context has decoded nothing.
+            try:
+                self.llm.reset()
+            except Exception:
+                pass
 
             # Keep AbstractCore's token budget in sync with the actual llama.cpp context window.
             #
@@ -6342,6 +6623,34 @@ class HuggingFaceProvider(BaseProvider):
             # concrete `n_ctx` allocation. After successful load (including fallbacks),
             # treat `self.max_tokens` as the runtime context window budget.
             self.max_tokens = int(chosen_n_ctx)
+
+            # Remember where the ladder settled (context calibration). Only when
+            # the ladder actually ran — a user-provided max_tokens is a pin, not
+            # a measurement. Best-effort: calibration must never break a load.
+            if not getattr(self, "_user_provided_max_tokens", False):
+                self._gguf_context_calibrated = True
+                self._gguf_calibrated_context = int(chosen_n_ctx)
+                try:
+                    from ..utils.context_calibration import (
+                        gguf_calibration_model_id,
+                        record_context_calibration,
+                    )
+                    from ..utils.memory import get_memory_snapshot
+
+                    _settle_snapshot = get_memory_snapshot()
+                    record_context_calibration(
+                        {
+                            "provider": "huggingface",
+                            "model_id": gguf_calibration_model_id(model_path),
+                            "requested_context": int(requested_n_ctx_i),
+                            "settled_context": int(chosen_n_ctx),
+                            "device_total_bytes": (_settle_snapshot.get("device") or {}).get("total_bytes"),
+                            "ram_total_bytes": (_settle_snapshot.get("ram") or {}).get("total_bytes"),
+                            "rungs_tried": list(attempted_rungs),
+                        }
+                    )
+                except Exception:
+                    pass
 
             # Ensure output reservation never exceeds the runtime context window.
             #
@@ -7957,7 +8266,14 @@ class HuggingFaceProvider(BaseProvider):
         )
         if not ok:
             yield GenerateResponse(
-                content="Error: failed to prefill GGUF prompt cache",
+                content=(
+                    "Error: failed to prefill GGUF prompt cache"
+                    + (
+                        f" ({self._gguf_last_prefill_error})"
+                        if getattr(self, "_gguf_last_prefill_error", None)
+                        else ""
+                    )
+                ),
                 model=self.model,
                 finish_reason="error",
             )
@@ -9068,6 +9384,31 @@ class HuggingFaceProvider(BaseProvider):
 
         return capabilities
 
+    def _est_weights_bytes(self) -> Optional[int]:
+        """Best-effort weight size of the loaded model (bytes), or None.
+
+        - GGUF: the resolved `.gguf` file size (the path is known post-load
+          via llama-cpp's `model_path`) — the on-disk quant IS the in-memory
+          weight footprint for a memory-mapped GGUF.
+        - transformers: sum over parameters of `numel * element_size`.
+        Guarded: never raises, None when unknowable."""
+        try:
+            llama_obj = getattr(self, "llm", None)
+            if llama_obj is not None:
+                model_path = getattr(llama_obj, "model_path", None)
+                if model_path:
+                    return int(Path(str(model_path)).stat().st_size)
+            model_obj = getattr(self, "model_instance", None)
+            if model_obj is None:
+                model_obj = getattr(getattr(self, "pipeline", None), "model", None)
+            if model_obj is not None:
+                return int(
+                    sum(p.numel() * p.element_size() for p in model_obj.parameters())
+                )
+        except Exception:
+            return None
+        return None
+
     def get_model_residency(self, *, task: str = "text_generation", model: Optional[str] = None, **kwargs) -> Dict[str, Any]:
         """Return Core-owned in-process residency truth for the loaded HuggingFace provider."""
         _ = kwargs
@@ -9081,7 +9422,7 @@ class HuggingFaceProvider(BaseProvider):
                 getattr(self, "pipeline", None),
             )
         )
-        return {
+        claim: Dict[str, Any] = {
             "task": task_s,
             "provider": "huggingface",
             "model": model_s,
@@ -9091,6 +9432,22 @@ class HuggingFaceProvider(BaseProvider):
             "state": "loaded" if loaded else "not_loaded",
             "source": "abstractcore.provider.huggingface",
         }
+        # GGUF context calibration truth: stamped only when the n_ctx ladder
+        # actually ran and settled (see _load_gguf_model). Absent otherwise —
+        # unknown stays unknown (ADR 0008).
+        if getattr(self, "_gguf_context_calibrated", False):
+            calibrated_ctx = getattr(self, "_gguf_calibrated_context", None)
+            if isinstance(calibrated_ctx, int) and calibrated_ctx > 0:
+                claim["context_calibrated"] = True
+                claim["calibrated_context_length"] = int(calibrated_ctx)
+        # Per-model memory footprint (best-effort, absent when unknowable):
+        # GGUF file size / transformers parameter bytes — flows onto every
+        # residency row derived from this claim.
+        if loaded:
+            est_weights = self._est_weights_bytes()
+            if est_weights is not None:
+                claim["est_weights_bytes"] = est_weights
+        return claim
 
     def validate_config(self) -> bool:
         """Validate provider configuration"""

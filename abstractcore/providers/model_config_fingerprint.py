@@ -30,7 +30,11 @@ from typing import Any, Dict, Optional
 
 from .tokenizer_fingerprint import check_tokenizer_fingerprint as _shared_verdict
 
-__all__ = ["model_config_fingerprint_for", "check_model_config_fingerprint"]
+__all__ = [
+    "model_config_fingerprint_for",
+    "check_model_config_fingerprint",
+    "model_geometry_for",
+]
 
 
 # Position/attention-geometry keys whose change invalidates cached K/V under
@@ -93,6 +97,63 @@ def _config_as_dict(config: Any) -> Optional[Dict[str, Any]]:
     except TypeError:
         pass
     return None
+
+
+def _geometry_int(section: Dict[str, Any], *keys: str) -> Optional[int]:
+    for key in keys:
+        value = section.get(key)
+        if value is None:
+            continue
+        try:
+            out = int(value)
+        except (TypeError, ValueError):
+            continue
+        if out > 0:
+            return out
+    return None
+
+
+def model_geometry_for(config: Any) -> Optional[Dict[str, Any]]:
+    """KV-cache-relevant geometry of a model config, without loading weights.
+
+    Accepts the same duck-typed inputs as `_config_as_dict` (dict /
+    PretrainedConfig / ModelArgs). Multimodal configs are read through their
+    nested `text_config`. Returns
+    ``{"n_layers", "n_kv_heads", "head_dim", "hidden_size",
+    "max_position_embeddings"}`` with None for unknown members, or None when no
+    config dict is reachable at all (unknown stays unknown — never guessed).
+    """
+    config_dict = _config_as_dict(config)
+    if config_dict is None:
+        return None
+    section: Dict[str, Any] = config_dict
+    for name in _NESTED_SECTIONS:
+        nested = _config_as_dict(config_dict.get(name))
+        if nested:
+            section = nested
+            break
+
+    n_layers = _geometry_int(section, "num_hidden_layers", "n_layer", "num_layers")
+    n_heads = _geometry_int(section, "num_attention_heads", "n_head")
+    n_kv_heads = _geometry_int(section, "num_key_value_heads") or n_heads
+    hidden_size = _geometry_int(section, "hidden_size", "n_embd", "d_model")
+    head_dim = _geometry_int(section, "head_dim")
+    if head_dim is None and hidden_size is not None and n_heads:
+        head_dim = hidden_size // n_heads or None
+    max_position_embeddings = _geometry_int(section, "max_position_embeddings", "n_positions")
+
+    if all(
+        value is None
+        for value in (n_layers, n_kv_heads, head_dim, hidden_size, max_position_embeddings)
+    ):
+        return None
+    return {
+        "n_layers": n_layers,
+        "n_kv_heads": n_kv_heads,
+        "head_dim": head_dim,
+        "hidden_size": hidden_size,
+        "max_position_embeddings": max_position_embeddings,
+    }
 
 
 def _canonical_value(value: Any) -> str:

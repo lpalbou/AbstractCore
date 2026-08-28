@@ -604,17 +604,66 @@ def test_streamed_error_chunk_does_not_claim_delivery():
     assert MEDIA_DELIVERED_KEY not in (out[-1].metadata or {})
 
 
-def test_mlx_vision_extra_is_opt_in():
-    """mlx-vlm must not reach the text-only local LLM install: it pulls a web
-    framework, opencv and an audio stack, and raises the transformers floor."""
+def _extras():
     import tomllib
     from pathlib import Path as _P
 
-    data = tomllib.loads(_P("pyproject.toml").read_text())
-    extras = data["project"]["optional-dependencies"]
-    assert any(d.startswith("mlx-vlm") for d in extras["mlx-vision"])
-    for name in ("mlx", "apple"):
-        assert not any(d.startswith("mlx-vlm") for d in extras[name]), name
+    return tomllib.loads(_P("pyproject.toml").read_text())["project"][
+        "optional-dependencies"
+    ]
+
+
+def _names(deps):
+    return {d.replace(" ", "").split(">")[0].split("<")[0].split("=")[0] for d in deps}
+
+
+def test_mlx_vlm_ships_with_mlx_lm_in_every_profile():
+    """Installing the MLX provider must install its image input. No exceptions.
+
+    This was previously the opposite assertion -- mlx-vlm was held out of `mlx`
+    and `apple` to keep a web framework, opencv and an audio stack out of a
+    text-only install. The cost of that saving, measured 2026-08-21: the standard
+    Apple path (abstractframework[apple] -> abstractgateway[apple] ->
+    AbstractRuntime[apple] -> abstractcore[all-apple]) shipped a gateway that
+    loaded sighted checkpoints and dropped every image with
+    `mlx_vlm_not_installed`, and the models invented what they could not see.
+
+    Written as a sweep over ALL extras rather than a list of known names, so a
+    new profile that adds mlx-lm cannot reintroduce the gap by being forgotten.
+    """
+    gaps = []
+    for name, deps in _extras().items():
+        names = _names(deps)
+        if "mlx-lm" in names and "mlx-vlm" not in names:
+            gaps.append(name)
+    assert not gaps, f"these extras install mlx-lm without mlx-vlm: {sorted(gaps)}"
+
+
+def test_the_apple_install_path_carries_vision():
+    """`all-apple` is the extra the whole Apple dependency chain resolves to.
+    Naming it explicitly, because the sweep above would still pass if this
+    profile stopped shipping MLX at all."""
+    names = _names(_extras()["all-apple"])
+    assert "mlx-lm" in names and "mlx-vlm" in names
+
+
+def test_mlx_floors_are_high_enough_for_the_vision_stack():
+    """mlx-vlm 0.6.3 needs mlx>=0.31.2 / mlx-lm>=0.31.3. Against mlx 0.31.1 it
+    imports and then dies at `mx.new_thread_local_stream` -- which reaches the
+    user as "vision is broken" with no mention of a version. Stating the floor is
+    what turns that into a resolver error at install time."""
+    for extra in ("mlx", "apple", "all", "all-apple", "full-dev"):
+        deps = {
+            d.replace(" ", "").split(">=")[0]: d.replace(" ", "")
+            for d in _extras()[extra]
+        }
+        assert ">=0.31.2" in deps["mlx"], f"{extra}: {deps['mlx']}"
+        assert ">=0.31.3" in deps["mlx-lm"], f"{extra}: {deps['mlx-lm']}"
+
+
+def test_mlx_vision_extra_still_resolves_for_existing_callers():
+    """Kept as an alias: published docs and install commands reference it."""
+    assert "mlx-vlm" in _names(_extras()["mlx-vision"])
 
 
 # --------------------------------------------------------------------------- #
@@ -677,11 +726,19 @@ def test_delivered_image_produces_no_notice_even_if_a_sibling_dropped():
 
 def test_not_installed_reason_carries_the_install_command():
     """A reason literal is a diagnosis; without the remedy the reader has to go
-    read provider source to learn that one pip install fixes it."""
+    read provider source to learn that one pip install fixes it.
+
+    The remedy names `[mlx]`, not `[mlx-vision]`: mlx-vlm is no longer an extra
+    anyone can forget to enable, so its absence means an incomplete install --
+    and pointing at an opt-in extra would send the reader looking for a switch
+    that does not exist instead of at the interpreter that is short a package.
+    """
     from abstractcore.media.delivery import remedy_for
 
     fix = remedy_for(["mlx_vlm_not_installed", "image_base64"])
-    assert fix and "abstractcore[mlx-vision]" in fix
+    assert fix and "abstractcore[mlx]" in fix
+    assert "incomplete" in fix
+    assert "interpreter" in fix
     # A part-type literal is not a remedy; inventing advice for it would be worse
     # than saying nothing.
     assert remedy_for(["image_base64"]) is None

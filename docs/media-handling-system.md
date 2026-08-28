@@ -255,7 +255,7 @@ For large files that exceed model context limits, use `BasicSummarizer` or imple
 | **Anthropic** | Claude 3.5 Sonnet, Claude 4 series | Supported: Up to 20 images | Supported: All formats |
 | **Ollama** | qwen2.5vl:7b, gemma3:4b, llama3.2-vision:11b | Supported: Single image | Supported: All formats |
 | **LMStudio** | qwen2.5-vl-7b, gemma-3n-e4b, magistral-small-2509 | Supported: Multiple images | Supported: All formats |
-| **MLX** | Vision-capable MLX checkpoints (`qwen3_5`, `qwen3_5_moe`, `qwen3_vl`, `gemma4`) | Supported: Single image, requires `abstractcore[mlx-vision]` | Supported: All formats |
+| **MLX** | Vision-capable MLX checkpoints (`qwen3_5`, `qwen3_5_moe`, `qwen3_vl`, `gemma4`) | Supported: Single image (mlx-vlm ships with the MLX provider) | Supported: All formats |
 
 ### Text-Only Providers
 
@@ -267,8 +267,9 @@ All providers support document processing even without vision capabilities:
 | **MLX** | Supported: All formats | Supported: Embedded in prompt |
 | **Any Provider** | Supported: Automatic fallback | Supported: Text extraction |
 
-MLX appears in both tables: it reads images natively for vision-capable checkpoints when
-`abstractcore[mlx-vision]` is installed, and embeds documents as text on every checkpoint. See
+MLX appears in both tables: it reads images natively for vision-capable checkpoints, and embeds
+documents as text on every checkpoint. Image input needs no separate extra — `mlx-vlm` ships with
+`mlx-lm` in every profile that installs the MLX provider. See
 [Vision Capabilities](vision-capabilities.md#1b-native-image-input-on-the-mlx-provider-apple-silicon).
 
 ### Knowing whether media reached the model

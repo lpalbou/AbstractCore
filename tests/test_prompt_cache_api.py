@@ -92,6 +92,24 @@ def test_prompt_cache_clear_resets_default():
     assert "prompt_cache_key" not in llm.last_kwargs
 
 
+def test_prompt_cache_update_key_meta_accepts_positional_mapping():
+    """A meta field literally named "key" must not collide with the positional
+    argument — it rides in the positional `updates` mapping."""
+    llm = DummyPromptCacheProvider()
+    llm._prompt_cache_store.set("cache-a", {"state": 1})
+
+    assert llm.prompt_cache_update_key_meta("cache-a", {"key": "field-value", "skip": None}) is True
+    assert llm.prompt_cache_update_key_meta("cache-a", {"a": 1}, b=2) is True
+
+    meta = llm.prompt_cache_key_meta("cache-a")
+    assert meta["key"] == "field-value"
+    assert meta["a"] == 1
+    assert meta["b"] == 2
+    assert "skip" not in meta
+
+    assert llm.prompt_cache_update_key_meta("missing", {"a": 1}) is False
+
+
 def test_prompt_cache_capabilities_for_keyed_provider() -> None:
     llm = DummyPromptCacheProvider()
 

@@ -133,7 +133,11 @@ def test_delivery_record_reports_measured_expansion(tmp_path):
     # ADR 0001: the known 1-D RoPE substitution is annotated, not absorbed.
     assert "rope_1d_substituted" in delivered[0]["fidelity"]
     assert "media_dropped" not in (r.metadata or {})
-    assert r.finish_reason == "stop"
+    # Not-an-error is what this assertion is for. It cannot be `== "stop"`: a
+    # thinking checkpoint spends a 48-token budget reasoning and is genuinely cut
+    # at the limit, which now reports `length` instead of claiming the model chose
+    # to stop. See `test_truncated_generation_is_reported_as_length_not_stop`.
+    assert r.finish_reason in ("stop", "length")
 
 
 def test_text_only_request_carries_no_media_keys():
@@ -341,3 +345,62 @@ def test_deepstack_does_not_leak_between_requests(tmp_path):
     # And the model still answers plain text afterwards.
     third = llm.generate("Name a colour. One word.", max_tokens=12, temperature=0.0, thinking="off")
     assert (third.content or "").strip()
+
+
+def test_prompt_tokens_include_the_image_expansion():
+    """`usage.input_tokens` must count the pixels the model actually processed.
+
+    The text estimator cannot see the expanded placeholder tokens, so an image
+    worth ~11.8k tokens was reported as a 56-token prompt -- which silently
+    wrecks every context meter and cost figure built on this number.
+    """
+    _gate()
+    from abstractcore import create_llm
+
+    llm = create_llm("mlx", model=MODEL)
+    r = llm.generate(
+        "Answer with one word: is this a photograph?",
+        media=["examples/media/image2.png"],
+        max_tokens=32,
+    )
+    delivered = (r.metadata or {}).get("media_delivered")
+    assert delivered, "a sighted checkpoint must report positive delivery"
+    image_tokens = int(delivered[0]["tokens"])
+    assert image_tokens > 1
+    # The prompt must account for at least the image; a text-only estimate cannot.
+    assert r.usage["input_tokens"] >= image_tokens, (
+        f"prompt reported {r.usage['input_tokens']} tokens for an image that "
+        f"expanded to {image_tokens}"
+    )
+    assert r.usage["prompt_tokens"] == r.usage["input_tokens"]
+    assert r.usage["total_tokens"] == r.usage["input_tokens"] + r.usage["output_tokens"]
+
+
+def test_truncated_generation_is_reported_as_length_not_stop():
+    """A response cut at `max_tokens` must not look like one the model ended.
+
+    A thinking model on a small budget spends the whole allowance reasoning and
+    returns empty content. Reported as `stop` with `output_tokens: 0`, that reads
+    as a model that had nothing to say on a free call -- so callers neither retry
+    nor notice the runaway reasoning they paid for.
+    """
+    _gate()
+    from abstractcore import create_llm
+
+    llm = create_llm("mlx", model=MODEL)
+    # A budget no answer can fit, so the outcome does not depend on how verbose
+    # the checkpoint happens to be or on whatever thinking default is in effect --
+    # an earlier version keyed on a 60-token budget and passed or failed with test
+    # ORDER, which is not a property of the code under test.
+    r = llm.generate("Write a 500-word essay on the history of cartography.", max_tokens=16)
+    assert r.finish_reason == "length", (
+        f"a 16-token budget on a 500-word essay reported {r.finish_reason!r}"
+    )
+    # Tokens the model EMITTED, not tokens that survived thinking-tag stripping.
+    assert r.usage["output_tokens"] > 0, "generated tokens reported as zero"
+    assert r.usage["completion_tokens"] == r.usage["output_tokens"]
+
+    # The invariant behind the assertion above, stated directly: hitting the
+    # budget and reporting a chosen stop cannot both be true.
+    if r.usage["output_tokens"] >= 16:
+        assert r.finish_reason == "length"

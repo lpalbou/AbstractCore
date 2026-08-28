@@ -80,6 +80,57 @@ def build_wire_name_map(names: Iterable[str]) -> Dict[str, str]:
     return {str(n): wire_safe_tool_name(str(n)) for n in names if isinstance(n, str) and n}
 
 
+def map_namespaced_tool_name(raw: str, allowed_names: Iterable[str]) -> Optional[str]:
+    """Recover the intended tool behind a namespaced or decorated name.
+
+    Models drift into OpenAI-style namespace prefixes (`functions.browser_probe`)
+    and dotted spellings of underscore names (`browser.probe`) — observed live on
+    Qwen3.8-Flash-Next (session acode-912712976c0c). Priority reads the WHOLE
+    name most faithfully first, so `browser.probe` prefers a roster name
+    `browser_probe` over a shorter roster name `probe`:
+
+      1. exact match;
+      2. whole name with dots replaced by underscores;
+      3. progressively strip leading dot-segments (`functions.x` -> `x`), first
+         remainder — or its dots->underscores spelling — in the roster wins;
+      4. longest allowed name occurring as a standalone token inside the raw
+         string (legacy wrapped-name recovery, e.g. "{function-name: write_file}").
+
+    Returns None when nothing maps; callers must not guess further.
+    """
+    s = str(raw or "").strip()
+    allowed = {
+        str(n).strip() for n in (allowed_names or [])
+        if isinstance(n, str) and str(n).strip()
+    }
+    if not s or not allowed:
+        return None
+    if s in allowed:
+        return s
+    if "." in s:
+        underscored = s.replace(".", "_")
+        if underscored in allowed:
+            return underscored
+        parts = s.split(".")
+        for i in range(1, len(parts)):
+            remainder = ".".join(parts[i:])
+            if remainder in allowed:
+                return remainder
+            remainder_us = remainder.replace(".", "_")
+            if remainder_us in allowed:
+                return remainder_us
+    try:
+        candidates = [
+            n for n in allowed
+            if re.search(r"(^|[^\w])" + re.escape(n) + r"([^\w]|$)", s)
+        ]
+        if candidates:
+            return max(candidates, key=lambda n: (len(n), n))
+    except Exception:
+        return None
+    return None
+
+
 def wire_safe_tool_history(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Copy chat history and encode tool names for strict native APIs.
 

@@ -77,7 +77,17 @@ from ..embeddings.models import (
 )
 from ..exceptions import AuthenticationError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
 from ..providers.base import PromptCacheError
+from ..providers.model_capabilities import modalities_for_model
 from ..utils.structured_logging import get_logger, configure_logging
+from ..utils.context_estimate import estimate_context_fit
+from ..utils.hostinfo import get_host_identity
+from ..utils.memory import get_memory_snapshot, prompt_cache_store_bytes
+from ..utils.residency import (
+    SWEEP_PROVIDERS,
+    normalize_sweep_model,
+    sweep_loaded_models,
+    sweep_models_match,
+)
 from ..utils.version import __version__
 from ..utils.message_preprocessor import MessagePreprocessor
 # Removed simple_model_discovery import - now using provider methods directly
@@ -3763,7 +3773,26 @@ def _ollama_inflight_exit(key: Tuple[str, str, str], *, unload_after_requested: 
 
 
 def _best_effort_unload(llm: Any, *, request_id: str, provider: str, model: str) -> None:
-    """Unload provider resources without failing the request lifecycle."""
+    """Unload provider resources without failing the request lifecycle.
+
+    LOCK GUARD: this is the raw-unload choke point for `unload_after` requests
+    whose runtime lookup MISSED the managed registry (e.g. an explicit
+    `base_url` vs a runtime stored with None). Such a request still talks to
+    the SAME model server, so an unguarded unload here would evict a model a
+    locked managed runtime pins (LM Studio server-side eviction is real; so is
+    Ollama's under ABSTRACTCORE_ALLOW_UNSAFE_UNLOAD_AFTER). Skip when any
+    locked managed runtime names the same provider/model.
+    """
+    locked_runtime = _locked_managed_runtime_matching(provider, model)
+    if locked_runtime is not None:
+        logger.info(
+            "🔒 Provider unload skipped (model locked by managed runtime)",
+            request_id=request_id,
+            provider=provider,
+            model=model,
+            runtime_id=locked_runtime.runtime_id,
+        )
+        return
     try:
         if not hasattr(llm, "unload_model"):
             raise AttributeError("Provider does not implement unload_model(model_name)")
@@ -3835,6 +3864,12 @@ class _GatewayLoadedRuntime:
         self.created_at = now
         self.last_used_at = now
         self.request_count = 0
+        # Registry-level model lock (Agentic OS): a locked runtime refuses
+        # unload without force, and best-effort cleanup paths skip it. The
+        # registry flag is the enforcement truth; provider-side knobs
+        # (e.g. Ollama keep_alive=-1) are advisory reinforcement.
+        self.locked: bool = False
+        self.locked_at: Optional[float] = None
         self.provider_executor = ThreadPoolExecutor(
             max_workers=1,
             thread_name_prefix=f"abstractcore-gateway-{self.runtime_id}",
@@ -3845,6 +3880,34 @@ _GATEWAY_RUNTIME_LOCK = threading.RLock()
 _GATEWAY_LOADED_RUNTIMES: Dict[str, _GatewayLoadedRuntime] = {}
 _GATEWAY_RUNTIME_IDS: Dict[str, str] = {}
 _SERVER_BLOC_STORE = FileBlocStore()
+
+
+def _locked_managed_runtime_matching(provider: Any, model: Any) -> Optional["_GatewayLoadedRuntime"]:
+    """The first LOCKED managed runtime pinning (provider, model), or None.
+
+    Name matching uses the provider-consistent sweep alias rules in BOTH
+    directions (Ollama `:latest`, LM Studio substring resolution) so a raw
+    request naming a variant of a locked runtime's model still matches.
+    Best-effort: never raises.
+    """
+    try:
+        provider_s = str(provider or "").strip().lower()
+        model_s = str(model or "").strip()
+        if not provider_s or not model_s:
+            return None
+        with _GATEWAY_RUNTIME_LOCK:
+            for runtime in _GATEWAY_LOADED_RUNTIMES.values():
+                if not getattr(runtime, "locked", False) or runtime.provider != provider_s:
+                    continue
+                if (
+                    runtime.model == model_s
+                    or sweep_models_match(provider_s, model_s, {"model": runtime.model})
+                    or sweep_models_match(provider_s, runtime.model, {"model": model_s})
+                ):
+                    return runtime
+    except Exception:
+        return None
+    return None
 
 
 def _normalize_loaded_runtime_base_url(base_url: Optional[str]) -> Optional[str]:
@@ -3965,6 +4028,9 @@ def _gateway_provider_residency_claim(runtime: _GatewayLoadedRuntime) -> Dict[st
         "isolation",
         "default",
         "pinned",
+        "locked",
+        "locked_at",
+        "lockable",
         "cache_state",
         "runtime_cached",
         "provider_residency_verified",
@@ -3990,19 +4056,104 @@ def _gateway_text_residency_record(runtime: _GatewayLoadedRuntime) -> Dict[str, 
     else:
         loaded = False
         state = "provider_residency_unknown"
-    return {
+    locked = bool(getattr(runtime, "locked", False))
+    record = {
         **_gateway_runtime_to_dict(runtime),
         "task": "text_generation",
         "state": state,
         "loaded": loaded,
         "runtime_cached": True,
         "cache_state": "gateway_runtime_cached",
-        "pinned": True,
+        # Truthful lock state (the old hardcoded `pinned: True` lied).
+        # `pinned` is kept as a deprecated alias of `locked` for callers that
+        # already read it — same value, now honest. Both reflect the
+        # GATEWAY-managed lock ONLY: an Ollama server-side keep_alive pin
+        # (e.g. from a load with the default `pin: true`) is a server-side
+        # fact that shows through the claim's `expires_at`, not through these
+        # flags.
+        "locked": locked,
+        "pinned": locked,
+        # Managed runtimes are registry-owned, so the registry lock is always
+        # claimable on them regardless of provider-side knob support.
+        "lockable": True,
         "isolation": "in_process",
         "health": "ok",
         "error": None,
         **provider_claim,
     }
+    locked_at = getattr(runtime, "locked_at", None)
+    if locked_at is not None:
+        record["locked_at"] = locked_at
+    # Normalized memory fields (additive): provider claims may carry
+    # Ollama-style `size`/`size_vram`; expose byte-suffixed names too.
+    for src, dst in (("size", "size_bytes"), ("size_vram", "size_vram_bytes")):
+        if record.get(dst) is None and record.get(src) is not None:
+            record[dst] = record[src]
+    # Prompt-cache store footprint (additive): total bytes this managed
+    # instance's prompt-cache store holds (per-key `bytes` + MLX snapshot
+    # bytes via `get_prompt_cache_stats`). Best-effort — unknown leaves any
+    # claim-relayed value (or absence) untouched.
+    cache_bytes = _gateway_runtime_prompt_cache_bytes(runtime)
+    if cache_bytes is not None:
+        record["cache_bytes"] = cache_bytes
+    _stamp_record_modalities(record, model=runtime.model, llm=runtime.llm)
+    _stamp_record_host_identity(record)
+    return record
+
+
+def _gateway_runtime_prompt_cache_bytes(runtime: _GatewayLoadedRuntime) -> Optional[int]:
+    """Total prompt-cache store bytes of a managed runtime, or None. Runs the
+    stats query on the runtime's provider thread (cache state is
+    thread-affine) and never raises."""
+    try:
+        method = getattr(runtime.llm, "get_prompt_cache_stats", None)
+        if not callable(method):
+            return None
+        stats = _run_loaded_gateway_runtime(runtime, method, touch=False)
+        return prompt_cache_store_bytes(stats)
+    except Exception:
+        return None
+
+
+def _stamp_record_modalities(record: Dict[str, Any], *, model: Any, llm: Any = None) -> None:
+    """Stamp registry-declared modalities onto a residency record, in place.
+
+    Registry miss → field omitted (never the text-only default, ADR 0008).
+    Runtime truth beats declared truth: a provider instance that knows its
+    vision lane is unusable (`_vision_usable is False`, MLX) has `input.image`
+    removed and the divergence noted. Best-effort: never raises.
+    """
+    try:
+        modalities = modalities_for_model(str(model or ""))
+        if modalities is None:
+            return
+        modalities = list(modalities)
+        if (
+            "input.image" in modalities
+            and llm is not None
+            and getattr(llm, "_vision_usable", None) is False
+        ):
+            modalities = [m for m in modalities if m != "input.image"]
+            record["modalities_note"] = "vision_unusable"
+        record["modalities"] = modalities
+    except Exception:
+        pass
+
+
+def _stamp_record_host_identity(record: Dict[str, Any]) -> None:
+    """Stamp THIS server's host identity onto a residency record, in place.
+
+    Every record this process serves was observed on this host; the stamp
+    lets a future multi-machine aggregator merge listings without schema
+    breakage. `setdefault` so an already-attributed record is never
+    overwritten. Best-effort: never raises.
+    """
+    try:
+        identity = get_host_identity()
+        record.setdefault("host_id", identity.get("host_id"))
+        record.setdefault("host_name", identity.get("host_name"))
+    except Exception:
+        pass
 
 
 def _drop_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime) -> None:
@@ -4132,23 +4283,70 @@ def _ensure_loaded_gateway_runtime(
         return runtime, True
 
 
-def _unload_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime) -> None:
+class GatewayRuntimeLockedError(RuntimeError):
+    """Raised when an unload reaches a runtime whose registry lock is set."""
+
+    def __init__(self, runtime: _GatewayLoadedRuntime) -> None:
+        super().__init__(
+            f"Runtime {runtime.runtime_id} ({runtime.provider}/{runtime.model}) is locked; "
+            "unlock it or pass force=true to unload."
+        )
+        self.runtime_id = runtime.runtime_id
+
+
+class GatewayRuntimeNotResidentError(RuntimeError):
+    """Raised when a lock reaches a runtime whose model is not provider-resident.
+
+    A lock is a promise the model STAYS in memory — locking something that is
+    not in memory would present configured/warm-client state as loaded (the
+    default-vs-loaded lie). The route maps this to HTTP 409 `model_not_resident`.
+    """
+
+    def __init__(self, runtime: _GatewayLoadedRuntime) -> None:
+        super().__init__(
+            f"Model {runtime.provider}/{runtime.model} is not resident in provider memory; "
+            "load it first (POST /acore/models/load with lock:true) before locking."
+        )
+        self.runtime_id = runtime.runtime_id
+
+
+def _unload_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime, *, force: bool = False) -> None:
+    # LOCK CHOKE POINT: every route-driven unload (the /acore/models/unload
+    # handler AND the unload_after best-effort path) funnels through this
+    # function, so the lock is enforced here rather than in
+    # `_drop_loaded_gateway_runtime` — the drop is also used as registry
+    # cleanup for runtimes whose provider load FAILED, where refusing would
+    # strand a broken entry in the registry forever.
+    with _GATEWAY_RUNTIME_LOCK:
+        if getattr(runtime, "locked", False) and not force:
+            raise GatewayRuntimeLockedError(runtime)
     if not hasattr(runtime.llm, "unload_model"):
         raise AttributeError("Provider does not implement unload_model(model_name)")
     _run_loaded_gateway_runtime(runtime, lambda: runtime.llm.unload_model(runtime.model))
+    # Clear the lock only AFTER the provider unload succeeded: a failed
+    # force-unload must leave the runtime registered AND still locked — never
+    # resident-but-silently-unlocked.
+    with _GATEWAY_RUNTIME_LOCK:
+        runtime.locked = False
+        runtime.locked_at = None
     _drop_loaded_gateway_runtime(runtime)
 
 
 def _best_effort_unload_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime, *, request_id: str) -> None:
     try:
         _unload_loaded_gateway_runtime(runtime)
+    except GatewayRuntimeLockedError:
+        # A locked runtime is exactly what unload_after cleanup must not tear
+        # down. Skip silently-but-logged: the caller's request already
+        # succeeded and cleanup is advisory.
         logger.info(
-            "🧹 Gateway Runtime Unloaded",
+            "🔒 Gateway runtime unload skipped (locked)",
             request_id=request_id,
             provider=runtime.provider,
             model=runtime.model,
             runtime_id=runtime.runtime_id,
         )
+        return
     except Exception as e:
         logger.warning(
             "⚠️ Gateway runtime unload failed",
@@ -4159,6 +4357,117 @@ def _best_effort_unload_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime, *
             error=str(e),
             error_type=type(e).__name__,
         )
+    else:
+        logger.info(
+            "🧹 Gateway Runtime Unloaded",
+            request_id=request_id,
+            provider=runtime.provider,
+            model=runtime.model,
+            runtime_id=runtime.runtime_id,
+        )
+
+
+# Ollama's server-side default keep-alive; restored on unlock so an unlocked
+# model goes back to ordinary server-managed residency.
+_OLLAMA_DEFAULT_KEEP_ALIVE = "5m"
+
+
+def _apply_provider_side_lock_knob(runtime: _GatewayLoadedRuntime, *, lock: bool) -> Dict[str, Any]:
+    """Best-effort provider-side reinforcement of the registry lock.
+
+    Ollama honors `keep_alive` (-1 pins server-side; the 5m default restores
+    normal behavior). No other provider exposes a residency-pin knob today.
+    The registry lock is fully enforced either way — a provider-side failure
+    is REPORTED in the returned dict, never raised.
+
+    The knob rides Ollama's native load request, which would LOAD a model that
+    is not currently resident. Lock callers guarantee residency up front
+    (`_lock_gateway_runtime` refuses non-resident runtimes); unlock verifies
+    it here and skips the restore when the model is gone — unlocking a
+    locked-but-since-evicted runtime must never load it back as a side effect.
+    """
+    if runtime.provider != "ollama":
+        if runtime.provider == "lmstudio" and lock:
+            # Honesty note: LM Studio exposes no residency-pin knob, so the
+            # lock protects only against THIS stack's unloads — the external
+            # server keeps its own eviction policy.
+            return {
+                "supported": False,
+                "applied": False,
+                "detail": "lock guards this stack's unloads; the external server may still evict on its own policy",
+            }
+        return {"supported": False, "applied": False}
+    if not lock:
+        # Restore only on VERIFIED residency (the knob rides a load request).
+        # UNKNOWN is not evidence of eviction: a transient probe failure on a
+        # genuinely resident model still skips the restore — the safe act —
+        # but the detail must not claim "not resident" it never verified.
+        resident = _gateway_provider_residency_claim(runtime).get("provider_resident")
+        if resident is not True:
+            detail = (
+                "model is not resident server-side; keep_alive restore skipped (no load side effect)"
+                if resident is False
+                else "model residency unverified; keep_alive restore skipped (no load side effect)"
+            )
+            return {"supported": True, "applied": False, "detail": detail}
+    keep_alive: Any = -1 if lock else _OLLAMA_DEFAULT_KEEP_ALIVE
+    try:
+        result = _gateway_load_provider_residency(runtime, {"keep_alive": keep_alive})
+    except Exception as exc:
+        return {
+            "supported": True,
+            "applied": False,
+            "detail": f"ollama keep_alive={keep_alive} update failed: {exc}",
+        }
+    if result is None:
+        return {
+            "supported": True,
+            "applied": False,
+            "detail": "provider instance does not expose load_model",
+        }
+    return {"supported": True, "applied": True}
+
+
+def _lock_gateway_runtime(runtime: _GatewayLoadedRuntime) -> Dict[str, Any]:
+    """Set the registry lock and apply the provider-side knob. Never fails
+    the lock over the knob: the registry flag is the enforcement truth.
+
+    LOCK RULE: lock requires provider-VERIFIED residency (`provider_resident`
+    is True). A warm registry entry alone is configuration, not memory — a
+    lock on it would present "configured" as "loaded" and, on Ollama, the old
+    behavior even performed a server-side load to apply the keep_alive knob.
+    Non-resident runtimes now raise `GatewayRuntimeNotResidentError` (mapped
+    to HTTP 409 `model_not_resident`); load with `lock: true` to lock at load.
+    """
+
+    def _require_registered() -> None:
+        # A lock flag on an unregistered runtime would be unenforceable —
+        # refuse. Checked before the (slow) residency probe and re-verified
+        # under the registry lock right before the flag is set, because a
+        # concurrent unload may drop the runtime at any point in between.
+        if runtime.runtime_id not in _GATEWAY_RUNTIME_IDS:
+            raise HTTPException(
+                status_code=404,
+                detail={"error": {"message": "Loaded model runtime not found.", "type": "not_found"}},
+            )
+
+    with _GATEWAY_RUNTIME_LOCK:
+        _require_registered()
+    claim = _gateway_provider_residency_claim(runtime)
+    if claim.get("provider_resident") is not True:
+        raise GatewayRuntimeNotResidentError(runtime)
+    with _GATEWAY_RUNTIME_LOCK:
+        _require_registered()
+        runtime.locked = True
+        runtime.locked_at = time.time()
+    return _apply_provider_side_lock_knob(runtime, lock=True)
+
+
+def _unlock_gateway_runtime(runtime: _GatewayLoadedRuntime) -> Dict[str, Any]:
+    with _GATEWAY_RUNTIME_LOCK:
+        runtime.locked = False
+        runtime.locked_at = None
+    return _apply_provider_side_lock_knob(runtime, lock=False)
 
 
 def _resolve_local_runtime_for_control(
@@ -4736,6 +5045,13 @@ class LoadedModelRequest(BaseModel):
     )
     options: Dict[str, Any] = Field(default_factory=dict, description="Task/backend-specific residency options.")
     pin: Optional[bool] = Field(default=True, description="Whether the model should be explicitly kept loaded when supported.")
+    lock: Optional[bool] = Field(
+        default=False,
+        description=(
+            "Lock the runtime after loading: registry-enforced (unload requires force=true) "
+            "plus the provider-side pin knob where one exists (Ollama keep_alive=-1)."
+        ),
+    )
     ttl_s: Optional[float] = Field(default=None, description="Optional future TTL hint in seconds. Currently advisory.")
 
     class Config:
@@ -4778,6 +5094,10 @@ class UnloadModelRequest(BaseModel):
     provider: Optional[str] = Field(default=None, description="Provider name for runtime selection when `runtime_id` is omitted.", example="mlx")
     model: Optional[str] = Field(default=None, description="Model identifier for runtime selection when `runtime_id` is omitted.", example="mlx-community/Qwen3.6-27B-4bit")
     base_url: Optional[str] = Field(default=None, description="Optional provider base URL used when the runtime was loaded.", example=None)
+    force: Optional[bool] = Field(
+        default=False,
+        description="Unload even when the runtime is locked (unlocks first). Without force a locked runtime returns HTTP 409.",
+    )
     options: Dict[str, Any] = Field(default_factory=dict, description="Task/backend-specific unload selectors.")
 
     class Config:
@@ -4790,6 +5110,25 @@ class UnloadModelRequest(BaseModel):
                         "model": "mlx-community/Qwen3.6-27B-4bit",
                         "base_url": None,
                     },
+                }
+            ]
+        }
+
+
+class LockModelRequest(BaseModel):
+    """Selector for `/acore/models/lock` and `/acore/models/unlock` (text runtimes)."""
+
+    runtime_id: Optional[str] = Field(default=None, description="Specific loaded runtime identifier returned by `/acore/models/load`.")
+    provider: Optional[str] = Field(default=None, description="Provider name for runtime selection when `runtime_id` is omitted.", example="ollama")
+    model: Optional[str] = Field(default=None, description="Model identifier for runtime selection when `runtime_id` is omitted.", example="qwen3-coder:30b")
+    base_url: Optional[str] = Field(default=None, description="Optional provider base URL used when the runtime was loaded.", example=None)
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "summary": "Lock Warm Runtime",
+                    "value": {"provider": "ollama", "model": "qwen3-coder:30b"},
                 }
             ]
         }
@@ -4859,10 +5198,85 @@ async def health_check():
 
 
 @app.get(
+    "/acore/memory",
+    tags=["runtime"],
+    summary="Host Memory Snapshot",
+    description="Best-effort host RAM/process/device memory snapshot for capacity decisions. Unknown values are null; never fails.",
+)
+def acore_memory():
+    return {"ok": True, **get_memory_snapshot()}
+
+
+def _merge_provider_server_sweep(
+    runtimes: list, *, provider_filter: str, model_filter: str
+) -> None:
+    """Merge the local model-server residency sweep (Ollama/LM Studio) into
+    the loaded-models listing, in place.
+
+    Registry/capability records win on (provider, aliased model): they only
+    absorb missing memory fields from the sweep. Sweep-only entries are
+    appended as `source: "provider_server"` and carry NO `task` label — the
+    server enumerations cannot classify what is resident (Ollama's /api/ps
+    lists embedding models too), so they ride only in unfiltered /
+    text_generation-default listings without asserting the label.
+    Best-effort: never fails the endpoint.
+    """
+    if provider_filter and provider_filter not in SWEEP_PROVIDERS:
+        return  # the sweep cannot contribute rows for other providers
+    try:
+        sweep_records = [dict(r) for r in sweep_loaded_models() if isinstance(r, dict)]
+    except Exception:
+        return
+    if not sweep_records:
+        return
+
+    remaining: list[Dict[str, Any]] = []
+    for record in sweep_records:
+        rec_provider = str(record.get("provider") or "").strip().lower()
+        matched = False
+        for existing in runtimes:
+            if not isinstance(existing, dict):
+                continue
+            if str(existing.get("provider") or "").strip().lower() != rec_provider:
+                continue
+            if not sweep_models_match(rec_provider, existing.get("model"), record):
+                continue
+            matched = True
+            for field_name in ("size_bytes", "size_vram_bytes"):
+                if existing.get(field_name) is None and record.get(field_name) is not None:
+                    existing[field_name] = record[field_name]
+        if not matched:
+            remaining.append(record)
+
+    model_filter_norm = normalize_sweep_model(model_filter) if model_filter else ""
+    for record in remaining:
+        if provider_filter and str(record.get("provider") or "").strip().lower() != provider_filter:
+            continue
+        # Same normalization as dedup: `?model=qwen3` must match `qwen3:latest`.
+        if model_filter_norm and normalize_sweep_model(record.get("model")) != model_filter_norm:
+            continue
+        record.pop("task", None)
+        record.setdefault("loaded", True)
+        record.setdefault("resident", True)
+        record["source"] = "provider_server"
+        # Sweep-only rows ARE lockable: `POST /acore/models/lock` ADOPTS a
+        # sweep-resident model into the managed registry (client construction
+        # only — never a provider-side load) and then enforces the lock like
+        # any managed runtime (unload 409/force, unload_after skip).
+        record["lockable"] = True
+        _stamp_record_modalities(record, model=record.get("model"))
+        _stamp_record_host_identity(record)
+        runtimes.append(record)
+
+
+@app.get(
     "/acore/models/loaded",
     tags=["runtime"],
     summary="List Loaded Gateway Runtimes",
-    description="List task-aware provider/model runtimes currently kept warm inside the gateway process.",
+    description=(
+        "List task-aware provider/model runtimes currently kept warm inside the gateway process, "
+        "merged with a best-effort sweep of local model servers (Ollama/LM Studio; `source: provider_server`)."
+    ),
 )
 def acore_models_loaded(
     http_request: Request,
@@ -4887,6 +5301,15 @@ def acore_models_loaded(
         if task_filter:
             filters["task"] = task_filter
         runtimes.extend(_capability_residency_loaded(task_filter, filters, http_request))
+    if task_filter in {None, "text_generation"}:
+        _merge_provider_server_sweep(
+            runtimes, provider_filter=provider_filter, model_filter=model_filter
+        )
+    # Every record this listing serves was observed on THIS host — stamp the
+    # host identity (setdefault) so multi-machine aggregation stays possible.
+    for record in runtimes:
+        if isinstance(record, dict):
+            _stamp_record_host_identity(record)
     models = sorted(runtimes, key=lambda item: str(item.get("runtime_id") or item.get("load_id") or ""))
     return {
         "ok": True,
@@ -4899,13 +5322,62 @@ def acore_models_loaded(
     }
 
 
+def _validated_request_base_url_override(
+    provider: str, base_url: Optional[str], *, provider_api_key: Optional[str]
+) -> Optional[str]:
+    """Validate a request-supplied base_url override (shared by the load route
+    and lock-adoption): allowlist-gated, and a non-loopback override refuses to
+    ride the server's own provider key. Returns the stripped URL or None."""
+    if not isinstance(base_url, str) or not base_url.strip():
+        return None
+    base_url = base_url.strip()
+    if not _server_allows_request_base_url(base_url):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "error": {
+                    "message": (
+                        "Request-level base_url overrides are restricted for security. "
+                        "By default only loopback URLs are allowed. "
+                        "To allow additional hosts/prefixes, set ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
+                    ),
+                    "type": "forbidden",
+                }
+            },
+        )
+
+    parsed = urllib.parse.urlsplit(base_url)
+    host = str(parsed.hostname or "").strip()
+    if host and not _is_loopback_host(host):
+        env_var = _provider_api_key_env_var(provider)
+        if _server_has_provider_api_key(provider) and not provider_api_key:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": {
+                        "message": (
+                            "Refusing request-level base_url override without an explicit provider key because "
+                            f"the server has {env_var} set. Provide the provider key via "
+                            "X-AbstractCore-Provider-API-Key."
+                        ),
+                        "type": "forbidden",
+                    }
+                },
+            )
+    return base_url
+
+
 @app.post(
     "/acore/models/load",
     tags=["runtime"],
     summary="Load Gateway Runtime",
     description=(
         "Load a task-specific provider/model into the gateway runtime registry so subsequent text, image, "
-        "voice, and transcription calls can reuse warm in-process providers when supported."
+        "voice, and transcription calls can reuse warm in-process providers when supported. "
+        "Note: the `locked`/`pinned` fields on the returned record reflect the GATEWAY-managed lock only "
+        "(set via `lock: true` or `/acore/models/lock`). The default `pin: true` still applies "
+        "provider-side residency hints where supported (Ollama keep_alive=-1) — that server-side state "
+        "is visible through the record's `expires_at`, not through `locked`/`pinned`."
     ),
 )
 def acore_models_load(req: LoadedModelRequest, http_request: Request):
@@ -4933,42 +5405,11 @@ def acore_models_load(req: LoadedModelRequest, http_request: Request):
         http_request=http_request,
     )
 
-    if isinstance(req.base_url, str) and req.base_url.strip():
-        base_url = req.base_url.strip()
-        if not _server_allows_request_base_url(base_url):
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "error": {
-                        "message": (
-                            "Request-level base_url overrides are restricted for security. "
-                            "By default only loopback URLs are allowed. "
-                            "To allow additional hosts/prefixes, set ABSTRACTCORE_SERVER_BASE_URL_ALLOWLIST."
-                        ),
-                        "type": "forbidden",
-                    }
-                },
-            )
-
-        parsed = urllib.parse.urlsplit(base_url)
-        host = str(parsed.hostname or "").strip()
-        if host and not _is_loopback_host(host):
-            env_var = _provider_api_key_env_var(provider)
-            if _server_has_provider_api_key(provider) and not provider_api_key:
-                raise HTTPException(
-                    status_code=403,
-                    detail={
-                        "error": {
-                            "message": (
-                                "Refusing request-level base_url override without an explicit provider key because "
-                                f"the server has {env_var} set. Provide the provider key via "
-                                "X-AbstractCore-Provider-API-Key."
-                            ),
-                            "type": "forbidden",
-                        }
-                    },
-                )
-        provider_kwargs["base_url"] = base_url
+    validated_base_url = _validated_request_base_url_override(
+        provider, req.base_url, provider_api_key=provider_api_key
+    )
+    if validated_base_url is not None:
+        provider_kwargs["base_url"] = validated_base_url
 
     if req.timeout_s is not None:
         provider_kwargs["timeout"] = req.timeout_s
@@ -5000,12 +5441,23 @@ def acore_models_load(req: LoadedModelRequest, http_request: Request):
                     }
                 },
             ) from exc
+    lock_block: Optional[Dict[str, Any]] = None
+    if bool(req.lock):
+        # Registry flag + provider-side knob; never fails the load over the
+        # knob (`pin` keeps its historical best-effort behavior unchanged).
+        # Lock requires provider-verified residency: when the provider cannot
+        # verify the just-loaded model resident, the load stays a success and
+        # the refusal is reported additively in the `lock` block.
+        try:
+            lock_block = {"locked": True, "provider_side": _lock_gateway_runtime(runtime)}
+        except GatewayRuntimeNotResidentError as exc:
+            lock_block = {"locked": False, "error": "model_not_resident", "detail": str(exc)}
     runtime_record = _gateway_text_residency_record(runtime)
     provider_loaded_new = bool(before_record.get("loaded") is not True and runtime_record.get("loaded") is True)
     loaded_new = bool((runtime_cache_loaded_new or provider_loaded_new) and runtime_record.get("loaded") is True)
     if provider_load_result is not None:
         runtime_record["provider_load_result"] = provider_load_result
-    return {
+    response = {
         "ok": True,
         "success": True,
         "loaded_new": loaded_new,
@@ -5015,6 +5467,9 @@ def acore_models_load(req: LoadedModelRequest, http_request: Request):
         "affected_models": [runtime_record],
         "prompt_cache_capabilities": _gateway_prompt_cache_capabilities_dict(runtime.llm),
     }
+    if lock_block is not None:
+        response["lock"] = lock_block
+    return response
 
 
 @app.post(
@@ -5054,33 +5509,36 @@ def acore_models_unload(req: UnloadModelRequest, http_request: Request):
         runtime_id=runtime_id,
     )
     if runtime is not None:
-        _unload_loaded_gateway_runtime(runtime)
+        try:
+            _unload_loaded_gateway_runtime(runtime, force=bool(req.force))
+        except GatewayRuntimeLockedError as exc:
+            # Locked runtimes refuse plain unloads; force=true unlocks first.
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "ok": False,
+                    "error": "model_locked",
+                    "detail": str(exc),
+                    "runtime_id": runtime.runtime_id,
+                },
+            )
+        unloaded_record = {
+            **_gateway_runtime_to_dict(runtime),
+            "task": "text_generation",
+            "state": "unloaded",
+            "loaded": False,
+            "locked": False,
+            "pinned": False,
+            "isolation": "in_process",
+            "health": "ok",
+            "error": None,
+        }
         return {
             "ok": True,
             "success": True,
-            "runtime": {
-                **_gateway_runtime_to_dict(runtime),
-                "task": "text_generation",
-                "state": "unloaded",
-                "loaded": False,
-                "pinned": False,
-                "isolation": "in_process",
-                "health": "ok",
-                "error": None,
-            },
+            "runtime": dict(unloaded_record),
             "unloaded": True,
-            "affected_models": [
-                {
-                    **_gateway_runtime_to_dict(runtime),
-                    "task": "text_generation",
-                    "state": "unloaded",
-                    "loaded": False,
-                    "pinned": False,
-                    "isolation": "in_process",
-                    "health": "ok",
-                    "error": None,
-                }
-            ],
+            "affected_models": [dict(unloaded_record)],
         }
     if task is None:
         for candidate_task in ("image_generation", "video_generation", "tts", "stt"):
@@ -5095,6 +5553,213 @@ def acore_models_unload(req: UnloadModelRequest, http_request: Request):
         status_code=404,
         detail={"error": {"message": "Loaded model runtime not found.", "type": "not_found"}},
     )
+
+
+def _resolve_text_runtime_for_lock(req: LockModelRequest, http_request: Request) -> _GatewayLoadedRuntime:
+    """Shared selector resolution for lock/unlock (mirrors the unload route)."""
+    runtime_id = str(req.runtime_id or "").strip() or None
+    provider = str(req.provider or "").strip().lower() or None
+    model = str(req.model or "").strip() or None
+    if runtime_id is None and (provider is None or model is None):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "message": "Provide runtime_id or provider+model to lock/unlock a gateway runtime.",
+                    "type": "invalid_request",
+                }
+            },
+        )
+    runtime = _get_loaded_gateway_runtime(
+        provider=provider,
+        model=model,
+        base_url=req.base_url,
+        explicit_provider_key_hash=_provider_key_fingerprint(_provider_api_key_from_request(http_request)),
+        runtime_id=runtime_id,
+    )
+    if runtime is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"error": {"message": "Loaded model runtime not found.", "type": "not_found"}},
+        )
+    return runtime
+
+
+def _sweep_verifies_model_resident(provider: str, model: str) -> bool:
+    """Does the host sweep verify (provider, model) resident on its local
+    model server? Sweep providers only; best-effort, never raises."""
+    try:
+        for record in sweep_loaded_models():
+            if not isinstance(record, dict):
+                continue
+            if str(record.get("provider") or "").strip().lower() != provider:
+                continue
+            if sweep_models_match(provider, model, record):
+                return True
+    except Exception:
+        return False
+    return False
+
+
+def _model_not_resident_conflict(detail: str, runtime_id: Optional[str]) -> JSONResponse:
+    return JSONResponse(
+        status_code=409,
+        content={
+            "ok": False,
+            "error": "model_not_resident",
+            "detail": detail,
+            "runtime_id": runtime_id,
+        },
+    )
+
+
+def _resolve_or_adopt_text_runtime_for_lock(
+    req: LockModelRequest, http_request: Request
+) -> Tuple[_GatewayLoadedRuntime, bool, bool]:
+    """Lock-route resolution with SWEEP ADOPTION.
+
+    Returns (runtime, adopted, adopted_new). A provider+model selector naming
+    no managed runtime, for a sweep provider (Ollama / LM Studio) whose server
+    the sweep verifies holds the model, is ADOPTED: a managed runtime entry is
+    created through the same ensure path the load route uses — CLIENT
+    CONSTRUCTION ONLY, never a provider-side model load (the caller's
+    `_lock_gateway_runtime` then re-verifies residency with the provider's own
+    probe before setting the flag). Not sweep-resident → the same
+    `GatewayRuntimeNotResidentError` refusal the non-resident lock rule uses
+    (mapped to HTTP 409 `model_not_resident` by the route, `runtime_id` null —
+    nothing was adopted). Everything else keeps the 400/404 behavior."""
+    provider = str(req.provider or "").strip().lower() or None
+    model = str(req.model or "").strip() or None
+    runtime_id = str(req.runtime_id or "").strip() or None
+    try:
+        return _resolve_text_runtime_for_lock(req, http_request), False, False
+    except HTTPException as exc:
+        if exc.status_code != 404:
+            raise
+        if runtime_id is not None or not provider or not model or provider not in SWEEP_PROVIDERS:
+            raise
+    if not _sweep_verifies_model_resident(provider, model):
+        raise _GatewaySweepNotResident(provider, model)
+    provider_api_key = _provider_api_key_from_request(http_request)
+    provider_kwargs: Dict[str, Any] = {}
+    if provider_api_key:
+        provider_kwargs["api_key"] = provider_api_key
+    validated_base_url = _validated_request_base_url_override(
+        provider, req.base_url, provider_api_key=provider_api_key
+    )
+    if validated_base_url is not None:
+        provider_kwargs["base_url"] = validated_base_url
+    runtime, adopted_new = _ensure_loaded_gateway_runtime(
+        provider=provider,
+        model=model,
+        provider_kwargs=provider_kwargs,
+        explicit_provider_key_hash=_provider_key_fingerprint(provider_api_key),
+    )
+    return runtime, True, adopted_new
+
+
+class _GatewaySweepNotResident(Exception):
+    """Lock adoption refused: the sweep does not verify the model resident."""
+
+    def __init__(self, provider: str, model: str) -> None:
+        super().__init__(
+            f"Model {provider}/{model} is not resident in provider memory; "
+            "load it first (POST /acore/models/load with lock:true) before locking."
+        )
+
+
+@app.post(
+    "/acore/models/lock",
+    tags=["runtime"],
+    summary="Lock Gateway Runtime",
+    description=(
+        "Lock a gateway runtime whose model is verified RESIDENT in provider memory against "
+        "unloading: registry-enforced (unload requires force=true, unload_after cleanup skips it), "
+        "plus a best-effort provider-side pin knob where one exists (Ollama keep_alive=-1). "
+        "A provider+model selector naming no managed runtime ADOPTS a sweep-resident model "
+        "(Ollama / LM Studio server residency, e.g. a model loaded by LM Studio itself): a managed "
+        "runtime entry is created via the load route's ensure path — client construction only, "
+        "never a provider-side model load — residency is re-verified with the provider's own "
+        "probe, and the lock is applied; the response then carries `adopted: true`. "
+        "Locking a model that is not resident refuses with HTTP 409 "
+        "`{\"error\": \"model_not_resident\"}` — load it first (`POST /acore/models/load` with "
+        "`lock: true`). A provider-side knob failure never fails the lock; it is reported in "
+        "`provider_side`. The `locked`/`pinned` record fields reflect this gateway-managed lock "
+        "only — Ollama's own server-side keep-alive shows through `expires_at`, and an LM Studio "
+        "lock guards only this stack's unloads (the external server keeps its own eviction policy)."
+    ),
+)
+def acore_models_lock(req: LockModelRequest, http_request: Request):
+    try:
+        runtime, adopted, adopted_new = _resolve_or_adopt_text_runtime_for_lock(req, http_request)
+    except _GatewaySweepNotResident as exc:
+        # Adoption refused: the sweep does not verify the model resident on
+        # its server. Nothing was adopted, so there is no runtime_id.
+        return _model_not_resident_conflict(str(exc), None)
+    try:
+        provider_side = _lock_gateway_runtime(runtime)
+    except GatewayRuntimeNotResidentError as exc:
+        # Locking a non-resident model would present "configured" as "loaded".
+        if adopted and adopted_new:
+            # The provider's own probe disagreed with the sweep: drop the
+            # just-adopted registry entry — adoption did not complete, and a
+            # stray entry would present "configured" rows nobody asked for.
+            _drop_loaded_gateway_runtime(runtime)
+            return _model_not_resident_conflict(str(exc), None)
+        return _model_not_resident_conflict(str(exc), runtime.runtime_id)
+    response = {
+        "ok": True,
+        "locked": True,
+        "runtime_id": runtime.runtime_id,
+        "provider": runtime.provider,
+        "model": runtime.model,
+        "provider_side": provider_side,
+    }
+    if adopted:
+        response["adopted"] = True
+    return response
+
+
+@app.post(
+    "/acore/models/unlock",
+    tags=["runtime"],
+    summary="Unlock Gateway Runtime",
+    description=(
+        "Clear a gateway runtime's registry lock (and restore the provider-side default residency "
+        "behavior where a knob exists, e.g. Ollama keep_alive back to its 5m default). Unlock works "
+        "even when the model has since been evicted — the lock is never stranded — and skips the "
+        "provider-side restore for a non-resident model so it is never loaded back as a side effect."
+    ),
+)
+def acore_models_unlock(req: LockModelRequest, http_request: Request):
+    runtime = _resolve_text_runtime_for_lock(req, http_request)
+    provider_side = _unlock_gateway_runtime(runtime)
+    return {
+        "ok": True,
+        "locked": False,
+        "runtime_id": runtime.runtime_id,
+        "provider": runtime.provider,
+        "model": runtime.model,
+        "provider_side": provider_side,
+    }
+
+
+@app.get(
+    "/acore/models/context_estimate",
+    tags=["runtime"],
+    summary="Estimate Model Context Fit",
+    description=(
+        "Analytical context-fit estimate for a provider/model on this host: geometry from local "
+        "configs/GGUF headers/Ollama metadata (never loads weights), KV math labeled as an estimate, "
+        "and measured calibration entries winning over estimates. Unknown stays unknown."
+    ),
+)
+def acore_models_context_estimate(
+    provider: str = Query(..., description="Provider name (e.g. huggingface, mlx, ollama, lmstudio)."),
+    model: str = Query(..., description="Model identifier (repo id, path, or server model name)."),
+    context_length: Optional[int] = Query(None, description="Optional requested context length to cost out."),
+):
+    return estimate_context_fit(provider, model, context_length)
 
 
 class PromptCacheProxyBase(BaseModel):
@@ -5169,6 +5834,33 @@ class PromptCacheForkProxyRequest(PromptCacheProxyBase):
 
 class PromptCacheClearProxyRequest(PromptCacheProxyBase):
     key: Optional[str] = Field(default=None, description="Specific upstream cache key to clear. Omit to clear upstream default/all cache state, depending on backend support.")
+
+
+class PromptCacheKeyMetaProxyRequest(PromptCacheProxyBase):
+    key: str = Field(..., description="Existing prompt-cache key to annotate.", example="session:abc123")
+    meta: Dict[str, Any] = Field(
+        ...,
+        description=(
+            "Metadata fields to merge into the key's stored meta (e.g. session_id, run_id, workflow_id). "
+            "Fields with null values are skipped."
+        ),
+        example={"session_id": "sess-1", "run_id": "run-9"},
+    )
+
+    class Config:
+        json_schema_extra = {
+            "examples": [
+                {
+                    "summary": "Stamp Session Attribution",
+                    "value": {
+                        "provider": "mlx",
+                        "model": "mlx-community/Qwen3.6-27B-4bit",
+                        "key": "session:abc123",
+                        "meta": {"session_id": "sess-1", "run_id": "run-9", "workflow_id": "wf-2"},
+                    },
+                }
+            ]
+        }
 
 
 class PromptCachePrepareModulesProxyRequest(PromptCacheProxyBase):
@@ -5632,7 +6324,10 @@ def _clear_live_bloc_bindings_across_loaded_runtimes(record_sha256: Optional[str
     "/acore/prompt_cache/stats",
     tags=["prompt-cache"],
     summary="Prompt Cache Stats",
-    description="Inspect prompt-cache stats on either a loaded gateway runtime (`provider` + `model`) or an upstream AbstractEndpoint (`base_url`).",
+    description=(
+        "Inspect prompt-cache stats on a loaded gateway runtime (`provider` + `model`), an upstream "
+        "AbstractEndpoint (`base_url`), or — with no selector — enumerate stats across every loaded gateway runtime."
+    ),
 )
 def acore_prompt_cache_stats(
     http_request: Request,
@@ -5676,10 +6371,44 @@ def acore_prompt_cache_stats(
         except Exception as e:
             return _gateway_prompt_cache_error_payload(llm, e, operation="stats")
     if not isinstance(base_url, str) or not base_url.strip():
-        return {
-            "supported": False,
-            "error": "base_url or provider+model is required for prompt cache control plane calls",
-        }
+        # No selector: enumerate prompt-cache stats across every loaded gateway
+        # runtime (visibility sweep — per-runtime failures are reported inline,
+        # never raised, and the sweep does not touch runtime usage counters).
+        # Stats are NOT dispatched to the runtime's single worker thread: a
+        # runtime mid-generation would stall the whole enumeration for its
+        # generation's duration. `get_prompt_cache_stats` is read-only (store
+        # access is lock-protected, `peek` is side-effect-free), so a short
+        # `runtime.lock` acquire keeps the selector path's discipline without
+        # unbounded blocking — a busy runtime reports itself instead.
+        with _GATEWAY_RUNTIME_LOCK:
+            loaded_runtimes = list(_GATEWAY_LOADED_RUNTIMES.values())
+        rows: list[Dict[str, Any]] = []
+        for runtime in loaded_runtimes:
+            row: Dict[str, Any] = {
+                "runtime_id": runtime.runtime_id,
+                "provider": runtime.provider,
+                "model": runtime.model,
+            }
+            stats_method = getattr(runtime.llm, "get_prompt_cache_stats", None)
+            if not callable(stats_method):
+                row["stats"] = None
+                row["error"] = "provider does not expose prompt cache stats"
+                rows.append(row)
+                continue
+            if not runtime.lock.acquire(timeout=1.0):
+                row["stats"] = None
+                row["error"] = "busy"
+                rows.append(row)
+                continue
+            try:
+                row["stats"] = stats_method()
+            except Exception as e:
+                row["stats"] = None
+                row["error"] = str(e)
+            finally:
+                runtime.lock.release()
+            rows.append(row)
+        return {"ok": True, "operation": "stats", "runtimes": rows}
     return _proxy_prompt_cache_request(
         http_request=http_request,
         base_url=base_url,
@@ -5952,6 +6681,144 @@ def acore_prompt_cache_clear(req: PromptCacheClearProxyRequest, http_request: Re
         api_key=api_key,
         method="POST",
         path="/acore/prompt_cache/clear",
+        json_body=body,
+    )
+
+
+# Meta keys the providers write as internal cache bookkeeping. `fed_token_ids`
+# is the MLX/HF record of exactly which tokens the resident KV holds (the
+# delta-feed correctness truth — a falsified record silently corrupts context
+# reuse, invisibly: stats hide the field as private); the binding fields are
+# what `prompt_cache_validate_binding` verifies durable-bloc artifacts against.
+# key_meta REJECTS these; attribution fields (session_id, run_id, workflow_id,
+# node_id, namespace, ...) pass through freely.
+_PROMPT_CACHE_RESERVED_META_KEYS = frozenset(
+    {
+        # cache-composition truth (MLX `_FED_TOKEN_IDS_META` / HF
+        # `_TRANSFORMERS_FED_IDS_META`; `fed_token_count` is its stats surface)
+        "fed_token_ids",
+        "fed_token_count",
+        # store/module bookkeeping written by the prompt-cache control plane
+        "backend",
+        "token_count",
+        "forked_from",
+        "module_id",
+        "module_hash",
+        "index",
+        "bloc_boundary_tokens",
+        "created_at_s",
+        # durable-bloc binding verification fields
+        "binding_id",
+        "artifact_sha256",
+        "bloc_sha256",
+        "content_sha256",
+        "rendered_recipe_sha256",
+        "manifest_version",
+        "provider",
+        "model",
+    }
+)
+
+_PROMPT_CACHE_META_MAX_BYTES = 16 * 1024
+
+
+@app.post(
+    "/acore/prompt_cache/key_meta",
+    tags=["prompt-cache"],
+    summary="Update Prompt Cache Key Metadata",
+    description=(
+        "Merge caller metadata (e.g. session/run/workflow attribution) into an existing prompt-cache key "
+        "on a loaded gateway runtime (`provider` + `model`) or an upstream AbstractEndpoint (`base_url`). "
+        "Provider-internal bookkeeping keys (cache composition, binding truth) are rejected."
+    ),
+)
+def acore_prompt_cache_key_meta(req: PromptCacheKeyMetaProxyRequest, http_request: Request):
+    _reject_body_api_key(req.api_key)
+    meta_updates = dict(req.meta or {})
+    reserved = sorted(k for k in meta_updates if k in _PROMPT_CACHE_RESERVED_META_KEYS)
+    if reserved:
+        return {
+            "ok": False,
+            "supported": True,
+            "operation": "key_meta",
+            "code": "prompt_cache_meta_reserved_key",
+            "error": (
+                "meta field(s) "
+                + ", ".join(repr(k) for k in reserved)
+                + " are provider-internal cache bookkeeping (cache composition / binding truth) "
+                "and cannot be set through key_meta."
+            ),
+        }
+    try:
+        meta_size = len(json.dumps(meta_updates, ensure_ascii=False).encode("utf-8"))
+    except Exception:
+        meta_size = _PROMPT_CACHE_META_MAX_BYTES + 1
+    if meta_size > _PROMPT_CACHE_META_MAX_BYTES:
+        return {
+            "ok": False,
+            "supported": True,
+            "operation": "key_meta",
+            "code": "prompt_cache_meta_too_large",
+            "error": (
+                f"meta payload is {meta_size} bytes serialized; "
+                f"the limit is {_PROMPT_CACHE_META_MAX_BYTES} bytes."
+            ),
+        }
+    local_requested = bool((req.runtime_id and req.runtime_id.strip()) or (str(req.provider or "").strip() and str(req.model or "").strip()))
+    if local_requested:
+        provider_s = str(req.provider or "").strip().lower()
+        model_s = str(req.model or "").strip()
+        runtime = _resolve_local_runtime_for_control(provider=provider_s, model=model_s, base_url=req.base_url, runtime_id=req.runtime_id, http_request=http_request)
+        llm = runtime.llm
+        caps = _gateway_prompt_cache_capabilities_dict(llm)
+        if not hasattr(llm, "prompt_cache_update_key_meta") or not hasattr(llm, "prompt_cache_key_meta"):
+            return {
+                "ok": False,
+                "supported": False,
+                "operation": "key_meta",
+                "code": "prompt_cache_unsupported",
+                "error": "provider does not support prompt cache key metadata",
+                "capabilities": caps,
+            }
+        try:
+            # Positional mapping, not **kwargs: a meta field named "key" must
+            # not collide with the positional argument.
+            updated = _run_loaded_gateway_runtime(
+                runtime,
+                lambda: llm.prompt_cache_update_key_meta(req.key, meta_updates),
+            )
+            if not updated:
+                return {
+                    "ok": False,
+                    "supported": True,
+                    "operation": "key_meta",
+                    "code": "prompt_cache_missing_key",
+                    "error": f"Prompt cache key '{req.key}' does not exist.",
+                    "capabilities": caps,
+                }
+            meta = _run_loaded_gateway_runtime(
+                runtime, lambda: llm.prompt_cache_key_meta(req.key), touch=False
+            )
+            return {"ok": True, "supported": True, "operation": "key_meta", "key": req.key, "meta": meta}
+        except Exception as e:
+            return _gateway_prompt_cache_error_payload(llm, e, operation="key_meta")
+    if not isinstance(req.base_url, str) or not req.base_url.strip():
+        return {
+            "supported": False,
+            "error": "base_url or provider+model is required for prompt cache control plane calls",
+        }
+    body = req.model_dump(exclude_none=True)
+    body.pop("runtime_id", None)
+    base_url = body.pop("base_url", None)
+    body.pop("provider", None)
+    body.pop("model", None)
+    api_key = body.pop("api_key", None)
+    return _proxy_prompt_cache_request(
+        http_request=http_request,
+        base_url=base_url,
+        api_key=api_key,
+        method="POST",
+        path="/acore/prompt_cache/key_meta",
         json_body=body,
     )
 

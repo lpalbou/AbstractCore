@@ -2,8 +2,8 @@
 
 > This is the "full context" companion to `llms.txt`: a single, self-contained guide for agents and developers using AbstractCore. It intentionally avoids GitHub link hubs; only a few external references are included (API-key signup pages).
 
-Last updated: 2026-08-21
-Package version: 2.13.39
+Last updated: 2026-08-27
+Package version: 2.13.40
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -856,6 +856,20 @@ curl -X POST http://localhost:8000/v1/chat/completions \\
 - Audio: `POST /v1/audio/transcriptions`, `POST /v1/audio/speech`, `POST /v1/audio/speech/stream`, `POST /v1/voice/clone` (requires an audio/voice plugin; commonly `abstractvoice`; global routes accept `model`, optional `provider`, and optional `base_url`; the stream route emits JSON Lines WAV segment events for compatible local/plugin TTS backends)
 
 If a required plugin/backend is missing, the server returns `501` with actionable messaging.
+
+### Runtime + memory control plane (`/acore/*`)
+
+The gateway can keep local models warm and report host memory/residency:
+
+- `POST /acore/models/load` / `POST /acore/models/unload`: load or unload a task-specific provider/model runtime inside the gateway process. Load accepts `lock: true` to lock the runtime in the same call; unload accepts `force: true` to unlock-and-unload a locked runtime (without it, a locked runtime returns HTTP `409` with `{"ok": false, "error": "model_locked", "detail": "...", "runtime_id": "..."}`).
+- `POST /acore/models/lock` / `POST /acore/models/unlock`: set or clear a registry-level lock on a text runtime whose model is provider-verified RESIDENT (`runtime_id` or `provider` + `model`, optional `base_url`). Lock requires residency: a warm registry runtime alone is configuration, not memory, and locking a non-resident model refuses with HTTP `409` `{"ok": false, "error": "model_not_resident", "detail": "...", "runtime_id": "..."}` — load it first (`POST /acore/models/load` with `lock: true`). The registry lock is the enforcement truth — `unload_after` cleanup skips locked runtimes too; where the provider has a residency knob it is applied best-effort and reported as `provider_side` (Ollama `keep_alive: -1` on lock, `"5m"` restored on unlock; the restore is skipped for a model that is no longer resident so unlock never loads it back — unlock never requires residency, so locks are never stranded; other providers report `supported: false`). Managed rows carry `locked`/`lockable`/`locked_at` (`pinned` is a truthful alias of `locked`); sweep-only rows carry `lockable: false`.
+- `GET /acore/models/context_estimate?provider=&model=&context_length=`: analytical context-fit estimate from local configs / GGUF headers / Ollama `/api/show` — never loads weights, never fails, advisory only (no load path gates on it). `confidence` is `calibrated` (a measured per-machine calibration entry wins) | `estimated` (f16-KV math over a real-ceiling memory budget: `iogpu.wired_limit_mb` sysctl / Metal `max_recommended_working_set_size` / CUDA `mem_get_info` free bytes, minus a small `max(2 GiB, 5%)` reserve — basis and reserve stated in `notes`, number in `budget_bytes`) | `unknown`. The response splits weights-fit from context-fit: tri-state `fits_weights` / `fits_requested_context`, and `predicted_max_context` is the context that fits beside the weights (`null` when the weights alone exceed the budget). Python equivalent: `abstractcore.utils.context_estimate.estimate_context_fit()`.
+- `GET /acore/models/loaded`: list warm gateway runtimes, merged with a best-effort sweep of the host's local model servers (Ollama `/api/ps`, LM Studio loaded instances). Sweep-only rows carry `source: "provider_server"`, `loaded: true`, `resident: true`, no `task` label, and `size_bytes` / `size_vram_bytes` where the server reports them. The `model` filter applies alias normalization (`?model=qwen3` matches a resident `qwen3:latest`); a sweep failure never fails the endpoint. Rows carry `host_id`/`host_name` (observing machine); text and sweep rows carry `modalities` where the capability registry declares them (registry miss → field omitted; unusable MLX vision → `modalities_note: "vision_unusable"`; capability-task rows such as image or TTS runtimes do not carry the field); GGUF rows whose context ladder ran carry `context_calibrated`/`calibrated_context_length`.
+- `GET /acore/memory`: best-effort host memory snapshot — `ram` (total/available/used/percent), `process.rss_bytes`, `device` (`backend`: `metal`|`cuda`|`mps`|null, `allocated_bytes`, `total_bytes`, `free_bytes`), `host` (`host_id`, `host_name`, `kind`). Unknown values are null; the route never fails. To verify an unload freed memory, read `device.allocated_bytes` — on Metal hosts, process RSS behaves as a high-water mark and does not drop after an in-process unload.
+- `GET /acore/prompt_cache/stats`: per-key cache stats (including best-effort per-key `bytes`) for one runtime, or — with no selector — an enumeration across every loaded runtime (`runtimes: [...]`; a runtime busy generating reports `error: "busy"` inline).
+- `POST /acore/prompt_cache/key_meta`: merge caller attribution metadata (e.g. `session_id`, `run_id`, `workflow_id`, `node_id`, `namespace`) into an existing cache key. Provider-internal bookkeeping keys are rejected (`prompt_cache_meta_reserved_key`); payloads above 16 KB serialized are rejected (`prompt_cache_meta_too_large`).
+
+Python equivalents: `abstractcore.utils.memory.get_memory_snapshot()`, `abstractcore.utils.residency.sweep_loaded_models()` (plus `SWEEP_PROVIDERS`, `normalize_sweep_model`, `sweep_models_match`), `abstractcore.utils.context_estimate.estimate_context_fit()`, `abstractcore.utils.hostinfo.get_host_identity()`, `abstractcore.providers.model_capabilities.modalities_for_model()`, and per-provider `list_loaded_models()` / `OllamaProvider.list_server_loaded_models()` / `LMStudioProvider.list_server_loaded_models()`. See `docs/memory-management.md`.
 
 ### Single-model endpoint (one provider/model per worker)
 
@@ -5579,7 +5593,7 @@ For large files that exceed model context limits, use `BasicSummarizer` or imple
 | **Anthropic** | Claude 3.5 Sonnet, Claude 4 series | Supported: Up to 20 images | Supported: All formats |
 | **Ollama** | qwen2.5vl:7b, gemma3:4b, llama3.2-vision:11b | Supported: Single image | Supported: All formats |
 | **LMStudio** | qwen2.5-vl-7b, gemma-3n-e4b, magistral-small-2509 | Supported: Multiple images | Supported: All formats |
-| **MLX** | Vision-capable MLX checkpoints (`qwen3_5`, `qwen3_5_moe`, `qwen3_vl`, `gemma4`) | Supported: Single image, requires `abstractcore[mlx-vision]` | Supported: All formats |
+| **MLX** | Vision-capable MLX checkpoints (`qwen3_5`, `qwen3_5_moe`, `qwen3_vl`, `gemma4`) | Supported: Single image (mlx-vlm ships with the MLX provider) | Supported: All formats |
 
 ### Text-Only Providers
 
@@ -5591,8 +5605,9 @@ All providers support document processing even without vision capabilities:
 | **MLX** | Supported: All formats | Supported: Embedded in prompt |
 | **Any Provider** | Supported: Automatic fallback | Supported: Text extraction |
 
-MLX appears in both tables: it reads images natively for vision-capable checkpoints when
-`abstractcore[mlx-vision]` is installed, and embeds documents as text on every checkpoint. See
+MLX appears in both tables: it reads images natively for vision-capable checkpoints, and embeds
+documents as text on every checkpoint. Image input needs no separate extra — `mlx-vlm` ships with
+`mlx-lm` in every profile that installs the MLX provider. See
 [Vision Capabilities](vision-capabilities.md#1b-native-image-input-on-the-mlx-provider-apple-silicon).
 
 ### Knowing whether media reached the model
@@ -10476,9 +10491,23 @@ The `unload_model(model_name)` method is a **best-effort resource cleanup hook**
   - Examples: **Ollama** uses native `keep_alive` load/unload semantics, and
     **LM Studio** uses its native loaded-instance REST API when available.
 
+On in-process providers (MLX, HuggingFace), unloading also drops the instance's session
+prompt caches (KV cache store and MLX hybrid snapshots): they are only useful with the
+weights resident, and they are the memory hogs.
+
 Provider/server availability and model catalog membership are not loaded-model proof.
 When Core can verify residency, providers expose `get_model_residency(...)`; otherwise
-loaded state is reported as unknown/fail-closed.
+loaded state is reported as unknown/fail-closed. Instances list what they can verify via
+`list_loaded_models()`, and `abstractcore.utils.residency.sweep_loaded_models()` sweeps
+the host's local model servers (Ollama, LM Studio) best-effort.
+`abstractcore.utils.memory.get_memory_snapshot()` reports host RAM, process RSS,
+device allocation, and the host identity; `device.allocated_bytes` — not process RSS,
+which behaves as a high-water mark on Metal hosts — is the signal that verifies an
+unload freed memory. GGUF loads that settle their context through the probe ladder
+record the settled context to a per-machine calibration store, which seeds later loads
+and powers `abstractcore.utils.context_estimate.estimate_context_fit()` — an analytical
+context-fit answer that never loads weights.
+See `docs/memory-management.md`.
 
 In the OpenAI-compatible AbstractCore server (`abstractcore.server.app`), requests can set `unload_after` (default `false`)
 to call `llm.unload_model(model)` after the request completes. For providers that can unload shared server state (e.g. Ollama),
@@ -11052,7 +11081,8 @@ The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top o
 - **Embedding Support**: Multi-provider embedding generation (HuggingFace, Ollama, LMStudio)
 - **Optional Vision Endpoints**: OpenAI-compatible `/v1/images/generations` and `/v1/images/edits` (plus `/v1/vision/*` catalog/residency control plane for image/video-capable backends) delegated to `abstractvision` (safe-by-default; requires explicit config).
 - **Optional Audio Endpoints**: OpenAI-compatible `/v1/audio/transcriptions` and `/v1/audio/speech` delegated to capability plugins (typically `abstractvoice`).
-- **Prompt Cache Control Plane**: `/acore/prompt_cache/*` proxy endpoints for cache stats/set/update/fork/clear (best-effort; typically targets an `abstractcore.endpoint` upstream).
+- **Prompt Cache Control Plane**: `/acore/prompt_cache/*` endpoints for cache stats/set/update/fork/clear/key_meta on warm gateway runtimes or an upstream `abstractcore.endpoint` (best-effort).
+- **Runtime + Memory Visibility**: `/acore/models/*` runtime load/list/unload plus `lock`/`unlock` model locks (a locked runtime refuses unloading without `force`), `GET /acore/models/context_estimate` context-fit estimates, and `GET /acore/memory` host memory snapshot. Loaded listings merge the host's local model-server sweep and stamp text and sweep records with registry-declared `modalities`, and every record with the observing machine's `host_id`/`host_name` — see `docs/memory-management.md`.
 
 **Request Flow Example**:
 
@@ -13448,9 +13478,26 @@ For local providers (Ollama, MLX, HuggingFace, LMStudio), this explicitly frees 
 - **LMStudio**: Uses native loaded-instance REST load/unload when available
 - **OpenAI/Anthropic**: No-op (safe to call)
 
+On in-process providers (MLX, HuggingFace), unloading also drops the instance's session
+prompt caches — the prompt-cache store and, on MLX, the hybrid KV boundary snapshots. To
+verify that memory was actually freed, read `device.allocated_bytes` from
+`abstractcore.utils.memory.get_memory_snapshot()`; process RSS behaves as a high-water
+mark on Metal hosts. See `docs/memory-management.md`.
+
 `get_model_residency(...)` reports verified loaded state only when the provider can
 check the backing runtime. Client construction, configured defaults, and model catalogs
-are not treated as loaded-model proof.
+are not treated as loaded-model proof. `list_loaded_models(filters=None)` returns the
+models the instance can verify as loaded (Ollama / LM Studio instances enumerate their
+whole server; MLX adds a best-effort `est_weights_bytes`), with normalized `size_bytes` /
+`size_vram_bytes` where the backend reports sizes.
+`abstractcore.utils.context_estimate.estimate_context_fit(provider, model, context_length=None)`
+estimates how much context a model can sustain on this host without loading weights
+(confidence `calibrated`|`estimated`|`unknown`; calibration wins; never raises),
+`abstractcore.utils.hostinfo.get_host_identity()` names the machine records were observed
+on (`host_id`/`host_name`/`kind`), and
+`abstractcore.providers.model_capabilities.modalities_for_model()` returns the
+registry-declared modality routes for a model, or `None` on a registry miss (never a
+text-only guess).
 
 **Example:**
 ```python

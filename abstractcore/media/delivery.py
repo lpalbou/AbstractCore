@@ -37,6 +37,10 @@ VISION_WEIGHTS_ABSENT = "vision_weights_absent"
 VISION_ENCODE_FAILED = "vision_encode_failed"
 VISION_MULTI_IMAGE_UNSUPPORTED = "vision_multi_image_unsupported"
 VISION_NOT_DECLARED = "vision_not_declared"
+# The load-time capability probe itself raised. Named rather than left empty:
+# an unnamed drop reaches the caller as a request that lost its image with no
+# stated cause, which is indistinguishable from a code path that forgot.
+VISION_PROBE_FAILED = "vision_probe_failed"
 
 # Providers whose delivery reporting is VERIFIED end to end. For these, silence
 # is a refusal: a future code path that forgets to fill the report fails loudly
@@ -49,7 +53,17 @@ REPORTING_PROVIDERS = frozenset({"mlx"})
 # learn that one `pip install` separates them from working sight. Only reasons
 # with an action belong here -- an entry that says nothing is worse than none.
 REASON_REMEDIES: Dict[str, str] = {
-    MLX_VLM_NOT_INSTALLED: 'install the vision extra: pip install "abstractcore[mlx-vision]"',
+    # mlx-vlm ships with mlx-lm in every profile that installs the MLX provider,
+    # so this reason no longer means "you skipped an optional extra" -- it means
+    # the environment is missing half of a package set that is meant to arrive
+    # together. Say that, or the reader goes looking for an extra to enable and
+    # never checks WHICH interpreter is short a dependency.
+    MLX_VLM_NOT_INSTALLED: (
+        "this MLX install is incomplete — mlx-vlm ships with mlx-lm and is missing "
+        'from this interpreter; repair with: pip install "abstractcore[mlx]" '
+        "(check you are installing into the interpreter that runs the model, not "
+        "another one on the same machine)"
+    ),
     MEDIA_PROCESSING_UNAVAILABLE: 'install the media extra: pip install "abstractcore[media]"',
     VISION_MULTI_IMAGE_UNSUPPORTED: "send one image per request on this lane",
     VISION_NOT_DECLARED: (

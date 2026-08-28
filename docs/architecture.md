@@ -202,9 +202,23 @@ The `unload_model(model_name)` method is a **best-effort resource cleanup hook**
   - Examples: **Ollama** uses native `keep_alive` load/unload semantics, and
     **LM Studio** uses its native loaded-instance REST API when available.
 
+On in-process providers (MLX, HuggingFace), unloading also drops the instance's session
+prompt caches (KV cache store and MLX hybrid snapshots): they are only useful with the
+weights resident, and they are the memory hogs.
+
 Provider/server availability and model catalog membership are not loaded-model proof.
 When Core can verify residency, providers expose `get_model_residency(...)`; otherwise
-loaded state is reported as unknown/fail-closed.
+loaded state is reported as unknown/fail-closed. Instances list what they can verify via
+`list_loaded_models()`, and `abstractcore.utils.residency.sweep_loaded_models()` sweeps
+the host's local model servers (Ollama, LM Studio) best-effort.
+`abstractcore.utils.memory.get_memory_snapshot()` reports host RAM, process RSS,
+device allocation, and the host identity; `device.allocated_bytes` — not process RSS,
+which behaves as a high-water mark on Metal hosts — is the signal that verifies an
+unload freed memory. GGUF loads that settle their context through the probe ladder
+record the settled context to a per-machine calibration store, which seeds later loads
+and powers `abstractcore.utils.context_estimate.estimate_context_fit()` — an analytical
+context-fit answer that never loads weights.
+See [Memory and Model Residency](memory-management.md).
 
 In the OpenAI-compatible AbstractCore server (`abstractcore.server.app`), requests can set `unload_after` (default `false`)
 to call `llm.unload_model(model)` after the request completes. For providers that can unload shared server state (e.g. Ollama),
@@ -781,7 +795,8 @@ The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top o
 - **Embedding Support**: Multi-provider embedding generation (remote OpenAI-compatible providers plus local backends)
 - **Optional Vision Endpoints**: OpenAI-compatible `/v1/images/generations`, `/v1/images/edits`, `/v1/videos/generations`, and `/v1/videos/edits` can proxy to an upstream media server without local vision runtimes; `/v1/vision/*` local model control remains delegated to `abstractvision` when installed and configured. Deep provider catalog discovery is exposed separately at `/v1/vision/providers/` and `/v1/vision/models`, and long image/video runs can use `/v1/vision/jobs/images/*` or `/v1/vision/jobs/videos/*` progress polling.
 - **Optional Audio Endpoints**: OpenAI-compatible `/v1/audio/transcriptions` and `/v1/audio/speech` delegated to capability plugins (typically `abstractvoice`). Voice/profile and TTS model discovery are exposed at `/v1/audio/voices` and `/v1/audio/speech/models`.
-- **Prompt Cache Control Plane**: `/acore/prompt_cache/*` proxy endpoints for cache stats/set/update/fork/clear (best-effort; typically targets an `abstractcore.endpoint` upstream).
+- **Prompt Cache Control Plane**: `/acore/prompt_cache/*` endpoints for cache stats/set/update/fork/clear/key_meta on warm gateway runtimes or an upstream `abstractcore.endpoint` (best-effort).
+- **Runtime + Memory Visibility**: `/acore/models/*` runtime load/list/unload plus `lock`/`unlock` model locks (a locked runtime refuses unloading without `force`), `GET /acore/models/context_estimate` context-fit estimates, and `GET /acore/memory` host memory snapshot. Loaded listings merge the host's local model-server sweep and stamp text and sweep records with registry-declared `modalities`, and every record with the observing machine's `host_id`/`host_name` — see [Memory and Model Residency](memory-management.md).
 
 **Request Flow Example**:
 

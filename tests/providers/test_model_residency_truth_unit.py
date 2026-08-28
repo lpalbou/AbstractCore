@@ -169,3 +169,104 @@ def test_ollama_load_model_uses_native_keep_alive_for_pinned_load() -> None:
             "json": {"model": "gemma3:1b", "prompt": "", "stream": False, "keep_alive": -1},
         }
     ]
+
+
+# ---------------------------------------------------------------------------
+# est_weights_bytes: per-model memory footprint on in-process residency claims
+# ---------------------------------------------------------------------------
+
+
+class _FakeParam:
+    def __init__(self, numel: int, element_size: int) -> None:
+        self._numel = numel
+        self._element_size = element_size
+
+    def numel(self) -> int:
+        return self._numel
+
+    def element_size(self) -> int:
+        return self._element_size
+
+
+class _FakeTransformersModel:
+    def parameters(self):
+        return [_FakeParam(100, 2), _FakeParam(12, 4)]
+
+
+def test_huggingface_transformers_residency_estimates_weight_bytes() -> None:
+    provider = object.__new__(HuggingFaceProvider)
+    provider.provider = "huggingface"
+    provider.model = "hf-test-model"
+    provider.llm = None
+    provider.model_instance = _FakeTransformersModel()
+    provider.pipeline = None
+
+    residency = provider.get_model_residency()
+
+    # sum(numel * element_size) = 100*2 + 12*4
+    assert residency["est_weights_bytes"] == 248
+
+
+def test_huggingface_transformers_pipeline_model_estimates_weight_bytes() -> None:
+    class _FakePipeline:
+        model = _FakeTransformersModel()
+
+    provider = object.__new__(HuggingFaceProvider)
+    provider.provider = "huggingface"
+    provider.model = "hf-test-model"
+    provider.llm = None
+    provider.model_instance = None
+    provider.pipeline = _FakePipeline()
+
+    assert provider.get_model_residency()["est_weights_bytes"] == 248
+
+
+def test_huggingface_gguf_residency_reports_resolved_file_size(tmp_path) -> None:
+    import os
+
+    gguf_path = tmp_path / "tiny-quant.gguf"
+    gguf_path.write_bytes(b"")
+    os.truncate(gguf_path, 3_109_915_433)  # sparse: no real bytes written
+
+    class _FakeLlama:
+        model_path = str(gguf_path)
+
+    provider = object.__new__(HuggingFaceProvider)
+    provider.provider = "huggingface"
+    provider.model = "org/tiny-quant-GGUF"
+    provider.llm = _FakeLlama()
+    provider.model_instance = None
+    provider.pipeline = None
+
+    residency = provider.get_model_residency()
+
+    assert residency["est_weights_bytes"] == 3_109_915_433
+
+
+def test_huggingface_unloaded_residency_omits_weight_bytes() -> None:
+    provider = object.__new__(HuggingFaceProvider)
+    provider.provider = "huggingface"
+    provider.model = "hf-test-model"
+    provider.llm = None
+    provider.model_instance = None
+    provider.pipeline = None
+
+    assert "est_weights_bytes" not in provider.get_model_residency()
+
+
+def test_mlx_residency_claim_carries_weight_bytes() -> None:
+    class _FakeArray:
+        def __init__(self, nbytes: int) -> None:
+            self.nbytes = nbytes
+
+    class _FakeMlxModel:
+        def parameters(self):
+            return {"layers": {"w": _FakeArray(100), "b": _FakeArray(24)}}
+
+    provider = object.__new__(MLXProvider)
+    provider.provider = "mlx"
+    provider.model = "mlx-test-model"
+    provider.llm = _FakeMlxModel()
+    provider.tokenizer = object()
+
+    assert provider.get_model_residency()["est_weights_bytes"] == 124

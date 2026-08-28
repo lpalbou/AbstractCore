@@ -9,8 +9,9 @@ This document describes **vision as an input modality** in AbstractCore (images 
 - **Images**: install `pip install "abstractcore[media]"` and use either:
   - a **vision-capable model** (VLM/VL), or
   - a text-only model with **vision fallback** configured (`abstractcore --set-vision-provider PROVIDER MODEL`).
-  - On Apple silicon, add `abstractcore[mlx-vision]` for native image input on MLX checkpoints
-    (see [Native image input on the MLX provider](#1b-native-image-input-on-the-mlx-provider-apple-silicon)).
+  - On Apple silicon, native image input on MLX checkpoints needs no extra step: `mlx-vlm`
+    ships with the MLX provider in `abstractcore[mlx]`, `[apple]`, `[all]`, `[all-apple]` and
+    `[full-dev]` (see [Native image input on the MLX provider](#1b-native-image-input-on-the-mlx-provider-apple-silicon)).
 - **Video**: native video input is model/provider dependent. For the portable frame-sampling path (`video_policy="frames_caption"` / `"auto"` fallback), you need:
   - `ffmpeg`/`ffprobe` available on `PATH`, and
   - image/vision handling (a vision-capable model or configured vision fallback).
@@ -50,12 +51,19 @@ abstractcore --set-video-sampling-strategy keyframes
 
 ## 1b) Native image input on the MLX provider (Apple silicon)
 
-The MLX provider reads images natively for vision-capable MLX checkpoints. Install the
-opt-in extra and pass `media=[...]` as usual:
+The MLX provider reads images natively for vision-capable MLX checkpoints. Nothing extra to
+install — `mlx-vlm` is part of the MLX provider's dependency set, so any profile that gives you
+`mlx-lm` also gives you image input. Pass `media=[...]` as usual:
 
 ```bash
-pip install "abstractcore[apple,mlx-vision]"
+pip install "abstractcore[apple]"
 ```
+
+If a sighted checkpoint still drops images with `mlx_vlm_not_installed`, the environment is
+missing half of a package set that is meant to arrive together — most often because the
+interpreter running the model is not the one that was installed into. Check with
+`<the-python-that-runs-the-model> -c "import mlx_vlm"` and repair with
+`pip install "abstractcore[mlx]"`.
 
 ```python
 from abstractcore import create_llm

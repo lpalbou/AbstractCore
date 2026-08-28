@@ -247,16 +247,21 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Camera | POST | `/v1/camera/detection` | Arm detection (motion/lightning/meteor) | detection fields; optional `camera` |
 | Camera | POST | `/v1/camera/detection/stop` | Disarm detection | optional `camera` |
 | Camera | GET | `/v1/camera/events` | Camera event log (cursor-paginated) | optional `camera`, cursor params |
-| Runtime | POST | `/acore/models/load` | Load and keep warm a task-specific model runtime | optional `task` (`text_generation` default, `image_generation`, `video_generation`, `text_to_video`, `image_to_video`, `tts`, `stt`), `provider`, `model`, `options`, `pin`, `base_url`, `timeout_s` |
-| Runtime | GET | `/acore/models/loaded` | List task-aware loaded runtimes | optional `task`, `provider`, `model` |
-| Runtime | POST | `/acore/models/unload` | Unload a task-specific runtime | `runtime_id` or `provider` + `model`, optional `task`, `base_url`, `options` |
-| Prompt Cache | GET | `/acore/prompt_cache/stats` | Cache stats on a loaded gateway runtime or upstream AbstractEndpoint | `provider` + `model` or `base_url`; provider key header if required |
+| Runtime | POST | `/acore/models/load` | Load and keep warm a task-specific model runtime | optional `task` (`text_generation` default, `image_generation`, `video_generation`, `text_to_video`, `image_to_video`, `tts`, `stt`), `provider`, `model`, `options`, `pin`, `lock`, `base_url`, `timeout_s` |
+| Runtime | GET | `/acore/models/loaded` | List task-aware loaded runtimes, merged with a host sweep of local model servers (Ollama/LM Studio) | optional `task`, `provider`, `model` |
+| Runtime | POST | `/acore/models/unload` | Unload a task-specific runtime; a locked runtime returns `409` unless `force` | `runtime_id` or `provider` + `model`, optional `task`, `base_url`, `force`, `options` |
+| Runtime | POST | `/acore/models/lock` | Lock a resident text runtime against unloading (`409 model_not_resident` otherwise) | `runtime_id` or `provider` + `model`, optional `base_url` |
+| Runtime | POST | `/acore/models/unlock` | Clear a text runtime's lock (works even after eviction) | `runtime_id` or `provider` + `model`, optional `base_url` |
+| Runtime | GET | `/acore/models/context_estimate` | Analytical context-fit estimate for a provider/model on this host | `provider`, `model`, optional `context_length` |
+| Runtime | GET | `/acore/memory` | Best-effort host memory snapshot (RAM, process, device backend, host identity) | none |
+| Prompt Cache | GET | `/acore/prompt_cache/stats` | Cache stats on a loaded gateway runtime or upstream AbstractEndpoint; with no selector, enumerate stats across all loaded runtimes | optional `provider` + `model` or `base_url`; provider key header if required |
 | Prompt Cache | GET | `/acore/prompt_cache/capabilities` | Cache capability discovery on a loaded gateway runtime or upstream AbstractEndpoint | `provider` + `model` or `base_url`; provider key header if required |
 | Prompt Cache | POST | `/acore/prompt_cache/set` | Select/create a cache key locally or upstream | `provider` + `model` or `base_url`, `key`, `make_default`, `ttl_s` |
 | Prompt Cache | POST | `/acore/prompt_cache/update` | Prepare prompt/messages/tools locally or upstream | `provider` + `model` or `base_url`, `key`, `prompt` or `messages`, `system_prompt`, `tools`, optional `thinking`, `ttl_s` |
 | Prompt Cache | POST | `/acore/prompt_cache/fork` | Fork one cache key to another locally or upstream | `provider` + `model` or `base_url`, `from_key`, `to_key`, `make_default`, `ttl_s` |
 | Prompt Cache | POST | `/acore/prompt_cache/clear` | Clear local or upstream cache state | `provider` + `model` or `base_url`, optional `key` |
 | Prompt Cache | POST | `/acore/prompt_cache/prepare_modules` | Prepare reusable module/tool context locally or upstream | `provider` + `model` or `base_url`, `namespace`, `modules`, `make_default`, `ttl_s`, `version` |
+| Prompt Cache | POST | `/acore/prompt_cache/key_meta` | Merge caller attribution metadata into an existing cache key | `runtime_id` or `provider` + `model` or `base_url`, `key`, `meta` |
 | Memory Blocs | POST | `/acore/blocs/upsert_text` | Persist extracted text into the gateway-local bloc store or an upstream AbstractEndpoint bloc store | optional `base_url`, `path`, `content`, optional bloc metadata |
 | Memory Blocs | GET | `/acore/blocs` | List gateway-local or upstream bloc records | optional `base_url`, `sha256`, `bloc_id` |
 | Memory Blocs | GET | `/acore/blocs/record` | Inspect a gateway-local or upstream bloc record | optional `base_url`, `sha256` or `bloc_id` |
@@ -1633,13 +1638,22 @@ If you want the gateway itself to keep a local model warm, use:
 - `POST /acore/models/load`
 - `GET /acore/models/loaded`
 - `POST /acore/models/unload`
+- `POST /acore/models/lock` / `POST /acore/models/unlock`
+- `GET /acore/models/context_estimate`
+- `GET /acore/memory`
 
 `/acore/models/load` creates or reuses a task-specific runtime. Omitted `task`
 keeps the existing text behavior, keyed by `provider`, `model`, optional
 `base_url`, and the explicit provider-key override when one is supplied. Later
 `/v1/chat/completions` calls that target the same provider/model automatically
 reuse that warm runtime instead of creating a fresh provider instance per
-request.
+request. Pass `"lock": true` to lock the runtime against unloading in the same
+call (see [Model locks](#model-locks)); the response then carries
+`lock: {"locked": true, "provider_side": {...}}`. The separate `pin` field
+(default `true`) is a best-effort provider-side residency hint applied at load
+where supported (Ollama `keep_alive: -1`); unlike `lock`, it is not enforced by
+the gateway, and the server-side state it produces shows through the record's
+`expires_at` rather than through `locked`/`pinned`.
 
 For text-generation runtimes, Core reports provider-owned loaded-model truth
 separately from gateway client cache state. A configured default model, model
@@ -1662,6 +1676,141 @@ exposes a real loaded-state signal.
 For capability-backed tasks it is true only when the backend reports or clearly
 implies that this request transitioned the model from not loaded to loaded.
 Already-loaded models should return `loaded_new=false`.
+
+#### Host model-server sweep in `/acore/models/loaded`
+
+For unfiltered and text-generation listings, `GET /acore/models/loaded` merges a
+best-effort sweep of the host's local model servers (Ollama `/api/ps`, LM Studio
+loaded instances — see
+[Memory and Model Residency](memory-management.md#host-wide-residency-which-models-are-loaded-on-this-machine)).
+Models resident on those servers but not loaded through the gateway appear as
+additional rows with `source: "provider_server"`, `loaded: true`,
+`resident: true`, and no `task` label (the server enumerations cannot classify
+what is resident — Ollama's running-model list includes embedding models too).
+Rows the gateway already tracks are not duplicated: sweep records matching a
+gateway runtime by the provider's own alias rules (case and Ollama's `:latest`
+alias; LM Studio's substring key resolution) only contribute missing
+`size_bytes` / `size_vram_bytes` fields. The `model` query filter applies the
+same alias normalization, so `?model=qwen3` matches a resident `qwen3:latest`.
+A sweep failure never fails the endpoint, and the sweep is skipped entirely
+when a `provider` filter excludes both `ollama` and `lmstudio`. Residency
+records also carry normalized `size_bytes` / `size_vram_bytes` where the
+backend reports sizes.
+
+Every record the listing serves carries the observing machine's `host_id` /
+`host_name`, and text-generation and sweep records whose model the capability
+registry knows carry `modalities` (registry route keys; a registry miss omits
+the field rather than guessing text-only, and an MLX runtime whose vision lane
+is unusable has `input.image` removed with `modalities_note:
+"vision_unusable"`; capability-task rows such as image or TTS runtimes do not
+carry the field). Managed rows
+report lock state (`locked`, `lockable: true`, `locked_at` while locked, with
+`pinned` as a compatibility alias of `locked`); sweep-only rows carry
+`lockable: false`. See
+[Memory and Model Residency](memory-management.md#modalities-and-host-identity-on-residency-records).
+
+#### Model locks
+
+`POST /acore/models/lock` and `POST /acore/models/unlock` set or clear a
+registry-level lock on a text runtime whose model is verified **resident** in
+provider memory. Select the runtime with `runtime_id` or `provider` + `model`
+(optional `base_url`); a missing selector returns `400` and an unknown runtime
+`404`. Lock requires provider-verified residency (`provider_resident: true`):
+a warm registry runtime alone is configuration, not memory, and locking a
+non-resident model returns HTTP `409` with body
+`{"ok": false, "error": "model_not_resident", "detail": "...", "runtime_id": "..."}` —
+load the model first (`POST /acore/models/load` with `"lock": true`). Unlock
+never requires residency, so a locked-but-since-evicted runtime is always
+unlockable.
+
+```bash
+curl -X POST http://localhost:8000/acore/models/lock \
+  -H "Authorization: Bearer $ABSTRACTCORE_AUTH_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"provider": "ollama", "model": "qwen3-coder:30b"}'
+```
+
+Response (both routes):
+
+```json
+{
+  "ok": true,
+  "locked": true,
+  "runtime_id": "1234567890abcdef",
+  "provider": "ollama",
+  "model": "qwen3-coder:30b",
+  "provider_side": {"supported": true, "applied": true}
+}
+```
+
+The registry lock is the enforcement truth:
+
+- `POST /acore/models/unload` on a locked runtime returns HTTP `409` with body
+  `{"ok": false, "error": "model_locked", "detail": "...", "runtime_id": "..."}`.
+  Pass `"force": true` to unlock and unload in one call; when the provider
+  unload fails, the runtime stays registered and locked.
+- `unload_after` cleanup on chat requests skips locked runtimes — including
+  requests that reach the same server-resident model outside the managed
+  runtime (matched with the same alias rules as the sweep).
+
+`provider_side` reports the best-effort provider-side reinforcement: on Ollama,
+lock applies `keep_alive: -1` and unlock restores the server default (`"5m"`);
+a failure is reported as `applied: false` with a `detail` and never fails the
+lock. Providers without a residency knob report `supported: false` while the
+gateway lock still enforces. Two Ollama notes: the record's `locked`/`pinned`
+fields reflect the gateway-managed lock only (Ollama's own server-side
+keep-alive shows through `expires_at`), and because the keep-alive setting
+rides Ollama's native load request, unlocking a runtime whose model was since
+evicted skips the keep-alive restore (`applied: false` with a detail) so the
+unlock never loads the model back as a side effect — the residency-required
+lock rule already prevents the lock-side equivalent.
+
+#### Context-fit estimates
+
+`GET /acore/models/context_estimate?provider=&model=&context_length=` answers
+how large a context the model could sustain on this host, and what a requested
+context would cost in KV memory, without loading any weights. Geometry comes
+from local configs, GGUF headers, or Ollama `/api/show` metadata; a measured
+calibration entry (recorded when a GGUF load settles its context ladder on
+this machine) wins over any estimate. `confidence` is `"calibrated"`,
+`"estimated"`, or `"unknown"`. The memory budget uses a real ceiling: on
+Metal/MPS the `iogpu.wired_limit_mb` sysctl when set, else Metal's
+`max_recommended_working_set_size`, else a labeled 75% fallback; on CUDA the
+`mem_get_info` free bytes — minus a small `max(2 GiB, 5%)` reserve, with basis
+and reserve stated in `notes` (`budget_bytes` carries the number). The response
+splits weights-fit from context-fit: `fits_weights` and
+`fits_requested_context` are tri-state (`true`/`false`/`null` when unknown),
+and `predicted_max_context` is the context that fits beside the weights
+(`null` when the weights alone exceed the budget). Estimates state their
+remaining assumptions (f16 KV cache) in `notes`, unknown members are omitted,
+the route never fails, and the estimate is advisory only — no load path gates
+on it.
+See [Memory and Model Residency](memory-management.md#context-calibration-and-estimation)
+for the full contract and the Python equivalent
+(`abstractcore.utils.context_estimate.estimate_context_fit()`).
+
+#### Host memory snapshot
+
+`GET /acore/memory` returns a best-effort host memory snapshot for capacity
+decisions (for example, whether another local model fits):
+
+```json
+{
+  "ok": true,
+  "ts": 1700000000.0,
+  "ram": {"total_bytes": 137438953472, "available_bytes": 33013366784, "used_bytes": 95548260352, "percent": 76.0},
+  "process": {"rss_bytes": 175357952},
+  "device": {"backend": "metal", "allocated_bytes": 0, "total_bytes": 137438953472, "free_bytes": null},
+  "host": {"host_id": "a1b2c3d4e5f6", "host_name": "studio.local", "kind": "local"}
+}
+```
+
+Unknown values are `null`; the route never fails. `device.backend` is
+`"metal"`, `"cuda"`, `"mps"`, or `null`. When verifying that an unload freed
+memory, read `device.allocated_bytes`: on Metal hosts, `process.rss_bytes`
+behaves as a high-water mark (freed device buffers return to the process
+allocator, not to the OS) and does not drop after an in-process unload. See
+[Memory and Model Residency](memory-management.md#reading-the-snapshot-allocated-bytes-vs-process-rss).
 
 ### Prompt Cache Control Plane
 
@@ -1693,12 +1842,39 @@ Operations:
 | Endpoint | Method | Parameters | Result |
 |---|---:|---|---|
 | `/acore/prompt_cache/capabilities` | GET | `provider` + `model` or `base_url` | Cache features on the selected local or upstream runtime. |
-| `/acore/prompt_cache/stats` | GET | `provider` + `model` or `base_url` | Cache stats on the selected local or upstream runtime. |
+| `/acore/prompt_cache/stats` | GET | optional `provider` + `model` or `base_url` | Cache stats on the selected local or upstream runtime. With no selector: stats across every loaded gateway runtime. |
 | `/acore/prompt_cache/set` | POST | `provider` + `model` or `base_url`, `key`, `make_default`, `ttl_s` | Select/create a cache key locally or upstream. |
 | `/acore/prompt_cache/update` | POST | `provider` + `model` or `base_url`, `key`, `prompt` or `messages`, `system_prompt`, `tools`, optional `thinking`, `add_generation_prompt`, `ttl_s` | Prepare prompt/messages/tools into a local or upstream cache key. |
 | `/acore/prompt_cache/fork` | POST | `provider` + `model` or `base_url`, `from_key`, `to_key`, `make_default`, `ttl_s` | Fork an existing local or upstream key. |
 | `/acore/prompt_cache/clear` | POST | `provider` + `model` or `base_url`, optional `key` | Clear a local or upstream key, or default/all cache state depending on backend support. |
 | `/acore/prompt_cache/prepare_modules` | POST | `provider` + `model` or `base_url`, `namespace`, `modules`, `make_default`, `ttl_s`, `version` | Prepare reusable module/tool context locally or upstream. |
+| `/acore/prompt_cache/key_meta` | POST | `runtime_id` or `provider` + `model` or `base_url`, `key`, `meta` | Merge caller metadata into an existing cache key. |
+
+Stats enumeration: `GET /acore/prompt_cache/stats` with no selector returns
+`{"ok": true, "operation": "stats", "runtimes": [...]}` with one row per loaded
+gateway runtime (`runtime_id`, `provider`, `model`, `stats`). Per-runtime
+failures are reported inline in an `error` field instead of failing the
+enumeration; a runtime busy generating reports `"stats": null, "error": "busy"`
+rather than stalling the listing. Per-key stats include a best-effort `bytes`
+size where the backend can compute it — see
+[Prompt Caching](prompt-caching.md#cache-residency-and-memory).
+
+Key metadata: `POST /acore/prompt_cache/key_meta` merges attribution metadata —
+for example `session_id`, `run_id`, `workflow_id`, `node_id`, `namespace` —
+into an existing cache key's metadata, where it appears in later stats
+(`meta_by_key`). `null` values are skipped. Two validation rules apply before
+any merge:
+
+- provider-internal bookkeeping keys (cache-composition and binding-verification
+  fields such as `fed_token_ids`, `token_count`, `backend`, `binding_id`,
+  `artifact_sha256`, `provider`, `model`) are rejected with
+  `code: "prompt_cache_meta_reserved_key"`;
+- `meta` serialized above 16 KB is rejected with
+  `code: "prompt_cache_meta_too_large"`.
+
+A key that does not exist returns `code: "prompt_cache_missing_key"`. The same
+operation is available in Python as
+`BaseProvider.prompt_cache_update_key_meta(key, updates)`.
 
 Example:
 

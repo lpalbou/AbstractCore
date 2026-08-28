@@ -15,11 +15,15 @@ def test_server_prompt_cache_control_plane_requires_base_url_or_provider_model()
     assert body["supported"] is False
     assert "base_url or provider+model" in body.get("error", "")
 
+    # Stats with NO selector is no longer an error: it enumerates prompt-cache
+    # stats across every loaded gateway runtime (empty registry -> empty list).
+    server_app._GATEWAY_LOADED_RUNTIMES.clear()
+    server_app._GATEWAY_RUNTIME_IDS.clear()
     r = client.get("/acore/prompt_cache/stats")
     assert r.status_code == 200
     body = r.json()
-    assert body["supported"] is False
-    assert "base_url or provider+model" in body.get("error", "")
+    assert body["ok"] is True
+    assert body["runtimes"] == []
 
 
 def test_server_bloc_control_plane_uses_local_store_without_base_url(tmp_path) -> None:

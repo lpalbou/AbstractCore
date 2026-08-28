@@ -582,6 +582,56 @@ class MLXProvider(BaseProvider):
         except Exception:
             pass
 
+    @staticmethod
+    def _mlx_cache_nbytes(cache_value: Any) -> Optional[int]:
+        """Best-effort byte size of an MLX KV cache (sum of state array nbytes).
+
+        None when nothing measurable was found — never guess."""
+        if cache_value is None:
+            return None
+        try:
+            total = 0
+            found = False
+            layers = cache_value if isinstance(cache_value, (list, tuple)) else [cache_value]
+            for layer in layers:
+                stack: List[Any] = [getattr(layer, "state", None)]
+                while stack:
+                    node = stack.pop()
+                    if node is None:
+                        continue
+                    if isinstance(node, (list, tuple)):
+                        stack.extend(node)
+                        continue
+                    nbytes = getattr(node, "nbytes", None)
+                    if isinstance(nbytes, int):
+                        total += nbytes
+                        found = True
+            return total if found else None
+        except Exception:
+            return None
+
+    def _prompt_cache_value_bytes(self, cache_value: Any) -> Optional[int]:
+        return self._mlx_cache_nbytes(cache_value)
+
+    def get_prompt_cache_stats(self) -> Dict[str, Any]:
+        """Add hybrid-snapshot visibility (count + best-effort bytes) to base stats."""
+        stats = super().get_prompt_cache_stats()
+        try:
+            self._ensure_hybrid_snapshot_state()
+            with self._hybrid_snapshot_lock:
+                snaps = list(self._hybrid_snapshots.values())
+            total = 0
+            found = False
+            for snap in snaps:
+                nbytes = self._mlx_cache_nbytes((snap or {}).get("cache"))
+                if isinstance(nbytes, int):
+                    total += nbytes
+                    found = True
+            stats["snapshots"] = {"count": len(snaps), "bytes": total if found else None}
+        except Exception:
+            pass
+        return stats
+
     # NOTE (2026-08-03): `_capture_hybrid_snapshot` lived here — prefill the ids
     # into a SECOND, fresh cache and store that as the key's boundary. It had
     # zero callers in HEAD and in the tree, and it is now removed rather than
@@ -2354,15 +2404,25 @@ class MLXProvider(BaseProvider):
                 import importlib.util
 
                 if usable and importlib.util.find_spec("mlx_vlm") is None:
-                    self.logger.info(
-                        f"mlx: {self.model} ships a vision tower but mlx-vlm is not "
-                        'installed, so images will be dropped. Install with: pip '
-                        'install "abstractcore[mlx-vision]"'
+                    # WARNING, not INFO: mlx-vlm is part of the MLX provider's
+                    # dependency set, so its absence is a broken install rather
+                    # than a configuration choice, and this checkpoint is about to
+                    # silently lose every image it is given.
+                    self.logger.warning(
+                        f"mlx: {self.model} ships a vision tower but mlx-vlm is "
+                        "missing from this interpreter, so images will be dropped. "
+                        'This install is incomplete — repair with: pip install '
+                        '"abstractcore[mlx]"'
                     )
-            except Exception:
+            except Exception as exc:
+                # Keep a NAMED reason. `None` here makes the later drop record
+                # skip the reason entirely (see `_try_vision_addon`), so a probe
+                # that merely crashed became a request with no diagnosis at all --
+                # the one failure mode this contract exists to prevent.
                 self._vision_usable = False
-                self._vision_reason = None
+                self._vision_reason = "vision_probe_failed"
                 self._vision_info = {}
+                self.logger.warning(f"mlx: vision capability probe failed: {exc}")
 
             # Silence the "Fetching" progress bar by redirecting stdout/stderr
             with open(os.devnull, "w") as devnull:
@@ -2436,7 +2496,9 @@ class MLXProvider(BaseProvider):
         Unload the MLX model from memory.
 
         Clears model and tokenizer references and forces garbage collection
-        to free GPU/CPU memory immediately.
+        to free GPU/CPU memory immediately. Also drops this instance's session
+        caches (prompt-cache store entries AND hybrid KV snapshots): they are
+        only useful with the weights resident, and they are the memory hogs.
         """
         import gc
 
@@ -2456,6 +2518,10 @@ class MLXProvider(BaseProvider):
 
             if hasattr(self, "stream_generate_fn"):
                 self.stream_generate_fn = None
+
+            # Session caches go with the weights (prompt_cache_clear also drops
+            # `_hybrid_snapshots` via this provider's override).
+            self._clear_prompt_caches_for_unload()
 
             # Force garbage collection to free memory immediately
             # The add-on holds the mlx-vlm wrapper, its processor and the tower;
@@ -3461,15 +3527,29 @@ class MLXProvider(BaseProvider):
         """Get MLX capabilities"""
         return ["streaming", "chat"]
 
+    def _est_weights_bytes(self) -> Optional[int]:
+        """Best-effort in-memory weight size of the loaded MLX model (bytes)."""
+        try:
+            from mlx.utils import tree_flatten
+
+            return int(sum(v.nbytes for _, v in tree_flatten(self.llm.parameters())))
+        except Exception:
+            return None
+
     def get_model_residency(
         self, *, task: str = "text_generation", model: Optional[str] = None, **kwargs
     ) -> Dict[str, Any]:
-        """Return Core-owned in-process residency truth for the loaded MLX provider."""
+        """Return Core-owned in-process residency truth for the loaded MLX provider.
+
+        Carries `est_weights_bytes` (best-effort, absent when unknowable) so
+        every consumer of the claim — the base `list_loaded_models` record,
+        the server's managed residency rows, the runtime's local rows — sees
+        the per-model memory footprint without a second probe."""
         _ = kwargs
         task_s = str(task or "text_generation").strip() or "text_generation"
         model_s = str(model or self.model or "").strip()
         loaded = self.llm is not None and self.tokenizer is not None
-        return {
+        claim: Dict[str, Any] = {
             "task": task_s,
             "provider": "mlx",
             "model": model_s,
@@ -3479,6 +3559,11 @@ class MLXProvider(BaseProvider):
             "state": "loaded" if loaded else "not_loaded",
             "source": "abstractcore.provider.mlx",
         }
+        if loaded:
+            est_weights = self._est_weights_bytes()
+            if est_weights is not None:
+                claim["est_weights_bytes"] = est_weights
+        return claim
 
     def validate_config(self) -> bool:
         """Validate MLX model is loaded"""

@@ -131,6 +131,33 @@ def detect_tool_calls(response: str, model_name: Optional[str] = None) -> bool:
         return _has_json_tool_pattern(response)
 
 
+def detect_unparsed_tool_intent(response: str) -> bool:
+    """True when text carries explicit tool-call syntax despite parsing to zero calls.
+
+    Callers use this AFTER `parse_tool_calls` returned nothing: a `<tool_call>`
+    wrapper together with a `<function=` tag (or a JSON name/arguments pair) is
+    near-certain tool INTENT, and treating such a response as a final answer
+    silently ends an agent loop on a malformed call. Detection only — the caller
+    decides how to surface it (log, response warning, feedback to the model).
+    """
+    if not isinstance(response, str):
+        return False
+    low = response.lower()
+    has_wrapper = "<tool_call" in low
+    has_function = "<function=" in low
+    has_parameter = "<parameter=" in low
+    if has_wrapper and (
+        has_function
+        or has_parameter  # e.g. <tool_call><web.search><parameter=...> — dotted bare tag
+        or ('"name"' in low and '"arguments"' in low)
+    ):
+        return True
+    # Wrapper-less qwen3_coder block: <function=...> plus at least one
+    # <parameter=...> is still unmistakable intent; a bare mention of either
+    # marker alone stays prose.
+    return has_function and has_parameter
+
+
 def parse_tool_calls(response: str, model_name: Optional[str] = None) -> List[ToolCall]:
     """
     Parse tool calls from response.
@@ -679,6 +706,13 @@ def _parse_function_call(response: str) -> List[ToolCall]:
 
 
 _XML_TOOL_NAME_PATTERN = r"[a-zA-Z_][a-zA-Z0-9_-]*"
+# Inside an explicit `<function=...>` tag the context is already unambiguous tool
+# intent, so the name charset can safely admit dots: models drift into OpenAI-style
+# namespaced names (`functions.browser_probe` — observed live on Qwen3.8-Flash-Next,
+# session acode-912712976c0c, where the dot made the whole block unparseable and the
+# ReAct loop concluded on a tool call). The bare-tag fallback keeps the strict
+# pattern: `<ns.tag>` in prose/HTML must not become a tool call.
+_XML_FUNCTION_NAME_PATTERN = r"[a-zA-Z_][a-zA-Z0-9_.-]*"
 _XML_TOOL_RESERVED_TAGS = {"tool_call", "function_call", "function", "parameter"}
 
 
@@ -782,7 +816,7 @@ def _parse_xmlish_parameter_tool_calls(body: str) -> List[ToolCall]:
     # Canonical Nemotron-style payload:
     #   <function=tool_name><parameter=x>...</parameter></function>
     function_re = re.compile(
-        rf"<function\s*=\s*({_XML_TOOL_NAME_PATTERN})\s*>",
+        rf"<function\s*=\s*({_XML_FUNCTION_NAME_PATTERN})\s*>",
         re.IGNORECASE,
     )
     for func_match in function_re.finditer(body):

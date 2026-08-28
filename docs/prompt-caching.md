@@ -23,6 +23,9 @@ Prompt caching is most useful when many calls share a long, stable prefix (syste
   - `prompt_cache_fork(from_key, to_key)`
   - `prompt_cache_clear(key=None)`
   - `prompt_cache_prepare_modules(...)` (hierarchical/prefix module caches)
+  - `prompt_cache_key_meta(key)` / `prompt_cache_update_key_meta(key, updates)`: read and merge
+    caller metadata (for example session/run/workflow attribution) on an in-process cache key;
+    merged fields appear in `get_prompt_cache_stats()["meta_by_key"]`.
   - Persistence (local providers only):
     - `prompt_cache_save(key, filename, ...)`
     - `prompt_cache_load(filename, ...)`
@@ -1500,6 +1503,11 @@ This makes the same capability contract available over HTTP, not only in-process
 
 The HTTP control plane mirrors this: `/acore/prompt_cache/update` accepts optional `thinking` so warm cache state can be prepared with the same reasoning mode you intend to use at inference time.
 
+The gateway server (`abstractcore serve`) exposes the same control plane for its warm runtimes,
+plus a no-selector `GET /acore/prompt_cache/stats` enumeration across all loaded runtimes and
+`POST /acore/prompt_cache/key_meta` for stamping attribution metadata onto cache keys — see
+[Server — Prompt Cache Control Plane](server.md#prompt-cache-control-plane).
+
 Server/operator note:
 
 - Core exposes provider-level `prompt_cache_save(...)` / `prompt_cache_load(...)` for Python and
@@ -1544,11 +1552,25 @@ llm = create_llm("mlx", model="...", prompt_cache_max_entries=4)
 llm.prompt_cache_clear(key)   # when a session ends
 ```
 
-**Measuring residency.** Process RSS is not a reliable instrument for this on Apple Silicon: MLX
-returns freed buffers to its own allocator pool rather than to the OS, so RSS behaves as a
-high-water mark. On a measured run, unloading a 2.35 GB model moved gateway RSS by 37 MB. Use
-`get_prompt_cache_stats()` for per-key `token_count` and multiply by the per-token figure above, or
-MLX's own allocator counters.
+**Unload frees the caches too.** `unload_model()` on the in-process providers (MLX, HuggingFace)
+drops the instance's prompt-cache store along with the weights — on MLX including the hybrid KV
+boundary snapshots. Session caches are only useful while the weights are resident, and they are the
+memory hogs, so unloading a model releases them in the same call. To end one session without
+unloading, use `prompt_cache_clear(key)` as above.
+
+**Measuring residency.** `get_prompt_cache_stats()` reports each key's cost directly where the
+backend can compute it: `meta_by_key[key]["bytes"]` carries a best-effort byte size (MLX sums the
+cached KV layers' array sizes, HuggingFace transformers sums the KV tensors, GGUF mirrors its cache
+state size), alongside `token_count` for the per-token arithmetic above. MLX stats also report a
+top-level `snapshots: {"count": ..., "bytes": ...}` entry for hybrid-architecture boundary
+snapshots, which live outside the keyed store.
+
+Process RSS is not a reliable instrument for this on Apple Silicon: MLX returns freed buffers to
+its own allocator pool rather than to the OS, so RSS behaves as a high-water mark. On a measured
+run, unloading a 2.35 GB model moved gateway RSS by 37 MB. Use the stats above, or
+`abstractcore.utils.memory.get_memory_snapshot()["device"]["allocated_bytes"]` — the device
+allocation drops by the freed amount even when RSS does not move (see
+[Memory and Model Residency](memory-management.md)).
 
 ## Safety / limitations
 

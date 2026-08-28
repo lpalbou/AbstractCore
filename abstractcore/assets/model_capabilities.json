@@ -4550,6 +4550,66 @@
         "top_k": 20
       }
     },
+    "qwen3.8-flash-next": {
+      "max_output_tokens": 131072,
+      "tool_support": "native",
+      "structured_output": "prompted",
+      "parallel_tools": false,
+      "vision_support": true,
+      "audio_support": false,
+      "video_support": true,
+      "capability_routes": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "thinking_support": true,
+      "thinking_control": { "template_kwarg": "enable_thinking" },
+      "thinking_tags": [
+        "<think>",
+        "</think>"
+      ],
+      "reasoning_levels": [
+        "low",
+        "medium",
+        "xhigh"
+      ],
+      "architecture": "qwen4_exp",
+      "total_parameters": "125B",
+      "active_parameters": "6B",
+      "experts": 512,
+      "shared_experts": 1,
+      "experts_activated": 10,
+      "transformer_layers": 48,
+      "vision_encoder": "Qwen4-Exp vision encoder (27-layer, patch 16, native-resolution image and video input)",
+      "image_resolutions": [
+        "variable"
+      ],
+      "notes": "Qwen3.8-Flash-Next multimodal MoE, the Qwen4 architecture preview (HF model_type 'qwen4_exp', GGUF arch 'qwen4exp'): 125B total / 6B activated parameters plus 51B n-gram embedding (bigram/trigram lookup at layer 2) and a 4B 1-layer MTP head; 48 layers laid out as 12 x (3 x (Gated DeltaNet -> MoE) then 1 x (Qwen Sparse Attention -> MoE)), i.e. full_attention_interval 4, with QSA selecting micro-blocks under a 2048-token indexer budget; MoE is 512 routed experts + 1 shared with 10 activated; gated residual streams (4 branches, rank 320). Native context 262,144 tokens, extensible to 1,000,000 via static YaRN (set factor 4.0 in text_config.rope_parameters; the shipped config has rope_type 'default'). Thinking is ON by default (disable per request with chat_template_kwargs enable_thinking=false); depth is tuned with reasoning_effort (xhigh default, medium, low; the template aliases 'high' to 'xhigh') and prior reasoning is retained via preserve_thinking (on by default). Tool calls use the Qwen3-Coder XML convention (<tool_call><function=name><parameter=key> blocks) taught directly by the chat template. max_output_tokens records the card's FINAL-response budget (131,072); the card additionally recommends up to 262,144 tokens for reasoning content on frameworks that cap reasoning separately. inference_parameters record the thinking-mode sampling defaults (also embedded in the GGUF); for non-thinking use the card recommends temperature=0.7, top_p=0.8, top_k=20, presence_penalty=1.5. GGUF inference requires llama.cpp with 'qwen4exp' support (ggml-org/llama.cpp PR #27742, still unmerged as of 2026-08-27; llama-cpp-python <= 0.3.35 and LM Studio engine <= 2.29.1 cannot load it).",
+      "source": "Hugging Face model card, config.json (model_type qwen4_exp, max_position_embeddings=262144) and GGUF metadata / chat_template.jinja (Qwen/Qwen3.8-Flash-Next and unsloth/Qwen3.8-Flash-Next-GGUF, accessed 2026-08-27)",
+      "canonical_name": "qwen3.8-flash-next",
+      "aliases": [
+        "Qwen/Qwen3.8-Flash-Next",
+        "qwen3.8-flash-next",
+        "qwen3.8:flash-next",
+        "unsloth/Qwen3.8-Flash-Next",
+        "unsloth/Qwen3.8-Flash-Next-GGUF"
+      ],
+      "max_tokens": 262144,
+      "license": "qwen-community-1.0",
+      "max_tools": -1,
+      "video_input_mode": "native",
+      "inference_parameters": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20
+      }
+    },
     "qwen3-omni-30b-a3b-instruct": {
       "max_output_tokens": 16384,
       "tool_support": "none",
