@@ -13,6 +13,7 @@ import copy
 import hashlib
 import json
 import platform
+import re
 import sys
 import threading
 import time
@@ -466,6 +467,64 @@ def _get_local_model_path(model_name: str) -> Optional[str]:
             # substitution), but the choice must at least be reproducible.
             return str(max(snapshot_dirs, key=lambda d: d.stat().st_mtime))
     return None
+
+
+# `model-00001-of-00003.gguf` — llama.cpp's split naming. `model_path` names only
+# the FIRST shard, so a naive `stat()` reports a fraction of the real weights
+# (live: 10,946,624 B for a 89,986,353,824 B three-shard model — off by 8,220x).
+_GGUF_SHARD_RE = re.compile(r"^(?P<stem>.+)-(?P<index>\d{5})-of-(?P<count>\d{5})\.gguf$", re.IGNORECASE)
+
+
+def _gguf_total_weight_bytes(model_path: Union[str, Path]) -> Optional[int]:
+    """Total on-disk weight bytes for a GGUF, summing every shard of a split set.
+
+    A sharded GGUF (`<stem>-00001-of-00003.gguf`) is loaded by handing llama.cpp
+    the first shard; it opens the siblings itself. `model_path` therefore names
+    one shard, and its size is NOT the model's weight footprint. When the name
+    matches the split pattern this sums every sibling shard that declares the
+    same `-of-NNNNN` count.
+
+    Missing shards are not faked: the sum covers the shards actually found, so a
+    partially-fetched set under-reports rather than claiming completeness.
+    Non-sharded files are a plain `stat()`. Guarded: never raises, None when
+    unknowable."""
+    try:
+        path = Path(str(model_path))
+        match = _GGUF_SHARD_RE.match(path.name)
+        if match is None:
+            return int(path.stat().st_size)
+
+        stem = match.group("stem")
+        count = match.group("count")
+        parent = path.parent
+        total = 0
+        seen_indices: set = set()
+        # `iterdir()` rather than `glob()`: a stem may contain glob metacharacters
+        # (`[`, `*`) and quant names routinely do. `stat()` follows symlinks on
+        # purpose — the HuggingFace cache materialises snapshot files as links
+        # into `blobs/`, and the blob is the real payload.
+        for sibling in sorted(parent.iterdir()):
+            sib_match = _GGUF_SHARD_RE.match(sibling.name)
+            if sib_match is None:
+                continue
+            if sib_match.group("stem") != stem or sib_match.group("count") != count:
+                continue
+            index = sib_match.group("index")
+            if index in seen_indices:
+                continue
+            try:
+                size = int(sibling.stat().st_size)
+            except OSError:
+                continue
+            seen_indices.add(index)
+            total += size
+        if not seen_indices:
+            # No sibling shard was readable (unreadable directory, or a synthetic
+            # path); fall back to the single file we were actually handed.
+            return int(path.stat().st_size)
+        return total
+    except Exception:
+        return None
 
 
 @dataclass
@@ -9387,17 +9446,23 @@ class HuggingFaceProvider(BaseProvider):
     def _est_weights_bytes(self) -> Optional[int]:
         """Best-effort weight size of the loaded model (bytes), or None.
 
-        - GGUF: the resolved `.gguf` file size (the path is known post-load
+        - GGUF: the TOTAL on-disk size of the quant (the path is known post-load
           via llama-cpp's `model_path`) — the on-disk quant IS the in-memory
-          weight footprint for a memory-mapped GGUF.
+          weight footprint for a memory-mapped GGUF. For a SPLIT GGUF,
+          `model_path` names only the first shard, so every sibling shard of the
+          set is summed (see `_gguf_total_weight_bytes`).
         - transformers: sum over parameters of `numel * element_size`.
+
+        Note this is a file-backed, memory-mapped footprint: it is resident as
+        process RSS and does NOT appear in the accelerator-heap counter
+        (`host_in_use_bytes`), which only sees driver-allocated buffers.
         Guarded: never raises, None when unknowable."""
         try:
             llama_obj = getattr(self, "llm", None)
             if llama_obj is not None:
                 model_path = getattr(llama_obj, "model_path", None)
                 if model_path:
-                    return int(Path(str(model_path)).stat().st_size)
+                    return _gguf_total_weight_bytes(model_path)
             model_obj = getattr(self, "model_instance", None)
             if model_obj is None:
                 model_obj = getattr(getattr(self, "pipeline", None), "model", None)

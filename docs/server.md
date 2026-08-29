@@ -250,10 +250,10 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Runtime | POST | `/acore/models/load` | Load and keep warm a task-specific model runtime | optional `task` (`text_generation` default, `image_generation`, `video_generation`, `text_to_video`, `image_to_video`, `tts`, `stt`), `provider`, `model`, `options`, `pin`, `lock`, `base_url`, `timeout_s` |
 | Runtime | GET | `/acore/models/loaded` | List task-aware loaded runtimes, merged with a host sweep of local model servers (Ollama/LM Studio) | optional `task`, `provider`, `model` |
 | Runtime | POST | `/acore/models/unload` | Unload a task-specific runtime; a locked runtime returns `409` unless `force` | `runtime_id` or `provider` + `model`, optional `task`, `base_url`, `force`, `options` |
-| Runtime | POST | `/acore/models/lock` | Lock a resident text runtime against unloading (`409 model_not_resident` otherwise) | `runtime_id` or `provider` + `model`, optional `base_url` |
+| Runtime | POST | `/acore/models/lock` | Lock a resident text runtime against unloading, adopting a sweep-resident model when no runtime is managed for it (`409 model_not_resident` otherwise) | `runtime_id` or `provider` + `model`, optional `base_url` |
 | Runtime | POST | `/acore/models/unlock` | Clear a text runtime's lock (works even after eviction) | `runtime_id` or `provider` + `model`, optional `base_url` |
 | Runtime | GET | `/acore/models/context_estimate` | Analytical context-fit estimate for a provider/model on this host | `provider`, `model`, optional `context_length` |
-| Runtime | GET | `/acore/memory` | Best-effort host memory snapshot (RAM, process, device backend, host identity) | none |
+| Runtime | GET | `/acore/memory` | Best-effort host memory snapshot (RAM, process, device backend incl. process-local and cross-process accelerator-heap bytes, host identity) | none |
 | Prompt Cache | GET | `/acore/prompt_cache/stats` | Cache stats on a loaded gateway runtime or upstream AbstractEndpoint; with no selector, enumerate stats across all loaded runtimes | optional `provider` + `model` or `base_url`; provider key header if required |
 | Prompt Cache | GET | `/acore/prompt_cache/capabilities` | Cache capability discovery on a loaded gateway runtime or upstream AbstractEndpoint | `provider` + `model` or `base_url`; provider key header if required |
 | Prompt Cache | POST | `/acore/prompt_cache/set` | Select/create a cache key locally or upstream | `provider` + `model` or `base_url`, `key`, `make_default`, `ttl_s` |
@@ -1697,6 +1697,25 @@ when a `provider` filter excludes both `ollama` and `lmstudio`. Residency
 records also carry normalized `size_bytes` / `size_vram_bytes` where the
 backend reports sizes.
 
+Managed rows carry two more per-model memory figures where they are knowable,
+both best-effort (absent means unknown, never zero):
+
+- `est_weights_bytes` — the in-memory weight footprint from the provider's own
+  residency claim, for providers that serve the model in this process: MLX sums
+  the loaded parameter arrays, and HuggingFace uses the total on-disk size of
+  the resolved `.gguf` for a GGUF model (**every shard** of a split set, not
+  just the first shard llama-cpp was handed) or the summed parameter bytes for
+  a transformers model. It is the only size an in-process runtime can report —
+  there is no server to ask for `size_bytes`. A memory-mapped GGUF's weights
+  are resident as process RSS and are absent from
+  `memory.device.host_in_use_bytes`.
+- `cache_bytes` — the total bytes that runtime's prompt-cache store holds
+  (per-key `bytes` plus MLX hybrid boundary-snapshot bytes). It is a **separate**
+  footprint from the weights; adding the two into one "size" double-counts.
+
+A client that renders one size per row should read the first known of
+`size_bytes`, `size_vram_bytes`, `est_weights_bytes`.
+
 Every record the listing serves carries the observing machine's `host_id` /
 `host_name`, and text-generation and sweep records whose model the capability
 registry knows carry `modalities` (registry route keys; a registry miss omits
@@ -1706,7 +1725,8 @@ is unusable has `input.image` removed with `modalities_note:
 carry the field). Managed rows
 report lock state (`locked`, `lockable: true`, `locked_at` while locked, with
 `pinned` as a compatibility alias of `locked`); sweep-only rows carry
-`lockable: false`. See
+`lockable: true` as well — locking one adopts it into the registry (see
+[Model locks](#model-locks)). See
 [Memory and Model Residency](memory-management.md#modalities-and-host-identity-on-residency-records).
 
 #### Model locks
@@ -1743,6 +1763,40 @@ Response (both routes):
 }
 ```
 
+##### Adopting a sweep-resident model
+
+A `provider` + `model` selector that names **no** managed runtime does not
+return `404` when the host sweep verifies that model resident on its server
+(Ollama or LM Studio — for example a model you loaded in the LM Studio app, or
+one `ollama run` left resident). The lock **adopts** it: the managed runtime
+entry is created through the same ensure path the load route uses — **client
+construction only, never a provider-side model load**, so the weights are not
+loaded a second time — residency is re-verified with the provider's own probe,
+and the lock is applied. The response then carries `"adopted": true`:
+
+```json
+{
+  "ok": true,
+  "locked": true,
+  "adopted": true,
+  "runtime_id": "1234567890abcdef",
+  "provider": "lmstudio",
+  "model": "qwen/qwen3-vl-4b",
+  "provider_side": {"supported": false, "applied": false,
+                    "detail": "lock guards this stack's unloads; the external server may still evict on its own policy"}
+}
+```
+
+A pair the sweep does **not** verify resident refuses with the usual
+`409 model_not_resident` body and `"runtime_id": null` — nothing was adopted.
+When the provider's own probe contradicts the sweep, the just-created entry is
+dropped and the same `409` is returned, so no stray "configured" row is left
+behind. Adoption covers the sweep providers only (Ollama, LM Studio): MLX and
+HuggingFace residency lives on an owning provider instance rather than on a
+server the sweep can ask, so a cold pair there still returns `404`. A
+`runtime_id` selector never adopts — it addresses an existing runtime or
+nothing.
+
 The registry lock is the enforcement truth:
 
 - `POST /acore/models/unload` on a locked runtime returns HTTP `409` with body
@@ -1757,7 +1811,14 @@ The registry lock is the enforcement truth:
 lock applies `keep_alive: -1` and unlock restores the server default (`"5m"`);
 a failure is reported as `applied: false` with a `detail` and never fails the
 lock. Providers without a residency knob report `supported: false` while the
-gateway lock still enforces. Two Ollama notes: the record's `locked`/`pinned`
+gateway lock still enforces. LM Studio is the case that needs stating plainly:
+a lock there answers `{"supported": false, "applied": false, "detail": "lock
+guards this stack's unloads; the external server may still evict on its own
+policy"}`. The lock is real against this stack's unloads and `unload_after`
+cleanup, but LM Studio runs its own eviction policy (idle TTL, JIT model
+switching, a manual eject), so a locked model can still disappear — re-read
+`GET /acore/models/loaded` rather than treating a lock as a residency
+guarantee. Two Ollama notes: the record's `locked`/`pinned`
 fields reflect the gateway-managed lock only (Ollama's own server-side
 keep-alive shows through `expires_at`), and because the keep-alive setting
 rides Ollama's native load request, unlocking a runtime whose model was since
@@ -1800,17 +1861,43 @@ decisions (for example, whether another local model fits):
   "ts": 1700000000.0,
   "ram": {"total_bytes": 137438953472, "available_bytes": 33013366784, "used_bytes": 95548260352, "percent": 76.0},
   "process": {"rss_bytes": 175357952},
-  "device": {"backend": "metal", "allocated_bytes": 0, "total_bytes": 137438953472, "free_bytes": null},
+  "device": {"backend": "metal", "allocated_bytes": 0, "total_bytes": 137438953472, "free_bytes": null,
+             "host_in_use_bytes": 105743990784, "wired_limit_bytes": 115343360000},
   "host": {"host_id": "a1b2c3d4e5f6", "host_name": "studio.local", "kind": "local"}
 }
 ```
 
 Unknown values are `null`; the route never fails. `device.backend` is
-`"metal"`, `"cuda"`, `"mps"`, or `null`. When verifying that an unload freed
-memory, read `device.allocated_bytes`: on Metal hosts, `process.rss_bytes`
-behaves as a high-water mark (freed device buffers return to the process
-allocator, not to the OS) and does not drop after an in-process unload. See
-[Memory and Model Residency](memory-management.md#reading-the-snapshot-allocated-bytes-vs-process-rss).
+`"metal"`, `"cuda"`, `"mps"`, or `null`.
+
+The device block carries three figures that answer three different questions:
+
+- `allocated_bytes` is **process-local** — what this server process's own
+  accelerator allocator holds. It is the signal to read when verifying that an
+  in-process unload freed memory. It does not see a model resident in another
+  process (LM Studio, Ollama), and it does not see a llama.cpp/GGUF model
+  resident in *this* process either, because those weights are mapped outside
+  that allocator. `allocated_bytes: 0` means "this allocator holds nothing",
+  never "nothing is loaded on this host".
+- `host_in_use_bytes` (Metal only, else `null`) is the **accelerator heap
+  across processes**: driver-allocated Metal buffers, read from IORegistry. It
+  is NOT the host's total memory use. Memory-mapped GGUF/llama.cpp weights are
+  absent from it — they are file-backed no-copy buffers, visible instead as
+  `process.rss_bytes` and the model's own `est_weights_bytes` — so a resident-
+  model total routinely exceeds it. Render it labelled as the accelerator heap,
+  never as the machine's memory use; use `ram` for the system picture.
+- `wired_limit_bytes` (Metal only, else `null`) is the enforced accelerator
+  ceiling — `sysctl iogpu.wired_limit_mb` when set, else Metal's
+  `max_recommended_working_set_size` — the same ceiling
+  `/acore/models/context_estimate` budgets against. Compare `host_in_use_bytes`
+  against it for headroom.
+
+On Metal hosts `process.rss_bytes` behaves as a high-water mark (freed device
+buffers return to the process allocator, not to the OS) and does not drop after
+an in-process unload, so it is not an unload signal. Neither device total is a
+per-model number; for that, read the residency records' `size_bytes` /
+`size_vram_bytes` / `est_weights_bytes`. See
+[Memory and Model Residency](memory-management.md#reading-the-snapshot-process-local-accelerator-heap-and-process-rss).
 
 ### Prompt Cache Control Plane
 

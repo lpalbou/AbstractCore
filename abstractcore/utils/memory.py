@@ -7,12 +7,24 @@ and the function never raises — visibility must not be able to break a caller.
 
 This module also owns the Apple-silicon accelerator ceilings the context
 estimator budgets against (`metal_wired_limit_bytes`,
-`metal_recommended_working_set_bytes`) and the host-WIDE accelerator usage
+`metal_recommended_working_set_bytes`) and the cross-process accelerator-heap
 probe (`ioreg` IOAccelerator PerformanceStatistics). The distinction matters:
-`device.allocated_bytes` is THIS PROCESS's accelerator memory (mlx active
-memory) — truthful per-process, but blind to models resident in other
-processes (LM Studio, Ollama). `device.host_in_use_bytes` is the host-wide
-figure the OS reports, so a model loaded by another process shows up.
+
+- `device.allocated_bytes` is THIS PROCESS's accelerator memory (mlx active
+  memory) — truthful per-process, blind to every other process.
+- `device.host_in_use_bytes` is ACCELERATOR-HEAP memory across processes:
+  buffers the Metal driver allocated, wherever they were allocated from. An
+  MLX model — in this process or in an MLX-engine server such as LM Studio —
+  shows up here.
+
+What `host_in_use_bytes` does NOT see, and must never be presented as seeing:
+**memory-mapped GGUF/llama.cpp weights**. llama.cpp mmaps the `.gguf` and wraps
+those pages with `newBufferWithBytesNoCopy`, so they are file-backed and never
+become driver-allocated accelerator memory — a fully offloaded 90 GB GGUF moves
+this counter by ~0. Such weights are visible instead as process RSS
+(`process.rss_bytes`) and as the model's own reported weight size
+(`est_weights_bytes`). It is therefore NOT the host's total memory use, and a
+resident-model total legitimately exceeds it. Use `ram` for the system picture.
 """
 
 from __future__ import annotations
@@ -102,7 +114,9 @@ def metal_recommended_working_set_bytes() -> Optional[int]:
 # `ioreg -r -c IOAccelerator -l` parsing (same discipline as the gateway's
 # GPU-utilization reader): PerformanceStatistics is a `{ "key"=value, ... }`
 # dict printed on one line; on Apple silicon the "In use system memory"
-# statistic is the host-wide accelerator memory currently in use, in bytes.
+# statistic is driver-allocated accelerator-heap memory currently in use across
+# processes, in bytes. It counts allocator-backed buffers only — memory-mapped
+# GGUF weights (`newBufferWithBytesNoCopy` over an mmap) are absent from it.
 _IOREG_PERF_STATS_RE = re.compile(r'"PerformanceStatistics"\s*=\s*\{(.*?)\}', re.DOTALL)
 _IOREG_KV_RE = re.compile(r'"([^"]+)"\s*=\s*([^,}]+)')
 _IOREG_IN_USE_KEY = "In use system memory"
@@ -111,6 +125,10 @@ _IOREG_IN_USE_KEY = "In use system memory"
 def parse_ioreg_accelerator_in_use_bytes(text: str) -> Optional[int]:
     """Sum of `"In use system memory"` across IOAccelerator
     PerformanceStatistics blocks in raw `ioreg` output, or None when absent.
+
+    This is accelerator-HEAP memory across processes, not whole-system memory
+    use: it tracks driver-allocated buffers, so memory-mapped GGUF weights are
+    excluded (see the module docstring).
 
     The key must match EXACTLY — `"In use system memory (driver)"` is a
     different (driver-only) statistic and is deliberately not counted."""
@@ -163,8 +181,8 @@ def _device_snapshot() -> Dict[str, Any]:
         "allocated_bytes": None,
         "total_bytes": None,
         "free_bytes": None,
-        # Metal-only extras (host-wide truth; stay None on other backends —
-        # CUDA's total/free already ARE device-wide truth):
+        # Metal-only extras (cross-process accelerator heap; stay None on other
+        # backends — CUDA's total/free already ARE device-wide truth):
         "host_in_use_bytes": None,
         "wired_limit_bytes": None,
     }
@@ -195,10 +213,12 @@ def _device_snapshot() -> Dict[str, Any]:
                         out["total_bytes"] = int(total)
             except Exception:
                 pass
-            # HOST-WIDE truth: accelerator memory in use across ALL processes
-            # (ioreg IOAccelerator PerformanceStatistics). A model resident in
-            # LM Studio's or Ollama's process shows up here, not in
-            # `allocated_bytes`.
+            # CROSS-PROCESS truth: driver-allocated accelerator-heap memory in
+            # use across ALL processes (ioreg IOAccelerator
+            # PerformanceStatistics). An MLX model resident in an MLX-engine
+            # server (LM Studio) shows up here, not in `allocated_bytes`.
+            # Memory-mapped GGUF weights do NOT appear here at all — they are
+            # file-backed no-copy buffers; see the module docstring.
             out["host_in_use_bytes"] = _ioreg_accelerator_in_use_bytes()
             # The enforced accelerator ceiling: the wired-limit sysctl when
             # set, else Metal's recommended working set. None when neither is
@@ -308,7 +328,8 @@ def get_memory_snapshot() -> Dict[str, Any]:
                     "allocated_bytes": int|None,   # THIS process (metal/mps: mlx/torch active memory)
                     "total_bytes": int|None,
                     "free_bytes": int|None,
-                    "host_in_use_bytes": int|None,  # metal: HOST-WIDE accelerator in-use (ioreg)
+                    "host_in_use_bytes": int|None,  # metal: cross-process accelerator HEAP (ioreg);
+                                                    #   excludes memory-mapped GGUF weights
                     "wired_limit_bytes": int|None}, # metal: enforced ceiling (sysctl, else Metal working set)
          "host": {"host_id", "host_name", "kind"}}
 

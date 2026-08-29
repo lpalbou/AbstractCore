@@ -5261,8 +5261,10 @@ def _merge_provider_server_sweep(
         record["source"] = "provider_server"
         # Sweep-only rows ARE lockable: `POST /acore/models/lock` ADOPTS a
         # sweep-resident model into the managed registry (client construction
-        # only — never a provider-side load) and then enforces the lock like
-        # any managed runtime (unload 409/force, unload_after skip).
+        # only — never a COLD load; ollama's keep-alive knob that follows does
+        # POST `/api/generate` with an empty prompt, which is a TTL refresh on
+        # an already-verified-resident model, not a load) and then enforces the
+        # lock like any managed runtime (unload 409/force, unload_after skip).
         record["lockable"] = True
         _stamp_record_modalities(record, model=record.get("model"))
         _stamp_record_host_identity(record)

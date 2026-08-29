@@ -92,7 +92,8 @@ def test_acore_memory_reports_snapshot() -> None:
         "allocated_bytes",
         "total_bytes",
         "free_bytes",
-        # host-wide accelerator truth (Metal; null elsewhere)
+        # cross-process accelerator HEAP (Metal; null elsewhere). Not total
+        # memory use: memory-mapped GGUF weights never appear in it.
         "host_in_use_bytes",
         "wired_limit_bytes",
     }

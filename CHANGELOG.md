@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **A sharded GGUF now reports the size of the whole quant, not its first shard.**
+  `est_weights_bytes` came from `stat()` on llama-cpp's `model_path`, which for a split
+  GGUF names only `…-00001-of-000NN.gguf`. That shard can be a rounding error against the
+  set: measured on a three-shard `Qwen3.8-Flash-Next-GGUF:UD-Q3_K_XL`, 10,946,624 B was
+  reported for an 89,986,353,824 B model — **off by 8,220×** — and that number was promoted
+  through `display_size_field_order` and `totals.model_bytes` into every residency UI. Split
+  sets are now summed across every sibling shard declaring the same `-of-NNNNN` count. A
+  partially-fetched set sums the shards actually present rather than claiming completeness;
+  non-sharded files are unchanged.
+- **The accelerator memory counter no longer claims to see what it cannot.**
+  `device.host_in_use_bytes` (ioreg `"In use system memory"`) was documented as the
+  "host-wide" figure that sees "models this process holds through another allocator". It is
+  a genuine accelerator counter — MLX allocations move it ~1:1 — but it counts *driver-
+  allocated* buffers, so **memory-mapped GGUF/llama.cpp weights never appear in it**:
+  llama.cpp mmaps the `.gguf` and wraps the pages with `newBufferWithBytesNoCopy`. Measured:
+  a fully offloaded 89.99 GB GGUF left the counter at 0.79 GB while process RSS was
+  75.81 GB. Docstrings and docs now state it precisely — accelerator-heap memory across
+  processes (MLX and MLX-engine servers such as LM Studio), not the host's total memory use,
+  and a resident-model total legitimately exceeds it. Every UI surface now renders it as a
+  scoped `Accelerator heap · <backend> (all processes)` line noting that memory-mapped GGUF
+  weights are not counted, with RAM as the primary system meter.
 - **`mlx-vlm` now ships with the MLX provider — image input is no longer an opt-in extra.**
   It was previously held out of `mlx`/`apple` to keep a web framework, opencv and an audio
   stack out of a text-only install. What that produced instead: the standard Apple install
@@ -840,6 +861,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   high-water mark (freed device buffers return to the process allocator, not to the OS) and does
   not drop after an in-process unload. See the new
   [Memory and Model Residency](docs/memory-management.md) guide.
+- **The device block separates process-local from host-wide accelerator memory.**
+  `device.allocated_bytes` is what *this process's* accelerator allocator holds — truthful for an
+  in-process MLX model, but blind to a model resident in another process (LM Studio, Ollama) and
+  blind to a llama.cpp/GGUF model resident in this one, whose weights are mapped outside that
+  allocator. So `allocated_bytes: 0` means "this allocator holds nothing", never "nothing is
+  loaded on this host". Two Metal-only fields now carry the rest: `device.host_in_use_bytes`, the
+  host-wide accelerator memory in use across all processes (IORegistry `"In use system memory"`),
+  and `device.wired_limit_bytes`, the enforced ceiling (`sysctl iogpu.wired_limit_mb` when set,
+  else Metal's `max_recommended_working_set_size` — the same ceiling `estimate_context_fit()`
+  budgets against, through the shared `abstractcore.utils.memory.metal_wired_limit_bytes()`).
+  Both are `None` on non-Metal backends.
 - **Host-wide resident-model sweep.** `abstractcore.utils.residency.sweep_loaded_models()`
   enumerates the models resident on the host's local model servers (Ollama `/api/ps`, LM Studio
   loaded instances) without constructing model-bound providers; unreachable servers are silently
@@ -849,10 +881,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolution).
 - **Provider loaded-model listings.** `list_loaded_models(filters=None)` on every provider returns
   the models the instance can verify as loaded; Ollama and LM Studio instances enumerate their
-  whole server, and MLX adds a best-effort `est_weights_bytes`. New classmethods
+  whole server. New classmethods
   `OllamaProvider.list_server_loaded_models()` and `LMStudioProvider.list_server_loaded_models()`
   answer the same server-wide question without a provider instance. Residency records carry
   normalized `size_bytes` / `size_vram_bytes` where the backend reports sizes.
+- **Per-model memory on residency records.** The in-process providers report a best-effort
+  `est_weights_bytes` on their residency claim — MLX sums the loaded parameter arrays, HuggingFace
+  uses the resolved `.gguf` file size for a GGUF model (a memory-mapped quant's on-disk size *is*
+  its weight footprint) or the summed parameter bytes for a transformers model. It is the only
+  size such a runtime can report: there is no model server to ask for `size_bytes`. Managed
+  residency records served by the gateway additionally carry `cache_bytes`, the total bytes that
+  runtime's prompt-cache store holds (per-key `bytes` plus MLX hybrid boundary-snapshot bytes).
+  Both are absent when unknown, never zero, and the two are separate footprints — adding
+  `cache_bytes` into a model's size double-counts. A client rendering one size per row should read
+  the first known of `size_bytes`, `size_vram_bytes`, `est_weights_bytes`.
 - **`GET /acore/models/loaded` merges the host sweep.** Models resident on local model servers but
   not loaded through the gateway appear as `source: "provider_server"` rows in unfiltered and
   text-generation listings, deduplicated against gateway runtimes by the provider's own alias rules
@@ -886,7 +928,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   model was since evicted so it is never loaded back as a side effect — locks are never
   stranded); providers without one report `provider_side.supported: false`
   while the gateway lock still enforces. Managed residency records carry `locked`, `lockable`,
-  and `locked_at`; sweep-only rows carry `lockable: false`.
+  and `locked_at`.
+- **Locking adopts a sweep-resident model.** Models resident on the host's local model servers are
+  often not loaded through this gateway — you loaded one in the LM Studio app, or `ollama run` left
+  it warm. A `provider` + `model` selector naming no managed runtime now creates the registry entry
+  for such a model through the same ensure path a load uses — **client construction only, never a
+  provider-side model load**, so the weights are not loaded a second time — re-verifies residency
+  with the provider's own probe, and applies the lock; the response carries `"adopted": true`.
+  A pair the sweep does not verify resident refuses with the same `409`
+  (`error: "model_not_resident"`, `runtime_id: null` — nothing was adopted), and a provider probe
+  that contradicts the sweep drops the just-created entry rather than leaving a stray "configured"
+  row. Adoption covers the sweep providers (Ollama, LM Studio) only, and a `runtime_id` selector
+  never adopts. Sweep-only rows therefore now carry `lockable: true`.
+- **LM Studio locks state what they do not cover.** LM Studio exposes no residency-pin knob, so a
+  lock there answers `provider_side: {"supported": false, "applied": false, "detail": "lock guards
+  this stack's unloads; the external server may still evict on its own policy"}`. The lock is real
+  against this stack's unloads and `unload_after` cleanup, but the external server keeps its own
+  eviction policy (idle TTL, JIT model switching, a manual eject) — re-read
+  `GET /acore/models/loaded` rather than treating a lock as a residency guarantee.
 - **Context calibration and estimation.** GGUF loads that settle their context through the probe
   ladder record the settled `n_ctx` to a per-machine calibration store
   (`~/.abstractcore/calibration/`, directory overridable with `ABSTRACTCORE_CALIBRATION_DIR`;
