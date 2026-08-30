@@ -38,6 +38,7 @@ nav:
   - Tool Calling: tool-calling.md
   - Structured Output: structured-output.md
   - Prompt Caching: prompt-caching.md
+  - Speculative Decoding: speculative-decoding.md
   - Memory Blocs: memory-blocs.md
   - Media: media-handling-system.md
   - Embeddings: embeddings.md

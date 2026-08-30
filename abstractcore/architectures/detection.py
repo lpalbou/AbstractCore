@@ -256,7 +256,7 @@ def get_architecture_format(architecture: str) -> Dict[str, Any]:
 # Capability fields that are API-rejection FACTS (wire contract), not style/family
 # inference. These must never be inherited through a low-confidence fuzzy match —
 # see the partial-match guard in get_model_capabilities().
-_WIRE_CONTRACT_CAPABILITY_FIELDS = ("unsupported_parameters", "token_param_name")
+_WIRE_CONTRACT_CAPABILITY_FIELDS = ("unsupported_parameters", "token_param_name", "speculation")
 
 # Separator characters that mark a token boundary in model names
 # ("gpt-5-2025-08-07", "o1-preview", "qwen3-next-80b-a3b", "name:tag").

@@ -295,6 +295,7 @@ def _validate_model_entry_v0(*, model_key: str, cfg: Mapping[str, Any]) -> None:
         "short_side_resize_target",
         "source",
         "spatial_perception",
+        "speculation",
         "status",
         "supported_resolutions",
         "tensor_type",

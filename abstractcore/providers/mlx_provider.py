@@ -28,6 +28,13 @@ except ImportError:
     OUTLINES_AVAILABLE = False
 
 from .base import BaseProvider, PromptCacheRenderedFragment, ThinkingControlHandling
+from .speculation import (
+    SpeculationOutcome,
+    SpeculationUnavailableError,
+    capability_speculation,
+    normalize_speculation_request,
+    unavailable as speculation_unavailable,
+)
 from ..architectures.response_postprocessing import (
     TRUNCATED_REASONING_MARKER,
     normalize_assistant_text,
@@ -83,6 +90,32 @@ class MLXProvider(BaseProvider):
         self._vision_usable: bool = False
         self._vision_reason: Optional[str] = None
         self._vision_info: Dict[str, Any] = {}
+        # Native-MTP speculative decoding state. The MTP lane is a DIFFERENT
+        # runtime, not a flag: mlx-lm strips `mtp.` weights on load and its own
+        # speculative path refuses this architecture outright ("requires a
+        # trimmable prompt cache"), so acceleration means loading the target
+        # through mlx-vlm and pairing it with a separate drafter checkpoint.
+        # Resolved once at load; None here means the lane is inert and every
+        # generate call behaves exactly as it did before.
+        self._speculation_request = normalize_speculation_request(
+            kwargs.get("speculation")
+        )
+        self._mtp_drafter = None
+        self._mtp_kind: Optional[str] = None
+        self._mtp_block_size: Optional[int] = None
+        self._mtp_processor = None
+        self._mtp_reason: Optional[str] = None
+        self._mtp_drafter_id: Optional[str] = None
+        self._mtp_prompt_cache_warned: bool = False
+        # Set per call by `_apply_per_call_speculation` when a request asks for
+        # `off` on a provider whose lane is loaded -- the one per-call change
+        # that IS honorable, since skipping the drafter needs no reload.
+        self._mtp_call_disabled: bool = False
+        self._mtp_call_outcome: Optional[SpeculationOutcome] = None
+        # Set when the lane declined at load time; carries the named reason into
+        # every later response's metadata so the diagnosis is not one log line
+        # the caller may never have seen.
+        self._mtp_outcome_at_load: Optional[SpeculationOutcome] = None
         # Delta-feed bookkeeping (see _prepare_cache_delta_feed): keys that
         # already warned about unknown-composition warm caches, and the last
         # fragment fed by _prompt_cache_backend_append (consumed by
@@ -2216,6 +2249,334 @@ class MLXProvider(BaseProvider):
             "meta": store_meta,
         }
 
+    # ------------------------------------------------------------------
+    # Native MTP (multi-token prediction) speculative decoding
+    # ------------------------------------------------------------------
+
+    def _plan_mtp_lane(self, load_target) -> Optional[Dict[str, Any]]:
+        """Decide whether this session should run the MTP lane, and with what.
+
+        Returns the resolved plan, or None to leave the ordinary mlx-lm lane
+        untouched. Every "no" that follows an explicit request goes through
+        `speculation_unavailable`, so it is warned with a named reason (or
+        raised, under `require_acceleration=True`) rather than silently dropped.
+        """
+        request = self._speculation_request
+        if request is None or not request.enabled:
+            return None
+
+        block = capability_speculation(self.model_capabilities, "mlx")
+        drafter_id = request.drafter or (block or {}).get("drafter")
+        if not drafter_id:
+            # Deliberately not a guess: the MLX head ships as its own repo whose
+            # name we cannot derive from the target's (mlx-community publishes
+            # `<model>-MTP-4bit` for some models and nothing for others), and
+            # `text_config.mtp_num_hidden_layers` is present even in checkpoints
+            # that carry no MTP tensors, so it is not evidence either.
+            self._mtp_outcome_at_load = speculation_unavailable(
+                request,
+                "no_mtp_drafter_for_model",
+                f"no MLX MTP drafter is known for '{self.model}'. Pass "
+                "speculation={'drafter': '<repo>'} or use a model whose registry "
+                "entry lists an mlx drafter",
+                logger=self.logger,
+            )
+            return None
+
+        try:
+            import mlx_vlm  # noqa: F401
+        except ImportError:
+            self._mtp_outcome_at_load = speculation_unavailable(
+                request,
+                "mlx_vlm_missing",
+                "native MTP on MLX runs through mlx-vlm (mlx-lm strips `mtp.` "
+                'weights on load); install with: pip install "abstractcore[mlx]"',
+                logger=self.logger,
+            )
+            return None
+
+        block_size = (
+            request.num_draft_tokens
+            or (block or {}).get("block_size")
+            # The drafter's own config carries a block_size, but it is an
+            # architecture/training property, NOT a tuned runtime value --
+            # measured, Qwen3.5-4B's drafter declares 4 and 4 is the one setting
+            # with no speedup at all (0.98x, against 1.16x at 2). Leaving this
+            # None lets mlx-vlm fall back to that config value.
+            or None
+        )
+        if block_size == 1:
+            # Measured on Qwen3.5-4B: 15.4 tok/s against 107.2 unaccelerated --
+            # a 7x SLOWDOWN, not a small loss. Worth naming rather than letting
+            # someone conclude MTP is broken.
+            self.logger.warning(
+                "speculation: num_draft_tokens=1 is pathologically slow on the "
+                "MLX MTP lane (measured ~0.14x of unaccelerated decoding). Use 2 "
+                "or more, or omit it to take the model's registry default."
+            )
+        return {"drafter": str(drafter_id), "block_size": block_size}
+
+    def _enter_mtp_lane(self, load_target, plan: Dict[str, Any]) -> bool:
+        """Load target + drafter through mlx-vlm. True when the lane is live.
+
+        On any failure this returns False and the caller falls back to the
+        ordinary mlx-lm load, so a broken drafter costs a warning rather than an
+        unusable provider -- unless the caller demanded acceleration, in which
+        case `speculation_unavailable` raises.
+        """
+        import os
+        from contextlib import redirect_stdout, redirect_stderr
+
+        request = self._speculation_request
+        drafter_id = plan["drafter"]
+        try:
+            from mlx_vlm import load as vlm_load
+            from mlx_vlm.speculative.drafters import load_drafter
+
+            with open(os.devnull, "w") as devnull:
+                with redirect_stdout(devnull), redirect_stderr(devnull):
+                    # Drafter FIRST, deliberately. It is the cheap, fallible
+                    # half -- 256 MB against the target's 15 GB, and the half
+                    # that fails (a repo that isn't cached, a kind that won't
+                    # resolve). Any failure here returns False and the caller
+                    # falls back to the ordinary mlx-lm load, which loads the
+                    # target again: loading the target first would spend 15 GB,
+                    # discard it, and spend 15 GB more.
+                    #
+                    # Use the kind the loader RESOLVES from the drafter's
+                    # config, never a caller-supplied one -- load_drafter's own
+                    # docstring says the resolved value is the dispatch key.
+                    drafter, kind = load_drafter(drafter_id)
+                    model, processor = vlm_load(str(load_target))
+        except Exception as exc:
+            self._mtp_outcome_at_load = speculation_unavailable(
+                request,
+                "mtp_drafter_load_failed",
+                f"could not load MLX MTP drafter '{drafter_id}': {exc}",
+                logger=self.logger,
+            )
+            return False
+
+        self.llm = model
+        self._mtp_processor = processor
+        # The provider only ever calls `.encode` on self.tokenizer (4 sites), so
+        # handing it the processor's inner tokenizer keeps those byte-identical
+        # while mlx-vlm gets the full processor it requires -- it rejects a bare
+        # mlx-lm tokenizer with "has no attribute stopping_criteria".
+        self.tokenizer = getattr(processor, "tokenizer", processor)
+        self._mtp_drafter = drafter
+        self._mtp_kind = kind
+        self._mtp_drafter_id = drafter_id
+        self._mtp_block_size = plan.get("block_size")
+        self.generate_fn = self._mtp_generate_fn
+        self.stream_generate_fn = self._mtp_stream_generate_fn
+        self.logger.info(
+            f"mlx: native MTP lane active (drafter={drafter_id}, kind={kind}, "
+            f"block_size={self._mtp_block_size or 'from drafter config'})"
+        )
+        return True
+
+    def _apply_per_call_speculation(self, value) -> None:
+        """Reconcile a per-call `speculation=` with the lane that is loaded.
+
+        Three outcomes, no fourth:
+          - `off`  -> honored; this call skips the drafter even if the lane is up.
+          - matches the loaded lane -> honored, nothing to do.
+          - asks for something the loaded lane is not -> `speculation_is_load_time`
+            (warned, or raised under `require_acceleration=True`).
+        """
+        # Both fields are PER CALL and reset here on every request. Writing a
+        # per-call refusal into provider-lifetime state let call 1's rejected
+        # drafter name leak into call 2's metadata -- a block whose whole job is
+        # to say what actually ran, naming a checkpoint that was never loaded.
+        self._mtp_call_disabled = False
+        self._mtp_call_outcome = None
+        request = normalize_speculation_request(value)
+        if request is None:
+            return
+
+        if not request.enabled:
+            # Honorable per call: not passing the drafter kwargs is all it takes.
+            self._mtp_call_disabled = True
+            if self._mtp_active:
+                self._mtp_call_outcome = SpeculationOutcome(
+                    requested=False,
+                    mode="off",
+                    used=False,
+                    reason="disabled_for_this_call",
+                    drafter=getattr(self, "_mtp_drafter_id", None),
+                )
+            return
+
+        if self._mtp_active:
+            wanted = request.drafter
+            if wanted and wanted != getattr(self, "_mtp_drafter_id", None):
+                self._mtp_call_disabled = True
+                self._mtp_call_outcome = speculation_unavailable(
+                    request,
+                    "speculation_is_load_time",
+                    f"this provider loaded drafter "
+                    f"'{getattr(self, '_mtp_drafter_id', None)}'; switching to "
+                    f"'{wanted}' needs a new provider because the drafter is "
+                    "bound to the target at load time",
+                    logger=self.logger,
+                )
+            return
+
+        # Lane not loaded: cannot be turned on mid-flight at any price.
+        held = getattr(self, "_mtp_outcome_at_load", None)
+        if held is not None and held.reason:
+            # A constructor-time request already failed for a NAMED reason
+            # (missing drafter, missing mlx-vlm). Re-raise under a strict
+            # per-call request rather than replacing the better diagnosis.
+            if request.require_acceleration:
+                raise SpeculationUnavailableError(
+                    f"speculation could not be enabled: {held.reason} "
+                    "(speculation.require_acceleration=True)",
+                    reason=held.reason,
+                )
+            return
+
+        self._mtp_call_outcome = speculation_unavailable(
+            request,
+            "speculation_is_load_time",
+            "speculation must be requested when the provider is created -- it "
+            "selects the runtime that loads the weights. Pass "
+            "speculation={'mode': 'native_mtp'} to create_llm(...)",
+            logger=self.logger,
+        )
+
+    @property
+    def _mtp_active(self) -> bool:
+        # getattr, not attribute access: the prompt-cache unit harnesses build
+        # this provider with `__new__` and never run `__init__` (see the note on
+        # the vision-addon fields), so every MTP accessor has to read as "off"
+        # on an instance that was never initialised.
+        return getattr(self, "_mtp_drafter", None) is not None
+
+    def _mtp_kwargs(self, input_embeddings) -> Dict[str, Any]:
+        """Drafter kwargs for one call, or {} when this call must not use it.
+
+        v1 is text-only. The vision add-on feeds `input_embeddings`, which is an
+        mlx-lm-shaped entry point that mlx-vlm's speculative loop does not take;
+        rather than guess at the pairing, an image request runs unaccelerated.
+        """
+        if (
+            not self._mtp_active
+            or input_embeddings is not None
+            or getattr(self, "_mtp_call_disabled", False)
+        ):
+            return {}
+        kw = {
+            "draft_model": self._mtp_drafter,
+            "draft_kind": getattr(self, "_mtp_kind", None),
+        }
+        block = getattr(self, "_mtp_block_size", None)
+        if block:
+            kw["draft_block_size"] = int(block)
+        return kw
+
+    def _mtp_generate_fn(self, model, tokenizer, prompt=None, **kwargs):
+        """mlx-lm-shaped call site adapter over mlx-vlm's `generate`."""
+        from mlx_vlm import generate as vlm_generate
+
+        text = prompt if prompt is not None else kwargs.pop("prompt", None)
+        result = vlm_generate(
+            model,
+            self._mtp_processor,
+            text,
+            **self._mtp_call_kwargs(kwargs),
+        )
+        # mlx-lm's `generate` returns a str; mlx-vlm returns a result object.
+        # The call site assigns straight into `response_text`, so normalize here
+        # rather than teaching every consumer about a second shape.
+        return getattr(result, "text", result)
+
+    def _mtp_stream_generate_fn(self, model, tokenizer, prompt=None, **kwargs):
+        from mlx_vlm import stream_generate as vlm_stream_generate
+
+        text = prompt if prompt is not None else kwargs.pop("prompt", None)
+        return vlm_stream_generate(
+            model,
+            self._mtp_processor,
+            text,
+            **self._mtp_call_kwargs(kwargs),
+        )
+
+    def _mtp_call_kwargs(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """Translate the mlx-lm call-site kwargs into mlx-vlm's vocabulary."""
+        out = dict(kwargs)
+        input_embeddings = out.pop("input_embeddings", None)
+        out.pop("verbose", None)
+        if input_embeddings is not None:
+            # FAIL CLOSED. Enabling the MTP lane swaps generate_fn wholesale, so
+            # once speculation is on every call goes through mlx-vlm -- image
+            # calls included. `mlx_vlm.generate` absorbs unknown kwargs into
+            # **kwargs, so forwarding mlx-lm's `input_embeddings` would not
+            # raise: the picture would simply vanish and the model would answer
+            # from text as if it had seen it. This lane is text-only in v1, and
+            # a refusal the caller can act on beats an answer they cannot trust.
+            raise ProviderAPIError(
+                "mlx: native MTP speculation is text-only, and this request carries "
+                "image/video input. The MTP lane runs through mlx-vlm's speculative "
+                "loop, which does not take the vision add-on's precomputed "
+                "embeddings, and silently answering without them would be worse "
+                "than refusing. Create the provider without speculation "
+                "(speculation={'mode': 'off'}) for media requests."
+            )
+        # The keyed snapshot prompt cache is built from mlx-lm cache objects and
+        # its rollback lane is shaped around them. Feeding one into mlx-vlm's
+        # speculative loop is exactly the "silent desync" this contract exists
+        # to prevent, so the MTP lane declines the warm cache instead. This is
+        # the one honest cost of the lane and it is stated in the docs.
+        cache = out.pop("prompt_cache", None)
+        if cache is not None and not self._mtp_prompt_cache_warned:
+            self._mtp_prompt_cache_warned = True
+            self.logger.warning(
+                "mlx: native MTP lane does not reuse the keyed prompt cache; "
+                "prompts are prefilled fresh. Disable speculation to get warm-cache "
+                "reuse back."
+            )
+        out.update(self._mtp_kwargs(input_embeddings))
+        return out
+
+    def _mtp_outcome(self, used_this_call: bool) -> SpeculationOutcome:
+        """Response metadata for one call.
+
+        `used` is set ONLY from whether a drafter ran on this call -- never from
+        the request or the registry.
+        """
+        # A per-call verdict is the most specific truth about THIS call, so it
+        # wins over both the constructor request and any load-time refusal.
+        call_outcome = getattr(self, "_mtp_call_outcome", None)
+        if call_outcome is not None:
+            return call_outcome
+        request = getattr(self, "_speculation_request", None)
+        if request is None or not request.enabled:
+            return SpeculationOutcome()
+        if used_this_call:
+            return SpeculationOutcome(
+                requested=True,
+                mode=request.mode,
+                used=True,
+                drafter=getattr(self, "_mtp_drafter_id", None),
+                num_draft_tokens=getattr(self, "_mtp_block_size", None),
+                details={
+                    "runtime": "mlx_vlm",
+                    "draft_kind": getattr(self, "_mtp_kind", None),
+                },
+            )
+        held = getattr(self, "_mtp_outcome_at_load", None)
+        if held is not None:
+            return held
+        return SpeculationOutcome(
+            requested=True,
+            mode=request.mode,
+            used=False,
+            reason=getattr(self, "_mtp_reason", None) or "speculation_not_applied",
+            drafter=getattr(self, "_mtp_drafter_id", None),
+        )
+
     def _load_model(self):
         """Load MLX model and tokenizer"""
         try:
@@ -2424,6 +2785,14 @@ class MLXProvider(BaseProvider):
                 self._vision_info = {}
                 self.logger.warning(f"mlx: vision capability probe failed: {exc}")
 
+            # Decide the MTP lane BEFORE loading. It is an either/or, never a
+            # retrofit: mlx-vlm and mlx-lm each hold their own copy of the
+            # weights, and this model is 15 GB at 4-bit, so loading one and then
+            # discovering we wanted the other costs a second 15 GB.
+            mtp_plan = self._plan_mtp_lane(load_target)
+            if mtp_plan is not None and self._enter_mtp_lane(load_target, mtp_plan):
+                return
+
             # Silence the "Fetching" progress bar by redirecting stdout/stderr
             with open(os.devnull, "w") as devnull:
                 with redirect_stdout(devnull), redirect_stderr(devnull):
@@ -2478,6 +2847,12 @@ class MLXProvider(BaseProvider):
             self.stream_generate_fn = stream_generate
         except ImportError:
             raise ImportError("MLX dependencies not installed. Install with: pip install mlx-lm")
+        except SpeculationUnavailableError:
+            # `require_acceleration=True` is an explicit "fail rather than run
+            # slow". Re-flattening it into a generic "Failed to load MLX model"
+            # below would destroy both the type and the machine-readable reason
+            # the caller asked for.
+            raise
         except Exception as e:
             # Check if it's a model not found error
             error_str = str(e).lower()
@@ -2609,6 +2984,14 @@ class MLXProvider(BaseProvider):
         both lost images silently.
         """
         from ..media.delivery import MediaReport, attach_media_report
+
+        # Consume `speculation=` here so a per-call request is never absorbed
+        # into **kwargs and dropped. It cannot TURN ON the lane -- entering it
+        # decides which runtime loads 15 GB of weights, which happened at
+        # construction -- but silence is the one outcome the contract forbids,
+        # so an unhonorable per-call request warns (or raises under
+        # require_acceleration) exactly like a constructor-time one.
+        self._apply_per_call_speculation(kwargs.pop("speculation", None))
 
         report = MediaReport.for_request(media, provider="mlx", model=self.model)
         out = self._generate_core(
@@ -3024,6 +3407,21 @@ class MLXProvider(BaseProvider):
                     response.metadata = merge_enrichment_metadata(
                         response.metadata, media_enrichment
                     )
+                # Speculation telemetry rides on every response where the caller
+                # asked for it, whether or not it worked -- a request that
+                # quietly did nothing is the failure mode the contract targets.
+                # `used` is computed from what this call actually ran: the MTP
+                # lane declines image requests, so sight silently disables it.
+                spec_outcome = self._mtp_outcome(
+                    bool(self._mtp_kwargs(input_embeddings))
+                )
+                if spec_outcome.requested or spec_outcome.reason:
+                    # `reason` alone is enough to report: a per-call
+                    # `speculation={'mode':'off'}` on an accelerated provider
+                    # requested nothing, yet "the lane exists and was skipped
+                    # for this call" is exactly what the caller needs to see.
+                    response.metadata = dict(response.metadata or {})
+                    response.metadata["speculation"] = spec_outcome.to_metadata()
 
                 # Handle tool execution for prompted models
                 if tools and self.tool_handler.supports_prompted and response.content:

@@ -242,7 +242,11 @@ class RetryManager:
             "InvalidRequestError",
             "ModelNotFoundError",
             "UnsupportedFeatureError",
-            "ConfigurationError"
+            "ConfigurationError",
+            # A lane that cannot speculate will not start speculating on
+            # attempt 2; retrying only multiplies the latency the caller was
+            # trying to avoid.
+            "SpeculationUnavailableError",
         }
 
     def get_circuit_breaker(self, key: str) -> CircuitBreaker:

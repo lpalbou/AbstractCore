@@ -2,8 +2,36 @@
 
 ## Metadata
 - Created: 2026-05-18
-- Status: Proposed
-- Completed: N/A
+- Status: Largely implemented 2026-08-29 — see `docs/speculative-decoding.md`
+- Completed: N/A (layers 1-3 shipped; layer 4 partially)
+
+## Update 2026-08-29 — what shipped, and which premises turned out wrong
+
+Layers 1-3 are implemented and measured; see `docs/speculative-decoding.md` for
+results and `abstractcore/providers/speculation.py` for the contract. Three of
+this document's own findings were superseded by direct measurement, and they are
+corrected here so nobody plans against them again:
+
+- **"draft-model speculative decoding is the fastest path to near-term wins on
+  MLX" — WRONG for these models.** It is not merely unimplemented, it is
+  impossible: Qwen3.5/3.8 are hybrids with linear-attention layers, and
+  `mlx_lm.generate(draft_model=...)` raises `Speculative decoding requires a
+  trimmable prompt cache (got {'ArraysCache'})`. v1 therefore ships
+  `mode="native_mtp"` and deliberately does NOT offer a `draft_model` mode.
+- **"MLX embedded-MTP depends on upstream mlx-lm consuming the weights" —
+  superseded.** mlx-lm still strips `mtp.` weights, but `mlx-vlm` 0.6.3 ships a
+  real `qwen3_5_mtp` drafter (`load_drafter` + `generate(draft_model=,
+  draft_kind="mtp")`). The MLX lane runs through mlx-vlm and works today:
+  measured 1.49x-1.97x on Qwen3.8-27B 4-bit, byte-identical output.
+- **"GGUF native MTP is more likely to land through an external runtime" —
+  CONFIRMED, and now precise.** llama.cpp merged MTP self-speculation
+  (`--spec-type draft-mtp`); the blocker for the in-process path is exactly that
+  `libllama-common` (which holds the driver) is not in the llama-cpp-python
+  wheel. The graphs ARE in the shipped `libllama`.
+
+Remaining from this proposal: `requires_mmproj` / `recommended_runtime`
+capability fields, server-route exposure of the `speculation` block, and warm
+prompt-cache reuse inside the MLX MTP lane (currently declined with a warning).
 
 ## Context
 

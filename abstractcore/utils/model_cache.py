@@ -390,6 +390,59 @@ def read_gguf_geometry(path: Path) -> Optional[dict]:
         return None
 
 
+def read_gguf_mtp_layers(path: Path) -> Optional[int]:
+    """Read `<arch>.nextn_predict_layers` from a GGUF header, or None.
+
+    This is the ONLY honest way to know a GGUF carries a multi-token-prediction
+    head. The filename is not evidence in either direction, and both errors
+    happen in the wild: `Qwen3.8-27B-Q4_K_M.gguf` carries the head with no "mtp"
+    anywhere in its name, while unsloth's `*-MTP-GGUF` repos put "MTP" in the
+    REPO name and not in the file's.
+
+    Reads the header only -- a few KB -- so it is safe to call before deciding
+    whether to load 17 GB of weights.
+    """
+    try:
+        with path.open("rb") as f:
+            if _read_exact(f, 4) != _GGUF_MAGIC:
+                return None
+            _ = _read_u32(f)  # version
+            _ = _read_u64(f)  # tensor_count
+            kv_count = _read_u64(f)
+
+            for _ in range(kv_count):
+                key = _read_gguf_string(f)
+                value_type = _read_u32(f)
+                # Arch-prefixed key: `qwen35.nextn_predict_layers`,
+                # `deepseek2.nextn_predict_layers`, ... so match the suffix
+                # rather than enumerating every architecture llama.cpp supports.
+                if key.endswith(".nextn_predict_layers") and value_type in (
+                    _GGUF_TYPE_UINT8,
+                    _GGUF_TYPE_INT8,
+                    _GGUF_TYPE_UINT16,
+                    _GGUF_TYPE_INT16,
+                    _GGUF_TYPE_UINT32,
+                    _GGUF_TYPE_INT32,
+                    _GGUF_TYPE_UINT64,
+                    _GGUF_TYPE_INT64,
+                ):
+                    size = _GGUF_FIXED_SIZES.get(value_type)
+                    if not size:
+                        return None
+                    raw = _read_exact(f, size)
+                    signed = value_type in (
+                        _GGUF_TYPE_INT8,
+                        _GGUF_TYPE_INT16,
+                        _GGUF_TYPE_INT32,
+                        _GGUF_TYPE_INT64,
+                    )
+                    return int.from_bytes(raw, "little", signed=signed)
+                _skip_gguf_value(f, value_type)
+    except Exception:
+        return None
+    return None
+
+
 def read_gguf_architecture(path: Path) -> Optional[str]:
     """Read `general.architecture` from a GGUF file (best-effort, cache-only).
 

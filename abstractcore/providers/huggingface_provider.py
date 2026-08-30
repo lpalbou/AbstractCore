@@ -6431,11 +6431,36 @@ class HuggingFaceProvider(BaseProvider):
 
             model_lower = self.model.lower()
 
-            if "mtp" in model_lower:
+            # Evidence, not filename. The old check was `"mtp" in model_lower`,
+            # which BOTH missed and misfired: `Qwen3.8-27B-Q4_K_M.gguf` carries
+            # a head with no "mtp" in its name, and a file merely named "MTP"
+            # proves nothing. Read the header instead (a few KB).
+            mtp_layers: int | None = None
+            try:
+                from ..utils.model_cache import read_gguf_mtp_layers
+
+                mtp_layers = read_gguf_mtp_layers(Path(model_path))
+            except Exception:
+                mtp_layers = None
+
+            if mtp_layers:
+                # Say WHY precisely. llama.cpp itself implements MTP
+                # self-speculation for this architecture; what is missing is
+                # purely the driver, which lives in `libllama-common` and is not
+                # shipped inside the llama-cpp-python wheel (the graphs are in
+                # libllama, but `Llama.__init__` exposes neither `load_mtp` nor
+                # `ctx_type`, so nothing can turn them on). Both escapes below
+                # were measured on this architecture at 1.3x-2.6x.
                 self.logger.warning(
-                    "Loading an MTP GGUF through llama-cpp-python. The model can be used as a regular GGUF, "
-                    "but current public llama-cpp-python bindings do not expose native MTP acceleration in-process. "
-                    "Use an external llama.cpp server/runtime with native MTP support if you need the speedup."
+                    f"This GGUF carries a multi-token-prediction head "
+                    f"({mtp_layers} nextn layer(s), arch={gguf_arch or 'unknown'}), but "
+                    "llama-cpp-python cannot execute it: the MTP speculative driver ships "
+                    "in llama.cpp's libllama-common, which is not part of the Python wheel. "
+                    "The model runs correctly here, just without the speedup. To get it, "
+                    "serve the same file from a llama.cpp runtime and point AbstractCore at "
+                    "it over HTTP:\n"
+                    "  - llama-server --spec-type draft-mtp --spec-draft-n-max 3\n"
+                    "  - LM Studio: lms load --speculative-draft-mtp"
                 )
 
             # Determine chat format for function calling

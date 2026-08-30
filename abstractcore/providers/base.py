@@ -1226,6 +1226,16 @@ class BaseProvider(AbstractCoreInterface, ABC):
         ):
             return error
 
+        # `require_acceleration=True` is a caller assertion about the LANE, not a
+        # transient API fault. Wrapping it into ProviderAPIError would destroy
+        # both the type callers catch and the machine-readable `.reason` that is
+        # the entire point of the strict mode -- and it would be retried three
+        # times for a condition that cannot change between attempts.
+        from .speculation import SpeculationUnavailableError
+
+        if isinstance(error, SpeculationUnavailableError):
+            return error
+
         # Central timeout normalization for all providers (httpx/requests/SDKs).
         # #[WARNING:TIMEOUT] — ADR-0027 §1: duration + responsible knob, accurately.
         if _looks_like_timeout(error):
