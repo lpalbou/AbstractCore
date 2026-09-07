@@ -148,10 +148,20 @@ def test_no_speculation_entry_points_a_drafter_at_the_target_itself():
         drafter = str(mlx_block.get("drafter", ""))
         assert drafter, f"'{key}' declares an mlx runtime with no drafter repo"
         assert drafter.lower() != key.lower()
-        assert "mtp" in drafter.lower(), (
-            f"'{key}' names drafter '{drafter}', which does not look like a "
-            "separate MTP head repo. The MLX head is a distinct checkpoint; "
-            "pointing at the target's own repo drafts nothing."
+
+        # Test the PROPERTY, not the spelling. This assertion used to require
+        # "mtp" in the repo name, which is the same filename-heuristic mistake
+        # we deleted from the GGUF lane: Gemma 4's drafter is published as
+        # `...-it-qat-assistant-4bit` and is a perfectly real separate
+        # checkpoint. What actually matters is that the drafter is not the
+        # target itself -- a self-reference loads the weights twice and drafts
+        # nothing.
+        aliases = {str(a).lower() for a in (entry.get("aliases") or [])}
+        aliases.add(str(entry.get("canonical_name", "")).lower())
+        assert drafter.lower() not in aliases, (
+            f"'{key}' names drafter '{drafter}', which is one of the entry's own "
+            "aliases -- that is the target, not a drafter. The MLX head is "
+            "always a distinct checkpoint."
         )
 
 
@@ -173,6 +183,10 @@ def test_mlx_drafters_are_only_claimed_where_one_is_published():
     #   Qwen3.6-35B-A3B-MTP-4bit  block_size 3, hidden 2048
     #   Qwen3.8-27B-MTP-4bit      block_size 3, hidden 5120   (end-to-end tested)
     known_published_mlx_drafters = {
+        # Gemma 4's is an ASSISTANT drafter, not an in-weights MTP head; it is
+        # routed through the same mlx-vlm "mtp" loop and is registered with
+        # output_preserving:false because it measurably is not.
+        "mlx-community/gemma-4-26b-a4b-it-qat-assistant-4bit",
         "mlx-community/qwen3.5-4b-mtp-4bit",
         "mlx-community/qwen3.5-9b-mtp-4bit",
         "mlx-community/qwen3.6-27b-mtp-4bit",

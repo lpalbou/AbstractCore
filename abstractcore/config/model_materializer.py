@@ -1632,6 +1632,65 @@ def recommended_plan(*, base_urls: Optional[Dict[str, str]] = None) -> Dict[str,
     }
 
 
+def route_is_answered(row: Any) -> bool:
+    """Does this capability-default row have something serving it, by ANY lane?
+
+    A value of its own is the obvious lane. The other three come from the
+    hierarchy decoration (`manager._decorate_route_hierarchy`): `covered_by`
+    (the text model handles this input modality), `covered_by_tasks` (a parent
+    whose task rows are all set) and `inherits_broad` (a task row whose parent
+    is set). All four mean the same thing to a recommendation: there is nothing
+    here to fix.
+    """
+
+    if not isinstance(row, dict):
+        return False
+    if row.get("provider") and row.get("model"):
+        return True
+    return bool(row.get("covered_by") or row.get("covered_by_tasks") or row.get("inherits_broad"))
+
+
+def mark_recommended_route_gaps(plan: Dict[str, Any], routes: Iterable[Any]) -> Dict[str, Any]:
+    """Split a `recommended_plan()` into ADVICE and GAPS, in place.
+
+    THE STARTER KIT IS ADVICE FOR AN EMPTY ROUTE, NOT A STANDING DEBT.
+    `recommended_plan()` answers exactly one question -- "is the fresh-install
+    model on this disk?" -- and every surface that rendered that answer raw told
+    an operator who had deliberately routed `input.text` at their own model that
+    a model was MISSING, with a download command to run. It could not be
+    cleared except by installing the model they had chosen against, so it never
+    cleared; a status line that cries wolf on a healthy host teaches an operator
+    to stop reading it.
+
+    `gaps` is the subset of `would_download` whose route nothing else answers --
+    the only part a surface may present as work to do. The counts and
+    `would_download` are left exactly as they were: `--dry-run` and
+    `models download --recommended` ask what the recommendation WOULD fetch,
+    which is a different question with a different right answer.
+    """
+
+    if not isinstance(plan, dict):
+        return plan
+    answered = {
+        str(row.get("key") or "").strip().lower()
+        for row in routes
+        if isinstance(row, dict) and route_is_answered(row)
+    }
+    answered.discard("")
+
+    def _mark(item: Any) -> bool:
+        if not isinstance(item, dict):
+            return False
+        item["route_answered"] = str(item.get("route") or "").strip().lower() in answered
+        return bool(item["route_answered"])
+
+    for item in plan.get("recommended") or []:
+        _mark(item)
+    plan["gaps"] = [dict(item) for item in (plan.get("would_download") or []) if not _mark(item)]
+    plan["routes_unanswered"] = len(plan["gaps"])
+    return plan
+
+
 # ---------------------------------------------------------------------------
 # Grid annotation -- the shape every console renders
 # ---------------------------------------------------------------------------

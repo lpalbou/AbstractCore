@@ -106,12 +106,20 @@ class MLXProvider(BaseProvider):
         self._mtp_processor = None
         self._mtp_reason: Optional[str] = None
         self._mtp_drafter_id: Optional[str] = None
+        # Whether this drafter is known NOT to reproduce the unaccelerated
+        # output byte-for-byte. True/None = no known divergence. Surfaced in
+        # response metadata so a caller pinning outputs can see it.
+        self._mtp_output_preserving: Optional[bool] = None
         self._mtp_prompt_cache_warned: bool = False
         # Set per call by `_apply_per_call_speculation` when a request asks for
         # `off` on a provider whose lane is loaded -- the one per-call change
         # that IS honorable, since skipping the drafter needs no reload.
         self._mtp_call_disabled: bool = False
         self._mtp_call_outcome: Optional[SpeculationOutcome] = None
+        # Whether the drafter ran on the most recent generate call. None = no
+        # call yet. Read by surfaces that cannot see response metadata (the
+        # streaming lane).
+        self._mtp_last_used: Optional[bool] = None
         # Set when the lane declined at load time; carries the named reason into
         # every later response's metadata so the diagnosis is not one log line
         # the caller may never have seen.
@@ -2285,16 +2293,31 @@ class MLXProvider(BaseProvider):
 
         try:
             import mlx_vlm  # noqa: F401
-        except ImportError:
+        except ImportError as exc:
+            # Name the INTERPRETER and the real exception. "install mlx-vlm" on
+            # its own sent someone chasing a package that was already installed
+            # -- in their shell. This repo carries a `.venv` whose console
+            # scripts shadow the pyenv ones, and mlx-vlm is present in one and
+            # not the other, so the environment is the diagnosis, not the hint.
+            import sys as _sys
+
             self._mtp_outcome_at_load = speculation_unavailable(
                 request,
                 "mlx_vlm_missing",
                 "native MTP on MLX runs through mlx-vlm (mlx-lm strips `mtp.` "
-                'weights on load); install with: pip install "abstractcore[mlx]"',
+                f"weights on load), but importing it failed under {_sys.executable}: "
+                f"{type(exc).__name__}: {exc}. Install it into THAT interpreter: "
+                f'"{_sys.executable}" -m pip install "abstractcore[mlx]"  '
+                "(if mlx-vlm works in your shell, you are running a different "
+                "interpreter than you think -- check `which -a abstractcore-chat`)",
                 logger=self.logger,
             )
             return None
 
+        if block is not None:
+            spec = self.model_capabilities.get("speculation") or {}
+            if isinstance(spec, dict) and spec.get("output_preserving") is False:
+                self._mtp_output_preserving = False
         block_size = (
             request.num_draft_tokens
             or (block or {}).get("block_size")
@@ -2466,6 +2489,13 @@ class MLXProvider(BaseProvider):
             or input_embeddings is not None
             or getattr(self, "_mtp_call_disabled", False)
         ):
+            # Record the per-call verdict here, the ONE place that decides it,
+            # so the streaming lane can report it too. Streaming yields plain
+            # content chunks with no usage or metadata, so without this a
+            # streamed turn could only guess -- and guessing "not used" while
+            # the drafter ran is exactly the kind of quiet lie this contract
+            # exists to prevent.
+            self._mtp_last_used = False
             return {}
         kw = {
             "draft_model": self._mtp_drafter,
@@ -2474,6 +2504,7 @@ class MLXProvider(BaseProvider):
         block = getattr(self, "_mtp_block_size", None)
         if block:
             kw["draft_block_size"] = int(block)
+        self._mtp_last_used = True
         return kw
 
     def _mtp_generate_fn(self, model, tokenizer, prompt=None, **kwargs):
@@ -2540,6 +2571,24 @@ class MLXProvider(BaseProvider):
         out.update(self._mtp_kwargs(input_embeddings))
         return out
 
+    def speculation_status(self) -> Dict[str, Any]:
+        """What the speculation lane is doing right now, for display surfaces.
+
+        `last_call_used` is the authoritative per-call fact and is set by
+        `_mtp_kwargs`, so it is correct in the streaming lane too.
+        """
+        return {
+            "lane_loaded": self._mtp_active,
+            "drafter": getattr(self, "_mtp_drafter_id", None),
+            "draft_tokens": getattr(self, "_mtp_block_size", None),
+            "draft_kind": getattr(self, "_mtp_kind", None),
+            "output_preserving": getattr(self, "_mtp_output_preserving", None),
+            "last_call_used": getattr(self, "_mtp_last_used", None),
+            "unavailable_reason": getattr(
+                getattr(self, "_mtp_outcome_at_load", None), "reason", None
+            ),
+        }
+
     def _mtp_outcome(self, used_this_call: bool) -> SpeculationOutcome:
         """Response metadata for one call.
 
@@ -2561,10 +2610,18 @@ class MLXProvider(BaseProvider):
                 used=True,
                 drafter=getattr(self, "_mtp_drafter_id", None),
                 num_draft_tokens=getattr(self, "_mtp_block_size", None),
-                details={
-                    "runtime": "mlx_vlm",
-                    "draft_kind": getattr(self, "_mtp_kind", None),
-                },
+                details=(
+                    {
+                        "runtime": "mlx_vlm",
+                        "draft_kind": getattr(self, "_mtp_kind", None),
+                    }
+                    if getattr(self, "_mtp_output_preserving", None) is not False
+                    else {
+                        "runtime": "mlx_vlm",
+                        "draft_kind": getattr(self, "_mtp_kind", None),
+                        "output_preserving": False,
+                    }
+                ),
             )
         held = getattr(self, "_mtp_outcome_at_load", None)
         if held is not None:

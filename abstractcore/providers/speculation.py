@@ -229,4 +229,9 @@ def unavailable(
         reason=reason,
         drafter=request.drafter,
         num_draft_tokens=request.num_draft_tokens,
+        # Carry the prose, not just the slug. The full diagnosis previously
+        # existed only as a log line, so any surface that showed the outcome
+        # (the CLI's /speculation view) could report "mlx_vlm_missing" and
+        # nothing about WHICH interpreter was missing it.
+        details={"message": message},
     )

@@ -2174,6 +2174,10 @@ def _models_status_payload(args) -> dict:
     materializer = _models_materializer()
     manager = _config_manager_for_cli(args)
     routes = materializer.annotate_route_availability(manager.list_capability_defaults())
+    # The gap marking rides the WHOLE grid, never the filtered view: under
+    # `models status input.text` every other route is absent from `routes`, and
+    # marking against that would report the entire recommendation as unanswered.
+    all_routes = list(routes)
     target = (getattr(args, "target", None) or "").strip()
     if target:
         routes = _filter_models_status_rows(routes, target)
@@ -2183,7 +2187,9 @@ def _models_status_payload(args) -> dict:
         "config_file": str(manager.config_file),
         "seeded": manager.config.capability_defaults.seeded or None,
         "routes": routes,
-        "recommended": materializer.recommended_plan(),
+        "recommended": materializer.mark_recommended_route_gaps(
+            materializer.recommended_plan(), all_routes
+        ),
         "providers": materializer.supported_providers(),
         "show_all": bool(getattr(args, "all", False) or target),
     }
@@ -2259,11 +2265,23 @@ def _print_models_status(payload: dict) -> None:
             f"Recommended defaults: {plan.get('installed', 0)} of {plan.get('total', 0)} present"
             + (f", {plan.get('unknown')} unknown" if plan.get("unknown") else "")
         )
-        for item in plan.get("would_download") or []:
+        # ONLY THE GAPS ARE WORK. A recommended model that is absent because the
+        # operator routed that capability at a model of their own is not
+        # missing anything -- printing `missing:` and a download command for it
+        # asked them, on every run, to install the model they chose against.
+        gaps = plan.get("gaps")
+        gaps = gaps if gaps is not None else (plan.get("would_download") or [])
+        for item in gaps:
             print(f"  missing: {item['provider']} {item['artifact']}  ({item['route']})")
-        if plan.get("would_download"):
+        if gaps:
             print("  abstractcore models download --recommended        # fetch exactly these")
             print("  abstractcore models download --recommended --dry-run")
+        elif plan.get("would_download"):
+            settled = len(plan["would_download"])
+            print(
+                f"  ({settled} recommended model(s) not installed, but every route they cover "
+                "is already configured — nothing to download)"
+            )
 
 
 def _handle_models_status(args) -> int:

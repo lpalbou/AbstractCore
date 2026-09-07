@@ -64,12 +64,22 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
         }
     });
 
-    // WEIGHTS BANNER. A fresh install has the three recommended routes
-    // configured and possibly none of their models on disk; the grid
-    // alone reads as "all set". This line says how many can actually
-    // run, names what is missing, and points at the one verb that fixes
-    // it. Absent entirely while the probe has not answered — a blank is
-    // honest, a zero would not be.
+    // WEIGHTS BANNER. A route with NOTHING serving it cannot run, and the
+    // recommended model for it is the one-click way out — invisible in
+    // the grid above, which is the fresh-install confusion this line
+    // exists for. Absent entirely while the probe has not answered — a
+    // blank is honest, a zero would not be.
+    //
+    // IT USED TO READ "recommended models: 2 of 3 present · missing:
+    // lmstudio qwen/qwen3.5-9b@4bit" ON A FULLY CONFIGURED MACHINE, in
+    // warn amber, forever: the operator had routed text generation at
+    // their own model, so the starter kit's build was absent and would
+    // stay absent. A warning whose only cure is installing the model you
+    // chose against is not a warning, it is noise — and noise on the
+    // healthy path is how an operator learns to skip the line that
+    // matters. `mark_recommended_route_gaps` decides which recommended
+    // models belong to an UNANSWERED route; a machine with none gets no
+    // banner at all.
     //
     // THE MISSING LIST IS THE ELASTIC PART. It can name a dozen
     // artifacts; the verb after it is the only actionable text on the
@@ -83,44 +93,46 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
         let t = theme.get().tokens;
         let avail = viewport.get().w;
         match store.availability.get() {
-            Loadable::Ready(a) if a.total > 0 => {
-                let head = format!(" recommended models: {} of {} present", a.installed, a.total);
-                let unknown = if a.unknown > 0 {
-                    format!("  ·  {} unknown", a.unknown)
-                } else {
+            Loadable::Ready(a) if !a.missing.is_empty() => {
+                let head = format!(
+                    " {} route{} with no model yet",
+                    a.missing.len(),
+                    if a.missing.len() == 1 { "" } else { "s" }
+                );
+                let routes = a
+                    .missing
+                    .iter()
+                    .map(|(route, _, _)| route.as_str())
+                    .filter(|route| !route.is_empty())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let routes = if routes.is_empty() {
                     String::new()
+                } else {
+                    format!("  ·  {routes}")
                 };
-                let mut spans = vec![span_bold(
-                    head.clone(),
-                    if a.absent == 0 { t.ok } else { t.warn },
-                )];
-                if !unknown.is_empty() {
-                    spans.push(span(unknown.clone(), t.text_muted));
+                let mut spans =
+                    vec![span_bold(head.clone(), t.warn), span(routes.clone(), t.text)];
+                const LABEL: &str = "  ·  recommended: ";
+                const VERB: &str = "  ·  w downloads the selected route's weights";
+                let list = a
+                    .missing
+                    .iter()
+                    .map(|(_, p, art)| format!("{p} {art}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                let budget = widths::elastic_budget(&[&head, &routes, LABEL, VERB], avail);
+                // Two honest lines, widest first: name the artifacts, or
+                // say nothing about them — but never at the verb's
+                // expense, and never by clipping a word. The COUNT is
+                // already in the head, so there is no third form.
+                if budget >= 8 {
+                    spans.push(span(
+                        format!("{LABEL}{}", widths::middle_fit(&list, budget)),
+                        t.warn,
+                    ));
                 }
-                if !a.missing.is_empty() {
-                    const LABEL: &str = "  ·  missing: ";
-                    const VERB: &str = "  ·  w downloads the selected route's weights";
-                    let list = a
-                        .missing
-                        .iter()
-                        .map(|(p, art)| format!("{p} {art}"))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    let budget = widths::elastic_budget(&[&head, &unknown, LABEL, VERB], avail);
-                    let count = format!("  ·  {} missing", a.missing.len());
-                    // Three honest lines, widest first: name the artifacts,
-                    // or count them, or say neither — but never at the
-                    // verb's expense, and never by clipping a word.
-                    if budget >= 8 {
-                        spans.push(span(
-                            format!("{LABEL}{}", widths::middle_fit(&list, budget)),
-                            t.warn,
-                        ));
-                    } else if widths::fits(&[&head, &unknown, &count, VERB], avail) {
-                        spans.push(span(count, t.warn));
-                    }
-                    spans.push(span(VERB.to_string(), t.text_faint));
-                }
+                spans.push(span(VERB.to_string(), t.text_faint));
                 line(spans)
             }
             Loadable::Failed(e) => line(vec![span(

@@ -27,6 +27,68 @@ print(r.metadata["speculation"])
 #  'runtime': 'mlx_vlm', 'draft_kind': 'mtp'}
 ```
 
+## From the CLI
+
+```bash
+# start a chat with the drafter loaded (drafter auto-resolves from the registry)
+abstractcore-chat --provider mlx --model mlx-community/Qwen3.8-27B-4bit \
+                  --speculation native_mtp
+
+# a drafter that isn't registered, or a hand-tuned draft width
+abstractcore-chat --provider mlx --model <target> \
+                  --drafter mlx-community/Qwen3.8-27B-MTP-4bit --num-draft-tokens 3
+
+# refuse to start rather than run unaccelerated
+abstractcore-chat --provider mlx --model <target> \
+                  --speculation native_mtp --require-acceleration
+```
+
+Inside the REPL, `/speculation` reports what is actually loaded and lets you
+toggle the drafter per turn:
+
+```
+> /speculation
+⚡ speculation: native MTP lane LOADED
+   drafter        : mlx-community/Qwen3.5-4B-MTP-4bit
+   draft tokens   : 2
+   per-call state : auto (on)
+
+> /speculation off      # lane stays loaded; the drafter is skipped
+```
+
+`--speculation` is a **startup** flag, not a runtime one: choosing it decides
+which runtime loads the weights. `/speculation off` works mid-session because
+skipping a drafter needs no reload; `/speculation on` cannot conjure a lane that
+was never loaded, and says so instead of pretending.
+
+## Comparing fairly
+
+This trips people up, so it is worth being explicit. There are two different
+comparisons and they answer different questions:
+
+```python
+# ❌ measures TWO changes at once
+slow = create_llm("mlx", model=M)                                  # runs on mlx-lm
+fast = create_llm("mlx", model=M, speculation={"mode": "native_mtp"})  # runs on mlx-vlm
+#   -> difference = the drafter AND the library switch
+
+# ✅ measures ONE change
+llm = create_llm("mlx", model=M, speculation={"mode": "native_mtp"})
+with_mtp    = llm.generate(PROMPT, thinking=False)
+without_mtp = llm.generate(PROMPT, thinking=False, speculation={"mode": "off"})
+#   -> same object, same weights, same library; only the drafter differs
+```
+
+The second snippet reuses **the same `llm`** — that is why no model name appears
+on the last line. Nothing is reloaded; `speculation={"mode": "off"}` just tells
+that one call to skip the drafter.
+
+Use the first comparison to answer *"is my session faster than before?"* and the
+second to answer *"what is MTP itself worth?"*. They can disagree, because
+enabling speculation on MLX also swaps mlx-lm for mlx-vlm, and mlx-vlm's own
+unaccelerated decoding is not always the same speed — or even the same text —
+as mlx-lm's.
+
 ## The request block
 
 | field | default | meaning |
@@ -95,6 +157,7 @@ MLX drafter that gets auto-resolved:
 | `qwen3.6-35b-a3b` | `mlx-community/Qwen3.6-35B-A3B-MTP-4bit` | drafter config verified, not run here |
 | `qwen3.5-9b` | `mlx-community/Qwen3.5-9B-MTP-4bit` | drafter config verified, not run here |
 | `qwen3.5-4b` | `mlx-community/Qwen3.5-4B-MTP-4bit` | tested; **too small to benefit** |
+| `gemma-4-26b-a4b-it` | `mlx-community/gemma-4-26B-A4B-it-qat-assistant-4bit` | tested, **1.12–1.48x**; not output-preserving |
 | `qwen3.6-27b-mtp-gguf` | — (GGUF only) | llama.cpp / LM Studio |
 | `qwen3.6-35b-a3b-mtp-gguf` | — (GGUF only) | llama.cpp / LM Studio |
 
@@ -109,10 +172,37 @@ create_llm("mlx", model="<target>",
            speculation={"mode": "native_mtp", "drafter": "<drafter repo>"})
 ```
 
-mlx-community also publishes MTP drafters for `Qwen3.5-122B-A10B`,
-`DeepSeek-V4-Flash` and `Hy3-preview`, and unsloth publishes `*-MTP-GGUF` for
-`Qwen3.5-2B/4B/9B`, `Qwen3.5-122B-A10B` and the Qwen3.6 pair. None are verified
-here.
+mlx-community also publishes drafters for `Qwen3.5-122B-A10B`,
+`DeepSeek-V4-Flash` (bf16 only) and `Hy3-preview`. Of these, mlx-vlm has a
+drafter implementation for DeepSeek-V4 (`deepseek_v4_mtp`) but **not** for Hy3,
+so the Hy3 drafter has no in-process consumer here.
+
+### Other families — surveyed from GGUF headers, not model names
+
+Each row below was checked by range-fetching the first 3 MB of a real Q4 GGUF
+and reading its `<arch>.nextn_predict_layers` key, so "MTP" means the head is in
+the file, not that the name says so.
+
+| family | example artifact | arch | MTP head |
+|---|---|---|---|
+| DeepSeek-V4 | `antirez/deepseek-v4-gguf` | `deepseek4` | **yes (1)** |
+| GLM-5.2 | `unsloth/GLM-5.2-GGUF` | `glm-dsa` | **yes (1)** |
+| GLM-5.3-Flash | `unsloth/GLM-5.3-Flash-GGUF` | `glm5next` | **yes (1)** |
+| Hunyuan Hy3 | `AngelSlim/Hy3-GGUF` | `hy_v3` | **yes (1)** |
+| MiMo | `AesSedai/MiMo-V2.5-GGUF` | `mimo2` | **yes (3)** |
+| Ling 3.0 flash | `bloomer010/Ling-3.0-flash-REAP288-73B-A5B-GGUF` | `bailingmoe3` | **yes (1)** |
+| Nemotron Labs 3 | `RemySkye/NVIDIA-Nemotron-Labs-3-Puzzle-75B-A9B-GGUF` | `nemotron_h_moe` | **yes (2)** |
+| Qwen3-Next 80B | `Qwen/Qwen3-Next-80B-A3B-Instruct-GGUF` | `qwen3next` | no |
+| Step 3.5 Flash | `ggml-org/Step-3.5-Flash-GGUF` | `step35` | no |
+| Cohere command-a | `bartowski/command-a-plus-05-2026-GGUF` | `cohere2moe` | no |
+
+The last three are cases where llama.cpp implements the MTP graph for the
+architecture but the published quants carry no head — the runtime is ready and
+the weights are not.
+
+Caveat on the two GLM rows: `glm5next` is **not** among the `graph_mtp` symbols
+in the llama.cpp build used here, so that one needs a newer runtime than
+`glm-dsa` does.
 
 llama.cpp additionally implements MTP graphs for `deepseek2/32/4`, `glm4_moe`,
 `glm_dsa`, `qwen35`, `qwen35moe`, `qwen3next`, `bailingmoe3`, `cohere2moe`,
@@ -166,9 +256,16 @@ drafts worst. Expect roughly 1.2x–1.9x on a 27B, not a fixed number.
 
 ### Output fidelity — two different questions
 
-1. **Does the drafter change the answer?** No. Against its own runtime's
-   drafter-off baseline, the MLX lane was byte-identical on every prompt and
-   both models above. That is the invariant the gated live test pins.
+1. **Does the drafter change the answer?** *Algorithmically, no* — mlx-vlm's
+   acceptance test is exact (`target token == drafted token`, otherwise reject
+   and keep the target's token). *Numerically, sometimes.* Verification
+   recomputes logits from a batched hidden state, which changes Metal's
+   reduction order, so a near-tie argmax can flip. Measured: both Qwen pairings
+   were byte-identical on all three prompts (that is what the gated live test
+   pins), while `gemma-4-26B-A4B` diverged on 2 of 3 — deterministically, at
+   ~0.87 similarity. Registry entries carry `output_preserving: false` where a
+   divergence has been observed, and the response metadata repeats it.
+   Do not assume bit-reproducibility on an untested pairing.
 2. **Does turning speculation on change the answer?** On MLX it can, because the
    lane switches library. On `Qwen3.5-4B-4bit`, mlx-lm and mlx-vlm produce
    *different* greedy text for the same prompt with no drafter involved; on

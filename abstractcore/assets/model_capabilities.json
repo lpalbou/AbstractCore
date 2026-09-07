@@ -3259,6 +3259,19 @@
       }
     },
     "gemma-4-26b-a4b-it": {
+      "speculation": {
+        "native_mtp": true,
+        "mtp_layers": 1,
+        "output_preserving": false,
+        "runtimes": {
+          "mlx": {
+            "mode": "drafter_repo",
+            "drafter": "mlx-community/gemma-4-26B-A4B-it-qat-assistant-4bit",
+            "block_size": 3
+          }
+        },
+        "source": "Drafter mlx-community/gemma-4-26B-A4B-it-qat-assistant-4bit (270 MB, config model_type 'gemma4_assistant', 4-bit) measured end-to-end on this pairing 2026-08-30: 1.38x code / 1.12x prose / 1.48x repetitive at 200 tokens. NOTE this is an ASSISTANT drafter, not an in-weights MTP head like Qwen's -- mlx-vlm routes it through the same 'mtp' round loop and its acceptance test is exact (target token == drafted token), but output was NOT byte-identical to the drafter-off control on 2 of 3 prompts (deterministic both ways, ~0.87 similarity). The divergence is numerical, not algorithmic: verification recomputes logits from a batched hidden state, which changes Metal reduction order and flips near-tie argmax. Qwen pairings stayed identical on the same harness."
+      },
       "max_output_tokens": 262144,
       "tool_support": "native",
       "structured_output": "native",
@@ -3275,6 +3288,7 @@
       "source": "Google Gemma 4 model card, Hugging Face model card/config/processor_config/generation_config (google/gemma-4-26B-A4B-it, accessed 2026-06-04), plus OpenRouter endpoint metadata for provider-route cap variance. Context length: 256K / raw max_position_embeddings 262144. Generation config does not define max_new_tokens/max_output_tokens; registry records the context-bounded model-level output maximum.",
       "canonical_name": "gemma-4-26b-a4b-it",
       "aliases": [
+        "mlx-community/gemma-4-26B-A4B-it-qat-4bit",
         "google/gemma-4-26B-A4B-it",
         "gemma-4-26B-A4B-it"
       ],

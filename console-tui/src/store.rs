@@ -335,8 +335,17 @@ pub struct AvailabilityData {
     pub installed: usize,
     pub absent: usize,
     pub unknown: usize,
-    /// `(provider, artifact)` of every recommended model NOT present.
-    pub missing: Vec<(String, String)>,
+    /// `(route, provider, artifact)` of every recommended model that is
+    /// absent AND whose route has nothing else serving it — the payload's
+    /// `recommended.gaps`, never the raw `would_download`.
+    ///
+    /// THE STARTER KIT IS ADVICE FOR AN EMPTY ROUTE, NOT A STANDING DEBT.
+    /// `would_download` answers "is the fresh-install model on this disk?",
+    /// so a machine whose operator routed `input.text` at their own model
+    /// was warned about a model it would never install and could never
+    /// clear. `mark_recommended_route_gaps` makes that judgement once, in
+    /// the payload, so this screen and the CLI cannot disagree.
+    pub missing: Vec<(String, String, String)>,
 }
 
 impl AvailabilityData {
@@ -370,13 +379,21 @@ impl AvailabilityData {
         }
         let plan = v.get("recommended").cloned().unwrap_or(Value::Null);
         let n = |key: &str| plan.get(key).and_then(Value::as_u64).unwrap_or(0) as usize;
+        // `gaps` when the payload offers it; `would_download` only as the
+        // fallback for an older `abstractcore`. An EMPTY `gaps` array is an
+        // answer ("nothing to do") and must not fall through to the raw list.
         let missing = plan
-            .get("would_download")
+            .get("gaps")
+            .or_else(|| plan.get("would_download"))
             .and_then(Value::as_array)
             .map(|a| {
                 a.iter()
                     .filter_map(|item| {
-                        Some((s(item, "provider")?, s(item, "artifact")?))
+                        Some((
+                            s(item, "route").unwrap_or_default(),
+                            s(item, "provider")?,
+                            s(item, "artifact")?,
+                        ))
                     })
                     .collect()
             })

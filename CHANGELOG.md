@@ -8,6 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **The recommended-models line no longer asks for a model no route needs
+  (2026-09-06).** `models status`, the console-TUI and both Gateway consoles
+  rendered `recommended_plan()` raw — "Recommended defaults: 2 of 3 present /
+  missing: lmstudio qwen/qwen3.5-9b@4bit", plus a download command — on
+  machines where every route was configured and working. The operator had
+  routed text generation at a model of their own, so the starter kit's build
+  was absent and would stay absent; the only way to clear the line was to
+  install the model they had chosen against. New
+  `model_materializer.mark_recommended_route_gaps()` marks each recommended
+  model with whether its route is answered (own provider/model, `covered_by`,
+  `covered_by_tasks`, or `inherits_broad`) and adds `recommended.gaps` to the
+  `models status` payload. The CLI lists and offers to download only the gaps —
+  and says plainly when an absent recommendation covers a route that is already
+  configured; the console-TUI's weights banner paints nothing at all when there
+  are none. The counts and `would_download` are unchanged, so `--dry-run` and
+  `models download --recommended` still answer what the recommendation *would*
+  fetch. Marking rides the whole grid, never the `models status <target>`
+  filter, so a narrowed status cannot invent gaps a full one does not have.
 - **A sharded GGUF now reports the size of the whole quant, not its first shard.**
   `est_weights_bytes` came from `stat()` on llama-cpp's `model_path`, which for a split
   GGUF names only `…-00001-of-000NN.gguf`. That shard can be a rounding error against the

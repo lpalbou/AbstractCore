@@ -440,12 +440,18 @@ def test_per_call_non_strict_request_warns_and_is_reported_in_metadata():
     ), provider.logger.warnings
 
     metadata = provider._mtp_outcome(bool(provider._mtp_kwargs(None))).to_metadata()
-    assert metadata == {
+    # The contract fields are pinned exactly; `message` was added deliberately
+    # after an operator hit `reason: mlx_vlm_missing` in the CLI and had no way
+    # to learn WHICH interpreter was missing it (the prose existed only as a
+    # log line). A slug names the class of failure; the message names the
+    # instance. Both ride the response now.
+    assert {k: v for k, v in metadata.items() if k != "message"} == {
         "requested": True,
         "mode": "native_mtp",
         "used": False,
         "reason": "speculation_is_load_time",
     }, metadata
+    assert "speculation must be requested when the provider is created" in metadata["message"]
 
 
 def test_per_call_off_is_honored_on_an_accelerated_provider():

@@ -609,6 +609,16 @@ weights, quantization included (`qwen/qwen3.5-9b@4bit`). `models status` prints
 the artifact to download next to the route that needs it, so the two never have
 to be reconciled by hand.
 
+**The recommendation is advice for an empty route, not a standing debt.**
+`models status` reports a recommended model as `missing:` only when its route
+has nothing else serving it — its own provider/model, a `covered_by`
+derivation, a parent covered by its task rows, or a task row inheriting its
+parent. Route text generation at a model of your own and the starter kit's LM
+Studio build stops being listed: nothing on this machine needs it. The payload
+carries both answers — `recommended.would_download` (what `--recommended`
+*would* fetch, which is what `--dry-run` reports) and `recommended.gaps` (what
+anything is actually short of). The consoles read `gaps`.
+
 Supported providers: `lmstudio`, `ollama`, `supertonic`, and the Hugging
 Face-backed engines (`mlx-gen`, `mlx`, `mlx-vlm`, `huggingface`, `diffusers`).
 

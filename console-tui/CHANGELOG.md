@@ -6,6 +6,32 @@ All notable changes, one entry per build wave, each with its gate line
 
 ## [Unreleased]
 
+### The weights banner stops warning a configured machine (2026-09-06, operator ruling)
+
+> "I do not like that it shows 'Recommended defaults — 2 of 3 models
+> present. Missing: lmstudio qwen/qwen3.5-9b@4bit' when we already have
+> models installed. The recommendations are for a clean fresh system with
+> no detected models, not for an already configured system. Otherwise it
+> appears like an error / something to do — and I will never install it
+> since I have better locally."
+
+The Routes weights line read `recommended models: 2 of 3 present ·
+missing: lmstudio qwen/qwen3.5-9b@4bit` in warn amber on a machine whose
+every route was answered. A warning whose only cure is installing the
+model you chose against is noise, and noise on the healthy path teaches
+an operator to skip the line that matters.
+
+`abstractcore models status --json` now carries `recommended.gaps` — the
+recommended models that are absent AND whose route has nothing else
+serving it (`mark_recommended_route_gaps`). The banner reads those and
+nothing else: `1 route with no model yet · input.text · recommended:
+lmstudio qwen/qwen3.5-9b@4bit · w downloads the selected route's
+weights`, and it paints nothing at all when there are no gaps.
+`would_download` remains the fallback for an older `abstractcore`.
+
+Gate: `cargo test` 71 lib + 60 headless green, `cargo check --tests`
+clean.
+
 ### One providers screen, two doors (2026-08-01, operator ruling)
 
 > "I do not understand why the providers are displayed in a different

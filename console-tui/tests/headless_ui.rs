@@ -366,6 +366,11 @@ fn routes_fixture() -> Value {
 /// voice route's are here, the embedding route's provider cannot be
 /// consulted, and an unconfigured route reports `route not configured`
 /// — which is not a missing download and must never be offered as one.
+///
+/// `input.text` IS configured, so `gaps` is empty even though the
+/// recommended 4-bit build is absent: the operator routed text at a model
+/// of their own and owes the starter kit nothing. That is the machine the
+/// banner used to warn at on every visit.
 fn availability_fixture() -> Value {
     json!({
         "ok": true,
@@ -394,7 +399,31 @@ fn availability_fixture() -> Value {
             "total": 3, "installed": 2, "absent": 1, "unknown": 0,
             "would_download": [
                 {"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit", "route": "input.text"}
-            ]
+            ],
+            "gaps": [], "routes_unanswered": 0
+        }
+    })
+}
+
+/// The same machine BEFORE anyone configured it: `input.text` has nothing
+/// routed to it and the recommended build is not on disk. This is the one
+/// shape the weights banner exists for.
+fn availability_fixture_fresh_install() -> Value {
+    json!({
+        "ok": true,
+        "routes": [
+            {"key": "input.text", "provider": "", "model": "",
+             "availability": {"status": "unknown", "evidence": "route not configured"}}
+        ],
+        "recommended": {
+            "total": 3, "installed": 2, "absent": 1, "unknown": 0,
+            "would_download": [
+                {"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit", "route": "input.text"}
+            ],
+            "gaps": [
+                {"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit", "route": "input.text"}
+            ],
+            "routes_unanswered": 1
         }
     })
 }
@@ -2668,19 +2697,23 @@ fn chrome_survives_every_screen_at_every_size() {
 // WEIGHTS: the `d` verb (model downloads)
 // =======================================================================
 
-/// The weights column and banner speak the SAME four words as the
-/// gateway console and the gateway TUI, and the banner names the exact
-/// artifact that is missing — the 4-bit build, not the served id the
-/// route stores.
+/// The weights column speaks the SAME four words as the gateway console
+/// and the gateway TUI — and there is NO banner, because every route on
+/// this machine is answered.
+///
+/// The absent artifact here is the recommended text build on a machine
+/// that routes text at its own model. The column still reports it
+/// honestly (that route's own weights are genuinely not downloaded); what
+/// must not happen is the screen presenting it as a shortfall the
+/// operator is expected to fix.
 #[test]
-fn routes_screen_shows_weight_availability_and_the_missing_artifact() {
+fn routes_screen_shows_weight_availability_and_no_banner_when_every_route_is_answered() {
     let mut h = harness_sized(Size::new(150, 40));
     h.load_fixtures();
     let s = h.goto_screen(3);
-    assert!(s.contains("recommended models: 2 of 3 present"), "banner counts:\n{s}");
     assert!(
-        s.contains("qwen/qwen3.5-9b@4bit"),
-        "the banner names the ARTIFACT, not the served id:\n{s}"
+        !s.contains("no model yet") && !s.contains("recommended:"),
+        "a fully routed machine is never told it is short of a model:\n{s}"
     );
     assert!(s.contains("not downloaded"), "absent weights read plainly:\n{s}");
     assert!(s.contains("installed"), "present weights read plainly:\n{s}");
@@ -2694,6 +2727,38 @@ fn routes_screen_shows_weight_availability_and_the_missing_artifact() {
     assert!(
         !s.contains("output.image  not downloaded"),
         "an unconfigured route is not a missing download:\n{s}"
+    );
+}
+
+/// ...and the machine the banner DOES exist for: a route with nothing
+/// routed to it, whose recommended model is not on disk. It names the
+/// route, names the ARTIFACT (`@4bit`, not the served id a route would
+/// store), and keeps the actionable verb.
+#[test]
+fn routes_screen_banners_only_the_routes_with_no_model_at_all() {
+    let mut h = harness_sized(Size::new(150, 40));
+    h.load_fixtures();
+    h.store
+        .availability
+        .set(Loadable::Ready(AvailabilityData::from_value(
+            &availability_fixture_fresh_install(),
+        )));
+    let s = h.goto_screen(3);
+    assert!(
+        s.contains("1 route with no model yet"),
+        "the banner counts ROUTES that need one, not catalog entries:\n{s}"
+    );
+    assert!(
+        s.contains("input.text"),
+        "it names the route the operator has to answer:\n{s}"
+    );
+    assert!(
+        s.contains("qwen/qwen3.5-9b@4bit"),
+        "the banner names the ARTIFACT, not the served id:\n{s}"
+    );
+    assert!(
+        s.contains("w downloads"),
+        "the actionable verb survives the elastic list:\n{s}"
     );
 }
 

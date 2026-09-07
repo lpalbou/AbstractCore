@@ -126,6 +126,11 @@ class SimpleCLI:
         # - bool: on/off
         # - str: "low"|"medium"|"high" when supported
         self.thinking: Optional[Union[bool, str]] = None
+        # Per-call speculation override. The LANE is chosen at construction
+        # (--speculation), because it decides which runtime loads the weights;
+        # what a running session can still do is skip the drafter for a call,
+        # which needs no reload. None = leave the lane as constructed.
+        self.speculation: Optional[bool] = None
         # Whether to display model-supplied reasoning/thinking separately.
         # - None: auto (show when thinking != off)
         # - bool: force on/off
@@ -292,6 +297,8 @@ class SimpleCLI:
             print("  /max-output-tokens <n|auto> Set max output tokens per response")
             print("  /thinking <mode>         Set thinking/reasoning mode (best-effort)")
             print("                           • /thinking auto|on|off|none|low|medium|high|xhigh")
+            print("  /speculation [on|off]    Show or toggle MTP speculative decoding")
+            print("                           • start with: --speculation native_mtp")
             print("  /show-reasoning <mode>   Display reasoning separately (auto/on/off)")
             print("                           • /show-reasoning auto|on|off")
             print("  /stream                  Toggle streaming mode on/off")
@@ -378,6 +385,59 @@ class SimpleCLI:
 
             current = "auto" if self.thinking is None else ("on" if self.thinking is True else "off" if self.thinking is False else str(self.thinking))
             print(f"✅ thinking set to: {current}")
+            return True
+
+        elif cmd.startswith('speculation') or cmd.startswith('spec'):
+            parts = cmd.split(maxsplit=1)
+            provider = self.provider
+            drafter = getattr(provider, "_mtp_drafter_id", None)
+            lane_live = getattr(provider, "_mtp_drafter", None) is not None
+
+            if len(parts) == 1:
+                if lane_live:
+                    block = getattr(provider, "_mtp_block_size", None)
+                    print(f"⚡ speculation: native MTP lane LOADED")
+                    print(f"   drafter        : {drafter}")
+                    print(f"   draft tokens   : {block or 'drafter default'}")
+                    state = ("auto (on)" if self.speculation is None
+                             else ("on" if self.speculation else "off for this session"))
+                    print(f"   per-call state : {state}")
+                    print("❓ Usage: /speculation <on|off>   (toggles the drafter; the lane stays loaded)")
+                else:
+                    held = getattr(provider, "_mtp_outcome_at_load", None)
+                    reason = getattr(held, "reason", None)
+                    print("⚡ speculation: not loaded for this session")
+                    if reason:
+                        print(f"   reason: {reason}")
+                    detail = (getattr(held, "details", None) or {}).get("message")
+                    if detail:
+                        print(f"   {detail}")
+                    if reason == "mlx_vlm_missing":
+                        import sys as _sys
+
+                        print(f"   interpreter: {_sys.executable}")
+                        print("💡 mlx-vlm is missing from THAT interpreter (it may well be")
+                        print("   installed in another one). Install it there, then restart.")
+                    else:
+                        print("💡 Speculation binds a drafter to the weights at load time, so it")
+                        print("   cannot be switched on mid-session. Restart with:")
+                        print(f"     abstractcore-chat --provider {self.provider_name} "
+                              f"--model {self.model_name} --speculation native_mtp")
+                return True
+
+            raw = parts[1].strip().lower()
+            if not lane_live:
+                print("❌ No MTP lane is loaded — /speculation cannot turn one on.")
+                print("   Restart with --speculation native_mtp (see /speculation for the command).")
+                return True
+            if raw in {"on", "true", "1", "yes", "auto"}:
+                self.speculation = True
+                print(f"✅ speculation on (drafter {drafter})")
+            elif raw in {"off", "false", "0", "no", "none"}:
+                self.speculation = False
+                print("✅ speculation off for subsequent turns (lane stays loaded, drafter skipped)")
+            else:
+                print("❓ Usage: /speculation <on|off>")
             return True
 
         elif cmd.startswith('show-reasoning') or cmd.startswith('reasoning'):
@@ -2057,8 +2117,15 @@ class SimpleCLI:
                     gen_kwargs["audio_language"] = self.audio_language
                 if self.thinking is not None:
                     gen_kwargs["thinking"] = self.thinking
+                if self.speculation is not None:
+                    gen_kwargs["speculation"] = {
+                        "mode": "native_mtp" if self.speculation else "off"
+                    }
                 response = self.session.generate(clean_input, **gen_kwargs)
 
+            # Bound before the branch so the debug block can reference it in
+            # either mode without a NameError.
+            last_chunk = None
             if self.stream_mode:
                 show_reasoning = self._should_show_reasoning() and not self.single_prompt_mode
                 buffer_for_reasoning_first = self._should_buffer_stream_for_reasoning_first()
@@ -2068,8 +2135,12 @@ class SimpleCLI:
                 display_buffer = ""  # Buffer for cleaned display content
                 reasoning_parts: List[str] = []
                 reasoning_complete: Optional[str] = None
+                # Keep the last chunk: in streaming mode `response` is the
+                # generator itself, so after the loop it carries no usage or
+                # metadata. Debug output needs the final chunk's totals.
 
                 for chunk in response:
+                    last_chunk = chunk
                     if hasattr(chunk, 'content') and chunk.content:
                         full_content += chunk.content
 
@@ -2189,7 +2260,16 @@ class SimpleCLI:
 
             if self.debug_mode:
                 latency = (time.time() - start_time) * 1000
-                print(f"⏱️ Response in {latency:.0f}ms")
+                debug_source = response
+                if self.stream_mode and last_chunk is not None:
+                    debug_source = last_chunk
+                    # Hand the timing helper the text we actually streamed so it
+                    # can count tokens; streamed chunks carry no usage.
+                    self._last_stream_text = locals().get("full_content") or None
+                print(self._debug_timing_line(debug_source, latency))
+                spec_line = self._debug_speculation_line(debug_source)
+                if spec_line:
+                    print(spec_line)
 
         except KeyboardInterrupt:
             print("\n⏸️ Interrupted")
@@ -2198,6 +2278,76 @@ class SimpleCLI:
             if self.debug_mode:
                 import traceback
                 traceback.print_exc()
+
+    def _debug_timing_line(self, response: Any, latency_ms: float) -> str:
+        """Timing WITH the denominator.
+
+        `Response in 8128ms` is unusable for comparing configurations: it moves
+        with the answer's length, so a faster lane that happened to write more
+        looks slower. Tokens and tok/s are what actually compare.
+        """
+        usage = getattr(response, "usage", None) or {}
+        out = usage.get("output_tokens") or usage.get("completion_tokens")
+        if not out:
+            # Streaming chunks carry no usage. Count the text we printed with
+            # the provider's own tokenizer rather than reporting a bare
+            # millisecond figure, which cannot be compared across runs.
+            text = getattr(self, "_last_stream_text", None)
+            counter = getattr(getattr(self, "provider", None), "_count_tokens", None)
+            if text and callable(counter):
+                try:
+                    out = counter(text)
+                except Exception:
+                    out = None
+        base = f"⏱️  {latency_ms:.0f}ms"
+        if isinstance(out, int) and out > 0 and latency_ms > 0:
+            tps = out / (latency_ms / 1000.0)
+            inp = usage.get("input_tokens") or usage.get("prompt_tokens")
+            prompt_part = f", {inp} in" if isinstance(inp, int) else ""
+            return f"{base} | {out} out{prompt_part} | {tps:.1f} tok/s"
+        return base
+
+    def _debug_speculation_line(self, response: Any) -> Optional[str]:
+        """One line saying whether the drafter actually ran on THIS response.
+
+        Read from the response metadata rather than from the provider's config,
+        so it reports what happened rather than what was asked for. Falls back to
+        the provider's loaded lane when a response carries no block (nothing was
+        requested), because "the lane is loaded and idle" is still worth seeing
+        in debug mode.
+        """
+        meta = getattr(response, "metadata", None) or {}
+        spec = meta.get("speculation")
+        if isinstance(spec, dict):
+            if spec.get("used"):
+                bits = [f"drafter={spec.get('drafter')}"]
+                if spec.get("num_draft_tokens"):
+                    bits.append(f"draft_tokens={spec['num_draft_tokens']}")
+                if spec.get("output_preserving") is False:
+                    bits.append("output_preserving=False")
+                return "⚡ speculation: USED (" + ", ".join(bits) + ")"
+            reason = spec.get("reason") or "not applied"
+            return f"⚡ speculation: requested but NOT used — {reason}"
+
+        # No metadata block: either nothing was requested, or this is the
+        # streaming lane, which yields bare content chunks. Ask the provider,
+        # which records the per-call verdict at the one place that decides it.
+        provider = getattr(self, "provider", None)
+        status_fn = getattr(provider, "speculation_status", None)
+        if not callable(status_fn):
+            return None
+        st = status_fn() or {}
+        if not st.get("lane_loaded"):
+            reason = st.get("unavailable_reason")
+            return f"⚡ speculation: NOT loaded — {reason}" if reason else None
+        if st.get("last_call_used"):
+            bits = [f"drafter={st.get('drafter')}"]
+            if st.get("draft_tokens"):
+                bits.append(f"draft_tokens={st['draft_tokens']}")
+            if st.get("output_preserving") is False:
+                bits.append("output_preserving=False")
+            return "⚡ speculation: USED (" + ", ".join(bits) + ")"
+        return "⚡ speculation: lane loaded, drafter SKIPPED on this call"
 
     def _should_show_reasoning(self) -> bool:
         """Decide whether to display reasoning in the CLI output."""
@@ -2304,6 +2454,10 @@ class SimpleCLI:
             gen_kwargs["audio_language"] = self.audio_language
         if self.thinking is not None:
             gen_kwargs["thinking"] = self.thinking
+        if self.speculation is not None:
+            gen_kwargs["speculation"] = {
+                "mode": "native_mtp" if self.speculation else "off"
+            }
         # Preserve session-level generation parameters for consistency.
         try:
             if getattr(self.session, "temperature", None) is not None:
@@ -2591,6 +2745,38 @@ build custom solutions using the AbstractCore framework directly.
         default=None,
         help="Optional language hint for speech-to-text (e.g. 'en', 'fr').",
     )
+    parser.add_argument(
+        "--speculation",
+        choices=["off", "native_mtp"],
+        default=None,
+        help=(
+            "Speculative decoding mode (mlx provider). 'native_mtp' loads the "
+            "model's multi-token-prediction drafter for faster generation. The "
+            "drafter is bound at load time, so this is a startup flag."
+        ),
+    )
+    parser.add_argument(
+        "--drafter",
+        default=None,
+        help=(
+            "MTP drafter repo/path, when the model has no registered default "
+            "(e.g. mlx-community/Qwen3.8-27B-MTP-4bit). Implies --speculation native_mtp."
+        ),
+    )
+    parser.add_argument(
+        "--num-draft-tokens",
+        type=int,
+        default=None,
+        help=(
+            "Tokens drafted per step. Omit to use the model's measured default. "
+            "1 is pathologically slow; 2-4 is the useful range."
+        ),
+    )
+    parser.add_argument(
+        "--require-acceleration",
+        action="store_true",
+        help="Fail at startup if speculation cannot be honored, instead of running unaccelerated.",
+    )
 
     args = parser.parse_args()
 
@@ -2654,19 +2840,54 @@ build custom solutions using the AbstractCore framework directly.
     if args.api_key:
         kwargs['api_key'] = args.api_key
 
+    # Speculation is a CONSTRUCTION-time option: it decides which runtime loads
+    # the weights, so it cannot be toggled on later in the session. Naming
+    # --drafter or --num-draft-tokens alone implies the mode, because asking for
+    # a drafter and getting plain decoding is the silent-degrade this contract
+    # exists to prevent.
+    spec_mode = args.speculation
+    if spec_mode is None and (args.drafter or args.num_draft_tokens or args.require_acceleration):
+        spec_mode = "native_mtp"
+    if spec_mode:
+        speculation = {"mode": spec_mode}
+        if args.drafter:
+            speculation["drafter"] = args.drafter
+        if args.num_draft_tokens:
+            speculation["num_draft_tokens"] = args.num_draft_tokens
+        if args.require_acceleration:
+            speculation["require_acceleration"] = True
+        kwargs['speculation'] = speculation
+
     # Create CLI (suppress banner for single-prompt mode)
-    cli = SimpleCLI(
-        provider=provider,
-        model=model,
-        stream=stream_mode,
-        max_tokens=args.max_tokens,
-        max_output_tokens=args.max_output_tokens,
-        debug=args.debug,
-        show_banner=not args.prompt,  # Hide banner in single-prompt mode
-        audio_policy=args.audio_policy,
-        audio_language=args.audio_language,
-        **kwargs
-    )
+    try:
+        cli = SimpleCLI(
+            provider=provider,
+            model=model,
+            stream=stream_mode,
+            max_tokens=args.max_tokens,
+            max_output_tokens=args.max_output_tokens,
+            debug=args.debug,
+            show_banner=not args.prompt,  # Hide banner in single-prompt mode
+            audio_policy=args.audio_policy,
+            audio_language=args.audio_language,
+            **kwargs
+        )
+    except Exception as e:
+        # --require-acceleration is a deliberate "fail rather than run slow", so
+        # it must read as a refusal with a fix, not as a crash. The provider's
+        # message is written for the Python API; translate it to CLI vocabulary.
+        if type(e).__name__ == "SpeculationUnavailableError":
+            print(f"❌ Speculation could not be enabled: {getattr(e, 'reason', 'unknown')}")
+            print(f"   {e}")
+            print()
+            if getattr(e, "reason", "") == "no_mtp_drafter_for_model":
+                print(f"💡 No MTP drafter is registered for '{model}'. Either:")
+                print("   • point at one explicitly:  --drafter <repo-or-path>")
+                print("   • or pick a model that has one — see `docs/speculative-decoding.md`")
+            else:
+                print("💡 Drop --require-acceleration to run unaccelerated instead.")
+            sys.exit(2)
+        raise
 
     # Run
     if args.prompt:
