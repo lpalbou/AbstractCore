@@ -174,11 +174,23 @@ class CachedSession(BasicSession):
                     modules.append(PromptCacheModule(module_id="tools", tools=tools_schema))
                 if modules:
                     namespace = self.prompt_cache_namespace or self._default_prompt_cache_namespace()
+                    # `thinking="auto"` — NOT None. KV mode serializes the system bloc
+                    # WITHOUT any thinking control, and says so: `generate()` receives
+                    # `prompt_cache_prefilled_modules=("system", …)` and the provider
+                    # hooks DECLINE an effort level for a prefilled system region
+                    # (handled_level=False, honest warning). `prepare_modules` resolves
+                    # `thinking=None` to the reasoning effort configured on the text
+                    # route — right for full-context callers, wrong here: it would bake
+                    # "Reasoning effort is set to low. …" into this bloc's KV while every
+                    # turn reports that no level could be applied (adversarial find,
+                    # 2026-09-17). "auto" is the explicit spelling of "no control": it
+                    # normalizes to (None, None) and adds no bytes.
                     prepared = provider.prompt_cache_prepare_modules(  # type: ignore[attr-defined]
                         namespace=namespace,
                         modules=modules,
                         make_default=False,
                         ttl_s=self.prompt_cache_ttl_s,
+                        thinking="auto",
                     )
                     self._prompt_cache_prefix_namespace = namespace
                     self._prompt_cache_prefix_modules = {}

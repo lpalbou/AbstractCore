@@ -1,10 +1,11 @@
 {
   "schema": 1,
   "agent_id": "core",
-  "url": "http://127.0.0.1:8765",
+  "url": "http://127.0.0.1:8791",
   "about": "",
+  "home": "/Users/albou/agora-af-release",
   "harnesses": [
-    "codex"
+    "claude"
   ],
-  "default_drive_harness": "codex"
+  "default_drive_harness": "claude"
 }

@@ -124,6 +124,7 @@ class PromptCachePrepareModulesRequest(BaseModel):
     make_default: bool = Field(default=False, description="Set the final derived key as default")
     ttl_s: Optional[float] = Field(default=None, description="Optional TTL for derived keys (seconds)")
     version: int = Field(default=1, description="Hash version for key derivation (bump on formatting changes)")
+    thinking: Optional[Union[bool, str]] = Field(default=None, description='The SAME `thinking` value the caller will pass to generate(). Thinking controls can rewrite the head of the system block, so a chain planned under a different request is a prefix of nothing generate() sends. Omit to use the reasoning effort configured on the text route.')
 
 
 class BlocUpsertTextRequest(BaseModel):
@@ -670,6 +671,7 @@ def create_app(
                     make_default=bool(req.make_default),
                     ttl_s=req.ttl_s,
                     version=int(req.version),
+                    thinking=req.thinking,
                 )
 
             return _provider_call(_op)

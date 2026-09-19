@@ -5871,6 +5871,7 @@ class PromptCachePrepareModulesProxyRequest(PromptCacheProxyBase):
     make_default: bool = Field(default=False, description="Whether the prepared module cache should become the upstream default.")
     ttl_s: Optional[float] = Field(default=None, description="Optional upstream cache TTL in seconds.", example=3600)
     version: int = Field(default=1, description="Payload version for forward-compatible module preparation.")
+    thinking: Optional[Union[bool, str]] = Field(default=None, description='The SAME `thinking` value the caller will pass to generate(). Thinking controls can rewrite the head of the system block, so a chain planned under a different request is a prefix of nothing generate() sends. Omit to use the reasoning effort configured on the text route.')
 
 
 class BlocProxyBase(PromptCacheProxyBase):
@@ -6857,6 +6858,7 @@ def acore_prompt_cache_prepare_modules(req: PromptCachePrepareModulesProxyReques
                     make_default=bool(req.make_default),
                     ttl_s=req.ttl_s,
                     version=int(req.version),
+                    thinking=req.thinking,
                 ),
             )
         except Exception as e:

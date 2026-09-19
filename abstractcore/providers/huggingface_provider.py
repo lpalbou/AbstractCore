@@ -1835,7 +1835,15 @@ class HuggingFaceProvider(BaseProvider):
         # system stays in the same stable prefix position before every turn, so
         # message-append KV reuse is unchanged; only the system-only ->
         # system+tools module boundary loses reuse (one-time re-prefill).
-        base_system = system_prompt if isinstance(system_prompt, str) else None
+        # CANONICAL WHITESPACE (parity with the MLX and transformers renderers).
+        # `PromptCacheModule.normalized()` strips system_prompt before it is
+        # fingerprinted AND rendered into a bloc chain; this lane rendered the
+        # caller's RAW string. A system prompt with any leading/trailing whitespace
+        # therefore produced one byte stream through the chain and another through
+        # `generate()`, and the prepared prefix stopped being a prefix at the edge of
+        # the system text. Fixed for MLX on 2026-08-03; found here 2026-09-17 by the
+        # per-lane parity test in tests/providers/test_prompt_cache_thinking_prefix.py.
+        base_system = (system_prompt.strip() or None) if isinstance(system_prompt, str) else None
         merged_system = (
             merge_tools_into_system(self.tool_handler, base_system, tools) if tools else base_system
         )
@@ -6993,13 +7001,24 @@ class HuggingFaceProvider(BaseProvider):
                     )
 
                     # Validate and return
-                    validated_obj = response_model.model_validate(generator)
+                    # Outlines 1.x returns the constrained JSON as a STRING.
+                    # `model_validate(str)` always raises, so this lane used to run a
+                    # full constrained generation, discard the correct result at debug
+                    # level and generate again on the prompted lane (2026-09-17).
+                    validated_obj = (
+                        response_model.model_validate_json(generator)
+                        if isinstance(generator, (str, bytes, bytearray))
+                        else response_model.model_validate(generator)
+                    )
 
+                    # `GenerateResponse` has no `validated_object` field: passing one raised
+                    # TypeError AFTER a successful constrained generation, so this lane never
+                    # returned and every structured call generated twice (2026-09-17). The
+                    # structured handler validates `content` itself.
                     return GenerateResponse(
                         content=validated_obj.model_dump_json(),
                         model=self.model,
                         finish_reason="stop",
-                        validated_object=validated_obj
                     )
                 except Exception as e:
                     # If native_outlines was explicitly requested, don't fall back
@@ -7010,7 +7029,11 @@ class HuggingFaceProvider(BaseProvider):
                             finish_reason="error"
                         )
                     # Otherwise fall back to prompted approach
-                    self.logger.debug(f"Outlines generation failed, falling back to prompted: {e}")
+                    # LOUD: at debug level this hid a lane that failed on every call.
+                    self.logger.warning(
+                        f"#FALLBACK Outlines native structured output failed "
+                        f"({type(e).__name__}: {e}); generating again on the prompted lane."
+                    )
                     # Continue with normal generation below
 
         # Build input text with tool and media support

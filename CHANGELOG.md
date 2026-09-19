@@ -8,6 +8,87 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **A prepared prompt-cache prefix is a prefix of the prompt again under a
+  reasoning-effort level (2026-09-17).** Found on a live AbstractAssistant
+  session on `mlx-community/Qwen3.8-27B-4bit`: two consecutive turns over an
+  unchanged ~5.5k-token context each paid a full ~17 s prefill. The ledger
+  read `rebuilt` cached=0, then `hit_restore` cached=**3**, and only turn 3
+  reused anything (cached=5465, 4 s). Qwen3.8 declares
+  `thinking_control.effort_system_lines`, so under `thinking="minimal"` (→
+  `low`) the renderers open the system block with "Reasoning effort is set to
+  low. …" — while `prompt_cache_prepare_modules` had no way to learn the
+  thinking request and planned the (system, tools) bloc chain from the bare
+  persona. The two agreed on `<|im_start|>system\n`. A comment in the MLX
+  renderer already conceded it ("will prefix-miss … correct, just uncached");
+  in practice that was every session on the affected models.
+  `prompt_cache_prepare_modules` now takes `thinking=` (pass the value
+  `generate()` is about to receive) and folds the control into the first
+  system-bearing bloc **before keys are derived** — the keys are shared across
+  sessions, so two effort levels must never share one. The rewritten text is
+  derived by probing `_apply_thinking_request`, not mirrored, so the
+  minimal→low mapping, the Harmony `Reasoning:` line and each local lane's
+  effort claim cannot drift from `generate()`. `thinking=None` is resolved the
+  way `generate()` resolves it — to the reasoning effort configured on the text
+  route — because a caller that leaves the level to configuration hit the same
+  bug (adversarial find: prepared under None, generated under `low`, `rebuilt`
+  cached=0). The `/acore/prompt_cache/prepare_modules` routes (endpoint and
+  server) accept and forward `thinking`; the field was missing and pydantic
+  dropped it silently. The folding rule is pinned per lane — MLX,
+  HF-transformers and the GGUF ChatML hand renderer produce the same bytes from
+  `reasoning_effort=` as from the folded text; a GGUF rendering through its
+  embedded Jinja template is not covered. Two edges of that default: KV-mode
+  `CachedSession` now prepares its prefix with `thinking="auto"` — its system
+  bloc is serialized without any thinking control and `generate()` honestly
+  declines a level for a prefilled system region, so resolving the configured
+  default there would have baked "Reasoning effort is set to low" into the KV
+  while every turn reported that no level could be applied; and an invalid
+  `thinking` value raises `prompt_cache_invalid_thinking` instead of planning a
+  chain without it and answering success. Tokenizer-only proof on the
+  real Qwen3.8 tokenizer: chain/prompt LCP 3 of 5354 before, 5380 of 5380
+  after, for every thinking value. On hardware (Qwen3.5-4B hybrid, replaying
+  the session's payloads with the effort surface emulated): `rebuilt 0 /
+  hit_restore 3 / hit_restore 4789` became `hit_restore 4786` on turn 1.
+- **A diverged fork seed is no longer mistaken for the previous prompt, and is
+  no longer silent (MLX).** The snapshot lane for untrimmable (Gated-DeltaNet /
+  SSM) models holds back its snapshot to what two consecutive prompts share.
+  A key freshly forked from a prepared prefix holds a record that was never a
+  prompt; when that seed did not match, the 3-token agreement of two
+  *renderers* was taken for "the stable transcript", snapshotted, restored on
+  the next turn and reported as `hit_restore`. Such a seed (no snapshot yet,
+  cache holds exactly its record, record not a prefix) now logs one
+  `#FALLBACK` per key, stamps `degraded_reason` into the `prompt_cache`
+  telemetry, and snapshots at a renderer-derived boundary — the request minus
+  its final turn — so the next turn restores the head instead of 3 tokens. The
+  trimmable lane gets the same warning; it stayed correct by trimming, which
+  is exactly why `hit_extend` cached=3 never looked wrong.
+- **The Outlines structured-output lane returns (MLX, HuggingFace).** It never
+  had. `response_model.model_validate(generator)` received the JSON *string*
+  Outlines 1.x returns, which always raises; behind it,
+  `GenerateResponse(validated_object=…)` named a field that dataclass does not
+  have, which also always raises. Both were caught by the lane's blanket
+  `except` and logged at DEBUG as "Outlines generation failed, falling back to
+  prompted", so every structured call ran a full constrained generation,
+  discarded the correct result and generated again — and every end-to-end
+  structured test stayed green, because the fallback answered. The lane now
+  validates with `model_validate_json`, returns a plain `GenerateResponse`
+  (carrying `usage` and `gen_time` on MLX), passes the caller's sampling
+  controls through (it passed none, so it would have decoded greedily whatever
+  `temperature`/`top_p`/`top_k`/`seed` said), and a genuine failure falls back
+  at WARNING with `#FALLBACK`. Measured on a 4B model: 4.93 s, `finish=length`,
+  empty content → 1.24 s, `finish=stop`, valid object. **Behaviour change to
+  know about:** structured calls on MLX/HF are now constrained from the first
+  token, as this lane was always meant to do — so a thinking model no longer
+  reasons before a structured answer, which it did only because of the
+  accidental fallback. `structured_output_method="prompted"` restores that. Not
+  fixed here: `generate_structured` returns the validated object and discards
+  the response, so a structured call's `usage` still reads `None` downstream.
+- **GGUF renders the system prompt with canonical whitespace.**
+  `PromptCacheModule.normalized()` strips `system_prompt` before it is
+  fingerprinted and rendered into a bloc chain; `_gguf_build_chat_messages`
+  rendered the caller's raw string. Any system prompt with leading or trailing
+  whitespace therefore diverged from its own prepared prefix at the edge of the
+  system text. Same defect, same one-line fix MLX received on 2026-08-03; found
+  by the new per-lane parity test.
 - **The recommended-models line no longer asks for a model no route needs
   (2026-09-06).** `models status`, the console-TUI and both Gateway consoles
   rendered `recommended_plan()` raw — "Recommended defaults: 2 of 3 present /

@@ -15,6 +15,7 @@ import inspect
 import threading
 from collections import deque, OrderedDict
 from dataclasses import dataclass, field
+from dataclasses import replace as dataclasses_replace
 from typing import (
     List,
     Dict,
@@ -7205,6 +7206,144 @@ class BaseProvider(AbstractCoreInterface, ABC):
             self._default_prompt_cache_key = dst
         return True
 
+    def _prompt_cache_thinking_system_text(
+        self, system_prompt: Optional[str], thinking: Optional[Union[bool, str]]
+    ) -> Optional[str]:
+        """The system text `generate(thinking=...)` will actually render.
+
+        DERIVED from `_apply_thinking_request`, never mirrored: that is the one
+        place thinking controls are decided (level mapping such as
+        minimal→low, the Harmony `Reasoning:` line, each lane's
+        `_acore_*_reasoning_effort` claim), so probing it cannot drift out of
+        sync with `generate()`. The probe carries a `prompt_cache_key` because
+        lanes that render by hand only in cache mode gate their claim on it.
+
+        Every local HAND renderer that serializes `effort_system_lines` writes the
+        sentence as `f"{line}\\n\\n{system}"` at the head of the FIRST system
+        block, so folding it into the text here yields the bytes those renderers
+        produce from `reasoning_effort=` — pinned per lane in
+        tests/providers/test_prompt_cache_thinking_prefix.py for MLX
+        `_build_prompt_fragment`, HF `_transformers_build_prompt_fragment` and GGUF
+        `_gguf_render_chatml_prompt`. NOT covered: a GGUF rendering through its
+        EMBEDDED Jinja template writes the model's own sentence from the kwarg, so
+        parity there rests on the asset sentence matching that template exactly.
+        A mismatch is a prefix miss — correct, uncached, never served as wrong KV
+        (every lane gates reuse on a token-level prefix check). Only the MLX lane
+        REPORTS such a miss today (`_warn_seed_diverged`); on the HuggingFace lanes
+        it is silent.
+        """
+        base = system_prompt.strip() if isinstance(system_prompt, str) else ""
+        with warnings.catch_warnings():
+            # generate() issues these same warnings on the real call.
+            warnings.simplefilter("ignore")
+            _p, _m, sys_out, kw_out, _meta = self._apply_thinking_request(
+                thinking=thinking,
+                prompt="",
+                messages=None,
+                system_prompt=base or None,
+                kwargs={"prompt_cache_key": "__acore_bloc_plan_probe__"},
+                request_shape={"has_response_model": False, "has_media": False, "messages": None},
+            )
+        text = sys_out.strip() if isinstance(sys_out, str) else ""
+        level = next(
+            (
+                v
+                for k, v in (kw_out or {}).items()
+                if isinstance(k, str)
+                and k.startswith("_acore_")
+                and k.endswith("_reasoning_effort")
+                and isinstance(v, str)
+                and v
+            ),
+            None,
+        )
+        if level:
+            line = (self._thinking_control_surfaces().effort_system_lines or {}).get(level)
+            if isinstance(line, str) and line.strip():
+                text = f"{line.strip()}\n\n{text}" if text else line.strip()
+        return text or None
+
+    def _prompt_cache_default_thinking(self) -> Any:
+        """The `thinking` value `generate()` assumes when its caller names none.
+
+        `generate_with_telemetry` does not stop at `thinking=None`: it resolves the
+        text route and adopts the reasoning effort configured on it
+        (`if thinking is None and route.reasoning is not None`). A planner that
+        treated None as "no control" therefore rebuilt the very bug it exists to
+        prevent for every caller that leaves the level to configuration — measured
+        by the adversarial pass, 2026-09-17: a client built without capability
+        defaults on a machine configured `reasoning: minimal` prepared under None,
+        generated under `low`, and got `rebuilt` cached=0 (shared 3 of 4760).
+        Same two calls `generate()` makes, for a plain text request. The probe text
+        must be NON-EMPTY: the route resolver only resolves the text route for a
+        request that carries text, so an empty probe reads every configuration as
+        "no reasoning default" (measured: scoped `reasoning: xhigh` → None).
+        """
+        request = self._build_generate_request(
+            prompt="prompt-cache bloc plan", request=None, text=None, messages=None, media=None
+        )
+        route = self._resolve_generate_route(
+            request=request,
+            output={"modality": "text", "task": "text_generation"},
+            thinking=None,
+            kwargs={},
+        )
+        return route.reasoning
+
+    def _prompt_cache_modules_with_thinking(
+        self,
+        modules: List[PromptCacheModule],
+        thinking: Optional[Union[bool, str]],
+    ) -> Tuple[List[PromptCacheModule], bool]:
+        """Rewrite a bloc chain's system region the way `generate(thinking=...)` will.
+
+        MEASURED 2026-09-17 (gateway session sess_de9ba93b…, Qwen3.8-27B-4bit, MLX):
+        the runtime prepared a (system, tools) chain of 5354 tokens and forked it
+        into the session key, then called `generate(thinking="minimal")`. Qwen3.8
+        declares `effort_system_lines`, so the renderer opened the system block with
+        "Reasoning effort is set to low. …" while the chain opened it with the
+        persona: the two agreed on exactly 3 tokens (`<|im_start|>system\\n`). The
+        whole prefix cache was unreachable, turn 1 AND turn 2 paid a full ~5.5k
+        prefill (`rebuilt` cached=0, then `hit_restore` cached=3), and nothing
+        warned. Tokenizer-only repro: effort None/medium → LCP 5354/5354,
+        effort low → LCP 3/5354.
+
+        The control lands in the FIRST system-bearing module (that is where every
+        renderer puts it); a chain with no system text gets a leading synthetic
+        module, which is the same single system block the renderers open when
+        tools are the only system content.
+        """
+        if not modules:
+            return modules, False
+        first_idx = next((i for i, m in enumerate(modules) if m.system_prompt), None)
+        current = modules[first_idx].system_prompt if first_idx is not None else None
+        try:
+            if thinking is None:
+                thinking = self._prompt_cache_default_thinking()
+            if thinking is None:
+                return modules, False
+            rewritten = self._prompt_cache_thinking_system_text(current, thinking)
+        except ValueError:
+            # An INVALID thinking value is the caller's error and `generate()` raises
+            # on it too. Planning "without thinking" and answering success would hand
+            # back keys for a chain the caller never asked for.
+            raise
+        except Exception as e:
+            logger.warning(
+                f"#FALLBACK prompt-cache bloc chain could not resolve thinking={thinking!r} "
+                f"({e}); planned WITHOUT the thinking control. If generate() renders one into "
+                f"the system block the prepared prefix will not match the prompt."
+            )
+            return modules, False
+        if (rewritten or None) == (current or None):
+            return modules, False
+        out = list(modules)
+        if first_idx is not None:
+            out[first_idx] = dataclasses_replace(out[first_idx], system_prompt=rewritten)
+        else:
+            out.insert(0, PromptCacheModule(module_id="thinking", system_prompt=rewritten))
+        return [m.normalized() for m in out], True
+
     def prompt_cache_prepare_modules(
         self,
         *,
@@ -7213,12 +7352,20 @@ class BaseProvider(AbstractCoreInterface, ABC):
         make_default: bool = False,
         ttl_s: Optional[float] = None,
         version: int = 1,
+        thinking: Optional[Union[bool, str]] = None,
     ) -> Dict[str, Any]:
         """Ensure hierarchical prefix caches exist for an ordered module list (best-effort).
 
         This builds immutable prefix caches (by derived keys) so callers can:
         - reuse stable sub-prefixes (persona, memory blueprints, etc.)
         - fork the final prefix into a per-session cache for incremental chat
+
+        `thinking` MUST be the same value the caller is about to pass to
+        `generate(thinking=...)` — including None, which both sides resolve to the
+        reasoning effort configured on the text route. Thinking controls can
+        rewrite the HEAD of the system block (see
+        `_prompt_cache_modules_with_thinking`), so a chain planned under a
+        different request is a prefix of nothing `generate()` sends.
 
         Returns a JSON-serializable dict containing per-module derived keys.
         """
@@ -7273,6 +7420,27 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 code="prompt_cache_no_modules",
                 capabilities=caps,
             )
+
+        # Fold the thinking control into the chain BEFORE keys are derived: the
+        # rewritten system text changes the bytes every later bloc sits on, so it
+        # must change every derived key too (these keys are shared across sessions —
+        # one key for two effort levels would serve KV built for the other level).
+        try:
+            normalized_modules, thinking_applied = self._prompt_cache_modules_with_thinking(
+                normalized_modules, thinking
+            )
+        except ValueError as e:
+            provider, model = self._prompt_cache_error_context()
+            raise PromptCacheOperationError(
+                f"Invalid `thinking` for prompt cache module preparation: {e}",
+                operation="prepare_modules",
+                provider=provider,
+                model=model,
+                code="prompt_cache_invalid_thinking",
+                capabilities=caps,
+            ) from e
+        if thinking_applied:
+            fingerprints = [mod.fingerprint(version=version) for mod in normalized_modules]
 
         # Derive deterministic prefix keys per module boundary.
         prefix_hash = hashlib.sha256(

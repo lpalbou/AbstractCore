@@ -7,9 +7,11 @@ import json
 import time
 import uuid
 import inspect
+import os
 import threading
+import weakref
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Union, Iterator, Type, TYPE_CHECKING
+from typing import List, Dict, Any, Callable, Optional, Tuple, Union, Iterator, Type, TYPE_CHECKING
 
 try:
     from pydantic import BaseModel
@@ -40,12 +42,61 @@ from ..architectures.response_postprocessing import (
     normalize_assistant_text,
 )
 from ..core.types import GenerateResponse
+from .base import PromptCacheStore
 from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
 
 if TYPE_CHECKING:
     from ..media.types import MediaContent
+
+
+class _SharedMLXModel:
+    """ONE loaded text model, and the KV state that only means something with it.
+
+    A provider INSTANCE is a cheap facade: generation defaults, a scoped config, a
+    tracer. The expensive parts are the weights and the prompt caches built on them —
+    and those used to be per instance. Measured 2026-09-17 on a live gateway: it builds
+    one host (runtime → client → provider) per service and rebuilds all of them whenever
+    a workflow is published, so one 15 GB model was resident FOUR times (physical
+    footprint 113 GB, peak 129 GB on a 128 GB machine, ~85 GB compressed or swapped),
+    each publish reloaded it once per service, and each rebuilt provider started with an
+    empty prompt-cache store — every session's cache was orphaned by a workflow publish
+    or by relaunching a desktop client. Second provider for the same model, measured:
+    2.37 → 4.80 GB, `a.llm is b.llm` False, the first provider's cache key not found.
+
+    Sharing the STATE (not the provider object) keeps what must stay per service — the
+    runtime stamps per-principal config onto the provider — while a session's cache
+    survives for as long as any provider of that model lives in the process.
+    """
+
+    def __init__(self, *, key: str, llm: Any, tokenizer: Any, prompt_cache_store: Any) -> None:
+        self.key = key
+        self.llm = llm
+        self.tokenizer = tokenizer
+        self.prompt_cache_store = prompt_cache_store
+        self.hybrid_snapshots: Dict[str, Dict[str, Any]] = {}
+        self.hybrid_snapshot_lock = threading.RLock()
+        self.delta_feed_warned_keys: set = set()
+        # Who is using it. Weak: a provider that is simply dropped (a rebuilt host's old
+        # client) must not count as a user forever.
+        self.holders: "weakref.WeakSet[Any]" = weakref.WeakSet()
+
+
+# WEAK values: the providers hold the strong references. When the last provider of a
+# model goes away the weights are freed exactly as before (`del llm` still returns the
+# memory); while any provider lives, the next one for the same model adopts it.
+_SHARED_MLX_MODELS: "weakref.WeakValueDictionary[str, _SharedMLXModel]" = weakref.WeakValueDictionary()
+_SHARED_MLX_MODELS_LOCK = threading.RLock()
+
+
+def _mlx_model_sharing_enabled(kwargs: Optional[Dict[str, Any]] = None) -> bool:
+    """On by default. `share_loaded_model=False` or ABSTRACTCORE_MLX_SHARE_MODELS=0 opts out."""
+    explicit = (kwargs or {}).get("share_loaded_model")
+    if isinstance(explicit, bool):
+        return explicit
+    raw = str(os.environ.get("ABSTRACTCORE_MLX_SHARE_MODELS", "") or "").strip().lower()
+    return raw not in {"0", "false", "no", "off"}
 
 
 class MLXProvider(BaseProvider):
@@ -151,7 +202,63 @@ class MLXProvider(BaseProvider):
         # threads updating DIFFERENT keys could cross-pollinate their
         # fed-token-id records (adversarial find P2-9).
         self._append_stash_lock = threading.RLock()
+        self._shared_model: Optional[_SharedMLXModel] = None
+        self._share_loaded_model = _mlx_model_sharing_enabled(kwargs)
         self._load_model()
+
+    def _load_or_adopt_shared_model(self, key: str, loader: Any) -> Tuple[Any, Any]:
+        """(llm, tokenizer) for `key` — loaded once per process, then adopted.
+
+        Adoption also swaps this instance's prompt-cache store, hybrid snapshots and
+        delta-feed bookkeeping for the shared ones: a KV cache is only reusable with the
+        weights it was computed on, so the two travel together. The first provider's
+        store (its size bound, TTL and eviction hook) becomes the shared one.
+        """
+        if not getattr(self, "_share_loaded_model", True):
+            return loader()
+        with _SHARED_MLX_MODELS_LOCK:  # also serializes two 15 GB loads of one model
+            shared = _SHARED_MLX_MODELS.get(key)
+            if shared is None:
+                llm, tokenizer = loader()
+                shared = _SharedMLXModel(
+                    key=key, llm=llm, tokenizer=tokenizer, prompt_cache_store=self._prompt_cache_store
+                )
+                _SHARED_MLX_MODELS[key] = shared
+            else:
+                self.logger.info(
+                    f"MLX model already resident in this process; adopting it and its prompt caches: {key}"
+                )
+            shared.holders.add(self)
+            self._shared_model = shared
+            self._prompt_cache_store = shared.prompt_cache_store
+            self._hybrid_snapshots = shared.hybrid_snapshots
+            self._hybrid_snapshot_lock = shared.hybrid_snapshot_lock
+            self._delta_feed_warned_keys = shared.delta_feed_warned_keys
+            return shared.llm, shared.tokenizer
+
+    def _release_shared_model(self) -> bool:
+        """Stop using the shared model. True when OTHER providers still use it — then
+        its weights and caches are theirs and must not be cleared by this unload."""
+        shared = getattr(self, "_shared_model", None)
+        if shared is None:
+            return False
+        with _SHARED_MLX_MODELS_LOCK:
+            shared.holders.discard(self)
+            still_used = len(shared.holders) > 0
+            self._shared_model = None
+            if still_used:
+                # Detach: this instance gets private, empty state so nothing it does
+                # after unload can touch what the others are using.
+                self._prompt_cache_store = PromptCacheStore(
+                    max_entries=int(getattr(shared.prompt_cache_store, "_max_entries", 32) or 32),
+                    on_evict=self._prompt_cache_store_evicted,
+                )
+                self._hybrid_snapshots = {}
+                self._hybrid_snapshot_lock = threading.RLock()
+                self._delta_feed_warned_keys = set()
+            else:
+                _SHARED_MLX_MODELS.pop(shared.key, None)
+            return still_used
 
     def supports_prompt_cache(self) -> bool:
         """MLX supports KV prompt caches via `mlx_lm.models.cache`."""
@@ -872,6 +979,61 @@ class MLXProvider(BaseProvider):
             return self._token_lcp_len(head_ids, full_ids)
         return None
 
+    def _stable_head_boundary(
+        self,
+        stable_head: Optional[Callable[[], Optional[str]]],
+        full_prompt: str,
+        full_ids: List[int],
+    ) -> Optional[int]:
+        """Token POSITION where this prompt's final turn begins, or None.
+
+        `stable_head` renders the same request minus its final turn through the
+        same renderer. It is only trusted when it is a literal text prefix of the
+        prompt; the position is the token LCP (never a count — see
+        `_generation_prompt_boundary` for why a seam merge makes those differ).
+        """
+        if not callable(stable_head):
+            return None
+        try:
+            head_text = stable_head()
+        except Exception:
+            return None
+        if not isinstance(head_text, str) or not head_text:
+            return None
+        if not str(full_prompt or "").startswith(head_text):
+            return None
+        head_ids = self._encode_prompt_token_ids(head_text)
+        if not head_ids:
+            return None
+        return self._token_lcp_len(head_ids, full_ids)
+
+    def _key_is_forked(self, key: str) -> bool:
+        meta = self.prompt_cache_key_meta(key) or {}
+        return bool(str(meta.get("forked_from") or "").strip())
+
+    def _warn_seed_diverged(self, key: str, *, shared: int, recorded: int) -> None:
+        """A prepared prefix that is not a prefix of the prompt. Loud, once per key.
+
+        This is the failure that hid a dead prefix cache behind healthy-looking
+        outcomes (`hit_restore` cached=3, `hit_extend` cached=3). It always means
+        the bloc chain and `generate()` rendered the same request differently.
+        """
+        warn_key = f"seed-diverged:{key}"
+        warned = getattr(self, "_delta_feed_warned_keys", None)
+        if warned is None:  # instances built via __new__ (pure cache-logic unit tests)
+            warned = self._delta_feed_warned_keys = set()
+        if warn_key in warned:
+            return
+        warned.add(warn_key)
+        self.logger.warning(
+            f"#FALLBACK MLX prompt cache '{key}': the prepared prefix it was forked from is NOT "
+            f"a prefix of the prompt generate() built (shared {shared} of {recorded} recorded "
+            f"tokens). The prefix cache is unreachable and this call pays a full prefill. The "
+            f"bloc chain was rendered differently from generate() — typically a control that "
+            f"rewrites the head of the system block (pass the same `thinking=` to "
+            f"prompt_cache_prepare_modules that generate() receives)."
+        )
+
     def _cache_is_trimmable(self, cache_value: Any) -> bool:
         """True if mlx_lm can trim this cache (architecture-determined, not
         fill-determined — an EMPTY hybrid cache already reports False). Used to
@@ -963,6 +1125,7 @@ class MLXProvider(BaseProvider):
         *,
         full_context: bool,
         telemetry: Optional[Dict[str, Any]] = None,
+        stable_head: Optional[Callable[[], Optional[str]]] = None,
     ) -> tuple[Any, Any, Optional[List[int]]]:
         """Decide what to feed mlx_lm over a (possibly warm) cache.
 
@@ -997,6 +1160,10 @@ class MLXProvider(BaseProvider):
         when provided, the decision is recorded into it (`outcome`,
         MEASURED `cached_tokens`/`fed_tokens`, `degraded_reason`). Caller
         ownership keeps concurrent generates race-free (no instance stash).
+
+        `stable_head` (2026-09-17): lazy renderer-derived text of this prompt
+        WITHOUT its final turn — consulted only when a forked prefix turns out
+        not to be a prefix of the prompt (see `seed_diverged` below).
         """
 
         def _note(
@@ -1193,10 +1360,30 @@ class MLXProvider(BaseProvider):
             # rewritten tail (append-only caller, or turn one off a forked prefix), so
             # nothing is gained by holding back — keep the full boundary.
             stable_end = boundary_end
+            seed_diverged = False
+            shared = 0
             if fed_ids:
                 shared = self._token_lcp_len(fed_ids, new_ids)
                 if shared < len(fed_ids):
-                    stable_end = max(prefix_len, min(shared, boundary_end))
+                    # DIVERGED SEED (2026-09-17). The LCP holdback reads `fed_ids` as
+                    # the PREVIOUS PROMPT: what two consecutive prompts share is stable
+                    # transcript. That is false for a record that was never a prompt —
+                    # a key FORKED from a prepared (system, tools) prefix holds exactly
+                    # its record (`cache_len == len(fed_ids)`, nothing generated past
+                    # it) and has no snapshot yet. When such a seed is not a prefix of
+                    # the prompt, `shared` is not a transcript boundary, it is the
+                    # point where two RENDERERS disagree. Measured on the gateway
+                    # (Qwen3.8-27B-4bit): the seed omitted the reasoning-effort system
+                    # line, `shared` was 3 (`<|im_start|>system\n`), the snapshot was
+                    # taken at 3 tokens, and turn 2 reported `hit_restore` cached=3 —
+                    # a "hit" that prefilled the whole 5.5k prompt again.
+                    seed_diverged = (
+                        snap is None and cache_len is not None and cache_len == len(fed_ids)
+                    )
+                    if seed_diverged:
+                        self._warn_seed_diverged(key, shared=shared, recorded=len(fed_ids))
+                    else:
+                        stable_end = max(prefix_len, min(shared, boundary_end))
             if prefix_len > 0 and not restored_from_snapshot:
                 # First snapshot-lane turn on a key seeded from the LIVE cache
                 # (a bloc fork). The `shared == len(fed_ids)` test above cannot
@@ -1231,6 +1418,18 @@ class MLXProvider(BaseProvider):
                 gen_at = self._generation_prompt_boundary(full_prompt, new_ids)
                 if gen_at is not None:
                     stable_end = max(0, min(stable_end, gen_at))
+            if seed_diverged:
+                # One observation, like turn 1 — but this caller TOLD us its shape by
+                # forking a prefix: stable head, rewritten tail. For that shape the
+                # generation-prompt holdback is known-useless (the runtime's final
+                # turn carries a fresh-timestamp envelope the next call strips), so
+                # hold back the whole final turn instead. Renderer-derived, so it
+                # cannot disagree with the prompt; absent → the turn-1 rule.
+                at = self._stable_head_boundary(stable_head, full_prompt, new_ids)
+                if at is None:
+                    at = self._generation_prompt_boundary(full_prompt, new_ids)
+                if at is not None:
+                    stable_end = max(0, min(stable_end, at))
 
             head = new_ids[prefix_len:stable_end]
             if head and not self._prefill_tokens_into_cache(working, head):
@@ -1290,6 +1489,16 @@ class MLXProvider(BaseProvider):
                 # cache on the FIRST call of every hybrid session. The GGUF lane
                 # already reported `cold` here; MLX and transformers now agree.
                 _note("cold", cached=0, fed=fed_this_turn)
+            elif seed_diverged:
+                _note(
+                    "rebuilt",
+                    cached=0,
+                    fed=fed_this_turn,
+                    reason=(
+                        f"prepared prefix is not a prefix of the prompt (shared {shared} of "
+                        f"{len(fed_ids)} recorded tokens); prefix cache unreachable, full prefill"
+                    ),
+                )
             else:
                 _note("rebuilt", cached=0, fed=fed_this_turn)
             return working, seed, new_ids
@@ -1400,6 +1609,13 @@ class MLXProvider(BaseProvider):
                 reason="prompt diverges from the artifact's recorded prefix; bypassed to protect the shared cache",
             )
             return None, full_prompt, None
+
+        if lcp < len(fed_ids) and cache_len == len(fed_ids) and self._key_is_forked(key):
+            # Same diverged seed as the snapshot lane. Trimming makes it CORRECT here
+            # (the cache is cut back to the shared tokens), which is exactly why it
+            # stayed silent: the turn reports `hit_extend` with a handful of cached
+            # tokens while the whole prepared prefix is discarded.
+            self._warn_seed_diverged(key, shared=lcp, recorded=len(fed_ids))
 
         effective_prefix = min(lcp, cache_len)
         identical = effective_prefix >= len(new_ids)
@@ -2854,7 +3070,9 @@ class MLXProvider(BaseProvider):
             with open(os.devnull, "w") as devnull:
                 with redirect_stdout(devnull), redirect_stderr(devnull):
                     try:
-                        self.llm, self.tokenizer = load(load_target)
+                        self.llm, self.tokenizer = self._load_or_adopt_shared_model(
+                            str(load_target), lambda: load(load_target)
+                        )
                     except ValueError as e:
                         msg = str(e)
                         low = msg.lower()
@@ -2935,6 +3153,10 @@ class MLXProvider(BaseProvider):
         import gc
 
         try:
+            # A SHARED model is unloaded for THIS provider only while others still use
+            # it: their weights and their sessions' caches are not this call's to clear.
+            shared_still_used = self._release_shared_model()
+
             if hasattr(self, "llm") and self.llm is not None:
                 # Clear MLX model
                 del self.llm
@@ -2952,8 +3174,13 @@ class MLXProvider(BaseProvider):
                 self.stream_generate_fn = None
 
             # Session caches go with the weights (prompt_cache_clear also drops
-            # `_hybrid_snapshots` via this provider's override).
+            # `_hybrid_snapshots` via this provider's override). After a release that
+            # left other users, this clears only the private empty state.
             self._clear_prompt_caches_for_unload()
+            if shared_still_used:
+                self.logger.info(
+                    "MLX model stays resident: other providers in this process still use it."
+                )
 
             # Force garbage collection to free memory immediately
             # The add-on holds the mlx-vlm wrapper, its processor and the tower;
@@ -3158,20 +3385,53 @@ class MLXProvider(BaseProvider):
                         or self.max_output_tokens
                         or 512
                     )
+                    # Sampling controls ride along (Outlines forwards extra kwargs to
+                    # `mlx_lm.generate`). This lane passed none, so once it started
+                    # returning it would have ignored temperature/top_p/top_k/seed
+                    # without a word — greedy decoding whatever the caller asked for.
+                    outlines_gen_kwargs = self._prepare_generation_kwargs(**kwargs)
+                    outlines_sampler = self._build_mlx_sampler(
+                        outlines_gen_kwargs.get("temperature", self.temperature),
+                        outlines_gen_kwargs.get("top_p", 0.9),
+                        outlines_gen_kwargs.get("top_k"),
+                    )
+                    outlines_seed = outlines_gen_kwargs.get("seed")
+                    if outlines_seed is not None:
+                        import mlx.core as mx
+
+                        mx.random.seed(outlines_seed)
+                    outlines_started = time.time()
                     generator = self._outlines_model(
                         full_prompt,
                         outlines.json_schema(response_model),
                         max_tokens=int(outlines_max_out),
+                        **({"sampler": outlines_sampler} if outlines_sampler is not None else {}),
                     )
 
                     # Validate and return
-                    validated_obj = response_model.model_validate(generator)
+                    # Outlines 1.x returns the constrained JSON as a STRING.
+                    # `model_validate(str)` always raises, so this lane used to run a
+                    # full constrained generation, discard the correct result at debug
+                    # level and generate again on the prompted lane (2026-09-17).
+                    validated_obj = (
+                        response_model.model_validate_json(generator)
+                        if isinstance(generator, (str, bytes, bytearray))
+                        else response_model.model_validate(generator)
+                    )
 
+                    # `GenerateResponse` has no `validated_object` field. Passing one raised
+                    # TypeError right here, AFTER a successful constrained generation, and
+                    # the handler below filed it as "Outlines generation failed" — so this
+                    # lane never once returned: every structured call generated twice. The
+                    # structured handler validates `content` itself; nothing reads the object.
+                    content = validated_obj.model_dump_json()
+                    usage = self._calculate_usage(full_prompt, content)
                     return GenerateResponse(
-                        content=validated_obj.model_dump_json(),
+                        content=content,
                         model=self.model,
                         finish_reason="stop",
-                        validated_object=validated_obj,
+                        usage=usage,
+                        gen_time=round((time.time() - outlines_started) * 1000, 1),
                     )
                 except Exception as e:
                     # If native_outlines was explicitly requested, don't fall back
@@ -3181,8 +3441,12 @@ class MLXProvider(BaseProvider):
                             model=self.model,
                             finish_reason="error",
                         )
-                    # Otherwise fall back to prompted approach
-                    self.logger.debug(f"Outlines generation failed, falling back to prompted: {e}")
+                    # Otherwise fall back to prompted approach — LOUDLY. At debug level this
+                    # hid a lane that failed on every call for the cost of a whole generation.
+                    self.logger.warning(
+                        f"#FALLBACK Outlines native structured output failed "
+                        f"({type(e).__name__}: {e}); generating again on the prompted lane."
+                    )
                     # Continue with normal generation below
 
         # Handle media content first if present
@@ -3349,12 +3613,39 @@ class MLXProvider(BaseProvider):
             # prompt-only callers (CachedSession KV mode) append by contract.
             # `messages=[]` IS full-context ("empty so far" — key-mode turn
             # one); only `messages=None` means prompt-only (P2-8).
+
+            def _stable_head() -> Optional[str]:
+                # This request minus its FINAL turn, through the same renderer that
+                # built `full_prompt` (the final turn is `prompt` when one is given,
+                # else the last message).
+                if isinstance(processed_prompt, str) and processed_prompt.strip():
+                    head_messages = messages
+                elif messages:
+                    head_messages = list(messages)[:-1]
+                else:
+                    return None
+                return self._build_prompt_fragment(
+                    prompt="",
+                    messages=head_messages,
+                    system_prompt=system_prompt,
+                    tools=tools,
+                    add_generation_prompt=False,
+                    prefilled_modules=prompt_cache_prefilled_modules,
+                    enable_thinking=(
+                        mlx_enable_thinking if isinstance(mlx_enable_thinking, bool) else None
+                    ),
+                    reasoning_effort=(
+                        mlx_reasoning_effort if isinstance(mlx_reasoning_effort, str) else None
+                    ),
+                )
+
             prompt_cache, prompt_to_feed, fed_ids_to_record = self._prepare_cache_delta_feed(
                 cache_key,
                 prompt_cache,
                 full_prompt,
                 full_context=messages is not None,
                 telemetry=cache_telemetry,
+                stable_head=_stable_head,
             )
             try:
                 key_meta = self.prompt_cache_key_meta(cache_key) or {}

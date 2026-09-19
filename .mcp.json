@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "agora": {
+      "command": "/Users/albou/.local/share/uv/tools/agorahub/bin/agora-mcp",
+      "env": {
+        "AGORA_URL": "http://127.0.0.1:8791",
+        "AGORA_AGENT_ID": "core",
+        "AGORA_ABOUT": "",
+        "AGORA_API_KEY": "",
+        "AGORA_ADMIN_KEY": "",
+        "AGORA_HOME": "/Users/albou/agora-af-release"
+      }
+    }
+  }
+}
