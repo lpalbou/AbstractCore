@@ -326,6 +326,43 @@ impl CoreCli {
         })
     }
 
+    /// Run a streaming `abstractcore <args> --json` verb and return its
+    /// FINAL document.
+    ///
+    /// `models download <p> <a> --json` (and `engines install --json`)
+    /// print one `host_job_v1` object per line while the job runs and the
+    /// final job last; that last line also carries the legacy
+    /// `ok`/`results` keys of the older one-document shape. A pretty-printed
+    /// single document is accepted too. A nonzero exit reports the final
+    /// job's own `error`/`message` when the last line is a job, else the
+    /// CLI's error line.
+    pub fn run_json_last(&self, args: &[&str], timeout: Duration) -> Result<CliOutput, CliError> {
+        let label = format!("abstractcore {}", args.join(" "));
+        let (status, stdout, stderr) = self.run_raw(args, &label, timeout)?;
+        let last = last_json_object(&stdout);
+        if !status.success() {
+            let code = status.code().unwrap_or(-1);
+            let msg = last
+                .as_ref()
+                .and_then(job_error_text)
+                .unwrap_or_else(|| error_line(&stdout, &stderr));
+            return Err(CliError::core(CliErrorKind::Exit(code), msg));
+        }
+        let value = last.ok_or_else(|| {
+            CliError::core(
+                CliErrorKind::BadJson,
+                format!(
+                    "no JSON object on stdout — first bytes: {}",
+                    head(&stdout, 120)
+                ),
+            )
+        })?;
+        Ok(CliOutput {
+            value,
+            fallback_warnings: fallback_lines(&stderr),
+        })
+    }
+
     /// Shared subprocess mechanics: spawn, drain both pipes on reader
     /// threads (a large payload can never deadlock), wait with a
     /// deadline, kill on overrun.
@@ -415,6 +452,35 @@ pub(crate) fn error_line(stdout: &str, stderr: &str) -> String {
         return l.trim().to_string();
     }
     "(no output)".into()
+}
+
+/// The whole stdout as one JSON object, else its LAST line that is one
+/// (NDJSON streams end with the final document).
+pub(crate) fn last_json_object(stdout: &str) -> Option<Value> {
+    let trimmed = stdout.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
+        return v.is_object().then_some(v);
+    }
+    trimmed
+        .lines()
+        .rev()
+        .find_map(|l| serde_json::from_str::<Value>(l.trim()).ok())
+        .filter(Value::is_object)
+}
+
+/// A job document's own failure text: `error` (a string or `{message}`),
+/// else `message`.
+fn job_error_text(v: &Value) -> Option<String> {
+    let err = v.get("error");
+    let text = err
+        .and_then(Value::as_str)
+        .or_else(|| err.and_then(|e| e.get("message")).and_then(Value::as_str))
+        .or_else(|| v.get("message").and_then(Value::as_str))?;
+    let text = text.trim();
+    (!text.is_empty()).then(|| text.to_string())
 }
 
 pub(crate) fn head(s: &str, n: usize) -> String {
@@ -525,6 +591,57 @@ mod tests {
         let missing = CoreCli::new(PathBuf::from("/nonexistent/bin"));
         let err = missing.run_json(&[], Duration::from_secs(1)).unwrap_err();
         assert_eq!(err.kind, CliErrorKind::Spawn);
+    }
+
+    /// The streaming download verb prints `host_job_v1` NDJSON progress
+    /// and the final job LAST; only that last line is the answer. A
+    /// failed job exits 1 and its own error text is surfaced.
+    #[test]
+    fn run_json_last_takes_the_final_ndjson_line() {
+        let sh = CoreCli::new(PathBuf::from("/bin/sh"));
+        let ok = sh
+            .run_json_last(
+                &[
+                    "-c",
+                    r#"echo '{"schema":"host_job_v1","status":"running","percent":10.0}'
+echo '{"schema":"host_job_v1","status":"running","percent":90.0}'
+echo '{"schema":"host_job_v1","status":"completed","ok":true,"results":[{"status":"downloaded","message":"done"}]}'"#,
+                ],
+                Duration::from_secs(5),
+            )
+            .unwrap();
+        assert_eq!(ok.value["status"], "completed");
+        assert_eq!(ok.value["results"][0]["status"], "downloaded");
+
+        // The old one-document reader would choke on exactly this stdout.
+        assert_eq!(
+            sh.run_json(
+                &["-c", "echo '{\"a\":1}'; echo '{\"a\":2}'"],
+                Duration::from_secs(5)
+            )
+            .unwrap_err()
+            .kind,
+            CliErrorKind::BadJson
+        );
+
+        let failed = sh
+            .run_json_last(
+                &[
+                    "-c",
+                    r#"echo '{"schema":"host_job_v1","status":"running"}'
+echo '{"schema":"host_job_v1","status":"failed","error":"pull failed: manifest unknown"}'
+exit 1"#,
+                ],
+                Duration::from_secs(5),
+            )
+            .unwrap_err();
+        assert_eq!(failed.kind, CliErrorKind::Exit(1));
+        assert!(failed.to_string().contains("manifest unknown"), "{failed}");
+
+        let empty = sh
+            .run_json_last(&["-c", "echo not json"], Duration::from_secs(5))
+            .unwrap_err();
+        assert_eq!(empty.kind, CliErrorKind::BadJson);
     }
 
     /// The P1-1 signal lane: an exit-0 run whose stderr carries a

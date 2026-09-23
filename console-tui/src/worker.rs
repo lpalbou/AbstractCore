@@ -235,9 +235,9 @@ fn handle(
 /// `abstractcore models download` (which runs the PROVIDER's own tool),
 /// so the console and the CLI cannot disagree about what a download is.
 ///
-/// One-shot, not streamed: the busy strip already shows elapsed for the
-/// whole run, and a second lane for provider chatter would buy a
-/// progress bar at the price of a second definition of "downloading".
+/// Read once at the end: the CLI streams `host_job_v1` progress lines,
+/// and this lane keeps only the final one (the busy strip already shows
+/// elapsed; the Models screen, 9, is the lane with a progress bar).
 /// The outcome lands in the journal and the notice, and availability is
 /// re-probed so the grid tells the truth immediately afterwards.
 fn handle_download(
@@ -257,7 +257,9 @@ fn handle_download(
     let label = format!("downloading {provider} {artifact}");
     begin(store, wake, op, &label);
     let action = format!("abstractcore models download {provider} {artifact}");
-    let outcome = cli.run_json(
+    // `models download --json` streams `host_job_v1` lines and ends with
+    // the final job, so only the LAST line is the answer.
+    let outcome = cli.run_json_last(
         &["models", "download", provider, artifact, "--json"],
         DOWNLOAD_TIMEOUT,
     );
@@ -266,21 +268,7 @@ fn handle_download(
     // useful half of a download failure.
     let (notice, journal) = match &outcome {
         Ok(out) => {
-            let result = out
-                .value
-                .get("results")
-                .and_then(|r| r.as_array())
-                .and_then(|a| a.first())
-                .cloned()
-                .unwrap_or(serde_json::Value::Null);
-            let status = result
-                .get("status")
-                .and_then(|s| s.as_str())
-                .unwrap_or("completed");
-            let message = result
-                .get("message")
-                .and_then(|s| s.as_str())
-                .unwrap_or_default();
+            let (status, message) = download_outcome(&out.value);
             (
                 format!(
                     "{provider} {artifact}: {status}{}",
@@ -305,6 +293,28 @@ fn handle_download(
         });
         store.notice.set(Some(notice));
     });
+}
+
+/// Status and message of a finished download, read from the final
+/// document: the legacy `results[0]`, else the job's `result`, else the
+/// job itself (`status`/`message`).
+pub(crate) fn download_outcome(v: &serde_json::Value) -> (String, String) {
+    let result = v
+        .get("results")
+        .and_then(|r| r.as_array())
+        .and_then(|a| a.first())
+        .or_else(|| v.get("result").filter(|r| r.is_object()));
+    let pick = |key: &str| {
+        result
+            .and_then(|r| r.get(key))
+            .and_then(|s| s.as_str())
+            .or_else(|| v.get(key).and_then(|s| s.as_str()))
+            .map(str::to_string)
+    };
+    (
+        pick("status").unwrap_or_else(|| "completed".into()),
+        pick("message").unwrap_or_default(),
+    )
 }
 
 // ---------------------------------------------------------------------
@@ -1051,6 +1061,26 @@ mod tests {
     use crate::writes::{Expect, RmwOp};
     use serde_json::json;
     use std::path::PathBuf;
+
+    /// The final `host_job_v1` line of a streamed download carries the
+    /// legacy `results`; a job without them still yields its own status.
+    #[test]
+    fn download_outcome_reads_the_final_job_line() {
+        let legacy = json!({"schema": "host_job_v1", "status": "completed", "ok": true,
+            "results": [{"status": "downloaded", "message": "qwen3:8b ready"}]});
+        assert_eq!(
+            download_outcome(&legacy),
+            ("downloaded".to_string(), "qwen3:8b ready".to_string())
+        );
+        let job_only = json!({"schema": "host_job_v1", "status": "cancelled",
+            "message": "cancelled by operator", "results": []});
+        assert_eq!(
+            download_outcome(&job_only),
+            ("cancelled".to_string(), "cancelled by operator".to_string())
+        );
+        let with_result = json!({"status": "completed", "result": {"status": "present"}});
+        assert_eq!(download_outcome(&with_result).0, "present");
+    }
 
     struct Scratch {
         dir: PathBuf,
