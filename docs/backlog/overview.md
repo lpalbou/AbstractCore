@@ -9,11 +9,13 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 29
+- Planned: 30
 - Proposed: 27
 - Completed: 30
 - Deprecated: 3
 - Recurrent: 0
+
+2026-09-23: added 0854 (models & engines backend follow-ups).
 
 2026-09-20: added the [native inference track](planned/native_inference/README.md)
 (0848–0853): Flash sidecar, shared negotiation, Transformers and GGUF adapters,
@@ -134,6 +136,7 @@ completed/ in a hygiene pass.)
 
 | Item | Notes |
 | --- | --- |
+| `planned/0854_models_engines_backend_follow_ups.md` | Models & engines backend follow-ups: catalog id/size verification, hub geometry, quant-level HF deletes, LM Studio fallbacks and byte progress, live Ollama fixture, Windows smoke. |
 | `planned/0847_shared_in_process_model_pool.md` | MLX model+prompt-cache sharing landed 2026-09-17 (one 15 GB model was resident 4x in one gateway); extend to the HuggingFace/GGUF lanes and decide the tenancy of a process-shared cache store. |
 | `planned/0810_resolved_generate_route_object_and_temporary_override_contract.md` | In progress: Core now has `ResolvedGenerateRoute`; remaining work is cross-topology/server parity and stricter denial semantics. |
 | `planned/0809_generate_request_object_and_output_contract.md` | In progress: `request=` now normalizes into the shared Core route substrate without breaking prompt-first callers; broader parity/docs follow-ups remain. |
