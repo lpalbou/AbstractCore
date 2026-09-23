@@ -630,7 +630,7 @@ fn probe_addr_list(addrs: &[std::net::SocketAddr], timeout: Duration) -> crate::
 fn no_cli_error() -> CliError {
     CliError::core(
         CliErrorKind::NotFound,
-        "no $ABSTRACTCORE_BIN, nothing on PATH, no venv fallback".into(),
+        "no $ABSTRACTCORE_CLI, nothing on PATH, ~/.local/bin or ./.venv".into(),
     )
 }
 
@@ -853,7 +853,7 @@ fn execute_write(
     let has_cli_verb = spec.verbs.iter().any(|v| matches!(v, WriteVerb::Cli(_)));
     if has_cli_verb && cli.is_none() {
         return Err(
-            "abstractcore CLI not found — this write needs it ($ABSTRACTCORE_BIN); \
+            "abstractcore CLI not found — this write needs it ($ABSTRACTCORE_CLI); \
              nothing was changed"
                 .into(),
         );

@@ -822,7 +822,7 @@ fn cli_missing_degrades_honestly() {
         .routes
         .set(Loadable::Failed(abstractcore_console::cli::CliError::core(
             abstractcore_console::cli::CliErrorKind::NotFound,
-            "no $ABSTRACTCORE_BIN, nothing on PATH, no venv fallback".into(),
+            "no $ABSTRACTCORE_CLI, nothing on PATH, ~/.local/bin or ./.venv".into(),
         )));
     let s = h.turns(2);
     assert!(s.contains("not found"), "cli line says not found:\n{s}");
@@ -831,7 +831,7 @@ fn cli_missing_degrades_honestly() {
         s.contains("abstractcore CLI not found"),
         "routes screen explains:\n{s}"
     );
-    assert!(s.contains("ABSTRACTCORE_BIN"), "and teaches the fix:\n{s}");
+    assert!(s.contains("ABSTRACTCORE_CLI"), "and teaches the fix:\n{s}");
 }
 
 // =======================================================================

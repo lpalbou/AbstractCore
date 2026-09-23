@@ -12,9 +12,10 @@ use std::time::{Duration, Instant};
 
 use serde_json::Value;
 
-/// The venv this workspace ships — the last-resort fallback when
-/// nothing on PATH answers.
-const KNOWN_VENV_BIN: &str = ".venv/bin/abstractcore";
+/// The uv tool shim (`uv tool install abstractcore`), under `$HOME`.
+const UV_TOOL_BIN: &str = ".local/bin/abstractcore";
+/// A project virtualenv, relative to the CURRENT directory.
+const LOCAL_VENV_BIN: &str = ".venv/bin/abstractcore";
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum CliErrorKind {
@@ -72,9 +73,9 @@ impl CliError {
     pub fn hint(&self) -> &'static str {
         match self.kind {
             CliErrorKind::NotFound => {
-                "set $ABSTRACTCORE_BIN, or install abstractcore on PATH — the file mirror still works"
+                "set $ABSTRACTCORE_CLI, or install abstractcore on PATH — the file mirror still works"
             }
-            CliErrorKind::Spawn => "check the binary is executable ($ABSTRACTCORE_BIN?)",
+            CliErrorKind::Spawn => "check the binary is executable ($ABSTRACTCORE_CLI?)",
             CliErrorKind::Timeout => "the Python side hung — retry with r",
             CliErrorKind::Exit(_) => "the message above is the CLI's own error",
             CliErrorKind::BadJson => "an abstractcore too old for --json? check its version",
@@ -96,21 +97,34 @@ pub struct CliInfo {
     pub source: &'static str,
 }
 
-/// `$ABSTRACTCORE_BIN` → `abstractcore` on PATH → the framework venv
-/// fallback. None = not found (the mirror still works; derived views
-/// and writes teach the fix).
+/// How the console finds `abstractcore`, first hit wins:
+///
+/// 1. `$ABSTRACTCORE_CLI` — an explicit override (honored without an
+///    existence check; a bad value fails loudly at spawn, naming it).
+///    `$ABSTRACTCORE_BIN` is accepted as a legacy alias.
+/// 2. `abstractcore` on `PATH`.
+/// 3. `~/.local/bin/abstractcore` — the `uv tool install` shim, often
+///    not on PATH in a fresh shell.
+/// 4. `./.venv/bin/abstractcore` relative to the current directory.
+///
+/// None = not found (the mirror still works; derived views and writes
+/// teach the fix).
 pub fn resolve_bin(
     env: &dyn Fn(&str) -> Option<String>,
     home: &Path,
+    cwd: &Path,
     exists: &dyn Fn(&Path) -> bool,
 ) -> Option<CliInfo> {
-    if let Some(explicit) = env("ABSTRACTCORE_BIN").filter(|v| !v.trim().is_empty()) {
-        // Explicit choice is honored even if the file check fails here
-        // (it may be a PATH-relative name); spawn errors will name it.
-        return Some(CliInfo {
-            bin: PathBuf::from(explicit.trim()),
-            source: "$ABSTRACTCORE_BIN",
-        });
+    for (var, source) in [
+        ("ABSTRACTCORE_CLI", "$ABSTRACTCORE_CLI"),
+        ("ABSTRACTCORE_BIN", "$ABSTRACTCORE_BIN (legacy alias)"),
+    ] {
+        if let Some(explicit) = env(var).filter(|v| !v.trim().is_empty()) {
+            return Some(CliInfo {
+                bin: PathBuf::from(explicit.trim()),
+                source,
+            });
+        }
     }
     if let Some(paths) = env("PATH") {
         for dir in std::env::split_paths(&paths) {
@@ -123,11 +137,20 @@ pub fn resolve_bin(
             }
         }
     }
-    let venv = home.join("tmp/abstractframework").join(KNOWN_VENV_BIN);
+    if !home.as_os_str().is_empty() {
+        let shim = home.join(UV_TOOL_BIN);
+        if exists(&shim) {
+            return Some(CliInfo {
+                bin: shim,
+                source: "~/.local/bin (uv tool)",
+            });
+        }
+    }
+    let venv = cwd.join(LOCAL_VENV_BIN);
     if exists(&venv) {
         return Some(CliInfo {
             bin: venv,
-            source: "framework venv fallback",
+            source: "./.venv",
         });
     }
     None
@@ -135,7 +158,8 @@ pub fn resolve_bin(
 
 pub fn resolve_bin_from_env() -> Option<CliInfo> {
     let home = std::env::var("HOME").map(PathBuf::from).unwrap_or_default();
-    resolve_bin(&|k| std::env::var(k).ok(), &home, &|p| p.is_file())
+    let cwd = std::env::current_dir().unwrap_or_default();
+    resolve_bin(&|k| std::env::var(k).ok(), &home, &cwd, &|p| p.is_file())
 }
 
 pub struct CoreCli {
@@ -405,35 +429,68 @@ mod tests {
     #[test]
     fn bin_resolution_order() {
         let home = Path::new("/home/u");
-        // Explicit env wins, even without an existence check.
+        let cwd = Path::new("/work/proj");
+        // Explicit override wins, even without an existence check —
+        // and over the legacy alias when both are set.
         let info = resolve_bin(
-            &|k| (k == "ABSTRACTCORE_BIN").then(|| "/opt/ac".to_string()),
+            &|k| match k {
+                "ABSTRACTCORE_CLI" => Some("/opt/ac".to_string()),
+                "ABSTRACTCORE_BIN" => Some("/opt/legacy".to_string()),
+                _ => None,
+            },
             home,
+            cwd,
             &|_| false,
         )
         .unwrap();
         assert_eq!(info.bin, PathBuf::from("/opt/ac"));
-        assert_eq!(info.source, "$ABSTRACTCORE_BIN");
+        assert_eq!(info.source, "$ABSTRACTCORE_CLI");
+        let info = resolve_bin(
+            &|k| (k == "ABSTRACTCORE_BIN").then(|| "/opt/legacy".to_string()),
+            home,
+            cwd,
+            &|_| false,
+        )
+        .unwrap();
+        assert_eq!(info.bin, PathBuf::from("/opt/legacy"));
 
-        // PATH scan finds the first hit.
+        // PATH scan finds the first hit — before the shim and the venv.
         let info = resolve_bin(
             &|k| (k == "PATH").then(|| "/a:/b".to_string()),
             home,
-            &|p| p == Path::new("/b/abstractcore"),
+            cwd,
+            &|p| {
+                p == Path::new("/b/abstractcore")
+                    || p.starts_with("/home")
+                    || p.starts_with("/work")
+            },
         )
         .unwrap();
         assert_eq!(info.bin, PathBuf::from("/b/abstractcore"));
         assert_eq!(info.source, "PATH");
 
-        // Venv fallback.
-        let info = resolve_bin(&|_| None, home, &|p| {
-            p == Path::new("/home/u/tmp/abstractframework/.venv/bin/abstractcore")
+        // uv tool shim, then ./.venv relative to the CURRENT directory.
+        let info = resolve_bin(&|_| None, home, cwd, &|p| {
+            p == Path::new("/home/u/.local/bin/abstractcore")
+                || p == Path::new("/work/proj/.venv/bin/abstractcore")
         })
         .unwrap();
-        assert_eq!(info.source, "framework venv fallback");
+        assert_eq!(info.bin, PathBuf::from("/home/u/.local/bin/abstractcore"));
+        let info = resolve_bin(&|_| None, home, cwd, &|p| {
+            p == Path::new("/work/proj/.venv/bin/abstractcore")
+        })
+        .unwrap();
+        assert_eq!(info.bin, PathBuf::from("/work/proj/.venv/bin/abstractcore"));
+        assert_eq!(info.source, "./.venv");
+
+        // No personal-workspace path is probed any more.
+        assert!(resolve_bin(&|_| None, home, cwd, &|p| {
+            p == Path::new("/home/u/tmp/abstractframework/.venv/bin/abstractcore")
+        })
+        .is_none());
 
         // Nothing anywhere: honest None.
-        assert!(resolve_bin(&|_| None, home, &|_| false).is_none());
+        assert!(resolve_bin(&|_| None, home, cwd, &|_| false).is_none());
     }
 
     #[test]

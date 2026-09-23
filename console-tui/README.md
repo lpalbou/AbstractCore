@@ -29,9 +29,24 @@ cargo run -- --theme catppuccin-mocha   # or ABSTRACTTUI_THEME=...
 The console reads `~/.abstractcore/config/abstractcore.json` directly
 (honoring `ABSTRACTCORE_CONFIG_FILE` / `ABSTRACTCORE_CONFIG_DIR`) and
 shells out to the `abstractcore` CLI for the derived views (routes
-coverage, redacted profiles). Binary resolution: `$ABSTRACTCORE_BIN` →
-`abstractcore` on PATH → the framework venv fallback. The header always
-names the file being shown and the CLI being used.
+coverage, redacted profiles). The header always names the file being
+shown and the CLI being used.
+
+### How the console finds `abstractcore`
+
+The first match wins:
+
+1. `$ABSTRACTCORE_CLI`: an explicit path (or name) to the binary. It is
+   used as given; a wrong value fails loudly, naming it.
+   `$ABSTRACTCORE_BIN` still works as a legacy alias.
+2. `abstractcore` on `PATH`.
+3. `~/.local/bin/abstractcore`: the shim `uv tool install abstractcore`
+   creates, which is often not on `PATH` in a fresh shell.
+4. `./.venv/bin/abstractcore`, relative to the directory you start the
+   console from (a project virtualenv).
+
+If none is found, the config mirror still works, and every screen that
+needs the CLI says so and names `$ABSTRACTCORE_CLI` as the fix.
 
 ## What it does
 

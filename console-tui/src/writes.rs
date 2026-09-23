@@ -153,7 +153,7 @@ pub enum Expect {
     Cleared {
         path: Vec<String>,
     },
-    /// `path` is a string whose sha256[:8] matches.
+    /// `path` is a string whose `sha256[:8]` matches.
     SecretFp {
         path: Vec<String>,
         fp: String,

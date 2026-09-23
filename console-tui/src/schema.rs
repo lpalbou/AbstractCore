@@ -53,7 +53,7 @@ pub enum FieldKind {
     Path,
     OptPath,
     /// Plaintext secret at rest — NEVER rendered; folded to
-    /// set/not-set + sha256[:8] fingerprint at parse time.
+    /// set/not-set + `sha256[:8]` fingerprint at parse time.
     Secret,
     /// An environment variable NAME (email password fields hold the
     /// var name, not the secret — manager.py:165-187).

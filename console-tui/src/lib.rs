@@ -43,7 +43,7 @@ USAGE:
 
 The console mirrors ~/.abstractcore/config/abstractcore.json (honoring
 ABSTRACTCORE_CONFIG_FILE / ABSTRACTCORE_CONFIG_DIR) and drives the
-abstractcore CLI ($ABSTRACTCORE_BIN, PATH, or the framework venv).
+abstractcore CLI ($ABSTRACTCORE_CLI, PATH, ~/.local/bin, or ./.venv).
 Writes go through the CLI setters (coupled fields) or a direct
 unknown-key-preserving rewrite (CLI-less fields), and every write is
 verified by re-reading.

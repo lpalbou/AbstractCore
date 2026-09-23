@@ -92,6 +92,7 @@ fn wait_terminal(t: &CliTransport, id: &str) -> Value {
 fn cli_transport_against_a_fake_abstractcore_on_path() {
     let dir = setup();
     // The fake must be what PATH resolution finds: no explicit override.
+    std::env::remove_var("ABSTRACTCORE_CLI");
     std::env::remove_var("ABSTRACTCORE_BIN");
     let path = std::env::var("PATH").unwrap_or_default();
     std::env::set_var("PATH", format!("{}:{path}", dir.display()));

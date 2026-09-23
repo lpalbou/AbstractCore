@@ -12,8 +12,10 @@ abstractcore-console                   # --wizard for the guided setup
 ```
 
 The console reads the config file directly and runs the `abstractcore`
-CLI for everything derived or written (`$ABSTRACTCORE_BIN`, else
-`abstractcore` on `PATH`).
+CLI for everything derived or written. It finds the CLI through
+`$ABSTRACTCORE_CLI`, then `abstractcore` on `PATH`, then
+`~/.local/bin/abstractcore` (the `uv tool` shim), then
+`./.venv/bin/abstractcore` in the current directory.
 
 ## Screens
 

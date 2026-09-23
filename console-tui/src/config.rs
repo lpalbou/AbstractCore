@@ -3,7 +3,7 @@
 //! re-read fresh at write time — the model below is display currency).
 //!
 //! Redaction is structural: secrets are folded to set/not-set +
-//! sha256[:8] fingerprints AT PARSE TIME and the raw `Value` is dropped
+//! `sha256[:8]` fingerprints AT PARSE TIME and the raw `Value` is dropped
 //! — no signal ever holds key material. The fingerprint convention is
 //! the Python side's own (`provider_profiles.py:120-124`: sha256 of the
 //! trimmed value, hex, first 8), so both surfaces show one fingerprint
@@ -229,7 +229,7 @@ pub struct FieldView {
     pub list_len: Option<usize>,
 }
 
-/// sha256[:8] of the NORMALIZED value — Python's exact convention
+/// `sha256[:8]` of the NORMALIZED value — Python's exact convention
 /// (`normalize_api_key`, provider_profiles.py:80-84: trim, and any
 /// case variant of `EMPTY` canonicalizes to `"EMPTY"` before hashing).
 pub fn fingerprint(secret: &str) -> String {

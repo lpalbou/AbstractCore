@@ -10,7 +10,7 @@ use crate::cli::CliError;
 use crate::config::FieldState;
 use crate::store::Loadable;
 
-/// A styled span for [`line`].
+/// A styled span for [`line()`].
 pub type SpanSpec = (String, Rgba, bool);
 
 pub fn span(text: impl Into<String>, ink: Rgba) -> SpanSpec {

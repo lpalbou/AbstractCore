@@ -83,7 +83,8 @@ impl CliTransport {
     }
 
     /// Resolve the binary like the rest of the console:
-    /// `$ABSTRACTCORE_BIN` → `abstractcore` on PATH → the framework venv.
+    /// `$ABSTRACTCORE_CLI` → `abstractcore` on PATH → `~/.local/bin` → `./.venv`
+    /// (see [`crate::cli::resolve_bin`]).
     /// `None` when nothing answers.
     pub fn from_env() -> Option<CliTransport> {
         cli::resolve_bin_from_env().map(|info| CliTransport::new(info.bin))
