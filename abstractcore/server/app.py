@@ -1464,6 +1464,12 @@ try:
 except Exception as e:
     logger.debug(f"Camera endpoints not loaded: {e}")
 
+# Models & engines (host profile, engine status/install, model catalog,
+# installed models, download/delete jobs): /acore/host|engines|models|jobs.
+from .host_routes import router as _host_router  # noqa: E402
+
+app.include_router(_host_router)
+
 # ============================================================================
 # Enhanced Error Handling and Logging Middleware
 # ============================================================================
@@ -10096,6 +10102,8 @@ def _resolve_external_host(bind_host: str) -> str:
     return bind_host
 
 def run_server(host: str = "0.0.0.0", port: int = 8000):
+    # Engine installs default to ON only on a loopback bind (host_routes).
+    os.environ["ABSTRACTCORE_SERVER_BIND_HOST"] = str(host)
     """Run the server"""
     import uvicorn
     uvicorn.run(app, host=host, port=port, log_level="error")
@@ -10171,6 +10179,9 @@ Debug Mode:
         debug=debug_mode,
         version=__version__
     )
+
+    # Engine installs default to ON only on a loopback bind (host_routes).
+    os.environ["ABSTRACTCORE_SERVER_BIND_HOST"] = str(args.host)
 
     # Print access URLs (outside logging)
     internal_url = f"http://127.0.0.1:{args.port}"

@@ -253,6 +253,15 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Runtime | POST | `/acore/models/lock` | Lock a resident text runtime against unloading, adopting a sweep-resident model when no runtime is managed for it (`409 model_not_resident` otherwise) | `runtime_id` or `provider` + `model`, optional `base_url` |
 | Runtime | POST | `/acore/models/unlock` | Clear a text runtime's lock (works even after eviction) | `runtime_id` or `provider` + `model`, optional `base_url` |
 | Runtime | GET | `/acore/models/context_estimate` | Analytical context-fit estimate for a provider/model on this host | `provider`, `model`, optional `context_length` |
+| Models & engines | GET | `/acore/host/profile` | Host profile: accelerator, memory ceiling, free memory, disk per model store (see [Local Models](models.md)) | optional `refresh` |
+| Models & engines | GET | `/acore/models/catalog` | Downloadable model catalog with presence and fit verdicts | `q`, `engine`, `fits`, `hub`, `tag` |
+| Models & engines | GET | `/acore/models/installed` | Installed models per engine, with sizes and delete blockers | optional `provider` |
+| Models & engines | POST | `/acore/models/download` | Start (or join) a download job | `provider`, `artifact`, `dry_run`, optional `expected_bytes` |
+| Models & engines | POST | `/acore/models/delete` | Start a delete job; `409` with `delete_blockers` when refused | `provider`, `artifact`, `dry_run`, `force` |
+| Models & engines | GET | `/acore/engines` | Engine status (see [Local Engines](engines.md)) | optional `probe` |
+| Models & engines | POST | `/acore/engines/{id}/install` | Install an engine as a job (`403` unless allowed, `409` when busy) | `dry_run`, `force` |
+| Models & engines | GET | `/acore/jobs`, `/acore/jobs/{id}` | Download/delete/install jobs, newest first | `kind`, `status` |
+| Models & engines | POST | `/acore/jobs/{id}/cancel` | Cancel a job | none |
 | Runtime | GET | `/acore/memory` | Best-effort host memory snapshot (RAM, process, device backend incl. process-local and cross-process accelerator-heap bytes, host identity) | none |
 | Prompt Cache | GET | `/acore/prompt_cache/stats` | Cache stats on a loaded gateway runtime or upstream AbstractEndpoint; with no selector, enumerate stats across all loaded runtimes | optional `provider` + `model` or `base_url`; provider key header if required |
 | Prompt Cache | GET | `/acore/prompt_cache/capabilities` | Cache capability discovery on a loaded gateway runtime or upstream AbstractEndpoint | `provider` + `model` or `base_url`; provider key header if required |

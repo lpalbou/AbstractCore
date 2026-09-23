@@ -190,6 +190,28 @@ asyncio.run(main())
 
 Implementation: `abstractcore/download.py`. For provider setup and base URLs, see [Prerequisites](prerequisites.md).
 
+## Local models and engines (catalog, fit, install)
+
+These functions back `abstractcore models ...`, `abstractcore engines ...` and the
+`/acore/models|engines|jobs` routes. Each returns a JSON-ready dict with a `schema` field.
+
+```python
+from abstractcore.utils.host_profile import host_profile          # host_profile_v1
+from abstractcore.utils.model_fit import estimate_fit             # fit verdict for one artifact
+from abstractcore.config.model_catalog import catalog             # model_catalog_v1
+from abstractcore.config.model_materializer import list_installed, delete_artifact
+from abstractcore.config.engines import engine_inventory, engine_install_plan, engine_install
+from abstractcore.config import host_jobs                         # host_job_v1 registry
+
+rows = catalog("qwen3 8b", fits=True)["rows"]
+installed = list_installed("ollama")["rows"]
+job = host_jobs.start_download_job("ollama", "qwen3:8b")          # background job
+print(host_jobs.default_registry().wait(job["job_id"])["status"])
+print(engine_install_plan("ollama")["argv"])                       # the exact command
+```
+
+See [Local Models](models.md) and [Local Engines](engines.md).
+
 ## Tool calling
 
 Tools are passed explicitly to `generate()` / `agenerate()`:

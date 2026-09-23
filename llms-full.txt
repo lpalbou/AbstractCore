@@ -722,6 +722,13 @@ AbstractCore stores persistent configuration at:
 
 `~/.abstractcore/config/abstractcore.json`
 
+### Local models and engines
+
+`abstractcore host profile`, `abstractcore models catalog|search|list|download|delete|jobs|cancel`
+and `abstractcore engines status|install|open` browse downloadable models with fit verdicts for
+this machine, manage installed weights, and install engines with the vendor's command. Every verb
+takes `--json`; exit code `2` means refused. See `docs/models.md` and `docs/engines.md`.
+
 ### Most-used commands
 
 ```bash
@@ -1536,6 +1543,18 @@ Token limits:
 - startup: `abstractcore-chat --max-tokens 8192 --max-output-tokens 1024 ...`
 - in-REPL: `/max-tokens 8192` and `/max-output-tokens 1024`
 
+Local models and engines (see [Local Models](docs/models.md) and [Local Engines](docs/engines.md)):
+
+```bash
+abstractcore host profile                        # accelerator, memory ceiling, free disk
+abstractcore models catalog --fits               # downloadable models that fit this machine
+abstractcore models download ollama qwen3:8b
+abstractcore models list                         # installed models per engine, with sizes
+abstractcore models delete ollama qwen3:8b --yes
+abstractcore engines status --probe              # Ollama / LM Studio / MLX / llama.cpp / ...
+abstractcore engines install ollama --dry-run    # the exact install command
+```
+
 ## Built-in CLI apps
 
 AbstractCore also ships with ready-to-use CLI apps:
@@ -1565,6 +1584,8 @@ Core features:
 - [Generation Parameters](docs/generation-parameters.md) — unified parameter vocabulary, default hierarchy, caller overrides, and provider quirks
 - [Session Management](docs/session.md) — conversation history, persistence, and compaction
 - [Embeddings](docs/embeddings.md) — embeddings API and RAG building blocks
+- [Local Models](docs/models.md) — model catalog with fit verdicts, installed models, download and delete
+- [Local Engines](docs/engines.md) — engine detection and one-command installs
 - [Async Guide](docs/async-guide.md) — async patterns, concurrency, best practices
 - [Centralized Config](docs/centralized-config.md) — `~/.abstractcore/config/abstractcore.json` + CLI config commands
 - [Capabilities](docs/capabilities.md) — supported features and current limitations
@@ -2939,6 +2960,28 @@ asyncio.run(main())
 ```
 
 Implementation: `abstractcore/download.py`. For provider setup and base URLs, see [Prerequisites](docs/prerequisites.md).
+
+## Local models and engines (catalog, fit, install)
+
+These functions back `abstractcore models ...`, `abstractcore engines ...` and the
+`/acore/models|engines|jobs` routes. Each returns a JSON-ready dict with a `schema` field.
+
+```python
+from abstractcore.utils.host_profile import host_profile          # host_profile_v1
+from abstractcore.utils.model_fit import estimate_fit             # fit verdict for one artifact
+from abstractcore.config.model_catalog import catalog             # model_catalog_v1
+from abstractcore.config.model_materializer import list_installed, delete_artifact
+from abstractcore.config.engines import engine_inventory, engine_install_plan, engine_install
+from abstractcore.config import host_jobs                         # host_job_v1 registry
+
+rows = catalog("qwen3 8b", fits=True)["rows"]
+installed = list_installed("ollama")["rows"]
+job = host_jobs.start_download_job("ollama", "qwen3:8b")          # background job
+print(host_jobs.default_registry().wait(job["job_id"])["status"])
+print(engine_install_plan("ollama")["argv"])                       # the exact command
+```
+
+See [Local Models](docs/models.md) and [Local Engines](docs/engines.md).
 
 ## Tool calling
 
@@ -9090,6 +9133,315 @@ This shows:
 
 ---
 
+### Inlined: `docs/models.md`
+
+# Local models: browse, check fit, download, delete
+
+AbstractCore can show which local models suit your machine, where they are installed, and
+fetch or remove them with each engine's own tool. The same data is available from the CLI
+(`abstractcore models ...`, with `--json`), from the HTTP server (`/acore/models/*`), and from
+Python. AbstractGateway re-exposes the same payloads, so every console shows the same answers.
+
+Related pages: [Engines](docs/engines.md) (installing Ollama, LM Studio, MLX, llama.cpp),
+[Centralized Config](docs/centralized-config.md) (which model each capability uses and
+`abstractcore models status`), [Memory and model residency](docs/memory-management.md)
+(what is loaded right now), [Server](docs/server.md).
+
+## What this covers
+
+| Verb | CLI | HTTP | Python |
+|---|---|---|---|
+| Describe this machine | `abstractcore host profile --json` | `GET /acore/host/profile` | `abstractcore.utils.host_profile.host_profile()` |
+| Browse downloadable models | `abstractcore models catalog [--engine X] [--fits] [--tag T] [--hub] --json` | `GET /acore/models/catalog?q=&engine=&fits=&hub=&tag=` | `abstractcore.config.model_catalog.catalog(...)` |
+| Search | `abstractcore models search "<query>" [--engine X] [--fits] [--hub] --json` | same route with `q=` | `model_catalog.search(q, ...)` |
+| List installed models | `abstractcore models list [--provider X] --json` | `GET /acore/models/installed?provider=` | `model_materializer.list_installed(provider)` |
+| Download | `abstractcore models download <provider> <artifact> [--dry-run] [--detach] [--json]` | `POST /acore/models/download` | `host_jobs.start_download_job(...)` / `model_materializer.download(...)` |
+| Delete | `abstractcore models delete <provider> <artifact> [--yes] [--dry-run] [--force] [--json]` | `POST /acore/models/delete` | `model_materializer.delete_artifact(...)` |
+| Follow background work | `abstractcore models jobs [<job_id>] [--kind K] [--status S] --json`, `abstractcore models cancel <job_id>` | `GET /acore/jobs`, `GET /acore/jobs/{id}`, `POST /acore/jobs/{id}/cancel` | `host_jobs.default_registry()` |
+
+Exit codes for every verb: `0` success, `1` error, `2` refused (a policy, a delete blocker, or
+a destructive action without `--yes`). A refusal still prints its JSON (`status`, `reason`,
+`message`, and `delete_blockers` for deletes).
+
+## Artifact references
+
+An **artifact** names the exact weights to fetch, quantization included:
+
+| Provider | Example artifact | Notes |
+|---|---|---|
+| `ollama` | `qwen3:8b` | An Ollama tag. |
+| `lmstudio` | `qwen/qwen3.5-9b@4bit` | LM Studio model id with `@quant`. A bare id lets LM Studio pick its default build. |
+| `mlx` | `mlx-community/Qwen3-8B-4bit` | A Hugging Face repo; MLX repos hold one quantization. |
+| `huggingface` | `unsloth/Qwen3-8B-GGUF:Q4_K_M` | A GGUF repo plus `:QUANT`. Only the matching `*Q4_K_M*.gguf` files are fetched. Without `:QUANT` the whole repo is downloaded. |
+| `mlx-gen`, `supertonic` | `AbstractFramework/flux.2-klein-4b-8bit`, `supertonic-3` | Image and voice starters. |
+
+## The host profile
+
+`abstractcore host profile --json` (`host_profile_v1`) reports:
+
+- `os`, `arch`, `accelerator` (`metal`, `cuda`, `rocm`, `none`), `gpu_name`, `unified_memory`;
+- `ram_bytes`, `vram_bytes` (CUDA, from `nvidia-smi`);
+- `ceiling_bytes` and `ceiling_source`: the most memory a model can use. On Apple silicon this is
+  the `iogpu.wired_limit_mb` sysctl when set (`metal_wired_limit`), else Metal's recommended
+  working set (`metal_recommended`, needs `mlx`), else 75% of RAM (`ram_75pct`). On NVIDIA it is
+  total VRAM (`cuda_total`). This is the same ceiling the context estimator uses;
+- `free_now_bytes`: memory available right now (available RAM capped at the ceiling; free VRAM on CUDA);
+- `disk`: free space for the Hugging Face cache, the LM Studio models folder and the Ollama store.
+
+Values that cannot be measured are `null`.
+
+## The catalog
+
+`abstractcore models catalog --json` returns `model_catalog_v1`: the host profile plus one row
+per model. The curated seed ships with AbstractCore
+(`abstractcore/assets/model_downloads_catalog.json`, schema alongside) and covers chat, coding,
+vision and embedding models across Qwen, Llama, Gemma, Mistral, DeepSeek, GPT-OSS, Phi,
+SmolLM, Granite, GLM and common embedding families, plus the recommended fresh-install set
+(`qwen/qwen3.5-9b@4bit`, FLUX.2 klein 4B, Supertonic 3).
+
+Each row carries `capabilities` (text, vision, audio, tools, thinking, max_tokens, embedding)
+joined from AbstractCore's model capability registry, and one entry per artifact with:
+
+- `presence.status`: `installed`, `absent`, `unknown` (the engine could not be asked), or
+  `not_applicable` (remote providers);
+- `download_bytes` and `size_source`: `catalog` (observed on a real engine store), `engine`
+  (reported by the installed engine), `hf_api` (Hugging Face file listing), `estimate`
+  (parameters x bits), or `unknown`;
+- `fit` (see below), `downloadable`, `supported_on_host`, and the `cli_download` command;
+- `recommended`: exactly one artifact per row is pre-selected for this machine. The curated
+  starter wins when the host can run it; otherwise the order is LM Studio, MLX, Ollama,
+  Hugging Face on Apple silicon and Ollama, LM Studio, Hugging Face elsewhere, preferring
+  artifacts that fit and engines that are installed.
+
+Filters: `q` (every word must start a word of the id, name, vendor, tags or artifacts),
+`--engine` (`ollama`, `lmstudio`, `mlx`, `huggingface`, or `llamacpp` for GGUF artifacts),
+`--fits` (keep `fits` and `tight` only), `--tag` (`chat`, `coding`, `vision`, `embedding`, ...).
+
+### Hugging Face enrichment (`--hub`)
+
+The catalog works offline. With `--hub` (`hub=true`), AbstractCore asks the Hugging Face API
+for exact file sizes and parameter counts of the Hugging Face-hosted artifacts and, when a
+query is given, appends up to 20 `hf_search` rows per lane (MLX repos on Apple silicon, GGUF
+repos everywhere; a GGUF search result gets the best available quant, Q4_K_M first).
+Answers are cached for 24 hours in `~/.abstractcore/config/cache/hf_hub_catalog.json`. A rate
+limit (HTTP 429) or an offline machine is reported in `hub.errors` and the offline answer is
+returned. Set `HF_TOKEN` for gated repos and higher rate limits.
+
+## Fit verdicts
+
+`fit` answers "will this run here" before any byte is downloaded:
+
+```
+W    weights       exact artifact size, else parameters x bits / 8 x 1.03
+KV   KV cache      n x 2 x layers x kv_heads x head_dim x 2 bytes (f16), when the geometry is known;
+                   otherwise n x 0.5 MiB x (parameters / 8e9)
+O    overhead      max(0.5 GiB, 5% of W)
+Ceff usable       ceiling - max(2 GiB, 5% of ceiling)
+need = W + KV + O          (n = min(8192, context window))
+```
+
+| Verdict | Meaning |
+|---|---|
+| `fits` | `need <= 0.8 x Ceff` |
+| `tight` | `need <= Ceff`: runs, with little headroom |
+| `partial_offload` | CUDA only: too big for VRAM, but fits VRAM + 75% of RAM (slower) |
+| `too_large` | does not fit |
+| `unknown` | no size and no parameter count, or no measurable ceiling |
+
+The block also reports `need_bytes`, `ceiling_bytes`, `free_now_bytes`, `fits_now` (whether it
+fits in memory that is free right now), `disk_ok` (download size plus 5 GiB headroom against
+free disk), `max_context` (largest context beside the weights, capped at the model window),
+`confidence` (`exact`, `estimated`, `rough`, `unknown`) and human `notes`. Mixture-of-experts
+models are sized by total parameters: every expert is resident. Verdicts are advisory; nothing
+blocks a download or a load on them.
+
+Python:
+
+```python
+from abstractcore.utils.host_profile import host_profile
+from abstractcore.utils.model_fit import estimate_fit
+
+fit = estimate_fit(host=host_profile(), params_total=8_200_000_000, quant="q4_k_m", max_tokens=131072)
+print(fit["verdict"], fit["need_bytes"], fit["max_context"])
+```
+
+## Installed models
+
+`abstractcore models list --json` returns `models_installed_v1`: one row per installed
+artifact with `provider`, `artifact`, `quant`, `size_bytes`, `params_total`, `location`,
+`loaded`, `catalog_id`, `deletable` and `delete_blockers`, plus `engines_probed`, per-engine
+`errors` and `totals`.
+
+| Engine | Source | Size fields |
+|---|---|---|
+| Ollama | `GET /api/tags` (`/api/ps` for `loaded`) | `size`, `details.parameter_size`, `details.quantization_level` |
+| LM Studio | `lms ls --json` (`lms ps --json` for `loaded`) | `sizeBytes`, `paramsString`, `quantization.name`, `maxContextLength` |
+| MLX / Hugging Face | the Hugging Face cache (`scan_cache_dir()`) | repo size on disk; rows split into `mlx` and `huggingface` by AbstractCore's MLX detection |
+
+When the local Ollama server is not running, its tags are listed from the on-disk manifests
+(marked `engine_not_running`). An engine that cannot be read appears in `errors`, never as an
+empty list.
+
+## Downloading
+
+```bash
+abstractcore models download ollama qwen3:8b
+abstractcore models download lmstudio qwen/qwen3.5-9b@4bit
+abstractcore models download huggingface unsloth/Qwen3-8B-GGUF:Q4_K_M
+abstractcore models download lmstudio qwen/qwen3.5-9b@4bit --dry-run     # show the command only
+```
+
+- Ollama downloads use `POST /api/pull` with real byte progress; LM Studio uses
+  `lms get <artifact> --yes` and verifies afterwards that the requested model landed;
+  Hugging Face uses `snapshot_download` (narrowed by `:QUANT`), with a byte total read from the
+  hub first.
+- A download that cannot fit on disk with 5 GiB to spare is refused before it starts (Hugging
+  Face computes the size itself; `expected_bytes` arms the check for other engines).
+- `--json` streams one `host_job_v1` object per line while the download runs and ends with the
+  final job. SIGTERM or Ctrl-C cancels the download, stops the engine tool, and the last line
+  reports `cancelled`. `--detach` starts the download in the background and prints the job;
+  follow it with `abstractcore models jobs <job_id> --json`.
+
+## Deleting
+
+```bash
+abstractcore models delete ollama qwen3:8b --dry-run
+abstractcore models delete ollama qwen3:8b --yes
+abstractcore models delete lmstudio qwen/qwen3.8-27b@q4_k_m --yes --force
+```
+
+| Engine | Mechanism |
+|---|---|
+| Ollama | `DELETE /api/delete` (with `--force`, a loaded model is unloaded first) |
+| LM Studio | `lms unload` when loaded (`--force`), then removal of the model's files under the LM Studio models folder and its hub entry |
+| MLX / Hugging Face | `scan_cache_dir().delete_revisions(...).execute()` for the whole repo |
+
+A delete is refused (exit `2`, HTTP `409`) when a blocker applies, unless `--force`:
+
+- `loaded`: the model is in memory;
+- `remote_engine`: the Ollama server is on another machine;
+- `shared_cache:mlx,huggingface`: the Hugging Face cache entry is classified for the other
+  engine (the files are shared).
+
+`unknown_location` (a model bundled inside LM Studio) and `engine_not_running` cannot be
+forced. Paths outside the known model stores are never removed.
+
+## Jobs
+
+Downloads, deletes and engine installs are jobs (`host_job_v1`): `job_id`, `kind`
+(`download`, `delete`, `engine_install`), `status` (`queued`, `running`, `completed`, `failed`,
+`cancelled`), `percent`, `downloaded_bytes`, `total_bytes`, `message`, `log_tail` (last 60
+lines), `command`, `dry_run`, `started_at`, `finished_at`, `error`, `joined`,
+`cli_equivalent`, and `result` (the verb's own outcome).
+
+- A second request for the same download joins the running job (`joined` counts them).
+- At most 40 finished jobs are kept per process.
+- Job snapshots are written to `~/.abstractcore/config/jobs/` (override with
+  `ABSTRACTCORE_JOBS_DIR`; disable with `ABSTRACTCORE_JOBS_PERSIST=0`), so
+  `abstractcore models jobs` lists work started by `abstractcore serve` or by
+  `--detach`, and `abstractcore models cancel <job_id>` can stop it.
+
+---
+
+### Inlined: `docs/engines.md`
+
+# Local engines: detect, install, open
+
+An **engine** is the software that runs local model weights: Ollama, LM Studio, MLX (`mlx-lm`),
+llama.cpp, vLLM, and the Hugging Face transformers stack. AbstractCore detects which engines are
+on this machine, whether their servers answer, and can install a missing engine with the
+vendor's documented command after showing you that command.
+
+Related pages: [Local models](docs/models.md) (browse, download, delete weights),
+[Prerequisites](docs/prerequisites.md) (provider setup and base URLs), [Server](docs/server.md).
+
+## Status
+
+```bash
+abstractcore engines status            # installed / version / supported on this host
+abstractcore engines status --probe    # also GET each local server once (running, models_count)
+abstractcore engines status --json     # engines_status_v1
+```
+
+HTTP: `GET /acore/engines?probe=true`, `GET /acore/engines/{id}`. Python:
+`abstractcore.config.engines.engine_inventory(probe=True)`.
+
+Each row carries `id`, `name`, `kind` (`local_server`, `local_engine`, `remote_only`),
+`supported_on_host` and `unsupported_reason`, `installed`, `version`, `install_location`,
+`running`, `base_url`, `reachable`, `models_count`, `install` (the plan below) and `docs_url`.
+`running`/`reachable` are `null` unless you probe.
+
+| Engine | Detected by | Version from |
+|---|---|---|
+| `ollama` | `ollama` on PATH, `/Applications/Ollama.app`, `%LOCALAPPDATA%\Programs\Ollama` | `ollama --version` (app bundle version as fallback) |
+| `lmstudio` | the `lms` CLI (PATH or `~/.lmstudio/bin/lms`), `/Applications/LM Studio.app`, `%LOCALAPPDATA%\Programs\LM Studio` | app bundle version, else `lms version` (`cli-<commit>`) |
+| `mlx` | `import mlx` | package metadata (`mlx`, `mlx-lm`) |
+| `llamacpp` | `import llama_cpp`, or `llama-server` on PATH | `llama-cpp-python` metadata |
+| `vllm` | `import vllm` or `vllm` on PATH | package metadata |
+| `huggingface` | `import transformers` | package metadata |
+
+Servers are read at `OLLAMA_BASE_URL` (default `http://localhost:11434`),
+`LMSTUDIO_BASE_URL` (default `http://localhost:1234/v1`) and `VLLM_BASE_URL`.
+
+## Install plans
+
+`abstractcore engines install <id> --dry-run` shows the exact command for this host without
+running anything. Commands come from a fixed table; nothing in them comes from a request.
+
+| Engine | macOS | Linux | Windows |
+|---|---|---|---|
+| Ollama | `brew install ollama` when Homebrew is present, else the official script `curl -fsSL https://ollama.com/install.sh \| sh` (may ask for your password to link `/usr/local/bin/ollama`) | official script; **needs sudo** (installs to `/usr/local`, creates a systemd `ollama.service`) | `winget install --id Ollama.Ollama` (per-user), else `irm https://ollama.com/install.ps1 \| iex` |
+| LM Studio | desktop app from https://lmstudio.ai/download (or `brew install --cask lm-studio`); the command installs the headless daemon and `lms` CLI: `curl -fsSL https://lmstudio.ai/install.sh \| bash`. Apple silicon only | same headless install (may need `libatomic1`) | desktop app (or `winget install --id ElementLabs.LMStudio`); headless: `irm https://lmstudio.ai/install.ps1 \| iex` |
+| MLX | `python -m pip install mlx-lm` into this Python environment | not supported | not supported |
+| llama.cpp | `python -m pip install llama-cpp-python` (Metal build); alternative `brew install llama.cpp` | same pip install (CPU unless `CMAKE_ARGS=-DGGML_CUDA=on`) | same pip install (needs a C/C++ compiler without a matching wheel); alternative `winget install --id ggml.llamacpp` |
+| vLLM | not supported (use a remote vLLM through `VLLM_BASE_URL`) | NVIDIA GPU only: `python -m pip install vllm` | not supported |
+| Hugging Face | `python -m pip install "abstractcore[huggingface]"` | same | same |
+
+Python-package installs target the interpreter running AbstractCore. When that environment has
+no `pip` (a `uv` virtual environment), the plan uses
+`uv pip install --python <this interpreter> ...` instead. The plan block also lists
+`alternatives`, `requires_admin`, `url` and human `notes`.
+
+## Installing
+
+```bash
+abstractcore engines install ollama --dry-run     # show the command
+abstractcore engines install ollama               # asks for confirmation, then streams the output
+abstractcore engines install ollama --yes --json  # NDJSON host_job_v1 lines, final job last
+abstractcore engines open lmstudio                # print and open the download page
+```
+
+HTTP: `POST /acore/engines/{id}/install` with `{"dry_run": false, "force": false}` returns a
+job; follow it with `GET /acore/jobs/{id}`.
+
+- An engine that is already installed finishes immediately as `already_installed`; pass
+  `--force` to run the installer anyway.
+- Only one engine install runs at a time; a second request is refused (exit `2`, HTTP `409`).
+- The installer runs with no terminal input: a step that needs a password (for example `sudo`
+  in the Linux Ollama script) fails with the tool's own message. Run the shown command in a
+  terminal in that case.
+- Cancel (`abstractcore models cancel <job_id>`, `POST /acore/jobs/{id}/cancel`, or SIGTERM /
+  Ctrl-C on the CLI) stops the installer and every process it started.
+- After a successful install the result reports `installed_after` and `version_after`. A new
+  shell may be needed before a freshly installed command is on your PATH.
+
+## Safety and policy
+
+- Installs run on the machine that runs AbstractCore. For `abstractcore serve`, that is the
+  server host, not the browser's machine.
+- The CLI allows installs by default. The server allows them by default only when bound to a
+  loopback address (`abstractcore serve --host 127.0.0.1`); set
+  `ABSTRACTCORE_ALLOW_ENGINE_INSTALL=1` or `=0` to override either default. `GET /acore/engines`
+  reports the effective `install_allowed`. A dry run is always allowed.
+- Every `POST` under `/acore/models`, `/acore/engines` and `/acore/jobs` needs a server
+  principal: the `ABSTRACTCORE_AUTH_TOKEN` bearer token, or
+  `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1` for local development. An upstream provider key
+  alone does not authorize host actions.
+- Refusals are structured: `{"ok": false, "status": "refused", "reason": ..., "message": ...}`
+  with HTTP `403` (not allowed), `404` (unknown engine) or `409` (unsupported, busy).
+
+---
+
 ### Inlined: `docs/server.md`
 
 # AbstractCore Server
@@ -9347,6 +9699,15 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Runtime | POST | `/acore/models/lock` | Lock a resident text runtime against unloading, adopting a sweep-resident model when no runtime is managed for it (`409 model_not_resident` otherwise) | `runtime_id` or `provider` + `model`, optional `base_url` |
 | Runtime | POST | `/acore/models/unlock` | Clear a text runtime's lock (works even after eviction) | `runtime_id` or `provider` + `model`, optional `base_url` |
 | Runtime | GET | `/acore/models/context_estimate` | Analytical context-fit estimate for a provider/model on this host | `provider`, `model`, optional `context_length` |
+| Models & engines | GET | `/acore/host/profile` | Host profile: accelerator, memory ceiling, free memory, disk per model store (see [Local Models](docs/models.md)) | optional `refresh` |
+| Models & engines | GET | `/acore/models/catalog` | Downloadable model catalog with presence and fit verdicts | `q`, `engine`, `fits`, `hub`, `tag` |
+| Models & engines | GET | `/acore/models/installed` | Installed models per engine, with sizes and delete blockers | optional `provider` |
+| Models & engines | POST | `/acore/models/download` | Start (or join) a download job | `provider`, `artifact`, `dry_run`, optional `expected_bytes` |
+| Models & engines | POST | `/acore/models/delete` | Start a delete job; `409` with `delete_blockers` when refused | `provider`, `artifact`, `dry_run`, `force` |
+| Models & engines | GET | `/acore/engines` | Engine status (see [Local Engines](docs/engines.md)) | optional `probe` |
+| Models & engines | POST | `/acore/engines/{id}/install` | Install an engine as a job (`403` unless allowed, `409` when busy) | `dry_run`, `force` |
+| Models & engines | GET | `/acore/jobs`, `/acore/jobs/{id}` | Download/delete/install jobs, newest first | `kind`, `status` |
+| Models & engines | POST | `/acore/jobs/{id}/cancel` | Cancel a job | none |
 | Runtime | GET | `/acore/memory` | Best-effort host memory snapshot (RAM, process, device backend incl. process-local and cross-process accelerator-heap bytes, host identity) | none |
 | Prompt Cache | GET | `/acore/prompt_cache/stats` | Cache stats on a loaded gateway runtime or upstream AbstractEndpoint; with no selector, enumerate stats across all loaded runtimes | optional `provider` + `model` or `base_url`; provider key header if required |
 | Prompt Cache | GET | `/acore/prompt_cache/capabilities` | Cache capability discovery on a loaded gateway runtime or upstream AbstractEndpoint | `provider` + `model` or `base_url`; provider key header if required |

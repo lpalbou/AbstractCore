@@ -43,6 +43,8 @@ nav:
   - Memory Blocs: memory-blocs.md
   - Media: media-handling-system.md
   - Embeddings: embeddings.md
+  - Local Models: models.md
+  - Local Engines: engines.md
   - Server: server.md
   - FAQ: faq.md
   - Troubleshooting: troubleshooting.md
