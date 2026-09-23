@@ -595,7 +595,7 @@ fn open_route_editor(cx: Scope, ctx: &Ctx, row: RouteRow) {
             super::model_field::kick_discovery(ctx, p);
         }
     }
-    open_form_guarded(ctx, cx, Size::new(84, 22), move |mcx, close, guard| {
+    open_form_guarded(ctx, cx, Size::new(84, 24), move |mcx, close, guard| {
         let t = theme.get().tokens;
         let mut popts = vec![SelectOption::new("— engine decides —")];
         let mut pinitial = 0usize;
@@ -613,6 +613,8 @@ fn open_route_editor(cx: Scope, ctx: &Ctx, row: RouteRow) {
         let is_text = row.is_text_generation();
         let reasoning_init_ix = crate::store::reasoning_index(row.reasoning.as_deref());
         let reasoning_sel = mcx.signal(reasoning_init_ix);
+        let mtp_init_ix = mtp_policy_index(row.options.as_ref());
+        let mtp_sel = mcx.signal(mtp_init_ix);
         let options = mcx.signal(
             row.options
                 .as_ref()
@@ -644,6 +646,7 @@ fn open_route_editor(cx: Scope, ctx: &Ctx, row: RouteRow) {
                         || model.with_untracked(|v| v != &model_init)
                         || base_url.with_untracked(|v| v != &url_init)
                         || reasoning_sel.get_untracked() != reasoning_init_ix
+                        || mtp_sel.get_untracked() != mtp_init_ix
                         || options.with_untracked(|v| v != &options_init)
                 },
                 move || {
@@ -651,6 +654,7 @@ fn open_route_editor(cx: Scope, ctx: &Ctx, row: RouteRow) {
                     let _ = model.get();
                     let _ = base_url.get();
                     let _ = reasoning_sel.get();
+                    let _ = mtp_sel.get();
                     let _ = options.get();
                 },
                 esc_armed,
@@ -682,13 +686,17 @@ fn open_route_editor(cx: Scope, ctx: &Ctx, row: RouteRow) {
             let m = model.get_untracked().trim().to_string();
             let u = base_url.get_untracked().trim().to_string();
             let r_ix = reasoning_sel.get_untracked();
-            let opts = match parse_options(&options.get_untracked()) {
+            let mut opts = match parse_options(&options.get_untracked()) {
                 Ok(o) => o,
                 Err(e) => {
                     form_error.set(Some(e));
                     return;
                 }
             };
+            let mtp_changed = is_text && mtp_sel.get_untracked() != mtp_init_ix;
+            if mtp_changed {
+                set_mtp_policy_option(&mut opts, mtp_sel.get_untracked());
+            }
             // THE DIFF. Each field is named only when the operator
             // moved it; an emptied field is named as "" so the store
             // CLEARS it rather than silently keeping the old value.
@@ -708,7 +716,7 @@ fn open_route_editor(cx: Scope, ctx: &Ctx, row: RouteRow) {
                         .map(|s| (*s).to_string())
                         .unwrap_or_default()
                 }),
-                options: (options.get_untracked() != options_init).then_some(opts),
+                options: (options.get_untracked() != options_init || mtp_changed).then_some(opts),
             };
             if edit.is_empty() {
                 form_error.set(Some(
@@ -820,6 +828,15 @@ fn open_route_editor(cx: Scope, ctx: &Ctx, row: RouteRow) {
                             .placeholder("k=v pairs, space-separated (voice=M2, k=\"a b\")")
                             .view(mcx),
                     ))
+                    .child(if is_text {
+                        field(&t, "MTP policy", Select::new(
+                            ["inherit / not set", "Off", "Depth 2", "Depth 3", "Depth 4", "Depth 5", "custom (keep options)"]
+                                .iter().map(|s| SelectOption::new(*s)).collect::<Vec<_>>()
+                        ).value(mtp_sel).view(mcx))
+                    } else { Element::new().style(LayoutStyle::default().h(0)).build() })
+                    .child(if is_text {
+                        line(vec![span(" MTP: compatible models only; missing heads require provisioning/reload.", t.text_faint)])
+                    } else { Element::new().style(LayoutStyle::default().h(0)).build() })
                     .child(line(vec![span(format!(" {hint}"), t.text_faint)]))
                     .child(message_slot(theme, form_error, in_flight))
                     .child(
@@ -864,6 +881,31 @@ fn open_route_editor(cx: Scope, ctx: &Ctx, row: RouteRow) {
 /// that would JSON-parse as scalars ("true", "42") are quoted too —
 /// the CLI JSON-parses option values, so an unquoted round trip would
 /// silently flip their type (M2 review P3-6).
+fn mtp_policy_index(options: Option<&serde_json::Value>) -> usize {
+    use serde_json::Value;
+    match options.and_then(|o| o.get("speculation")) {
+        None | Some(Value::Null) => 0,
+        Some(Value::Bool(false)) => 1,
+        Some(v) if v.get("mode").and_then(Value::as_str) == Some("off") => 1,
+        Some(v) => match v.get("num_draft_tokens").and_then(Value::as_u64) {
+            Some(n @ 2..=5) => n as usize,
+            _ => 6,
+        },
+    }
+}
+
+fn set_mtp_policy_option(options: &mut Vec<(String, String)>, index: usize) {
+    if index > 5 { return; }
+    options.retain(|(key, _)| key != "speculation");
+    if index == 1 {
+        options.push(("speculation".into(), "false".into()));
+    } else if index >= 2 {
+        options.push(("speculation".into(), serde_json::json!({
+            "mode": "native_mtp", "num_draft_tokens": index, "require_acceleration": false,
+        }).to_string()));
+    }
+}
+
 fn render_options(o: &serde_json::Map<String, serde_json::Value>) -> String {
     o.iter()
         .map(|(k, v)| {
@@ -1081,8 +1123,34 @@ fn routes_table(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_options, render_options};
+    use super::{parse_options, render_options, mtp_policy_index, set_mtp_policy_option};
     use serde_json::json;
+
+    #[test]
+    fn mtp_policy_preserves_options_off_and_inherit() {
+        let mut pairs = vec![("other".into(), "4".into())];
+        set_mtp_policy_option(&mut pairs, 2);
+        assert_eq!(pairs[0], ("other".into(), "4".into()));
+        let value: serde_json::Value = serde_json::from_str(&pairs[1].1).unwrap();
+        assert_eq!(value["num_draft_tokens"], 2);
+        assert_eq!(value["require_acceleration"], false);
+        assert_eq!(mtp_policy_index(Some(&json!({"speculation":value}))), 2);
+        set_mtp_policy_option(&mut pairs, 1);
+        assert_eq!(pairs[1], ("speculation".into(), "false".into()));
+        assert_eq!(mtp_policy_index(Some(&json!({"speculation":false}))), 1);
+        set_mtp_policy_option(&mut pairs, 0);
+        assert_eq!(pairs, vec![("other".into(), "4".into())]);
+    }
+
+    #[test]
+    fn custom_policy_survives_round_trip() {
+        let value = json!({"speculation":{"num_draft_tokens":7}, "other":true});
+        assert_eq!(mtp_policy_index(Some(&value)), 6);
+        let mut pairs = parse_options(&render_options(value.as_object().unwrap())).unwrap();
+        let before = pairs.clone();
+        set_mtp_policy_option(&mut pairs, 6);
+        assert_eq!(pairs, before);
+    }
 
     /// The options round trip (M2 review P3-6): spaced values quote
     /// and re-parse; ambiguous strings keep their type via quoting.

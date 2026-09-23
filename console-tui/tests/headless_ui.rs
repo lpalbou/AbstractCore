@@ -1598,8 +1598,8 @@ fn route_editor_sends_only_the_field_the_operator_edited() {
 
     // Saving an UNTOUCHED form refuses instead of rewriting the row
     // with its own rendered values. Tab order: provider, model, base
-    // URL, reasoning, options, [Save].
-    for _ in 0..5 {
+    // URL, reasoning, options, MTP policy, [Save].
+    for _ in 0..6 {
         h.key(b"\t");
         h.turn();
     }
@@ -1628,8 +1628,8 @@ fn route_editor_sends_only_the_field_the_operator_edited() {
     }
     h.type_text("\r"); // commit
     h.turns(2);
-    for _ in 0..2 {
-        h.key(b"\t"); // options → Save
+    for _ in 0..3 {
+        h.key(b"\t"); // options → MTP policy → Save
         h.turn();
     }
     h.type_text("\r");
