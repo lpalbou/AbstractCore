@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.13.42] - 2026-09-23
+
+### Fixed
+
+- **GPU and non-MLX install profiles resolve again on Python 3.11 and 3.12.** `all-gpu` and
+  `all-non-mlx` still capped NumPy below 2 on Python < 3.13, while `abstractvision[all-gpu]`
+  requires NumPy 2. So `abstractcore[all-gpu]`, and every GPU profile built on it
+  (`abstractruntime[gpu]`, `abstractagent[gpu]`, `abstractgateway[gpu]`,
+  `abstractframework[gpu]`), could only be installed on Python 3.13. Both extras now allow
+  `numpy>=1.20.0,<3.0.0`, as `all`, `embeddings`, `full-dev` and `test` already did.
+- Known limit: on Python 3.10, `all-gpu` and `all-apple` are still not installable. The TTS
+  engine that `abstractvoice[all-gpu]` / `abstractvoice[all-apple]` bring in (f5-tts) needs
+  NumPy 1.x on Python 3.10, and the vision and MLX stacks need NumPy 2. Use Python 3.11 or
+  newer for these profiles.
+
 ## [2.13.41] - 2026-09-23
 
 2.13.39 and 2.13.40 were not published to PyPI separately; their changes (listed below) ship

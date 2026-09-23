@@ -171,3 +171,23 @@ def test_hardware_profile_aliases_match_provider_specific_local_engine_extras() 
         assert dep in apple_block
     assert "vllm>=0.6.0,<1.0.0" in vllm_block
     assert "vllm>=0.6.0,<1.0.0" in gpu_block
+
+
+def test_numpy_2_is_allowed_by_every_profile_that_pulls_numpy_2_plugins() -> None:
+    # abstractvision[all-gpu] (mlx-gen) and mlx-vlm require numpy>=2. An extra that
+    # still caps numpy<2 on Python < 3.13 makes the profile unsatisfiable there
+    # (abstractcore[all-gpu]==2.13.41 installed only on Python 3.13).
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    text = pyproject.read_text(encoding="utf-8")
+
+    for key in ("all", "all-apple", "all-gpu", "all-non-mlx", "embeddings", "full-dev", "test"):
+        block = _extract_optional_dependency_block(text, key=key)
+        numpy_lines = [
+            line.strip().strip('",')
+            for line in block.splitlines()
+            if line.strip().strip('"').startswith("numpy")
+        ]
+        assert numpy_lines, f"{key}: expected an explicit numpy requirement"
+        for req in numpy_lines:
+            assert "<2" not in req.split(";")[0], f"{key}: numpy capped below 2: {req!r}"
+            assert "<3.0.0" in req, f"{key}: numpy lost its <3.0.0 upper bound: {req!r}"

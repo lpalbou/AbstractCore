@@ -157,7 +157,7 @@ pip install "abstractcore[all-gpu]"      # GPU host: remote SDKs + HF/GGUF + vLL
 `voice`, `audio`, `vision`, and `music` install the lightweight capability
 plugin paths used for remote-capable routing. `all-apple`/`all-gpu` are larger
 aggregate profiles for a full local-development environment, including local
-plugin engines such as OmniVoice where supported.
+plugin engines such as OmniVoice where supported; they need Python 3.11 or newer.
 
 ## Quickstart
 

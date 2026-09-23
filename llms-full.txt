@@ -3,7 +3,7 @@
 > Expanded companion to `llms.txt`: setup, API and provider guidance, followed by canonical documentation pages. Use the linked source pages for authoritative documentation and the source code for behavior.
 
 Last updated: 2026-09-20
-Package version: 2.13.41
+Package version: 2.13.42
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -1165,7 +1165,7 @@ pip install "abstractcore[all-gpu]"      # GPU host: remote SDKs + HF/GGUF + vLL
 `voice`, `audio`, `vision`, and `music` install the lightweight capability
 plugin paths used for remote-capable routing. `all-apple`/`all-gpu` are larger
 aggregate profiles for a full local-development environment, including local
-plugin engines such as OmniVoice where supported.
+plugin engines such as OmniVoice where supported; they need Python 3.11 or newer.
 
 ## Quickstart
 
@@ -1996,8 +1996,8 @@ pip install "abstractcore[all-gpu]"      # NVIDIA GPU: remote SDKs + HF/GGUF + v
 - `[mlx]` - Provider-specific MLX extra, kept for explicit installs
 - `[vllm]` - Provider-specific vLLM extra, kept for explicit installs
 - `[remote]` - Lightweight hosted SDK bundle for OpenAI + Anthropic; OpenRouter, Portkey, Ollama, LM Studio, and generic `/v1` endpoints need no extra dependency.
-- `[all-apple]` - Best for Apple Silicon local development (includes MLX and local plugin engines where supported, excludes vLLM)
-- `[all-gpu]` - Best for NVIDIA GPU local development (includes vLLM and local plugin engines where supported, excludes MLX)
+- `[all-apple]` - Best for Apple Silicon local development (includes MLX and local plugin engines where supported, excludes vLLM); Python 3.11+
+- `[all-gpu]` - Best for NVIDIA GPU local development (includes vLLM and local plugin engines where supported, excludes MLX); Python 3.11+
 - For CPU-only or Intel machines, compose only what you need, for example `abstractcore[remote,huggingface,tools]`.
 
 Capability extras such as `[voice]`, `[audio]`, `[vision]`, and `[music]`
