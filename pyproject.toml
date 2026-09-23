@@ -156,23 +156,22 @@ huggingface = [
 # silently cannot do what its checkpoints advertise.
 #
 # The floors are pinned to what mlx-vlm actually needs, not left to the resolver:
-# mlx-vlm 0.6.3 against mlx 0.31.1 imports and then dies at
-# `mx.new_thread_local_stream`, which reaches the user as a vision failure with
-# no mention of a version.
+# mlx-vlm 0.7.1 provides Qwen4-Exp, embedded MTP and native recurrent APC;
+# MLX 0.32.2 is the tested execution floor for that graph.
 mlx = [
     # The benchmark script relies on `mlx_lm.generate.BatchGenerator` (continuous batching).
-    "mlx>=0.31.2,<1.0.0",
+    "mlx>=0.32.2,<1.0.0",
     "mlx-lm>=0.31.3,<1.0.0",
-    "mlx-vlm>=0.6.3,<0.7.0",  # image input; see the MLX PROVIDER DEPENDENCY RULE
+    "mlx-vlm>=0.7.1,<0.8.0",  # image input and native MTP
     "outlines>=0.1.0",  # Optional native structured output support
 ]
 
 apple = [
     # Hardware-profile alias for the native Apple local LLM stack.
     # Keep in sync with `mlx`.
-    "mlx>=0.31.2,<1.0.0",
+    "mlx>=0.32.2,<1.0.0",
     "mlx-lm>=0.31.3,<1.0.0",
-    "mlx-vlm>=0.6.3,<0.7.0",  # image input; see the MLX PROVIDER DEPENDENCY RULE
+    "mlx-vlm>=0.7.1,<0.8.0",  # image input and native MTP
     "outlines>=0.1.0",
 ]
 
@@ -180,7 +179,7 @@ apple = [
 # documentation keep working. It is now redundant: `mlx` and `apple` already
 # carry mlx-vlm, and nothing may depend on this extra to get sight.
 mlx-vision = [
-    "mlx-vlm>=0.6.3,<0.7.0",
+    "mlx-vlm>=0.7.1,<0.8.0",
 ]
 
 mlx-bench = [
@@ -200,7 +199,7 @@ gpu = [
 
 embeddings = [
     "sentence-transformers>=5.1.0,<6.0.0",  # Required for EmbeddingGemma model support
-    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
     "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
 ]
 
@@ -256,11 +255,11 @@ pdf-pymupdf-commercial = [
 ]
 
 voice = [
-    "abstractvoice>=0.11.0",
+    "abstractvoice>=0.11.2",
 ]
 
 audio = [
-    "abstractvoice>=0.11.0",
+    "abstractvoice>=0.11.2",
 ]
 
 compression = [
@@ -287,14 +286,14 @@ all = [
     "outlines>=0.1.0",
     # MLX provider deps (mlx-vlm is not optional -- see the MLX PROVIDER
     # DEPENDENCY RULE above the `mlx` extra)
-    "mlx>=0.31.2,<1.0.0",
+    "mlx>=0.32.2,<1.0.0",
     "mlx-lm>=0.31.3,<1.0.0",
-    "mlx-vlm>=0.6.3,<0.7.0",
+    "mlx-vlm>=0.7.1,<0.8.0",
     # vLLM provider deps
     "vllm>=0.6.0,<1.0.0",
     # Features
     "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
     "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     "tiktoken>=0.5.0,<1.0.0",
     "requests>=2.25.0,<3.0.0",
@@ -307,7 +306,7 @@ all = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.11.0",
+    "abstractvoice>=0.11.2",
     "omnivoice>=0.1.5",
     "abstractmusic>=0.1.15",
     # Server
@@ -315,7 +314,7 @@ all = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.26",
+    "abstractvision>=0.3.29",
 ]
 
 all-apple = [
@@ -337,9 +336,9 @@ all-apple = [
     # (abstractframework[apple] -> abstractgateway[apple] -> AbstractRuntime[apple]
     # -> abstractcore[all-apple]). mlx-vlm missing HERE is what shipped a gateway
     # that could not see. See the MLX PROVIDER DEPENDENCY RULE above `mlx`.
-    "mlx>=0.31.2,<1.0.0",
+    "mlx>=0.32.2,<1.0.0",
     "mlx-lm>=0.31.3,<1.0.0",
-    "mlx-vlm>=0.6.3,<0.7.0",
+    "mlx-vlm>=0.7.1,<0.8.0",
     # Features
     "sentence-transformers>=5.1.0,<6.0.0",
     "numpy>=2.1.0,<3.0.0",
@@ -354,7 +353,7 @@ all-apple = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice[all-apple]>=0.11.0",
+    "abstractvoice[all-apple]>=0.11.2",
     "omnivoice>=0.1.5",
     "abstractmusic[all-apple]>=0.1.15",
     # Server
@@ -362,7 +361,7 @@ all-apple = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision[all-apple]>=0.3.26",
+    "abstractvision[all-apple]>=0.3.29",
 ]
 
 all-gpu = [
@@ -392,7 +391,7 @@ all-gpu = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice[all-gpu]>=0.11.0",
+    "abstractvoice[all-gpu]>=0.11.2",
     "omnivoice>=0.1.5",
     "abstractmusic[all-gpu]>=0.1.15",
     # Server
@@ -400,7 +399,7 @@ all-gpu = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision[all-gpu]>=0.3.26",
+    "abstractvision[all-gpu]>=0.3.29",
 ]
 
 # Legacy broad bundle kept for existing users. New installs should usually
@@ -431,7 +430,7 @@ all-non-mlx = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.11.0",
+    "abstractvoice>=0.11.2",
     "omnivoice>=0.1.5",
     "abstractmusic>=0.1.15",
     # Server
@@ -439,7 +438,7 @@ all-non-mlx = [
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.26",
+    "abstractvision>=0.3.29",
 ]
 
 # Development dependencies
@@ -468,19 +467,19 @@ server = [
 # Vision (optional) - delegates to AbstractVision.
 # Kept as a separate extra for installs that want vision without the HTTP server.
 vision = [
-    "abstractvision>=0.3.26",
+    "abstractvision>=0.3.29",
 ]
 
 vision-diffusers = [
-    "abstractvision[huggingface]>=0.3.26",
+    "abstractvision[huggingface]>=0.3.29",
 ]
 
 vision-sdcpp = [
-    "abstractvision[sdcpp]>=0.3.26",
+    "abstractvision[sdcpp]>=0.3.29",
 ]
 
 vision-local = [
-    "abstractvision[local]>=0.3.26",
+    "abstractvision[local]>=0.3.29",
 ]
 
 music = [
@@ -507,7 +506,7 @@ test = [
     # These are imported unconditionally by parts of the test suite.
     "openai>=1.0.0,<2.0.0",
     "anthropic>=0.25.0,<1.0.0",
-    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
     "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     "Pillow>=10.0.0,<13.0.0",
     "fastapi>=0.100.0,<1.0.0",
@@ -518,6 +517,10 @@ test = [
     "requests>=2.25.0,<3.0.0",
     "beautifulsoup4>=4.12.0,<5.0.0",
     "lxml>=4.9.0,<6.0.0",
+    # Memory/residency snapshot tests measure the real host through psutil.
+    "psutil>=5.9.0,<6.0.0",
+    # Chat-template rendering tests render real GGUF templates with Jinja2.
+    "jinja2>=3.0.0,<4.0.0",
 ]
 
 # Documentation dependencies
@@ -541,12 +544,12 @@ full-dev = [
     "llama-cpp-python>=0.3.23,<1.0.0",
     "outlines>=0.1.0",
     # See the MLX PROVIDER DEPENDENCY RULE above the `mlx` extra.
-    "mlx>=0.31.2,<1.0.0",
+    "mlx>=0.32.2,<1.0.0",
     "mlx-lm>=0.31.3,<1.0.0",
-    "mlx-vlm>=0.6.3,<0.7.0",
+    "mlx-vlm>=0.7.1,<0.8.0",
     "vllm>=0.6.0,<1.0.0",
     "sentence-transformers>=5.1.0,<6.0.0",
-    "numpy>=1.20.0,<2.0.0; python_version < '3.13'",
+    "numpy>=1.20.0,<3.0.0; python_version < '3.13'",
     "numpy>=2.1.0,<3.0.0; python_version >= '3.13'",
     "tiktoken>=0.5.0,<1.0.0",
     "requests>=2.25.0,<3.0.0",
@@ -559,14 +562,14 @@ full-dev = [
     "pypdf>=6.0.0,<7.0.0",
     "unstructured[docx,pptx,xlsx,odt,rtf]>=0.10.0,<1.0.0",
     "pandas>=1.0.0,<3.0.0",
-    "abstractvoice>=0.11.0",
+    "abstractvoice>=0.11.2",
     "omnivoice>=0.1.5",
     "abstractmusic>=0.1.15",
     "fastapi>=0.100.0,<1.0.0",
     "uvicorn[standard]>=0.23.0,<1.0.0",
     "python-multipart>=0.0.6,<1.0.0",
     "sse-starlette>=1.6.0,<2.0.0",
-    "abstractvision>=0.3.26",
+    "abstractvision>=0.3.29",
     # Tooling
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",

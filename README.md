@@ -545,6 +545,9 @@ Start here:
 - [Troubleshooting](docs/troubleshooting.md) — common failures and fixes
 
 Core features:
+
+- [Native MLX Runtime](docs/native-mlx-runtime.md) — in-process Qwen3.8 inference, vision, selectable MTP depth, concurrent requests and RAM/SSD prefix reuse; [M5 Max measurements](docs/native-mlx-benchmarks.md)
+- [Stopping a Generation](docs/generation-cancel.md) — `cancel_event=` per provider, `GenerationCancelledError`, safe eject and reload
 - [Tool Calling](docs/tool-calling.md) — universal tools across providers (native + prompted)
 - [Tool Syntax Rewriting](docs/tool-syntax-rewriting.md) — rewrite tool-call syntax for different runtimes/clients
 - [Structured Output](docs/structured-output.md) — schema enforcement + retry strategies

@@ -39,6 +39,7 @@ nav:
   - Structured Output: structured-output.md
   - Prompt Caching: prompt-caching.md
   - Speculative Decoding: speculative-decoding.md
+  - Generation Cancel: generation-cancel.md
   - Memory Blocs: memory-blocs.md
   - Media: media-handling-system.md
   - Embeddings: embeddings.md

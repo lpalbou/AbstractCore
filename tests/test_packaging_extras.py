@@ -57,26 +57,26 @@ def test_server_extra_stays_vision_runtime_light() -> None:
 
     assert "abstractvision" not in server_block
     assert "abstractvoice" not in server_block
-    assert "abstractvoice>=0.11.0" in voice_block
+    assert "abstractvoice>=0.11.2" in voice_block
     assert "abstractmusic" not in voice_block
-    assert "abstractvoice>=0.11.0" in audio_block
+    assert "abstractvoice>=0.11.2" in audio_block
     _assert_block_has_dependency_prefix(vision_block, "abstractvision>=")
     _assert_block_has_dependency_prefix(vision_diffusers_block, "abstractvision[huggingface]>=")
     _assert_block_has_dependency_prefix(vision_sdcpp_block, "abstractvision[sdcpp]>=")
     _assert_block_has_dependency_prefix(vision_local_block, "abstractvision[local]>=")
     assert "abstractmusic>=0.1.15" in music_block
     assert "abstract3d>=0.1.0" in scene3d_block
-    assert "abstractvoice[all-apple]>=0.11.0" in all_apple_block
+    assert "abstractvoice[all-apple]>=0.11.2" in all_apple_block
     assert "omnivoice>=0.1.5" in all_apple_block
     _assert_block_has_dependency_prefix(all_apple_block, "abstractvision[all-apple]>=")
     assert "abstractmusic[all-apple]>=0.1.15" in all_apple_block
     assert "vllm" not in all_apple_block
-    assert "abstractvoice[all-gpu]>=0.11.0" in all_gpu_block
+    assert "abstractvoice[all-gpu]>=0.11.2" in all_gpu_block
     assert "omnivoice>=0.1.5" in all_gpu_block
     _assert_block_has_dependency_prefix(all_gpu_block, "abstractvision[all-gpu]>=")
     assert "abstractmusic[all-gpu]>=0.1.15" in all_gpu_block
     assert "mlx-lm" not in all_gpu_block
-    assert "abstractvoice>=0.11.0" in full_dev_block
+    assert "abstractvoice>=0.11.2" in full_dev_block
     assert "omnivoice>=0.1.5" in full_dev_block
     _assert_block_has_dependency_prefix(full_dev_block, "abstractvision>=")
     assert "abstractmusic>=0.1.15" in full_dev_block
@@ -166,7 +166,7 @@ def test_hardware_profile_aliases_match_provider_specific_local_engine_extras() 
     vllm_block = _extract_optional_dependency_block(text, key="vllm")
     gpu_block = _extract_optional_dependency_block(text, key="gpu")
 
-    for dep in ("mlx>=0.30.0,<1.0.0", "mlx-lm>=0.30.0,<1.0.0", "outlines>=0.1.0"):
+    for dep in ("mlx>=0.32.2,<1.0.0", "mlx-lm>=0.31.3,<1.0.0", "mlx-vlm>=0.7.1,<0.8.0", "outlines>=0.1.0"):
         assert dep in mlx_block
         assert dep in apple_block
     assert "vllm>=0.6.0,<1.0.0" in vllm_block

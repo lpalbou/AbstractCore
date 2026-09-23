@@ -2,7 +2,7 @@
 
 > Unified Python interface for cloud + local LLM providers with streaming, tool calling, structured output, media handling (images/audio/video + documents), embeddings, and an optional OpenAI-compatible HTTP server. Default install stays lightweight; features are enabled via extras.
 
-Last reviewed against source: 2026-08-27. Package version in source: 2.13.40. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
+Package version: 2.13.41. Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 This is the curated, high-signal index for agents. For a self-contained handbook with the important details inlined, read `llms-full.txt`.
 
@@ -57,7 +57,7 @@ Quick start:
 - [Tool syntax rewriting](docs/tool-syntax-rewriting.md): preserve tool-call markup (`tool_call_tags`, server `agent_format`)
 - [Structured output](docs/structured-output.md): `response_model=...`, native vs prompted, validation/retry behavior
 - [Media handling](docs/media-handling-system.md): `media=[...]`, audio/video policies, vision fallback and plugins, and the media-delivery contract (`metadata.media_delivered` with measured token counts and content hashes, `metadata.media_dropped` reason literals, and `media_delivery_verdict()` returning delivered/not_delivered/unverified)
-- [Vision capabilities](docs/vision-capabilities.md): image/video input, native image input on the MLX provider for vision-capable checkpoints (no extra needed — mlx-vlm ships with mlx-lm; `qwen3_5`, `qwen3_5_moe`, `qwen3_vl`, `gemma4`), one image per request, `response_model=` with media refused rather than dropped, and how this differs from generative vision
+- [Vision capabilities](docs/vision-capabilities.md): image/video input; MLX includes mlx-vlm, with single-image add-ons for `qwen3_5`, `qwen3_5_moe`, `qwen3_vl`, `gemma4` and native multi-image/MTP support for `qwen4_exp`; `response_model=` with media is refused rather than dropped; distinction from generative vision
 - [Centralized config](docs/centralized-config.md): `abstractcore --config`, `abstractcore config defaults|set-default|clear-default`, capability route defaults (`input.*`, `output.*`, `embedding.*`, `rerank.*`) including the `--reasoning` effort on the text route (`set-default` is a partial update: a flag you omit keeps its stored value, `""` clears one field), explicit `input.voice`/`input.video` fallback routing, provider keys, HTTP server auth/hardening, logging, vision/audio/video strategies. AbstractCore owns these values; AbstractGateway surfaces them and keeps no copy.
 - [Data-home registry](docs/data-registry.md): machine-level registry (`~/.abstractframework/data_registry.json`) of framework data directories — `register_data_home` at first write, `list_data_homes(include_sizes=...)`, owner-declared `safe_to_purge` enforced by `purge_data_home` (contents-only, nesting/symlink-swap guarded); kinds: model-cache|prompt-cache|runs|sessions|logs|entity-home|artifacts
 
@@ -66,7 +66,7 @@ Quick start:
 - [Provider registry](abstractcore/providers/registry.py): provider IDs, defaults, install extras
 - [Provider setup guide](docs/prerequisites.md): env vars + examples for OpenAI/Anthropic/Ollama/LMStudio/MLX/HuggingFace/vLLM/OpenRouter/Portkey/OpenAI-compatible
 - Install profile vocabulary: `abstractcore[apple]` is the hardware alias for the MLX local LLM stack, `abstractcore[gpu]` is the hardware alias for the vLLM local LLM stack, capability extras such as `voice`/`audio`/`vision`/`music` stay remote-light, and `abstractcore[all-apple]` / `abstractcore[all-gpu]` are larger aggregate profiles with local plugin engines where supported.
-- Optional media plugin floors in this source: `abstractvoice>=0.11.0`, `abstractvision>=0.3.26`, and `abstractmusic>=0.1.15`. Two further optional plugins register through the same `abstractcore.capabilities_plugins` entry point group: `abstract3d` (`abstractcore[scene3d]`) exposes text→3D and image→3D via `llm.scene3d` and `/v1/scene3d/generations` (backends: triposr/step1x/hunyuan3d21/trellis2); `abstractcamera` exposes real-camera piloting via `llm.camera` and `/v1/camera/*` (discovery, open/close, photo, bounded video, detection, event log). The AbstractVision plugin supports direct `llm.vision.t2i/i2i/upscale_image/t2v/i2v` calls, exact MLX-Gen model ids, source/reference image edits, adapter discovery through `llm.vision.list_provider_adapters(...)`, SeedVR2 image upscaling with canonical `AbstractFramework/seedvr2-{3b,7b}-{8bit,4bit}` packages, typed Wan A14B `guidance_2` plus Wan TI2V `flow_shift` video controls, first-class batch `count` / `seeds` delegation, and image/video output routing through `generate(..., output=...)`; top-level progress callbacks are forwarded to generated image/video output specs.
+- Optional media plugin floors in this source: `abstractvoice>=0.11.2`, `abstractvision>=0.3.29`, and `abstractmusic>=0.1.15`. Two further optional plugins register through the same `abstractcore.capabilities_plugins` entry point group: `abstract3d` (`abstractcore[scene3d]`) exposes text→3D and image→3D via `llm.scene3d` and `/v1/scene3d/generations` (backends: triposr/step1x/hunyuan3d21/trellis2); `abstractcamera` exposes real-camera piloting via `llm.camera` and `/v1/camera/*` (discovery, open/close, photo, bounded video, detection, event log). The AbstractVision plugin supports direct `llm.vision.t2i/i2i/upscale_image/t2v/i2v` calls, exact MLX-Gen model ids, source/reference image edits, adapter discovery through `llm.vision.list_provider_adapters(...)`, SeedVR2 image upscaling with canonical `AbstractFramework/seedvr2-{3b,7b}-{8bit,4bit}` packages, typed Wan A14B `guidance_2` plus Wan TI2V `flow_shift` video controls, first-class batch `count` / `seeds` delegation, and image/video output routing through `generate(..., output=...)`; top-level progress callbacks are forwarded to generated image/video output specs.
 
 ## Server (OpenAI-compatible `/v1`)
 
@@ -82,6 +82,11 @@ Quick start:
 - [pyproject.toml](pyproject.toml): extras + console scripts
 
 ## Optional
+
+- [Speculative decoding](docs/speculative-decoding.md): shared MTP controls; native Qwen3.8-Flash-Next Q4 MLX with embedded head, per-call depth, prefix reuse, image input, and sampling limitations. No oMLX/server required.
+- [Native MLX runtime](docs/native-mlx-runtime.md): fresh-install MTP depth-2 policy, Core/Gateway default controls, application overrides, execution discovery, opt-in scheduling, cache-group limits, bounded RAM/SSD caches and cancellation.
+- [Native MLX benchmarks](docs/native-mlx-benchmarks.md): M5 Max 128-GiB two-model comparison with oMLX, actual versus requested MTP, concurrent/staggered throughput, vision off/on, memory and measurement limits; includes portable CSV.
+- [Generation cancel](docs/generation-cancel.md): `cancel_event=` per provider lane, `GenerationCancelledError`, safe eject/reload with `unload_model()` / `load_model()`
 
 - [Architecture](docs/architecture.md): core/provider/session/tool/media/capabilities design
 - [Practical recipes](docs/examples.md): copy/paste code snippets (provider-agnostic)
