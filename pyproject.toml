@@ -613,7 +613,8 @@ packages = [
     "abstractcore.media.handlers",
     "abstractcore.media.utils",
     "abstractcore.compression",
-    "abstractcore.config"
+    "abstractcore.config",
+    "abstractcore.console"
 ]
 
 [tool.setuptools.dynamic]
