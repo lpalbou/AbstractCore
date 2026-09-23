@@ -36,6 +36,8 @@ import uuid
 import warnings
 from typing import Any, Dict, List, Optional
 
+import importlib.util
+
 import pytest
 
 from abstractcore.architectures import (
@@ -46,6 +48,12 @@ from abstractcore.architectures import (
 from abstractcore.providers.base import PromptCacheModule, PromptCacheStore
 from abstractcore.providers.mlx_provider import MLXProvider
 from abstractcore.tools import UniversalToolHandler
+
+
+_requires_mlx_stack = pytest.mark.skipif(
+    not all(importlib.util.find_spec(m) for m in ("mlx", "mlx_lm", "mlx_vlm")),
+    reason="requires the optional MLX stack (pip install \"abstractcore[mlx]\")",
+)
 
 QWEN38 = "mlx-community/Qwen3.8-27B-4bit"
 
@@ -413,6 +421,7 @@ TURN1 = f"{HEAD} U stamp-1 hello loop-1 GEN"
 TURN2 = f"{HEAD} U hello A hi U stamp-2 again loop-1 GEN"   # final turn of TURN1 rewritten
 
 
+@_requires_mlx_stack
 def test_diverged_seed_is_reported_and_never_becomes_the_snapshot_boundary():
     p = _cache_provider()
     cache = _fork_seed(p, "k", SEED)
@@ -432,6 +441,7 @@ def test_diverged_seed_is_reported_and_never_becomes_the_snapshot_boundary():
     assert p._get_hybrid_snapshot("k")["ids"] == head_ids
 
 
+@_requires_mlx_stack
 def test_after_a_diverged_seed_the_next_turn_restores_the_head():
     p = _cache_provider()
     cache = _fork_seed(p, "k", SEED)
@@ -493,6 +503,7 @@ def test_a_previous_PROMPT_record_keeps_the_lcp_holdback():
     assert p.logger.warnings == [] or all("prepared prefix" not in w for w in p.logger.warnings)
 
 
+@_requires_mlx_stack
 def test_a_healthy_seed_is_still_reused_silently():
     p = _cache_provider()
     cache = _fork_seed(p, "k", HEAD)

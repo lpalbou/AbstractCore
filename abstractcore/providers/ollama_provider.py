@@ -236,7 +236,13 @@ class OllamaProvider(BaseProvider):
 
         Sends a request with keep_alive=0 to immediately unload the model
         from the Ollama server, freeing server-side memory.
+
+        Our own in-flight host-cancellable requests are cancelled first (an
+        unload under a running request would otherwise wait for it or let it
+        reload the model). The sync client is replaced, not just closed, so
+        the instance stays usable afterwards.
         """
+        self._stop_inflight_before_unload(model_name, refuse_if_running=False)
         try:
             target_model = model_name.strip() if isinstance(model_name, str) and model_name.strip() else self.model
 
@@ -263,20 +269,27 @@ class OllamaProvider(BaseProvider):
                     break
                 time.sleep(0.1)
 
-            # Close the HTTP client connection
+            # Close the HTTP client connection and REPLACE it: a closed httpx
+            # client raises on every later request, and a pooled runtime keeps
+            # this instance (its default model) after an unload.
             if hasattr(self, 'client') and self.client is not None:
                 self.client.close()
+                from ._http import build_read_idle_timeout
+                self.client = httpx.Client(
+                    timeout=build_read_idle_timeout(self._timeout, getattr(self, "_read_idle_timeout", None))
+                )
 
-            # Close async client if it was created
+            # Close async client if it was created (re-created lazily)
             if self._async_client is not None:
                 import asyncio
+                async_client, self._async_client = self._async_client, None
                 try:
                     loop = asyncio.get_running_loop()
-                    loop.create_task(self._async_client.aclose())
+                    loop.create_task(async_client.aclose())
                 except RuntimeError:
                     # No running loop, close synchronously
                     import asyncio
-                    asyncio.run(self._async_client.aclose())
+                    asyncio.run(async_client.aclose())
 
         except Exception as e:
             # Log but don't raise - unload should be best-effort
@@ -439,6 +452,12 @@ class OllamaProvider(BaseProvider):
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Internal generation with Ollama"""
 
+        # Host cancel (generation_cancel.py): popped FIRST so it never reaches
+        # the payload; the HTTP call runs under an HttpCancelGuard.
+        from .generation_cancel import CANCEL_KWARG, as_cancel_event
+
+        cancel_event = as_cancel_event(kwargs.pop(CANCEL_KWARG, None))
+
         # Handle tools for prompted models (one shared placement policy).
         final_system_prompt = merge_tools_into_system(self.tool_handler, system_prompt, tools)
 
@@ -599,24 +618,51 @@ class OllamaProvider(BaseProvider):
             endpoint = "/api/generate"
 
         if stream:
+            if cancel_event is not None:
+                return self._stream_generate(
+                    endpoint, payload, tools, kwargs.get('tool_call_tags'), cancel_event=cancel_event
+                )
             return self._stream_generate(endpoint, payload, tools, kwargs.get('tool_call_tags'))
         else:
-            response = self._single_generate(endpoint, payload, tools, media_metadata)
+            if cancel_event is not None:
+                response = self._single_generate(endpoint, payload, tools, media_metadata, cancel_event=cancel_event)
+            else:
+                response = self._single_generate(endpoint, payload, tools, media_metadata)
             if media_enrichment:
                 from ..media.enrichment import merge_enrichment_metadata
 
                 response.metadata = merge_enrichment_metadata(response.metadata, media_enrichment)
             return response
 
-    def _single_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None, media_metadata: Optional[List[Dict[str, Any]]] = None) -> GenerateResponse:
+    def supports_generation_cancel(self) -> bool:
+        """True: sync /api/chat and /api/generate requests (streaming or not)
+        run under an HttpCancelGuard when the host passes an event. Ollama
+        cancels the request context on client disconnect and the runner stops
+        decoding (measured, generation_cancel.py)."""
+        return True
+
+    def _cancel_guard(self, cancel_event: Any, url: str):
+        from .generation_cancel import HttpCancelGuard
+
+        return HttpCancelGuard(cancel_event, provider="ollama", model=self.model, url=url)
+
+    def _single_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None, media_metadata: Optional[List[Dict[str, Any]]] = None, cancel_event: Any = None) -> GenerateResponse:
         """Generate single response"""
+        guard = None
         try:
             # Track generation time
             start_time = time.time()
-            response = self.client.post(
-                f"{self.base_url}{endpoint}",
-                json=payload
-            )
+            if cancel_event is not None:
+                request_url = f"{self.base_url}{endpoint}"
+                guard = self._cancel_guard(cancel_event, request_url)
+                with guard:
+                    with guard.client(timeout=self.client.timeout) as client:
+                        response = client.post(request_url, json=payload, extensions=guard.extensions)
+            else:
+                response = self.client.post(
+                    f"{self.base_url}{endpoint}",
+                    json=payload
+                )
             response.raise_for_status()
             gen_time = round((time.time() - start_time) * 1000, 1)
 
@@ -680,6 +726,9 @@ class OllamaProvider(BaseProvider):
             return generate_response
 
         except Exception as e:
+            cancelled = guard.cancelled_error_from(e) if guard is not None else None
+            if cancelled is not None:
+                raise cancelled from e
             # Check for model not found errors
             error_str = str(e).lower()
             if ('404' in error_str or 'not found' in error_str or 'model not found' in error_str or
@@ -691,19 +740,30 @@ class OllamaProvider(BaseProvider):
             # Let BaseProvider normalize (timeouts/connectivity/etc.) consistently.
             raise
 
-    def _stream_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None, tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
+    def _stream_generate(self, endpoint: str, payload: Dict[str, Any], tools: Optional[List[Dict[str, Any]]] = None, tool_call_tags: Optional[str] = None, cancel_event: Any = None) -> Iterator[GenerateResponse]:
         """Generate streaming response with tool tag rewriting support"""
+        # Host cancel: own connection under an HttpCancelGuard for the whole
+        # stream (also stops a stream still in PREFILL, before any chunk).
+        guard = None
+        client = self.client
+        extra: Dict[str, Any] = {}
+        if cancel_event is not None:
+            guard = self._cancel_guard(cancel_event, f"{self.base_url}{endpoint}")
+            guard.__enter__()
+            client = guard.client(timeout=self.client.timeout)
+            extra = {"extensions": guard.extensions}
         try:
             # #[WARNING:TIMEOUT] — stream-only read-idle bound, opted in per request
             # (ADR-0027 §4; the total stays authoritative on connect/write/pool).
             from ._http import build_read_idle_timeout
-            with self.client.stream(
+            with client.stream(
                 "POST",
                 f"{self.base_url}{endpoint}",
                 json=payload,
                 timeout=build_read_idle_timeout(
                     self._timeout, getattr(self, "_read_idle_timeout", None), streaming=True
                 ),
+                **extra,
             ) as response:
                 response.raise_for_status()
 
@@ -799,11 +859,19 @@ class OllamaProvider(BaseProvider):
                         )
 
         except Exception as e:
+            cancelled = guard.cancelled_error_from(e, where="while streaming") if guard is not None else None
+            if cancelled is not None:
+                # A host cancel is a typed stop, never an "Error: ..." chunk.
+                raise cancelled from e
             yield GenerateResponse(
                 content=f"Error: {str(e)}",
                 model=self.model,
                 finish_reason="error"
             )
+        finally:
+            if guard is not None:
+                client.close()
+                guard.__exit__(None, None, None)
 
     async def _agenerate_internal(self,
                                    prompt: str,

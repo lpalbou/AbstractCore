@@ -1787,6 +1787,14 @@ class ConfigurationManager:
         try:
             kind, modality, task = self._route_parts(kind, modality, task)
             key = self.storage_capability_route_key(kind, modality, task)
+            if isinstance(options, dict) and "speculation" in options:
+                from ..providers.speculation import normalize_speculation_value
+                options = dict(options)
+                normalized = normalize_speculation_value(options["speculation"])
+                if normalized is None:
+                    options.pop("speculation")
+                else:
+                    options["speculation"] = normalized
             route = CapabilityRouteDefault(
                 provider=str(provider).strip() if isinstance(provider, str) and provider.strip() else None,
                 model=str(model).strip() if isinstance(model, str) and model.strip() else None,

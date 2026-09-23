@@ -51,6 +51,33 @@ class EmptyCompletionError(ProviderAPIError):
     pass
 
 
+class GenerationCancelledError(AbstractCoreError):
+    """The host cancelled this generation through its `cancel_event`.
+
+    Raised by a provider (or the BaseProvider stream loop) when the caller's
+    `threading.Event` was set while the model was prefilling or decoding: the
+    provider stopped at its next observable point (one token on the MLX
+    lanes, one stream chunk on HTTP streams) instead of finishing the answer.
+
+    A cancel is a HOST decision, never a provider fault: `request_local=True`
+    makes `core/retry.py` re-raise it without a retry, a circuit-breaker
+    failure or a retry-exhausted alert, and it is deliberately not a
+    `ProviderError` so no classifier can mistake it for a transient.
+    `partial_text` carries what was decoded before the stop (diagnostic
+    only — a cancelled answer is not an answer).
+    """
+
+    request_local = True
+
+    def __init__(self, message: str = "generation cancelled by the host", *, provider=None,
+                 model=None, generated_tokens=None, partial_text=None):
+        super().__init__(message)
+        self.provider = provider
+        self.model = model
+        self.generated_tokens = generated_tokens
+        self.partial_text = partial_text
+
+
 class AuthenticationError(ProviderError):
     """Authentication with provider failed"""
     pass
@@ -207,6 +234,7 @@ __all__ = [
     'ProviderError',
     'ProviderAPIError',
     'EmptyCompletionError',
+    'GenerationCancelledError',
     'AuthenticationError',
     'Authentication',  # Backward compatibility alias
     'RateLimitError',

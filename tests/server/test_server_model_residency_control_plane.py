@@ -16,6 +16,11 @@ def _host_config_isolation(monkeypatch):
     from abstractcore.server import vision_endpoints as _ve
 
     monkeypatch.setattr(_ve, "_vision_route_defaults", lambda modality="image", task=None: {})
+    # These are process globals and /acore/models/loaded merges their contents
+    # with text runtimes. Fresh dictionaries keep a fake vision model from
+    # leaking into the next test/module, while monkeypatch restores prior state.
+    monkeypatch.setattr(_ve, "_BACKEND_CACHE", {})
+    monkeypatch.setattr(_ve, "_RESIDENCY_RECORDS", {})
     _ve._VISION_ROUTE_WARNED.clear()
 
 

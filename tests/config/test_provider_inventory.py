@@ -92,7 +92,10 @@ def test_vllm_has_no_assumed_default(tmp_path, monkeypatch) -> None:
     assert rows["vllm"]["base_url"] == "", "guessing a vLLM address would be a lie"
 
 
-def test_a_key_is_reported_by_presence_and_fingerprint_never_by_value(tmp_path) -> None:
+def test_a_key_is_reported_by_presence_and_fingerprint_never_by_value(tmp_path, monkeypatch) -> None:
+    # set_api_key exports the key to OPENAI_API_KEY; restore the environment
+    # afterwards so later tests never see (and send) this fake key.
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     manager = ConfigurationManager(config_file=tmp_path / "abstractcore.json", apply_env=False)
     manager.set_api_key("openai", "sk-live-topsecret-body")
     rows = {row["provider"]: row for row in model_materializer.provider_inventory(manager)}

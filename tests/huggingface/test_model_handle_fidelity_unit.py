@@ -16,9 +16,21 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import importlib.util
+
 import pytest
 
 from abstractcore.providers.huggingface_provider import HuggingFaceProvider
+
+
+_requires_llama_cpp = pytest.mark.skipif(
+    importlib.util.find_spec("llama_cpp") is None,
+    reason="requires the optional llama-cpp-python runtime (pip install \"abstractcore[huggingface]\")",
+)
+_requires_transformers = pytest.mark.skipif(
+    importlib.util.find_spec("transformers") is None,
+    reason="requires the optional transformers runtime (pip install \"abstractcore[huggingface]\")",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -160,6 +172,7 @@ def test_substitution_gate_names_the_manifest_that_caused_it(monkeypatch, tmp_pa
 
 
 @pytest.mark.basic
+@_requires_transformers
 def test_manifest_plus_gguf_does_not_block_a_handle_whose_weights_are_present(
     monkeypatch, tmp_path: Path, stub_loaders: list[str]
 ) -> None:
@@ -187,6 +200,7 @@ def test_manifest_plus_gguf_does_not_block_a_handle_whose_weights_are_present(
 # ---------------------------------------------------------------------------
 
 @pytest.mark.basic
+@_requires_transformers
 def test_bare_hf_id_with_only_transformers_weights_resolves_normally(
     monkeypatch, tmp_path: Path, stub_loaders: list[str]
 ) -> None:
@@ -201,6 +215,7 @@ def test_bare_hf_id_with_only_transformers_weights_resolves_normally(
 
 
 @pytest.mark.basic
+@_requires_llama_cpp
 def test_genuine_gguf_repo_id_still_loads_as_gguf(
     monkeypatch, tmp_path: Path, stub_loaders: list[str]
 ) -> None:
@@ -215,6 +230,7 @@ def test_genuine_gguf_repo_id_still_loads_as_gguf(
 
 
 @pytest.mark.basic
+@_requires_llama_cpp
 def test_gguf_file_path_still_loads_as_gguf(
     monkeypatch, tmp_path: Path, stub_loaders: list[str]
 ) -> None:
@@ -229,6 +245,7 @@ def test_gguf_file_path_still_loads_as_gguf(
 
 
 @pytest.mark.basic
+@_requires_llama_cpp
 def test_explicit_model_type_gguf_opts_into_the_hub_alias(
     monkeypatch, tmp_path: Path, stub_loaders: list[str]
 ) -> None:
@@ -245,6 +262,7 @@ def test_explicit_model_type_gguf_opts_into_the_hub_alias(
 
 
 @pytest.mark.basic
+@_requires_transformers
 def test_explicit_model_type_transformers_bypasses_the_gate(
     monkeypatch, tmp_path: Path, stub_loaders: list[str]
 ) -> None:
@@ -359,6 +377,7 @@ def test_invalid_model_type_selector_is_rejected(monkeypatch, tmp_path: Path) ->
 
 
 @pytest.mark.basic
+@_requires_llama_cpp
 def test_artifact_mismatch_survives_the_constructor_as_its_own_type(
     monkeypatch, tmp_path: Path
 ) -> None:

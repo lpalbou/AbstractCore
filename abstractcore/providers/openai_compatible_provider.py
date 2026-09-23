@@ -931,22 +931,32 @@ class OpenAICompatibleProvider(BaseProvider):
 
         Note: Most OpenAI-compatible servers manage model memory automatically.
         This method only closes the HTTP client connection for cleanup.
+
+        First it cancels this instance's in-flight host-cancellable requests
+        (generation_cancel.InflightGenerations): an unload must not leave our
+        own request decoding (or, on LM Studio, JIT-reloading the model).
+        The sync client is REPLACED, not just closed: the instance stays
+        usable (a pooled runtime keeps its default client after an unload,
+        and a closed httpx client raises on every later request).
         """
+        self._stop_inflight_before_unload(model_name, refuse_if_running=False)
         try:
-            # Close the HTTP client connection
+            # Close the HTTP client connection (and replace it: see docstring)
             if hasattr(self, 'client') and self.client is not None:
                 self.client.close()
+                self.client = httpx.Client(timeout=self._httpx_timeout())
 
             # Close async client if it was created
             if self._async_client is not None:
                 import asyncio
+                async_client, self._async_client = self._async_client, None
                 try:
                     loop = asyncio.get_running_loop()
-                    loop.create_task(self._async_client.aclose())
+                    loop.create_task(async_client.aclose())
                 except RuntimeError:
                     # No running loop
                     import asyncio
-                    asyncio.run(self._async_client.aclose())
+                    asyncio.run(async_client.aclose())
 
         except Exception as e:
             # Log but don't raise - unload should be best-effort
@@ -969,6 +979,12 @@ class OpenAICompatibleProvider(BaseProvider):
                           tool_call_tags: Optional[str] = None,
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate response using OpenAI-compatible server"""
+
+        # Host cancel (generation_cancel.py): popped FIRST so it can never reach
+        # a request payload; the HTTP call runs under an HttpCancelGuard.
+        from .generation_cancel import CANCEL_KWARG, as_cancel_event
+
+        cancel_event = as_cancel_event(kwargs.pop(CANCEL_KWARG, None))
 
         # Build messages for chat completions with tool support
         chat_messages = []
@@ -1146,9 +1162,14 @@ class OpenAICompatibleProvider(BaseProvider):
 
         if stream:
             # Return streaming response - BaseProvider will handle tag rewriting via UnifiedStreamProcessor
+            if cancel_event is not None:
+                return self._stream_generate(payload, cancel_event=cancel_event)
             return self._stream_generate(payload)
         else:
-            response = self._single_generate(payload)
+            if cancel_event is not None:
+                response = self._single_generate(payload, cancel_event=cancel_event)
+            else:
+                response = self._single_generate(payload)
             if media_enrichment:
                 from ..media.enrichment import merge_enrichment_metadata
 
@@ -1241,17 +1262,57 @@ class OpenAICompatibleProvider(BaseProvider):
         _flush()
         return out
 
-    def _single_generate(self, payload: Dict[str, Any]) -> GenerateResponse:
-        """Generate single response"""
+    def supports_generation_cancel(self) -> bool:
+        """True: every sync chat request (streaming or not) runs under an
+        HttpCancelGuard when the host passes an event (generation_cancel.py).
+        Inherited by LM Studio, vLLM, OpenRouter and Portkey."""
+        return True
+
+    def _cancel_guard(self, cancel_event: Any, url: str):
+        """HttpCancelGuard for one request of this provider (generation_cancel.py)."""
+        from .generation_cancel import HttpCancelGuard
+
+        return HttpCancelGuard(
+            cancel_event,
+            provider=getattr(self, "provider", None) or self.PROVIDER_DISPLAY_NAME,
+            model=self.model,
+            url=url,
+        )
+
+    def _single_generate(self, payload: Dict[str, Any], cancel_event: Any = None, *, _post: Any = None) -> GenerateResponse:
+        """Generate single response.
+
+        With a host `cancel_event` the request runs on its own connection under
+        an HttpCancelGuard: a cancel severs the socket, the blocked read returns
+        at once and the server stops decoding (measured: LM Studio and Ollama
+        stop on disconnect, streaming or not)."""
+        if cancel_event is not None and _post is None:
+            request_url = f"{self.base_url}/chat/completions"
+            guard = self._cancel_guard(cancel_event, request_url)
+            with guard:
+                with guard.client(timeout=self._httpx_timeout()) as client:
+                    def _guarded_post(url, **kw):
+                        return client.post(url, extensions=guard.extensions, **kw)
+
+                    try:
+                        return self._single_generate(payload, cancel_event, _post=_guarded_post)
+                    except Exception as e:  # noqa: BLE001
+                        cancelled = guard.cancelled_error_from(e)
+                        if cancelled is not None:
+                            raise cancelled from e
+                        raise
+        post = _post
         try:
             # Ensure client is available
-            if not hasattr(self, 'client') or self.client is None:
-                raise ProviderAPIError("HTTP client not initialized")
+            if post is None:
+                if not hasattr(self, 'client') or self.client is None:
+                    raise ProviderAPIError("HTTP client not initialized")
+                post = self.client.post
 
             # Track generation time
             start_time = time.time()
             request_url = f"{self.base_url}/chat/completions"
-            response = self.client.post(
+            response = post(
                 request_url,
                 json=payload,
                 headers=self._get_headers()
@@ -1259,17 +1320,17 @@ class OpenAICompatibleProvider(BaseProvider):
             if self._is_prompt_cache_key_rejection(response, payload):
                 self._mark_prompt_cache_key_unsupported()
                 payload = {k: v for k, v in payload.items() if k != "prompt_cache_key"}
-                response = self.client.post(request_url, json=payload, headers=self._get_headers())
+                response = post(request_url, json=payload, headers=self._get_headers())
             if self._is_reasoning_effort_rejection(response, payload):
                 self._mark_reasoning_effort_unsupported()
                 payload = {k: v for k, v in payload.items() if k != "reasoning_effort"}
-                response = self.client.post(request_url, json=payload, headers=self._get_headers())
+                response = post(request_url, json=payload, headers=self._get_headers())
             repaired = self._render_400_repaired_payload(response, payload)
             if repaired is not None:
                 # Reactive template-render repair (LM Studio lane): ONE retry;
                 # a second failure falls through to _raise_for_status below.
                 payload = repaired
-                response = self.client.post(request_url, json=payload, headers=self._get_headers())
+                response = post(request_url, json=payload, headers=self._get_headers())
             self._raise_for_status(response, request_url=request_url)
             gen_time = round((time.time() - start_time) * 1000, 1)
 
@@ -1342,20 +1403,49 @@ class OpenAICompatibleProvider(BaseProvider):
                 self._raise_model_not_found()
             raise
 
-    def _stream_generate(self, payload: Dict[str, Any]) -> Iterator[GenerateResponse]:
-        """Generate streaming response"""
+    def _stream_generate(
+        self,
+        payload: Dict[str, Any],
+        cancel_event: Any = None,
+        *,
+        _client: Any = None,
+        _extensions: Optional[Dict[str, Any]] = None,
+    ) -> Iterator[GenerateResponse]:
+        """Generate streaming response.
+
+        With a host `cancel_event` the stream runs on its own connection under
+        an HttpCancelGuard, so a cancel also stops a stream that has not
+        produced its first chunk yet (a long PREFILL: no chunk, no per-chunk
+        check, a thread blocked in recv)."""
         request_url = f"{self.base_url}/chat/completions"
+        if cancel_event is not None and _client is None:
+            guard = self._cancel_guard(cancel_event, request_url)
+            with guard:
+                with guard.client(timeout=self._httpx_timeout(streaming=True)) as client:
+                    try:
+                        yield from self._stream_generate(
+                            payload, cancel_event, _client=client, _extensions=guard.extensions
+                        )
+                    except Exception as e:  # noqa: BLE001
+                        cancelled = guard.cancelled_error_from(e, where="while streaming")
+                        if cancelled is not None:
+                            raise cancelled from e
+                        raise
+            return
+        client = _client if _client is not None else self.client
+        extra = {"extensions": _extensions} if _extensions else {}
 
         # #[WARNING:TIMEOUT] — the READ-IDLE (no-progress) bound is stream-only and
         # is opted into HERE, per request (ADR-0027 §4; ADR-0014 keeps the total
         # authoritative on connect/write/pool). The shared client deliberately
         # carries read == total so non-streaming generations are never capped.
-        with self.client.stream(
+        with client.stream(
             "POST",
             request_url,
             json=payload,
             headers=self._get_headers(),
             timeout=self._httpx_timeout(streaming=True),
+            **extra,
         ) as response:
             status0 = getattr(response, "status_code", None)
             if status0 is not None and int(status0) >= 400:
@@ -1366,17 +1456,17 @@ class OpenAICompatibleProvider(BaseProvider):
                 if self._is_prompt_cache_key_rejection(response, payload):
                     self._mark_prompt_cache_key_unsupported()
                     retry_payload = {k: v for k, v in payload.items() if k != "prompt_cache_key"}
-                    yield from self._stream_generate(retry_payload)
+                    yield from self._stream_generate(retry_payload, cancel_event, _client=_client, _extensions=_extensions)
                     return
                 if self._is_reasoning_effort_rejection(response, payload):
                     self._mark_reasoning_effort_unsupported()
                     retry_payload = {k: v for k, v in payload.items() if k != "reasoning_effort"}
-                    yield from self._stream_generate(retry_payload)
+                    yield from self._stream_generate(retry_payload, cancel_event, _client=_client, _extensions=_extensions)
                     return
                 if self._is_stream_options_rejection(response, payload):
                     self._mark_stream_options_unsupported()
                     retry_payload = {k: v for k, v in payload.items() if k != "stream_options"}
-                    yield from self._stream_generate(retry_payload)
+                    yield from self._stream_generate(retry_payload, cancel_event, _client=_client, _extensions=_extensions)
                     return
                 repaired = self._render_400_repaired_payload(response, payload)
                 if repaired is not None:
@@ -1384,7 +1474,7 @@ class OpenAICompatibleProvider(BaseProvider):
                     # so the reactive repair re-establishes the stream. Bounded:
                     # on the recursive call the hook returns None for its own
                     # repaired payload and a second render-400 raises below.
-                    yield from self._stream_generate(repaired)
+                    yield from self._stream_generate(repaired, cancel_event, _client=_client, _extensions=_extensions)
                     return
             self._raise_for_status(response, request_url=request_url)
 
@@ -1415,7 +1505,7 @@ class OpenAICompatibleProvider(BaseProvider):
                             if not yielded_any:
                                 repaired = self._stream_error_event_repaired_payload(chunk, payload)
                                 if repaired is not None:
-                                    yield from self._stream_generate(repaired)
+                                    yield from self._stream_generate(repaired, cancel_event, _client=_client, _extensions=_extensions)
                                     return
 
                             # In-stream ERROR events must be LOUD. Servers can

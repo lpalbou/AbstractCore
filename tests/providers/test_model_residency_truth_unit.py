@@ -1,6 +1,15 @@
+import importlib.util
+
+import pytest
 from abstractcore.providers.huggingface_provider import HuggingFaceProvider
 from abstractcore.providers.mlx_provider import MLXProvider
 from abstractcore.providers.ollama_provider import OllamaProvider
+
+
+_requires_mlx_stack = pytest.mark.skipif(
+    not all(importlib.util.find_spec(m) for m in ("mlx", "mlx_lm", "mlx_vlm")),
+    reason="requires the optional MLX stack (pip install \"abstractcore[mlx]\")",
+)
 
 
 def test_mlx_model_residency_reports_in_process_loaded_state() -> None:
@@ -254,6 +263,7 @@ def test_huggingface_unloaded_residency_omits_weight_bytes() -> None:
     assert "est_weights_bytes" not in provider.get_model_residency()
 
 
+@_requires_mlx_stack
 def test_mlx_residency_claim_carries_weight_bytes() -> None:
     class _FakeArray:
         def __init__(self, nbytes: int) -> None:

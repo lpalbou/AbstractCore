@@ -27,6 +27,22 @@ def allow_unauthenticated_server_in_tests(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def restore_api_key_environment():
+    """Undo API keys a test exported into the process environment.
+
+    `ConfigurationManager.set_api_key()` exports the configured key to its env
+    var (for example OPENAI_API_KEY) by design. Without this guard a fake key
+    set by a config test leaks into later tests, which then treat it as real
+    credentials and call the live API.
+    """
+    saved = {k: v for k, v in os.environ.items() if k.endswith("_API_KEY")}
+    yield
+    for k in [k for k in os.environ if k.endswith("_API_KEY") and k not in saved]:
+        os.environ.pop(k, None)
+    os.environ.update(saved)
+
+
+@pytest.fixture(autouse=True)
 def isolate_data_registry(tmp_path, monkeypatch):
     """Point register-at-first-write at a per-test registry file.
 

@@ -64,9 +64,13 @@ def create_llm(provider: str, model: Optional[str] = None, **kwargs) -> Abstract
     # lane label. It happens before HuggingFaceProvider.__init__, so the artifact
     # guard installed there cannot see it. Silent was the wrong default: say it.
     if model:
+        from ..providers.mlx_model_rules import is_mlx_model
+
         rerouted_from = None
-        # MLX models should use MLX provider
-        if "mlx-community" in model.lower() and provider.lower() == "huggingface":
+        # MLX models should use MLX provider. The same rule decides which of the
+        # two local-weight model lists a repo appears in (providers/mlx_model_rules.py),
+        # so a model offered under `mlx` in a picker re-routes here identically.
+        if provider.lower() == "huggingface" and is_mlx_model(model):
             rerouted_from, provider = provider, "mlx"
         # GGUF models should use HuggingFace GGUF backend
         elif (".gguf" in model.lower() or "-gguf" in model.lower()) and provider.lower() == "mlx":

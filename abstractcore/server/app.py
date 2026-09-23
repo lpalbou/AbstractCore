@@ -55,6 +55,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, ValidationError, AliasChoices, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from ..utils.async_stream import async_stream, supports_concurrent_generation, run_sync_with_disconnect
 
 from ..core.bloc_kv import (
     BlocKVArtifactInUseError,
@@ -75,7 +76,7 @@ from ..embeddings.models import (
     list_available_providers as _list_embedding_providers,
     list_direct_embedding_providers as _list_direct_embedding_providers,
 )
-from ..exceptions import AuthenticationError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
+from ..exceptions import AuthenticationError, GenerationCancelledError, InvalidRequestError, ModelNotFoundError, ProviderAPIError, RateLimitError
 from ..providers.base import PromptCacheError
 from ..providers.model_capabilities import modalities_for_model
 from ..utils.structured_logging import get_logger, configure_logging
@@ -1744,6 +1745,7 @@ class OpenAIResponsesFunctionCall(BaseModel):
 
 class OpenAIResponsesRequest(BaseModel):
     """OpenAI Responses API request format (100% compatible)"""
+    speculation: Optional[Union[bool, Dict[str, Any]]] = None
     model: str = Field(
         description="Model identifier",
         example="gpt-4o"
@@ -1963,6 +1965,9 @@ class ChatMessage(BaseModel):
 
 class ChatCompletionRequest(BaseModel):
     """OpenAI-compatible chat completion request"""
+    speculation: Optional[Union[bool, Dict[str, Any]]] = Field(
+        default=None, description="AbstractCore speculative decoding options; false disables MTP for this request.",
+    )
     model: str = Field(
         description="ID of the model to use. Use provider/model format (e.g., 'openai/gpt-4', 'ollama/llama3:latest', "
                     "'anthropic/claude-3-opus-20240229'). You can use the List models API to see all available models, "
@@ -2869,16 +2874,15 @@ def generate_streaming_responses_response(
 
         def _iter_chunks() -> Iterator[Any]:
             if loaded_runtime is not None:
-                for item in _stream_loaded_gateway_runtime(
+                yield from _stream_loaded_gateway_runtime(
                     loaded_runtime,
                     lambda: llm.generate(**gen_kwargs),
-                ):
-                    yield item
+                )
                 return
-            for item in llm.generate(**gen_kwargs):
-                yield item
+            yield from llm.generate(**gen_kwargs)
 
-        for chunk in _iter_chunks():
+        provider_chunks = _iter_chunks()
+        for chunk in provider_chunks:
             if hasattr(chunk, "content") and chunk.content:
                 chunk_text = chunk.content
                 if syntax_rewriter.target_format in [SyntaxFormat.OPENAI, SyntaxFormat.CODEX]:
@@ -3078,6 +3082,8 @@ def generate_streaming_responses_response(
         yield f"data: {json.dumps(error_chunk)}\n\n"
         yield "data: [DONE]\n\n"
     finally:
+        if "provider_chunks" in locals():
+            provider_chunks.close()
         if loaded_runtime is not None and unload_after:
             _best_effort_unload_loaded_gateway_runtime(loaded_runtime, request_id=request_id)
         elif provider_normalized == "ollama" and ollama_key is not None:
@@ -3218,6 +3224,7 @@ def convert_openai_responses_to_chat_completion(openai_request: OpenAIResponsesR
         frequency_penalty=openai_request.frequency_penalty,
         presence_penalty=openai_request.presence_penalty,
         thinking=openai_request.thinking,
+        speculation=openai_request.speculation,
         tools=_normalize_openai_responses_tools(openai_request.tools),
         tool_choice=_normalize_openai_responses_tool_choice(openai_request.tool_choice),
         prompt_cache_key=openai_request.prompt_cache_key,
@@ -4221,6 +4228,11 @@ def _run_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime, operation, *, to
 
 
 def _stream_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime, operation) -> Iterator[Any]:
+    if supports_concurrent_generation(runtime.llm):
+        with runtime.lock:
+            _touch_loaded_gateway_runtime(runtime)
+        yield from operation()
+        return
     # Do not bound the bridge queue here. A loaded runtime has a single provider
     # worker thread; if the client stops draining a bounded queue, that worker
     # can block forever in `put()` and wedge every later cache-control or chat
@@ -4253,6 +4265,22 @@ def _stream_loaded_gateway_runtime(runtime: _GatewayLoadedRuntime, operation) ->
         yield value
 
 
+def _run_loaded_gateway_generation(runtime: _GatewayLoadedRuntime, operation):
+    """Concurrent admission only when the provider owns scheduling internally."""
+    if not supports_concurrent_generation(runtime.llm):
+        return _run_loaded_gateway_runtime(runtime, operation)
+    with runtime.lock:
+        _touch_loaded_gateway_runtime(runtime)
+    return operation()
+
+
+_MLX_RUNTIME_OPTIONS = frozenset({
+    "mlx_batching", "mlx_max_batch_size", "mlx_max_queue_size", "mlx_batch_wait_ms",
+    "mlx_queue_timeout_s", "mlx_output_queue_size", "mlx_cache_disk_path",
+    "mlx_cache_disk_max_gb", "mlx_cache_memory_max_gb", "mlx_cache_scope", "speculation",
+})
+
+
 def _ensure_loaded_gateway_runtime(
     *,
     provider: str,
@@ -4269,6 +4297,10 @@ def _ensure_loaded_gateway_runtime(
     with _GATEWAY_RUNTIME_LOCK:
         existing = _GATEWAY_LOADED_RUNTIMES.get(registry_key)
         if existing is not None:
+            requested = {key: value for key, value in provider_kwargs.items() if key in _MLX_RUNTIME_OPTIONS}
+            prior = getattr(existing, "mlx_runtime_options", {})
+            if requested and any(prior.get(key) != value for key, value in requested.items()):
+                raise HTTPException(status_code=409, detail="Runtime configuration differs; unload it before changing MLX options.")
             return existing, False
         llm = create_llm(provider, model=model, **provider_kwargs)
         runtime = _GatewayLoadedRuntime(
@@ -4278,6 +4310,7 @@ def _ensure_loaded_gateway_runtime(
             explicit_provider_key_hash=explicit_provider_key_hash,
             llm=llm,
         )
+        runtime.mlx_runtime_options = {key: value for key, value in provider_kwargs.items() if key in _MLX_RUNTIME_OPTIONS}
         _GATEWAY_LOADED_RUNTIMES[registry_key] = runtime
         _GATEWAY_RUNTIME_IDS[runtime.runtime_id] = registry_key
         return runtime, True
@@ -5415,6 +5448,9 @@ def acore_models_load(req: LoadedModelRequest, http_request: Request):
 
     if req.timeout_s is not None:
         provider_kwargs["timeout"] = req.timeout_s
+
+    if provider == "mlx":
+        provider_kwargs.update({key: value for key, value in (req.options or {}).items() if key in _MLX_RUNTIME_OPTIONS})
 
     runtime, runtime_cache_loaded_new = _ensure_loaded_gateway_runtime(
         provider=provider,
@@ -7534,6 +7570,18 @@ def list_capability_defaults():
     return _capability_defaults_payload()
 
 
+@app.get("/v1/models/execution-capabilities", tags=["models"])
+def model_execution_capabilities(
+    model_name: str = Query(...), provider: str = Query(...),
+):
+    """Read execution facts from this host without admitting or loading a model."""
+    from ..providers.speculation import get_execution_capabilities
+    runtime = _get_loaded_gateway_runtime(provider=provider, model=model_name)
+    return get_execution_capabilities(
+        model_name, provider=provider, instance=runtime.llm if runtime is not None else None,
+    )
+
+
 @app.put(
     "/v1/config/capability-defaults/{kind}/{modality}",
     tags=["configuration"],
@@ -9487,9 +9535,13 @@ async def process_chat_completion(
             # OpenAI-native alias: reasoning_effort 'none' maps to thinking 'none' (off);
             # effort levels map 1:1 onto the unified thinking vocabulary.
             gen_kwargs["thinking"] = request.reasoning_effort.strip().lower()
+        if request.speculation is not None:
+            gen_kwargs["speculation"] = request.speculation
+        if request.top_p is not None:
+            gen_kwargs["top_p"] = request.top_p
         if request.stop:
             gen_kwargs["stop"] = request.stop
-        if request.seed:
+        if request.seed is not None:
             gen_kwargs["seed"] = request.seed
         if request.frequency_penalty:
             gen_kwargs["frequency_penalty"] = request.frequency_penalty
@@ -9505,6 +9557,19 @@ async def process_chat_completion(
             binding=request.prompt_cache_binding,
             loaded_runtime=loaded_runtime,
         )
+        cancel_event = threading.Event() if supports_concurrent_generation(llm) else None
+        if cancel_event is not None:
+            gen_kwargs["_cancel_event"] = cancel_event
+        elif _client_disconnect_cancels(llm):
+            # A client that goes away cancels the generation (2026-09-23): the
+            # runtime's RemoteAbstractCoreLLMClient severs its request on a Stop,
+            # and this is the only signal that reaches the server. HTTP-backed
+            # providers are safe to run off the event loop (one independent
+            # request per call), so they now take the same disconnect-watched
+            # lane as the MLX scheduler, and the provider severs ITS upstream
+            # request in turn (HttpCancelGuard): the model server stops.
+            cancel_event = threading.Event()
+            gen_kwargs["cancel_event"] = cancel_event
 
         # Generate response
         # Only cleanup files created by this request (with our specific prefixes)
@@ -9520,8 +9585,7 @@ async def process_chat_completion(
 
         try:
             if request.stream:
-                return StreamingResponse(
-                    (
+                stream_content = (
                         generate_streaming_responses_response(
                             llm,
                             gen_kwargs,
@@ -9550,18 +9614,22 @@ async def process_chat_completion(
                             allow_unsafe_unload_after=allow_unsafe_unload_after,
                             loaded_runtime=loaded_runtime,
                         )
-                    ),
+                    )
+                return StreamingResponse(
+                    async_stream(stream_content, on_cancel=cancel_event.set) if cancel_event is not None else stream_content,
                     media_type="text/event-stream",
                     headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
                 )
             else:
                 if loaded_runtime is not None:
-                    response = _run_loaded_gateway_runtime(
-                        loaded_runtime,
-                        lambda: llm.generate(**gen_kwargs),
-                    )
+                    operation = lambda: _run_loaded_gateway_generation(loaded_runtime, lambda: llm.generate(**gen_kwargs))
                 else:
-                    response = llm.generate(**gen_kwargs)
+                    operation = lambda: llm.generate(**gen_kwargs)
+                try:
+                    response = await run_sync_with_disconnect(operation, request=http_request, cancel_event=cancel_event) if cancel_event is not None else operation()
+                finally:
+                    if cancel_event is not None:
+                        cancel_event.set()
                 if openai_output_format == "responses":
                     openai_response = convert_to_openai_responses_response(
                         response,
@@ -9624,6 +9692,12 @@ async def process_chat_completion(
 
     except HTTPException:
         raise
+    except GenerationCancelledError as e:
+        # The client went away (or a Stop severed it): a host decision, not a
+        # server failure. Nobody is listening for the body; say so at INFO.
+        logger.info("Chat completion cancelled (client disconnected)", request_id=request_id, detail=str(e))
+        return JSONResponse(status_code=499, content={"error": {
+            "message": str(e), "type": "cancelled", "code": "generation_cancelled"}})
     except Exception as e:
         logger.error(
             "❌ Chat completion failed",
@@ -9631,10 +9705,31 @@ async def process_chat_completion(
             error=str(e),
             error_type=type(e).__name__
         )
+        if "llm" in locals() and supports_concurrent_generation(llm):
+            return JSONResponse(status_code=getattr(e, "http_status", 500), content={"error": {
+                "message": str(e), "type": "native_runtime_error",
+                "code": getattr(e, "code", "native_runtime_error"),
+            }})
         raise HTTPException(
             status_code=500,
             detail={"error": {"message": str(e), "type": "server_error"}}
         )
+
+def _client_disconnect_cancels(llm: Any) -> bool:
+    """HTTP-backed providers (Ollama, LM Studio, any OpenAI-compatible server)
+    that honour a host cancel: their chat requests run off the event loop with
+    a client-disconnect watcher. In-process transformers / llama.cpp stay on
+    the loop (their instances are not safe to run concurrently)."""
+    from ..providers.ollama_provider import OllamaProvider
+    from ..providers.openai_compatible_provider import OpenAICompatibleProvider
+
+    capability = getattr(llm, "supports_generation_cancel", None)
+    return (
+        isinstance(llm, (OllamaProvider, OpenAICompatibleProvider))
+        and callable(capability)
+        and capability() is True
+    )
+
 
 def generate_streaming_response(
     llm,
@@ -9656,20 +9751,34 @@ def generate_streaming_response(
         chat_id = f"chatcmpl-{uuid.uuid4().hex[:8]}"
         created_time = int(time.time())
         has_tool_calls = False
+        last_finish_reason = None
+        last_usage = None
+        last_native_metadata = {}
 
         def _iter_chunks() -> Iterator[Any]:
             if loaded_runtime is not None:
-                for item in _stream_loaded_gateway_runtime(
+                yield from _stream_loaded_gateway_runtime(
                     loaded_runtime,
                     lambda: llm.generate(**gen_kwargs),
-                ):
-                    yield item
+                )
                 return
-            for item in llm.generate(**gen_kwargs):
-                yield item
+            yield from llm.generate(**gen_kwargs)
 
         reasoning_delta_emitted = False
-        for chunk in _iter_chunks():
+        provider_chunks = _iter_chunks()
+        for chunk in provider_chunks:
+            if getattr(chunk, "finish_reason", None):
+                last_finish_reason = chunk.finish_reason
+            if getattr(chunk, "usage", None):
+                last_usage = chunk.usage
+            if isinstance(getattr(chunk, "metadata", None), dict):
+                # Unscheduled MTP also reports actual speculation outcomes.
+                # Keep fields from earlier chunks when the terminal only adds usage.
+                last_native_metadata.update({
+                    key: chunk.metadata[key]
+                    for key in ("execution", "speculation", "performance", "prompt_cache")
+                    if key in chunk.metadata
+                })
             # Reasoning streaming (OpenAI-compatible `delta.reasoning_content`, the
             # DeepSeek/vLLM/LM Studio convention). Incremental deltas are forwarded
             # as they arrive; the trailing aggregate `metadata["reasoning"]` is
@@ -9717,7 +9826,7 @@ def generate_streaming_response(
                     content = syntax_rewriter.rewrite_content(content)
 
                 # Only send content if it's meaningful (not just whitespace)
-                if content.strip():
+                if content:
                     openai_chunk = {
                         "id": chat_id,
                         "object": "chat.completion.chunk",
@@ -9784,9 +9893,18 @@ def generate_streaming_response(
             "choices": [{
                 "index": 0,
                 "delta": {},
-                "finish_reason": "tool_calls" if has_tool_calls else "stop"
+                "finish_reason": "tool_calls" if has_tool_calls else (last_finish_reason or "stop")
             }]
         }
+        if last_usage:
+            final_chunk["usage"] = dict(last_usage)
+            if "cached_input_tokens" in last_usage:
+                final_chunk["usage"]["prompt_tokens_details"] = {
+                    **last_usage.get("prompt_tokens_details", {}),
+                    "cached_tokens": int(last_usage["cached_input_tokens"]),
+                }
+        if last_native_metadata:
+            final_chunk["abstractcore"] = last_native_metadata
         yield f"data: {json.dumps(final_chunk)}\n\n"
         yield "data: [DONE]\n\n"
 
@@ -9828,6 +9946,8 @@ def generate_streaming_response(
         error_chunk = {"error": {"message": str(e), "type": "server_error"}}
         yield f"data: {json.dumps(error_chunk)}\n\n"
     finally:
+        if "provider_chunks" in locals():
+            provider_chunks.close()
         if loaded_runtime is not None and unload_after:
             _best_effort_unload_loaded_gateway_runtime(loaded_runtime, request_id=request_id)
         elif provider_normalized == "ollama" and ollama_key is not None:
@@ -9907,7 +10027,7 @@ def convert_to_openai_response(
         "choices": [{
             "index": 0,
             "message": {"role": "assistant", "content": content},
-            "finish_reason": "stop"
+            "finish_reason": getattr(response, "finish_reason", None) or "stop"
         }],
         "usage": {
             # `usage` can legitimately be None (GenerateResponse.usage is Optional);
@@ -9919,12 +10039,23 @@ def convert_to_openai_response(
     }
 
     # Preserve token detail breakdowns (e.g. reasoning_tokens for invisible-reasoning models).
+    response_metadata = getattr(response, "metadata", None)
+    if isinstance(response_metadata, dict):
+        execution_metadata = {
+            key: response_metadata[key]
+            for key in ("execution", "speculation", "performance", "prompt_cache")
+            if key in response_metadata
+        }
+        if execution_metadata:
+            response_dict["abstractcore"] = execution_metadata
     provider_usage = getattr(response, "usage", None)
     if isinstance(provider_usage, dict):
         for detail_key in ("completion_tokens_details", "prompt_tokens_details"):
             details = provider_usage.get(detail_key)
             if isinstance(details, dict) and details:
                 response_dict["usage"][detail_key] = dict(details)
+        if "cached_input_tokens" in provider_usage:
+            response_dict["usage"].setdefault("prompt_tokens_details", {})["cached_tokens"] = int(provider_usage["cached_input_tokens"])
 
     # Surface model reasoning to clients using the de-facto OpenAI-compatible key
     # (`message.reasoning_content` — DeepSeek/vLLM/LM Studio convention, and the key

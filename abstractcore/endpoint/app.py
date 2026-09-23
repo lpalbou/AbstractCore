@@ -9,6 +9,7 @@ backends (HF GGUF / MLX) as a `/v1` endpoint.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import hashlib
 import json
 import os
@@ -21,7 +22,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
@@ -39,6 +40,7 @@ from ..core.file_blocs import FileBlocStore
 from ..core.factory import create_llm
 from ..core.types import GenerateResponse
 from ..providers.base import PromptCacheCapabilities, PromptCacheError
+from ..utils.async_stream import async_stream, supports_concurrent_generation, run_sync_with_disconnect
 
 
 @dataclass(frozen=True)
@@ -65,6 +67,7 @@ class ChatCompletionRequest(BaseModel):
     max_tokens: Optional[int] = None
     top_p: Optional[float] = 1.0
     stream: bool = False
+    speculation: Optional[Union[bool, Dict[str, Any]]] = None
     thinking: Optional[Union[bool, str]] = Field(
         default=None,
         description="Unified thinking/reasoning control (best-effort across providers/models).",
@@ -257,7 +260,7 @@ def _format_tool_calls(tool_calls: Optional[List[Dict[str, Any]]]) -> Optional[L
     return formatted or None
 
 
-def _usage_to_openai(usage: Optional[Dict[str, Any]]) -> Optional[Dict[str, int]]:
+def _usage_to_openai(usage: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not isinstance(usage, dict) or not usage:
         return None
     prompt_tokens = usage.get("prompt_tokens") or usage.get("input_tokens") or 0
@@ -268,11 +271,17 @@ def _usage_to_openai(usage: Optional[Dict[str, Any]]) -> Optional[Dict[str, int]
             total_tokens = int(prompt_tokens) + int(completion_tokens)
         except Exception:
             total_tokens = 0
-    return {
+    result = {
         "prompt_tokens": int(prompt_tokens) if prompt_tokens is not None else 0,
         "completion_tokens": int(completion_tokens) if completion_tokens is not None else 0,
         "total_tokens": int(total_tokens) if total_tokens is not None else 0,
     }
+    for key in ("prompt_tokens_details", "completion_tokens_details"):
+        if isinstance(usage.get(key), dict):
+            result[key] = dict(usage[key])
+    if "cached_input_tokens" in usage:
+        result.setdefault("prompt_tokens_details", {})["cached_tokens"] = int(usage["cached_input_tokens"])
+    return result
 
 
 def _maybe_strip_provider_prefix(model: str) -> str:
@@ -335,6 +344,11 @@ def create_app(
         return provider_executor.submit(operation).result()
 
     def _provider_stream(operation):
+        if supports_concurrent_generation(provider):
+            # The provider owns its GPU worker and cancellation-aware queues.
+            # Do not serialize admission through the legacy provider executor.
+            yield from operation()
+            return
         out: "queue.Queue[Tuple[str, Any]]" = queue.Queue(maxsize=32)
 
         def _run():
@@ -939,7 +953,7 @@ def create_app(
                 return _bloc_error("kv_prune", e, status_code=500)
 
     @app.post("/v1/chat/completions")
-    def chat_completions(request: ChatCompletionRequest):
+    async def chat_completions(request: ChatCompletionRequest, http_request: Request):
         requested_model = _maybe_strip_provider_prefix(request.model)
         if requested_model and requested_model != model_id:
             raise HTTPException(
@@ -952,9 +966,24 @@ def create_app(
                 },
             )
 
-        system_prompt, messages = _extract_system_prompt(request.messages)
+        native_media = []
+        normalized_messages = request.messages
+        if supports_concurrent_generation(provider) or getattr(provider, "_mtp_processor", None) is not None:
+            from ..media.openai_parts import extract_native_chat_media
+            try:
+                copied, native_media = extract_native_chat_media([
+                    message.model_dump(exclude_none=True) for message in request.messages
+                ])
+                normalized_messages = [ChatMessage.model_validate(message) for message in copied]
+            except ValueError as exc:
+                return JSONResponse(status_code=400, content={"error": {
+                    "message": str(exc), "type": "invalid_request_error", "code": "native_media_invalid",
+                }})
+        system_prompt, messages = _extract_system_prompt(normalized_messages)
 
         gen_kwargs: Dict[str, Any] = {}
+        if native_media:
+            gen_kwargs["media"] = native_media
         if request.temperature is not None:
             gen_kwargs["temperature"] = request.temperature
         if request.max_tokens is not None:
@@ -963,6 +992,8 @@ def create_app(
             gen_kwargs["top_p"] = request.top_p
         if request.thinking is not None:
             gen_kwargs["thinking"] = request.thinking
+        if request.speculation is not None:
+            gen_kwargs["speculation"] = request.speculation
         if request.seed is not None:
             gen_kwargs["seed"] = request.seed
         if request.frequency_penalty is not None:
@@ -975,7 +1006,10 @@ def create_app(
             gen_kwargs["prompt_cache_key"] = request.prompt_cache_key.strip()
         if isinstance(request.prompt_cache_retention, str) and request.prompt_cache_retention.strip():
             gen_kwargs["prompt_cache_retention"] = request.prompt_cache_retention.strip()
-        _apply_prompt_cache_binding(gen_kwargs, request.prompt_cache_binding)
+        await asyncio.to_thread(_apply_prompt_cache_binding, gen_kwargs, request.prompt_cache_binding)
+        cancel_event = threading.Event() if supports_concurrent_generation(provider) else None
+        if cancel_event is not None:
+            gen_kwargs["_cancel_event"] = cancel_event
 
         completion_id = f"chatcmpl-{uuid.uuid4().hex}"
         response_created = int(time.time())
@@ -1005,6 +1039,10 @@ def create_app(
             usage = _usage_to_openai(resp.usage)
             if usage:
                 body["usage"] = usage
+            if isinstance(resp.metadata, dict):
+                execution_metadata = {key: resp.metadata[key] for key in ("execution", "speculation", "performance", "prompt_cache") if key in resp.metadata}
+                if execution_metadata:
+                    body["abstractcore"] = execution_metadata
             return JSONResponse(content=body)
 
         def _event_stream(chunks: Iterable[GenerateResponse]):
@@ -1028,18 +1066,26 @@ def create_app(
                 if tool_calls:
                     delta["tool_calls"] = tool_calls
 
-                if not delta:
+                execution_metadata = {
+                    key: chunk.metadata[key]
+                    for key in ("execution", "speculation", "performance", "prompt_cache")
+                    if isinstance(chunk.metadata, dict) and key in chunk.metadata
+                }
+                if not delta and not chunk.finish_reason and not chunk.usage and not execution_metadata:
                     continue
 
-                yield "data: " + json.dumps(
-                    {
+                body = {
                         "id": completion_id,
                         "object": "chat.completion.chunk",
                         "created": response_created,
                         "model": model_id,
-                        "choices": [{"index": 0, "delta": delta, "finish_reason": None}],
+                        "choices": [{"index": 0, "delta": delta, "finish_reason": chunk.finish_reason}],
                     }
-                ) + "\n\n"
+                if chunk.usage:
+                    body["usage"] = _usage_to_openai(chunk.usage)
+                if execution_metadata:
+                    body["abstractcore"] = execution_metadata
+                yield "data: " + json.dumps(body) + "\n\n"
 
             yield "data: [DONE]\n\n"
 
@@ -1055,23 +1101,48 @@ def create_app(
                         **gen_kwargs,
                     )
                 )
-                yield from _event_stream(resp)
+                try:
+                    yield from _event_stream(resp)
+                except Exception as exc:
+                    if not supports_concurrent_generation(provider):
+                        raise
+                    yield "data: " + json.dumps({"error": {
+                        "message": str(exc), "type": "native_runtime_error",
+                        "code": getattr(exc, "code", "native_runtime_error"),
+                    }}) + "\n\n"
+                    yield "data: [DONE]\n\n"
+                finally:
+                    resp.close()
             return StreamingResponse(
-                _locked_event_stream(),
+                async_stream(_locked_event_stream(), on_cancel=cancel_event.set) if cancel_event is not None else _locked_event_stream(),
                 media_type="text/event-stream",
                 headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
             )
 
-        resp = _provider_call(
-            lambda: provider.generate(
+        def generate():
+            return provider.generate(
                     prompt="",
                     messages=messages,
                     system_prompt=system_prompt,
                     tools=request.tools,
                     stream=False,
                     **gen_kwargs,
-                )
             )
+        try:
+            if cancel_event is not None:
+                resp = await run_sync_with_disconnect(generate, request=http_request, cancel_event=cancel_event)
+            else:
+                resp = await asyncio.to_thread(lambda: _provider_call(generate))
+        except Exception as exc:
+            if cancel_event is None:
+                raise
+            return JSONResponse(status_code=getattr(exc, "http_status", 500), content={"error": {
+                "message": str(exc), "type": "native_runtime_error",
+                "code": getattr(exc, "code", "native_runtime_error"),
+            }})
+        finally:
+            if cancel_event is not None:
+                cancel_event.set()
 
         if not isinstance(resp, GenerateResponse):
             # Defensive: structured outputs or other provider behaviors.

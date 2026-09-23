@@ -7,6 +7,8 @@ Explicit per-call keys always win; pooled factories must strip the param (tested
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from abstractcore import create_llm
 
 
@@ -17,7 +19,8 @@ def _spy_provider(llm, captured):
         captured.update(call_params)
 
         class R:
-            content = []
+            # A non-empty answer: an empty completion is (correctly) a retryable error.
+            content = [SimpleNamespace(type="text", text="ok")]
             model = "m"
             stop_reason = "end_turn"
 

@@ -10,6 +10,8 @@ import json
 import sys
 import types
 
+import importlib.util
+
 import pytest
 
 from abstractcore.media.delivery import (
@@ -18,6 +20,12 @@ from abstractcore.media.delivery import (
     MediaReport,
     attach_media_report,
     media_delivery_verdict,
+)
+
+
+_requires_mlx_stack = pytest.mark.skipif(
+    not all(importlib.util.find_spec(m) for m in ("mlx", "mlx_lm", "mlx_vlm")),
+    reason="requires the optional MLX stack (pip install \"abstractcore[mlx]\")",
 )
 
 
@@ -290,6 +298,7 @@ def test_side_channel_classification_is_explicit():
     assert not set(DROPPABLE_SIDE_CHANNELS) & set(REQUIRED_SIDE_CHANNELS)
 
 
+@_requires_mlx_stack
 def test_deepstack_layers_always_restores_the_model():
     """The wrappers hold ONE request's visual features. If they outlived the
     request, a later prompt would inherit a previous image's detail."""
@@ -365,6 +374,7 @@ def _probe_addon(vlm_embed_factory):
     return addon, _Tok(), _TextModel()
 
 
+@_requires_mlx_stack
 def test_uniform_rescale_is_corrected_not_refused():
     """Gemma's encoder pre-multiplies by embed_scale while the mlx-lm decoder
     re-applies the same scale unconditionally, so embeddings arrive scaled twice
@@ -379,6 +389,7 @@ def test_uniform_rescale_is_corrected_not_refused():
     assert factor == pytest.approx(scale, rel=1e-4)
 
 
+@_requires_mlx_stack
 def test_non_scalar_disagreement_is_refused():
     """A disagreement no single factor can reconcile has no correction, so the
     lane must refuse rather than feed the decoder out-of-distribution vectors."""
@@ -399,6 +410,7 @@ def test_non_scalar_disagreement_is_refused():
     assert excinfo.value.reason == REASON_CONVENTION_MISMATCH
 
 
+@_requires_mlx_stack
 def test_agreeing_family_needs_no_correction():
     import mlx.core as mx
 
@@ -452,6 +464,7 @@ def test_error_response_still_reports_drops():
     assert out.metadata[MEDIA_DROPPED_KEY] == ["vision_encode_failed"]
 
 
+@_requires_mlx_stack
 def test_unexpanded_placeholder_is_refused(monkeypatch):
     """If the processor did not expand the placeholder, the model would answer
     from text while the lane claimed sight. Guarded at the encoder, before the
@@ -605,7 +618,10 @@ def test_streamed_error_chunk_does_not_claim_delivery():
 
 
 def _extras():
-    import tomllib
+    try:
+        import tomllib
+    except ModuleNotFoundError:  # Python < 3.11: the `test` extra installs tomli
+        import tomli as tomllib
     from pathlib import Path as _P
 
     return tomllib.loads(_P("pyproject.toml").read_text())["project"][
@@ -648,17 +664,19 @@ def test_the_apple_install_path_carries_vision():
 
 
 def test_mlx_floors_are_high_enough_for_the_vision_stack():
-    """mlx-vlm 0.6.3 needs mlx>=0.31.2 / mlx-lm>=0.31.3. Against mlx 0.31.1 it
-    imports and then dies at `mx.new_thread_local_stream` -- which reaches the
-    user as "vision is broken" with no mention of a version. Stating the floor is
-    what turns that into a resolver error at install time."""
+    """Native Qwen4 target/MTP/PLE APIs require the verified 0.7.1 VLM stack.
+
+    State compatible MLX floors so unsupported runtimes fail resolution rather
+    than silently shipping a provider without its native model or image lane.
+    """
     for extra in ("mlx", "apple", "all", "all-apple", "full-dev"):
         deps = {
             d.replace(" ", "").split(">=")[0]: d.replace(" ", "")
             for d in _extras()[extra]
         }
-        assert ">=0.31.2" in deps["mlx"], f"{extra}: {deps['mlx']}"
+        assert ">=0.32.2" in deps["mlx"], f"{extra}: {deps['mlx']}"
         assert ">=0.31.3" in deps["mlx-lm"], f"{extra}: {deps['mlx-lm']}"
+        assert ">=0.7.1" in deps["mlx-vlm"], f"{extra}: {deps['mlx-vlm']}"
 
 
 def test_mlx_vision_extra_still_resolves_for_existing_callers():

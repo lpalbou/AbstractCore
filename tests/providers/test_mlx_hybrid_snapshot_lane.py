@@ -13,10 +13,18 @@ scripts/verify_prompt_cache_families.py and the 2026-07-15 parity report.
 
 from typing import List
 
+import importlib.util
+
 import pytest
 
 from abstractcore.providers.base import PromptCacheStore
 from abstractcore.providers.mlx_provider import MLXProvider
+
+
+_requires_mlx_stack = pytest.mark.skipif(
+    not all(importlib.util.find_spec(m) for m in ("mlx", "mlx_lm", "mlx_vlm")),
+    reason="requires the optional MLX stack (pip install \"abstractcore[mlx]\")",
+)
 
 
 class _FakeLayer:
@@ -292,6 +300,7 @@ def _turns(prefix: str, n: int, *, ephemeral: bool = True) -> List[str]:
     return out
 
 
+@_requires_mlx_stack
 def test_forked_bloc_session_does_not_rebuild_on_turn_two():
     """THE 2026-08-03 REGRESSION PIN.
 
@@ -322,6 +331,7 @@ def test_forked_bloc_session_does_not_rebuild_on_turn_two():
     assert all(t["cached_tokens"] > 0 for t in tel)
 
 
+@_requires_mlx_stack
 def test_forked_bloc_session_turn_one_leaves_a_restorable_snapshot():
     """The precise mechanism: turn 1 must WRITE a snapshot, and that snapshot must
     stop before the per-call ephemeral tail. A boundary that includes the tail is
@@ -340,6 +350,7 @@ def test_forked_bloc_session_turn_one_leaves_a_restorable_snapshot():
     assert p.tokenizer.encode(turn2)[: len(snap["ids"])] == snap["ids"]  # restorable
 
 
+@_requires_mlx_stack
 def test_untrimmable_arch_takes_the_snapshot_lane_even_when_no_trim_is_needed():
     """The gate itself: an untrimmable cache must route on the ARCHITECTURE, not on
     the fill state. `trim_needed == 0` must not be read as 'the trim lane works
@@ -358,6 +369,7 @@ def test_untrimmable_arch_takes_the_snapshot_lane_even_when_no_trim_is_needed():
     assert p._get_hybrid_snapshot("k") is not None
 
 
+@_requires_mlx_stack
 def test_append_only_session_keeps_the_full_boundary():
     """Guard against over-correction. With no ephemeral tail the previous prompt IS
     a true prefix of this one, so nothing is volatile and the boundary must NOT be
@@ -486,6 +498,7 @@ def test_generation_prompt_boundary_is_none_when_the_prompt_has_no_generation_pr
     assert p._generation_prompt_boundary(body, p.tokenizer.encode(body)) is None
 
 
+@_requires_mlx_stack
 def test_fresh_key_turn_one_snapshot_excludes_the_generation_scaffolding():
     """THE 2026-08-03 HARDWARE FINDING (agent 4, Qwen3.5-4B-MLX-4bit, 10k loop):
     turn 1 `rebuilt`, **turn 2 `rebuilt` again** (a full 10,118-token prefill),
@@ -535,6 +548,7 @@ def test_fresh_key_turn_one_snapshot_excludes_the_generation_scaffolding():
     assert tel2["cached_tokens"] == len(snap["ids"]) > 0
 
 
+@_requires_mlx_stack
 def test_fresh_key_session_rebuilds_only_on_turn_one():
     """End to end on the agent-loop shape agent 4 ran: fresh key, no bloc fork,
     monotonically growing transcript, generation scaffolding on every call. Turn 1
@@ -587,6 +601,7 @@ def _artifact_turns(prefix: str, n: int) -> List[str]:
     return out
 
 
+@_requires_mlx_stack
 def test_session_forked_from_an_artifact_bloc_still_reuses():
     """`prompt_cache_fork` copies the source meta wholesale, so a session forked
     from a durable bloc KV artifact inherited `loaded_from`/`binding_id`/

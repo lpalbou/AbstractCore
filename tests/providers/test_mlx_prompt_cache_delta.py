@@ -22,10 +22,18 @@ semantics.
 
 from typing import List, Optional
 
+import importlib.util
+
 import pytest
 
 from abstractcore.providers.base import PromptCacheStore
 from abstractcore.providers.mlx_provider import MLXProvider
+
+
+_requires_mlx_stack = pytest.mark.skipif(
+    not all(importlib.util.find_spec(m) for m in ("mlx", "mlx_lm", "mlx_vlm")),
+    reason="requires the optional MLX stack (pip install \"abstractcore[mlx]\")",
+)
 
 
 class _FakeLayer:
@@ -635,6 +643,7 @@ def test_append_record_meta_chains_module_records():
     assert p._prompt_cache_append_record_meta(meta1) is None
 
 
+@_requires_mlx_stack
 def test_real_trim_helper_treats_partial_trim_as_failure(monkeypatch):
     """The real _trim_prompt_cache_tokens (not the test fake): mlx_lm returns
     the count actually trimmed; a short count must read as failure or the

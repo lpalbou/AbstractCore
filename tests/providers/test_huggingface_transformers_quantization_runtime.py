@@ -1,7 +1,15 @@
+import importlib.util
+
 import pytest
 
 import abstractcore.providers.huggingface_provider as hf_provider
 from abstractcore.providers.huggingface_provider import HuggingFaceProvider
+
+
+_requires_transformers = pytest.mark.skipif(
+    importlib.util.find_spec("transformers") is None,
+    reason="requires the optional transformers runtime (pip install \"abstractcore[huggingface]\")",
+)
 
 
 def _provider(model: str = "example/model") -> HuggingFaceProvider:
@@ -128,6 +136,7 @@ def test_legacy_4bit_and_8bit_are_mutually_exclusive():
     assert "mutually exclusive" in str(exc.value)
 
 
+@_requires_transformers
 def test_legacy_flags_require_bitsandbytes(monkeypatch):
     monkeypatch.setattr(hf_provider, "_module_available", lambda name: False)
     with pytest.raises(ImportError) as exc:

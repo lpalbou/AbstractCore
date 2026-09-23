@@ -24,6 +24,7 @@ from model names (see the `speculation` blocks in `model_capabilities.json`):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import lru_cache
 from typing import Any, Dict, Mapping, Optional
 
 # v1 deliberately ships two modes. `draft_model` (a separate small model drafting
@@ -157,22 +158,71 @@ def normalize_speculation_request(value: Any) -> Optional[SpeculationRequest]:
 
     n = value.get("num_draft_tokens")
     if n is not None:
-        try:
-            n = int(n)
-        except (TypeError, ValueError):
+        if isinstance(n, bool) or not (
+            isinstance(n, int) or (isinstance(n, str) and n.strip().isdigit())
+        ):
             raise ValueError(f"num_draft_tokens must be an int, got {n!r}")
+        n = int(n)
         if n < 1:
             raise ValueError(f"num_draft_tokens must be >= 1, got {n}")
 
     drafter = value.get("drafter")
-    if drafter is not None and not str(drafter).strip():
+    if drafter is not None and (not isinstance(drafter, str) or not drafter.strip()):
         raise ValueError("speculation.drafter must be a non-empty string when given")
+
+    required = value.get("require_acceleration", False)
+    if not isinstance(required, bool):
+        raise ValueError("speculation.require_acceleration must be a bool")
 
     return SpeculationRequest(
         mode=mode,
         drafter=str(drafter).strip() if drafter else None,
         num_draft_tokens=n,
-        require_acceleration=bool(value.get("require_acceleration", False)),
+        require_acceleration=required,
+    )
+
+
+def normalize_speculation_value(value: Any) -> Any:
+    """Validate a JSON control without filling omitted, inheritable fields.
+
+    Shared by configuration, Runtime and HTTP adapters. None means inherit;
+    False means off. Never use truthiness when transporting this value.
+    """
+    request = normalize_speculation_request(value)
+    if request is None or isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return False if not request.enabled else {"mode": request.mode}
+    out = dict(value)
+    if "mode" in out:
+        out["mode"] = request.mode
+    if "num_draft_tokens" in out:
+        out["num_draft_tokens"] = request.num_draft_tokens
+    if "drafter" in out:
+        out["drafter"] = request.drafter
+    return out
+
+
+def resolve_speculation_request(
+    default: Optional[SpeculationRequest], override: Any
+) -> Optional[SpeculationRequest]:
+    """Resolve per-call controls without mutating provider-lifetime defaults.
+
+    Omitted fields inherit the loaded session's defaults. Explicit off always
+    wins. This is backend-neutral: runtimes translate the resulting draft-token
+    count to their own verifier width (which may include a seed/bonus token).
+    """
+    request = normalize_speculation_request(override)
+    if request is None:
+        return default
+    if not request.enabled or default is None:
+        return request
+    explicit_required = isinstance(override, Mapping) and "require_acceleration" in override
+    return SpeculationRequest(
+        mode=request.mode,
+        drafter=request.drafter or default.drafter,
+        num_draft_tokens=request.num_draft_tokens or default.num_draft_tokens,
+        require_acceleration=(request.require_acceleration if explicit_required else default.require_acceleration),
     )
 
 
@@ -197,6 +247,186 @@ def capability_speculation(
     out = dict(block)
     out.setdefault("mtp_layers", spec.get("mtp_layers"))
     return out
+
+
+def configured_speculation_default(*, config_file: Any = None, capability_defaults: Any = None) -> Any:
+    """Read the current Core-owned policy, without creating config or loading weights.
+
+    Key the tiny read cache by the file stamp: a console change takes effect on
+    the next request, without replacing a shared provider or holding GPU locks.
+    """
+    from ..config.manager import resolve_config_file
+    if capability_defaults is not None:
+        from ..config.capability_defaults import capability_default_speculation
+        return capability_default_speculation(capability_defaults)
+    path = resolve_config_file(config_file=config_file)
+    try:
+        stamp = path.stat()
+    except FileNotFoundError:
+        from ..config.capability_defaults import RECOMMENDED_CAPABILITY_DEFAULT_ROUTES
+        return normalize_speculation_value(RECOMMENDED_CAPABILITY_DEFAULT_ROUTES["input.text"].options.get("speculation"))
+    return normalize_speculation_value(_read_configured_speculation(str(path), stamp.st_mtime_ns, stamp.st_ctime_ns, stamp.st_size))
+
+
+@lru_cache(maxsize=16)
+def _read_configured_speculation(path: str, mtime: int, ctime: int, size: int) -> Any:
+    import json
+    from pathlib import Path
+    from ..config.capability_defaults import capability_default_speculation
+    document = json.loads(Path(path).read_text(encoding="utf-8"))
+    return capability_default_speculation(document.get("capability_defaults", {}).get("routes", {}))
+
+
+def _local_model_directory(model: str):
+    from pathlib import Path
+    from ..utils.model_cache import resolve_hf_snapshot_dir, resolve_lmstudio_model_dir
+    path = Path(model).expanduser()
+    if path.is_dir():
+        return path
+    return resolve_hf_snapshot_dir(model) or resolve_lmstudio_model_dir(model)
+
+
+def mlx_speculation_artifact(model: str) -> Optional[Dict[str, Any]]:
+    """Registry evidence using an exact HF cache repo identity, never a midfix guess."""
+    from pathlib import Path
+    from ..architectures.detection import get_model_capabilities
+    path = Path(model).expanduser()
+    identity = model
+    if path.is_dir() and path.parent.name == "snapshots" and path.parent.parent.name.startswith("models--"):
+        parts = path.parent.parent.name.removeprefix("models--").split("--")
+        if len(parts) == 2 and all(parts):
+            identity = "/".join(parts)
+    return capability_speculation(get_model_capabilities(identity), "mlx")
+
+
+def describe_speculation_capabilities(model: str, provider: str, instance: Any = None) -> Dict[str, Any]:
+    """Describe artifact + adapter + instance facts; never download or load a model.
+
+    Unknown readiness (None) is different from an unsupported adapter (False).
+    Static registry evidence is not an assertion that a loaded head exists.
+    """
+    import importlib.util
+    from ..architectures.detection import get_model_capabilities
+    caps = getattr(instance, "model_capabilities", None) if instance is not None else None
+    caps = caps if isinstance(caps, Mapping) else get_model_capabilities(model)
+    block = (capability_speculation(caps, "mlx") or mlx_speculation_artifact(model)) if provider == "mlx" else None
+    active = instance is not None and getattr(instance, "_mtp_active", False) is True
+    supported = provider == "mlx" and bool(block or active)
+    reason = None if supported else "native_mtp_backend_unavailable" if provider != "mlx" else "mtp_artifact_unverified"
+    head_present = None
+    local = _local_model_directory(model) if provider == "mlx" else None
+    if local is not None:
+        from .mlx_qwen4 import is_qwen4_checkpoint, embedded_mtp_keys
+        if is_qwen4_checkpoint(str(local)):
+            head_present = bool(embedded_mtp_keys(str(local)))
+            supported = head_present
+            reason = None if supported else "embedded_mtp_weights_missing"
+        elif block and block.get("drafter"):
+            head = _local_model_directory(str(block["drafter"]))
+            head_present = bool(head and any(head.glob("*.safetensors")))
+    if supported and importlib.util.find_spec("mlx_vlm") is None:
+        supported, reason = False, "mlx_vlm_missing"
+    ready = bool(active) if instance is not None else None
+    if not supported:
+        ready = False
+    elif not active:
+        reason = "mtp_head_not_cached" if head_present is False else "model_not_loaded" if instance is None else "speculation_is_load_time"
+    default = configured_speculation_default(
+        config_file=getattr(instance, "_abstractcore_config_file", None),
+        capability_defaults=getattr(instance, "_abstractcore_capability_defaults", None),
+    )
+    effective_default = normalize_speculation_value(default) if supported else False
+    if instance is not None and getattr(instance, "_speculation_inherits_config", True) is False:
+        request = getattr(instance, "_speculation_request", None)
+        if request is not None:
+            effective_default = False if not request.enabled else {
+                "mode": request.mode,
+                "num_draft_tokens": request.num_draft_tokens or getattr(instance, "_mtp_block_size", None),
+                "require_acceleration": request.require_acceleration,
+            }
+    return {
+        "supported": supported,
+        "ready": ready,
+        "reason": reason,
+        # Choices implemented by the native MLX verifier, not a universal model
+        # vocabulary. Other adapters must declare their own choices when added.
+        "supported_depths": [2, 3, 4, 5] if supported else [],
+        "default": normalize_speculation_value(default),
+        "effective_default": effective_default,
+        "requires_reload": (not active) if supported and instance is not None else None,
+        "head_present": True if active else head_present,
+    }
+
+
+def get_execution_capabilities(model_name: str, *, provider: str, instance: Any = None) -> Dict[str, Any]:
+    """Public library/HTTP discovery contract for one selected execution route."""
+    concurrent = None
+    concurrency_reason = None
+    if instance is not None:
+        try:
+            probe = getattr(instance, "supports_concurrent_generation", None)
+            answer = probe() if callable(probe) else False
+            concurrent = answer if isinstance(answer, bool) else None
+            if concurrent is None:
+                concurrency_reason = "invalid_capability_probe"
+        except Exception:
+            concurrency_reason = "capability_probe_failed"
+    return {
+        "version": 1,
+        "provider": provider,
+        "model": model_name,
+        "speculation": describe_speculation_capabilities(model_name, provider, instance),
+        "concurrency": {"supported": concurrent, "source": "loaded_instance" if instance is not None else "unknown", "reason": concurrency_reason},
+    }
+
+
+def prepare_provider_speculation(instance: Any, kwargs: Dict[str, Any]) -> Optional[SpeculationOutcome]:
+    """Validate every provider's explicit request; unsupported must not evaporate.
+
+    MLX negotiates its head and per-call restrictions in its adapter. Other
+    providers currently have no native-MTP execution adapter; off is always
+    safe, while a best-effort refusal is attached to the individual response.
+    """
+    value = kwargs.get("speculation")
+    if value is None:
+        value = getattr(instance, "_speculation_constructor_default", None)
+    request = normalize_speculation_request(value)
+    if request is None:
+        return None
+    if getattr(instance, "provider", None) == "mlx":
+        return None
+    kwargs.pop("speculation", None)
+    if not request.enabled:
+        return SpeculationOutcome(reason="disabled_for_this_call")
+    return unavailable(
+        request, "native_mtp_backend_unavailable",
+        f"The {getattr(instance, 'provider', None) or type(instance).__name__} provider has no native MTP adapter",
+        logger=getattr(instance, "logger", None),
+    )
+
+
+def attach_speculation_outcome(response: Any, outcome: Optional[SpeculationOutcome]) -> Any:
+    if outcome is not None and response is not None and hasattr(response, "metadata"):
+        response.metadata = {**(response.metadata or {}), "speculation": outcome.to_metadata()}
+    return response
+
+
+def speculation_outcome_stream(source: Any, outcome: Optional[SpeculationOutcome]):
+    try:
+        for chunk in source:
+            yield attach_speculation_outcome(chunk, outcome)
+    finally:
+        if hasattr(source, "close"):
+            source.close()
+
+
+async def speculation_outcome_async_stream(source: Any, outcome: Optional[SpeculationOutcome]):
+    try:
+        async for chunk in source:
+            yield attach_speculation_outcome(chunk, outcome)
+    finally:
+        if hasattr(source, "aclose"):
+            await source.aclose()
 
 
 def unavailable(

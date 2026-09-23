@@ -1700,6 +1700,18 @@ def _handle_config_set_default(args) -> int:
         # replaces them. A flag the operator did not type must not erase a
         # setting made from the AbstractGateway console or an earlier command.
         options = _parse_capability_options(raw_options) if raw_options else None
+        speculation = getattr(args, "speculation", None)
+        if speculation is not None:
+            from ..providers.speculation import normalize_speculation_value
+            options = dict(options if options is not None else manager.stored_capability_default(args.route).get("options", {}))
+            if speculation == "inherit":
+                options.pop("speculation", None)
+            else:
+                value = False if speculation == "off" else {
+                    "mode": "native_mtp", "num_draft_tokens": int(speculation),
+                    "require_acceleration": False,
+                }
+                options["speculation"] = normalize_speculation_value(value)
     except ValueError as e:
         print(f"❌ Error: {e}")
         return 1
@@ -2043,6 +2055,10 @@ def _handle_config_subcommand(argv: List[str]) -> int:
             "stored options; passing --option replaces the whole set; passing --option \"\" "
             "(a single empty value) clears every option on the route."
         ),
+    )
+    set_default.add_argument(
+        "--speculation", choices=["inherit", "off", "2", "3", "4", "5"], default=None,
+        help="Default MTP policy for compatible models; preserves other options and never downloads a head",
     )
     set_default.set_defaults(func=_handle_config_set_default)
 

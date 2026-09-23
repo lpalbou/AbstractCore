@@ -3,6 +3,7 @@ Base provider with integrated telemetry, events, and exception handling.
 """
 
 import time
+import copy
 import uuid
 import asyncio
 import warnings
@@ -664,6 +665,26 @@ class PromptCacheOperationError(PromptCacheError):
         )
 
 
+
+def _release_cancelled_frames(error: BaseException) -> None:
+    """For a host-cancelled call only: clear the locals of the FINISHED frames
+    the exception's traceback pins (`traceback.clear_frames` skips frames that
+    are still executing). Diagnostics lose nothing that matters: a cancel is a
+    host decision, not a fault to debug."""
+    if type(error).__name__ != "GenerationCancelledError":
+        return
+    import traceback as _tb
+
+    seen = set()
+    err: Optional[BaseException] = error
+    while err is not None and id(err) not in seen:
+        seen.add(id(err))
+        try:
+            _tb.clear_frames(err.__traceback__)
+        except Exception:  # noqa: BLE001
+            pass
+        err = err.__cause__ or err.__context__
+
 class BaseProvider(AbstractCoreInterface, ABC):
     """
     Base provider class with integrated telemetry and events.
@@ -673,6 +694,10 @@ class BaseProvider(AbstractCoreInterface, ABC):
     def __init__(self, model: str, **kwargs):
         AbstractCoreInterface.__init__(self, model, **kwargs)
         self.provider = None
+        from .speculation import normalize_speculation_value
+        self._speculation_constructor_default = normalize_speculation_value(kwargs.get("speculation"))
+        self._abstractcore_config_file = kwargs.get("_abstractcore_config_file")
+        self._abstractcore_capability_defaults = copy.deepcopy(kwargs.get("_abstractcore_capability_defaults"))
         self._explicit_generation_params = frozenset(
             key
             for key, value in kwargs.items()
@@ -942,6 +967,9 @@ class BaseProvider(AbstractCoreInterface, ABC):
             # Only log debug info for model not found errors to avoid duplication
             if isinstance(error, ModelNotFoundError):
                 self.logger.debug(f"Model not found: {self.model}")
+            elif getattr(error, "request_local", False) is True and error.__class__.__name__ == "GenerationCancelledError":
+                # A host Stop is not a generation failure (generation_cancel.py).
+                self.logger.info(f"Generation cancelled by the host for {self.model}: {error} (latency: {latency_ms:.2f}ms)")
             else:
                 self.logger.error(
                     f"Generation failed for {self.model}: {error} (latency: {latency_ms:.2f}ms)"
@@ -1235,6 +1263,24 @@ class BaseProvider(AbstractCoreInterface, ABC):
         from .speculation import SpeculationUnavailableError
 
         if isinstance(error, SpeculationUnavailableError):
+            return error
+
+        # Keep native admission/cancellation identity through the public API.
+        # This module imports no MLX tensors or optional Apple dependencies.
+        # The runtime distinguishes request-local rejection from backend faults;
+        # string-based timeout wrapping would erase that distinction and retry
+        # an already-cancelled or overloaded request against a healthy model.
+        from .mlx_runtime import NativeRuntimeError
+
+        if isinstance(error, NativeRuntimeError):
+            return error
+
+        # A host cancel is a host decision (generation_cancel.py): keep its type so
+        # the retry layer sees `request_local` and the host sees a cancel, not a
+        # provider failure to be retried or reported as an outage.
+        from ..exceptions import GenerationCancelledError
+
+        if isinstance(error, GenerationCancelledError):
             return error
 
         # Central timeout normalization for all providers (httpx/requests/SDKs).
@@ -3430,6 +3476,8 @@ class BaseProvider(AbstractCoreInterface, ABC):
             glyph_compression: Glyph compression preference ("auto", "always", "never")
             thinking: Unified reasoning/thinking control (auto/on/off/none or low/medium/high/xhigh when supported)
         """
+        from .speculation import prepare_provider_speculation, attach_speculation_outcome, speculation_outcome_stream
+        speculation_outcome = prepare_provider_speculation(self, kwargs)
         system_prompt = self._normalize_system_prompt_alias(system_prompt, kwargs, stacklevel=4)
 
         request_payload = kwargs.pop("request", None)
@@ -4871,6 +4919,19 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 )
 
             except Exception as e:
+                # A call whose host cancel_event is set failed BECAUSE of the
+                # cancel (an HTTP lane's severed socket, an in-process stop):
+                # report the typed stop, never a transport error to retry.
+                if cancel_event is not None and cancel_event.is_set():
+                    from ..exceptions import GenerationCancelledError
+
+                    if isinstance(e, GenerationCancelledError):
+                        raise
+                    raise cancelled_error(
+                        provider=getattr(self, "provider", None) or self.__class__.__name__,
+                        model=self.model,
+                        where="while waiting for the response",
+                    ) from e
                 # Convert to custom exception and re-raise for retry handling
                 custom_error = self._handle_api_error(e)
                 raise custom_error
@@ -4893,7 +4954,43 @@ class BaseProvider(AbstractCoreInterface, ABC):
         # Execute with retry. Hosts may pass cancel_event= (threading.Event) to make
         # backoff waits cancellable (C3: a cancelled run must not park a worker for a
         # full backoff); the kwarg is consumed here and never reaches provider payloads.
-        cancel_event = kwargs.pop("cancel_event", None)
+        #
+        # 2026-09-23 (Stop must stop the model): the same event now also stops the
+        # generation ITSELF. It is forwarded under `CANCEL_KWARG` to providers that
+        # declare `supports_generation_cancel()` (MLX: stops within one token), the
+        # stream loop below checks it between chunks for every provider, and an event
+        # already set before the call raises without contacting the model. See
+        # `providers/generation_cancel.py`.
+        from .generation_cancel import CANCEL_KWARG, as_cancel_event, cancelled_error
+
+        cancel_event = as_cancel_event(kwargs.pop("cancel_event", None))
+        if cancel_event is None and self._PRIVATE_CANCEL_EVENT_FOR_EJECT and self.supports_generation_cancel():
+            # Eject safety (generation_cancel.InflightGenerations): an in-process
+            # provider whose unload could free memory under a running decode
+            # gives every call a private event, so `unload_model` can stop it.
+            cancel_event = threading.Event()
+        if cancel_event is not None:
+            if cancel_event.is_set():
+                raise cancelled_error(
+                    provider=getattr(self, "provider", None) or self.__class__.__name__,
+                    model=self.model,
+                    where="before the request was sent",
+                )
+            if self.supports_generation_cancel():
+                kwargs[CANCEL_KWARG] = cancel_event
+
+        # TEXT phase feedback (prefill vs generation). Same discipline as
+        # cancel_event: a host callback is consumed HERE, never forwarded into a
+        # provider request payload. The media lane above already routed its own
+        # copy into the output spec and returned, so this only ever sees text
+        # calls. A provider that cannot observe the prefill/decode boundary
+        # honestly gets nothing — no synthetic phases, and no unknown callable
+        # reaching a strict SDK's kwargs.
+        from .generation_progress import PROGRESS_KWARG, pop_text_progress_callback
+
+        text_progress_callback = pop_text_progress_callback(kwargs)
+        if text_progress_callback is not None and self.supports_text_progress_events():
+            kwargs[PROGRESS_KWARG] = text_progress_callback
         if self._endpoint_damping_requested and self.retry_manager.damping_domain is None:
             try:
                 from ..core.endpoint_damping import get_endpoint_damping_registry
@@ -4910,17 +5007,24 @@ class BaseProvider(AbstractCoreInterface, ABC):
                     "continuing with per-instance retry state"
                 )
                 self._endpoint_damping_requested = False
+        # In-flight registry (eject safety): a non-streaming call is active from
+        # here to the `finally` below; a stream registers itself when its body
+        # starts running and deregisters when it ends (an unstarted stream runs
+        # nothing an unload could break).
+        inflight_registry = self._inflight_generations()
+        inflight_call = None if stream else inflight_registry.begin(cancel_event)
         try:
             response, start_time, start_perf = self.retry_manager.execute_with_retry(
                 _execute_generation,
                 provider_key=self.provider_key,
-                cancel_event=cancel_event if isinstance(cancel_event, threading.Event) else None,
+                cancel_event=cancel_event,
             )
 
             # Handle streaming with unified processor
             if stream:
 
                 def unified_stream():
+                    stream_call = inflight_registry.begin(cancel_event)
                     try:
                         # Import and create unified stream processor
                         from .streaming import UnifiedStreamProcessor
@@ -4974,6 +5078,24 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         media_meta: Dict[str, Any] = {}
                         reasoning_delta_parts: List[str] = []
                         for processed_chunk in processor.process_stream(response, converted_tools):
+                            # Host cancel, checked per chunk for EVERY provider: close
+                            # the upstream stream (an HTTP provider's response) so the
+                            # server stops decoding for us, then say so with a typed
+                            # error — a cancelled answer is never returned as complete.
+                            if cancel_event is not None and cancel_event.is_set():
+                                _close = getattr(response, "close", None)
+                                if callable(_close):
+                                    try:
+                                        _close()
+                                    except Exception as close_err:  # noqa: BLE001
+                                        self.logger.warning(
+                                            f"cancelled stream: closing the upstream stream raised {close_err!r}"
+                                        )
+                                raise cancelled_error(
+                                    provider=getattr(self, "provider", None) or self.__class__.__name__,
+                                    model=self.model,
+                                    where="while streaming",
+                                )
                             last_chunk = processed_chunk
                             if isinstance(processed_chunk.usage, dict) and processed_chunk.usage:
                                 last_seen_usage = processed_chunk.usage
@@ -5116,13 +5238,32 @@ class BaseProvider(AbstractCoreInterface, ABC):
                         self._track_generation(prompt, None, start_time, success=True, stream=True)
 
                     except Exception as e:
+                        # A stream that failed because the host cancelled (the
+                        # severed socket of an HTTP lane) is a typed stop.
+                        if cancel_event is not None and cancel_event.is_set():
+                            from ..exceptions import GenerationCancelledError
+
+                            if not isinstance(e, GenerationCancelledError):
+                                stop = cancelled_error(
+                                    provider=getattr(self, "provider", None) or self.__class__.__name__,
+                                    model=self.model,
+                                    where="while streaming",
+                                )
+                                self._track_generation(
+                                    prompt, None, start_time, success=False, error=stop, stream=True
+                                )
+                                _release_cancelled_frames(e)
+                                raise stop from e
                         # Track error
                         self._track_generation(
                             prompt, None, start_time, success=False, error=e, stream=True
                         )
+                        _release_cancelled_frames(e)
                         raise
+                    finally:
+                        inflight_registry.end(stream_call)
 
-                return unified_stream()
+                return speculation_outcome_stream(unified_stream(), speculation_outcome)
             else:
                 # Non-streaming: normalize tool calls into structured form.
                 if response and converted_tools:
@@ -5206,10 +5347,17 @@ class BaseProvider(AbstractCoreInterface, ABC):
                 # returning a silently incomplete result.
                 self._annotate_output_truncation(response)
 
+                attach_speculation_outcome(response, speculation_outcome)
                 self._track_generation(prompt, response, start_time, success=True, stream=False)
                 return response
 
         except Exception as e:
+            # A host cancel: drop the locals of the finished frames its traceback
+            # pins (the aborted decode's KV cache, logits, input tensors), so an
+            # eject waiting on this call frees them now, not when the caller
+            # eventually discards the exception (measured: 1.1 GB of MPS pool
+            # retained across an in-flight eject before this).
+            _release_cancelled_frames(e)
             # This exception comes from the retry manager after all attempts failed
             # Track final error (start_time may not be available, use current time)
             current_time = time.time()
@@ -5234,6 +5382,58 @@ class BaseProvider(AbstractCoreInterface, ABC):
 
             # Re-raise the exception
             raise e
+        finally:
+            inflight_registry.end(inflight_call)
+
+    # --- In-flight generations & eject safety (generation_cancel.py) --------
+    #: In-process providers whose unload could free memory under a running
+    #: decode set this True: every call then carries a (private) cancel event
+    #: so `cancel_inflight_generations` can stop it before an unload.
+    _PRIVATE_CANCEL_EVENT_FOR_EJECT = False
+
+    def _inflight_generations(self):
+        """This instance's registry of in-flight (cancel-evented) generations."""
+        registry = self.__dict__.get("_inflight_generation_registry")
+        if registry is None:
+            from .generation_cancel import InflightGenerations
+
+            registry = self.__dict__.setdefault("_inflight_generation_registry", InflightGenerations())
+        return registry
+
+    def cancel_inflight_generations(
+        self, *, reason: str = "model eject", drain_timeout_s: Optional[float] = None
+    ) -> Dict[str, Any]:
+        """Cancel every generation running on this instance and wait for them.
+
+        Explicit bounded wait (`drain_timeout_s`, default
+        `generation_cancel.DEFAULT_EJECT_DRAIN_TIMEOUT_S`); the outcome is
+        logged and returned (`drained` False = something is still running)."""
+        return self._inflight_generations().cancel_all(
+            reason=reason,
+            drain_timeout_s=drain_timeout_s,
+            provider=getattr(self, "provider", None) or self.__class__.__name__,
+            model=getattr(self, "model", None),
+        )
+
+    def _stop_inflight_before_unload(self, model_name: Any = None, *, drain_timeout_s: Optional[float] = None,
+                                     refuse_if_running: bool = True) -> Dict[str, Any]:
+        """The first step of every `unload_model`: stop what is running.
+
+        With `refuse_if_running` (in-process lanes) a call that did not stop by
+        the deadline makes the unload RAISE instead of freeing memory under it."""
+        outcome = self.cancel_inflight_generations(
+            reason=f"unload of {model_name or getattr(self, 'model', None)!s}",
+            drain_timeout_s=drain_timeout_s,
+        )
+        self._last_unload_inflight = dict(outcome)
+        if refuse_if_running and not outcome.get("drained", True):
+            raise ProviderAPIError(
+                f"Refusing to unload {getattr(self, 'model', None)!s}: {outcome.get('still_running')} "
+                f"generation(s) still running {outcome.get('waited_s')}s after being cancelled "
+                f"(drain_timeout_s={outcome.get('drain_timeout_s')}). Nothing was freed; retry the "
+                "unload once they end."
+            )
+        return outcome
 
     def _structured_output_carries_media(self) -> bool:
         """Can this provider's structured-output lane transport media to the model?
@@ -5244,6 +5444,30 @@ class BaseProvider(AbstractCoreInterface, ABC):
         re-renders the prompt through a text-only encoder.
         """
         return True
+
+    def supports_text_progress_events(self) -> bool:
+        """Can this provider report the prefill/generation boundary for TEXT calls?
+
+        Default False, and deliberately so: a phase line the UI renders is a
+        claim about what the model is doing right now, and a provider that only
+        learns the answer when the whole response arrives cannot make it. Only
+        override where there is a real per-token / per-snapshot signal (see
+        `abstractcore/providers/generation_progress.py`). When this is False the
+        host's callback is dropped at the boundary and never reaches provider
+        kwargs.
+        """
+        return False
+
+    def supports_generation_cancel(self) -> bool:
+        """Can this provider stop an in-flight generation when the host's event is set?
+
+        Default False: the host's `cancel_event` is then consumed at the boundary
+        (retry backoff + the base stream loop's per-chunk check) and never reaches
+        provider kwargs. Override to True only where `_generate_internal` accepts
+        `CANCEL_KWARG` and stops at a real observable point, raising
+        `GenerationCancelledError` (see `providers/generation_cancel.py`).
+        """
+        return False
 
     def _generate_internal(
         self,
@@ -8875,6 +9099,8 @@ Please provide a structured response."""
         Returns:
             GenerateResponse, AsyncIterator[GenerateResponse] for streaming, or BaseModel for structured output
         """
+        from .speculation import prepare_provider_speculation, attach_speculation_outcome, speculation_outcome_async_stream
+        speculation_outcome = prepare_provider_speculation(self, kwargs)
         system_prompt = self._normalize_system_prompt_alias(system_prompt, kwargs, stacklevel=3)
         thinking = kwargs.get("thinking")
 
@@ -9036,9 +9262,9 @@ Please provide a structured response."""
             # Wrap the async stream so a terminal finish_reason=length chunk is
             # annotated + warned before it reaches the consumer (mirror of the
             # sync unified_stream per-chunk annotation).
-            return self._annotate_async_stream(response)
+            return speculation_outcome_async_stream(self._annotate_async_stream(response), speculation_outcome)
 
-        return response
+        return attach_speculation_outcome(response, speculation_outcome)
 
     async def _annotate_async_stream(
         self, source: "AsyncIterator[GenerateResponse]"

@@ -20,7 +20,7 @@ if TYPE_CHECKING:  # pragma: no cover
 from .openai_compatible_provider import OpenAICompatibleProvider, _TEMPLATE_RENDER_ERROR_RE
 from .base import ThinkingControlHandling
 from ..core.types import GenerateResponse
-from ..exceptions import ProviderAPIError
+from ..exceptions import GenerationCancelledError, ProviderAPIError
 
 
 def _stringified_tool_argument_value(value: Any) -> Any:
@@ -541,6 +541,7 @@ class LMStudioProvider(OpenAICompatibleProvider):
         and may ignore them depending on backend/template.
         """
         _ = stream
+        cancel_event = kwargs.pop("cancel_event", None)
         payload = self._native_rest_build_chat_payload(
             prompt=prompt,
             system_prompt=system_prompt,
@@ -552,7 +553,21 @@ class LMStudioProvider(OpenAICompatibleProvider):
         request_url = f"{self._native_rest_base_url()}/api/v1/chat"
         start = time.time()
         try:
-            resp = httpx.post(request_url, json=payload, timeout=self._timeout)
+            if cancel_event is not None:
+                # Host cancel: own connection under an HttpCancelGuard; a cancel
+                # severs it and LM Studio stops decoding (measured, 0.4.20).
+                guard = self._cancel_guard(cancel_event, request_url)
+                with guard:
+                    with guard.client(timeout=self._timeout) as client:
+                        try:
+                            resp = client.post(request_url, json=payload, extensions=guard.extensions)
+                        except Exception as e:  # noqa: BLE001
+                            cancelled = guard.cancelled_error_from(e)
+                            if cancelled is not None:
+                                raise cancelled from e
+                            raise
+            else:
+                resp = httpx.post(request_url, json=payload, timeout=self._timeout)
             try:
                 resp.raise_for_status()
             except httpx.HTTPStatusError as e:  # pragma: no cover
@@ -570,6 +585,8 @@ class LMStudioProvider(OpenAICompatibleProvider):
 
             gen_time = round((time.time() - start) * 1000, 1)
             data = resp.json()
+        except GenerationCancelledError:
+            raise  # a host cancel is never an API error (and never falls back)
         except Exception as e:  # noqa: BLE001
             raise ProviderAPIError(f"LM Studio native REST API error: {e}") from e
 
@@ -654,6 +671,7 @@ class LMStudioProvider(OpenAICompatibleProvider):
         failures surface to the caller before any chunk is yielded — the routing gate can
         then fall back to the OpenAI-compatible endpoint with an explicit warning.
         """
+        cancel_event = kwargs.pop("cancel_event", None)
         payload = self._native_rest_build_chat_payload(
             prompt=prompt,
             system_prompt=system_prompt,
@@ -663,10 +681,32 @@ class LMStudioProvider(OpenAICompatibleProvider):
         )
         request_url = f"{self._native_rest_base_url()}/api/v1/chat"
 
-        stream_cm = httpx.stream("POST", request_url, json=payload, timeout=self._timeout)
+        # Host cancel: the stream runs on its own connection under an
+        # HttpCancelGuard that lives exactly as long as `_chunks()` below.
+        guard = None
+        guard_client = None
+        if cancel_event is not None:
+            guard = self._cancel_guard(cancel_event, request_url)
+            guard.__enter__()
+            guard_client = guard.client(timeout=self._timeout)
+
+        def _release_guard() -> None:
+            if guard_client is not None:
+                guard_client.close()
+            if guard is not None:
+                guard.__exit__(None, None, None)
+
+        if guard_client is not None:
+            stream_cm = guard_client.stream("POST", request_url, json=payload, extensions=guard.extensions)
+        else:
+            stream_cm = httpx.stream("POST", request_url, json=payload, timeout=self._timeout)
         try:
             resp = stream_cm.__enter__()
         except Exception as e:  # noqa: BLE001
+            _release_guard()
+            cancelled = guard.cancelled_error_from(e) if guard is not None else None
+            if cancelled is not None:
+                raise cancelled from e
             raise ProviderAPIError(f"LM Studio native REST API error: {e}") from e
 
         try:
@@ -684,6 +724,7 @@ class LMStudioProvider(OpenAICompatibleProvider):
                 )
         except BaseException:
             stream_cm.__exit__(None, None, None)
+            _release_guard()
             raise
 
         def _chunks() -> Iterator[GenerateResponse]:
@@ -724,21 +765,35 @@ class LMStudioProvider(OpenAICompatibleProvider):
                             raw_response=result,
                             metadata={"_provider_request": {"url": request_url, "payload": payload}},
                         )
+            except Exception as e:  # noqa: BLE001
+                cancelled = guard.cancelled_error_from(e, where="while streaming") if guard is not None else None
+                if cancelled is not None:
+                    raise cancelled from e
+                raise
             finally:
                 stream_cm.__exit__(None, None, None)
+                _release_guard()
 
         return _chunks()
 
     def unload_model(self, model_name: str) -> None:
-        """Best-effort unload via LM Studio native REST (`POST /api/v1/models/unload`)."""
+        """Best-effort unload via LM Studio native REST (`POST /api/v1/models/unload`).
+
+        Our own in-flight requests are cancelled FIRST: LM Studio answers an
+        unload under a running request with an in-stream "Model unloaded"
+        error, which the retry layer would resample — JIT-reloading the model
+        the operator just ejected."""
+        self._stop_inflight_before_unload(model_name, refuse_if_running=False)
         target = str(model_name or getattr(self, "model", "") or "").strip()
         if target:
             try:
                 self._native_rest_unload_model(target)
             except Exception as e:
                 # Unload must remain best-effort; fall back to closing clients.
+                # WARNING (was debug): the caller's residency re-check reports
+                # the model still loaded, and this line says why.
                 if hasattr(self, "logger"):
-                    self.logger.debug(f"LM Studio native REST unload failed for {target!r}: {e}")
+                    self.logger.warning(f"LM Studio native REST unload failed for {target!r}: {e}")
 
         super().unload_model(model_name)
 
@@ -1056,21 +1111,32 @@ class LMStudioProvider(OpenAICompatibleProvider):
                             stacklevel=3,
                         )
             else:
+                from .generation_cancel import CANCEL_KWARG
+
+                # The host cancel rides the native call explicitly (never the
+                # payload builder's kwargs); the OpenAI-compatible fallback
+                # below still receives it through `kwargs` (CANCEL_KWARG).
+                native_kwargs = {k: v for k, v in kwargs.items() if k != CANCEL_KWARG}
+                native_cancel = kwargs.get(CANCEL_KWARG)
+                if native_cancel is not None:
+                    native_kwargs["cancel_event"] = native_cancel
                 try:
                     if stream:
                         return self._native_rest_chat_stream(
                             prompt=str(prompt or ""),
                             system_prompt=system_prompt,
                             media=media,
-                            **kwargs,
+                            **native_kwargs,
                         )
                     return self._native_rest_chat_generate(
                         prompt=str(prompt or ""),
                         system_prompt=system_prompt,
                         stream=False,
                         media=media,
-                        **kwargs,
+                        **native_kwargs,
                     )
+                except GenerationCancelledError:
+                    raise  # a host cancel must never fall back to a second request
                 except Exception as e:  # noqa: BLE001
                     # Fall back to OpenAI-compatible path if the native REST endpoint is unavailable.
                     kwargs = dict(kwargs)

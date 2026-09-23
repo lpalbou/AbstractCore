@@ -7,6 +7,10 @@ faked HTTP, and the host-level `sweep_loaded_models()` fan-out.
 
 from __future__ import annotations
 
+import importlib.util
+
+import pytest
+
 from typing import Any, Dict, List
 
 import httpx
@@ -19,6 +23,12 @@ from abstractcore.utils.residency import (
     normalize_sweep_model,
     sweep_loaded_models,
     sweep_models_match,
+)
+
+
+_requires_mlx_stack = pytest.mark.skipif(
+    not all(importlib.util.find_spec(m) for m in ("mlx", "mlx_lm", "mlx_vlm")),
+    reason="requires the optional MLX stack (pip install \"abstractcore[mlx]\")",
 )
 
 
@@ -57,6 +67,7 @@ def test_base_list_loaded_models_from_residency_loaded() -> None:
     assert records[0]["loaded"] is True
 
 
+@_requires_mlx_stack
 def test_mlx_list_loaded_models_estimates_weight_bytes() -> None:
     class _FakeArray:
         def __init__(self, nbytes: int) -> None:

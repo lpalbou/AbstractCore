@@ -973,7 +973,11 @@ class UnifiedStreamProcessor:
                 )
 
         except Exception as e:
-            logger.error(f"Error in unified stream processing: {e}")
+            if getattr(e, "request_local", False) is True and type(e).__name__ == "GenerationCancelledError":
+                # A host Stop is not a stream failure (generation_cancel.py).
+                logger.info(f"Unified stream stopped by the host: {e}")
+            else:
+                logger.error(f"Error in unified stream processing: {e}")
             raise
 
     def _initialize_tag_rewriter(self, tool_call_tags):

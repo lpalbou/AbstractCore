@@ -306,7 +306,11 @@ RECOMMENDED_CAPABILITY_DEFAULT_ROUTES: Dict[str, CapabilityRouteDefault] = {
     # stores the bare LM Studio id because that is what the server serves when
     # a single quant is installed; the 4-bit choice is pinned by the download
     # artifact reference below, which is what actually fetches the weights.
-    "input.text": CapabilityRouteDefault(provider="lmstudio", model="qwen/qwen3.5-9b"),
+    "input.text": CapabilityRouteDefault(
+        provider="lmstudio", model="qwen/qwen3.5-9b",
+        options={"speculation": {"mode": "native_mtp", "num_draft_tokens": 2,
+                                 "require_acceleration": False}},
+    ),
     "output.voice": CapabilityRouteDefault(provider="supertonic", model="supertonic-3"),
     "output.image": CapabilityRouteDefault(provider="mlx-gen", model="AbstractFramework/flux.2-klein-4b-8bit"),
 }
@@ -780,6 +784,26 @@ def capability_default_reasoning(routes: Any) -> Optional[str]:
         value = _clean_optional_string(row.get("reasoning"))
         if value:
             return value.lower()
+    return None
+
+
+def capability_default_speculation(routes: Any) -> Any:
+    """Text-route MTP policy; absence inherits, False is an explicit override.
+
+    This is configured intent, not a capability claim. Only the execution host
+    may negotiate it against the selected artifact/backend/loaded instance.
+    """
+    from ..providers.speculation import normalize_speculation_value
+
+    if not isinstance(routes, Mapping):
+        return None
+    for key in TEXT_ROUTE_KEYS:
+        row = routes.get(key)
+        if not isinstance(row, Mapping) or row.get("source") == "not_configured":
+            continue
+        options = row.get("options")
+        if isinstance(options, Mapping) and "speculation" in options:
+            return normalize_speculation_value(options["speculation"])
     return None
 
 

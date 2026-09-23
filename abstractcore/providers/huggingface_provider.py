@@ -66,11 +66,13 @@ from .base import BaseProvider, PromptCacheCapabilities, PromptCacheRenderedFrag
 from ..core.types import GenerateResponse
 from ..core import degeneration as _degeneration
 from ..exceptions import (
+    GenerationCancelledError,
     InvalidRequestError,
     ModelArtifactMismatchError,
     ModelNotFoundError,
     format_model_error,
 )
+from .generation_cancel import CANCEL_KWARG, as_cancel_event, cancelled_error, raise_if_cancelled
 from ..tools import UniversalToolHandler, execute_tools, merge_tools_into_system
 from ..events import EventType
 
@@ -80,6 +82,175 @@ if TYPE_CHECKING:
 
 
 _MPS_GENERATION_LOCK = threading.Lock()
+
+
+# --- Host cancel on the in-process lanes (providers/generation_cancel.py) -----
+# transformers: `generate()` is a closed loop, so a StoppingCriteria is the one
+# per-step hook; it RAISES (never "stops normally") so a cancelled answer can
+# never be returned as a complete one. llama-cpp: `create_chat_completion`
+# takes no stopping criteria, but calls every logits processor once per
+# sampled token — the same per-token hook. Chunked prefills check between
+# chunks. A single forward/eval (one prefill chunk, one llama.cpp n_batch) is
+# not interruptible from Python; the gateway kill switch lands right after it.
+
+
+def _transformers_attach_host_cancel(generation_kwargs: Dict[str, Any], cancel_event: Any, *, model: Any) -> bool:
+    """Append a StoppingCriteria that raises GenerationCancelledError once the
+    host's event is set (checked every decode step). True when attached.
+
+    Every transformers decode site calls this, so it is also where live phase
+    feedback hooks the same per-step seam (`_transformers_attach_progress`,
+    a no-op unless a host subscribed)."""
+    _transformers_attach_progress(generation_kwargs)
+    if cancel_event is None:
+        return False
+    from transformers import StoppingCriteria, StoppingCriteriaList
+
+    class _HostCancelStoppingCriteria(StoppingCriteria):
+        def __call__(self, input_ids, scores, **kwargs) -> bool:  # noqa: ANN001
+            if cancel_event.is_set():
+                raise cancelled_error(provider="huggingface", model=model, where="while decoding (transformers)")
+            return False
+
+    existing = generation_kwargs.get("stopping_criteria")
+    generation_kwargs["stopping_criteria"] = StoppingCriteriaList(
+        list(existing or []) + [_HostCancelStoppingCriteria()]
+    )
+    return True
+
+
+class _LlamaCppHostCancel:
+    """A llama-cpp logits processor (called once per sampled token) that ENDS
+    the generation at the next token once the host's event is set.
+
+    It cannot raise: llama-cpp-python 0.3 runs logits processors inside a
+    ctypes sampler callback, where an exception is printed and IGNORED
+    (measured live 2026-09-23: a raising processor printed 3,817 tracebacks
+    and the non-streaming call decoded to its 4,000-token end, 50.9 s after
+    the cancel). So it forces end-of-generation instead — every logit -inf
+    except EOS — and records `fired`; the caller then raises the typed
+    `GenerationCancelledError` (a cancelled answer is never returned)."""
+
+    def __init__(self, cancel_event: Any, *, model: Any, eos_token_id: Optional[int]) -> None:
+        self.cancel_event = cancel_event
+        self.model = model
+        self.eos_token_id = eos_token_id
+        self.fired = False
+
+    def __call__(self, input_ids, scores):  # noqa: ANN001
+        if self.cancel_event.is_set():
+            self.fired = True
+            if self.eos_token_id is not None:
+                try:
+                    import numpy as _np
+
+                    scores[:] = -_np.inf
+                    scores[int(self.eos_token_id)] = 0.0
+                except Exception:  # noqa: BLE001
+                    pass
+        return scores
+
+    def raise_if_fired(self, *, where: str = "while decoding (llama.cpp)") -> None:
+        if self.fired or self.cancel_event.is_set():
+            raise cancelled_error(provider="huggingface", model=self.model, where=where)
+
+
+def _llama_cpp_host_cancel_logits_processor(cancel_event: Any, *, model: Any, eos_token_id: Optional[int] = None):
+    return _LlamaCppHostCancel(cancel_event, model=model, eos_token_id=eos_token_id)
+
+
+# --- Live phase feedback on the in-process lanes (providers/generation_progress.py)
+# The emitter for the call in flight is bound to the executing thread by
+# `_generate_internal` (and around every `next()` of a returned stream), so the
+# seams deep inside the lanes report without threading a kwarg through a dozen
+# signatures. What each seam can honestly observe:
+#   * prefill start + per-chunk progress: the transformers 2,048-token chunk
+#     loop (`_transformers_prefill_cache`) and llama.cpp's `n_batch` slices
+#     (`_gguf_eval_cancellable`), both as absolute positions on the prompt
+#     (the restored prefix counts from the start);
+#   * first token + decode cadence: the per-step StoppingCriteria / per-token
+#     llama-cpp logits processor that host cancel already relies on, and the
+#     control-plane token loop.
+# A one-shot prefill (short transformers prompt; llama-cpp's own
+# `create_chat_completion` eval) is NOT observable mid-way: no progress events,
+# the first-token event still marks its end.
+_HF_TEXT_PROGRESS = threading.local()
+
+
+def _hf_current_progress() -> Any:
+    emitter = getattr(_HF_TEXT_PROGRESS, "emitter", None)
+    return emitter if emitter is not None and getattr(emitter, "active", False) else None
+
+
+class _hf_progress_bound:
+    """Bind `emitter` to this thread for the block (restores the previous one)."""
+
+    def __init__(self, emitter: Any) -> None:
+        self._emitter = emitter
+        self._previous = None
+
+    def __enter__(self) -> Any:
+        self._previous = getattr(_HF_TEXT_PROGRESS, "emitter", None)
+        _HF_TEXT_PROGRESS.emitter = self._emitter
+        return self._emitter
+
+    def __exit__(self, *exc: Any) -> None:
+        _HF_TEXT_PROGRESS.emitter = self._previous
+
+
+def _hf_report_generated(generated_tokens: int) -> None:
+    progress = _hf_current_progress()
+    if progress is not None and generated_tokens > 0:
+        progress.generation(generated_tokens=int(generated_tokens))
+
+
+def _transformers_attach_progress(generation_kwargs: Dict[str, Any]) -> bool:
+    """Append a StoppingCriteria that reports decode progress (never stops).
+
+    transformers calls stopping criteria once per decode step, after the new
+    token is appended: the first call IS the first token."""
+    progress = _hf_current_progress()
+    if progress is None:
+        return False
+    from transformers import StoppingCriteria, StoppingCriteriaList
+
+    class _PhaseProgressCriteria(StoppingCriteria):
+        def __init__(self) -> None:
+            self.start_len: Optional[int] = None
+
+        def __call__(self, input_ids, scores, **kwargs) -> bool:  # noqa: ANN001
+            length = int(input_ids.shape[-1])
+            if self.start_len is None:
+                self.start_len = length - 1
+            progress.generation(generated_tokens=max(1, length - self.start_len))
+            return False
+
+    existing = generation_kwargs.get("stopping_criteria")
+    generation_kwargs["stopping_criteria"] = StoppingCriteriaList(
+        list(existing or []) + [_PhaseProgressCriteria()]
+    )
+    return True
+
+
+class _LlamaCppPhaseProgress:
+    """llama-cpp logits processor that reports decode progress (scores untouched).
+
+    Called once per sampled token with every token so far; its first call
+    happens when the prompt's logits exist, i.e. at the end of prefill."""
+
+    def __init__(self, progress: Any) -> None:
+        self.progress = progress
+        self.start_len: Optional[int] = None
+
+    def __call__(self, input_ids, scores):  # noqa: ANN001
+        try:
+            length = int(len(input_ids))
+            if self.start_len is None:
+                self.start_len = length
+            self.progress.generation(generated_tokens=length - self.start_len + 1)
+        except Exception:  # noqa: BLE001 - a ctypes callback must never raise
+            pass
+        return scores
 _AUTO_GROWING_LLAMA_RAM_CACHE_CLS = None
 
 _ARTIFACT_LOGGER = None
@@ -997,8 +1168,14 @@ class HuggingFaceProvider(BaseProvider):
         Also drops this instance's session caches (prompt-cache store entries):
         they are only useful with the weights resident, and they are the
         memory hogs.
+
+        In-flight generations are cancelled FIRST and waited for (bounded,
+        logged): `Llama.close()` under a running llama.cpp eval frees the
+        context it is using. A call that does not stop by the deadline makes
+        this RAISE (nothing freed) instead of crashing the process.
         """
         import gc
+        self._stop_inflight_before_unload(model_name, refuse_if_running=True)
         try:
             if hasattr(self, 'llm') and self.llm is not None:
                 # Try to properly close the Llama object (GGUF models)
@@ -1018,6 +1195,12 @@ class HuggingFaceProvider(BaseProvider):
 
             if hasattr(self, 'pipeline') and self.pipeline is not None:
                 self.pipeline = None
+
+            # The Outlines wrapper holds a live reference to model_instance and
+            # tokenizer: left in place it defeats the unload for any instance
+            # that ever served a structured request (MLX had the same bug).
+            if getattr(self, '_outlines_model', None) is not None:
+                self._outlines_model = None
 
             # Hybrid boundary snapshots are the LARGEST tensors this provider
             # holds (deepcopied KV caches, up to the snapshot bound of them) —
@@ -2614,6 +2797,40 @@ class HuggingFaceProvider(BaseProvider):
         except Exception:
             pass
 
+    def _gguf_eval_cancellable(self, llm: Any, tokens: List[int], cancel_event: Any,
+                               *, position: Optional[int] = None) -> None:
+        """`llm.eval(tokens)` in `n_batch` slices, checking the host's cancel
+        event between slices (llama-cpp's own eval loops over the same slices;
+        without an event or a phase subscriber this is ONE `eval` call,
+        byte-identical to before).
+
+        `position` is where `tokens` start on the prompt (the tokens already in
+        the context before this eval). When a host subscribed to live phase
+        feedback, each evaluated slice is reported as the absolute prefill
+        position `position + evaluated` (`prefill_progress`)."""
+        progress = _hf_current_progress() if position is not None else None
+        if cancel_event is None and progress is None:
+            llm.eval(tokens)
+            return
+        try:
+            step = int(getattr(llm, "n_batch", 0) or 0)
+        except Exception:  # noqa: BLE001
+            step = 0
+        if step <= 0:
+            step = 512
+        if progress is not None:
+            progress.prefill_progress(processed_tokens=int(position))
+        for start in range(0, len(tokens), step):
+            if cancel_event is not None:
+                raise_if_cancelled(
+                    cancel_event, provider="huggingface", model=self.model,
+                    where=f"during prefill (llama.cpp, {start}/{len(tokens)} prompt tokens evaluated)",
+                )
+            chunk = tokens[start:start + step]
+            llm.eval(chunk)
+            if progress is not None:
+                progress.prefill_progress(processed_tokens=int(position) + start + len(chunk))
+
     def _gguf_prefill_prompt_cache(
         self,
         cache_obj: Any,
@@ -2628,8 +2845,15 @@ class HuggingFaceProvider(BaseProvider):
         protect_snapshot_key: Sequence[int] = (),
         telemetry: Optional[Dict[str, Any]] = None,
         _second_attempt: bool = False,
+        cancel_event: Any = None,
     ) -> bool:
         """Bring llama.cpp's context to `prompt_tokens`, reusing whatever is cheapest.
+
+        HOST CANCEL (2026-09-23): the prompt is evaluated in `n_batch` slices with
+        the host's event checked between them (`_gguf_eval_cancellable`); a cancel
+        raises `GenerationCancelledError` straight through (never the cold-retry /
+        engine-rebuild recovery below), leaving llama.cpp's context holding exactly
+        the slices already evaluated — a consistent, reusable prefix.
 
         LIVE CONTEXT FIRST (2026-08-03). This method used to open with an
         unconditional `llm.reset()`, which erased `n_tokens`/`_input_ids` — exactly
@@ -2757,9 +2981,13 @@ class HuggingFaceProvider(BaseProvider):
 
         head = list(prompt_tokens[prefix_len:stable_end])
         tail = list(prompt_tokens[stable_end:])
+        _phase = _hf_current_progress()
+        if _phase is not None:
+            # PREFILL STARTS HERE, with the exact restored prefix.
+            _phase.prefill(prompt_tokens=n_prompt, cached_tokens=prefix_len, fed_tokens=n_prompt - prefix_len)
         try:
             if head:
-                llm.eval(head)
+                self._gguf_eval_cancellable(llm, head, cancel_event, position=prefix_len)
             # Snapshot the clean boundary BEFORE the volatile tail is evaluated
             # and before generation mutates the context.
             #
@@ -2787,9 +3015,11 @@ class HuggingFaceProvider(BaseProvider):
                 if snapshot_at_boundary:
                     self._gguf_prune_snapshots(cache_obj, boundary_key, protect=protect_snapshot_key)
             if tail:
-                llm.eval(tail)
+                self._gguf_eval_cancellable(llm, tail, cancel_event, position=stable_end)
             if set_cache and hasattr(llm, "set_cache"):
                 llm.set_cache(cache_obj)
+        except GenerationCancelledError:
+            raise  # a host Stop is not a prefill failure: no reset, no cold retry
         except Exception as prefill_err:
             # Never swallow the engine's reason (ADR-0001): a bare False here
             # surfaced upstream as "failed to prefill GGUF prompt cache" while the
@@ -2814,6 +3044,7 @@ class HuggingFaceProvider(BaseProvider):
                     protect_snapshot_key=protect_snapshot_key,
                     telemetry=telemetry,
                     _second_attempt=True,
+                    cancel_event=cancel_event,
                 )
 
             if not _second_attempt:
@@ -4308,7 +4539,11 @@ class HuggingFaceProvider(BaseProvider):
         self._transformers_prefill_step_cached = step
         return step
 
-    def _transformers_prefill_cache(self, state: _TransformersPromptCacheValue, token_ids: List[int]) -> bool:
+    def _transformers_prefill_cache(self, state: _TransformersPromptCacheValue, token_ids: List[int],
+                                    cancel_event: Any = None) -> bool:
+        """Chunked prefill into `state`. A host cancel is checked BETWEEN chunks
+        (raises GenerationCancelledError); `state` then holds exactly the
+        chunks already fed, so it stays consistent and reusable."""
         if not token_ids:
             return True
         if getattr(self, "model_instance", None) is None:
@@ -4323,11 +4558,19 @@ class HuggingFaceProvider(BaseProvider):
         step = self._transformers_prefill_step()
         if step <= 0:
             step = len(token_ids)
+        _phase = _hf_current_progress()
+        if _phase is not None:
+            # Rate base: the prefix already in `state` (restored) is processed.
+            _phase.prefill_progress(processed_tokens=len(state.prompt_tokens))
 
         # Chunked: never materialize an [heads, L, L] score transient for the
         # whole prompt at once (see _transformers_prefill_step). Each chunk's
         # forward extends the SAME cache, so the resulting KV is identical.
         for start in range(0, len(token_ids), step):
+            raise_if_cancelled(
+                cancel_event, provider="huggingface", model=self.model,
+                where=f"during prefill ({start}/{len(token_ids)} prompt tokens fed)",
+            )
             chunk = token_ids[start:start + step]
             past_len = len(state.prompt_tokens)
             input_ids = torch.tensor([chunk], dtype=torch.long, device=device)
@@ -4364,6 +4607,20 @@ class HuggingFaceProvider(BaseProvider):
             if new_cache is not None:
                 state.cache = new_cache
             state.prompt_tokens = tuple(int(tok) for tok in (state.prompt_tokens + tuple(chunk)))
+            progress = _hf_current_progress()
+            if progress is not None:
+                # MPS/CUDA forwards are ASYNC: without a sync the count would be
+                # "submitted", not "computed". Paid once per 2,048-token chunk,
+                # and only while a host is watching.
+                try:
+                    dev = str(device)
+                    if dev.startswith("mps"):
+                        torch.mps.synchronize()
+                    elif dev.startswith("cuda"):
+                        torch.cuda.synchronize()
+                except Exception:  # noqa: BLE001
+                    pass
+                progress.prefill_progress(processed_tokens=len(state.prompt_tokens))
         return True
 
     def _prompt_cache_backend_create(self) -> Optional[Any]:
@@ -5759,16 +6016,13 @@ class HuggingFaceProvider(BaseProvider):
 
         # MLX quantized repos expose safetensors and a compact config such as
         # {"bits": 4, "group_size": 64, "mode": "affine"}, but they are not
-        # standard HuggingFace Transformers quantized checkpoints.
-        if (
-            "mlx" in model_lower
-            or (
-                quantization_config.get("mode") == "affine"
-                and "bits" in quantization_config
-                and "group_size" in quantization_config
-                and "quant_method" not in quantization_config
-            )
-        ):
+        # standard HuggingFace Transformers quantized checkpoints. Both halves
+        # of the test live in providers/mlx_model_rules.py, which is also what
+        # decides whether the repo is offered under `mlx` or `huggingface`:
+        # a model this loader refuses must never be in this provider's list.
+        from .mlx_model_rules import is_mlx_model, is_mlx_quantization_config
+
+        if is_mlx_model(model_lower) or is_mlx_quantization_config(quantization_config):
             raise ImportError(
                 "HuggingFace transformers model "
                 f"{model_label!r} looks like an MLX-format quantized checkpoint. Use "
@@ -6905,6 +7159,46 @@ class HuggingFaceProvider(BaseProvider):
         """Public generate method that includes telemetry"""
         return self.generate_with_telemetry(*args, **kwargs)
 
+    # Eject safety: every call carries a (private, when the host passed none)
+    # cancel event so `unload_model` can stop it before freeing the weights.
+    _PRIVATE_CANCEL_EVENT_FOR_EJECT = True
+
+    def load_model(self, model_name: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+        """(Re)load this instance's model after an `unload_model` (idempotent).
+
+        One provider instance serves ONE model: `model_name` must be this
+        instance's model (or omitted). Returns what was done and the measured
+        wall time; raises on load failure."""
+        _ = kwargs
+        target = str(model_name or self.model or "").strip()
+        if target and target != str(self.model):
+            raise ValueError(
+                f"HuggingFaceProvider instance for {self.model!r} cannot load {target!r}: "
+                "create a provider for that model instead."
+            )
+        loaded = any(getattr(self, a, None) is not None for a in ("llm", "model_instance", "pipeline"))
+        if loaded:
+            return {"supported": True, "operation": "load", "provider": "huggingface", "model": self.model,
+                    "action": "already_loaded", "source": "abstractcore.provider.huggingface"}
+        t0 = time.time()
+        if self.model_type == "gguf":
+            self._setup_device_gguf()
+            self._load_gguf_model()
+        else:
+            self._setup_device_transformers()
+            self._load_transformers_model()
+        return {"supported": True, "operation": "load", "provider": "huggingface", "model": self.model,
+                "action": "loaded", "load_s": round(time.time() - t0, 3),
+                "source": "abstractcore.provider.huggingface"}
+
+    def supports_generation_cancel(self) -> bool:
+        """True: transformers decodes under a StoppingCriteria and llama-cpp
+        under a logits processor that raise on the host's event (one token),
+        chunked prefills check between chunks (generation_cancel.py). Not
+        interruptible: one prefill forward / llama.cpp eval batch, the Outlines
+        structured lane and custom `infer()` models (checked before start)."""
+        return True
+
     def _generate_internal(self,
                           prompt: str,
                           messages: Optional[List[Dict[str, str]]] = None,
@@ -6916,10 +7210,96 @@ class HuggingFaceProvider(BaseProvider):
                           **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate response using appropriate backend"""
 
-        if self.model_type == "gguf":
-            return self._generate_gguf(prompt, messages, system_prompt, tools, media, stream, response_model, **kwargs)
-        else:
-            return self._generate_transformers(prompt, messages, system_prompt, tools, media, stream, response_model, **kwargs)
+        cancel_event = as_cancel_event(kwargs.pop(CANCEL_KWARG, None))
+        from .generation_progress import PROGRESS_KWARG, TextProgressEmitter
+
+        progress = TextProgressEmitter(kwargs.pop(PROGRESS_KWARG, None), provider="huggingface", model=self.model)
+        if not any(getattr(self, a, None) is not None for a in ("llm", "model_instance", "pipeline")):
+            # Ejected (`unload_model`) and asked again: reload on demand, LOUDLY
+            # (the lanes below would otherwise answer "Error: ... not loaded"
+            # as if it were the model's reply). A failed reload raises.
+            self.logger.warning(
+                f"HuggingFace model {self.model} is not loaded (ejected); reloading it on demand for this request"
+            )
+            self.load_model()
+
+        def _run():
+            if self.model_type == "gguf":
+                return self._generate_gguf(prompt, messages, system_prompt, tools, media, stream, response_model,
+                                           cancel_event=cancel_event, **kwargs)
+            return self._generate_transformers(prompt, messages, system_prompt, tools, media, stream, response_model,
+                                               cancel_event=cancel_event, **kwargs)
+
+        if not progress.active:
+            return _run()
+        return self._with_text_progress(progress, _run)
+
+    def _with_text_progress(self, progress: Any, run: Any) -> Any:
+        """Run one call with `progress` bound to the executing thread.
+
+        The lanes' seams (see `_hf_current_progress`) report prefill and decode
+        from inside; this wrapper guarantees the TERMINAL event on every exit —
+        a returned response, a raised error, or a stream (bound around each
+        `next()`, completed when it ends or is closed) — so a UI never keeps
+        showing a live phase for a call that is over."""
+
+        def _counts(response: Any) -> Dict[str, Any]:
+            usage = getattr(response, "usage", None) or {}
+            out: Dict[str, Any] = {}
+            if isinstance(usage, dict):
+                out["generated_tokens"] = usage.get("output_tokens", usage.get("completion_tokens"))
+                out["prompt_tokens"] = usage.get("input_tokens", usage.get("prompt_tokens"))
+            return out
+
+        try:
+            with _hf_progress_bound(progress):
+                result = run()
+        except BaseException as exc:
+            from ..exceptions import GenerationCancelledError
+
+            progress.complete(finish_reason="cancelled" if isinstance(exc, GenerationCancelledError) else "error")
+            raise
+        if isinstance(result, GenerateResponse) or not hasattr(result, "__next__"):
+            progress.complete(finish_reason=getattr(result, "finish_reason", None), **_counts(result))
+            return result
+
+        def _bound_stream(inner=result):
+            last = None
+            finish = None
+            try:
+                while True:
+                    with _hf_progress_bound(progress):
+                        try:
+                            chunk = next(inner)
+                        except StopIteration:
+                            break
+                    last = chunk
+                    finish = getattr(chunk, "finish_reason", None) or finish
+                    yield chunk
+            except GeneratorExit:
+                raise  # the consumer stopped reading: keep the last known finish
+            except BaseException as exc:
+                from ..exceptions import GenerationCancelledError
+
+                finish = "cancelled" if isinstance(exc, GenerationCancelledError) else "error"
+                raise
+            finally:
+                close = getattr(inner, "close", None)
+                if callable(close):
+                    try:
+                        close()
+                    except Exception:  # noqa: BLE001
+                        pass
+                progress.complete(finish_reason=finish, **(_counts(last) if last is not None else {}))
+
+        return _bound_stream()
+
+    def supports_text_progress_events(self) -> bool:
+        """True: both in-process lanes report the first token and decode
+        cadence, and their chunked prefills (transformers 2,048-token chunks,
+        llama.cpp `n_batch` slices) report mid-prefill progress. One-shot
+        prefills report no mid-prefill position (see `_HF_TEXT_PROGRESS`)."""
+        return True
 
     def _generate_transformers(self,
                                prompt: str,
@@ -6929,14 +7309,18 @@ class HuggingFaceProvider(BaseProvider):
                                media: Optional[List['MediaContent']] = None,
                                stream: bool = False,
                                response_model: Optional[Type[BaseModel]] = None,
+                               cancel_event: Any = None,
                                **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate using transformers backend with optional Outlines native structured output"""
 
+        raise_if_cancelled(cancel_event, provider="huggingface", model=self.model, where="before the request was sent")
         if not self.pipeline:
             # Handle vision models that use processor instead of pipeline
             if self.processor and hasattr(self.model_instance, 'generate'):
-                return self._generate_vision_model(prompt, messages, system_prompt, tools, media, stream, response_model, **kwargs)
+                return self._generate_vision_model(prompt, messages, system_prompt, tools, media, stream, response_model,
+                                                   cancel_event=cancel_event, **kwargs)
             # Handle custom models like DeepSeek-OCR that don't support standard pipelines
+            # (`infer()` owns its loop: not interruptible, checked before start only).
             elif hasattr(self.model_instance, 'infer'):
                 return self._generate_custom_model(prompt, messages, system_prompt, tools, media, stream, response_model, **kwargs)
             else:
@@ -7101,7 +7485,10 @@ class HuggingFaceProvider(BaseProvider):
                     seed=seed_value,
                     enable_thinking=hf_transformers_enable_thinking if isinstance(hf_transformers_enable_thinking, bool) else None,
                     reasoning_effort=hf_transformers_reasoning_effort,
+                    cancel_event=cancel_event,
                 )
+            except GenerationCancelledError:
+                raise  # a host Stop is never an "Error:" answer
             except Exception as e:
                 return GenerateResponse(
                     content=f"Error generating response with prompt cache: {str(e)}",
@@ -7178,9 +7565,11 @@ class HuggingFaceProvider(BaseProvider):
 
         try:
             if stream:
-                return self._stream_generate_transformers_with_tools(input_text, max_new_tokens, temperature, top_p, top_k, tools, kwargs.get('tool_call_tags'), seed_value)
+                return self._stream_generate_transformers_with_tools(input_text, max_new_tokens, temperature, top_p, top_k, tools, kwargs.get('tool_call_tags'), seed_value,
+                                                                     cancel_event=cancel_event)
             else:
-                response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p, top_k, seed_value)
+                response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p, top_k, seed_value,
+                                                              cancel_event=cancel_event)
                 if media_enrichment:
                     from ..media.enrichment import merge_enrichment_metadata
 
@@ -7192,6 +7581,8 @@ class HuggingFaceProvider(BaseProvider):
 
                 return response
 
+        except GenerationCancelledError:
+            raise  # a host Stop is never an "Error:" answer
         except Exception as e:
             return GenerateResponse(
                 content=f"Error generating response: {str(e)}",
@@ -7327,6 +7718,7 @@ class HuggingFaceProvider(BaseProvider):
                               media: Optional[List['MediaContent']] = None,
                               stream: bool = False,
                               response_model: Optional[Type[BaseModel]] = None,
+                              cancel_event: Any = None,
                               **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate using vision model (Glyph, GLM-4.1V, etc.)"""
 
@@ -7738,6 +8130,7 @@ class HuggingFaceProvider(BaseProvider):
             # stream. Never a cap: it stops on evidence of a verbatim repeating
             # cycle and returns everything produced before it.
             _rep_detector = _degeneration.attach_to_generation_kwargs(generation_kwargs)
+            _transformers_attach_host_cancel(generation_kwargs, cancel_event, model=self.model)
 
             # Generate response
             generated_ids = None
@@ -7820,6 +8213,8 @@ class HuggingFaceProvider(BaseProvider):
                 return _single_chunk_stream()
             return response
 
+        except GenerationCancelledError:
+            raise  # a host Stop is never an "Error:" answer
         except Exception as e:
             gen_time = (time.time() - start_time) * 1000 if 'start_time' in locals() else 0.0
             error_resp = GenerateResponse(
@@ -7888,9 +8283,11 @@ class HuggingFaceProvider(BaseProvider):
                        media: Optional[List['MediaContent']] = None,
                        stream: bool = False,
                        response_model: Optional[Type[BaseModel]] = None,
+                       cancel_event: Any = None,
                        **kwargs) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         """Generate using GGUF backend with llama-cpp-python"""
 
+        raise_if_cancelled(cancel_event, provider="huggingface", model=self.model, where="before the request was sent")
         if not self.llm:
             return GenerateResponse(
                 content="Error: GGUF model not loaded",
@@ -8002,6 +8399,25 @@ class HuggingFaceProvider(BaseProvider):
             "top_p": unified_kwargs.get("top_p", 0.9),
             "stream": stream
         }
+        host_cancel = None
+        if cancel_event is not None:
+            # Fallback lane (create_chat_completion): per-sampled-token check
+            # that ends the generation at the next token (see _LlamaCppHostCancel).
+            eos_id = None
+            try:
+                eos_id = int(self.llm.token_eos())
+            except Exception:  # noqa: BLE001
+                eos_id = None
+            host_cancel = _llama_cpp_host_cancel_logits_processor(cancel_event, model=self.model, eos_token_id=eos_id)
+            generation_kwargs["logits_processor"] = [host_cancel]
+        _phase_progress = _hf_current_progress()
+        if _phase_progress is not None:
+            # Same per-token seam, for live phase feedback: llama-cpp's own
+            # prompt eval is one opaque call here, so the first-token event is
+            # the only prefill boundary this fallback lane can report.
+            generation_kwargs["logits_processor"] = list(generation_kwargs.get("logits_processor") or []) + [
+                _LlamaCppPhaseProgress(_phase_progress)
+            ]
 
         # Add seed if provided (GGUF/llama-cpp supports seed)
         seed_value = unified_kwargs.get("seed")
@@ -8091,6 +8507,7 @@ class HuggingFaceProvider(BaseProvider):
                         if isinstance(prompt_cache_key, str) and prompt_cache_key.strip()
                         else None
                     ),
+                    cancel_event=cancel_event,
                 )
 
             marker = self._thinking_disable_prefill(gguf_enable_thinking)
@@ -8120,6 +8537,8 @@ class HuggingFaceProvider(BaseProvider):
                 return self._stream_generate_gguf_with_tools(generation_kwargs, tools, has_native_tools, kwargs.get('tool_call_tags'))
             else:
                 response = self._single_generate_gguf(generation_kwargs)
+                if host_cancel is not None:
+                    host_cancel.raise_if_fired()  # a cut-short answer is never returned
                 if media_enrichment:
                     from ..media.enrichment import merge_enrichment_metadata
 
@@ -8132,6 +8551,8 @@ class HuggingFaceProvider(BaseProvider):
 
                 return response
 
+        except GenerationCancelledError:
+            raise  # a host Stop is never an "Error:" answer
         except Exception as e:
             error_message = str(e)
             if stream:
@@ -8261,6 +8682,7 @@ class HuggingFaceProvider(BaseProvider):
         reasoning_effort: Optional[str] = None,
         cache_state: Optional[_GGUFPromptCacheValue] = None,
         cache_key: Optional[str] = None,
+        cancel_event: Any = None,
     ) -> Iterator[GenerateResponse]:
         """Generate GGUF text by prefilling cached KV state and sampling from it.
 
@@ -8359,6 +8781,7 @@ class HuggingFaceProvider(BaseProvider):
         # say WHICH cache it was reporting on, so a reader with more than one
         # session in flight could not attribute a row to a key.
         cache_telemetry: Dict[str, Any] = {"mode": "key", "key": cache_key} if cache_key else {}
+        raise_if_cancelled(cancel_event, provider="huggingface", model=self.model, where="before prefill (llama.cpp)")
         ok = self._gguf_prefill_prompt_cache(
             cache_obj,
             prompt_tokens,
@@ -8370,6 +8793,7 @@ class HuggingFaceProvider(BaseProvider):
             generation_boundary=generation_boundary,
             protect_snapshot_key=(cache_state.prompt_tokens if cache_state is not None else ()),
             telemetry=cache_telemetry,
+            cancel_event=cancel_event,
         )
         if not ok:
             yield GenerateResponse(
@@ -8433,6 +8857,11 @@ class HuggingFaceProvider(BaseProvider):
                 mirostat_eta=float(mirostat_eta),
                 reset=False,
             ):
+                # Host cancel, once per sampled token (llama.cpp resident KV
+                # keeps the tokens already decoded; the next call's prefix
+                # match against it stays exact).
+                raise_if_cancelled(cancel_event, provider="huggingface", model=self.model,
+                                   where="while decoding (llama.cpp)", generated_tokens=output_tokens)
                 tok_i = int(tok)
 
                 # Stop token detection (token-id based).
@@ -8451,6 +8880,7 @@ class HuggingFaceProvider(BaseProvider):
                 if isinstance(max_output_tokens, int) and max_output_tokens > 0 and output_tokens > int(max_output_tokens):
                     finish_reason = "length"
                     break
+                _hf_report_generated(output_tokens)  # live phase: first token, then cadence
 
                 try:
                     token_bytes = llm.detokenize([tok_i])
@@ -8464,6 +8894,8 @@ class HuggingFaceProvider(BaseProvider):
                     yield GenerateResponse(content=pending, model=self.model)
                     pending = ""
 
+        except GenerationCancelledError:
+            raise  # a host Stop is never an "Error:" chunk
         except Exception as e:
             yield GenerateResponse(
                 content=f"Error: {str(e)}",
@@ -8533,6 +8965,7 @@ class HuggingFaceProvider(BaseProvider):
         reasoning_effort: Optional[str] = None,
         cache_state: Optional[_GGUFPromptCacheValue] = None,
         cache_key: Optional[str] = None,
+        cancel_event: Any = None,
     ) -> Union[GenerateResponse, Iterator[GenerateResponse]]:
         if stream:
             return self._gguf_control_plane_stream_generate(
@@ -8556,6 +8989,7 @@ class HuggingFaceProvider(BaseProvider):
                 reasoning_effort=reasoning_effort,
                 cache_state=cache_state,
                 cache_key=cache_key,
+                cancel_event=cancel_event,
             )
 
         collected = ""
@@ -8581,6 +9015,7 @@ class HuggingFaceProvider(BaseProvider):
             reasoning_effort=reasoning_effort,
             cache_state=cache_state,
             cache_key=cache_key,
+            cancel_event=cancel_event,
         ):
             last = chunk
             if isinstance(chunk.content, str) and chunk.content:
@@ -8596,6 +9031,9 @@ class HuggingFaceProvider(BaseProvider):
 
     def _stream_generate_gguf(self, kwargs: Dict[str, Any], tool_call_tags: Optional[str] = None) -> Iterator[GenerateResponse]:
         """Stream response using GGUF with tool tag rewriting support"""
+        host_cancel = next(
+            (p for p in (kwargs.get("logits_processor") or []) if isinstance(p, _LlamaCppHostCancel)), None
+        )
         stream = self.llm.create_chat_completion(**kwargs)
 
         current_tool_call = None
@@ -8612,6 +9050,11 @@ class HuggingFaceProvider(BaseProvider):
                 pass
 
         for chunk in stream:
+            if host_cancel is not None and host_cancel.cancel_event.is_set():
+                close = getattr(stream, "close", None)
+                if callable(close):
+                    close()
+                host_cancel.raise_if_fired(where="while streaming (llama.cpp)")
             if 'choices' not in chunk or not chunk['choices']:
                 continue
 
@@ -8682,6 +9125,9 @@ class HuggingFaceProvider(BaseProvider):
                         finish_reason=choice['finish_reason']
                     )
 
+        if host_cancel is not None:
+            host_cancel.raise_if_fired(where="while streaming (llama.cpp)")
+
     def _single_generate_transformers_cached(
         self,
         *,
@@ -8698,6 +9144,7 @@ class HuggingFaceProvider(BaseProvider):
         seed: Optional[int] = None,
         enable_thinking: Optional[bool] = None,
         reasoning_effort: Optional[str] = None,
+        cancel_event: Any = None,
     ) -> GenerateResponse:
         """Generate a single response using a transformers KV cache keyed by `prompt_cache_key`."""
 
@@ -8940,6 +9387,13 @@ class HuggingFaceProvider(BaseProvider):
                 metadata={"prompt_cache": dict(cache_telemetry)},
             )
 
+        _phase = _hf_current_progress()
+        if _phase is not None:
+            # PREFILL STARTS HERE: the key's resident prefix is restored, the
+            # delta is what this call feeds.
+            _phase.prefill(prompt_tokens=len(state.prompt_tokens) + len(delta_ids),
+                           cached_tokens=len(state.prompt_tokens), fed_tokens=len(delta_ids))
+
         # LONG-DELTA GUARD: `generate()` forwards its whole input in ONE pass,
         # which at 30k asserts inside Metal (see _transformers_prefill_step).
         # Feed all but the last token through the chunked prefill and let
@@ -8948,7 +9402,7 @@ class HuggingFaceProvider(BaseProvider):
         # byte-identically.
         chunk_step = self._transformers_prefill_step()
         if chunk_step > 0 and len(delta_ids) > chunk_step:
-            if not self._transformers_prefill_cache(state, list(delta_ids[:-1])):
+            if not self._transformers_prefill_cache(state, list(delta_ids[:-1]), cancel_event=cancel_event):
                 raise RuntimeError(
                     "Transformers cached generation failed: chunked prefill of the "
                     f"{len(delta_ids) - 1}-token delta failed"
@@ -9003,6 +9457,7 @@ class HuggingFaceProvider(BaseProvider):
             raise RuntimeError("prompt cache key has no concrete transformers cache state")
         # Prefer updating the existing provider-native cache object in-place for speed.
         generate_kwargs["past_key_values"] = state.cache
+        _transformers_attach_host_cancel(generate_kwargs, cancel_event, model=self.model)
 
         output = None
         try:
@@ -9015,7 +9470,7 @@ class HuggingFaceProvider(BaseProvider):
                         output = self.model_instance.generate(**generate_kwargs)
                 else:
                     output = self.model_instance.generate(**generate_kwargs)
-        except Exception as e:
+        except BaseException as e:
             # generate() can RAISE AFTER mutating the cache in place (MPS OOM
             # mid-decode): `state.prompt_tokens` then no longer describes the
             # physical KV, and every later call would silently misattend over
@@ -9024,9 +9479,14 @@ class HuggingFaceProvider(BaseProvider):
             # Reset the key's live state before re-raising; the key's next
             # call rebuilds — or restores from the still-clean pre-decode
             # snapshot, which is exactly what the snapshot is for.
+            # BaseException (2026-09-23): a host Stop mid-decode and the
+            # gateway kill switch (`EffectKilled`, a BaseException injected
+            # between steps) mutate the cache exactly the same way.
             state.cache = None
             state.prompt_tokens = ()
             self._transformers_release_device_pool()
+            if isinstance(e, GenerationCancelledError) or not isinstance(e, Exception):
+                raise  # typed host stop / kill switch: keep the type
             raise RuntimeError(f"Transformers cached generation failed: {e}") from e
         finally:
             # Threshold-guarded (no-op below the pooled-bytes bound): caps the
@@ -9103,6 +9563,7 @@ class HuggingFaceProvider(BaseProvider):
         temperature: float,
         top_p: float,
         top_k: Optional[int] = None,
+        cancel_event: Any = None,
     ) -> Optional[GenerateResponse]:
         """Uncached generation for prompts too long to one-shot prefill.
 
@@ -9139,8 +9600,12 @@ class HuggingFaceProvider(BaseProvider):
         output = None
         pool_guard_stats: Dict[str, Any] = {}
         state = _TransformersPromptCacheValue(cache=self._transformers_empty_native_cache())
+        _phase = _hf_current_progress()
+        if _phase is not None:
+            # PREFILL STARTS HERE: no cache on this lane, every token is fed.
+            _phase.prefill(prompt_tokens=len(prompt_ids), cached_tokens=0, fed_tokens=len(prompt_ids))
         try:
-            if not self._transformers_prefill_cache(state, [int(t) for t in prompt_ids[:-1]]):
+            if not self._transformers_prefill_cache(state, [int(t) for t in prompt_ids[:-1]], cancel_event=cancel_event):
                 raise RuntimeError(
                     f"chunked prefill of the {len(prompt_ids) - 1}-token prompt failed"
                 )
@@ -9175,6 +9640,7 @@ class HuggingFaceProvider(BaseProvider):
                 generate_kwargs["eos_token_id"] = eos_i
             if state.cache is not None:
                 generate_kwargs["past_key_values"] = state.cache
+            _transformers_attach_host_cancel(generate_kwargs, cancel_event, model=self.model)
 
             use_mps_lock = str(device).startswith("mps") or str(getattr(self, "device", "") or "").strip().lower() == "mps"
             # This path bounds its PREFILL by chunking and then decodes with
@@ -9242,7 +9708,7 @@ class HuggingFaceProvider(BaseProvider):
 
     def _single_generate_transformers(self, input_text: str, max_new_tokens: int,
                                      temperature: float, top_p: float, top_k: Optional[int] = None,
-                                     seed: Optional[int] = None) -> GenerateResponse:
+                                     seed: Optional[int] = None, *, cancel_event: Any = None) -> GenerateResponse:
         """Generate single response using transformers (original implementation)"""
         try:
             # Set seed for deterministic generation if provided
@@ -9285,10 +9751,12 @@ class HuggingFaceProvider(BaseProvider):
             # before). On MPS a one-shot 30k prefill aborts the PROCESS
             # (Metal assert), so this must run before the pipeline.
             chunked_resp = self._transformers_generate_uncached_chunked(
-                input_text, max_new_tokens, temperature, top_p, top_k
+                input_text, max_new_tokens, temperature, top_p, top_k, cancel_event=cancel_event
             )
             if chunked_resp is not None:
                 return chunked_resp
+            # The pipeline forwards `stopping_criteria` to `model.generate()`.
+            _transformers_attach_host_cancel(pipeline_kwargs, cancel_event, model=self.model)
 
             try:
                 # Same step-scoped guard as the chunked path. A short prompt
@@ -9326,6 +9794,8 @@ class HuggingFaceProvider(BaseProvider):
                     gen_time=gen_time
                 )
 
+        except GenerationCancelledError:
+            raise  # a host Stop is never an "Error:" answer
         except Exception as e:
             gen_time = round((time.time() - start_time) * 1000, 1) if 'start_time' in locals() else 0.0
             return GenerateResponse(
@@ -9354,11 +9824,13 @@ class HuggingFaceProvider(BaseProvider):
 
     def _stream_generate_transformers(self, input_text: str, max_new_tokens: int,
                                      temperature: float, top_p: float, top_k: Optional[int] = None,
-                                     tool_call_tags: Optional[str] = None, seed: Optional[int] = None) -> Iterator[GenerateResponse]:
+                                     tool_call_tags: Optional[str] = None, seed: Optional[int] = None,
+                                     *, cancel_event: Any = None) -> Iterator[GenerateResponse]:
         """Stream response using transformers (simulated, original implementation) with tool tag rewriting support"""
         try:
             # HuggingFace doesn't have native streaming, so we simulate it
-            full_response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p, top_k, seed)
+            full_response = self._single_generate_transformers(input_text, max_new_tokens, temperature, top_p, top_k, seed,
+                                                               cancel_event=cancel_event)
 
             if full_response.content:
                 # Apply tool tag rewriting if enabled
@@ -9386,6 +9858,8 @@ class HuggingFaceProvider(BaseProvider):
                     finish_reason="stop"
                 )
 
+        except GenerationCancelledError:
+            raise  # a host Stop is never an "Error:" chunk
         except Exception as e:
             yield GenerateResponse(
                 content=f"Error: {str(e)}",
@@ -9587,12 +10061,14 @@ class HuggingFaceProvider(BaseProvider):
     def _stream_generate_transformers_with_tools(self, input_text: str, max_new_tokens: int,
                                                temperature: float, top_p: float, top_k: Optional[int] = None,
                                                tools: Optional[List[Dict[str, Any]]] = None,
-                                               tool_call_tags: Optional[str] = None, seed: Optional[int] = None) -> Iterator[GenerateResponse]:
+                                               tool_call_tags: Optional[str] = None, seed: Optional[int] = None,
+                                               *, cancel_event: Any = None) -> Iterator[GenerateResponse]:
         """Stream generate with tool execution at the end"""
         collected_content = ""
 
         # Stream the response content
-        for chunk in self._stream_generate_transformers(input_text, max_new_tokens, temperature, top_p, top_k, tool_call_tags, seed):
+        for chunk in self._stream_generate_transformers(input_text, max_new_tokens, temperature, top_p, top_k, tool_call_tags, seed,
+                                                        cancel_event=cancel_event):
             collected_content += chunk.content
             yield chunk
 
@@ -9682,6 +10158,7 @@ class HuggingFaceProvider(BaseProvider):
         """
         try:
             from .model_capabilities import filter_models_by_capabilities
+            from .mlx_model_rules import is_mlx_model
 
             hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
             if not hf_cache.exists():
@@ -9693,9 +10170,12 @@ class HuggingFaceProvider(BaseProvider):
                     # Convert models--microsoft--DialoGPT-medium to microsoft/DialoGPT-medium
                     model_name = item.name.replace("models--", "").replace("--", "/")
 
-                    # CRITICAL: Exclude MLX models from HuggingFace list
-                    # Any model with "mlx" in the name should be classified as MLX, not HuggingFace
-                    if "mlx" not in model_name.lower():
+                    # CRITICAL: an MLX repo belongs to the MLX provider, never
+                    # here -- transformers cannot load MLX safetensors, so
+                    # offering one in this list is offering a load that fails.
+                    # `is_mlx_model` is the shared rule MLXProvider uses to
+                    # INCLUDE the very same repos; see providers/mlx_model_rules.py.
+                    if not is_mlx_model(model_name, local_path=item):
                         models.append(model_name)
 
             models = sorted(models)

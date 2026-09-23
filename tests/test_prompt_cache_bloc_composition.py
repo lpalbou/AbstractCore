@@ -251,7 +251,13 @@ REAL_CASES = [c for c in TEMPLATE_CASES if "/toy" not in c[0]]
 # silently shrinks to the four toy tokenizers and the suite still reports green
 # — three real template families satisfied by environment coincidence rather
 # than by the test. Fail loudly instead.
-assert len(REAL_CASES) >= 3, (
+#
+# The one exception is the hermetic CI lane
+# (ABSTRACTCORE_TEST_HERMETIC_MODEL_DISCOVERY=1), which by design has no local
+# models: there the toy tokenizers still run and the REAL_CASES parametrizations
+# are reported as skipped (empty parameter set), never as passed.
+_HERMETIC = os.getenv("ABSTRACTCORE_TEST_HERMETIC_MODEL_DISCOVERY") == "1"
+assert _HERMETIC or len(REAL_CASES) >= 3, (
     "bloc composition tests require at least 3 REAL local tokenizers; found "
     f"{[c[0] for c in REAL_CASES]}. Install the whitelisted models or fix "
     "_REAL_TOKENIZER_CASES — do NOT relax this guard."

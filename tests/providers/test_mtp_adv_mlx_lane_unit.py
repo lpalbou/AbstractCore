@@ -17,12 +17,20 @@ import sys
 import types
 from typing import Any, Dict, List, Optional
 
+import importlib.util
+
 import pytest
 
 from abstractcore.providers.mlx_provider import MLXProvider
 from abstractcore.providers.speculation import (
     SpeculationRequest,
     SpeculationUnavailableError,
+)
+
+
+_requires_mlx_stack = pytest.mark.skipif(
+    not all(importlib.util.find_spec(m) for m in ("mlx", "mlx_lm", "mlx_vlm")),
+    reason="requires the optional MLX stack (pip install \"abstractcore[mlx]\")",
 )
 
 
@@ -78,6 +86,12 @@ class _LoadRecorder:
 
     def install(self, monkeypatch) -> None:
         recorder = self
+        # Loader-order tests are hermetic even when the real sidecar repository
+        # has never been downloaded on this machine.
+        monkeypatch.setattr(
+            "abstractcore.providers.mlx_native_session.resolve_native_drafter_path",
+            lambda path: str(path),
+        )
 
         def vlm_load(path, *a, **k):
             recorder.calls.append("target")
@@ -330,7 +344,7 @@ def test_text_calls_still_reach_mlx_vlm_after_the_media_guard(monkeypatch):
     assert out == "ok", "the adapter must unwrap mlx-vlm's result object to text"
     assert seen.get("draft_model") is drafter
     assert seen.get("draft_kind") == "mtp"
-    assert seen.get("draft_block_size") == 3
+    assert seen.get("draft_block_size") == 4  # Three proposals plus the seed.
     assert "input_embeddings" not in seen
 
 
@@ -684,6 +698,7 @@ def test_the_refusal_is_actually_attempted_once(monkeypatch):
     )
 
 
+@_requires_mlx_stack
 def test_explicit_drafter_overrides_the_registry():
     provider = _provider(
         _speculation_request=SpeculationRequest(

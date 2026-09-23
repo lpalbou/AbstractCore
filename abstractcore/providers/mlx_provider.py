@@ -35,6 +35,7 @@ from .speculation import (
     SpeculationUnavailableError,
     capability_speculation,
     normalize_speculation_request,
+    resolve_speculation_request,
     unavailable as speculation_unavailable,
 )
 from ..architectures.response_postprocessing import (
@@ -43,6 +44,7 @@ from ..architectures.response_postprocessing import (
 )
 from ..core.types import GenerateResponse
 from .base import PromptCacheStore
+from .generation_progress import PREFILL_PROGRESS_KWARG
 from ..exceptions import ProviderAPIError, ModelNotFoundError, format_model_error
 from ..tools import UniversalToolHandler, execute_tools
 from ..events import EventType
@@ -88,6 +90,25 @@ class _SharedMLXModel:
 # memory); while any provider lives, the next one for the same model adopts it.
 _SHARED_MLX_MODELS: "weakref.WeakValueDictionary[str, _SharedMLXModel]" = weakref.WeakValueDictionary()
 _SHARED_MLX_MODELS_LOCK = threading.RLock()
+
+
+def _installed_mlx_versions() -> str:
+    """`mlx 0.31.2, mlx-lm 0.31.3, mlx-vlm (not installed)` -- for error text.
+
+    A stale MLX stack fails as a ModuleNotFoundError for a module the installed
+    version simply does not have yet, so the version triple IS the diagnosis.
+    """
+    from importlib.metadata import PackageNotFoundError, version
+
+    parts: List[str] = []
+    for dist in ("mlx", "mlx-lm", "mlx-vlm"):
+        try:
+            parts.append(f"{dist} {version(dist)}")
+        except PackageNotFoundError:
+            parts.append(f"{dist} (not installed)")
+        except Exception:
+            parts.append(f"{dist} (unknown)")
+    return ", ".join(parts)
 
 
 def _mlx_model_sharing_enabled(kwargs: Optional[Dict[str, Any]] = None) -> bool:
@@ -151,6 +172,8 @@ class MLXProvider(BaseProvider):
         self._speculation_request = normalize_speculation_request(
             kwargs.get("speculation")
         )
+        self._speculation_inherits_config = kwargs.get("speculation") is None
+        self._speculation_default_supported = False
         self._mtp_drafter = None
         self._mtp_kind: Optional[str] = None
         self._mtp_block_size: Optional[int] = None
@@ -175,6 +198,42 @@ class MLXProvider(BaseProvider):
         # every later response's metadata so the diagnosis is not one log line
         # the caller may never have seen.
         self._mtp_outcome_at_load: Optional[SpeculationOutcome] = None
+        self._native_qwen4 = None
+        self._native_session = None
+        self._native_runtime = None
+        self._native_owner_id = None
+        self._mlx_batching = kwargs.get("mlx_batching", False)
+        if not isinstance(self._mlx_batching, bool):
+            raise ValueError("mlx_batching must be a bool")
+        self._mlx_runtime_options = {
+            "max_batch_size": kwargs.get("mlx_max_batch_size", 4),
+            "max_queue_size": kwargs.get("mlx_max_queue_size", 32),
+            "batch_wait_ms": kwargs.get("mlx_batch_wait_ms", 10),
+            "queue_timeout_s": kwargs.get("mlx_queue_timeout_s", 120),
+            "output_queue_size": kwargs.get("mlx_output_queue_size", 256),
+        }
+        # memory_max_gb: None = mlx-vlm's machine-relative budget. It is a cap
+        # on each retained prefix snapshot, so it is only ever forwarded when
+        # the operator chose a number (see NativeSession.prompt_cache).
+        memory_max_gb = kwargs.get("mlx_cache_memory_max_gb")
+        if memory_max_gb is not None:
+            from .mlx_native_cache import _positive_gb
+            memory_max_gb = _positive_gb(memory_max_gb, "mlx_cache_memory_max_gb")
+        self._mlx_cache_options = {
+            "disk_path": kwargs.get("mlx_cache_disk_path"),
+            "disk_max_gb": kwargs.get("mlx_cache_disk_max_gb", 4.0),
+            "memory_max_gb": memory_max_gb,
+        }
+        self._mlx_cache_scope = kwargs.get("mlx_cache_scope", "local")
+        if not isinstance(self._mlx_cache_scope, str) or not self._mlx_cache_scope.strip():
+            raise ValueError("mlx_cache_scope must be a non-empty string")
+        if self._mlx_cache_options["disk_path"] is not None and not self._mlx_batching:
+            raise ValueError("mlx_cache_disk_path requires mlx_batching=True")
+        self._mtp_generation_lock = threading.Lock()
+        self._native_cache_key = None
+        self._mlx_ple_offload = kwargs.get("mlx_ple_offload", True)
+        if not isinstance(self._mlx_ple_offload, bool):
+            raise ValueError("mlx_ple_offload must be a bool")
         # Delta-feed bookkeeping (see _prepare_cache_delta_feed): keys that
         # already warned about unknown-composition warm caches, and the last
         # fragment fed by _prompt_cache_backend_append (consumed by
@@ -205,6 +264,153 @@ class MLXProvider(BaseProvider):
         self._shared_model: Optional[_SharedMLXModel] = None
         self._share_loaded_model = _mlx_model_sharing_enabled(kwargs)
         self._load_model()
+
+    def supports_concurrent_generation(self) -> bool:
+        """The native scheduler, not ordinary thread submission, owns concurrency."""
+        return getattr(self, "_native_runtime", None) is not None
+
+    def supports_text_progress_events(self) -> bool:
+        """True on every MLX lane: each one can observe the first sampled token.
+
+        The native runtime reports prompt/cached/generation counters per
+        snapshot; mlx-vlm and mlx-lm both expose `stream_generate`, whose first
+        response with a token IS the end of prefill. See
+        `providers/generation_progress.py` for the emitted contract.
+        """
+        return True
+
+    def supports_generation_cancel(self) -> bool:
+        """True on every MLX lane: each decodes token by token in-process.
+
+        The native runtime checks the job's event per token (batched and
+        exclusive loops); the mlx-lm / mlx-vlm lanes are driven through their
+        `stream_generate` generator whenever an event is supplied, checked per
+        sampled token and closed on cancel (mlx-lm additionally aborts prefill
+        between chunks). Contract: `providers/generation_cancel.py`.
+        """
+        return True
+
+    def _bind_native_session(self, session):
+        """Bind one execution policy to shared weights, never competing workers."""
+        import importlib.metadata
+        from pathlib import Path
+        self._native_session = session
+        self._mtp_generation_lock = session.lock
+        batching = getattr(self, "_mlx_batching", False)
+        runtime_options = getattr(self, "_mlx_runtime_options", {})
+        cache_options = getattr(self, "_mlx_cache_options", {})
+        signature = json.dumps({"batching": batching,
+                                "runtime": runtime_options,
+                                "cache": cache_options}, sort_keys=True, default=str)
+        with session.config_lock:
+            if session.execution_config is not None and session.execution_config != signature:
+                raise ProviderAPIError("Native MLX weights are already resident with different execution/cache settings; unload their providers before changing settings")
+            session.execution_config = signature
+            if batching:
+                if session.runtime is None:
+                    from .mlx_native_cache import NativeCacheStore
+                    from .mlx_runtime import NativeRuntime
+                    head_identity = None
+                    if session.drafter is not None:
+                        embedded = getattr(self, "_native_qwen4", None) is session
+                        head_identity = {
+                            "path": (str(Path(self._resolved_model_id).resolve()) + "#mtp") if embedded
+                                    else session.drafter_path,
+                            "weights_fingerprint": self.prompt_cache_weights_fingerprint() if embedded
+                                                   else session.drafter_weights_fingerprint,
+                        }
+                        if cache_options.get("disk_path") is not None and not head_identity["weights_fingerprint"]:
+                            raise ProviderAPIError("Native disk caching requires a verified drafter weights fingerprint")
+                    identity = {
+                        "model_path": str(Path(self._resolved_model_id).resolve()),
+                        "weights_fingerprint": self.prompt_cache_weights_fingerprint(),
+                        "model_config": self.prompt_cache_model_config_fingerprint(),
+                        "tokenizer": self.prompt_cache_tokenizer_fingerprint(),
+                        "mlx": importlib.metadata.version("mlx"),
+                        "mlx_vlm": importlib.metadata.version("mlx-vlm"),
+                        "head": head_identity,
+                        "ple_offload": bool(getattr(session, "ple_offload", False)),
+                    }
+                    session.cache_store = NativeCacheStore(identity, **cache_options)
+                    session.runtime = NativeRuntime(
+                        session.model, session.processor, session.drafter,
+                        getattr(session, "draft_kind", None) or self._mtp_kind,
+                        cache_factory=session.cache_store.manager,
+                        on_close=session.cache_store.close, **runtime_options)
+                self._native_runtime = session.runtime
+                self._native_owner_id = session.runtime.acquire()
+            session.holders.add(self)
+            from .mlx_native_session import release_native_owner
+            self._native_finalizer = weakref.finalize(self, release_native_owner, session, getattr(self, "_native_owner_id", None))
+
+    def _native_request_view(self, cancel_event=None):
+        """Request-local facade over shared immutable defaults and runtime lease.
+
+        Explicitly rebind adapter methods: copying a bound method otherwise
+        silently routes execution back through the original mutable provider.
+        """
+        view = copy.copy(self)
+        view._native_request_facade = True
+        view._native_parent = self  # Keep the real model lease alive through lazy streams.
+        view._vision_side = {}
+        view._pending_append_fragment = None
+        view._pending_append_fragment_ids = None
+        view._pending_append_precount = 0
+        view._last_output_budget_clamp = None
+        view._native_runtime_metadata = {}
+        view._native_runtime_stream = None
+        if cancel_event is not None and not isinstance(cancel_event, threading.Event):
+            from .mlx_runtime import NativeRuntimeError
+            raise NativeRuntimeError("_cancel_event must be a threading.Event", code="invalid_request")
+        view._native_cancel_event = cancel_event if cancel_event is not None else threading.Event()
+        view.generate_fn = view._mtp_generate_fn
+        view.stream_generate_fn = view._mtp_stream_generate_fn
+        return view
+
+    def _native_runtime_request(self, text, kwargs):
+        import base64
+        from pathlib import Path
+        from .mlx_runtime import NativeRequest, NativeRuntimeError
+        media = []
+        for index, part in getattr(self, "_native_media", ()):
+            path = getattr(part, "file_path", None)
+            raw = Path(path).read_bytes() if path else part.content
+            if isinstance(raw, str):
+                raw = base64.b64decode(raw, validate=True)
+            media.append((index, bytes(raw)))
+        enabled = self._mtp_active and not getattr(self, "_mtp_call_disabled", False)
+        try:
+            # Validate raw values before coercion: bools and fractional counts
+            # must not silently become different controls at the native seam.
+            return NativeRequest(
+                prompt=text, max_tokens=kwargs["max_tokens"],
+                temperature=kwargs.get("temperature", 0),
+                top_p=kwargs.get("top_p", 1), top_k=kwargs.get("top_k", 0),
+                seed=kwargs.get("seed"),
+                draft_tokens=(getattr(self, "_mtp_call_block_size", None) or 3) if enabled else 0,
+                cache_key=getattr(self, "_native_cache_key", None),
+                cache_scope=self._mlx_cache_scope, media=tuple(media),
+                sampling=dict(getattr(self, "_native_sampling_kwargs", {})),
+                stop=tuple(getattr(self, "_native_stop", ())), owner_id=self._native_owner_id,
+            )
+        except (TypeError, ValueError, KeyError) as exc:
+            raise NativeRuntimeError(str(exc), code="invalid_request") from exc
+
+    def _observe_native_runtime_result(self, result):
+        self._mtp_last_result = result
+        self._native_runtime_metadata = dict(result.metadata or {})
+        spec = self._native_runtime_metadata.pop("speculation", {})
+        self._mtp_last_used = bool(spec.get("used", False))
+        self._mtp_call_stats = dict(spec.get("stats", {}))
+        self._native_media_records = list(result.media_records or ())
+        self._record_native_media()
+
+    def _publish_native_request_status(self):
+        parent = getattr(self, "_native_parent", None)
+        if parent is not None:
+            # A single immutable snapshot means concurrent responses never read
+            # one another's mutable counters. This view is last-COMPLETED only.
+            parent._native_last_completed_status = self.speculation_status()
 
     def _load_or_adopt_shared_model(self, key: str, loader: Any) -> Tuple[Any, Any]:
         """(llm, tokenizer) for `key` — loaded once per process, then adopted.
@@ -264,8 +470,22 @@ class MLXProvider(BaseProvider):
         """MLX supports KV prompt caches via `mlx_lm.models.cache`."""
         return True
 
+    def get_prompt_cache_capabilities(self):
+        if getattr(self, "_mtp_processor", None) is not None:
+            from .base import PromptCacheCapabilities
+            return PromptCacheCapabilities(
+                supported=True, mode="keyed", supports_clear=True, supports_stats=True,
+                notes=("Native prefix reuse requires complete messages; optional managed SSD tier when mlx_batching=True. "
+                       "Clear invalidates all shared native entries, including clear(key).",),
+            )
+        return super().get_prompt_cache_capabilities()
+
     def prompt_cache_supports_kv_source_of_truth(self) -> bool:
         """MLX KV caches are mutable and can serve as the context source-of-truth."""
+        if getattr(self, "_mtp_processor", None) is not None:
+            # Native VLM APC requires the full logical history; it is not an
+            # append-only hidden conversation store.
+            return False
         return True
 
     def prompt_cache_cache_backend(self) -> str:
@@ -473,6 +693,11 @@ class MLXProvider(BaseProvider):
         return new_kwargs, ThinkingControlHandling()
 
     def _prompt_cache_backend_create(self) -> Optional[Any]:
+        if getattr(self, "_mtp_processor", None) is not None:
+            raise ProviderAPIError(
+                "Native Qwen4 uses automatic prefix caching: pass prompt_cache_key and "
+                "complete messages to generate(); manual prefill/append/fork is unsupported."
+            )
         try:
             from mlx_lm.models.cache import make_prompt_cache
         except Exception:
@@ -653,6 +878,24 @@ class MLXProvider(BaseProvider):
     def prompt_cache_clear(self, key: Optional[str] = None) -> bool:
         """Clear prompt caches AND their hybrid snapshots (avoid stale/leaked
         snapshot state outliving the key it mirrors)."""
+        native = getattr(self, "_native_session", None) or getattr(self, "_native_qwen4", None)
+        if native:
+            runtime = getattr(self, "_native_runtime", None)
+            if runtime is not None:
+                if key is not None:
+                    self.logger.warning("#FALLBACK Native APC clear(key) clears all shared native prefix entries")
+                runtime.control(native.cache_store.clear)
+                return True
+            if not native.lock.acquire(blocking=False):
+                raise ProviderAPIError("Cannot clear native prompt cache during generation; close its stream first")
+            try:
+                if key is not None:
+                    self.logger.warning("#FALLBACK Native APC clear(key) clears all shared native prefix entries")
+                if native.apc is not None:
+                    native.apc.clear()
+                return True
+            finally:
+                native.lock.release()
         result = super().prompt_cache_clear(key)
         with self._hybrid_snapshot_lock:
             if key is None:
@@ -761,8 +1004,96 @@ class MLXProvider(BaseProvider):
     def _prompt_cache_value_bytes(self, cache_value: Any) -> Optional[int]:
         return self._mlx_cache_nbytes(cache_value)
 
+    _NATIVE_APC_COUNTERS = ("exact_stores", "exact_hits", "memory_skips", "rejects", "stores", "hits", "misses")
+
+    def _native_apc_counters(self) -> Optional[Dict[str, int]]:
+        """Counters of the direct lane's mlx-vlm prefix cache, or None.
+
+        None when no manager exists yet (the first keyed call builds it and its
+        counters start at zero, which is what a None baseline means to
+        `_native_apc_delta`) and on the scheduled lane, whose manager is
+        worker-owned and must not be read from the caller thread.
+        """
+        if getattr(self, "_native_runtime", None) is not None:
+            return None
+        native = getattr(self, "_native_session", None) or getattr(self, "_native_qwen4", None)
+        apc = getattr(native, "apc", None) if native is not None else None
+        if apc is None:
+            return None
+        snap = apc.stats_snapshot()
+        counters = {name: int(snap.get(name) or 0) for name in self._NATIVE_APC_COUNTERS}
+        counters["memory_max_bytes"] = int(snap.get("memory_max_bytes") or 0)
+        counters["resident_bytes"] = int(snap.get("resident_bytes") or 0)
+        return counters
+
+    def _native_apc_delta(self, before: Optional[Dict[str, int]]) -> Optional[Dict[str, int]]:
+        """What THIS call did to the prefix cache: counter deltas plus the budget it ran under."""
+        after = self._native_apc_counters()
+        if after is None:
+            return None
+        base = before or {}
+        delta = {name: after[name] - int(base.get(name, 0)) for name in self._NATIVE_APC_COUNTERS}
+        delta["memory_max_bytes"] = after["memory_max_bytes"]
+        delta["resident_bytes"] = after["resident_bytes"]
+        return delta
+
+    def _native_apc_telemetry(self, telemetry: Dict[str, Any], native_result: Any) -> None:
+        """Fill the native lane's prompt-cache telemetry from MEASURED values only.
+
+        `outcome` uses the mlx-lm lane's vocabulary (`hit_restore` / `cold`) and
+        is decided by the runtime's own `cached_tokens`. `apc` carries this
+        call's store/skip counters (from `_mtp_last_apc`, captured around the
+        native generate call) so a snapshot that did not fit the budget shows
+        up in the ledger as what it is. mlx-vlm skips retaining any snapshot
+        larger than its memory budget and says nothing; the failure this makes
+        loud is "every turn re-prefills 20k tokens and no field explains why".
+        """
+        cached = int(getattr(native_result, "cached_tokens", 0) or 0)
+        prompt_tokens = int(getattr(native_result, "prompt_tokens", 0) or 0)
+        telemetry["cached_tokens"] = cached
+        telemetry["fed_tokens"] = prompt_tokens - cached
+        telemetry["outcome"] = "hit_restore" if cached > 0 else "cold"
+        delta = getattr(self, "_mtp_last_apc", None)
+        if delta is None:
+            return
+        telemetry["apc"] = dict(delta)
+        stored = delta["exact_stores"] > 0 or delta["stores"] > 0
+        reason = None
+        if not stored and delta["memory_skips"] > 0:
+            reason = (
+                f"native_apc_store_skipped: the {prompt_tokens}-token prefix snapshot did not fit "
+                f"the prefix-cache memory budget ({delta['memory_max_bytes'] >> 20} MiB), so the "
+                "next turn on this key re-prefills the whole conversation. Raise "
+                "mlx_cache_memory_max_gb, or unset it for the machine-sized default."
+            )
+        elif not stored and delta["rejects"] > 0:
+            reason = (
+                f"native_apc_store_rejected: mlx-vlm refused to snapshot the {prompt_tokens}-token "
+                "prefix (see its 'APC exact-cache store rejected' log line); the next turn on "
+                "this key re-prefills the whole conversation."
+            )
+        if reason is None:
+            return
+        telemetry["degraded_reason"] = f"#FALLBACK {reason}"
+        warned = getattr(self, "_native_apc_skip_warned_keys", None)
+        if warned is None:
+            warned = self._native_apc_skip_warned_keys = set()
+        key = telemetry.get("key")
+        if key not in warned:
+            warned.add(key)
+            self.logger.warning("mlx: " + reason)
+
     def get_prompt_cache_stats(self) -> Dict[str, Any]:
         """Add hybrid-snapshot visibility (count + best-effort bytes) to base stats."""
+        native = getattr(self, "_native_session", None) or getattr(self, "_native_qwen4", None)
+        if native:
+            runtime = getattr(self, "_native_runtime", None)
+            if runtime is not None:
+                return {"backend": "mlx_vlm_apc", "full_history_required": True,
+                        "stats": runtime.control(native.cache_store.stats),
+                        "execution": runtime.stats()}
+            return {"backend": "mlx_vlm_apc", "full_history_required": True,
+                    "stats": native.apc.stats_snapshot() if native.apc is not None else {}}
         stats = super().get_prompt_cache_stats()
         try:
             self._ensure_hybrid_snapshot_state()
@@ -2150,6 +2481,8 @@ class MLXProvider(BaseProvider):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Save an MLX KV prompt cache to a `.safetensors` file (model-locked; best-effort)."""
+        if getattr(self, "_mtp_processor", None) is not None:
+            raise ProviderAPIError("Native MLX automatic prefix caches do not implement manual prompt_cache_save; use the managed SSD tier with mlx_batching=True")
         _ = kwargs
         if not self.supports_prompt_cache():
             raise ValueError("Prompt caching is not supported for this provider/model.")
@@ -2276,6 +2609,8 @@ class MLXProvider(BaseProvider):
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Load an MLX KV prompt cache from a `.safetensors` file (model-locked; best-effort)."""
+        if getattr(self, "_mtp_processor", None) is not None:
+            raise ProviderAPIError("Native MLX automatic prefix caches do not implement manual prompt_cache_load; use the managed SSD tier with mlx_batching=True")
         _ = kwargs
         if not self.supports_prompt_cache():
             raise ValueError("Prompt caching is not supported for this provider/model.")
@@ -2489,7 +2824,7 @@ class MLXProvider(BaseProvider):
         if request is None or not request.enabled:
             return None
 
-        block = capability_speculation(self.model_capabilities, "mlx")
+        block = capability_speculation(self.model_capabilities, "mlx") or getattr(self, "_speculation_artifact", None)
         drafter_id = request.drafter or (block or {}).get("drafter")
         if not drafter_id:
             # Deliberately not a guess: the MLX head ships as its own repo whose
@@ -2544,16 +2879,22 @@ class MLXProvider(BaseProvider):
             # None lets mlx-vlm fall back to that config value.
             or None
         )
-        if block_size == 1:
-            # Measured on Qwen3.5-4B: 15.4 tok/s against 107.2 unaccelerated --
-            # a 7x SLOWDOWN, not a small loss. Worth naming rather than letting
-            # someone conclude MTP is broken.
-            self.logger.warning(
-                "speculation: num_draft_tokens=1 is pathologically slow on the "
-                "MLX MTP lane (measured ~0.14x of unaccelerated decoding). Use 2 "
-                "or more, or omit it to take the model's registry default."
-            )
-        return {"drafter": str(drafter_id), "block_size": block_size}
+        if getattr(self, "_speculation_inherits_config", False):
+            from .speculation import _local_model_directory
+            cached_head = _local_model_directory(str(drafter_id))
+            if cached_head is None or not any(cached_head.glob("*.safetensors")):
+                self._mtp_outcome_at_load = speculation_unavailable(
+                    request, "mtp_head_not_cached",
+                    "The default MTP policy needs a matching head that is not cached. "
+                    "Provision it explicitly in model management; defaults never download weights.",
+                    logger=self.logger,
+                )
+                return None
+            drafter_id = str(cached_head)
+        plan = {"drafter": str(drafter_id), "block_size": block_size}
+        if getattr(self, "_speculation_inherits_config", False):
+            plan["drafter_id"] = request.drafter or (block or {}).get("drafter")
+        return plan
 
     def _enter_mtp_lane(self, load_target, plan: Dict[str, Any]) -> bool:
         """Load target + drafter through mlx-vlm. True when the lane is live.
@@ -2569,8 +2910,7 @@ class MLXProvider(BaseProvider):
         request = self._speculation_request
         drafter_id = plan["drafter"]
         try:
-            from mlx_vlm import load as vlm_load
-            from mlx_vlm.speculative.drafters import load_drafter
+            from .mlx_native_session import load_native_session
 
             with open(os.devnull, "w") as devnull:
                 with redirect_stdout(devnull), redirect_stderr(devnull):
@@ -2585,8 +2925,9 @@ class MLXProvider(BaseProvider):
                     # Use the kind the loader RESOLVES from the drafter's
                     # config, never a caller-supplied one -- load_drafter's own
                     # docstring says the resolved value is the dispatch key.
-                    drafter, kind = load_drafter(drafter_id)
-                    model, processor = vlm_load(str(load_target))
+                    session = load_native_session(str(load_target), drafter_id)
+                    drafter, kind = session.drafter, session.draft_kind
+                    model, processor = session.model, session.processor
         except Exception as exc:
             self._mtp_outcome_at_load = speculation_unavailable(
                 request,
@@ -2605,12 +2946,13 @@ class MLXProvider(BaseProvider):
         self.tokenizer = getattr(processor, "tokenizer", processor)
         self._mtp_drafter = drafter
         self._mtp_kind = kind
-        self._mtp_drafter_id = drafter_id
+        self._mtp_drafter_id = plan.get("drafter_id") or drafter_id
         self._mtp_block_size = plan.get("block_size")
         self.generate_fn = self._mtp_generate_fn
         self.stream_generate_fn = self._mtp_stream_generate_fn
+        self._bind_native_session(session)
         self.logger.info(
-            f"mlx: native MTP lane active (drafter={drafter_id}, kind={kind}, "
+            f"mlx: native VLM lane active (drafter={drafter_id}, kind={kind}, "
             f"block_size={self._mtp_block_size or 'from drafter config'})"
         )
         return True
@@ -2630,7 +2972,29 @@ class MLXProvider(BaseProvider):
         # to say what actually ran, naming a checkpoint that was never loaded.
         self._mtp_call_disabled = False
         self._mtp_call_outcome = None
-        request = normalize_speculation_request(value)
+        self._mtp_last_used = False
+        self._mtp_call_stats = {}
+        self._native_sampling_kwargs = {}
+        self._native_media = []
+        self._native_media_records = []
+        self._native_media_report = None
+        self._native_media_delivered = set()
+        self._mtp_last_result = None
+        self._mtp_last_apc = None
+        self._native_cache_key = None
+        self._mtp_call_block_size = getattr(self, "_mtp_block_size", None)
+        default = getattr(self, "_speculation_request", None)
+        if getattr(self, "_speculation_inherits_config", False):
+            from .speculation import configured_speculation_default
+            # Config owns intent; existing session owns readiness. Never reload
+            # or mutate another request's defaults when the console changes.
+            policy = configured_speculation_default(
+                config_file=getattr(self, "_abstractcore_config_file", None),
+                capability_defaults=getattr(self, "_abstractcore_capability_defaults", None),
+            ) if getattr(self, "_speculation_default_supported", False) else False
+            default = normalize_speculation_request(policy if policy is not None else False)
+        request = resolve_speculation_request(default, value)
+        self._mtp_call_request = request
         if request is None:
             return
 
@@ -2648,6 +3012,8 @@ class MLXProvider(BaseProvider):
             return
 
         if self._mtp_active:
+            if request.num_draft_tokens is not None:
+                self._mtp_call_block_size = request.num_draft_tokens
             wanted = request.drafter
             if wanted and wanted != getattr(self, "_mtp_drafter_id", None):
                 self._mtp_call_disabled = True
@@ -2696,9 +3062,9 @@ class MLXProvider(BaseProvider):
     def _mtp_kwargs(self, input_embeddings) -> Dict[str, Any]:
         """Drafter kwargs for one call, or {} when this call must not use it.
 
-        v1 is text-only. The vision add-on feeds `input_embeddings`, which is an
-        mlx-lm-shaped entry point that mlx-vlm's speculative loop does not take;
-        rather than guess at the pairing, an image request runs unaccelerated.
+        The legacy vision add-on's `input_embeddings` are mlx-lm-shaped and
+        unsupported by this adapter. Native Qwen4 images use prepared pixel
+        tensors instead and can use MTP after the vision prefill.
         """
         if (
             not self._mtp_active
@@ -2717,38 +3083,164 @@ class MLXProvider(BaseProvider):
             "draft_model": self._mtp_drafter,
             "draft_kind": getattr(self, "_mtp_kind", None),
         }
-        block = getattr(self, "_mtp_block_size", None)
+        block = getattr(self, "_mtp_call_block_size", getattr(self, "_mtp_block_size", None))
         if block:
-            kw["draft_block_size"] = int(block)
-        self._mtp_last_used = True
+            kw["draft_block_size"] = int(block) + 1
         return kw
+
+    def _mtp_stats_snapshot(self):
+        draft = getattr(self, "_mtp_drafter", None)
+        if draft is None or getattr(self, "_mtp_call_disabled", False):
+            return None
+        return tuple(getattr(draft, "speculative_total_" + key, 0) for key in ("rounds", "accepted", "drafted"))
+
+    def _mtp_record_execution(self, before):
+        if before is None:
+            return
+        draft = self._mtp_drafter
+        now = tuple(getattr(draft, "speculative_total_" + key, 0) for key in ("rounds", "accepted", "drafted"))
+        rounds, accepted, drafted = (int(b - a) for a, b in zip(before, now))
+        self._mtp_last_used = drafted > 0
+        self._mtp_call_stats = {"rounds": rounds, "accepted_tokens": accepted, "drafted_tokens": drafted}
+        if drafted:
+            self._mtp_call_stats["acceptance_rate"] = accepted / drafted
 
     def _mtp_generate_fn(self, model, tokenizer, prompt=None, **kwargs):
         """mlx-lm-shaped call site adapter over mlx-vlm's `generate`."""
-        from mlx_vlm import generate as vlm_generate
-
         text = prompt if prompt is not None else kwargs.pop("prompt", None)
-        result = vlm_generate(
-            model,
-            self._mtp_processor,
-            text,
-            **self._mtp_call_kwargs(kwargs),
-        )
+        if getattr(self, "_native_runtime", None) is not None:
+            from dataclasses import replace
+            from .mlx_runtime import NativeRuntimeError
+            handle = self._native_runtime.stream(self._native_runtime_request(text, kwargs),
+                cancel_event=getattr(self, "_native_cancel_event", None))
+            self._native_runtime_stream = handle
+            parts, result = [], None
+            if getattr(self, "_native_cancel_event", None) is not None and self._native_cancel_event.is_set():
+                handle.close()
+            try:
+                for result in handle:
+                    parts.append(result.text)
+                event = getattr(self, "_native_cancel_event", None)
+                cancelled = event is not None and event.is_set()
+            finally:
+                handle.close()
+                self._native_runtime_stream = None
+            if result is None or result.finish_reason is None:
+                raise NativeRuntimeError("Native MLX request ended without a terminal result",
+                                         code="cancelled" if cancelled else "backend_error")
+            result = replace(result, text="".join(parts))
+            self._observe_native_runtime_result(result)
+            return result.text
+        from mlx_vlm import generate as vlm_generate
+        call_kwargs = self._mtp_call_kwargs(kwargs)
+        call_kwargs.update(self._native_image_kwargs(text))
+        before = self._mtp_stats_snapshot()
+        apc_before = self._native_apc_counters()
+        try:
+            result = vlm_generate(model, self._mtp_processor, text, **call_kwargs)
+            self._mtp_last_result = result
+            self._mtp_last_apc = self._native_apc_delta(apc_before)
+            self._record_native_media()
+        finally:
+            self._mtp_record_execution(before)
         # mlx-lm's `generate` returns a str; mlx-vlm returns a result object.
         # The call site assigns straight into `response_text`, so normalize here
         # rather than teaching every consumer about a second shape.
         return getattr(result, "text", result)
 
     def _mtp_stream_generate_fn(self, model, tokenizer, prompt=None, **kwargs):
-        from mlx_vlm import stream_generate as vlm_stream_generate
-
         text = prompt if prompt is not None else kwargs.pop("prompt", None)
-        return vlm_stream_generate(
-            model,
-            self._mtp_processor,
-            text,
-            **self._mtp_call_kwargs(kwargs),
-        )
+        # Mid-prefill progress (`TextProgressEmitter.prefill_progress`), never
+        # forwarded to mlx-vlm or into the native request.
+        prefill_progress = kwargs.pop(PREFILL_PROGRESS_KWARG, None)
+        if not callable(prefill_progress):
+            prefill_progress = None
+        if getattr(self, "_native_runtime", None) is not None:
+            # Only passed when someone listens: an unobserved call is
+            # byte-identical to before.
+            observe_kwargs = {}
+            if prefill_progress is not None:
+                def on_prefill(item, _report=prefill_progress):
+                    _report(**item.as_kwargs())
+                observe_kwargs["on_prefill_progress"] = on_prefill
+            handle = self._native_runtime.stream(self._native_runtime_request(text, kwargs),
+                cancel_event=getattr(self, "_native_cancel_event", None), **observe_kwargs)
+            self._native_runtime_stream = handle
+            if getattr(self, "_native_cancel_event", None) is not None and self._native_cancel_event.is_set():
+                handle.close()
+            def scheduled():
+                from .mlx_runtime import NativeRuntimeError
+                result = None
+                try:
+                    for result in handle:
+                        self._observe_native_runtime_result(result)
+                        yield result
+                    if result is None or result.finish_reason is None:
+                        event = getattr(self, "_native_cancel_event", None)
+                        cancelled = event is not None and event.is_set()
+                        raise NativeRuntimeError("Native MLX stream ended without a terminal result",
+                                                 code="cancelled" if cancelled else "backend_error")
+                finally:
+                    handle.close()
+                    self._native_runtime_stream = None
+            return scheduled()
+        from mlx_vlm import stream_generate as vlm_stream_generate
+        call_kwargs = self._mtp_call_kwargs(kwargs)
+        call_kwargs.update(self._native_image_kwargs(text))
+        before = self._mtp_stats_snapshot()
+        apc_before = self._native_apc_counters()
+        generator = vlm_stream_generate(model, self._mtp_processor, text, **call_kwargs)
+        def observed():
+            from .mlx_prefill_observer import observe_prefill
+
+            def _fed(done, total, _report=prefill_progress):
+                _report(fed_processed=done, fed_total=total)
+
+            def _results():
+                # mlx-vlm's chunked prefill runs inside the FIRST `next()`, on
+                # this thread; its "Prefill" bar is observed only while bound.
+                while True:
+                    with observe_prefill(_fed if prefill_progress is not None else None):
+                        try:
+                            item = next(generator)
+                        except StopIteration:
+                            return
+                    yield item
+
+            try:
+                for result in _results():
+                    self._mtp_last_result = result
+                    self._record_native_media()
+                    self._mtp_record_execution(before)
+                    yield result
+            finally:
+                try:
+                    generator.close()
+                finally:
+                    self._mtp_record_execution(before)
+                    self._mtp_last_apc = self._native_apc_delta(apc_before)
+        return observed()
+
+    def _native_image_kwargs(self, prompt):
+        media = getattr(self, "_native_media", None)
+        if not media:
+            return {}
+        from .mlx_qwen4 import prepare_images
+        inputs, self._native_media_records = prepare_images(self.llm, self._mtp_processor, prompt, media)
+        return inputs
+
+    def _record_native_media(self):
+        report = getattr(self, "_native_media_report", None)
+        if report is not None:
+            seen = getattr(self, "_native_media_delivered", None)
+            if seen is None:
+                seen = self._native_media_delivered = set()
+            for record in self._native_media_records:
+                identity = (record["index"], record["kind"], record["transport"])
+                if identity not in seen:
+                    report.deliver(**record)
+                    seen.add(identity)
+            self._native_media_records = []
 
     def _mtp_call_kwargs(self, kwargs: Dict[str, Any]) -> Dict[str, Any]:
         """Translate the mlx-lm call-site kwargs into mlx-vlm's vocabulary."""
@@ -2785,6 +3277,16 @@ class MLXProvider(BaseProvider):
                 "reuse back."
             )
         out.update(self._mtp_kwargs(input_embeddings))
+        if getattr(self, "_mtp_processor", None) is not None:
+            out.setdefault("prefill_step_size", 256)
+            if getattr(self, "_native_cache_key", None):
+                session = getattr(self, "_native_session", None) or getattr(self, "_native_qwen4", None)
+                if session is None:
+                    raise ProviderAPIError("Native MLX prefix caching requires a loaded native session")
+                out["apc_manager"] = session.prompt_cache(
+                    memory_max_gb=getattr(self, "_mlx_cache_options", {}).get("memory_max_gb")
+                )
+                out["apc_tenant"] = json.dumps([getattr(self, "_mlx_cache_scope", "local"), self._native_cache_key])
         return out
 
     def speculation_status(self) -> Dict[str, Any]:
@@ -2793,10 +3295,15 @@ class MLXProvider(BaseProvider):
         `last_call_used` is the authoritative per-call fact and is set by
         `_mtp_kwargs`, so it is correct in the streaming lane too.
         """
+        completed = getattr(self, "_native_last_completed_status", None)
+        if completed is not None and not getattr(self, "_native_request_facade", False):
+            return {**completed, "stats": dict(completed.get("stats", {}))}
         return {
             "lane_loaded": self._mtp_active,
             "drafter": getattr(self, "_mtp_drafter_id", None),
             "draft_tokens": getattr(self, "_mtp_block_size", None),
+            "effective_draft_tokens": getattr(self, "_mtp_call_block_size", None),
+            "stats": dict(getattr(self, "_mtp_call_stats", {})),
             "draft_kind": getattr(self, "_mtp_kind", None),
             "output_preserving": getattr(self, "_mtp_output_preserving", None),
             "last_call_used": getattr(self, "_mtp_last_used", None),
@@ -2816,7 +3323,7 @@ class MLXProvider(BaseProvider):
         call_outcome = getattr(self, "_mtp_call_outcome", None)
         if call_outcome is not None:
             return call_outcome
-        request = getattr(self, "_speculation_request", None)
+        request = getattr(self, "_mtp_call_request", None) or getattr(self, "_speculation_request", None)
         if request is None or not request.enabled:
             return SpeculationOutcome()
         if used_this_call:
@@ -2825,16 +3332,18 @@ class MLXProvider(BaseProvider):
                 mode=request.mode,
                 used=True,
                 drafter=getattr(self, "_mtp_drafter_id", None),
-                num_draft_tokens=getattr(self, "_mtp_block_size", None),
+                num_draft_tokens=getattr(self, "_mtp_call_block_size", getattr(self, "_mtp_block_size", None)),
                 details=(
                     {
                         "runtime": "mlx_vlm",
                         "draft_kind": getattr(self, "_mtp_kind", None),
+                        **getattr(self, "_mtp_call_stats", {}),
                     }
                     if getattr(self, "_mtp_output_preserving", None) is not False
                     else {
                         "runtime": "mlx_vlm",
                         "draft_kind": getattr(self, "_mtp_kind", None),
+                        **getattr(self, "_mtp_call_stats", {}),
                         "output_preserving": False,
                     }
                 ),
@@ -2852,9 +3361,20 @@ class MLXProvider(BaseProvider):
 
     def _load_model(self):
         """Load MLX model and tokenizer"""
+        # Only THESE two imports mean "the MLX provider is not installed". They
+        # are deliberately outside the load block below: that block imports
+        # mlx_vlm, the Qwen4-Exp MTP drafter and per-architecture modules, and
+        # answering any of those with "install mlx-lm" points the caller at a
+        # package that is already there while hiding the one that is missing.
         try:
             from mlx_lm import load, generate, stream_generate
             import mlx.core as mx
+        except ImportError as e:
+            raise ImportError(
+                "MLX dependencies not installed. Install with: pip install mlx-lm"
+            ) from e
+
+        try:
             import os
             from contextlib import redirect_stdout, redirect_stderr
             from pathlib import Path
@@ -3020,6 +3540,46 @@ class MLXProvider(BaseProvider):
 
             load_target = str(load_dir)
             self._resolved_model_id = load_target
+            from .speculation import mlx_speculation_artifact
+            self._speculation_artifact = mlx_speculation_artifact(self.model)
+            if getattr(self, "_speculation_inherits_config", False):
+                from .speculation import configured_speculation_default, describe_speculation_capabilities
+                policy = configured_speculation_default(
+                    config_file=getattr(self, "_abstractcore_config_file", None),
+                    capability_defaults=getattr(self, "_abstractcore_capability_defaults", None),
+                )
+                self._speculation_default_supported = describe_speculation_capabilities(self.model, "mlx")["supported"]
+                if policy is not None and self._speculation_default_supported:
+                    self._speculation_request = normalize_speculation_request(policy)
+            from .mlx_qwen4 import is_qwen4_checkpoint, embedded_mtp_keys, load_qwen4_session
+
+            if is_qwen4_checkpoint(load_target):
+                request = self._speculation_request
+                enable_mtp = bool(request and request.enabled)
+                if enable_mtp and request.drafter:
+                    raise ValueError("Qwen4-Exp uses its embedded MTP head; omit speculation.drafter")
+                if enable_mtp and not embedded_mtp_keys(load_target):
+                    self._mtp_outcome_at_load = speculation_unavailable(
+                        request, "embedded_mtp_weights_missing",
+                        "This Qwen4-Exp checkpoint contains no indexed MTP weights; use an MTP-preserving artifact",
+                        logger=self.logger,
+                    )
+                    enable_mtp = False
+                session = load_qwen4_session(load_target, mtp=enable_mtp, ple_offload=self._mlx_ple_offload)
+                self._native_qwen4 = session
+                self._mtp_generation_lock = session.lock
+                self.llm = session.model
+                self._mtp_processor = session.processor
+                self.tokenizer = getattr(session.processor, "tokenizer", session.processor)
+                self._mtp_drafter = session.drafter if enable_mtp else None
+                self._mtp_kind = "mtp" if enable_mtp else None
+                self._mtp_drafter_id = load_target + "#mtp" if enable_mtp else None
+                self._mtp_block_size = (request.num_draft_tokens or 3) if enable_mtp else None
+                self.generate_fn = self._mtp_generate_fn
+                self.stream_generate_fn = self._mtp_stream_generate_fn
+                self._bind_native_session(session)
+                self.logger.info(f"mlx: native Qwen4-Exp loaded; embedded MTP={enable_mtp}, PLE mmap={session.ple_offload}")
+                return
             # config.json ONLY: no mlx_vlm import, no tensor scan, no network.
             # The transport-actual answer comes from the real add-on load at the
             # first image; this cheap flag only decides whether to try.
@@ -3064,6 +3624,10 @@ class MLXProvider(BaseProvider):
             # discovering we wanted the other costs a second 15 GB.
             mtp_plan = self._plan_mtp_lane(load_target)
             if mtp_plan is not None and self._enter_mtp_lane(load_target, mtp_plan):
+                return
+            if self._mlx_batching:
+                if not self._enter_mtp_lane(load_target, {"drafter": None, "block_size": None}):
+                    raise ProviderAPIError("Native MLX batching could not load this model through mlx-vlm")
                 return
 
             # Silence the "Fetching" progress bar by redirecting stdout/stderr
@@ -3120,8 +3684,18 @@ class MLXProvider(BaseProvider):
 
             self.generate_fn = generate
             self.stream_generate_fn = stream_generate
-        except ImportError:
-            raise ImportError("MLX dependencies not installed. Install with: pip install mlx-lm")
+        except ImportError as e:
+            # A module the installed MLX stack does not provide -- almost always
+            # a version floor that is not met, not an absent provider. The
+            # raisers below already name the floor they need (see
+            # mlx_qwen4._create_qwen4_session), so KEEP their text and add the
+            # one fact they cannot know: what is actually installed here.
+            raise ImportError(
+                f"{e}\n"
+                f"Installed MLX stack: {_installed_mlx_versions()} "
+                f"(AbstractCore requires mlx>=0.32.2, mlx-lm>=0.31.3, mlx-vlm>=0.7.1). "
+                f"Fix with: pip install -U \"abstractcore[mlx]\""
+            ) from e
         except SpeculationUnavailableError:
             # `require_acceleration=True` is an explicit "fail rather than run
             # slow". Re-flattening it into a generic "Failed to load MLX model"
@@ -3141,7 +3715,98 @@ class MLXProvider(BaseProvider):
                 raise ModelNotFoundError(error_message)
             raise Exception(f"Failed to load MLX model {self.model}: {str(e)}")
 
+    def load_model(self, model_name: Optional[str] = None, **kwargs: Any) -> Dict[str, Any]:
+        """(Re)load this instance's model after an `unload_model` (idempotent).
+
+        Runs the constructor's own `_load_model()` (weights, tokenizer, native
+        session when configured). One instance serves ONE model; the MTP
+        drafter is loaded again on the first speculative call, as at start."""
+        _ = kwargs
+        target = str(model_name or self.model or "").strip()
+        if target and target != str(self.model):
+            raise ValueError(
+                f"MLXProvider instance for {self.model!r} cannot load {target!r}: "
+                "create a provider for that model instead."
+            )
+        if self.llm is not None and self.tokenizer is not None:
+            return {"supported": True, "operation": "load", "provider": "mlx", "model": self.model,
+                    "action": "already_loaded", "source": "abstractcore.provider.mlx"}
+        t0 = time.time()
+        self._load_model()
+        return {"supported": True, "operation": "load", "provider": "mlx", "model": self.model,
+                "action": "loaded", "load_s": round(time.time() - t0, 3), "source": "abstractcore.provider.mlx"}
+
     def unload_model(self, model_name: str) -> None:
+        # Stop what is running on this instance first (host-cancellable calls:
+        # every gateway/runtime call carries its effect's event). A call that
+        # does not stop by the deadline makes the unload RAISE, nothing freed.
+        self._stop_inflight_before_unload(model_name, refuse_if_running=True)
+        runtime = getattr(self, "_native_runtime", None)
+        session = getattr(self, "_native_session", None)
+        if runtime is not None:
+            # release rejects pending/active requests without destroying the lease.
+            release_error = None
+            with session.config_lock:
+                try:
+                    runtime.release(self._native_owner_id)
+                except Exception as exc:
+                    # A stopped worker's flush failure must remain visible, but
+                    # must not pin its dead session/weights to this provider.
+                    # A live worker (including a close timeout) still owns its
+                    # tensors: preserve everything so the same lease can retry.
+                    worker = getattr(runtime, "_thread", None)
+                    if (getattr(runtime, "_pending_release_owner", None) != self._native_owner_id
+                            or worker is None or worker.is_alive()):
+                        raise
+                    release_error = (str(exc), getattr(exc, "code", "backend_error"))
+                    # Keep only scalar failure details: the original exception
+                    # traceback can retain the runtime, session and all weights.
+                    del worker
+                session.holders.discard(self)
+                self._native_shared_still_used = bool(list(session.holders))
+                if not self._native_shared_still_used:
+                    session.runtime = None
+                    session.cache_store = None
+                    session.execution_config = None
+            finalizer = getattr(self, "_native_finalizer", None)
+            if finalizer is not None:
+                finalizer.detach()
+            self._native_runtime = None
+            self._native_owner_id = None
+            self._native_last_completed_status = None
+            self._native_session = None
+            self._native_qwen4 = None
+            # Drop the outer frame's owners before the common cleanup collects
+            # model cycles and clears Metal's allocator. Otherwise weights are
+            # freed only after that clear, leaving newly cached allocations.
+            del runtime, session
+            self._unload_model_unlocked(model_name)
+            if release_error is not None:
+                from .mlx_runtime import NativeRuntimeError
+                message, code = release_error
+                raise NativeRuntimeError(message, code=code) from None
+            return None
+        lock = getattr(self, "_mtp_generation_lock", None) if getattr(self, "_mtp_processor", None) is not None else None
+        if lock is not None and not lock.acquire(blocking=False):
+            raise ProviderAPIError("Cannot unload native MLX during generation; finish or close its stream first")
+        try:
+            # Drop only this provider's native references. A sibling provider
+            # may still own the shared weights and prefix cache.
+            if session is not None:
+                session.holders.discard(self)
+                self._native_shared_still_used = bool(list(session.holders))
+                finalizer = getattr(self, "_native_finalizer", None)
+                if finalizer is not None:
+                    finalizer()
+                self._native_session = None
+            self._native_qwen4 = None
+            del session
+            return self._unload_model_unlocked(model_name)
+        finally:
+            if lock is not None:
+                lock.release()
+
+    def _unload_model_unlocked(self, model_name: str) -> None:
         """
         Unload the MLX model from memory.
 
@@ -3155,7 +3820,7 @@ class MLXProvider(BaseProvider):
         try:
             # A SHARED model is unloaded for THIS provider only while others still use
             # it: their weights and their sessions' caches are not this call's to clear.
-            shared_still_used = self._release_shared_model()
+            shared_still_used = self._release_shared_model() or getattr(self, "_native_shared_still_used", False)
 
             if hasattr(self, "llm") and self.llm is not None:
                 # Clear MLX model
@@ -3188,11 +3853,15 @@ class MLXProvider(BaseProvider):
             # unload entirely for any provider that ran a structured request.
             self._vision_addon = None
             self._outlines_model = None
+            self._mtp_drafter = None
+            self._mtp_processor = None
+            self._mtp_last_result = None
+            self._native_qwen4 = None
             gc.collect()
             try:
                 import mlx.core as mx
-
-                mx.clear_cache()
+                if not shared_still_used:
+                    mx.clear_cache()
             except Exception:
                 pass
         except Exception as e:
@@ -3239,6 +3908,78 @@ class MLXProvider(BaseProvider):
         """Public generate method that includes telemetry"""
         return self.generate_with_telemetry(*args, **kwargs)
 
+    async def agenerate(self, prompt="", messages=None, system_prompt=None,
+                        tools=None, media=None, stream=False, **kwargs):
+        """Normalize scheduled requests once, through the public sync lane.
+
+        BaseProvider.agenerate applies thinking/routing before calling the
+        adapter. Re-entering generate after that loses the original thinking
+        choice and can reapply configured defaults. The native scheduler is
+        already thread-safe, so hand its sync facade the original request;
+        it owns normalization, telemetry, tools and structured output.
+        """
+        if not self.supports_concurrent_generation():
+            return await super().agenerate(
+                prompt, messages=messages, system_prompt=system_prompt,
+                tools=tools, media=media, stream=stream, **kwargs)
+        return await self._agenerate_internal(
+            prompt, messages, system_prompt, tools, media, stream, **kwargs)
+
+    async def _agenerate_internal(self, prompt, messages, system_prompt, tools, media, stream, **kwargs):
+        """Never advance a blocking native iterator on the asyncio event loop."""
+        if not self.supports_concurrent_generation():
+            return await super()._agenerate_internal(prompt, messages, system_prompt, tools, media, stream, **kwargs)
+        import asyncio
+        view = self._native_request_view()
+        call = dict(messages=messages, system_prompt=system_prompt, tools=tools, media=media, **kwargs)
+        def cancel():
+            view._native_cancel_event.set()
+            handle = view._native_runtime_stream
+            if handle is not None:
+                handle.close()
+        if not stream:
+            task = asyncio.create_task(asyncio.to_thread(view.generate, prompt, stream=False, **call))
+            try:
+                return await asyncio.shield(task)
+            except asyncio.CancelledError:
+                cancel()
+                try:
+                    await asyncio.wait_for(asyncio.shield(task), timeout=5)
+                except (Exception, asyncio.CancelledError):
+                    pass
+                raise
+        from ..utils.async_stream import async_stream
+        def source():
+            # Lazy creation keeps normalization and iterator advancement on
+            # the same producer thread, including owner-thread close.
+            yield from view.generate(prompt, stream=True, **call)
+        return async_stream(source(), on_cancel=cancel)
+
+    async def _annotate_async_stream(self, source):
+        # Base's wrapper does not close its nested iterator on client aclose().
+        try:
+            async for chunk in source:
+                self._annotate_output_truncation(chunk)
+                yield chunk
+        finally:
+            if hasattr(source, "aclose"):
+                await source.aclose()
+
+    def _resolve_generate_route(self, *, request, output, thinking, kwargs):
+        if getattr(self, "_mtp_processor", None) is not None:
+            # A directly constructed native provider is already bound to its
+            # weights. Global route defaults must not mislabel their execution.
+            kwargs = dict(kwargs)
+            kwargs.setdefault("_provider", self.provider)
+            kwargs.setdefault("_model", self.model)
+            if output is not None and (getattr(request, "text", None) or getattr(request, "messages", None)):
+                output = [dict(spec) for spec in self._normalize_output_specs(output)]
+                for spec in output:
+                    if spec.get("modality") == "text" and spec.get("task") in (None, "text_generation"):
+                        spec.setdefault("provider", kwargs["_provider"])
+                        spec.setdefault("model", kwargs["_model"])
+        return super()._resolve_generate_route(request=request, output=output, thinking=thinking, kwargs=kwargs)
+
     def _structured_output_carries_media(self) -> bool:
         """False: Outlines' MLX adapter accepts a prompt STRING and re-encodes it
         with the plain tokenizer, so an image's expanded placeholder tokens cannot
@@ -3247,7 +3988,85 @@ class MLXProvider(BaseProvider):
         """
         return False
 
-    def _generate_internal(
+    def _generate_internal(self, prompt, messages=None, system_prompt=None, tools=None,
+                           media=None, stream=False, response_model=None, **kwargs):
+        """Own native runtime state through exhaustion/close of a lazy stream.
+
+        Overlapping native calls fail explicitly instead of resetting another
+        request's drafter/cache state. Resolving per-call controls happens only
+        after ownership is acquired, not when a lazy iterator is constructed.
+        """
+        call = dict(messages=messages, system_prompt=system_prompt, tools=tools,
+                    media=media, stream=stream, response_model=response_model, **kwargs)
+        if getattr(self, "_native_runtime", None) is not None:
+            event = call.pop("_cancel_event", None)
+            if event is not None and not isinstance(event, threading.Event):
+                from .mlx_runtime import NativeRuntimeError
+                raise NativeRuntimeError("_cancel_event must be a threading.Event", code="invalid_request")
+            view = self if getattr(self, "_native_request_facade", False) else self._native_request_view(event)
+            if event is not None:
+                view._native_cancel_event = event
+            if not stream:
+                response = view._generate_internal_unlocked(prompt, **call)
+                view._publish_native_request_status()
+                return response
+            def scheduled_stream():
+                iterator = view._generate_internal_unlocked(prompt, **call)
+                try:
+                    for chunk in iterator:
+                        chunk.metadata = dict(chunk.metadata or {})
+                        chunk.metadata.update(getattr(view, "_native_runtime_metadata", {}))
+                        outcome = view._mtp_outcome(bool(getattr(view, "_mtp_last_used", False)))
+                        if outcome.requested or outcome.reason:
+                            chunk.metadata["speculation"] = outcome.to_metadata()
+                        yield chunk
+                finally:
+                    if hasattr(iterator, "close"):
+                        iterator.close()
+                    view._publish_native_request_status()
+            return scheduled_stream()
+        if getattr(self, "_mtp_processor", None) is None:
+            return self._generate_internal_unlocked(prompt, **call)
+        lock = getattr(self, "_mtp_generation_lock", None)
+        if lock is None:
+            lock = self._mtp_generation_lock = threading.Lock()
+
+        def acquire():
+            if not lock.acquire(blocking=False):
+                raise ProviderAPIError("Native MLX generation is already active; finish or close its stream before another request")
+
+        if not stream:
+            acquire()
+            try:
+                return self._generate_internal_unlocked(prompt, **call)
+            finally:
+                lock.release()
+
+        def owned_stream():
+            acquire()
+            iterator = None
+            try:
+                iterator = self._generate_internal_unlocked(prompt, **call)
+                for chunk in iterator:
+                    native_report = getattr(self, "_native_media_report", None)
+                    if native_report is not None:
+                        from ..media.delivery import attach_media_report
+                        chunk = attach_media_report(chunk, native_report)
+                    outcome = self._mtp_outcome(bool(getattr(self, "_mtp_last_used", False)))
+                    if outcome.requested or outcome.reason:
+                        chunk.metadata = dict(chunk.metadata or {})
+                        chunk.metadata["speculation"] = outcome.to_metadata()
+                    yield chunk
+            finally:
+                try:
+                    if iterator is not None and hasattr(iterator, "close"):
+                        iterator.close()
+                finally:
+                    lock.release()
+
+        return owned_stream()
+
+    def _generate_internal_unlocked(
         self,
         prompt: str,
         messages: Optional[List[Dict[str, str]]] = None,
@@ -3275,7 +4094,46 @@ class MLXProvider(BaseProvider):
         # construction -- but silence is the one outcome the contract forbids,
         # so an unhonorable per-call request warns (or raises under
         # require_acceleration) exactly like a constructor-time one.
-        self._apply_per_call_speculation(kwargs.pop("speculation", None))
+        try:
+            self._apply_per_call_speculation(kwargs.pop("speculation", None))
+        except (TypeError, ValueError) as exc:
+            if getattr(self, "_native_runtime", None) is not None:
+                from .mlx_runtime import NativeRuntimeError
+                raise NativeRuntimeError(str(exc), code="invalid_controls") from exc
+            raise
+        if getattr(self, "_mtp_processor", None) is not None:
+            self._native_execute_tools = kwargs.get("execute_tools")
+            self._prepare_native_sampling(kwargs)
+            stop = kwargs.get("stop") or ()
+            try:
+                self._native_stop = (stop,) if isinstance(stop, str) else tuple(stop)
+                if any(not isinstance(item, str) or not item for item in self._native_stop):
+                    raise ValueError("stop must contain non-empty strings")
+            except (TypeError, ValueError) as exc:
+                if getattr(self, "_native_runtime", None) is not None:
+                    from .mlx_runtime import NativeRuntimeError
+                    raise NativeRuntimeError(str(exc), code="invalid_request") from exc
+                raise
+            if self._native_stop and not self.supports_concurrent_generation():
+                raise ProviderAPIError("Native MLX stop strings require mlx_batching=True")
+            if kwargs.get("prompt_cache_key") and messages is None:
+                if getattr(self, "_native_runtime", None) is not None:
+                    from .mlx_runtime import NativeRuntimeError
+                    raise NativeRuntimeError(
+                        "Native prefix caching requires messages containing the complete conversation "
+                        "(messages=[] for a standalone prompt); hidden-context append fragments are unsupported",
+                        code="invalid_request")
+                raise ProviderAPIError(
+                    "Native Qwen4 prompt_cache_key requires messages containing the complete "
+                    "conversation (messages=[] for a standalone prompt). Hidden-context "
+                    "append fragments are not supported by the native prefix cache."
+                )
+            if response_model and self.structured_output_method == "native_outlines":
+                if getattr(self, "_native_runtime", None) is not None:
+                    from .mlx_runtime import NativeRuntimeError
+                    raise NativeRuntimeError("Native MLX does not support Outlines' mlx-lm adapter; use structured_output_method='prompted'",
+                                             code="invalid_controls")
+                raise ProviderAPIError("Native Qwen4 does not support Outlines' mlx-lm adapter; use structured_output_method='prompted'")
 
         report = MediaReport.for_request(media, provider="mlx", model=self.model)
         out = self._generate_core(
@@ -3290,6 +4148,29 @@ class MLXProvider(BaseProvider):
             **kwargs,
         )
         return attach_media_report(out, report)
+
+    def _prepare_native_sampling(self, kwargs):
+        """Keep native controls intact; never silently skip target processors.
+
+        mlx-vlm 0.7.1's MTP loop does not apply logit processors beyond the
+        first token. Strict acceleration refuses that combination; optional
+        acceleration falls back explicitly to the same native target decoder.
+        Sampler-side controls (including min_p) remain compatible with MTP.
+        """
+        names = ("min_p", "repetition_penalty", "presence_penalty", "frequency_penalty",
+                 "repetition_context_size", "presence_context_size", "frequency_context_size", "logit_bias")
+        self._native_sampling_kwargs = {k: kwargs[k] for k in names if k in kwargs}
+        neutral = {"repetition_penalty": (None, 1, 1.0), "presence_penalty": (None, 0, 0.0),
+                   "frequency_penalty": (None, 0, 0.0), "logit_bias": (None, {})}
+        active = [k for k, values in neutral.items() if kwargs.get(k) not in values]
+        if active and self._mtp_active and not getattr(self, "_mtp_call_disabled", False):
+            self._mtp_call_disabled = True
+            self._mtp_call_outcome = speculation_unavailable(
+                self._mtp_call_request, "mtp_logit_processors_unsupported",
+                "mlx-vlm MTP cannot honor " + ", ".join(active) +
+                "; use speculation=False for native target-only decoding with these controls",
+                logger=self.logger,
+            )
 
     def _generate_core(
         self,
@@ -3310,9 +4191,34 @@ class MLXProvider(BaseProvider):
             report = MediaReport.for_request(media, provider="mlx", model=self.model)
 
         if not self.llm or not self.tokenizer:
-            return GenerateResponse(
-                content="Error: MLX model not loaded", model=self.model, finish_reason="error"
+            # Ejected (`unload_model`) and asked again: reload on demand, LOUDLY,
+            # like LM Studio / Ollama JIT loading. Measured before 2026-09-23: a
+            # gateway run after an eject "completed" with the answer
+            # "Error: MLX model not loaded" and success=true. A failed reload
+            # raises (never an error string dressed as an answer).
+            self.logger.warning(
+                f"MLX model {self.model} is not loaded (ejected); reloading it on demand for this request"
             )
+            self.load_model()
+
+        # Phase feedback (prefill vs generation). Popped before
+        # `_prepare_generation_kwargs` so it can never be mistaken for a
+        # sampling control, and inert unless a host actually subscribed.
+        from .generation_progress import PROGRESS_KWARG, TextProgressEmitter
+
+        progress = TextProgressEmitter(
+            kwargs.pop(PROGRESS_KWARG, None), provider="mlx", model=self.model,
+        )
+
+        # Host cancel (generation_cancel.py). The native-runtime lane already
+        # popped it in `_generate_internal` and bound it to the request view
+        # (`_native_cancel_event`, checked per token by the scheduler); every
+        # other lane receives it here and checks it per sampled token.
+        from .generation_cancel import CANCEL_KWARG, as_cancel_event
+
+        cancel_event = as_cancel_event(kwargs.pop(CANCEL_KWARG, None))
+        if cancel_event is None and getattr(self, "_native_runtime", None) is not None:
+            cancel_event = as_cancel_event(getattr(self, "_native_cancel_event", None))
 
         prompt_cache_prefilled_modules = kwargs.pop("prompt_cache_prefilled_modules", None)
         if isinstance(prompt_cache_prefilled_modules, tuple):
@@ -3329,6 +4235,7 @@ class MLXProvider(BaseProvider):
             response_model
             and PYDANTIC_AVAILABLE
             and not stream
+            and getattr(self, "_mtp_processor", None) is None
             and self.structured_output_method != "prompted"  # Skip if explicitly prompted
         )
 
@@ -3464,6 +4371,15 @@ class MLXProvider(BaseProvider):
         dropped_media: List[str] = report.dropped
         input_embeddings = None
         vision_ids = None
+        native_images = []
+        if getattr(self, "_mtp_processor", None) is not None and media:
+            native_images = [(i, part) for i, part in enumerate(media) if self._is_image_part(part)]
+            self._native_media = native_images
+            self._native_media_report = report
+            report.note_images(len(native_images))
+            media = [part for part in media if not self._is_image_part(part)]
+            if any(str(getattr(getattr(part, "media_type", None), "value", "")) in ("video", "audio") for part in media):
+                raise ProviderAPIError("Native Qwen4 accepts image frames, not audio/video containers; supply extracted images")
         if media:
             # Native sight first. Fills `report.delivered` and returns embeddings;
             # on ANY failure it records a named reason and returns None, and we
@@ -3561,6 +4477,8 @@ class MLXProvider(BaseProvider):
                 processed_prompt = f"{notice}\n\n{base}"
 
         # Build full prompt with tool support
+        if native_images:
+            processed_prompt = "<|vision_start|><|image_pad|><|vision_end|>" * len(native_images) + "\n" + processed_prompt
         full_prompt = self._build_prompt(
             processed_prompt,
             messages,
@@ -3585,6 +4503,12 @@ class MLXProvider(BaseProvider):
         fed_ids_to_record: Optional[List[int]] = None
         cache_telemetry: Optional[Dict[str, Any]] = None
         prompt_cache_key = kwargs.get("prompt_cache_key")
+        if getattr(self, "_mtp_processor", None) is not None and prompt_cache_key:
+            # Native VLM APC owns recurrent/QSA snapshots and receives the FULL
+            # prompt. Never run mlx-lm's suffix/delta discipline on these states.
+            self._native_cache_key = str(prompt_cache_key)
+            cache_telemetry = {"mode": "key", "key": prompt_cache_key, "backend": "mlx_vlm_apc"}
+            prompt_cache_key = None
         # A turn whose prompt is fed as EMBEDDINGS must never enter key-mode delta
         # feed. `_prepare_cache_delta_feed` matches by longest-common-prefix over
         # TOKEN IDS, and an image turn's ids contain N identical placeholder tokens
@@ -3682,6 +4606,30 @@ class MLXProvider(BaseProvider):
                 )
             )
 
+        # PREFILL STARTS HERE. Announce it before the GPU work, with whatever
+        # the cache lane already measured: the key-mode lane knows cached/fed
+        # exactly, the native APC lane only learns them once prefill has run,
+        # so there we pay one tokenizer encode to report an honest total rather
+        # than a plausible zero. Both are skipped entirely when nobody listens.
+        if progress.active:
+            cached_hint = fed_hint = total_hint = None
+            if isinstance(cache_telemetry, dict):
+                cached_hint = cache_telemetry.get("cached_tokens")
+                fed_hint = cache_telemetry.get("fed_tokens")
+            if fed_hint is None and not isinstance(prompt_to_feed, str):
+                try:
+                    fed_hint = len(prompt_to_feed)
+                except TypeError:
+                    fed_hint = None
+            if cached_hint is not None and fed_hint is not None:
+                total_hint = int(cached_hint) + int(fed_hint)
+            elif isinstance(full_prompt, str) and full_prompt:
+                encoded = self._encode_prompt_token_ids(full_prompt)
+                total_hint = len(encoded) if encoded is not None else None
+            progress.prefill(
+                prompt_tokens=total_hint, cached_tokens=cached_hint, fed_tokens=fed_hint,
+            )
+
         try:
             if stream:
                 if (
@@ -3704,6 +4652,8 @@ class MLXProvider(BaseProvider):
                     seed_value,
                     prompt_cache,
                     input_embeddings=input_embeddings,
+                    progress=progress,
+                    cancel_event=cancel_event,
                 )
 
                 # The streamed generator is consumed AFTER this function returns,
@@ -3714,7 +4664,10 @@ class MLXProvider(BaseProvider):
                         for _chunk in _inner:
                             yield _chunk
                     finally:
-                        _st.close()
+                        try:
+                            _inner.close()
+                        finally:
+                            _st.close()
 
                 return _guarded_stream()
             else:
@@ -3728,6 +4681,8 @@ class MLXProvider(BaseProvider):
                     prompt_cache,
                     usage_prompt=full_prompt,
                     input_embeddings=input_embeddings,
+                    progress=progress,
+                    cancel_event=cancel_event,
                 )
                 if (
                     fed_ids_to_record
@@ -3744,6 +4699,9 @@ class MLXProvider(BaseProvider):
                         # "optimize" by extending the record from reply text.
                         self._record_fed_token_ids(prompt_cache_key.strip(), fed_ids_to_record)
                 if cache_telemetry is not None:
+                    native_result = getattr(self, "_mtp_last_result", None)
+                    if getattr(self, "_mtp_processor", None) is not None and native_result is not None:
+                        self._native_apc_telemetry(cache_telemetry, native_result)
                     # Sync lane only, deliberately: the runtime's durable
                     # llm_call lane forces stream=False, and that ledger is
                     # the consumer this struct exists for.
@@ -3760,9 +4718,7 @@ class MLXProvider(BaseProvider):
                 # quietly did nothing is the failure mode the contract targets.
                 # `used` is computed from what this call actually ran: the MTP
                 # lane declines image requests, so sight silently disables it.
-                spec_outcome = self._mtp_outcome(
-                    bool(self._mtp_kwargs(input_embeddings))
-                )
+                spec_outcome = self._mtp_outcome(bool(getattr(self, "_mtp_last_used", False)))
                 if spec_outcome.requested or spec_outcome.reason:
                     # `reason` alone is enough to report: a per-call
                     # `speculation={'mode':'off'}` on an accelerated provider
@@ -3773,12 +4729,24 @@ class MLXProvider(BaseProvider):
 
                 # Handle tool execution for prompted models
                 if tools and self.tool_handler.supports_prompted and response.content:
-                    response = self._handle_prompted_tool_execution(response, tools)
+                    execution_kwargs = ({"execute_tools_param": getattr(self, "_native_execute_tools", None)}
+                                        if getattr(self, "_mtp_processor", None) is not None else {})
+                    response = self._handle_prompted_tool_execution(response, tools, **execution_kwargs)
 
                 return response
 
         except Exception as e:
             _stack.close()
+            if self.supports_concurrent_generation():
+                raise
+            from ..exceptions import GenerationCancelledError
+
+            if isinstance(e, GenerationCancelledError):
+                # A host cancel is never an "Error: ..." answer with
+                # finish_reason=error: the caller must see the cancel itself
+                # (mission H live proof: the runtime recorded the stopped call
+                # as COMPLETED with this error text as its content).
+                raise
             return GenerateResponse(
                 content=f"Error: {str(e)}", model=self.model, finish_reason="error"
             )
@@ -4056,17 +5024,30 @@ class MLXProvider(BaseProvider):
         usage_prompt: Optional[str] = None,
         *,
         input_embeddings: Optional[Any] = None,
+        progress: Optional[Any] = None,
+        cancel_event: Optional[threading.Event] = None,
     ) -> GenerateResponse:
         """Generate single response.
+
+        `cancel_event` (host Stop, generation_cancel.py): when supplied the call
+        is ALSO driven through `_observed_generate`, which checks it per sampled
+        token, closes the generator and raises `GenerationCancelledError`.
 
         `prompt` may be a rendered string OR a token-id list (the delta-feed
         suffix over a warm cache — mlx_lm accepts both). `usage_prompt` is the
         full logical prompt for usage accounting, so a suffix feed does not
         under-report prompt tokens.
+
+        `progress` is a `TextProgressEmitter`. When one is subscribed the call
+        is driven through `stream_generate_fn` instead of `generate_fn` so the
+        first sampled token — the end of prefill — is observable; the joined
+        text and every downstream count are identical, because mlx-lm's
+        `generate` IS `"".join(r.text for r in stream_generate(...))` and the
+        native adapter's two lanes consume the same runtime stream.
         """
 
         # Handle seed parameter (MLX supports seed via mx.random.seed)
-        if seed is not None:
+        if seed is not None and getattr(self, "_native_runtime", None) is None:
             import mlx.core as mx
 
             mx.random.seed(seed)
@@ -4074,8 +5055,12 @@ class MLXProvider(BaseProvider):
 
         # Track generation time
         start_time = time.time()
-        sampler = self._build_mlx_sampler(temperature, top_p, top_k)
-        sampler_kwargs = {"sampler": sampler} if sampler is not None else {}
+        if getattr(self, "_mtp_processor", None) is not None:
+            sampler_kwargs = {"temperature": temperature, "top_p": top_p, "top_k": top_k or 0, "seed": seed}
+            sampler_kwargs.update(getattr(self, "_native_sampling_kwargs", {}))
+        else:
+            sampler = self._build_mlx_sampler(temperature, top_p, top_k)
+            sampler_kwargs = {"sampler": sampler} if sampler is not None else {}
 
         # Try different MLX API signatures
         try:
@@ -4085,18 +5070,33 @@ class MLXProvider(BaseProvider):
             embed_kwargs = (
                 {"input_embeddings": input_embeddings} if input_embeddings is not None else {}
             )
-            response_text = self.generate_fn(
-                self.llm,
-                self.tokenizer,
-                prompt=prompt,
-                max_tokens=max_tokens,
-                verbose=False,
-                prompt_cache=prompt_cache,
-                **sampler_kwargs,
-                **embed_kwargs,
-            )
+            if (progress is not None and getattr(progress, "active", False)) or cancel_event is not None:
+                if progress is None:
+                    from .generation_progress import TextProgressEmitter
+
+                    progress = TextProgressEmitter(None, provider="mlx", model=self.model)
+                response_text = self._observed_generate(
+                    progress,
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    prompt_cache=prompt_cache,
+                    sampler_kwargs=sampler_kwargs,
+                    embed_kwargs=embed_kwargs,
+                    cancel_event=cancel_event,
+                )
+            else:
+                response_text = self.generate_fn(
+                    self.llm,
+                    self.tokenizer,
+                    prompt=prompt,
+                    max_tokens=max_tokens,
+                    verbose=False,
+                    prompt_cache=prompt_cache,
+                    **sampler_kwargs,
+                    **embed_kwargs,
+                )
         except TypeError:
-            if input_embeddings is not None:
+            if input_embeddings is not None or getattr(self, "_mtp_processor", None) is not None:
                 # The legacy-signature retry below drops prompt_cache AND the
                 # embeddings and re-runs text-only, and the bare `except` under it
                 # substitutes a canned sentence. Either would answer from text
@@ -4125,11 +5125,23 @@ class MLXProvider(BaseProvider):
         )
         usage = self._calculate_usage(usage_text, raw_text)
 
+        native_result = getattr(self, "_mtp_last_result", None) if getattr(self, "_mtp_processor", None) is not None else None
+        if native_result is not None:
+            usage["input_tokens"] = usage["prompt_tokens"] = int(native_result.prompt_tokens)
+            usage["cached_input_tokens"] = int(native_result.cached_tokens)
+            metadata = dict(metadata or {})
+            metadata["performance"] = {"prompt_tokens_per_second": native_result.prompt_tps,
+                                       "generation_tokens_per_second": native_result.generation_tps,
+                                       "peak_memory_gb": native_result.peak_memory}
+            metadata.update(getattr(self, "_native_runtime_metadata", {}))
+
         # Count what the model EMITTED, not what survived post-processing.
         # `generated` is the text left after the thinking block is stripped, so a
         # response whose whole budget went to reasoning reported `output_tokens: 0`
         # -- a caller watching for runaway reasoning saw a free call.
         n_out = self._count_tokens(raw_text)
+        if native_result is not None:
+            n_out = int(native_result.generation_tokens)
         if n_out is not None:
             usage["output_tokens"] = n_out
             usage["completion_tokens"] = n_out
@@ -4161,6 +5173,8 @@ class MLXProvider(BaseProvider):
             # An unterminated thinking block is proof of truncation even when the
             # token count is off by the tokenizer's accounting of special tokens.
             finish_reason = "length"
+        if native_result is not None and getattr(native_result, "finish_reason", None):
+            finish_reason = native_result.finish_reason
 
         return GenerateResponse(
             content=generated,
@@ -4170,6 +5184,138 @@ class MLXProvider(BaseProvider):
             gen_time=gen_time,
             metadata=metadata,
         )
+
+    @staticmethod
+    def _progress_counts(response: Any) -> Dict[str, Any]:
+        """Per-snapshot counters, whatever lane produced the response object.
+
+        mlx-lm's `GenerationResponse`, mlx-vlm's result and the native
+        runtime's `NativeResult` all spell these the same way; only
+        `cached_tokens` is native-only, and a lane that cannot measure it
+        must report nothing rather than a plausible zero.
+        """
+
+        return {
+            "generated_tokens": getattr(response, "generation_tokens", None),
+            "prompt_tokens": getattr(response, "prompt_tokens", None),
+            "cached_tokens": getattr(response, "cached_tokens", None),
+            "tokens_per_second": getattr(response, "generation_tps", None),
+            "prompt_tokens_per_second": getattr(response, "prompt_tps", None),
+        }
+
+    def _prefill_observation_kwargs(
+        self,
+        progress: Any,
+        cancel_event: Optional[threading.Event] = None,
+        make_cancelled: Optional[Callable[[int, int], BaseException]] = None,
+    ) -> Dict[str, Any]:
+        """`stream_generate_fn` kwargs that observe the prompt pass chunk by chunk.
+
+        Mid-prefill progress per lane (see `generation_progress.prefill_progress`):
+
+        * mlx-lm: its own `prompt_progress_callback(processed, total)`, called
+          after every `prefill_step_size` chunk over the tokens this call
+          feeds. The same hook aborts the prefill on a host cancel.
+        * native runtime / in-process mlx-vlm (`_mtp_stream_generate_fn`): the
+          emitter's `prefill_progress` rides the provider-internal
+          `PREFILL_PROGRESS_KWARG`; the adapter hands it to the runtime's
+          `on_prefill_progress` or to the mlx-vlm prefill-bar observer.
+
+        Empty when nobody listens and nothing can cancel, so an unobserved call
+        is byte-identical to before.
+        """
+        report = None
+        if progress is not None and getattr(progress, "active", False):
+            report = getattr(progress, "prefill_progress", None)
+        mlx_lm_lane = (
+            getattr(self, "_mtp_processor", None) is None
+            and getattr(self, "_native_runtime", None) is None
+        )
+        if not mlx_lm_lane:
+            return {PREFILL_PROGRESS_KWARG: report} if report is not None else {}
+        if report is None and cancel_event is None:
+            return {}
+
+        def _on_prompt_progress(processed: int, total: int) -> None:
+            if cancel_event is not None and cancel_event.is_set() and make_cancelled is not None:
+                raise make_cancelled(processed, total)
+            if report is not None:
+                report(fed_processed=processed, fed_total=total)
+
+        return {"prompt_progress_callback": _on_prompt_progress}
+
+    def _observed_generate(
+        self,
+        progress: Any,
+        *,
+        prompt: Any,
+        max_tokens: int,
+        prompt_cache: Optional[Any],
+        sampler_kwargs: Dict[str, Any],
+        embed_kwargs: Dict[str, Any],
+        cancel_event: Optional[threading.Event] = None,
+    ) -> str:
+        """`generate_fn` equivalent that reports the prefill→generation boundary.
+
+        The FIRST response carrying a token ends prefill: everything before it
+        was prompt processing, and its arrival is the ttft this call will
+        report. Afterwards the emitter rate-limits, so a 45 tok/s decode still
+        costs the host ~2 records per second, never one per token.
+
+        HOST CANCEL (generation_cancel.py): `cancel_event` is checked before
+        every sampled token is accepted; when set, the generator is closed
+        (mlx-lm/mlx-vlm stop decoding; the native runtime's handle closes its
+        job) and `GenerationCancelledError` is raised with the partial count.
+        On the plain mlx-lm lane the event also aborts PREFILL between
+        `prefill_step_size` chunks through mlx-lm's `prompt_progress_callback`.
+        """
+        from .generation_cancel import cancelled_error
+
+        def _cancelled(where: str, generated: Optional[int], partial: str):
+            return cancelled_error(provider="mlx", model=self.model, where=where,
+                                   generated_tokens=generated, partial_text=partial)
+
+        if cancel_event is not None and cancel_event.is_set():
+            raise _cancelled("before decoding started", 0, "")
+
+        extra_kwargs = self._prefill_observation_kwargs(
+            progress,
+            cancel_event,
+            lambda processed, total: _cancelled(f"during prefill ({processed}/{total} prompt tokens)", 0, ""),
+        )
+
+        generator = self.stream_generate_fn(
+            self.llm,
+            self.tokenizer,
+            prompt,
+            max_tokens=max_tokens,
+            prompt_cache=prompt_cache,
+            **sampler_kwargs,
+            **embed_kwargs,
+            **extra_kwargs,
+        )
+        parts: List[str] = []
+        counts: Dict[str, Any] = {}
+        finish_reason = None
+        try:
+            for response in generator:
+                if cancel_event is not None and cancel_event.is_set():
+                    finish_reason = "cancelled"
+                    raise _cancelled("while decoding", counts.get("generated_tokens"), "".join(parts))
+                parts.append(str(getattr(response, "text", "") or ""))
+                counts = self._progress_counts(response)
+                finish_reason = getattr(response, "finish_reason", None) or finish_reason
+                if counts.get("generated_tokens") is None:
+                    # A lane that does not count for us still has tokens: the
+                    # arrival of a text segment is the observable event.
+                    counts["generated_tokens"] = len(parts)
+                progress.generation(**counts)
+        finally:
+            close = getattr(generator, "close", None)
+            if callable(close):
+                close()
+            progress.complete(finish_reason=finish_reason, **counts)
+        return "".join(parts)
 
     def _count_tokens(self, text: str) -> Optional[int]:
         """Exact token count via the loaded tokenizer, or None if it cannot say."""
@@ -4209,11 +5355,24 @@ class MLXProvider(BaseProvider):
         prompt_cache: Optional[Any] = None,
         *,
         input_embeddings: Optional[Any] = None,
+        progress: Optional[Any] = None,
+        cancel_event: Optional[threading.Event] = None,
     ) -> Iterator[GenerateResponse]:
-        """Generate real streaming response using MLX stream_generate with tool tag rewriting support"""
+        """Generate real streaming response using MLX stream_generate with tool tag rewriting support
+
+        `progress` reports generation snapshots (the caller already emitted the
+        prefill event); `cancel_event` is checked per sampled token and stops
+        the stream with `GenerationCancelledError` (generation_cancel.py).
+        """
+        from ..exceptions import GenerationCancelledError
+        from .generation_cancel import cancelled_error
+
+        stream_finish_reason = None
+        stream_counts: Dict[str, Any] = {}
+        source_gen = None
         try:
             # Handle seed parameter (MLX supports seed via mx.random.seed)
-            if seed is not None:
+            if seed is not None and getattr(self, "_native_runtime", None) is None:
                 import mlx.core as mx
 
                 mx.random.seed(seed)
@@ -4233,14 +5392,21 @@ class MLXProvider(BaseProvider):
                     pass
 
             # Use MLX's native streaming with minimal parameters
-            sampler = self._build_mlx_sampler(temperature, top_p, top_k)
-            sampler_kwargs = {"sampler": sampler} if sampler is not None else {}
+            if getattr(self, "_mtp_processor", None) is not None:
+                sampler_kwargs = {"temperature": temperature, "top_p": top_p, "top_k": top_k or 0, "seed": seed}
+                sampler_kwargs.update(getattr(self, "_native_sampling_kwargs", {}))
+            else:
+                sampler = self._build_mlx_sampler(temperature, top_p, top_k)
+                sampler_kwargs = {"sampler": sampler} if sampler is not None else {}
             # Only pass the kwarg when we have embeddings, so a text-only stream
             # is byte-identical to the previous call site.
             embed_kwargs = (
                 {"input_embeddings": input_embeddings} if input_embeddings is not None else {}
             )
-            for response in self.stream_generate_fn(
+            if cancel_event is not None and cancel_event.is_set():
+                raise cancelled_error(provider="mlx", model=self.model,
+                                      where="before decoding started", generated_tokens=0)
+            source_gen = self.stream_generate_fn(
                 self.llm,
                 self.tokenizer,
                 prompt,
@@ -4248,7 +5414,18 @@ class MLXProvider(BaseProvider):
                 prompt_cache=prompt_cache,
                 **sampler_kwargs,
                 **embed_kwargs,
-            ):
+                **self._prefill_observation_kwargs(progress),
+            )
+            for response in source_gen:
+                if cancel_event is not None and cancel_event.is_set():
+                    stream_finish_reason = "cancelled"
+                    raise cancelled_error(provider="mlx", model=self.model, where="while streaming",
+                                          generated_tokens=stream_counts.get("generated_tokens"))
+                if progress is not None:
+                    stream_counts = self._progress_counts(response)
+                    stream_finish_reason = getattr(response, "finish_reason", None) or stream_finish_reason
+                    if stream_counts.get("generated_tokens") is not None:
+                        progress.generation(**stream_counts)
                 # Each response has a .text attribute with the new token(s)
                 content = response.text
 
@@ -4257,17 +5434,42 @@ class MLXProvider(BaseProvider):
                     rewritten_content, buffer = rewriter.rewrite_streaming_chunk(content, buffer)
                     content = rewritten_content
 
+                usage = None
+                metadata = None
+                finish_reason = None
+                if getattr(self, "_native_runtime", None) is not None:
+                    metadata = dict(response.metadata or {})
+                    metadata.pop("speculation", None)  # Canonical provider outcome is attached above.
+                    finish_reason = response.finish_reason
+                    if finish_reason:
+                        usage = {"input_tokens": response.prompt_tokens, "prompt_tokens": response.prompt_tokens,
+                                 "output_tokens": response.generation_tokens, "completion_tokens": response.generation_tokens,
+                                 "cached_input_tokens": response.cached_tokens,
+                                 "total_tokens": response.prompt_tokens + response.generation_tokens}
                 yield GenerateResponse(
                     content=content,
                     model=self.model,
-                    finish_reason=None,  # MLX doesn't provide finish reason in stream
+                    finish_reason=finish_reason,
+                    usage=usage,
+                    metadata=metadata,
                     raw_response=response,
                 )
 
+        except GenerationCancelledError:
+            # A host cancel is never rendered as an "Error: ..." content chunk.
+            raise
         except Exception as e:
+            if self.supports_concurrent_generation():
+                raise
             yield GenerateResponse(
                 content=f"Error: {str(e)}", model=self.model, finish_reason="error"
             )
+        finally:
+            _close = getattr(source_gen, "close", None)
+            if callable(_close):
+                _close()
+            if progress is not None:
+                progress.complete(finish_reason=stream_finish_reason, **stream_counts)
 
     def get_capabilities(self) -> List[str]:
         """Get MLX capabilities"""
@@ -4278,7 +5480,12 @@ class MLXProvider(BaseProvider):
         try:
             from mlx.utils import tree_flatten
 
-            return int(sum(v.nbytes for _, v in tree_flatten(self.llm.parameters())))
+            arrays = [v for _, v in tree_flatten(self.llm.parameters())]
+            drafter = getattr(self, "_mtp_drafter", None)
+            if drafter is not None:
+                arrays.extend(v for _, v in tree_flatten(drafter.parameters()))
+            # Shared target/drafter embeddings must not be counted twice.
+            return int(sum(v.nbytes for v in {id(a): a for a in arrays}.values()))
         except Exception:
             return None
 
@@ -4335,12 +5542,19 @@ class MLXProvider(BaseProvider):
         prompt_cache: Optional[Any] = None,
         *,
         input_embeddings: Optional[Any] = None,
+        progress: Optional[Any] = None,
+        cancel_event: Optional[threading.Event] = None,
     ) -> Iterator[GenerateResponse]:
-        """Stream generate with tool execution at the end"""
-        collected_content = ""
+        """Stream generate with tool execution at the end
 
-        # Stream the response content
-        for chunk in self._stream_generate(
+        (`progress`/`cancel_event`: see `_stream_generate`. `_generate_core`
+        passed `progress=` here before this signature accepted it, so every
+        `stream=True` call on this lane raised TypeError — fixed 2026-09-23.)
+        """
+        collected_content = ""
+        terminal = None
+        scheduled = self.supports_concurrent_generation()
+        source = self._stream_generate(
             full_prompt,
             max_tokens,
             temperature,
@@ -4350,35 +5564,64 @@ class MLXProvider(BaseProvider):
             seed,
             prompt_cache,
             input_embeddings=input_embeddings,
-        ):
-            collected_content += chunk.content or ""
-            yield chunk
+            progress=progress,
+            cancel_event=cancel_event,
+        )
+        try:
+            for chunk in source:
+                collected_content += chunk.content or ""
+                if scheduled and chunk.finish_reason is not None:
+                    # A terminal describes the whole public response, including
+                    # any explicitly requested provider-side tool execution.
+                    terminal = copy.copy(chunk)
+                    terminal.content = ""
+                    if chunk.content or chunk.tool_calls:
+                        partial = copy.copy(chunk)
+                        partial.finish_reason = None
+                        partial.usage = None
+                        yield partial
+                else:
+                    yield chunk
 
-        # Handle tool execution if we have tools and content
-        if tools and self.tool_handler.supports_prompted and collected_content:
-            # Create complete response for tool processing
-            complete_response = GenerateResponse(
-                content=collected_content, model=self.model, finish_reason="stop"
-            )
-
-            # Handle tool execution using base method
-            final_response = self._handle_prompted_tool_execution(complete_response, tools)
-
-            # If tools were executed, yield the tool results as final chunk
-            if final_response.content != collected_content:
-                tool_results_content = final_response.content[len(collected_content) :]
-                yield GenerateResponse(
-                    content=tool_results_content, model=self.model, finish_reason="stop"
+            if tools and self.tool_handler.supports_prompted and collected_content:
+                complete_response = GenerateResponse(
+                    content=collected_content, model=self.model, finish_reason="stop"
                 )
+                execution_kwargs = ({"execute_tools_param": getattr(self, "_native_execute_tools", None)}
+                                    if getattr(self, "_mtp_processor", None) is not None else {})
+                final_response = self._handle_prompted_tool_execution(complete_response, tools, **execution_kwargs)
+                if final_response.content != collected_content:
+                    if scheduled:
+                        # Base strips tool-call markup before appending results;
+                        # slicing by the ORIGINAL text length truncates results.
+                        cleaned = self.tool_handler.parse_response(collected_content, mode="prompted").content or ""
+                        if not final_response.content.startswith(cleaned):
+                            raise ProviderAPIError("Tool execution returned a response without its parsed content prefix")
+                        result_text = final_response.content[len(cleaned):]
+                    else:
+                        result_text = final_response.content[len(collected_content):]
+                    if result_text:
+                        yield GenerateResponse(content=result_text, model=self.model,
+                                               finish_reason=None if scheduled else "stop")
+            if terminal is not None:
+                yield terminal
+        finally:
+            if hasattr(source, "close"):
+                source.close()
 
     @classmethod
     def list_available_models(cls, **kwargs) -> List[str]:
         """
         List available MLX models from local caches.
 
-        This includes:
-        - HuggingFace hub cache (~/.cache/huggingface/hub) for any repo containing "mlx"
-        - LM Studio cache (~/.lmstudio/models) for any org/model containing "mlx"
+        This scans:
+        - the HuggingFace hub cache (~/.cache/huggingface/hub)
+        - the LM Studio store (~/.lmstudio/models)
+
+        and keeps the repos `mlx_model_rules.is_mlx_model` classifies as MLX.
+        That is the SAME call `HuggingFaceProvider.list_available_models` uses
+        to exclude them, so the two lists are complements: no repo can land in
+        both dropdowns, and none can fall out of both.
 
         Args:
             **kwargs: Optional parameters including:
@@ -4390,6 +5633,7 @@ class MLXProvider(BaseProvider):
         """
         from pathlib import Path
         from .model_capabilities import filter_models_by_capabilities
+        from .mlx_model_rules import has_local_weights, is_mlx_model
 
         try:
             model_set = set()
@@ -4401,9 +5645,11 @@ class MLXProvider(BaseProvider):
                         # Convert models--mlx-community--Qwen3-Coder-30B-A3B-Instruct-4bit to mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
                         model_name = item.name.replace("models--", "").replace("--", "/")
 
-                        # Include ANY model with "mlx" in the name (case-insensitive)
-                        # This captures: mlx-community/*, */mlx-*, *-mlx-*, etc.
-                        if "mlx" in model_name.lower():
+                        # A cache entry is not a model: a repo that was only
+                        # RESOLVED leaves `refs/` and no weights, and `_load_model`
+                        # refuses it. Offering it puts a model in the picker that
+                        # cannot answer a single turn.
+                        if is_mlx_model(model_name, local_path=item) and has_local_weights(item):
                             model_set.add(model_name)
 
             lmstudio_models = Path.home() / ".lmstudio" / "models"
@@ -4412,16 +5658,11 @@ class MLXProvider(BaseProvider):
                 for org_dir in lmstudio_models.iterdir():
                     if not org_dir.is_dir():
                         continue
-                    # These org folders are MLX by design (model names may not include "mlx")
-                    include_all_in_org = org_dir.name.lower() in {
-                        "mlx-community",
-                        "lmstudio-community",
-                    }
                     for model_dir in org_dir.iterdir():
                         if not model_dir.is_dir():
                             continue
                         model_name = f"{org_dir.name}/{model_dir.name}"
-                        if include_all_in_org or "mlx" in model_name.lower():
+                        if is_mlx_model(model_name, local_path=model_dir):
                             model_set.add(model_name)
 
             models = sorted(model_set)

@@ -145,6 +145,15 @@ def test_no_speculation_entry_points_a_drafter_at_the_target_itself():
         mlx_block = runtimes.get("mlx")
         if not isinstance(mlx_block, dict):
             continue
+        if mlx_block.get("mode") == "embedded":
+            assert not mlx_block.get("drafter"), (
+                f"'{key}' embeds its head; a separate drafter would duplicate "
+                "the target or substitute a different checkpoint"
+            )
+            continue
+        assert mlx_block.get("mode") == "drafter_repo", (
+            f"'{key}' declares an unrecognized MLX MTP mode"
+        )
         drafter = str(mlx_block.get("drafter", ""))
         assert drafter, f"'{key}' declares an mlx runtime with no drafter repo"
         assert drafter.lower() != key.lower()
@@ -160,18 +169,12 @@ def test_no_speculation_entry_points_a_drafter_at_the_target_itself():
         aliases.add(str(entry.get("canonical_name", "")).lower())
         assert drafter.lower() not in aliases, (
             f"'{key}' names drafter '{drafter}', which is one of the entry's own "
-            "aliases -- that is the target, not a drafter. The MLX head is "
-            "always a distinct checkpoint."
+            "aliases -- that is the target, not a distinct drafter checkpoint."
         )
 
 
 def test_mlx_drafters_are_only_claimed_where_one_is_published():
-    """Do not invent an MLX drafter for the Qwen3.6 MTP GGUFs.
-
-    mlx-community publishes `Qwen3.8-27B-MTP-4bit` and nothing equivalent for
-    the Qwen3.6 pair, whose heads exist only inside unsloth's `*-MTP-GGUF`
-    repos. An mlx block on those entries would be a guess.
-    """
+    """Require deliberately verified sidecar or embedded MLX head evidence."""
     # Expanded 2026-08-29 as this test instructs -- deliberately, after fetching
     # each repo's config.json and checking it reports `model_type:
     # "qwen3_5_mtp"` (the discriminator a plain target never carries) AND a
@@ -193,10 +196,30 @@ def test_mlx_drafters_are_only_claimed_where_one_is_published():
         "mlx-community/qwen3.6-35b-a3b-mtp-4bit",
         "mlx-community/qwen3.8-27b-mtp-4bit",
     }
+    # This checkpoint carries 76 actual indexed mtp.* tensors. Its native
+    # loader validates their presence and strictly loads the head; a config
+    # flag or a generic Qwen4 family name is not sufficient evidence.
+    known_embedded_mlx_artifacts = {
+        "qwen3.8-flash-next-oq4e-mtp": (
+            "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp",
+            "2615fc0e976e65c2f3b55daca3a948f1cdc5b9f8",
+        ),
+    }
     for key, entry in _registry_keys_with_speculation().items():
         runtimes = entry[CAPABILITY_KEY].get("runtimes", {}) or {}
         mlx_block = runtimes.get("mlx")
         if not isinstance(mlx_block, dict):
+            continue
+        if mlx_block.get("mode") == "embedded":
+            assert key in known_embedded_mlx_artifacts, (
+                f"'{key}' claims an embedded MLX head without verified tensor "
+                "evidence; verify the artifact before extending this allow-list"
+            )
+            repo, revision = known_embedded_mlx_artifacts[key]
+            assert repo in (entry.get("aliases") or [])
+            source = entry[CAPABILITY_KEY].get("source", "")
+            assert repo in source and revision in source
+            assert "76 embedded mtp tensors" in source
             continue
         drafter = str(mlx_block.get("drafter", "")).lower()
         assert drafter in known_published_mlx_drafters, (

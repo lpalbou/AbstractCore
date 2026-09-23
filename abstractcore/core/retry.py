@@ -229,6 +229,7 @@ class RetryManager:
         self.retryable_errors = {
             "RateLimitError",
             "ProviderAPIError",
+            "NativeRuntimeError",
             "EmptyCompletionError",
             "TimeoutError",
             "ConnectionError",
@@ -267,6 +268,11 @@ class RetryManager:
         """
         error_type_name = type(error).__name__
         error_str = str(error).lower()
+
+        # Explicit local admission/cancellation signals must never be inferred
+        # from prose (a queued timeout is not an unhealthy provider timeout).
+        if getattr(error, "request_local", False) is True:
+            return RetryableErrorType.UNKNOWN
 
         # Check explicit error types first
         if error_type_name in self.non_retryable_errors:
@@ -418,6 +424,11 @@ class RetryManager:
                 return result
 
             except Exception as e:
+                if getattr(e, "request_local", False) is True:
+                    # No retry, endpoint-health penalty, or exhausted-retry
+                    # alert for a caller-local cancellation/admission outcome.
+                    logger.debug(f"Request declined by {provider_key}: {e}")
+                    raise
                 last_error = e
                 error_type = self.classify_error(e)
 
