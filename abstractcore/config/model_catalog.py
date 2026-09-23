@@ -607,7 +607,12 @@ def _matches_query(row: Mapping[str, Any], query: str) -> bool:
             " ".join(str(a.get("artifact") or "") for a in row.get("artifacts") or []),
         ]
     ).lower()
-    return all(tok in hay for tok in query.lower().split())
+    # A token matches at the START of a word (words split on separators, `.`
+    # kept inside versions): "8b" finds "qwen3-8b" but not "qwen3.5-0.8b".
+    import re as _re
+
+    words = [w for w in _re.split(r"[\s/:@_,-]+", hay) if w]
+    return all(any(w.startswith(tok) for w in words) for tok in query.lower().split())
 
 
 def _artifact_matches_engine(art: Mapping[str, Any], engine: str) -> bool:

@@ -2394,6 +2394,21 @@ def _handle_models_download(args) -> int:
     # printed alongside the payload is a parse error, not a nicety.
     as_json = bool(getattr(args, "json", False))
 
+    if getattr(args, "detach", False):
+        # A DETACHED job outlives this process: the terminal console's CLI
+        # transport polls it with `models jobs <id> --json`.
+        from .host_jobs import spawn_detached
+
+        if recommended:
+            print("❌ Error: --detach takes one provider/artifact, not --recommended")
+            return 1
+        job = spawn_detached({"kind": "download", "provider": provider, "artifact": artifact, "dry_run": dry_run})
+        if as_json:
+            print(json.dumps(job, indent=2, sort_keys=True))
+        else:
+            print(f"started {job['job_id']} -- follow it with: abstractcore models jobs {job['job_id']}")
+        return 0
+
     if recommended:
         targets = [(item["provider"], item["artifact"]) for item in materializer.recommended_downloads()]
         if not as_json:
@@ -2445,9 +2460,11 @@ def _handle_models_subcommand(argv: List[str]) -> int:
     parser = argparse.ArgumentParser(
         prog="abstractcore models",
         description=(
-            "Inspect and download the model WEIGHTS behind AbstractCore's capability "
-            "defaults. `abstractcore config` decides which model a capability uses; this "
-            "command answers whether it is on this machine and fetches it when it is not."
+            "Inspect, browse, download and delete model WEIGHTS. `status` answers whether "
+            "each capability default is on this machine; `list` shows everything installed "
+            "per engine; `catalog`/`search` browse downloadable models with fit verdicts for "
+            "this machine; `download`/`delete` act on one artifact; `jobs`/`cancel` follow "
+            "background work. `abstractcore config` decides which model a capability uses."
         ),
     )
     parser.add_argument("--config-file", default=None, help="Use a specific AbstractCore config JSON file")
@@ -2501,7 +2518,17 @@ def _handle_models_subcommand(argv: List[str]) -> int:
         help="Report what would be fetched (and the exact command) without downloading",
     )
     download.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    download.add_argument(
+        "--detach",
+        action="store_true",
+        help="Run in the background and print the job (poll it with `abstractcore models jobs <id>`)",
+    )
     download.set_defaults(func=_handle_models_download)
+
+    # list | catalog | search | delete | jobs | cancel (models & engines contracts)
+    from .models_engines_cli import add_models_subparsers
+
+    add_models_subparsers(sub)
 
     args = parser.parse_args(argv)
     if not getattr(args, "cmd", None):
@@ -2958,6 +2985,14 @@ def main(argv: List[str] = None):
         return _handle_config_subcommand(argv[1:])
     if argv and argv[0] == "models":
         return _handle_models_subcommand(argv[1:])
+    if argv and argv[0] == "engines":
+        from .models_engines_cli import handle_engines
+
+        return handle_engines(argv[1:])
+    if argv and argv[0] == "host":
+        from .models_engines_cli import handle_host
+
+        return handle_host(argv[1:])
     if Path(sys.argv[0]).name == "abstractcore-config" and (
         not argv or argv[0] in _CONFIG_SUBCOMMANDS or argv[0].startswith("--")
     ):
