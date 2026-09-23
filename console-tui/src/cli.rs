@@ -315,7 +315,7 @@ impl CoreCli {
     }
 }
 
-fn run_raw_at(
+pub(crate) fn run_raw_at(
     bin: &Path,
     args: &[&str],
     redacted_label: &str,
@@ -380,7 +380,7 @@ fn read_all(mut r: impl Read) -> String {
 /// The most useful single error line from a failed CLI run: the CLI's
 /// own `❌ Error:` line (stdout) first, else the first non-empty stderr
 /// line, else a generic head of whatever was printed.
-fn error_line(stdout: &str, stderr: &str) -> String {
+pub(crate) fn error_line(stdout: &str, stderr: &str) -> String {
     if let Some(l) = stdout.lines().find(|l| l.contains("Error:")) {
         return l.trim().to_string();
     }
@@ -393,7 +393,7 @@ fn error_line(stdout: &str, stderr: &str) -> String {
     "(no output)".into()
 }
 
-fn head(s: &str, n: usize) -> String {
+pub(crate) fn head(s: &str, n: usize) -> String {
     let t: String = s.chars().take(n).collect();
     t.replace('\n', " ")
 }

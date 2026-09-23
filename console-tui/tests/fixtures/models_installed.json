@@ -1,0 +1,55 @@
+{
+ "schema": "models_installed_v1",
+ "generated_at": "2026-09-23T10:00:00Z",
+ "engines_probed": [
+  "ollama",
+  "lmstudio",
+  "mlx",
+  "huggingface"
+ ],
+ "errors": {
+  "ollama": "unreachable"
+ },
+ "rows": [
+  {
+   "provider": "lmstudio",
+   "artifact": "qwen/qwen3-8b@4bit",
+   "quant": "4bit",
+   "size_bytes": 4600000000,
+   "params_total": 8200000000,
+   "location": "~/.lmstudio/models/qwen/qwen3-8b",
+   "loaded": false,
+   "catalog_id": "qwen3-8b",
+   "deletable": true,
+   "delete_blockers": []
+  },
+  {
+   "provider": "mlx",
+   "artifact": "mlx-community/gpt-oss-20b-4bit",
+   "quant": "4bit",
+   "size_bytes": 11000000000,
+   "params_total": null,
+   "location": "~/.cache/huggingface/hub/models--mlx-community--gpt-oss-20b-4bit",
+   "loaded": true,
+   "catalog_id": "gpt-oss-20b",
+   "deletable": true,
+   "delete_blockers": [
+    "loaded"
+   ]
+  },
+  {
+   "provider": "huggingface",
+   "artifact": "sentence-transformers/all-MiniLM-L6-v2",
+   "quant": null,
+   "size_bytes": 90000000,
+   "params_total": 22000000,
+   "location": "~/.cache/huggingface/hub/models--sentence-transformers--all-MiniLM-L6-v2",
+   "loaded": null,
+   "catalog_id": null,
+   "deletable": true,
+   "delete_blockers": [
+    "shared_cache:mlx,huggingface"
+   ]
+  }
+ ]
+}

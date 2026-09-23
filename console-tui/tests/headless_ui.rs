@@ -4,8 +4,10 @@
 //! frames exactly as the worker's posted closures would).
 
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
-use std::sync::mpsc;
+use std::sync::{mpsc, Arc, Mutex};
+use std::time::Duration;
 
 use abstracttui::app::Driver;
 use abstracttui::prelude::*;
@@ -13,6 +15,7 @@ use abstracttui::testing::CaptureTerm;
 use serde_json::{json, Value};
 
 use abstractcore_console::config::{self, ConfigPath, FileState, PathSource};
+use abstractcore_console::screens::{ScreensCtx, ScreensOptions, ScreensStore};
 use abstractcore_console::store::{
     AvailabilityData, ConfigMirror, Loadable, ProfilesData, RoutesData, Store,
 };
@@ -26,6 +29,11 @@ struct Harness {
     store: Store,
     ui: UiState,
     rx: mpsc::Receiver<Cmd>,
+    /// The Models/Engines backend: contract fixtures + a call log.
+    mock: Arc<MockTransport>,
+    screens: ScreensStore,
+    /// URLs the `o` verb asked to open (never a real browser in tests).
+    opened: Rc<RefCell<Vec<String>>>,
 }
 
 fn harness() -> Harness {
@@ -42,11 +50,35 @@ fn harness_sized(size: Size) -> Harness {
     let store_out = store_slot.clone();
     let ui_slot: Rc<RefCell<Option<UiState>>> = Rc::new(RefCell::new(None));
     let ui_out = ui_slot.clone();
+    let mock = Arc::new(MockTransport::default());
+    let mock_mount = mock.clone();
+    let screens_slot: Rc<RefCell<Option<ScreensStore>>> = Rc::new(RefCell::new(None));
+    let screens_out = screens_slot.clone();
+    let opened: Rc<RefCell<Vec<String>>> = Rc::new(RefCell::new(Vec::new()));
+    let opened_mount = opened.clone();
     app.mount(move |cx| {
         let store = Store::create(cx);
         *store_out.borrow_mut() = Some(store);
         let ui_state = UiState::create(cx);
         *ui_out.borrow_mut() = Some(ui_state);
+        let opened_rec = opened_mount.clone();
+        let screens = ScreensCtx::new(
+            cx,
+            mock_mount.clone(),
+            overlays.clone(),
+            ScreensOptions {
+                notice: Some(store.notice),
+                // Fast polls: a job walks running → completed in a few
+                // frames instead of seconds.
+                poll_interval: Duration::from_millis(10),
+                opener: Some(Rc::new(move |url: &str| {
+                    opened_rec.borrow_mut().push(url.to_string());
+                    Ok(())
+                })),
+                ..ScreensOptions::default()
+            },
+        );
+        *screens_out.borrow_mut() = Some(screens.store);
         let ctx = Ctx {
             tx: tx.clone(),
             overlays: overlays.clone(),
@@ -54,6 +86,7 @@ fn harness_sized(size: Size) -> Harness {
             store,
             ui: ui_state,
             modal: Rc::new(RefCell::new(None)),
+            screens,
         };
         ui::root(cx, ctx)
     })
@@ -81,6 +114,7 @@ fn harness_sized(size: Size) -> Harness {
     let driver = Driver::new(&mut app, &mut term, cfg).expect("driver");
     let store = store_slot.borrow().expect("store created");
     let ui = ui_slot.borrow().expect("ui state created");
+    let screens = screens_slot.borrow().expect("screens created");
     Harness {
         app,
         term,
@@ -88,6 +122,9 @@ fn harness_sized(size: Size) -> Harness {
         store,
         ui,
         rx,
+        mock,
+        screens,
+        opened,
     }
 }
 
@@ -2677,7 +2714,7 @@ fn chrome_survives_every_screen_at_every_size() {
     for (w, hgt) in [(80u16, 24u16), (100, 24), (60, 16)] {
         let mut h = harness_sized(Size::new(w as i32, hgt as i32));
         h.load_fixtures();
-        for screen in 0..8 {
+        for screen in 0..ui::SCREENS.len() {
             let s = h.goto_screen(screen);
             let lines: Vec<&str> = s.lines().collect();
             assert!(
@@ -2689,7 +2726,7 @@ fn chrome_survives_every_screen_at_every_size() {
             );
             // The strip windows around the active tab at narrow widths
             // — the ACTIVE label is the one always guaranteed visible.
-            let active_label = format!("{} {}", screen + 1, ui::SCREENS[screen]);
+            let active_label = format!("{} {}", ui::screen_key(screen), ui::SCREENS[screen]);
             assert!(
                 lines
                     .get(1)
@@ -2699,7 +2736,7 @@ fn chrome_survives_every_screen_at_every_size() {
             );
             let hint_row = lines.last().unwrap_or(&"");
             assert!(
-                hint_row.contains("1-8"),
+                hint_row.contains("1-9,0"),
                 "footer hints at the last row ({w}x{hgt} screen={screen}):\n{s}"
             );
         }
@@ -2942,5 +2979,671 @@ fn narrow_routes_grid_keeps_the_discriminating_tail() {
     assert!(
         s.contains("not configured"),
         "the state vocabulary is not squeezed into nonsense:\n{s}"
+    );
+}
+
+// =======================================================================
+// MODELS (9) and ENGINES (0): the shared library screens over a mock
+// transport answering with the contract A–E fixtures.
+// =======================================================================
+
+use abstractcore_console::transport::{ConsoleTransport, TransportError};
+
+fn fixture(name: &str) -> Value {
+    let text = match name {
+        "host_profile" => include_str!("fixtures/host_profile.json"),
+        "engines_status" => include_str!("fixtures/engines_status.json"),
+        "model_catalog" => include_str!("fixtures/model_catalog.json"),
+        "models_installed" => include_str!("fixtures/models_installed.json"),
+        "job_running" => include_str!("fixtures/job_running.json"),
+        "job_completed" => include_str!("fixtures/job_completed.json"),
+        other => panic!("no fixture {other}"),
+    };
+    serde_json::from_str(text).expect("fixture parses")
+}
+
+/// The contract backend, in memory: answers every read from the
+/// fixtures (filtering the catalog the way the real backend does),
+/// records every call, and walks jobs through `polls`.
+#[derive(Default)]
+struct MockTransport {
+    calls: Mutex<Vec<String>>,
+    /// Successive `job()` answers; empty = the last job, completed.
+    polls: Mutex<VecDeque<Value>>,
+    last_job: Mutex<Option<Value>>,
+    cancelled: Mutex<bool>,
+    /// When set, `delete_model` refuses with this error.
+    refuse_delete: Mutex<Option<TransportError>>,
+}
+
+impl MockTransport {
+    fn record(&self, call: String) {
+        self.calls.lock().unwrap().push(call);
+    }
+
+    fn calls(&self) -> Vec<String> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    fn called(&self, prefix: &str) -> bool {
+        self.calls().iter().any(|c| c.starts_with(prefix))
+    }
+
+    fn job_doc(kind: &str, status: &str, extra: Value) -> Value {
+        let mut j = fixture("job_running");
+        j["kind"] = json!(kind);
+        j["status"] = json!(status);
+        j["job_id"] = json!(format!("{kind}_1"));
+        // Only the download fixture's own progress belongs to a download.
+        if kind != "download" {
+            j["log_tail"] = json!([]);
+            j["downloaded_bytes"] = Value::Null;
+            j["total_bytes"] = Value::Null;
+        }
+        if let Value::Object(m) = extra {
+            for (k, v) in m {
+                j[k] = v;
+            }
+        }
+        j
+    }
+
+    fn started(&self, doc: Value) -> Result<Value, TransportError> {
+        *self.last_job.lock().unwrap() = Some(doc.clone());
+        Ok(doc)
+    }
+}
+
+impl ConsoleTransport for MockTransport {
+    fn host_profile(&self) -> Result<Value, TransportError> {
+        self.record("host_profile".into());
+        Ok(fixture("host_profile"))
+    }
+    fn engines_status(&self, probe: bool) -> Result<Value, TransportError> {
+        self.record(format!("engines_status probe={probe}"));
+        Ok(fixture("engines_status"))
+    }
+    fn models_catalog(
+        &self,
+        q: &str,
+        engine: Option<&str>,
+        fits_only: bool,
+    ) -> Result<Value, TransportError> {
+        self.record(format!(
+            "catalog q={q} engine={} fits={fits_only}",
+            engine.unwrap_or("-")
+        ));
+        let mut c = fixture("model_catalog");
+        let q = q.to_lowercase();
+        let rows: Vec<Value> = c["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|r| q.is_empty() || r["id"].as_str().unwrap().contains(&q))
+            .map(|r| {
+                let mut r = r.clone();
+                let arts: Vec<Value> = r["artifacts"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .filter(|a| engine.is_none_or(|e| a["provider"] == e))
+                    .filter(|a| {
+                        !fits_only || matches!(a["fit"]["verdict"].as_str(), Some("fits" | "tight"))
+                    })
+                    .cloned()
+                    .collect();
+                r["artifacts"] = json!(arts);
+                r
+            })
+            .collect();
+        c["rows"] = json!(rows);
+        Ok(c)
+    }
+    fn models_installed(&self, provider: Option<&str>) -> Result<Value, TransportError> {
+        self.record(format!("installed provider={}", provider.unwrap_or("-")));
+        Ok(fixture("models_installed"))
+    }
+    fn start_download(&self, provider: &str, artifact: &str) -> Result<Value, TransportError> {
+        self.record(format!("download {provider} {artifact}"));
+        self.started(Self::job_doc(
+            "download",
+            "running",
+            json!({"provider": provider, "artifact": artifact, "percent": 0.0,
+                   "downloaded_bytes": 0, "message": "pulling manifest"}),
+        ))
+    }
+    fn delete_model(
+        &self,
+        provider: &str,
+        artifact: &str,
+        force: bool,
+    ) -> Result<Value, TransportError> {
+        self.record(format!("delete {provider} {artifact} force={force}"));
+        if let Some(e) = self.refuse_delete.lock().unwrap().clone() {
+            return Err(e);
+        }
+        self.started(Self::job_doc(
+            "delete",
+            "completed",
+            json!({"provider": provider, "artifact": artifact, "percent": 100.0,
+                   "command": ["lms", "rm", artifact]}),
+        ))
+    }
+    fn engine_install(&self, id: &str, dry_run: bool) -> Result<Value, TransportError> {
+        self.record(format!("install {id} dry_run={dry_run}"));
+        let command = json!(["brew", "install", id]);
+        if dry_run {
+            return self.started(Self::job_doc(
+                "engine_install",
+                "completed",
+                json!({"provider": null, "artifact": null, "engine": id, "dry_run": true,
+                       "command": command, "percent": null}),
+            ));
+        }
+        self.started(Self::job_doc(
+            "engine_install",
+            "running",
+            json!({"provider": null, "artifact": null, "engine": id, "command": command,
+                   "percent": null, "message": "==> Downloading ollama"}),
+        ))
+    }
+    fn job(&self, id: &str) -> Result<Value, TransportError> {
+        self.record(format!("job {id}"));
+        let last = self
+            .last_job
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("a job started");
+        if *self.cancelled.lock().unwrap() {
+            let mut j = last;
+            j["status"] = json!("cancelled");
+            return Ok(j);
+        }
+        if let Some(next) = self.polls.lock().unwrap().pop_front() {
+            return Ok(next);
+        }
+        let mut j = last;
+        j["status"] = json!("completed");
+        j["percent"] = json!(100.0);
+        Ok(j)
+    }
+    fn cancel_job(&self, id: &str) -> Result<Value, TransportError> {
+        self.record(format!("cancel {id}"));
+        *self.cancelled.lock().unwrap() = true;
+        let mut j = self
+            .last_job
+            .lock()
+            .unwrap()
+            .clone()
+            .expect("a job started");
+        j["status"] = json!("cancelled");
+        Ok(j)
+    }
+    fn host_label(&self) -> String {
+        "test-host".into()
+    }
+}
+
+impl Harness {
+    /// Turn frames until `pred` holds on the screen text (the worker
+    /// thread answers asynchronously); panics with the last frame.
+    fn settle_until(&mut self, what: &str, pred: impl Fn(&str) -> bool) -> String {
+        let mut last = String::new();
+        for _ in 0..400 {
+            last = self.turn();
+            if pred(&last) {
+                return last;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("never saw {what}:\n{last}\ncalls: {:?}", self.mock.calls());
+    }
+
+    /// Turn frames until the mock's call log satisfies `pred`.
+    fn wait_for_call(&mut self, what: &str, pred: impl Fn(&[String]) -> bool) {
+        for _ in 0..400 {
+            if pred(&self.mock.calls()) {
+                return;
+            }
+            self.turn();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        panic!("never saw {what}: {:?}", self.mock.calls());
+    }
+
+    fn settle_until_contains(&mut self, needle: &str) -> String {
+        let n = needle.to_string();
+        self.settle_until(needle, move |s| s.contains(&n))
+    }
+
+    fn open_models(&mut self) -> String {
+        self.key(b"9");
+        self.settle_until("the catalog rows", |s| {
+            s.contains("Qwen3 8B") && s.contains("Apple M5 Max")
+        })
+    }
+
+    fn open_engines(&mut self) -> String {
+        self.key(b"0");
+        self.settle_until("the engines table", |s| {
+            s.contains("Ollama") && s.contains("llama.cpp")
+        })
+    }
+
+    fn select_artifact(&mut self, artifact: &str) -> String {
+        let idx = self
+            .screens
+            .catalog
+            .with_untracked(|c| {
+                c.ready()
+                    .and_then(|d| d.rows.iter().position(|r| r.artifact == artifact))
+            })
+            .unwrap_or_else(|| panic!("{artifact} is not in the catalog fixture"));
+        self.screens.catalog_sel.set(idx);
+        self.turns(2)
+    }
+
+    fn select_engine(&mut self, id: &str) -> String {
+        let idx = self
+            .screens
+            .engines
+            .with_untracked(|e| {
+                e.ready()
+                    .and_then(|d| d.engines.iter().position(|r| r.id == id))
+            })
+            .unwrap_or_else(|| panic!("{id} is not in the engines fixture"));
+        self.screens.engine_sel.set(idx);
+        self.turns(2)
+    }
+}
+
+#[test]
+fn models_screen_renders_the_catalog_in_the_shared_vocabulary() {
+    let mut h = harness();
+    h.load_fixtures();
+    let s = h.open_models();
+    // Tab 9, the host profile line, the four fixture models.
+    assert!(s.contains("9 Models"), "{s}");
+    assert!(s.contains("128.0 GiB unified"), "host summary:\n{s}");
+    assert!(s.contains("models up to 96.0 GiB"), "{s}");
+    for model in ["Qwen3 8B", "Gemma 3 27B", "DeepSeek R1 671B", "GPT-OSS 20B"] {
+        assert!(s.contains(model), "{model} listed:\n{s}");
+    }
+    // Contract G vocabulary: fit badges and weight labels.
+    for word in ["fits", "tight", "too large", "not downloaded", "installed"] {
+        assert!(s.contains(word), "{word} rendered:\n{s}");
+    }
+    assert!(
+        s.contains("★ Qwen3 8B"),
+        "recommended artifact starred:\n{s}"
+    );
+    // The installed read's per-engine errors are shown, not swallowed.
+    assert!(s.contains("ollama: unreachable"), "{s}");
+    // Footer names this screen's verbs.
+    assert!(s.contains("download") && s.contains("filter"), "{s}");
+    // Entering the screen read host, catalog and installed ONCE each.
+    let calls = h.mock.calls();
+    assert_eq!(
+        calls.iter().filter(|c| c.starts_with("catalog")).count(),
+        1,
+        "{calls:?}"
+    );
+    assert!(h.mock.called("host_profile") && h.mock.called("installed"));
+    // Leaving and re-entering does not re-read (r does).
+    h.key(b"1");
+    h.turns(3);
+    h.key(b"9");
+    h.turns(3);
+    assert_eq!(
+        h.mock
+            .calls()
+            .iter()
+            .filter(|c| c.starts_with("catalog"))
+            .count(),
+        1
+    );
+    h.key(b"r");
+    h.wait_for_call("a second catalog read", |calls| {
+        calls.iter().filter(|c| c.starts_with("catalog")).count() == 2
+    });
+    h.settle_until_contains("Qwen3 8B");
+}
+
+#[test]
+fn models_filter_slash_requeries_with_the_typed_text() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.open_models();
+    h.key(b"/");
+    let s = h.turns(2);
+    assert!(s.contains("Filter models"), "the filter input opens:\n{s}");
+    h.type_text("gemma");
+    h.turns(1);
+    h.key(b"\r");
+    let s = h.settle_until("only gemma", |s| {
+        s.contains("Gemma 3 27B") && !s.contains("Qwen3 8B")
+    });
+    assert!(
+        s.contains("filter \"gemma\""),
+        "the status line names it:\n{s}"
+    );
+    assert!(
+        h.mock.called("catalog q=gemma engine=- fits=false"),
+        "{:?}",
+        h.mock.calls()
+    );
+    // Empty clears.
+    h.key(b"/");
+    h.turns(2);
+    h.key(b"\x1b[F"); // End: the prefilled cursor starts at column 0
+    for _ in 0..5 {
+        h.key(&[0x7f]);
+    }
+    h.turns(1);
+    h.key(b"\r");
+    h.settle_until("every model back", |s| {
+        s.contains("Qwen3 8B") && s.contains("no filter")
+    });
+}
+
+#[test]
+fn models_fits_only_f_toggles_the_backend_filter() {
+    let mut h = harness();
+    h.load_fixtures();
+    let s = h.open_models();
+    assert!(s.contains("DeepSeek R1 671B"));
+    h.key(b"f");
+    let s = h.settle_until("the too-large row gone", |s| {
+        !s.contains("DeepSeek R1 671B") && s.contains("Qwen3 8B")
+    });
+    assert!(s.contains("fits only"), "{s}");
+    assert!(h.mock.called("catalog q= engine=- fits=true"));
+    h.key(b"f");
+    h.settle_until_contains("DeepSeek R1 671B");
+}
+
+#[test]
+fn models_engine_e_cycles_through_seen_engines() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.open_models();
+    h.key(b"e");
+    let s = h.settle_until("an engine filter", |s| s.contains("engine ollama"));
+    assert!(!s.contains("GPT-OSS 20B"), "only ollama artifacts:\n{s}");
+    assert!(h.mock.called("catalog q= engine=ollama fits=false"));
+}
+
+#[test]
+fn download_w_polls_the_job_to_a_completion_toast() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.open_models();
+    // Progress the backend reports on the next polls.
+    h.mock
+        .polls
+        .lock()
+        .unwrap()
+        .extend([fixture("job_running"), fixture("job_running")]);
+    h.select_artifact("qwen3:8b");
+    h.key(b"w");
+    let s = h.settle_until("the job at 42%", |s| s.contains("42%"));
+    assert!(
+        s.contains("download ollama qwen3:8b"),
+        "the strip names it:\n{s}"
+    );
+    assert!(s.contains("2.0 GiB / 4.8 GiB"), "bytes shown:\n{s}");
+    assert!(s.contains("c cancels"), "{s}");
+    assert!(h.mock.called("download ollama qwen3:8b"));
+    let s = h.settle_until_contains("✓ download ollama qwen3:8b completed");
+    assert!(s.contains("completed"), "{s}");
+    assert!(!h.screens.job_active());
+    // A finished download re-reads what is on disk and the catalog.
+    h.wait_for_call("the post-job reloads", |calls| {
+        let after = calls
+            .iter()
+            .position(|c| c.starts_with("download"))
+            .unwrap();
+        calls[after..].iter().any(|c| c.starts_with("installed"))
+            && calls[after..].iter().any(|c| c.starts_with("catalog"))
+    });
+}
+
+#[test]
+fn download_w_refuses_installed_and_confirms_oversized() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.open_models();
+    h.select_artifact("qwen/qwen3-8b@4bit");
+    h.key(b"w");
+    h.settle_until_contains("already on disk");
+    assert!(!h.mock.called("download"));
+    h.select_artifact("deepseek-ai/DeepSeek-R1");
+    h.key(b"w");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Download deepseek-ai/DeepSeek-R1?") && s.contains("Download anyway"),
+        "oversized asks first:\n{s}"
+    );
+    h.key(b"\r"); // default = don't download
+    h.turns(2);
+    assert!(!h.mock.called("download"), "{:?}", h.mock.calls());
+}
+
+#[test]
+fn delete_d_confirms_then_deletes() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.open_models();
+    h.select_artifact("qwen/qwen3-8b@4bit");
+    h.key(b"d");
+    let s = h.turns(2);
+    assert!(
+        s.contains("Delete qwen/qwen3-8b@4bit from lmstudio?"),
+        "{s}"
+    );
+    assert!(s.contains("runs on   test-host"), "the host is named:\n{s}");
+    assert!(s.contains("frees     4.3 GiB"), "{s}");
+    // Default is KEEP.
+    h.key(b"\r");
+    h.turns(2);
+    assert!(!h.mock.called("delete"), "Enter keeps it");
+    h.key(b"d");
+    h.turns(2);
+    h.key(b"1");
+    h.turns(1);
+    h.key(b"\r");
+    let s = h.settle_until_contains("✓ delete lmstudio qwen/qwen3-8b@4bit completed");
+    assert!(s.contains("completed"), "{s}");
+    assert!(h
+        .mock
+        .called("delete lmstudio qwen/qwen3-8b@4bit force=false"));
+}
+
+#[test]
+fn delete_d_shows_blockers_and_the_backend_refusal() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.open_models();
+    // The installed view: the loaded MLX model.
+    h.key(b"v");
+    let s = h.settle_until_contains("3 installed");
+    assert!(s.contains("loaded"), "{s}");
+    let idx = h
+        .screens
+        .installed
+        .with_untracked(|i| {
+            i.ready()
+                .and_then(|d| d.rows.iter().position(|r| r.provider == "mlx"))
+        })
+        .unwrap();
+    h.screens.installed_sel.set(idx);
+    h.turns(2);
+    h.key(b"d");
+    let s = h.turns(2);
+    assert!(s.contains("It is blocked"), "{s}");
+    assert!(
+        s.contains("loaded in memory right now"),
+        "the blocker is spelled out:\n{s}"
+    );
+    assert!(s.contains("Delete anyway (force)"), "{s}");
+    // The backend still refuses (say the model got pinned meanwhile).
+    *h.mock.refuse_delete.lock().unwrap() = Some(TransportError::refused(
+        "model is pinned",
+        Some(json!({"delete_blockers": ["loaded"]})),
+    ));
+    h.key(b"1");
+    h.turns(1);
+    h.key(b"\r");
+    let s = h.settle_until_contains("refused: model is pinned");
+    assert!(
+        s.contains("(loaded)"),
+        "the refusal's reasons ride along:\n{s}"
+    );
+    assert!(h
+        .mock
+        .called("delete mlx mlx-community/gpt-oss-20b-4bit force=true"));
+    assert!(
+        h.screens.job.get_untracked().is_none(),
+        "nothing is running"
+    );
+}
+
+#[test]
+fn engines_screen_renders_status_and_refuses_with_reasons() {
+    let mut h = harness();
+    h.load_fixtures();
+    let s = h.open_engines();
+    assert!(s.contains("0 Engines"), "{s}");
+    assert!(s.contains("test-host"), "the host is named:\n{s}");
+    for word in [
+        "installed",
+        "not installed",
+        "unsupported",
+        "i: brew",
+        "o: page",
+    ] {
+        assert!(s.contains(word), "{word}:\n{s}");
+    }
+    assert!(h.mock.called("engines_status probe=false"));
+    h.select_engine("vllm");
+    h.key(b"i");
+    h.settle_until_contains("needs Linux with an NVIDIA GPU");
+    h.select_engine("mlx");
+    h.key(b"i");
+    h.settle_until_contains("MLX is already installed (v0.26.1)");
+    h.select_engine("lmstudio");
+    h.key(b"i");
+    h.settle_until_contains("installs from its download page");
+    assert!(!h.mock.called("install"), "{:?}", h.mock.calls());
+    // r probes.
+    h.key(b"r");
+    h.wait_for_call("a probing status read", |calls| {
+        calls.iter().any(|c| c == "engines_status probe=true")
+    });
+}
+
+#[test]
+fn install_i_confirm_shows_argv_host_and_notes() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.open_engines();
+    h.select_engine("ollama");
+    h.key(b"i");
+    let s = h.turns(2);
+    assert!(s.contains("Install Ollama on test-host?"), "{s}");
+    assert!(
+        s.contains("command   brew install ollama"),
+        "the exact argv:\n{s}"
+    );
+    assert!(s.contains("runs on   test-host"), "{s}");
+    assert!(s.contains("Homebrew install — no sudo needed"), "{s}");
+    assert!(s.contains("Dry run"), "{s}");
+    // Default = cancel.
+    h.key(b"\r");
+    h.settle_until_contains("install cancelled — nothing ran");
+    assert!(!h.mock.called("install"));
+    // Dry run: asks the backend, runs nothing.
+    h.key(b"i");
+    h.turns(2);
+    h.key(b"2");
+    h.turns(1);
+    h.key(b"\r");
+    h.settle_until_contains("dry run: install ollama would run `brew install ollama`");
+    assert!(h.mock.called("install ollama dry_run=true"));
+    // llama.cpp: a pip install into this environment.
+    h.select_engine("llamacpp");
+    h.key(b"i");
+    let s = h.turns(2);
+    assert!(s.contains("-m pip install llama-cpp-python"), "{s}");
+    assert!(
+        s.contains("Python environment abstractcore runs from"),
+        "{s}"
+    );
+    assert!(s.contains("downloads about 57.2 MiB"), "{s}");
+}
+
+#[test]
+fn install_then_cancel_c_stops_the_job() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.open_engines();
+    // Keep the install running until cancelled.
+    h.mock.polls.lock().unwrap().extend(
+        (0..400).map(|_| MockTransport::job_doc("engine_install", "running", json!({"engine": "ollama", "provider": null, "artifact": null, "percent": null, "message": "==> Downloading ollama"}))),
+    );
+    h.select_engine("ollama");
+    h.key(b"i");
+    h.turns(2);
+    h.key(b"1");
+    h.turns(1);
+    h.key(b"\r");
+    let s = h.settle_until_contains("Downloading ollama");
+    assert!(s.contains("install ollama"), "{s}");
+    assert!(h.screens.job_active());
+    // q refuses while it runs.
+    h.key(b"q");
+    h.settle_until_contains("models/engines job is running");
+    h.key(b"c");
+    let s = h.settle_until_contains("⊘ install ollama cancelled");
+    assert!(s.contains("cancelled"), "{s}");
+    assert!(h.mock.called("cancel engine_install_1"));
+    assert!(!h.screens.job_active());
+}
+
+#[test]
+fn open_o_hands_the_download_page_to_the_opener() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.open_engines();
+    h.select_engine("lmstudio");
+    h.key(b"o");
+    h.settle_until_contains("opened https://lmstudio.ai/download");
+    assert_eq!(*h.opened.borrow(), vec!["https://lmstudio.ai/download"]);
+}
+
+#[test]
+fn a_second_verb_while_a_job_runs_is_refused_single_flight() {
+    let mut h = harness();
+    h.load_fixtures();
+    h.open_models();
+    h.mock
+        .polls
+        .lock()
+        .unwrap()
+        .extend((0..400).map(|_| fixture("job_running")));
+    h.select_artifact("qwen3:8b");
+    h.key(b"w");
+    h.settle_until_contains("42%");
+    h.select_artifact("gemma3:27b");
+    h.key(b"w");
+    h.settle_until_contains("is still running — c cancels it");
+    assert_eq!(
+        h.mock
+            .calls()
+            .iter()
+            .filter(|c| c.starts_with("download"))
+            .count(),
+        1
     );
 }

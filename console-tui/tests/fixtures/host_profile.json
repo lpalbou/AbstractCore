@@ -1,0 +1,7 @@
+{"schema": "host_profile_v1", "os": "darwin", "arch": "arm64", "accelerator": "metal",
+ "gpu_name": "Apple M5 Max", "unified_memory": true, "ram_bytes": 137438953472, "vram_bytes": null,
+ "ceiling_bytes": 103079215104, "ceiling_source": "metal_wired_limit", "free_now_bytes": 61000000000,
+ "disk": {"hf_cache": {"path": "~/.cache/huggingface/hub", "free_bytes": 500000000000},
+          "lmstudio": {"path": "~/.lmstudio/models", "free_bytes": 500000000000},
+          "ollama": {"path": "~/.ollama/models", "free_bytes": 500000000000}},
+ "python": "3.12.13", "generated_at": "2026-09-23T10:00:00Z"}

@@ -32,7 +32,11 @@ use crate::store::{Loadable, Store};
 use crate::worker::Cmd;
 use util::{fit_width, hints, line, span, span_bold};
 
-pub const SCREENS: [&str; 8] = [
+/// APPEND ONLY: indices are the wizard's step targets, the footer's
+/// hint arms and the tests' `goto_screen` arguments. Screens 9 and 10
+/// are the shared library screens (`crate::screens`); the tenth is
+/// reached with `0`.
+pub const SCREENS: [&str; 10] = [
     "Overview",
     "Model",
     "Providers",
@@ -41,12 +45,28 @@ pub const SCREENS: [&str; 8] = [
     "Embeddings",
     "Server",
     "Review",
+    crate::screens::CATALOG_TITLE,
+    crate::screens::ENGINES_TITLE,
 ];
+
+/// Index of the shared Models screen (`9`).
+pub const SCREEN_CATALOG: usize = 8;
+/// Index of the shared Engines screen (`0`).
+pub const SCREEN_ENGINES: usize = 9;
+
+/// The digit that jumps to screen `i` (1-9, then 0 for the tenth).
+pub fn screen_key(i: usize) -> char {
+    if i == 9 {
+        '0'
+    } else {
+        char::from_digit(i as u32 + 1, 10).expect("screens 1-9")
+    }
+}
 
 /// Stable PageHost page ids, parallel to `SCREENS`. `ui.screen: usize`
 /// stays the source of truth; a two-way equality-guarded bridge keeps
 /// PageHost's string `active` in lockstep.
-pub const SCREEN_IDS: [&str; 8] = [
+pub const SCREEN_IDS: [&str; 10] = [
     "overview",
     "model",
     "providers",
@@ -55,6 +75,8 @@ pub const SCREEN_IDS: [&str; 8] = [
     "embeddings",
     "server",
     "review",
+    crate::screens::CATALOG_ID,
+    crate::screens::ENGINES_ID,
 ];
 
 /// Which screen edits a given config section — the overview's
@@ -131,6 +153,9 @@ pub struct Ctx {
     pub store: Store,
     pub ui: UiState,
     pub modal: Rc<RefCell<Option<Modal>>>,
+    /// The shared Models / Engines screens (library, `crate::screens`),
+    /// over the `abstractcore` CLI transport in the binary.
+    pub screens: crate::screens::ScreensCtx,
 }
 
 impl Ctx {
@@ -300,6 +325,16 @@ pub fn root(cx: Scope, ctx: Ctx) -> View {
                 ));
                 return;
             }
+            // A download/install child dies with this process (its pipes
+            // close) — quitting would silently cancel it.
+            if ctx_q.screens.store.job_active() {
+                ctx_q.store.notice.set(Some(
+                    "a models/engines job is running — c on Models/Engines cancels it \
+                     (Ctrl+C force-quits and stops it)"
+                        .into(),
+                ));
+                return;
+            }
             quit.quit();
         })
         .shortcut(KeyChord::plain(Key::Char('r')), move |_| {
@@ -353,15 +388,19 @@ pub fn root(cx: Scope, ctx: Ctx) -> View {
     // Digit REFUSALS (wizard only): PageHost owns digit jumps in
     // browse; the wizard's refusal-with-a-reason stays a root shortcut
     // so a swallowed digit never reads as a dead app.
+    // PageHost's own digit jumps stop at 9, so the tenth screen's `0`
+    // is this root shortcut's job in browse mode.
     for i in 0..SCREENS.len() {
         let ctx_i = ctx.clone();
-        let key = char::from_digit(i as u32 + 1, 10).unwrap();
+        let key = screen_key(i);
         root_el = root_el.shortcut(KeyChord::plain(Key::Char(key)), move |_| {
             if ctx_i.ui.wizard.get_untracked() {
                 ctx_i.store.notice.set(Some(
                     "digit jumps work in browse mode — walk the wizard with Ctrl+N, finish with f"
                         .into(),
                 ));
+            } else if i >= 9 {
+                ctx_i.ui.screen.set(i);
             }
         });
     }
@@ -409,7 +448,8 @@ pub fn root(cx: Scope, ctx: Ctx) -> View {
             )
         };
         let c: Vec<Ctx> = (0..SCREEN_IDS.len()).map(|_| host_ctx.clone()).collect();
-        let [c0, c1, c2, c3, c4, c5, c6, c7]: [Ctx; 8] = c.try_into().ok().expect("8 screens");
+        let [c0, c1, c2, c3, c4, c5, c6, c7, c8, c9]: [Ctx; 10] =
+            c.try_into().ok().expect("10 screens");
         PageHost::new()
             .page(SCREEN_IDS[0], "1 Overview", move |gcx| {
                 overview::view(gcx, &c0, theme)
@@ -461,6 +501,12 @@ pub fn root(cx: Scope, ctx: Ctx) -> View {
             })
             .page(SCREEN_IDS[7], "8 Review", move |gcx| {
                 review::view(gcx, &c7, theme)
+            })
+            .page(SCREEN_IDS[8], "9 Models", move |gcx| {
+                crate::screens::catalog(gcx, &c8.screens)
+            })
+            .page(SCREEN_IDS[9], "0 Engines", move |gcx| {
+                crate::screens::engines(gcx, &c9.screens)
             })
             .active(active)
             .number_jump(!wizard_now)
@@ -746,9 +792,13 @@ fn footer(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme
                                 pairs.push(("f", "finish"));
                                 pairs.push(("Ctrl+C", "quit"));
                             } else {
-                                pairs.push(("1-8", "screens"));
+                                pairs.push(("1-9,0", "screens"));
                                 pairs.push(("q", "quit"));
-                                pairs.push(("w", "wizard"));
+                                // Models owns `w` (download) — the root's
+                                // wizard key never reaches it there.
+                                if screen != SCREEN_CATALOG {
+                                    pairs.push(("w", "wizard"));
+                                }
                             }
                             pairs.push(("r", "reload"));
                             match screen {
@@ -778,6 +828,12 @@ fn footer(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Theme
                                     // download confirms with the artifact
                                     // spelled out before it spends a byte.
                                     pairs.push(("w", "download weights"));
+                                }
+                                SCREEN_CATALOG => {
+                                    pairs.extend_from_slice(crate::screens::catalog::HINTS)
+                                }
+                                SCREEN_ENGINES => {
+                                    pairs.extend_from_slice(crate::screens::engines::HINTS)
                                 }
                                 _ => {}
                             }
