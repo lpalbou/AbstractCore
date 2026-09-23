@@ -360,6 +360,9 @@ def _request_is_auth_exempt(request: Request) -> bool:
         return True
     if path in {"/", "/favicon.ico", "/health", "/console"} or path.startswith("/console/fragment/"):
         return True
+    # The one-time console claim is its own boundary (loopback peer + code).
+    if path == "/acore/session/claim" and request.method.upper() == "POST":
+        return True
     if not _server_protect_docs() and path in {"/docs", "/docs-lite", "/docs/oauth2-redirect", "/openapi.json", "/redoc"}:
         return True
     return False
@@ -1474,6 +1477,11 @@ app.include_router(_host_router)
 from .console_routes import router as _console_router  # noqa: E402
 
 app.include_router(_console_router)
+
+# First-run console claim: POST /acore/session/claim (loopback only).
+from .session_routes import router as _session_router  # noqa: E402
+
+app.include_router(_session_router)
 
 # ============================================================================
 # Enhanced Error Handling and Logging Middleware
@@ -10108,15 +10116,51 @@ def _resolve_external_host(bind_host: str) -> str:
     return bind_host
 
 def run_server(host: str = "0.0.0.0", port: int = 8000):
+    """Run the server"""
+    from .first_run import prepare_server_auth, print_banner
+
     # Engine installs default to ON only on a loopback bind (host_routes).
     os.environ["ABSTRACTCORE_SERVER_BIND_HOST"] = str(host)
-    """Run the server"""
+    print_banner(prepare_server_auth(host), host, port)
     import uvicorn
     uvicorn.run(app, host=host, port=port, log_level="error")
 
 # ============================================================================
 # Server Runner Function
 # ============================================================================
+
+def _serve_auth_helper(args: argparse.Namespace) -> int:
+    """`serve --print-token` / `serve --claim-url`: no server is started."""
+    from . import first_run
+
+    if first_run.env_token():
+        if args.print_token:
+            print(first_run.env_token())
+            return 0
+        print(
+            "ABSTRACTCORE_AUTH_TOKEN is set, so the server uses that token and issues no console "
+            "links; paste the token into the console instead.",
+            file=sys.stderr,
+        )
+        return 2
+    if not first_run.is_loopback_host(args.host):
+        print(
+            f"--print-token/--claim-url serve a loopback server only (got --host {args.host}); "
+            "a non-loopback server needs ABSTRACTCORE_AUTH_TOKEN.",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        token, _created = first_run.load_or_create_token()
+        if args.print_token:
+            print(token)
+            return 0
+        code = first_run.mint_claim()
+    except (OSError, RuntimeError) as exc:
+        print(f"abstractcore serve: {exc}", file=sys.stderr)
+        return 1
+    print(first_run.claim_url(args.host, args.port, code))
+    return 0
 
 def run_server_with_args(argv: Optional[List[str]] = None, *, prog: Optional[str] = None):
     """Run the server with argument parsing for CLI usage."""
@@ -10126,8 +10170,10 @@ def run_server_with_args(argv: Optional[List[str]] = None, *, prog: Optional[str
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  abstractcore serve                                  # Start server with defaults
-  abstractcore serve --host 127.0.0.1 --port 8080    # Custom host/port
+  abstractcore serve                                  # Start on 127.0.0.1:8000, print a console link
+  abstractcore serve --host 0.0.0.0 --port 8080      # All interfaces (needs ABSTRACTCORE_AUTH_TOKEN)
+  abstractcore serve --print-token                   # Print the local server's bearer token
+  abstractcore serve --claim-url                     # Print a fresh one-time console link
   abstractcore serve --reload                        # Development auto-reload
   python -m abstractcore.server.app                    # Start server with defaults
   python -m abstractcore.server.app --debug           # Start with debug logging
@@ -10135,7 +10181,9 @@ Examples:
   python -m abstractcore.server.app --debug --port 8080           # Debug on custom port
 
 Environment Variables:
-  ABSTRACTCORE_AUTH_TOKEN=...  # Server auth token for non-health endpoints
+  ABSTRACTCORE_AUTH_TOKEN=...  # Server auth token for non-health endpoints. On a loopback
+                               # bind without it, the server generates one and keeps it in
+                               # <config dir>/server-token (0600).
   ABSTRACTCORE_DEBUG=true    # Enable debug mode (equivalent to --debug)
   HOST=127.0.0.1            # Server host (overridden by --host)
   PORT=8080                  # Server port (overridden by --port)
@@ -10156,8 +10204,8 @@ Debug Mode:
     )
     parser.add_argument(
         '--host',
-        default=os.getenv("HOST", "0.0.0.0"),
-        help='Host to bind the server to (default: 0.0.0.0)'
+        default=os.getenv("HOST", "127.0.0.1"),
+        help='Host to bind the server to (default: 127.0.0.1; use 0.0.0.0 for all interfaces)'
     )
     parser.add_argument(
         '--port',
@@ -10170,8 +10218,21 @@ Debug Mode:
         action='store_true',
         help='Enable uvicorn auto-reload (development only)'
     )
+    parser.add_argument(
+        '--print-token',
+        action='store_true',
+        help='Print the bearer token of the local (loopback) server and exit; creates it on first use'
+    )
+    parser.add_argument(
+        '--claim-url',
+        action='store_true',
+        help='Print a fresh one-time console link (valid 10 minutes) for the local server on --port and exit'
+    )
 
     args = parser.parse_args(argv)
+
+    if args.print_token or args.claim_url:
+        return _serve_auth_helper(args)
 
     # Reconfigure logging if debug mode is requested (--debug overrides config defaults)
     if args.debug:
@@ -10189,12 +10250,17 @@ Debug Mode:
     # Engine installs default to ON only on a loopback bind (host_routes).
     os.environ["ABSTRACTCORE_SERVER_BIND_HOST"] = str(args.host)
 
-    # Print access URLs (outside logging)
-    internal_url = f"http://127.0.0.1:{args.port}"
-    external_host = _resolve_external_host(args.host)
-    external_url = f"http://{external_host}:{args.port}"
-    print(f"Internal URL: {internal_url}")
-    print(f"External URL: {external_url}")
+    # First run on loopback: generate/load the token and mint a console link.
+    from .first_run import is_loopback_host, prepare_server_auth, print_banner
+
+    try:
+        state = prepare_server_auth(args.host)
+    except (OSError, RuntimeError) as exc:
+        print(f"abstractcore serve: cannot prepare the server token: {exc}", file=sys.stderr)
+        return 1
+    print_banner(state, args.host, args.port)
+    if not is_loopback_host(args.host):
+        print(f"External URL: http://{_resolve_external_host(args.host)}:{args.port}")
 
     # Enhanced uvicorn configuration for debug mode
     uvicorn_config = {
@@ -10220,4 +10286,4 @@ Debug Mode:
 # ============================================================================
 
 if __name__ == "__main__":
-    run_server_with_args()
+    raise SystemExit(run_server_with_args() or 0)

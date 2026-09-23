@@ -2570,8 +2570,8 @@ def _handle_models_subcommand(argv: List[str]) -> int:
 def _handle_serve_subcommand(argv: List[str]) -> int:
     from abstractcore.server.app import run_server_with_args
 
-    run_server_with_args(argv, prog="abstractcore serve")
-    return 0
+    rc = run_server_with_args(argv, prog="abstractcore serve")
+    return rc if isinstance(rc, int) else 0
 
 
 def handle_commands(args) -> bool:

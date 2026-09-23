@@ -389,7 +389,7 @@ _JS_TEMPLATE = r"""
       wrap.innerHTML = `<div class="acc-modal" role="dialog" aria-modal="true" aria-labelledby="acc-auth-title">
         <h3 id="acc-auth-title">Server token required</h3>
         ${reason ? `<p class="acc-error">${esc(reason)}</p>` : ""}
-        <p>This AbstractCore server requires its bearer token (the value of <code>ABSTRACTCORE_AUTH_TOKEN</code> on the host). It is kept in this browser tab's session storage only.</p>
+        <p>This AbstractCore server requires its bearer token. On the server's machine, <code>abstractcore serve --print-token</code> prints it (or <code>abstractcore serve --claim-url</code> prints a one-time console link). It is kept in this browser tab's session storage only.</p>
         <form data-acc="auth-form">
           <input type="password" data-acc="auth-token" autocomplete="off" placeholder="Bearer token" aria-label="Bearer token" style="width:100%">
           <div class="acc-modal-actions">
@@ -1310,8 +1310,44 @@ _JS_TEMPLATE = r"""
       const btn = document.getElementById(`acc-tab-button-${id}`);
       if (btn) btn.addEventListener("click", () => { if (window.location.hash !== `#${id}`) window.location.hash = id; else show(id); });
     }
-    window.addEventListener("hashchange", () => show(window.location.hash.slice(1)));
-    show(window.location.hash.slice(1) || "overview");
+    // One-time console link (`/console#claim=<code>`, printed by
+    // `abstractcore serve`): strip it from the address bar at once, trade it
+    // for the bearer token, keep the token in this tab only.
+    const claim = /^#claim=([A-Za-z0-9_-]{16,128})$/.exec(window.location.hash || "");
+    if (claim) {
+      try { window.history.replaceState(null, "", window.location.pathname + window.location.search); } catch (e) { window.location.hash = ""; }
+    }
+    const start = () => {
+      window.addEventListener("hashchange", () => show(window.location.hash.slice(1)));
+      show(window.location.hash.slice(1) || "overview");
+    };
+    if (!claim) { start(); return; }
+    redeemClaim(apiBase, claim[1]).then((problem) => {
+      if (problem) {
+        const main = document.querySelector(".acc-main");
+        if (main) main.insertAdjacentHTML("afterbegin", `<p class="acc-error" id="acc-claim-error" role="alert">${esc(problem)}</p>`);
+      }
+      syncForget();
+      start();
+    });
+  }
+
+  async function redeemClaim(apiBase, code) {
+    try {
+      const res = await fetch(`${apiBase}/session/claim`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ code }),
+      });
+      let data = {};
+      try { data = await res.json(); } catch (e) { data = {}; }
+      if (res.ok && data && data.token) { setToken(data.token); return ""; }
+      if (getToken()) return "";  // this tab is already signed in; the used link is harmless
+      return (data && data.message) || `The console link was refused (HTTP ${res.status}). Run \`abstractcore serve --claim-url\` for a fresh one.`;
+    } catch (e) {
+      return `Could not redeem the console link: ${(e && e.message) || e}`;
+    }
   }
 
   window.AbstractCoreConsole = Object.freeze({
