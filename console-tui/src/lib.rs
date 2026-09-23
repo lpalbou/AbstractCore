@@ -25,7 +25,7 @@ use abstracttui::prelude::*;
 use store::Store;
 use ui::{Ctx, UiState};
 
-pub const ENGINE_VERSION: &str = "0.3.0";
+pub const ENGINE_VERSION: &str = "0.3.6";
 
 const HELP: &str = "\
 abstractcore-console — configure AbstractCore from the terminal

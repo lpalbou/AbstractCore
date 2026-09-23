@@ -30,7 +30,7 @@ path = "src/main.rs"
 # receive motion, and OUT of platform_clipboard in the headless harness
 # (tests must never shell out to pbcopy). 0.2.27 carried the same change
 # as a patch and was YANKED for it — never pin it.
-abstracttui = "0.3.0"
+abstracttui = "0.3.6"
 # JSON: the config file IS JSON, and `abstractcore config ... --json`
 # emits the derived views. Battle-tested parsing; unknown keys must be
 # PRESERVED on rewrite (serde_json::Value round-trip, never a typed
