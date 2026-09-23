@@ -3,7 +3,7 @@
 > Expanded companion to `llms.txt`: setup, API and provider guidance, followed by canonical documentation pages. Use the linked source pages for authoritative documentation and the source code for behavior.
 
 Last updated: 2026-09-20
-Package version: 2.13.42
+Package version: 2.14.0
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -1179,6 +1179,20 @@ plugin engines such as OmniVoice where supported; they need Python 3.11 or newer
 
 ## Quickstart
 
+Pick, download and run a local model from the browser:
+
+```bash
+pip install "abstractcore[server]"
+abstractcore serve
+# open the printed link: http://127.0.0.1:8000/console#claim=...
+```
+
+The **Models** tab lists models that fit this machine and downloads one in a click; the
+**Engines** tab installs Ollama, LM Studio, MLX or llama.cpp with one confirmation that shows
+the exact command. Each action prints its CLI twin (`abstractcore models download ...`,
+`abstractcore engines install ...`). See [Local Models](docs/models.md),
+[Local Engines](docs/engines.md) and [Web Console](docs/console.md).
+
 Local/offline example (requires Ollama running with `ollama pull qwen3:4b`
 already done):
 
@@ -1512,15 +1526,21 @@ routes, not in `/v1/models`.
 
 ```bash
 pip install "abstractcore[server]"
-abstractcore serve
+abstractcore serve                        # 127.0.0.1:8000; prints a one-time console link
+export ABSTRACTCORE_AUTH_TOKEN="$(abstractcore serve --print-token)"
 ```
+
+On your own machine the server creates its bearer token on first run; on a network, set
+`ABSTRACTCORE_AUTH_TOKEN` yourself and pass `--host 0.0.0.0`. See
+[First run](docs/server.md#first-run-on-your-machine).
 
 Use any OpenAI-compatible client, and route to any provider/model via `model="provider/model"`:
 
 ```python
+import os
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_AUTH_TOKEN"])
 resp = client.chat.completions.create(
     model="ollama/qwen3:4b",
     messages=[{"role": "user", "content": "Hello from the gateway!"}],
@@ -1530,8 +1550,8 @@ print(resp.choices[0].message.content)
 
 See [Server](docs/server.md).
 
-The server also serves a web console at `http://localhost:8000/console`: see what this machine
-can run, browse and download models with fit badges, delete weights, and install engines such as
+The server also serves a web console at `/console` (open the link `abstractcore serve` prints):
+see what this machine can run, browse and download models with fit badges, delete weights, and install engines such as
 Ollama with one confirmation. Every action shows its CLI equivalent. See [Web Console](docs/console.md).
 
 Single-model `/v1` endpoint (one provider/model per worker): see [Endpoint](docs/endpoint.md) (`abstractcore-endpoint`).
@@ -1605,6 +1625,7 @@ Reference and internals:
 - [API Reference](docs/api-reference.md) — Python API (including events)
 - [Server](docs/server.md) — OpenAI-compatible gateway with tool/media support
 - [Web Console](docs/console.md) — `/console`: models, engines and providers in the browser; embeddable screens
+- [Terminal Console](docs/console-tui.md) — `abstractcore-console`: the same Models and Engines screens in a terminal
 - [CLI Guide](docs/acore-cli.md) — interactive `abstractcore-chat` walkthrough
 
 Project:
@@ -9438,11 +9459,12 @@ job; follow it with `GET /acore/jobs/{id}`.
 - Installs run on the machine that runs AbstractCore. For `abstractcore serve`, that is the
   server host, not the browser's machine.
 - The CLI allows installs by default. The server allows them by default only when bound to a
-  loopback address (`abstractcore serve --host 127.0.0.1`); set
+  loopback address (`abstractcore serve` binds `127.0.0.1` by default); set
   `ABSTRACTCORE_ALLOW_ENGINE_INSTALL=1` or `=0` to override either default. `GET /acore/engines`
   reports the effective `install_allowed`. A dry run is always allowed.
 - Every `POST` under `/acore/models`, `/acore/engines` and `/acore/jobs` needs a server
-  principal: the `ABSTRACTCORE_AUTH_TOKEN` bearer token, or
+  principal: the server's bearer token (on a loopback `abstractcore serve`, the one it
+  generated; `abstractcore serve --print-token` prints it), or
   `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1` for local development. An upstream provider key
   alone does not authorize host actions.
 - Refusals are structured: `{"ok": false, "status": "refused", "reason": ..., "message": ...}`
@@ -9460,9 +9482,10 @@ If you want a dedicated **single-model** `/v1` server (one provider/model per wo
 
 ## Web console
 
-Open `http://localhost:8000/console` for a browser console: host profile, model catalog with
-fit badges, download and delete, engine status and install, providers. Each action shows its
-CLI equivalent. See [Web Console](docs/console.md).
+`abstractcore serve` prints a one-time link, `http://127.0.0.1:8000/console#claim=<code>`,
+that opens the browser console already signed in: host profile, model catalog with fit badges,
+download and delete, engine status and install, providers. Each action shows its CLI
+equivalent. See [First run](docs/server.md#first-run-on-your-machine) and [Web Console](docs/console.md).
 
 ## Interactive API docs (start here)
 
@@ -9493,24 +9516,73 @@ route away from the provider's default API host.
 
 ### Install and Run (2 minutes)
 
+On your own machine:
+
 ```bash
-# Install
 pip install "abstractcore[server]"
-
-# Configure server auth and provider keys
-export ABSTRACTCORE_AUTH_TOKEN="acore-server-secret"
-export OPENAI_API_KEY="sk-..."
-
-# Start server
 abstractcore serve
+# AbstractCore server
+#   Config dir: ~/.abstractcore/config
+#   URL:        http://127.0.0.1:8000
+#   ...
+#   Open the console (one-time link, valid 10 minutes):
+#     http://127.0.0.1:8000/console#claim=...
 
-# Or with uvicorn directly
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# Test
+export ABSTRACTCORE_AUTH_TOKEN="$(abstractcore serve --print-token)"   # for API clients
 curl http://localhost:8000/health
 # Response: {"status":"healthy"}
 ```
+
+Open the printed link, then use the **Models** and **Engines** tabs. The server listens on
+`127.0.0.1` only and created its bearer token for you (see
+[First run](docs/server.md#first-run-on-your-machine)).
+
+On a network or in production, choose the token yourself and bind every interface:
+
+```bash
+export ABSTRACTCORE_AUTH_TOKEN="acore-server-secret"
+export OPENAI_API_KEY="sk-..."
+abstractcore serve --host 0.0.0.0 --port 8000
+
+# Or with uvicorn directly (no generated token: set ABSTRACTCORE_AUTH_TOKEN)
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
+```
+
+### First run on your machine
+
+`abstractcore serve` on a loopback address (`127.0.0.1`, the default, `localhost` or `::1`)
+with neither `ABSTRACTCORE_AUTH_TOKEN` nor `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED` set
+(nor their persisted forms, `abstractcore --set-server-auth-token` and
+`abstractcore --allow-unauthenticated-server`):
+
+- creates a bearer token once and keeps it in `<config dir>/server-token`, readable by you
+  only (`~/.abstractcore/config/server-token` by default; `ABSTRACTCORE_CONFIG_DIR` moves it),
+  and uses it as the server token on every start;
+- prints a one-time console link, `http://127.0.0.1:<port>/console#claim=<code>`, valid for
+  10 minutes and for one use. Opening it signs that browser tab in: the console exchanges the
+  code for the token, keeps the token in the tab's session storage and removes the code from
+  the address bar;
+- prints the command-line equivalents.
+
+| You want | Run |
+|---|---|
+| The token for an API client or the terminal | `abstractcore serve --print-token` |
+| A fresh console link for a running server | `abstractcore serve --claim-url --port <port>` |
+| Your own fixed token | `ABSTRACTCORE_AUTH_TOKEN=<token> abstractcore serve`, or write it into `<config dir>/server-token` |
+| No auth at all (local development only) | `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1 abstractcore serve` |
+
+The link is redeemed with `POST /acore/session/claim` `{"code": "<code>"}`, which returns
+`{"ok": true, "token_type": "bearer", "token": "..."}`. It answers only a direct connection
+from the same machine: a request from another address, one carrying a forwarding header
+(`X-Forwarded-For`, `Forwarded`, `X-Real-IP`, ...) or one whose `Host` is not a loopback name
+is refused with 403, and a used, expired or unknown code is refused with 403 too. When the
+token comes from `ABSTRACTCORE_AUTH_TOKEN` (or `--set-server-auth-token`), no links are issued
+and the route answers 404.
+
+A server bound to any other address (`--host 0.0.0.0`, a LAN address) never generates a token:
+set `ABSTRACTCORE_AUTH_TOKEN`, or every API call answers `server_auth_not_configured`. The
+start banner says which case applies. Starting the app with `uvicorn` directly skips the first
+run too.
 
 ### First Request
 
@@ -9584,8 +9656,9 @@ export VLLM_BASE_URL="http://localhost:8000/v1"
 export OPENAI_BASE_URL="http://localhost:1234/v1"
 export OPENAI_API_KEY="your-endpoint-key"                # optional, if the endpoint requires auth
 
-# Server bind (used by `abstractcore serve` and compatibility module entrypoints)
-export HOST="0.0.0.0"
+# Server bind (used by `abstractcore serve` and compatibility module entrypoints).
+# The default is 127.0.0.1; 0.0.0.0 listens on every interface and needs ABSTRACTCORE_AUTH_TOKEN.
+export HOST="127.0.0.1"
 export PORT="8000"
 
 # Debug mode
@@ -9619,7 +9692,10 @@ export ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1
 # Using AbstractCore's built-in CLI
 abstractcore serve --help                              # View all options
 abstractcore serve --debug                             # Debug mode
-abstractcore serve --host 127.0.0.1 --port 8080        # Custom host/port
+abstractcore serve --port 8080                         # Custom port (binds 127.0.0.1)
+abstractcore serve --host 0.0.0.0 --port 8080          # Every interface (set ABSTRACTCORE_AUTH_TOKEN)
+abstractcore serve --print-token                       # Print the local server's token, then exit
+abstractcore serve --claim-url --port 8080             # Print a fresh one-time console link, then exit
 abstractcore serve --debug --port 8001                 # Debug on custom port
 abstractcore serve --reload                            # Development auto-reload
 
@@ -9649,6 +9725,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Health | GET | `/health` | Liveness/version probe; never requires auth | none |
 | Console | GET | `/console` | Web console page; never requires auth (its API calls do) | none |
 | Console | GET | `/console/fragment/{kind}` | Embeddable Models/Engines screen as `{kind, html, js, css}`; never requires auth | path `kind`: `models` or `engines` |
+| Console | POST | `/acore/session/claim` | Trade a one-time console link code for the bearer token ([first run](docs/server.md#first-run-on-your-machine)); loopback peers only, no auth | JSON `code` |
 | Configuration | GET | `/v1/config/capability-defaults` | List explicit input/output/embedding/rerank route defaults | none |
 | Configuration | PUT | `/v1/config/capability-defaults/{kind}/{modality}` | Set one capability route default | path `kind`, `modality`; body `provider`, `model`, `base_url`, `options` |
 | Configuration | PUT | `/v1/config/capability-defaults/{kind}/{modality}/{task}` | Set one task-specific generated-media route default | path `kind`, `modality`, `task`; body `provider`, `model`, `base_url`, `options` |
@@ -11861,7 +11938,7 @@ export ANTHROPIC_API_KEY="sk-ant-..."
 
 # Web Console
 
-`abstractcore serve` ships a browser console at `http://localhost:8000/console`. Use it to see
+`abstractcore serve` ships a browser console at `http://127.0.0.1:8000/console`. Use it to see
 what this machine can run, browse and download models, delete weights you no longer need, and
 install local inference engines such as Ollama, without writing a command. Every action the
 console takes shows the equivalent `abstractcore` CLI command, so you can repeat it in a terminal
@@ -11877,10 +11954,12 @@ look and behave the same.
 ```bash
 pip install "abstractcore[server]"
 abstractcore serve
-# then open http://localhost:8000/console
+# then open the printed link: http://127.0.0.1:8000/console#claim=...
 ```
 
-The server landing page (`/`) links to it as well.
+The link signs the browser tab in once (it is valid for 10 minutes and one use). Lost it, or
+opening the console in another browser? `abstractcore serve --claim-url --port 8000` prints a
+fresh one. The server landing page (`/`) links to the console as well.
 
 ## Tabs
 
@@ -11968,14 +12047,22 @@ consoles.
 ## Authentication
 
 The console page and its fragments are static code and never require a token. The data behind
-them does: when `ABSTRACTCORE_AUTH_TOKEN` is set, the first API call answers `401` and the console
-asks for the token. The token is kept in the browser tab's `sessionStorage` only (cleared when
-the tab closes) and sent as `Authorization: Bearer <token>`. Use **Forget token** in the top bar
-to clear it.
+them does. There are two ways in:
 
-When no token is configured and `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED` is not set, the API
-answers `503 server_auth_not_configured`; the console shows that message. See
-[Server](docs/server.md) for the auth settings.
+- **The one-time link** printed by `abstractcore serve` on your own machine
+  (`/console#claim=<code>`). The console trades the code for the server's token through
+  `POST /acore/session/claim`, then removes it from the address bar. This works only from the
+  machine running the server; see [First run](docs/server.md#first-run-on-your-machine).
+- **Pasting the token.** When the first API call answers `401`, the console asks for the token
+  (`abstractcore serve --print-token` prints it, or it is the value of `ABSTRACTCORE_AUTH_TOKEN`).
+
+Either way the token is kept in the browser tab's `sessionStorage` only (cleared when the tab
+closes) and sent as `Authorization: Bearer <token>`. Use **Forget token** in the top bar to
+clear it.
+
+A server bound to a non-loopback address with no token configured and
+`ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED` unset answers `503 server_auth_not_configured`; the
+console shows that message. See [Server](docs/server.md) for the auth settings.
 
 ## Themes
 
@@ -12026,11 +12113,83 @@ AbstractCoreConsole.mount("models", document.getElementById("tab-catalog"), {
   `--text-primary`, `--accent`, `--info`, `--success`, `--warning`, `--error`, ...), so the
   screens follow the host's active theme.
 
+## Terminal console
+
+The same Models and Engines screens exist in the terminal: `abstractcore-console` (a Rust
+terminal app, `cargo install abstractcore-console`) shows them as screen 9 "Models" and screen 0
+"Engines", with the same labels and keys (`w` download, `d` delete, `i` install, `o` open
+download page, `/` filter, `f` fits only, `c` cancel). It drives the `abstractcore` CLI on this
+machine, so it needs no server. See [Terminal console](docs/console-tui.md).
+
 ## Related
 
 - [Server](docs/server.md): endpoints, auth settings, runtime control plane.
 - [Centralized Config](docs/centralized-config.md): API keys and default models (`abstractcore --config`).
 - [Memory and Model Residency](docs/memory-management.md): loading, unloading and locking models.
+
+---
+
+### Inlined: `docs/console-tui.md`
+
+# Terminal console (`abstractcore-console`)
+
+`abstractcore-console` is AbstractCore's keyboard-first terminal console.
+It configures `abstractcore.json` (default models, providers and API
+keys, capability routes, media, embeddings, server) and manages local
+models and engines on this machine.
+
+```bash
+pip install abstractcore               # the CLI the console drives
+cargo install abstractcore-console     # the console (Rust 1.87+)
+abstractcore-console                   # --wizard for the guided setup
+```
+
+The console reads the config file directly and runs the `abstractcore`
+CLI for everything derived or written. It finds the CLI through
+`$ABSTRACTCORE_CLI`, then `abstractcore` on `PATH`, then
+`~/.local/bin/abstractcore` (the `uv tool` shim), then
+`./.venv/bin/abstractcore` in the current directory.
+
+## Screens
+
+| Key | Screen | What it is for |
+|---|---|---|
+| 1 | Overview | every config section's state; Enter jumps to its owner |
+| 2 | Model | default models and app defaults |
+| 3 | Providers | providers, endpoint profiles, API keys, model discovery |
+| 4 | Routes | capability routes (vision, audio, image, video, embeddings); `w` downloads a route's weights |
+| 5 | Media | vision / audio / video settings |
+| 6 | Embeddings | the embeddings route |
+| 7 | Server | server, logging, timeouts, cache |
+| 8 | Review | the file identity and test evidence |
+| 9 | **Models** | the model catalog fitted to this host: `w` download, `d` delete, `/` filter, `f` fits only, `e` engine, `v` installed ⇄ catalog, `c` cancel |
+| 0 | **Engines** | Ollama, LM Studio, MLX, llama.cpp, vLLM, Hugging Face: `i` install (confirmed; shows the command and the host), `o` open the download page, `r` probe |
+
+Models and Engines speak the same vocabulary as the web console and the
+gateway console: weights `installed / not downloaded / unknown /
+remote`, fit `fits / tight / too large / partial offload / unknown`.
+Every action there is a CLI command you can run yourself:
+
+| Console action | CLI equivalent |
+|---|---|
+| Models list | `abstractcore models catalog --json` / `models search <q> [--engine X] [--fits] --json` |
+| Installed view | `abstractcore models list --json` |
+| `w` download | `abstractcore models download <provider> <artifact> --json` |
+| `d` delete | `abstractcore models delete <provider> <artifact> --yes [--force] --json` |
+| Engines list | `abstractcore engines status [--probe] --json` |
+| `i` install | `abstractcore engines install <id> --yes [--dry-run] --json` |
+
+Downloads and installs run on the machine that runs the console. One job
+runs at a time; `c` cancels it, and `q` will not quit while it runs.
+
+## Same screens in the gateway console
+
+The Models and Engines screens are a library inside the crate
+(`abstractcore_console::screens`). `abstractgateway-console` mounts them
+over an HTTP transport to the gateway's `/api/gateway/models/*` and
+`/api/gateway/engines/*` routes, so a gateway operator sees the same
+screens, acting on the gateway host. See the crate README
+(`console-tui/README.md`) for the library API.
 
 ---
 
@@ -13425,10 +13584,11 @@ Install and run:
 
 ```bash
 pip install "abstractcore[server]"
-abstractcore serve
+abstractcore serve        # open the printed link for the web console
 ```
 
-See [Server](docs/server.md).
+On your own machine the server creates its bearer token on first run
+(`abstractcore serve --print-token` prints it). See [Server](docs/server.md#first-run-on-your-machine).
 
 ## Where are logs and traces?
 

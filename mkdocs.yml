@@ -46,5 +46,7 @@ nav:
   - Local Models: models.md
   - Local Engines: engines.md
   - Server: server.md
+  - Web Console: console.md
+  - Terminal Console: console-tui.md
   - FAQ: faq.md
   - Troubleshooting: troubleshooting.md

@@ -1,6 +1,6 @@
 # Web Console
 
-`abstractcore serve` ships a browser console at `http://localhost:8000/console`. Use it to see
+`abstractcore serve` ships a browser console at `http://127.0.0.1:8000/console`. Use it to see
 what this machine can run, browse and download models, delete weights you no longer need, and
 install local inference engines such as Ollama, without writing a command. Every action the
 console takes shows the equivalent `abstractcore` CLI command, so you can repeat it in a terminal
@@ -16,10 +16,12 @@ look and behave the same.
 ```bash
 pip install "abstractcore[server]"
 abstractcore serve
-# then open http://localhost:8000/console
+# then open the printed link: http://127.0.0.1:8000/console#claim=...
 ```
 
-The server landing page (`/`) links to it as well.
+The link signs the browser tab in once (it is valid for 10 minutes and one use). Lost it, or
+opening the console in another browser? `abstractcore serve --claim-url --port 8000` prints a
+fresh one. The server landing page (`/`) links to the console as well.
 
 ## Tabs
 
@@ -107,14 +109,22 @@ consoles.
 ## Authentication
 
 The console page and its fragments are static code and never require a token. The data behind
-them does: when `ABSTRACTCORE_AUTH_TOKEN` is set, the first API call answers `401` and the console
-asks for the token. The token is kept in the browser tab's `sessionStorage` only (cleared when
-the tab closes) and sent as `Authorization: Bearer <token>`. Use **Forget token** in the top bar
-to clear it.
+them does. There are two ways in:
 
-When no token is configured and `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED` is not set, the API
-answers `503 server_auth_not_configured`; the console shows that message. See
-[Server](server.md) for the auth settings.
+- **The one-time link** printed by `abstractcore serve` on your own machine
+  (`/console#claim=<code>`). The console trades the code for the server's token through
+  `POST /acore/session/claim`, then removes it from the address bar. This works only from the
+  machine running the server; see [First run](server.md#first-run-on-your-machine).
+- **Pasting the token.** When the first API call answers `401`, the console asks for the token
+  (`abstractcore serve --print-token` prints it, or it is the value of `ABSTRACTCORE_AUTH_TOKEN`).
+
+Either way the token is kept in the browser tab's `sessionStorage` only (cleared when the tab
+closes) and sent as `Authorization: Bearer <token>`. Use **Forget token** in the top bar to
+clear it.
+
+A server bound to a non-loopback address with no token configured and
+`ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED` unset answers `503 server_auth_not_configured`; the
+console shows that message. See [Server](server.md) for the auth settings.
 
 ## Themes
 
@@ -164,6 +174,14 @@ AbstractCoreConsole.mount("models", document.getElementById("tab-catalog"), {
 - Styles are scoped under `.acc-root` and read the UI kit's CSS variables (`--bg-secondary`,
   `--text-primary`, `--accent`, `--info`, `--success`, `--warning`, `--error`, ...), so the
   screens follow the host's active theme.
+
+## Terminal console
+
+The same Models and Engines screens exist in the terminal: `abstractcore-console` (a Rust
+terminal app, `cargo install abstractcore-console`) shows them as screen 9 "Models" and screen 0
+"Engines", with the same labels and keys (`w` download, `d` delete, `i` install, `o` open
+download page, `/` filter, `f` fits only, `c` cancel). It drives the `abstractcore` CLI on this
+machine, so it needs no server. See [Terminal console](console-tui.md).
 
 ## Related
 

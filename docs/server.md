@@ -6,9 +6,10 @@ If you want a dedicated **single-model** `/v1` server (one provider/model per wo
 
 ## Web console
 
-Open `http://localhost:8000/console` for a browser console: host profile, model catalog with
-fit badges, download and delete, engine status and install, providers. Each action shows its
-CLI equivalent. See [Web Console](console.md).
+`abstractcore serve` prints a one-time link, `http://127.0.0.1:8000/console#claim=<code>`,
+that opens the browser console already signed in: host profile, model catalog with fit badges,
+download and delete, engine status and install, providers. Each action shows its CLI
+equivalent. See [First run](#first-run-on-your-machine) and [Web Console](console.md).
 
 ## Interactive API docs (start here)
 
@@ -39,24 +40,73 @@ route away from the provider's default API host.
 
 ### Install and Run (2 minutes)
 
+On your own machine:
+
 ```bash
-# Install
 pip install "abstractcore[server]"
-
-# Configure server auth and provider keys
-export ABSTRACTCORE_AUTH_TOKEN="acore-server-secret"
-export OPENAI_API_KEY="sk-..."
-
-# Start server
 abstractcore serve
+# AbstractCore server
+#   Config dir: ~/.abstractcore/config
+#   URL:        http://127.0.0.1:8000
+#   ...
+#   Open the console (one-time link, valid 10 minutes):
+#     http://127.0.0.1:8000/console#claim=...
 
-# Or with uvicorn directly
-uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
-
-# Test
+export ABSTRACTCORE_AUTH_TOKEN="$(abstractcore serve --print-token)"   # for API clients
 curl http://localhost:8000/health
 # Response: {"status":"healthy"}
 ```
+
+Open the printed link, then use the **Models** and **Engines** tabs. The server listens on
+`127.0.0.1` only and created its bearer token for you (see
+[First run](#first-run-on-your-machine)).
+
+On a network or in production, choose the token yourself and bind every interface:
+
+```bash
+export ABSTRACTCORE_AUTH_TOKEN="acore-server-secret"
+export OPENAI_API_KEY="sk-..."
+abstractcore serve --host 0.0.0.0 --port 8000
+
+# Or with uvicorn directly (no generated token: set ABSTRACTCORE_AUTH_TOKEN)
+uvicorn abstractcore.server.app:app --host 0.0.0.0 --port 8000
+```
+
+### First run on your machine
+
+`abstractcore serve` on a loopback address (`127.0.0.1`, the default, `localhost` or `::1`)
+with neither `ABSTRACTCORE_AUTH_TOKEN` nor `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED` set
+(nor their persisted forms, `abstractcore --set-server-auth-token` and
+`abstractcore --allow-unauthenticated-server`):
+
+- creates a bearer token once and keeps it in `<config dir>/server-token`, readable by you
+  only (`~/.abstractcore/config/server-token` by default; `ABSTRACTCORE_CONFIG_DIR` moves it),
+  and uses it as the server token on every start;
+- prints a one-time console link, `http://127.0.0.1:<port>/console#claim=<code>`, valid for
+  10 minutes and for one use. Opening it signs that browser tab in: the console exchanges the
+  code for the token, keeps the token in the tab's session storage and removes the code from
+  the address bar;
+- prints the command-line equivalents.
+
+| You want | Run |
+|---|---|
+| The token for an API client or the terminal | `abstractcore serve --print-token` |
+| A fresh console link for a running server | `abstractcore serve --claim-url --port <port>` |
+| Your own fixed token | `ABSTRACTCORE_AUTH_TOKEN=<token> abstractcore serve`, or write it into `<config dir>/server-token` |
+| No auth at all (local development only) | `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1 abstractcore serve` |
+
+The link is redeemed with `POST /acore/session/claim` `{"code": "<code>"}`, which returns
+`{"ok": true, "token_type": "bearer", "token": "..."}`. It answers only a direct connection
+from the same machine: a request from another address, one carrying a forwarding header
+(`X-Forwarded-For`, `Forwarded`, `X-Real-IP`, ...) or one whose `Host` is not a loopback name
+is refused with 403, and a used, expired or unknown code is refused with 403 too. When the
+token comes from `ABSTRACTCORE_AUTH_TOKEN` (or `--set-server-auth-token`), no links are issued
+and the route answers 404.
+
+A server bound to any other address (`--host 0.0.0.0`, a LAN address) never generates a token:
+set `ABSTRACTCORE_AUTH_TOKEN`, or every API call answers `server_auth_not_configured`. The
+start banner says which case applies. Starting the app with `uvicorn` directly skips the first
+run too.
 
 ### First Request
 
@@ -130,8 +180,9 @@ export VLLM_BASE_URL="http://localhost:8000/v1"
 export OPENAI_BASE_URL="http://localhost:1234/v1"
 export OPENAI_API_KEY="your-endpoint-key"                # optional, if the endpoint requires auth
 
-# Server bind (used by `abstractcore serve` and compatibility module entrypoints)
-export HOST="0.0.0.0"
+# Server bind (used by `abstractcore serve` and compatibility module entrypoints).
+# The default is 127.0.0.1; 0.0.0.0 listens on every interface and needs ABSTRACTCORE_AUTH_TOKEN.
+export HOST="127.0.0.1"
 export PORT="8000"
 
 # Debug mode
@@ -165,7 +216,10 @@ export ABSTRACTCORE_SERVER_ALLOW_LOCAL_FILES=1
 # Using AbstractCore's built-in CLI
 abstractcore serve --help                              # View all options
 abstractcore serve --debug                             # Debug mode
-abstractcore serve --host 127.0.0.1 --port 8080        # Custom host/port
+abstractcore serve --port 8080                         # Custom port (binds 127.0.0.1)
+abstractcore serve --host 0.0.0.0 --port 8080          # Every interface (set ABSTRACTCORE_AUTH_TOKEN)
+abstractcore serve --print-token                       # Print the local server's token, then exit
+abstractcore serve --claim-url --port 8080             # Print a fresh one-time console link, then exit
 abstractcore serve --debug --port 8001                 # Debug on custom port
 abstractcore serve --reload                            # Development auto-reload
 
@@ -195,6 +249,7 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Health | GET | `/health` | Liveness/version probe; never requires auth | none |
 | Console | GET | `/console` | Web console page; never requires auth (its API calls do) | none |
 | Console | GET | `/console/fragment/{kind}` | Embeddable Models/Engines screen as `{kind, html, js, css}`; never requires auth | path `kind`: `models` or `engines` |
+| Console | POST | `/acore/session/claim` | Trade a one-time console link code for the bearer token ([first run](#first-run-on-your-machine)); loopback peers only, no auth | JSON `code` |
 | Configuration | GET | `/v1/config/capability-defaults` | List explicit input/output/embedding/rerank route defaults | none |
 | Configuration | PUT | `/v1/config/capability-defaults/{kind}/{modality}` | Set one capability route default | path `kind`, `modality`; body `provider`, `model`, `base_url`, `options` |
 | Configuration | PUT | `/v1/config/capability-defaults/{kind}/{modality}/{task}` | Set one task-specific generated-media route default | path `kind`, `modality`, `task`; body `provider`, `model`, `base_url`, `options` |

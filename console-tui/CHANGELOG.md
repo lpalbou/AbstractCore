@@ -45,6 +45,11 @@ the gateway console mounts over its own transport.
   outcome lands as a toast, and a finished download/delete/install
   re-reads what it changed. `q` refuses while a job runs.
 
+- **Routes-screen downloads read the streamed job.** `abstractcore models
+  download … --json` (abstractcore 2.14.0) prints one `host_job_v1` line
+  per progress step; the routes screen's `w` download now keeps the final
+  line (`CoreCli::run_json_last`) and reports a failed job's own error.
+
 ### Platform
 
 - abstracttui 0.3.0 → **0.3.6**, the version abstractgateway-console

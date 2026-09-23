@@ -83,11 +83,12 @@ job; follow it with `GET /acore/jobs/{id}`.
 - Installs run on the machine that runs AbstractCore. For `abstractcore serve`, that is the
   server host, not the browser's machine.
 - The CLI allows installs by default. The server allows them by default only when bound to a
-  loopback address (`abstractcore serve --host 127.0.0.1`); set
+  loopback address (`abstractcore serve` binds `127.0.0.1` by default); set
   `ABSTRACTCORE_ALLOW_ENGINE_INSTALL=1` or `=0` to override either default. `GET /acore/engines`
   reports the effective `install_allowed`. A dry run is always allowed.
 - Every `POST` under `/acore/models`, `/acore/engines` and `/acore/jobs` needs a server
-  principal: the `ABSTRACTCORE_AUTH_TOKEN` bearer token, or
+  principal: the server's bearer token (on a loopback `abstractcore serve`, the one it
+  generated; `abstractcore serve --print-token` prints it), or
   `ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED=1` for local development. An upstream provider key
   alone does not authorize host actions.
 - Refusals are structured: `{"ok": false, "status": "refused", "reason": ..., "message": ...}`

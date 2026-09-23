@@ -161,6 +161,20 @@ plugin engines such as OmniVoice where supported; they need Python 3.11 or newer
 
 ## Quickstart
 
+Pick, download and run a local model from the browser:
+
+```bash
+pip install "abstractcore[server]"
+abstractcore serve
+# open the printed link: http://127.0.0.1:8000/console#claim=...
+```
+
+The **Models** tab lists models that fit this machine and downloads one in a click; the
+**Engines** tab installs Ollama, LM Studio, MLX or llama.cpp with one confirmation that shows
+the exact command. Each action prints its CLI twin (`abstractcore models download ...`,
+`abstractcore engines install ...`). See [Local Models](docs/models.md),
+[Local Engines](docs/engines.md) and [Web Console](docs/console.md).
+
 Local/offline example (requires Ollama running with `ollama pull qwen3:4b`
 already done):
 
@@ -494,15 +508,21 @@ routes, not in `/v1/models`.
 
 ```bash
 pip install "abstractcore[server]"
-abstractcore serve
+abstractcore serve                        # 127.0.0.1:8000; prints a one-time console link
+export ABSTRACTCORE_AUTH_TOKEN="$(abstractcore serve --print-token)"
 ```
+
+On your own machine the server creates its bearer token on first run; on a network, set
+`ABSTRACTCORE_AUTH_TOKEN` yourself and pass `--host 0.0.0.0`. See
+[First run](docs/server.md#first-run-on-your-machine).
 
 Use any OpenAI-compatible client, and route to any provider/model via `model="provider/model"`:
 
 ```python
+import os
 from openai import OpenAI
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="unused")
+client = OpenAI(base_url="http://localhost:8000/v1", api_key=os.environ["ABSTRACTCORE_AUTH_TOKEN"])
 resp = client.chat.completions.create(
     model="ollama/qwen3:4b",
     messages=[{"role": "user", "content": "Hello from the gateway!"}],
@@ -512,8 +532,8 @@ print(resp.choices[0].message.content)
 
 See [Server](docs/server.md).
 
-The server also serves a web console at `http://localhost:8000/console`: see what this machine
-can run, browse and download models with fit badges, delete weights, and install engines such as
+The server also serves a web console at `/console` (open the link `abstractcore serve` prints):
+see what this machine can run, browse and download models with fit badges, delete weights, and install engines such as
 Ollama with one confirmation. Every action shows its CLI equivalent. See [Web Console](docs/console.md).
 
 Single-model `/v1` endpoint (one provider/model per worker): see [Endpoint](docs/endpoint.md) (`abstractcore-endpoint`).
@@ -587,6 +607,7 @@ Reference and internals:
 - [API Reference](docs/api-reference.md) — Python API (including events)
 - [Server](docs/server.md) — OpenAI-compatible gateway with tool/media support
 - [Web Console](docs/console.md) — `/console`: models, engines and providers in the browser; embeddable screens
+- [Terminal Console](docs/console-tui.md) — `abstractcore-console`: the same Models and Engines screens in a terminal
 - [CLI Guide](docs/acore-cli.md) — interactive `abstractcore-chat` walkthrough
 
 Project:

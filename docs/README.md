@@ -72,6 +72,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 
 - **[Server](server.md)** — OpenAI-compatible `/v1` gateway (install `pip install "abstractcore[server]"`; run `abstractcore serve`)
 - **[Web Console](console.md)** — browser console at `/console`: host profile, model catalog with fit badges, download/delete, engine install with confirmation, and the embedding contract for AbstractGateway
+- **[Terminal Console](console-tui.md)** — `abstractcore-console`: the same Models and Engines screens in a terminal, plus config screens
 - **[Endpoint](endpoint.md)** — single-model OpenAI-compatible `/v1` endpoint (install `pip install "abstractcore[server]"`; run `abstractcore-endpoint`)
 
 ## Built-in CLI apps

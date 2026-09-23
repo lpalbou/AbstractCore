@@ -295,10 +295,11 @@ Install and run:
 
 ```bash
 pip install "abstractcore[server]"
-abstractcore serve
+abstractcore serve        # open the printed link for the web console
 ```
 
-See [Server](server.md).
+On your own machine the server creates its bearer token on first run
+(`abstractcore serve --print-token` prints it). See [Server](server.md#first-run-on-your-machine).
 
 ## Where are logs and traces?
 

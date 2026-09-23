@@ -7,8 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.14.0] - 2026-09-23
+
+Browse, download and delete local models and install local engines from one place: the
+command line, a browser console served by `abstractcore serve`, or the terminal console.
+
 ### Added
 
+- **Ready on first run.** A bare `abstractcore serve` now starts on `127.0.0.1:8000` and prints
+  a one-time console link, `http://127.0.0.1:8000/console#claim=<code>` (valid 10 minutes).
+  On a loopback address with no `ABSTRACTCORE_AUTH_TOKEN`, the server creates its bearer token
+  once and keeps it in `<config dir>/server-token` (readable by you only); opening the link
+  signs the browser tab in. `abstractcore serve --print-token` prints the token for API
+  clients and `abstractcore serve --claim-url` prints a fresh link. The link is redeemed
+  through `POST /acore/session/claim`, which answers only direct connections from the same
+  machine. See [First run](docs/server.md#first-run-on-your-machine).
+- **Web console at `/console`.** `abstractcore serve` now serves a browser console with four
+  tabs: Overview (host profile, engines summary, server health), Models (catalog search and
+  filters including "Fits this machine", weights status, fit badges with evidence, Download,
+  Delete with confirmation, job progress and Cancel), Engines (status, Install with a
+  confirmation that shows the exact command and the host it runs on, Open download page) and
+  Providers (read-only). Every action shows its CLI equivalent. The console keeps the
+  server token in the tab's session storage only, and asks for it when it has none. Themes
+  come from the AbstractFramework UI kit and follow the system light/dark preference. See
+  [Web Console](docs/console.md).
+- **Embeddable Models and Engines screens.** `abstractcore.console.web.fragment("models" |
+  "engines")` and `GET /console/fragment/{kind}` return `{html, js, css}` that a host console
+  mounts with `window.AbstractCoreConsole.mount(kind, rootEl, {apiBase, request, isAdmin,
+  onJob, hostName, cliPrefix})`, injecting its own request function for auth and CSRF.
+- **Terminal console Models and Engines screens.** The `abstractcore-console` terminal app
+  (0.2.0) gains screen 9 "Models" and screen 0 "Engines" with the same labels and keys as the
+  web console (`w` download, `d` delete, `i` install, `o` open download page, `/` filter,
+  `f` fits only, `c` cancel), and ships as a library so other consoles can mount the same
+  screens. See [Terminal console](docs/console-tui.md).
 - **Local model browser.** `abstractcore models catalog` and `models search` list downloadable
   models (a curated catalog of 76 models across 46 families: chat, coding, vision, embedding)
   with, for each engine artifact, whether it is installed, its download size, and a fit verdict
@@ -38,19 +69,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`ABSTRACTCORE_ALLOW_ENGINE_INSTALL` overrides).
 - **GGUF quant selection**: a Hugging Face artifact `org/Repo-GGUF:Q4_K_M` downloads only that
   quant's files, and a download that cannot fit on disk is refused before it starts.
-- **Web console at `/console`.** `abstractcore serve` now serves a browser console with four
-  tabs: Overview (host profile, engines summary, server health), Models (catalog search and
-  filters including "Fits this machine", weights status, fit badges with evidence, Download,
-  Delete with confirmation, job progress and Cancel), Engines (status, Install with a
-  confirmation that shows the exact command and the host it runs on, Open download page) and
-  Providers (read-only). Every action shows its CLI equivalent. When `ABSTRACTCORE_AUTH_TOKEN`
-  is set, the console asks for the token and keeps it in the tab's session storage. Themes
-  come from the AbstractFramework UI kit and follow the system light/dark preference. See
-  [Web Console](docs/console.md).
-- **Embeddable Models and Engines screens.** `abstractcore.console.web.fragment("models" |
-  "engines")` and `GET /console/fragment/{kind}` return `{html, js, css}` that a host console
-  mounts with `window.AbstractCoreConsole.mount(kind, rootEl, {apiBase, request, isAdmin,
-  onJob, hostName, cliPrefix})`, injecting its own request function for auth and CSRF.
+
+### Changed
+
+- **`abstractcore serve` binds `127.0.0.1` by default** (it was `0.0.0.0`). Pass
+  `--host 0.0.0.0` (or set `HOST`) to listen on every interface; a non-loopback server still
+  requires `ABSTRACTCORE_AUTH_TOKEN`, and its start banner now says so. The Docker image sets
+  `HOST=0.0.0.0` and is unaffected.
+- `abstractcore models download <provider> <artifact> --json` prints one `host_job_v1` object
+  per line while the download runs; the last line keeps the previous `ok` and `results` keys.
+- `psutil` may now be 6.x or 7.x (`psutil>=5.9,<8`), so the extras that use it install from
+  wheels on Linux ARM64 (Graviton, Raspberry Pi, Docker on Apple Silicon) without a compiler.
 
 ## [2.13.42] - 2026-09-23
 
