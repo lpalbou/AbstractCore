@@ -699,6 +699,8 @@ def catalog(
                 except LookupError as exc:
                     hub_block.update(ok=False)
                     hub_block["errors"].append(f"hub search failed (offline?): {str(exc)[:200]}")
+                if repos and not (hub_block["fetched"] or hub_block["cached"]):
+                    hub_block["ok"] = False  # every lookup failed: offline or blocked
                 cache.save()
 
     try:

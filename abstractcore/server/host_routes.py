@@ -30,10 +30,10 @@ import ipaddress
 import os
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, Body, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 router = APIRouter(tags=["models & engines"])
 
@@ -106,6 +106,10 @@ def _refusal(status_code: int, status: str, message: str, **extra: Any) -> JSONR
 
 
 class ModelDownloadBody(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit", "dry_run": False}]}
+    )
+
     provider: str = Field(..., description="ollama | lmstudio | mlx | huggingface | mlx-gen | supertonic ...")
     artifact: str = Field(..., description="Exact artifact reference (quant included): qwen3:8b, qwen/qwen3.5-9b@4bit, org/Repo-GGUF:Q4_K_M")
     dry_run: bool = False
@@ -113,6 +117,10 @@ class ModelDownloadBody(BaseModel):
 
 
 class ModelDeleteBody(BaseModel):
+    model_config = ConfigDict(
+        json_schema_extra={"examples": [{"provider": "ollama", "artifact": "qwen3:8b", "dry_run": True, "force": False}]}
+    )
+
     provider: str
     artifact: str
     dry_run: bool = False
@@ -120,6 +128,8 @@ class ModelDeleteBody(BaseModel):
 
 
 class EngineInstallBody(BaseModel):
+    model_config = ConfigDict(json_schema_extra={"examples": [{"dry_run": True, "force": False}]})
+
     dry_run: bool = False
     force: bool = False
 
@@ -285,7 +295,11 @@ async def acore_models_delete(body: ModelDeleteBody, request: Request) -> Dict[s
 
 
 @router.post("/acore/engines/{engine_id}/install", summary="Install an engine as a job (contract F)")
-async def acore_engine_install(engine_id: str, request: Request, body: Optional[EngineInstallBody] = None) -> Dict[str, Any]:
+async def acore_engine_install(
+    engine_id: str,
+    request: Request,
+    body: Optional[EngineInstallBody] = Body(None, example={"dry_run": True, "force": False}),
+) -> Dict[str, Any]:
     from ..config import host_jobs
     from ..config.engines import EngineInstallRefused, engine_install
 

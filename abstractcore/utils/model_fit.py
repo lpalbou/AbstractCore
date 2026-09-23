@@ -158,7 +158,7 @@ def parse_param_count(value: Any) -> Optional[int]:
     unit = m.group(2)
     if unit is None:
         return int(number) if number >= 1e6 else None
-    return int(number * _SUFFIX[unit])
+    return int(round(number * _SUFFIX[unit]))
 
 
 # `-8b`, `_0.6B`, `:30b`, `-35B-A3B`; never the `4b` of `4bit` and never the
@@ -183,16 +183,16 @@ def parse_params_from_name(name: Any) -> Tuple[Optional[int], Optional[int]]:
     active: Optional[int] = None
     m_active = _NAME_ACTIVE_RE.search(tail)
     if m_active:
-        active = int(float(m_active.group(1)) * 1e9)
+        active = int(round(float(m_active.group(1)) * 1e9))
     m_experts = _NAME_EXPERTS_RE.search(tail)
     if m_experts:
-        return int(int(m_experts.group(1)) * float(m_experts.group(2)) * 1e9), active
+        return int(round(int(m_experts.group(1)) * float(m_experts.group(2)) * 1e9)), active
     for m in _NAME_TOTAL_RE.finditer(tail):
         start = m.start()
         if start > 0 and tail[start - 1].lower() == "a" and (start < 2 or not tail[start - 2].isalnum()):
             continue  # that's the active count
         unit = m.group(2).lower()
-        return int(float(m.group(1)) * (1e9 if unit == "b" else 1e6)), active
+        return int(round(float(m.group(1)) * (1e9 if unit == "b" else 1e6))), active
     return None, active
 
 

@@ -4,11 +4,19 @@
     abstractcore models list|catalog|search|delete|jobs|cancel ...
     abstractcore engines status|install|open ...
 
-Wired from `config/main.py`. Every verb has `--json` (one JSON document on
-stdout, nothing else) and the same exit codes: 0 ok, 1 error, 2 refused
-(policy, blockers, or a destructive action without `--yes`). The JSON is the
-exact payload the core server routes return, so the terminal console's CLI
-transport and the web consoles render one shape.
+Wired from `config/main.py`. Every verb has `--json` and the same exit
+codes: 0 ok, 1 error, 2 refused (policy, blockers, or a destructive action
+without `--yes`; the refusal JSON -- `status`, `message`, `reason` /
+`delete_blockers` -- is still printed). The JSON is the exact payload the
+core server routes return, so the terminal console's CLI transport and the
+web consoles render one shape.
+
+Two verbs are LONG and stream instead of printing one document:
+`models download <provider> <artifact> --json` and `engines install <id>
+--yes --json` print one compact `host_job_v1` object per line while the job
+runs (NDJSON) and end with the final job. SIGTERM/SIGINT cancel the job,
+terminate the vendor tool's process group, and the last line says
+`cancelled`.
 """
 
 from __future__ import annotations
@@ -26,6 +34,85 @@ EXIT_REFUSED = 2
 
 def _print_json(payload: Any) -> None:
     print(json.dumps(payload, indent=2, sort_keys=True, default=str))
+
+
+# ---------------------------------------------------------------------------
+# NDJSON job streaming (the terminal console's CLI transport reads this)
+# ---------------------------------------------------------------------------
+
+_STREAM_KEYS = ("status", "percent", "downloaded_bytes", "total_bytes", "message")
+_CANCEL_GRACE_S = 10.0
+
+
+def stream_job_ndjson(
+    job_id: str,
+    registry: Any,
+    *,
+    final_extra: Optional[Dict[str, Any]] = None,
+    poll_s: float = 0.2,
+    out: Any = None,
+) -> Dict[str, Any]:
+    """Print one compact `host_job_v1` JSON object per line while the job runs,
+    then the final object (plus `final_extra`). Returns the final job.
+
+    SIGTERM / SIGINT cancel the job -- which terminates the vendor tool's
+    whole process group -- and the last line reports `cancelled`. A job that
+    does not stop within a grace period (a Hugging Face transfer between
+    progress ticks) is reported `cancelled` anyway and abandoned with the
+    process.
+    """
+
+    import signal
+
+    stream = out or sys.stdout
+    state = {"cancel_at": None, "signals": 0}
+
+    def _on_signal(signum: int, _frame: Any) -> None:
+        state["signals"] += 1
+        if state["cancel_at"] is None:
+            state["cancel_at"] = time.monotonic()
+            registry.cancel(job_id)
+        elif state["signals"] >= 3:
+            raise SystemExit(130)
+
+    previous: Dict[int, Any] = {}
+    for sig in (getattr(signal, "SIGTERM", None), getattr(signal, "SIGINT", None)):
+        if sig is None:
+            continue
+        try:
+            previous[sig] = signal.signal(sig, _on_signal)
+        except Exception:
+            pass  # not the main thread: no handler, the job still runs
+
+    def _emit(job: Dict[str, Any]) -> None:
+        stream.write(json.dumps(job, sort_keys=True, default=str) + "\n")
+        stream.flush()
+
+    last_key: Any = None
+    try:
+        while True:
+            job = registry.get(job_id) or {}
+            finished = job.get("status") not in ("queued", "running")
+            key = tuple(job.get(k) for k in _STREAM_KEYS)
+            if finished:
+                break
+            if state["cancel_at"] is not None and time.monotonic() - state["cancel_at"] > _CANCEL_GRACE_S:
+                job = dict(job, status="cancelled", message="cancelled (the transfer was abandoned on exit)", error=None)
+                break
+            if key != last_key:
+                _emit(job)
+                last_key = key
+            time.sleep(poll_s)
+    finally:
+        for sig, handler in previous.items():
+            try:
+                signal.signal(sig, handler)
+            except Exception:
+                pass
+    final = dict(job)
+    final.update(final_extra or {})
+    _emit(final)
+    return final
 
 
 def _gb(value: Any) -> str:
@@ -204,6 +291,7 @@ def _handle_delete(args: argparse.Namespace) -> int:
             "artifact": args.artifact,
             "message": f"{args.artifact} is not installed for {args.provider}" + (f" ({check['error']})" if check.get("error") else ""),
             "delete_blockers": check.get("delete_blockers") or [],
+            "reason": "blocked" if check.get("delete_blockers") else "not_found",
         }
         _print_json(payload) if args.json else print(f"❌ {payload['message']}")
         return EXIT_REFUSED if payload["delete_blockers"] else EXIT_ERROR
@@ -216,13 +304,22 @@ def _handle_delete(args: argparse.Namespace) -> int:
             "artifact": args.artifact,
             "delete_blockers": blockers,
             "message": "refusing to delete: " + ", ".join(blockers) + " (use --force to override)",
+            "reason": "blocked",
         }
         _print_json(payload) if args.json else print(f"⛔ {payload['message']}")
         return EXIT_REFUSED
     row = check.get("row") or {}
     if not args.yes and not args.dry_run:
         if args.json or not _confirm(f"Delete {args.provider} {args.artifact} ({_gb(row.get('size_bytes'))}) at {row.get('location')}?"):
-            payload = {"ok": False, "status": "refused", "message": "not confirmed: pass --yes to delete without a prompt"}
+            payload = {
+                "ok": False,
+                "status": "refused",
+                "reason": "not_confirmed",
+                "provider": args.provider,
+                "artifact": args.artifact,
+                "delete_blockers": [],
+                "message": "not confirmed: pass --yes to delete without a prompt",
+            }
             _print_json(payload) if args.json else print(f"⛔ {payload['message']}")
             return EXIT_REFUSED
     job = host_jobs.start_delete_job(
@@ -381,14 +478,15 @@ def _engines_install(args: argparse.Namespace) -> int:
     status = engine_status(eid, probe=False)
     plan = status["install"]
     refused: Optional[str] = None
+    reason = ""
     if not status["supported_on_host"]:
-        refused = status.get("unsupported_reason") or "not supported on this host"
+        refused, reason = status.get("unsupported_reason") or "not supported on this host", "unsupported"
     elif not plan.get("available"):
-        refused = plan.get("notes") or "no install command for this host"
+        refused, reason = plan.get("notes") or "no install command for this host", "no_plan"
     elif not args.dry_run and not engine_install_allowed():
-        refused = "engine installs are disabled on this host (ABSTRACTCORE_ALLOW_ENGINE_INSTALL=0)"
+        refused, reason = "engine installs are disabled on this host (ABSTRACTCORE_ALLOW_ENGINE_INSTALL=0)", "not_allowed"
     if refused:
-        payload = {"ok": False, "status": "refused", "engine": eid, "message": refused, "install": plan}
+        payload = {"ok": False, "status": "refused", "reason": reason, "engine": eid, "message": refused, "install": plan}
         _print_json(payload) if args.json else print(f"⛔ {refused}\n   download page: {plan.get('url')}")
         return EXIT_REFUSED
 
@@ -401,7 +499,7 @@ def _engines_install(args: argparse.Namespace) -> int:
             print(f"  page    : {plan['url']}")
     if not args.yes and not args.dry_run:
         if args.json or not _confirm("Run this command now?"):
-            payload = {"ok": False, "status": "refused", "engine": eid, "message": "not confirmed: pass --yes to install without a prompt", "install": plan}
+            payload = {"ok": False, "status": "refused", "reason": "not_confirmed", "engine": eid, "message": "not confirmed: pass --yes to install without a prompt", "install": plan}
             _print_json(payload) if args.json else print(f"⛔ {payload['message']}")
             return EXIT_REFUSED
 
@@ -411,8 +509,12 @@ def _engines_install(args: argparse.Namespace) -> int:
         return EXIT_OK
 
     try:
-        if args.json or args.dry_run:
-            job = engine_install(eid, dry_run=bool(args.dry_run), force=bool(args.force), run_inline=True)
+        if args.dry_run:
+            job = engine_install(eid, dry_run=True, force=bool(args.force), run_inline=True)
+        elif args.json:
+            started = engine_install(eid, force=bool(args.force))
+            job = stream_job_ndjson(started["job_id"], host_jobs.default_registry())
+            return EXIT_OK if job["status"] == "completed" else EXIT_ERROR
         else:
             job = engine_install(eid, force=bool(args.force))
             job = _follow(job["job_id"])

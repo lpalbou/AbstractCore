@@ -1798,6 +1798,9 @@ def _run_streaming(
             text=True,
             bufsize=1,
             env=env,
+            # In a job the tool gets its own process group, so a cancel stops
+            # the whole tree (brew/pip/installer children included).
+            start_new_session=bool(control is not None and os.name != "nt"),
         )
     except Exception as exc:
         return DownloadOutcome(
@@ -1809,6 +1812,10 @@ def _run_streaming(
             command=list(cmd),
         )
     if control is not None:
+        try:
+            proc._abstractcore_own_group = os.name != "nt"  # type: ignore[attr-defined]
+        except Exception:
+            pass
         control.register_process(proc)
     assert proc.stdout is not None
     for raw in proc.stdout:

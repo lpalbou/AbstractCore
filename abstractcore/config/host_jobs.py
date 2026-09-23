@@ -157,14 +157,27 @@ class JobControl:
 
     @staticmethod
     def _terminate(proc: subprocess.Popen) -> None:
+        """SIGTERM the process GROUP (installers spawn children), then SIGKILL."""
+
+        def _signal(sig: int) -> None:
+            try:
+                if os.name != "nt" and getattr(proc, "_abstractcore_own_group", False):
+                    os.killpg(proc.pid, sig)
+                elif sig == 15:
+                    proc.terminate()
+                else:
+                    proc.kill()
+            except Exception:
+                pass
+
         def _kill() -> None:
             try:
                 if proc.poll() is None:
-                    proc.terminate()
+                    _signal(15)
                     try:
                         proc.wait(timeout=5.0)
                     except Exception:
-                        proc.kill()
+                        _signal(9)
             except Exception:
                 pass
 

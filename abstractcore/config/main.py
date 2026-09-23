@@ -2409,6 +2409,33 @@ def _handle_models_download(args) -> int:
             print(f"started {job['job_id']} -- follow it with: abstractcore models jobs {job['job_id']}")
         return 0
 
+    if as_json and not recommended:
+        # ONE artifact in machine mode: stream `host_job_v1` NDJSON while it
+        # runs (the terminal console owns this process and reads each line),
+        # ending with the final job -- which also carries the legacy
+        # `ok/dry_run/recommended/results` keys of the one-document shape.
+        from .host_jobs import default_registry, start_download_job
+        from .models_engines_cli import stream_job_ndjson
+
+        registry = default_registry()
+        started = start_download_job(provider, artifact, dry_run=dry_run, registry=registry, run_inline=dry_run)
+        final_job = registry.get(started["job_id"]) or started
+        result = final_job.get("result") or {}
+        legacy = {
+            "ok": final_job.get("status") == "completed",
+            "dry_run": dry_run,
+            "recommended": False,
+            "results": [result] if result else [],
+        }
+        if dry_run:
+            print(json.dumps(dict(final_job, **legacy), sort_keys=True, default=str))
+        else:
+            final_job = stream_job_ndjson(started["job_id"], registry)
+            result = final_job.get("result") or {}
+            legacy.update(ok=final_job.get("status") == "completed", results=[result] if result else [])
+            print(json.dumps(dict(final_job, **legacy), sort_keys=True, default=str))
+        return 0 if final_job.get("status") == "completed" else 1
+
     if recommended:
         targets = [(item["provider"], item["artifact"]) for item in materializer.recommended_downloads()]
         if not as_json:
