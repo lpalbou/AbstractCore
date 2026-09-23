@@ -1,0 +1,2810 @@
+{
+ "$schema": "./model_downloads_catalog.schema.json",
+ "schema": "model_downloads_catalog_v1",
+ "version": "2026-09-23",
+ "notes": "Curated download catalog. Sizes are bytes observed in real engine stores/caches (size_source=catalog) or null (unknown). verified=true means the artifact id was seen on a real engine or cache when the seed was built; other ids follow each engine's naming convention and are checked by presence probes and by the post-download verification in model_materializer.",
+ "rows": [
+  {
+   "id": "qwen3-0.6b",
+   "family": "qwen3",
+   "display_name": "Qwen3 0.6B",
+   "vendor": "Qwen",
+   "params_total": 600000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-0.6b",
+   "tags": [
+    "chat",
+    "small",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "qwen3:0.6b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-0.6B-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-0.6B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwen3-1.7b",
+   "family": "qwen3",
+   "display_name": "Qwen3 1.7B",
+   "vendor": "Qwen",
+   "params_total": 1700000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-1.7b",
+   "tags": [
+    "chat",
+    "small",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "qwen3:1.7b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-1.7B-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-1.7B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwen3-4b",
+   "family": "qwen3",
+   "display_name": "Qwen3 4B",
+   "vendor": "Qwen",
+   "params_total": 4000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-4b",
+   "tags": [
+    "chat",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "qwen3:4b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-4B-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-4B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 2497281312,
+     "size_source": "catalog",
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "qwen3-4b-2507",
+   "family": "qwen3",
+   "display_name": "Qwen3 4B Instruct 2507",
+   "vendor": "Qwen",
+   "params_total": 4000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-4b-2507",
+   "tags": [
+    "chat",
+    "tools"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "qwen/qwen3-4b-2507",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-4B-Instruct-2507-4bit",
+     "quant": "4bit",
+     "download_bytes": 2278972236,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 2497281120,
+     "size_source": "catalog",
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "qwen3-8b",
+   "family": "qwen3",
+   "display_name": "Qwen3 8B",
+   "vendor": "Qwen",
+   "params_total": 8199999999,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-8b",
+   "tags": [
+    "chat",
+    "coding",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "qwen3:8b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-8B-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwen3-14b",
+   "family": "qwen3",
+   "display_name": "Qwen3 14B",
+   "vendor": "Qwen",
+   "params_total": 14800000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-14b",
+   "tags": [
+    "chat",
+    "coding",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "qwen3:14b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-14B-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-14B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwen3-32b",
+   "family": "qwen3",
+   "display_name": "Qwen3 32B",
+   "vendor": "Qwen",
+   "params_total": 32799999999,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-32b",
+   "tags": [
+    "chat",
+    "coding",
+    "thinking",
+    "large"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "qwen3:32b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-32B-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-32B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwen3-30b-a3b-2507",
+   "family": "qwen3",
+   "display_name": "Qwen3 30B-A3B Instruct 2507",
+   "vendor": "Qwen",
+   "params_total": 30500000000,
+   "params_active": 3300000000,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-30b-a3b-2507",
+   "tags": [
+    "chat",
+    "moe",
+    "tools"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "qwen3:30b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "qwen/qwen3-30b-a3b-2507",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-30B-A3B-Instruct-2507-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwen3-coder-30b",
+   "family": "qwen3-coder",
+   "display_name": "Qwen3 Coder 30B-A3B",
+   "vendor": "Qwen",
+   "params_total": 30500000000,
+   "params_active": 3300000000,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-coder-30b",
+   "tags": [
+    "coding",
+    "moe",
+    "tools"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "qwen3-coder:30b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwen3-vl-4b",
+   "family": "qwen3-vl",
+   "display_name": "Qwen3 VL 4B",
+   "vendor": "Qwen",
+   "params_total": 4830000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-vl-4b",
+   "tags": [
+    "chat",
+    "vision"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "qwen/qwen3-vl-4b@4bit",
+     "quant": "4bit",
+     "download_bytes": 3109915433,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "ollama",
+     "artifact": "qwen3-vl:4b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-VL-4B-Instruct-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwen3-vl-8b",
+   "family": "qwen3-vl",
+   "display_name": "Qwen3 VL 8B",
+   "vendor": "Qwen",
+   "params_total": 8770000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-vl-8b",
+   "tags": [
+    "chat",
+    "vision"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "qwen/qwen3-vl-8b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "qwen3-vl:8b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-VL-8B-Instruct-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwen3-vl-30b-a3b",
+   "family": "qwen3-vl",
+   "display_name": "Qwen3 VL 30B-A3B",
+   "vendor": "Qwen",
+   "params_total": 30500000000,
+   "params_active": 3300000000,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-vl-30b-a3b",
+   "tags": [
+    "chat",
+    "vision",
+    "moe"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "qwen/qwen3-vl-30b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "qwen3-vl:30b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-VL-30B-A3B-Instruct-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwen3.5-0.8b",
+   "family": "qwen3.5",
+   "display_name": "Qwen3.5 0.8B",
+   "vendor": "Qwen",
+   "params_total": 800000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3.5-0.8b",
+   "tags": [
+    "chat",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "qwen/qwen3.5-0.8b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "qwen3.5:0.8b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwen3.5-2b",
+   "family": "qwen3.5",
+   "display_name": "Qwen3.5 2B",
+   "vendor": "Qwen",
+   "params_total": 2000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3.5-2b",
+   "tags": [
+    "chat",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "qwen/qwen3.5-2b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "qwen3.5:2b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3.5-2B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 1280835840,
+     "size_source": "catalog",
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "qwen3.5-4b",
+   "family": "qwen3.5",
+   "display_name": "Qwen3.5 4B",
+   "vendor": "Qwen",
+   "params_total": 4000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3.5-4b",
+   "tags": [
+    "chat",
+    "vision"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "qwen/qwen3.5-4b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "qwen3.5:4b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3.5-4B-4bit",
+     "quant": "4bit",
+     "download_bytes": 3061129077,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3.5-4B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 2740937888,
+     "size_source": "catalog",
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "qwen3.5-9b",
+   "family": "qwen3.5",
+   "display_name": "Qwen3.5 9B",
+   "vendor": "Qwen",
+   "params_total": 9000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3.5-9b",
+   "tags": [
+    "chat",
+    "vision",
+    "tools",
+    "recommended"
+   ],
+   "starter": true,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "qwen/qwen3.5-9b@4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": true,
+     "recommended": true
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3.5-9B-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "qwen3.5:9b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "notes": "The AbstractFramework fresh-install text/vision default (RECOMMENDED_MODEL_DOWNLOADS input.text)."
+  },
+  {
+   "id": "qwen3.5-27b",
+   "family": "qwen3.5",
+   "display_name": "Qwen3.5 27B",
+   "vendor": "Qwen",
+   "params_total": 27000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3.5-27b",
+   "tags": [
+    "chat",
+    "vision",
+    "large"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "qwen/qwen3.5-27b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "qwen3.5:27b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwen3.5-35b-a3b",
+   "family": "qwen3.5",
+   "display_name": "Qwen3.5 35B-A3B",
+   "vendor": "Qwen",
+   "params_total": 35000000000,
+   "params_active": 3000000000,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3.5-35b-a3b",
+   "tags": [
+    "chat",
+    "vision",
+    "moe"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "qwen/qwen3.5-35b-a3b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "qwen3.5:35b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwen3.6-27b",
+   "family": "qwen3.6",
+   "display_name": "Qwen3.6 27B",
+   "vendor": "Qwen",
+   "params_total": 27000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3.6-27b",
+   "tags": [
+    "chat",
+    "coding",
+    "large"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3.6-27B-4bit",
+     "quant": "4bit",
+     "download_bytes": 16081490064,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "ollama",
+     "artifact": "qwen3.6:27b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "Qwen/Qwen3.6-27B",
+     "quant": "bf16",
+     "download_bytes": 55586024670,
+     "size_source": "catalog",
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "qwen3.6-35b-a3b",
+   "family": "qwen3.6",
+   "display_name": "Qwen3.6 35B-A3B",
+   "vendor": "Qwen",
+   "params_total": 35000000000,
+   "params_active": 3000000000,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3.6-35b-a3b",
+   "tags": [
+    "chat",
+    "coding",
+    "moe"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "qwen/qwen3.6-35b-a3b@q4_k_m",
+     "quant": "q4_k_m",
+     "download_bytes": 22069768080,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3.6-35B-A3B-4bit",
+     "quant": "4bit",
+     "download_bytes": 20429169263,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "ollama",
+     "artifact": "qwen3.6:35b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwen3.8-27b",
+   "family": "qwen3.8",
+   "display_name": "Qwen3.8 27B",
+   "vendor": "Qwen",
+   "params_total": 27000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3.8-27b",
+   "tags": [
+    "chat",
+    "coding",
+    "vision",
+    "large"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "qwen/qwen3.8-27b@q4_k_m",
+     "quant": "q4_k_m",
+     "download_bytes": 17742039110,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3.8-27B-4bit",
+     "quant": "4bit",
+     "download_bytes": 16081490933,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "ollama",
+     "artifact": "qwen3.8:27b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3.8-27B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "llama-3.2-1b",
+   "family": "llama3.2",
+   "display_name": "Llama 3.2 1B Instruct",
+   "vendor": "Meta",
+   "params_total": 1240000000,
+   "params_active": null,
+   "license": "llama3.2",
+   "capabilities_key": "llama-3.2-1b",
+   "tags": [
+    "chat",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "llama3.2:1b",
+     "quant": "q8_0",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Llama-3.2-1B-Instruct-4bit",
+     "quant": "4bit",
+     "download_bytes": 712575975,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "llama-3.2-3b",
+   "family": "llama3.2",
+   "display_name": "Llama 3.2 3B Instruct",
+   "vendor": "Meta",
+   "params_total": 3210000000,
+   "params_active": null,
+   "license": "llama3.2",
+   "capabilities_key": "llama-3.2-3b",
+   "tags": [
+    "chat",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "llama3.2:3b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Llama-3.2-3B-Instruct-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "llama-3.1-8b",
+   "family": "llama3.1",
+   "display_name": "Llama 3.1 8B Instruct",
+   "vendor": "Meta",
+   "params_total": 8029999999,
+   "params_active": null,
+   "license": "llama3.1",
+   "capabilities_key": "llama-3.1-8b",
+   "tags": [
+    "chat",
+    "tools"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "llama3.1:8b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "llama-3.3-70b",
+   "family": "llama3.3",
+   "display_name": "Llama 3.3 70B Instruct",
+   "vendor": "Meta",
+   "params_total": 70600000000,
+   "params_active": null,
+   "license": "llama3.3",
+   "capabilities_key": "llama-3.3-70b",
+   "tags": [
+    "chat",
+    "large"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "llama3.3:70b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Llama-3.3-70B-Instruct-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "llama-4-scout",
+   "family": "llama4",
+   "display_name": "Llama 4 Scout 17B-16E",
+   "vendor": "Meta",
+   "params_total": 109000000000,
+   "params_active": 17000000000,
+   "license": "llama4",
+   "capabilities_key": "llama-4-scout",
+   "tags": [
+    "chat",
+    "vision",
+    "moe",
+    "large"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "llama4:scout",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Llama-4-Scout-17B-16E-Instruct-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "gemma-3-1b",
+   "family": "gemma3",
+   "display_name": "Gemma 3 1B",
+   "vendor": "Google",
+   "params_total": 1000000000,
+   "params_active": null,
+   "license": "gemma",
+   "capabilities_key": "gemma3",
+   "tags": [
+    "chat",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "gemma3:1b",
+     "quant": "q4_k_m",
+     "download_bytes": 815319791,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "google/gemma-3-1b@4bit",
+     "quant": "4bit",
+     "download_bytes": 771933305,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/gemma-3-1b-it-qat-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "gemma-3-4b",
+   "family": "gemma3",
+   "display_name": "Gemma 3 4B",
+   "vendor": "Google",
+   "params_total": 4300000000,
+   "params_active": null,
+   "license": "gemma",
+   "capabilities_key": "gemma3-4b",
+   "tags": [
+    "chat",
+    "vision"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "gemma3:4b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "google/gemma-3-4b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/gemma-3-4b-it-qat-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "gemma-3-12b",
+   "family": "gemma3",
+   "display_name": "Gemma 3 12B",
+   "vendor": "Google",
+   "params_total": 12200000000,
+   "params_active": null,
+   "license": "gemma",
+   "capabilities_key": "gemma3",
+   "tags": [
+    "chat",
+    "vision"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "gemma3:12b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "google/gemma-3-12b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/gemma-3-12b-it-qat-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "gemma-3-27b",
+   "family": "gemma3",
+   "display_name": "Gemma 3 27B",
+   "vendor": "Google",
+   "params_total": 27400000000,
+   "params_active": null,
+   "license": "gemma",
+   "capabilities_key": "gemma3",
+   "tags": [
+    "chat",
+    "vision",
+    "large"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "gemma3:27b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "google/gemma-3-27b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/gemma-3-27b-it-qat-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "gemma-3n-e4b",
+   "family": "gemma3n",
+   "display_name": "Gemma 3n E4B",
+   "vendor": "Google",
+   "params_total": 8000000000,
+   "params_active": null,
+   "license": "gemma",
+   "capabilities_key": "gemma3n:e4b",
+   "tags": [
+    "chat",
+    "small",
+    "vision"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "gemma3n:e4b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "google/gemma-3n-e4b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "notes": "E4B = ~4B effective parameters; ~8B raw parameters are resident."
+  },
+  {
+   "id": "gemma-4-e4b",
+   "family": "gemma4",
+   "display_name": "Gemma 4 E4B",
+   "vendor": "Google",
+   "params_total": null,
+   "params_active": null,
+   "license": "gemma",
+   "capabilities_key": "gemma-4-e4b-it",
+   "tags": [
+    "chat",
+    "vision",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/gemma-4-E4B-it-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 4977164416,
+     "size_source": "catalog",
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "gemma-4-26b-a4b",
+   "family": "gemma4",
+   "display_name": "Gemma 4 26B-A4B",
+   "vendor": "Google",
+   "params_total": 26000000000,
+   "params_active": 4000000000,
+   "license": "gemma",
+   "capabilities_key": "gemma-4-26b-a4b-it",
+   "tags": [
+    "chat",
+    "vision",
+    "moe"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/gemma-4-26B-A4B-it-qat-4bit",
+     "quant": "4bit",
+     "download_bytes": 15641239295,
+     "size_source": "catalog",
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "mistral-7b",
+   "family": "mistral",
+   "display_name": "Mistral 7B Instruct v0.3",
+   "vendor": "Mistral AI",
+   "params_total": 7250000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "mistral-7b",
+   "tags": [
+    "chat"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "mistral:7b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Mistral-7B-Instruct-v0.3-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "bartowski/Mistral-7B-Instruct-v0.3-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "mistral-small-3.2-24b",
+   "family": "mistral-small",
+   "display_name": "Mistral Small 3.2 24B",
+   "vendor": "Mistral AI",
+   "params_total": 24000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "mistral-small-3.2-24b-instruct",
+   "tags": [
+    "chat",
+    "vision",
+    "tools"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "mistral-small3.2:24b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "devstral-small-2-24b",
+   "family": "devstral",
+   "display_name": "Devstral Small 2 24B",
+   "vendor": "Mistral AI",
+   "params_total": 24000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "devstral-small-2-24b",
+   "tags": [
+    "coding",
+    "tools",
+    "agentic"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "mistralai/devstral-small-2",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "devstral-small-2:24b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "magistral-small-2509",
+   "family": "magistral",
+   "display_name": "Magistral Small 2509",
+   "vendor": "Mistral AI",
+   "params_total": 24000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "magistral-small-2509",
+   "tags": [
+    "chat",
+    "thinking",
+    "vision"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "mistralai/magistral-small-2509",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "magistral:24b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "deepseek-r1-distill-qwen-1.5b",
+   "family": "deepseek-r1",
+   "display_name": "DeepSeek R1 Distill Qwen 1.5B",
+   "vendor": "DeepSeek",
+   "params_total": 1780000000,
+   "params_active": null,
+   "license": "mit",
+   "capabilities_key": "deepseek-r1",
+   "tags": [
+    "chat",
+    "thinking",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "deepseek-r1:1.5b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/DeepSeek-R1-Distill-Qwen-1.5B-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "deepseek-r1-distill-qwen-7b",
+   "family": "deepseek-r1",
+   "display_name": "DeepSeek R1 Distill Qwen 7B",
+   "vendor": "DeepSeek",
+   "params_total": 7620000000,
+   "params_active": null,
+   "license": "mit",
+   "capabilities_key": "deepseek-r1",
+   "tags": [
+    "chat",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "deepseek-r1:7b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/DeepSeek-R1-Distill-Qwen-7B-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "deepseek-r1-0528-qwen3-8b",
+   "family": "deepseek-r1",
+   "display_name": "DeepSeek R1 0528 Qwen3 8B",
+   "vendor": "DeepSeek",
+   "params_total": 8189999999,
+   "params_active": null,
+   "license": "mit",
+   "capabilities_key": "deepseek-r1",
+   "tags": [
+    "chat",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "deepseek-r1:8b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "deepseek/deepseek-r1-0528-qwen3-8b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/DeepSeek-R1-0528-Qwen3-8B-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "deepseek-r1-distill-qwen-14b",
+   "family": "deepseek-r1",
+   "display_name": "DeepSeek R1 Distill Qwen 14B",
+   "vendor": "DeepSeek",
+   "params_total": 14800000000,
+   "params_active": null,
+   "license": "mit",
+   "capabilities_key": "deepseek-r1",
+   "tags": [
+    "chat",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "deepseek-r1:14b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/DeepSeek-R1-Distill-Qwen-14B-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "deepseek-r1-distill-qwen-32b",
+   "family": "deepseek-r1",
+   "display_name": "DeepSeek R1 Distill Qwen 32B",
+   "vendor": "DeepSeek",
+   "params_total": 32799999999,
+   "params_active": null,
+   "license": "mit",
+   "capabilities_key": "deepseek-r1",
+   "tags": [
+    "chat",
+    "thinking",
+    "large"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "deepseek-r1:32b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/DeepSeek-R1-Distill-Qwen-32B-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "gpt-oss-20b",
+   "family": "gpt-oss",
+   "display_name": "GPT-OSS 20B",
+   "vendor": "OpenAI",
+   "params_total": 21000000000,
+   "params_active": 3600000000,
+   "license": "apache-2.0",
+   "capabilities_key": "gpt-oss-20b",
+   "tags": [
+    "chat",
+    "thinking",
+    "tools",
+    "moe"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "gpt-oss:20b",
+     "quant": "mxfp4",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "openai/gpt-oss-20b",
+     "quant": "mxfp4",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/gpt-oss-20b-MXFP4-Q8",
+     "quant": "mxfp4",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/gpt-oss-20b-GGUF:F16",
+     "quant": "f16",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "notes": "Weights ship in MXFP4 (~4.25 bits); the GGUF F16 file keeps MXFP4 experts."
+  },
+  {
+   "id": "gpt-oss-120b",
+   "family": "gpt-oss",
+   "display_name": "GPT-OSS 120B",
+   "vendor": "OpenAI",
+   "params_total": 117000000000,
+   "params_active": 5100000000,
+   "license": "apache-2.0",
+   "capabilities_key": "gpt-oss-120b",
+   "tags": [
+    "chat",
+    "thinking",
+    "tools",
+    "moe",
+    "large"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "gpt-oss:120b",
+     "quant": "mxfp4",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "openai/gpt-oss-120b",
+     "quant": "mxfp4",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "phi-4",
+   "family": "phi4",
+   "display_name": "Phi-4 14B",
+   "vendor": "Microsoft",
+   "params_total": 14700000000,
+   "params_active": null,
+   "license": "mit",
+   "capabilities_key": "phi-4",
+   "tags": [
+    "chat",
+    "reasoning"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "phi4:14b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/phi-4-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "bartowski/phi-4-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "phi-4-mini",
+   "family": "phi4",
+   "display_name": "Phi-4 mini 3.8B",
+   "vendor": "Microsoft",
+   "params_total": 3840000000,
+   "params_active": null,
+   "license": "mit",
+   "capabilities_key": "phi-4",
+   "tags": [
+    "chat",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "phi4-mini:3.8b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Phi-4-mini-instruct-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "smollm2-135m",
+   "family": "smollm2",
+   "display_name": "SmolLM2 135M Instruct",
+   "vendor": "Hugging Face",
+   "params_total": 135000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "chat",
+    "tiny"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "smollm2:135m",
+     "quant": "q8_0",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "HuggingFaceTB/SmolLM2-135M-Instruct",
+     "quant": "bf16",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "smollm2-1.7b",
+   "family": "smollm2",
+   "display_name": "SmolLM2 1.7B Instruct",
+   "vendor": "Hugging Face",
+   "params_total": 1710000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "chat",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "smollm2:1.7b",
+     "quant": "q8_0",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/SmolLM2-1.7B-Instruct-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "smollm3-3b",
+   "family": "smollm3",
+   "display_name": "SmolLM3 3B",
+   "vendor": "Hugging Face",
+   "params_total": 3080000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "chat",
+    "small",
+    "thinking"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/SmolLM3-3B-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "ggml-org/SmolLM3-3B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "granite-4.0-h-tiny",
+   "family": "granite4",
+   "display_name": "Granite 4.0 H Tiny",
+   "vendor": "IBM",
+   "params_total": 7000000000,
+   "params_active": 1000000000,
+   "license": "apache-2.0",
+   "capabilities_key": "granite-4.0-h-tiny",
+   "tags": [
+    "chat",
+    "tools",
+    "moe",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "granite4:tiny-h",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "ibm/granite-4-h-tiny",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "glm-4.7-flash",
+   "family": "glm",
+   "display_name": "GLM 4.7 Flash 30B-A3B",
+   "vendor": "Z.ai",
+   "params_total": 30000000000,
+   "params_active": 3000000000,
+   "license": "mit",
+   "capabilities_key": "glm-4.7-flash",
+   "tags": [
+    "chat",
+    "coding",
+    "moe"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "zai-org/glm-4.7-flash",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "glm-4.7-flash",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "lfm2.5-2.6b",
+   "family": "lfm2.5",
+   "display_name": "LFM2.5 2.6B",
+   "vendor": "Liquid AI",
+   "params_total": 2600000000,
+   "params_active": null,
+   "license": "lfm1.0",
+   "capabilities_key": null,
+   "tags": [
+    "chat",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2.5-2.6B-4bit",
+     "quant": "4bit",
+     "download_bytes": 1535593241,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/LFM2.5-2.6B-8bit",
+     "quant": "8bit",
+     "download_bytes": 2884062385,
+     "size_source": "catalog",
+     "verified": true
+    }
+   ]
+  },
+  {
+   "id": "nomic-embed-text-v1.5",
+   "family": "nomic-embed",
+   "display_name": "Nomic Embed Text v1.5",
+   "vendor": "Nomic AI",
+   "params_total": 137000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "nomic-embed-text-v1.5",
+   "tags": [
+    "embedding"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "nomic-embed-text",
+     "quant": "f16",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "text-embedding-nomic-embed-text-v1.5",
+     "quant": "q4_k_m",
+     "download_bytes": 84106624,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "nomic-ai/nomic-embed-text-v1.5-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "embedding": true
+   }
+  },
+  {
+   "id": "bge-m3",
+   "family": "bge",
+   "display_name": "BGE-M3",
+   "vendor": "BAAI",
+   "params_total": 568000000,
+   "params_active": null,
+   "license": "mit",
+   "capabilities_key": "bge-m3",
+   "tags": [
+    "embedding",
+    "multilingual"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "bge-m3",
+     "quant": "f16",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "BAAI/bge-m3",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "embedding": true
+   }
+  },
+  {
+   "id": "bge-small-en-v1.5",
+   "family": "bge",
+   "display_name": "BGE small en v1.5",
+   "vendor": "BAAI",
+   "params_total": 33000000,
+   "params_active": null,
+   "license": "mit",
+   "capabilities_key": null,
+   "tags": [
+    "embedding",
+    "tiny"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "bge-small-en-v1.5",
+     "quant": "8bit",
+     "download_bytes": 36512994,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/bge-small-en-v1.5-8bit",
+     "quant": "8bit",
+     "download_bytes": 36512994,
+     "size_source": "catalog",
+     "verified": true
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "embedding": true
+   }
+  },
+  {
+   "id": "all-minilm-l6-v2",
+   "family": "minilm",
+   "display_name": "all-MiniLM-L6-v2",
+   "vendor": "sentence-transformers",
+   "params_total": 22700000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "embedding",
+    "tiny"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "all-minilm",
+     "quant": "f16",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/all-MiniLM-L6-v2-4bit",
+     "quant": "4bit",
+     "download_bytes": 13853144,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "sentence-transformers/all-MiniLM-L6-v2",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "embedding": true
+   }
+  },
+  {
+   "id": "qwen3-embedding-0.6b",
+   "family": "qwen3-embedding",
+   "display_name": "Qwen3 Embedding 0.6B",
+   "vendor": "Qwen",
+   "params_total": 600000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-embedding-0.6b",
+   "tags": [
+    "embedding",
+    "multilingual"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "qwen3-embedding:0.6b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "text-embedding-qwen3-embedding-0.6b",
+     "quant": "q8_0",
+     "download_bytes": 639150592,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "Qwen/Qwen3-Embedding-0.6B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 639150592,
+     "size_source": "catalog",
+     "verified": true
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "embedding": true
+   }
+  },
+  {
+   "id": "qwen3-embedding-4b",
+   "family": "qwen3-embedding",
+   "display_name": "Qwen3 Embedding 4B",
+   "vendor": "Qwen",
+   "params_total": 4000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-embedding-4b",
+   "tags": [
+    "embedding",
+    "multilingual"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "qwen3-embedding:4b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "text-embedding-qwen3-embedding-4b",
+     "quant": "q4_k_m",
+     "download_bytes": 2496703776,
+     "size_source": "catalog",
+     "verified": true
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "Qwen/Qwen3-Embedding-4B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": 2496703776,
+     "size_source": "catalog",
+     "verified": true
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "embedding": true
+   }
+  },
+  {
+   "id": "qwen3-embedding-8b",
+   "family": "qwen3-embedding",
+   "display_name": "Qwen3 Embedding 8B",
+   "vendor": "Qwen",
+   "params_total": 8000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "qwen3-embedding-8b",
+   "tags": [
+    "embedding",
+    "multilingual"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "qwen3-embedding:8b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "Qwen/Qwen3-Embedding-8B-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "embedding": true
+   }
+  },
+  {
+   "id": "embeddinggemma-300m",
+   "family": "embeddinggemma",
+   "display_name": "EmbeddingGemma 300M",
+   "vendor": "Google",
+   "params_total": 308000000,
+   "params_active": null,
+   "license": "gemma",
+   "capabilities_key": "embeddinggemma:300m",
+   "tags": [
+    "embedding",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "embeddinggemma:300m",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "google/embeddinggemma-300m",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "embedding": true
+   }
+  },
+  {
+   "id": "qwen2.5-coder-7b",
+   "family": "qwen2.5-coder",
+   "display_name": "Qwen2.5 Coder 7B Instruct",
+   "vendor": "Qwen",
+   "params_total": 7620000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "coding"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "qwen2.5-coder:7b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "qwq-32b",
+   "family": "qwq",
+   "display_name": "QwQ 32B",
+   "vendor": "Qwen",
+   "params_total": 32799999999,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "chat",
+    "thinking",
+    "large"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "qwq:32b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/QwQ-32B-4bit",
+     "quant": "4bit",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "granite-4.1-8b",
+   "family": "granite4.1",
+   "display_name": "Granite 4.1 8B",
+   "vendor": "IBM",
+   "params_total": 8000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": "granite-4.1-8b",
+   "tags": [
+    "chat",
+    "tools"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "granite4.1:8b",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "minimax-m2",
+   "family": "minimax-m2",
+   "display_name": "MiniMax M2 230B-A10B",
+   "vendor": "MiniMax",
+   "params_total": 230000000000,
+   "params_active": 10000000000,
+   "license": "apache-2.0",
+   "capabilities_key": "minimax-m2",
+   "tags": [
+    "coding",
+    "agentic",
+    "moe",
+    "large"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "lmstudio",
+     "artifact": "minimax/minimax-m2",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/minimax-m2",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "deepseek-coder-v2-lite",
+   "family": "deepseek-coder-v2",
+   "display_name": "DeepSeek Coder V2 Lite 16B",
+   "vendor": "DeepSeek",
+   "params_total": 15700000000,
+   "params_active": 2400000000,
+   "license": "deepseek",
+   "capabilities_key": null,
+   "tags": [
+    "coding",
+    "moe"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "deepseek-coder-v2:16b",
+     "quant": "q4_0",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "starcoder2-3b",
+   "family": "starcoder2",
+   "display_name": "StarCoder2 3B",
+   "vendor": "BigCode",
+   "params_total": 3030000000,
+   "params_active": null,
+   "license": "bigcode-openrail-m",
+   "capabilities_key": null,
+   "tags": [
+    "coding",
+    "completion",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "starcoder2:3b",
+     "quant": "q4_0",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "moondream2",
+   "family": "moondream",
+   "display_name": "Moondream 2",
+   "vendor": "Vikhyat",
+   "params_total": 1870000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "vision",
+    "small"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "moondream",
+     "quant": "q4_0",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "llava-7b",
+   "family": "llava",
+   "display_name": "LLaVA 1.6 7B",
+   "vendor": "LLaVA",
+   "params_total": 7000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "vision"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "llava:7b",
+     "quant": "q4_0",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "falcon3-7b",
+   "family": "falcon3",
+   "display_name": "Falcon 3 7B",
+   "vendor": "TII",
+   "params_total": 7460000000,
+   "params_active": null,
+   "license": "falcon-llm",
+   "capabilities_key": null,
+   "tags": [
+    "chat"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "falcon3:7b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "command-r7b",
+   "family": "command-r",
+   "display_name": "Command R7B",
+   "vendor": "Cohere",
+   "params_total": 8029999999,
+   "params_active": null,
+   "license": "cc-by-nc-4.0",
+   "capabilities_key": null,
+   "tags": [
+    "chat",
+    "tools",
+    "rag"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "command-r7b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "exaone-3.5-7.8b",
+   "family": "exaone",
+   "display_name": "EXAONE 3.5 7.8B",
+   "vendor": "LG AI Research",
+   "params_total": 7820000000,
+   "params_active": null,
+   "license": "exaone",
+   "capabilities_key": null,
+   "tags": [
+    "chat",
+    "multilingual"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "exaone3.5:7.8b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "olmo-2-7b",
+   "family": "olmo2",
+   "display_name": "OLMo 2 7B Instruct",
+   "vendor": "Ai2",
+   "params_total": 7300000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "chat",
+    "open-data"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "olmo2:7b",
+     "quant": "q4_k_m",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ]
+  },
+  {
+   "id": "mxbai-embed-large",
+   "family": "mxbai-embed",
+   "display_name": "mxbai-embed-large v1",
+   "vendor": "Mixedbread",
+   "params_total": 335000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "embedding"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "mxbai-embed-large",
+     "quant": "f16",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "mixedbread-ai/mxbai-embed-large-v1",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "embedding": true
+   }
+  },
+  {
+   "id": "snowflake-arctic-embed2",
+   "family": "arctic-embed",
+   "display_name": "Snowflake Arctic Embed 2.0",
+   "vendor": "Snowflake",
+   "params_total": 568000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "embedding",
+    "multilingual"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "snowflake-arctic-embed2",
+     "quant": "f16",
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": false
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "embedding": true
+   }
+  },
+  {
+   "id": "flux.2-klein-4b",
+   "family": "flux.2",
+   "display_name": "FLUX.2 [klein] 4B (8-bit)",
+   "vendor": "Black Forest Labs",
+   "params_total": 4000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities_key": null,
+   "tags": [
+    "image",
+    "recommended"
+   ],
+   "starter": true,
+   "artifacts": [
+    {
+     "provider": "mlx-gen",
+     "artifact": "AbstractFramework/flux.2-klein-4b-8bit",
+     "quant": "8bit",
+     "download_bytes": 8569654788,
+     "size_source": "catalog",
+     "verified": true,
+     "recommended": true
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "vision": false,
+    "image_generation": true
+   },
+   "notes": "The AbstractFramework fresh-install image-generation default (output.image)."
+  },
+  {
+   "id": "supertonic-3",
+   "family": "supertonic",
+   "display_name": "Supertonic 3 (TTS)",
+   "vendor": "Supertone",
+   "params_total": null,
+   "params_active": null,
+   "license": null,
+   "capabilities_key": null,
+   "tags": [
+    "voice",
+    "recommended"
+   ],
+   "starter": true,
+   "artifacts": [
+    {
+     "provider": "supertonic",
+     "artifact": "supertonic-3",
+     "quant": null,
+     "download_bytes": null,
+     "size_source": "unknown",
+     "verified": true,
+     "recommended": true
+    }
+   ],
+   "capabilities_override": {
+    "text": false,
+    "audio": true,
+    "speech_synthesis": true
+   },
+   "notes": "The AbstractFramework fresh-install voice default (output.voice), fetched through abstractvoice."
+  }
+ ]
+}

@@ -85,6 +85,12 @@ __all__ = [
     "recommended_downloads",
     "recommended_plan",
     "annotate_route_availability",
+    "hf_artifact_parts",
+    "list_installed",
+    "delete_artifact",
+    "delete_blockers",
+    "MODELS_INSTALLED_SCHEMA",
+    "INSTALLED_PROVIDERS",
 ]
 
 
@@ -1102,7 +1108,7 @@ def _interrupted_presence(provider: str, artifact: str, repo_id: str, count: int
 
 
 def _probe_huggingface(provider: str, artifact: str) -> ModelPresence:
-    repo_id, _quant = split_artifact(artifact)
+    repo_id, quant, patterns = hf_artifact_parts(artifact)
     if "/" not in repo_id:
         return ModelPresence(
             provider,
@@ -1121,6 +1127,19 @@ def _probe_huggingface(provider: str, artifact: str) -> ModelPresence:
         # same download resumes exactly where it stopped.
         if interrupted:
             return _interrupted_presence(provider, artifact, repo_id, interrupted, interrupted_bytes, blobs_dir)
+        if patterns and not _snapshot_has_matching_file(snapshot, patterns):
+            # A multi-quant GGUF repo is cached, but not THIS quant: the
+            # artifact names one file set, and that set is not here.
+            return ModelPresence(
+                provider,
+                artifact,
+                PRESENCE_ABSENT,
+                evidence="hf cache scan",
+                detail=f"{repo_id} is cached but has no {quant} GGUF file",
+                location=str(snapshot),
+                instruction=f"abstractcore models download {provider} {artifact}",
+                downloadable=True,
+            )
         return ModelPresence(
             provider,
             artifact,
@@ -1165,8 +1184,14 @@ def download(
     progress_cb: Optional[ProgressCallback] = None,
     base_url: Optional[str] = None,
     dry_run: bool = False,
+    expected_bytes: Optional[int] = None,
 ) -> DownloadOutcome:
     """Fetch one artifact with the provider's own tool. Only on explicit request.
+
+    `expected_bytes` (from the catalog, when known) arms a DISK PRE-CHECK: a
+    download that cannot fit on the target filesystem with 5 GiB to spare is
+    refused before the first byte, instead of filling the disk and failing
+    half-way. Hugging Face downloads compute the exact figure themselves.
 
     `dry_run` resolves everything -- provider support, current presence, the
     exact command -- and stops before spending a byte, which is how the
@@ -1183,7 +1208,7 @@ def download(
     # ambient sweep, and the probes it makes are fresh.
     _outer_sweep = _sweep.set(None)
     try:
-        return _download(pid, ref, emit, base_url=base_url, dry_run=dry_run)
+        return _download(pid, ref, emit, base_url=base_url, dry_run=dry_run, expected_bytes=expected_bytes)
     finally:
         _sweep.reset(_outer_sweep)
 
@@ -1195,6 +1220,7 @@ def _download(
     *,
     base_url: Optional[str] = None,
     dry_run: bool = False,
+    expected_bytes: Optional[int] = None,
 ) -> DownloadOutcome:
     if not pid or not ref:
         return DownloadOutcome(pid, ref, False, "failed", message="a provider and an artifact are required")
@@ -1230,14 +1256,28 @@ def _download(
             location=presence.location,
         )
 
+    disk_problem = _disk_shortfall(pid, expected_bytes)
+
     if dry_run:
         return DownloadOutcome(
             pid,
             ref,
             True,
             "planned",
-            message=f"would download {ref} with {pid}",
+            message=f"would download {ref} with {pid}" + (f" -- WARNING: {disk_problem}" if disk_problem else ""),
             command=_planned_command(pid, ref),
+        )
+
+    if disk_problem:
+        emit(DownloadProgress(status=DownloadStatus.ERROR, message=disk_problem))
+        return DownloadOutcome(
+            pid,
+            ref,
+            False,
+            "failed",
+            message=disk_problem,
+            command=_planned_command(pid, ref),
+            instruction="Free disk space (abstractcore models list shows what is installed), then retry.",
         )
 
     emit(DownloadProgress(status=DownloadStatus.STARTING, message=f"{pid}: fetching {ref}"))
@@ -1255,8 +1295,55 @@ def _planned_command(provider: str, artifact: str) -> List[str]:
         return ["ollama", "pull", artifact]
     if provider == "supertonic":
         return ["python", "-m", "abstractvoice", "download", "--supertonic"]
-    repo_id, _ = split_artifact(artifact)
-    return ["huggingface_hub.snapshot_download", repo_id]
+    repo_id, _quant, patterns = hf_artifact_parts(artifact)
+    cmd = ["huggingface_hub.snapshot_download", repo_id]
+    for pattern in patterns or []:
+        cmd += ["--include", pattern]
+    return cmd
+
+
+_DISK_HEADROOM_BYTES = 5 * 1024**3
+
+
+def _store_dir_for(provider: str) -> Optional[Path]:
+    try:
+        from ..utils.host_profile import default_model_store_paths
+
+        stores = default_model_store_paths()
+    except Exception:
+        return None
+    if provider == "ollama":
+        return stores.get("ollama")
+    if provider == "lmstudio":
+        return stores.get("lmstudio")
+    if provider in _HF_BACKED:
+        return stores.get("hf_cache")
+    return None
+
+
+def _disk_shortfall(provider: str, needed_bytes: Optional[int]) -> Optional[str]:
+    """A human sentence when `needed_bytes` cannot land with 5 GiB to spare, else None.
+
+    Only a KNOWN size can fail this check; an unknown size is not evidence.
+    Remote Ollama daemons store on their own host, so they are never checked.
+    """
+
+    if not isinstance(needed_bytes, int) or needed_bytes <= 0:
+        return None
+    if provider == "ollama" and not _ollama_is_this_machine(_ollama_base_url(None)):
+        return None
+    target = _store_dir_for(provider)
+    if target is None:
+        return None
+    from ..utils.host_profile import disk_free_bytes
+
+    free = disk_free_bytes(target)
+    if free is None or needed_bytes <= free - _DISK_HEADROOM_BYTES:
+        return None
+    return (
+        f"not enough disk space for {provider}: the download needs {needed_bytes / 1e9:.1f} GB "
+        f"plus 5 GiB headroom, and {target} has {free / 1e9:.1f} GB free"
+    )
 
 
 # --- lmstudio download ------------------------------------------------------
@@ -1332,9 +1419,21 @@ def _download_ollama(artifact: str, emit: ProgressCallback, base_url: Optional[s
     )
     lines: List[str] = []
     last_status = ""
+    control = _job_control()
     try:
         with urllib.request.urlopen(request, timeout=None) as response:  # noqa: S310 - localhost daemon
             for raw in response:
+                if control is not None and control.is_cancelled():
+                    emit(DownloadProgress(status=DownloadStatus.CANCELLED, message="cancelled"))
+                    return DownloadOutcome(
+                        "ollama",
+                        artifact,
+                        False,
+                        "cancelled",
+                        message="cancelled; Ollama keeps the layers already fetched and resumes on the next pull",
+                        output="\n".join(lines),
+                        command=["POST", url, artifact],
+                    )
                 text = raw.decode("utf-8", errors="replace").strip()
                 if not text:
                     continue
@@ -1449,7 +1548,17 @@ def _download_supertonic(artifact: str, emit: ProgressCallback, base_url: Option
 
 
 def _download_huggingface(artifact: str, emit: ProgressCallback, base_url: Optional[str]) -> DownloadOutcome:
-    repo_id, _quant = split_artifact(artifact)
+    """`snapshot_download`, narrowed to ONE quant when the artifact names one.
+
+    `org/Model-GGUF:Q4_K_M` fetches only the Q4_K_M file(s) (`allow_patterns`);
+    without the narrowing a multi-quant GGUF repo downloads EVERY quant --
+    often 100+ GB for a model whose chosen file is 5 GB. The exact byte total
+    is read from the hub's file listing first (one metadata request), which
+    buys both a real percentage and a disk pre-check that refuses a download
+    that cannot fit, instead of filling the disk half-way through.
+    """
+
+    repo_id, quant, patterns = hf_artifact_parts(artifact)
     try:
         from huggingface_hub import snapshot_download  # type: ignore
     except Exception as exc:
@@ -1463,17 +1572,69 @@ def _download_huggingface(artifact: str, emit: ProgressCallback, base_url: Optio
         )
 
     token = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN") or None
-    emit(DownloadProgress(status=DownloadStatus.DOWNLOADING, message=f"snapshot_download {repo_id}"))
+    command = _planned_command("huggingface", artifact)
+    total, total_error = _hf_remote_total(repo_id, patterns, token)
+    if patterns and total == 0 and not total_error:
+        message = f"{repo_id} has no file matching {quant} ({', '.join(patterns)})"
+        emit(DownloadProgress(status=DownloadStatus.ERROR, message=message))
+        return DownloadOutcome(
+            "huggingface",
+            artifact,
+            False,
+            "failed",
+            message=message,
+            command=command,
+            instruction=f"Check the quant names on https://huggingface.co/{repo_id}/tree/main",
+        )
+    shortfall = _disk_shortfall("huggingface", total)
+    if shortfall:
+        emit(DownloadProgress(status=DownloadStatus.ERROR, message=shortfall))
+        return DownloadOutcome(
+            "huggingface",
+            artifact,
+            False,
+            "failed",
+            message=shortfall,
+            command=command,
+            instruction="Free disk space (abstractcore models list shows what is installed), then retry.",
+        )
+
+    emit(
+        DownloadProgress(
+            status=DownloadStatus.DOWNLOADING,
+            message=f"snapshot_download {repo_id}" + (f" ({quant} only)" if patterns else ""),
+            total_bytes=total,
+        )
+    )
+
+    control = _job_control()
+    kwargs: Dict[str, Any] = {"repo_id": repo_id, "token": token}
+    if patterns:
+        kwargs["allow_patterns"] = list(patterns)
+    if control is not None:
+        tqdm_class = _cancel_aware_tqdm(control)
+        if tqdm_class is not None and _accepts_kwarg(snapshot_download, "tqdm_class"):
+            kwargs["tqdm_class"] = tqdm_class
 
     # Real progress without a hub-version-specific callback API: the bytes on
-    # disk are the ground truth, and polling them costs one stat walk a second.
+    # disk are the ground truth, and polling them costs one stat walk.
     stop = threading.Event()
-    watcher = threading.Thread(target=_watch_hf_cache, args=(repo_id, emit, stop), daemon=True)
+    watcher = threading.Thread(target=_watch_hf_cache, args=(repo_id, emit, stop, total), daemon=True)
     watcher.start()
     try:
-        resolved = snapshot_download(repo_id=repo_id, token=token)
+        resolved = snapshot_download(**kwargs)
     except Exception as exc:
         stop.set()
+        if control is not None and control.is_cancelled():
+            emit(DownloadProgress(status=DownloadStatus.CANCELLED, message="cancelled"))
+            return DownloadOutcome(
+                "huggingface",
+                artifact,
+                False,
+                "cancelled",
+                message="cancelled; files already fetched stay in the cache and the next download resumes",
+                command=command,
+            )
         message = str(exc)
         emit(DownloadProgress(status=DownloadStatus.ERROR, message=message))
         return DownloadOutcome(
@@ -1483,6 +1644,7 @@ def _download_huggingface(artifact: str, emit: ProgressCallback, base_url: Optio
             "failed",
             message=message,
             output=message,
+            command=command,
             instruction=(
                 f"If {repo_id} is gated, accept its licence on huggingface.co and export HF_TOKEN, "
                 "then retry."
@@ -1499,30 +1661,107 @@ def _download_huggingface(artifact: str, emit: ProgressCallback, base_url: Optio
         "completed",
         message=f"snapshot cached at {resolved}",
         location=str(resolved),
-        command=["huggingface_hub.snapshot_download", repo_id],
+        command=command,
     )
 
 
-def _watch_hf_cache(repo_id: str, emit: ProgressCallback, stop: threading.Event) -> None:
+def _accepts_kwarg(fn: Callable[..., Any], name: str) -> bool:
+    try:
+        import inspect
+
+        return name in inspect.signature(fn).parameters
+    except Exception:
+        return False
+
+
+def _cancel_aware_tqdm(control: Any) -> Optional[type]:
+    """A tqdm subclass that raises at its next tick once the job is cancelled.
+
+    `snapshot_download` offers no cancel API, and a Python thread cannot be
+    killed; its progress bars are the one hook it calls repeatedly, so that is
+    where a cancelled job stops.
+    """
+
+    try:
+        from tqdm.auto import tqdm as _base  # type: ignore
+    except Exception:
+        return None
+
+    class _CancelAwareTqdm(_base):  # type: ignore[misc, valid-type]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            kwargs.setdefault("disable", True)
+            super().__init__(*args, **kwargs)
+
+        def update(self, n: Any = 1) -> Any:
+            if control.is_cancelled():
+                raise RuntimeError("download cancelled")
+            return super().update(n)
+
+    return _CancelAwareTqdm
+
+
+def _hf_remote_total(repo_id: str, patterns: Optional[List[str]], token: Optional[str]) -> Tuple[Optional[int], str]:
+    """Exact bytes to fetch (sibling sizes, filtered by `patterns`), or (None, why).
+
+    One metadata request. Failure is not fatal: the download proceeds without
+    a percentage and without a disk pre-check.
+    """
+
+    try:
+        from huggingface_hub import HfApi  # type: ignore
+
+        info = HfApi().model_info(repo_id, files_metadata=True, token=token)
+    except Exception as exc:
+        return None, str(exc)
+    total = 0
+    for sibling in getattr(info, "siblings", None) or []:
+        name = str(getattr(sibling, "rfilename", "") or "")
+        size = getattr(sibling, "size", None)
+        if patterns and not _matches_any(name, patterns):
+            continue
+        if isinstance(size, int):
+            total += size
+    return total, ""
+
+
+def _watch_hf_cache(
+    repo_id: str,
+    emit: ProgressCallback,
+    stop: threading.Event,
+    total: Optional[int] = None,
+    interval: float = 2.0,
+) -> None:
     folder = "models--" + repo_id.replace("/", "--")
-    while not stop.wait(2.0):
-        total = 0
+
+    def _bytes_now() -> int:
+        found = 0
         for base in _hf_cache_dirs():
             path = base / folder
             try:
                 if not path.is_dir():
                     continue
-                total += sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
+                found += sum(p.stat().st_size for p in path.rglob("*") if p.is_file() and not p.is_symlink())
             except Exception:
                 continue
-        if total > 0:
-            emit(
-                DownloadProgress(
-                    status=DownloadStatus.DOWNLOADING,
-                    message=f"{repo_id}: {total / 1_000_000:.0f} MB on disk",
-                    downloaded_bytes=total,
-                )
+        return found
+
+    # Files already on disk before this download (another quant, an earlier
+    # partial run) are not progress; count only what arrives.
+    baseline = _bytes_now()
+    while not stop.wait(interval):
+        got = max(0, _bytes_now() - baseline)
+        if got <= 0:
+            continue
+        percent = min(99.0, got / total * 100.0) if isinstance(total, int) and total > 0 else None
+        emit(
+            DownloadProgress(
+                status=DownloadStatus.DOWNLOADING,
+                message=f"{repo_id}: {got / 1_000_000:.0f} MB fetched",
+                percent=percent,
+                downloaded_bytes=got,
+                total_bytes=total if isinstance(total, int) and total > 0 else None,
             )
+        )
 
 
 _DOWNLOADERS: Dict[str, Callable[[str, ProgressCallback, Optional[str]], DownloadOutcome]] = {
@@ -1532,17 +1771,33 @@ _DOWNLOADERS: Dict[str, Callable[[str, ProgressCallback, Optional[str]], Downloa
 }
 
 
-def _run_streaming(cmd: List[str], provider: str, artifact: str, emit: ProgressCallback) -> DownloadOutcome:
-    """Run a provider CLI and forward its lines verbatim (rule 4)."""
+def _run_streaming(
+    cmd: List[str],
+    provider: str,
+    artifact: str,
+    emit: ProgressCallback,
+    *,
+    env: Optional[Dict[str, str]] = None,
+) -> DownloadOutcome:
+    """Run a provider CLI and forward its lines verbatim (rule 4).
+
+    Inside a host job the process is registered with the job's control, so a
+    cancel terminates it; the outcome is then `cancelled`, not `failed`.
+    """
 
     lines: List[str] = []
+    control = _job_control()
     try:
         proc = subprocess.Popen(  # noqa: S603 - argv, never a shell string
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
+            # Inside a host job nobody is at a terminal: a tool that stops to
+            # ask (a sudo password, a y/N prompt) must fail fast, not hang.
+            stdin=subprocess.DEVNULL if control is not None else None,
             text=True,
             bufsize=1,
+            env=env,
         )
     except Exception as exc:
         return DownloadOutcome(
@@ -1553,6 +1808,8 @@ def _run_streaming(cmd: List[str], provider: str, artifact: str, emit: ProgressC
             message=f"could not run {cmd[0]}: {exc}",
             command=list(cmd),
         )
+    if control is not None:
+        control.register_process(proc)
     assert proc.stdout is not None
     for raw in proc.stdout:
         text = raw.rstrip("\n").rstrip("\r")
@@ -1562,6 +1819,17 @@ def _run_streaming(cmd: List[str], provider: str, artifact: str, emit: ProgressC
         emit(DownloadProgress(status=DownloadStatus.DOWNLOADING, message=text.strip()))
     code = proc.wait()
     output = "\n".join(lines)
+    if control is not None and control.is_cancelled():
+        emit(DownloadProgress(status=DownloadStatus.CANCELLED, message="cancelled"))
+        return DownloadOutcome(
+            provider,
+            artifact,
+            False,
+            "cancelled",
+            message=f"cancelled ({cmd[0]} terminated)",
+            output=output,
+            command=list(cmd),
+        )
     if code != 0:
         emit(DownloadProgress(status=DownloadStatus.ERROR, message=f"{cmd[0]} exited {code}"))
         return DownloadOutcome(
@@ -1574,13 +1842,14 @@ def _run_streaming(cmd: List[str], provider: str, artifact: str, emit: ProgressC
             command=list(cmd),
             instruction=f"Run `{' '.join(cmd)}` yourself to see the tool's full prompt.",
         )
-    emit(DownloadProgress(status=DownloadStatus.COMPLETE, message=f"{provider}: {artifact} downloaded", percent=100.0))
+    verb = "installed" if provider == "engine" else "downloaded"
+    emit(DownloadProgress(status=DownloadStatus.COMPLETE, message=f"{provider}: {artifact} {verb}", percent=100.0))
     return DownloadOutcome(
         provider,
         artifact,
         True,
         "completed",
-        message=f"{artifact} downloaded",
+        message=f"{artifact} {verb}",
         output=output,
         command=list(cmd),
     )
@@ -1780,3 +2049,933 @@ def route_key_for(kind: Any, modality: Any, task: Any = None) -> str:
     """Re-exported so surfaces build route keys the one supported way."""
 
     return capability_route_key(kind, modality, task)
+
+
+# ---------------------------------------------------------------------------
+# Job hooks (cooperative cancel) -- see `config.host_jobs`
+# ---------------------------------------------------------------------------
+
+
+def _job_control() -> Any:
+    """The running host job's cancel handle, or None outside a job."""
+
+    try:
+        from .host_jobs import current_job_control
+
+        return current_job_control()
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# Hugging Face artifact references: `org/repo`, `org/repo:QUANT`
+# ---------------------------------------------------------------------------
+
+_GGUF_QUANT_RE = re.compile(r"^(?:ud[-_])?(?:i?q\d[\w]*|f16|bf16|f32|fp16|mxfp4)$", re.IGNORECASE)
+
+
+def hf_artifact_parts(artifact: Any) -> Tuple[str, Optional[str], Optional[List[str]]]:
+    """`"unsloth/Qwen3-8B-GGUF:Q4_K_M"` -> `(repo_id, "Q4_K_M", ["*Q4_K_M*.gguf", ...])`.
+
+    The `repo:QUANT` form is how the catalog names ONE GGUF quant inside a
+    multi-quant repo (Hugging Face repo ids never contain `:`). The `@quant`
+    form (`split_artifact`) is accepted too. Only GGUF-shaped quants produce
+    `allow_patterns`; an MLX repo is one quant already and is fetched whole.
+    """
+
+    raw = str(artifact or "").strip()
+    quant: Optional[str] = None
+    repo = raw
+    head, sep, tail = raw.partition(":")
+    if sep and "/" in head and tail.strip():
+        repo, quant = head.strip(), tail.strip()
+    else:
+        repo, quant = split_artifact(raw)
+    patterns: Optional[List[str]] = None
+    if quant and _GGUF_QUANT_RE.match(quant):
+        variants: List[str] = []
+        for v in (quant, quant.upper(), quant.lower()):
+            if v not in variants:
+                variants.append(v)
+        patterns = [f"*{v}*.gguf" for v in variants]
+    return repo, quant, patterns
+
+
+def _matches_any(name: str, patterns: Iterable[str]) -> bool:
+    import fnmatch
+
+    return any(fnmatch.fnmatchcase(name, pattern) for pattern in patterns)
+
+
+def _snapshot_has_matching_file(snapshot: Path, patterns: List[str]) -> bool:
+    try:
+        for path in snapshot.rglob("*"):
+            rel = path.relative_to(snapshot).as_posix()
+            if _matches_any(rel, patterns) and path.exists():
+                return True
+    except Exception:
+        return False
+    return False
+
+
+# ---------------------------------------------------------------------------
+# list_installed(): every model on this machine, per engine, with sizes
+# ---------------------------------------------------------------------------
+
+MODELS_INSTALLED_SCHEMA = "models_installed_v1"
+INSTALLED_PROVIDERS: Tuple[str, ...] = ("ollama", "lmstudio", "mlx", "huggingface")
+
+_BLOCKER_LOADED = "loaded"
+_BLOCKER_REMOTE = "remote_engine"
+_BLOCKER_SHARED = "shared_cache:mlx,huggingface"
+_BLOCKER_NOT_RUNNING = "engine_not_running"
+_BLOCKER_UNKNOWN_LOCATION = "unknown_location"
+
+
+def _display(path: Optional[Path]) -> Optional[str]:
+    if path is None:
+        return None
+    try:
+        rel = Path(path).resolve().relative_to(Path.home().resolve())
+        return "~/" + rel.as_posix()
+    except Exception:
+        return str(path)
+
+
+def _installed_row(
+    provider: str,
+    artifact: str,
+    *,
+    quant: Optional[str] = None,
+    size_bytes: Optional[int] = None,
+    params_total: Optional[int] = None,
+    location: Optional[str] = None,
+    loaded: Optional[bool] = None,
+    blockers: Optional[List[str]] = None,
+    deletable: bool = True,
+    **extra: Any,
+) -> Dict[str, Any]:
+    row: Dict[str, Any] = {
+        "provider": provider,
+        "artifact": artifact,
+        "quant": (str(quant).lower() if quant else None),
+        "size_bytes": int(size_bytes) if isinstance(size_bytes, int) else None,
+        "params_total": int(params_total) if isinstance(params_total, int) else None,
+        "location": location,
+        "loaded": loaded,
+        "catalog_id": None,
+        "deletable": bool(deletable),
+        "delete_blockers": list(blockers or []),
+    }
+    row.update(extra)
+    return row
+
+
+def _parse_params(value: Any) -> Tuple[Optional[int], Optional[int]]:
+    try:
+        from ..utils.model_fit import parse_param_count, parse_params_from_name
+    except Exception:  # pragma: no cover
+        return None, None
+    text = str(value or "").strip()
+    if not text:
+        return None, None
+    total, active = parse_params_from_name("x-" + text.replace(" ", ""))
+    if total is None:
+        total = parse_param_count(text)
+    return total, active
+
+
+# --- ollama -----------------------------------------------------------------
+
+
+def _ollama_models_dir() -> Path:
+    try:
+        from ..utils.host_profile import default_model_store_paths
+
+        return Path(default_model_store_paths()["ollama"])
+    except Exception:
+        return Path.home() / ".ollama" / "models"
+
+
+def _ollama_manifest_rows(models_dir: Path) -> List[Dict[str, Any]]:
+    """Installed tags read from Ollama's on-disk manifests (server not running).
+
+    Layout: `manifests/<registry>/<namespace>/<model>/<tag>`; the library
+    namespace on the default registry is the bare `model:tag` users type.
+    """
+
+    rows: List[Dict[str, Any]] = []
+    root = models_dir / "manifests"
+    try:
+        files = [p for p in root.rglob("*") if p.is_file()]
+    except Exception:
+        return rows
+    for path in files:
+        try:
+            parts = path.relative_to(root).parts
+        except Exception:
+            continue
+        if len(parts) < 4 or parts[-1].startswith("."):
+            continue
+        registry, namespace, model, tag = parts[0], "/".join(parts[1:-2]), parts[-2], parts[-1]
+        if registry == "registry.ollama.ai" and namespace == "library":
+            name = f"{model}:{tag}"
+        elif registry == "registry.ollama.ai":
+            name = f"{namespace}/{model}:{tag}"
+        else:
+            name = f"{registry}/{namespace}/{model}:{tag}"
+        try:
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            size = sum(int(layer.get("size") or 0) for layer in manifest.get("layers") or [])
+            size += int((manifest.get("config") or {}).get("size") or 0)
+        except Exception:
+            size = None
+        total, _active = _parse_params(tag)
+        rows.append(
+            _installed_row(
+                "ollama",
+                name,
+                size_bytes=size,
+                params_total=total,
+                location=_display(models_dir),
+                loaded=None,
+                blockers=[_BLOCKER_NOT_RUNNING],
+                deletable=False,
+                size_source="manifest",
+            )
+        )
+    rows.sort(key=lambda r: r["artifact"])
+    return rows
+
+
+def _ollama_loaded_names(host: str) -> Optional[set]:
+    payload, _error = _http_json(f"{host}/api/ps")
+    if not isinstance(payload, dict):
+        return None
+    names = set()
+    for row in payload.get("models") or []:
+        if isinstance(row, dict):
+            for key in ("name", "model"):
+                value = str(row.get(key) or "").strip().lower()
+                if value:
+                    names.add(value)
+    return names
+
+
+def _installed_ollama(base_url: Optional[str], include_loaded: bool) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    host = _ollama_base_url(base_url)
+    local = _ollama_is_this_machine(host)
+    payload, error = _http_json(f"{host}/api/tags")
+    if not isinstance(payload, dict):
+        if local:
+            rows = _ollama_manifest_rows(_ollama_models_dir())
+            return rows, f"unreachable ({error}); listed {len(rows)} tag(s) from on-disk manifests, delete needs the server"
+        return [], f"unreachable ({error})"
+    loaded = _ollama_loaded_names(host) if include_loaded else None
+    rows: List[Dict[str, Any]] = []
+    for item in payload.get("models") or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name") or item.get("model") or "").strip()
+        if not name:
+            continue
+        details = item.get("details") if isinstance(item.get("details"), dict) else {}
+        total, _active = _parse_params(details.get("parameter_size"))
+        is_loaded: Optional[bool] = None
+        if loaded is not None:
+            is_loaded = any(_ollama_tag_match(n, name) for n in loaded)
+        blockers: List[str] = []
+        if is_loaded:
+            blockers.append(_BLOCKER_LOADED)
+        if not local:
+            blockers.append(_BLOCKER_REMOTE)
+        size = item.get("size")
+        rows.append(
+            _installed_row(
+                "ollama",
+                name,
+                quant=details.get("quantization_level") or None,
+                size_bytes=size if isinstance(size, int) else None,
+                params_total=total,
+                location=_display(_ollama_models_dir()) if local else host,
+                loaded=is_loaded,
+                blockers=blockers,
+                size_source="engine",
+                format=details.get("format") or None,
+                family=details.get("family") or None,
+                digest=item.get("digest") or None,
+                modified_at=item.get("modified_at") or None,
+            )
+        )
+    return rows, None
+
+
+# --- lmstudio ---------------------------------------------------------------
+
+
+def _lms_listing() -> Tuple[Optional[List[Dict[str, Any]]], str]:
+    return _cached_listing("lms:ls:full", _read_lms_listing)
+
+
+def _read_lms_listing() -> Tuple[Optional[List[Dict[str, Any]]], str]:
+    """The full `lms ls --json` rows (not just ids), or why we have none."""
+
+    cli = _lms_cli()
+    if not cli:
+        return None, "the `lms` CLI is not installed"
+    try:
+        proc = subprocess.run([cli, "ls", "--json"], capture_output=True, text=True, timeout=_CLI_PROBE_TIMEOUT)
+    except Exception as exc:
+        return None, f"`lms ls` failed: {exc}"
+    if proc.returncode != 0:
+        return None, f"`lms ls` exited {proc.returncode}: {(proc.stderr or '').strip()[:200]}"
+    try:
+        payload = json.loads(proc.stdout or "[]")
+    except Exception as exc:
+        return None, f"`lms ls --json` returned unparseable output: {exc}"
+    if not isinstance(payload, list):
+        return None, f"`lms ls --json` returned a {type(payload).__name__}, not a list of models"
+    return [row for row in payload if isinstance(row, dict)], ""
+
+
+def _lms_loaded_keys() -> Optional[set]:
+    """Identifiers `lms ps --json` reports as loaded; None when it cannot tell."""
+
+    cli = _lms_cli()
+    if not cli:
+        return None
+    try:
+        proc = subprocess.run([cli, "ps", "--json"], capture_output=True, text=True, timeout=_CLI_PROBE_TIMEOUT)
+        payload = json.loads(proc.stdout or "[]") if proc.returncode == 0 else None
+    except Exception:
+        return None
+    if not isinstance(payload, list):
+        return None
+    keys = set()
+    for row in payload:
+        if not isinstance(row, dict):
+            continue
+        for key in ("identifier", "modelKey", "path", "indexedModelIdentifier"):
+            value = str(row.get(key) or "").strip().lower()
+            if value:
+                keys.add(value)
+    return keys
+
+
+def _lmstudio_models_root() -> Path:
+    try:
+        from ..utils.model_cache import default_lmstudio_model_dirs
+
+        dirs = default_lmstudio_model_dirs()
+        if dirs:
+            return Path(dirs[0])
+    except Exception:
+        pass
+    return Path.home() / ".lmstudio" / "models"
+
+
+def _lmstudio_hub_root() -> Path:
+    return Path.home() / ".lmstudio" / "hub" / "models"
+
+
+def _ci_child(parent: Path, name: str) -> Optional[Path]:
+    direct = parent / name
+    if direct.exists():
+        return direct
+    try:
+        for entry in parent.iterdir():
+            if entry.name.lower() == name.lower():
+                return entry
+    except Exception:
+        return None
+    return None
+
+
+def _ci_path(root: Path, rel: str) -> Optional[Path]:
+    current = root
+    for part in [p for p in str(rel).replace("\\", "/").split("/") if p]:
+        nxt = _ci_child(current, part)
+        if nxt is None:
+            return None
+        current = nxt
+    return current if current != root else None
+
+
+def _lmstudio_locate(row: Dict[str, Any]) -> Tuple[Optional[Path], List[Path]]:
+    """`(weights_path, extra_paths)` for one `lms ls` row.
+
+    `path` is either a location under the models root (a repo directory, or a
+    single `.gguf` file inside a multi-quant repo) or an LM Studio HUB id
+    (`qwen/qwen3.8-27b`) whose manifest under `~/.lmstudio/hub/models` names
+    the Hugging Face repo that holds the weights. Hub models return the
+    manifest directory as an extra path, so a delete removes the entry too.
+    """
+
+    ref = str(row.get("path") or "").strip()
+    root = _lmstudio_models_root()
+    if ref:
+        found = _ci_path(root, ref)
+        if found is not None:
+            return found, []
+        hub_dir = _ci_path(_lmstudio_hub_root(), ref)
+        manifest = hub_dir / "manifest.json" if hub_dir is not None else None
+        if manifest is not None and manifest.is_file():
+            try:
+                data = json.loads(manifest.read_text(encoding="utf-8"))
+            except Exception:
+                data = {}
+            for dep in data.get("dependencies") or []:
+                for source in (dep or {}).get("sources") or []:
+                    if (source or {}).get("type") != "huggingface":
+                        continue
+                    user, repo = source.get("user"), source.get("repo")
+                    if user and repo:
+                        weights = _ci_path(root, f"{user}/{repo}")
+                        if weights is not None:
+                            return weights, [hub_dir]
+            return None, [hub_dir]
+    return None, []
+
+
+def _lmstudio_row_artifact(row: Dict[str, Any]) -> str:
+    return str(row.get("selectedVariant") or row.get("modelKey") or row.get("path") or "").strip()
+
+
+def _lmstudio_row_matches(row: Dict[str, Any], artifact: str) -> bool:
+    candidates = [
+        row.get("selectedVariant"),
+        row.get("modelKey"),
+        row.get("indexedModelIdentifier"),
+        row.get("path"),
+        *(row.get("variants") or []),
+    ]
+    return any(_matches_installed_id(c, artifact) for c in candidates if isinstance(c, str) and c.strip())
+
+
+def _installed_lmstudio(include_loaded: bool) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    listing, error = _lms_listing()
+    if listing is None:
+        return [], error or "the `lms` CLI is unavailable"
+    loaded_keys = _lms_loaded_keys() if include_loaded else None
+    rows: List[Dict[str, Any]] = []
+    for item in listing:
+        artifact = _lmstudio_row_artifact(item)
+        if not artifact:
+            continue
+        quantization = item.get("quantization") if isinstance(item.get("quantization"), dict) else {}
+        total, active = _parse_params(item.get("paramsString"))
+        weights, extra = _lmstudio_locate(item)
+        is_loaded: Optional[bool] = None
+        if loaded_keys is not None:
+            names = {str(item.get(k) or "").strip().lower() for k in ("modelKey", "path", "indexedModelIdentifier")}
+            names.discard("")
+            is_loaded = bool(names & loaded_keys)
+        blockers: List[str] = []
+        if is_loaded:
+            blockers.append(_BLOCKER_LOADED)
+        if weights is None:
+            blockers.append(_BLOCKER_UNKNOWN_LOCATION)
+        size = item.get("sizeBytes")
+        rows.append(
+            _installed_row(
+                "lmstudio",
+                artifact,
+                quant=quantization.get("name") or None,
+                size_bytes=size if isinstance(size, int) else None,
+                params_total=total,
+                location=_display(weights),
+                loaded=is_loaded,
+                blockers=blockers,
+                deletable=weights is not None,
+                size_source="engine",
+                params_active=active,
+                model_key=item.get("modelKey"),
+                lms_path=item.get("path"),
+                type=item.get("type"),
+                format=item.get("format"),
+                display_name=item.get("displayName"),
+                max_context=item.get("maxContextLength"),
+            )
+        )
+    return rows, None
+
+
+# --- huggingface cache (mlx + huggingface) ------------------------------------
+
+
+def _classify_hf_repo(repo_id: str, repo_path: Optional[Path]) -> str:
+    try:
+        from ..providers.mlx_model_rules import is_mlx_model
+
+        return "mlx" if is_mlx_model(repo_id, local_path=repo_path) else "huggingface"
+    except Exception:
+        return "mlx" if "mlx" in repo_id.lower() else "huggingface"
+
+
+_NAME_QUANT_RE = re.compile(r"(?:^|[-_.])(\d+bit|[34568]bit|fp8|bf16|fp16|mxfp4|q\d_k_[msl]|q\d_\d|q8_0)(?:$|[-_.])", re.IGNORECASE)
+
+
+def _hf_repos() -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    """`[{repo_id, repo_path, size_bytes, revisions, nb_files, cache_dir}]` for model repos."""
+
+    repos: List[Dict[str, Any]] = []
+    try:
+        from huggingface_hub import scan_cache_dir  # type: ignore
+    except Exception:
+        scan_cache_dir = None  # type: ignore[assignment]
+    error: Optional[str] = None
+    for cache_dir in _hf_cache_dirs():
+        if scan_cache_dir is not None:
+            try:
+                info = scan_cache_dir(cache_dir)
+            except Exception as exc:
+                error = f"scan_cache_dir({cache_dir}) failed: {exc}"
+                continue
+            for repo in info.repos:
+                if getattr(repo, "repo_type", "model") != "model":
+                    continue
+                repos.append(
+                    {
+                        "repo_id": repo.repo_id,
+                        "repo_path": Path(repo.repo_path),
+                        "size_bytes": int(repo.size_on_disk),
+                        "revisions": [rev.commit_hash for rev in repo.revisions],
+                        "nb_files": int(repo.nb_files),
+                        "cache_dir": Path(cache_dir),
+                    }
+                )
+            continue
+        # No huggingface_hub: the cache layout is simple enough to read.
+        try:
+            for folder in Path(cache_dir).glob("models--*"):
+                repo_id = folder.name[len("models--"):].replace("--", "/", 1)
+                size = sum(p.stat().st_size for p in (folder / "blobs").glob("*") if p.is_file())
+                revs = [p.name for p in (folder / "snapshots").glob("*") if p.is_dir()]
+                repos.append(
+                    {
+                        "repo_id": repo_id,
+                        "repo_path": folder,
+                        "size_bytes": size,
+                        "revisions": revs,
+                        "nb_files": None,
+                        "cache_dir": Path(cache_dir),
+                    }
+                )
+        except Exception as exc:
+            error = f"cache scan of {cache_dir} failed: {exc}"
+    return repos, error
+
+
+def _installed_hf(wanted: Iterable[str]) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    wanted_set = set(wanted)
+    repos, error = _hf_repos()
+    rows: List[Dict[str, Any]] = []
+    for repo in repos:
+        if not repo["revisions"]:
+            continue  # a resolved-but-empty entry holds no weights
+        provider = _classify_hf_repo(repo["repo_id"], repo["repo_path"])
+        if provider not in wanted_set:
+            continue
+        total, active = _parse_params(repo["repo_id"].rsplit("/", 1)[-1])
+        m = _NAME_QUANT_RE.search(repo["repo_id"].rsplit("/", 1)[-1])
+        interrupted, _bytes, _where = _hf_interrupted_downloads(repo["repo_id"])
+        rows.append(
+            _installed_row(
+                provider,
+                repo["repo_id"],
+                quant=m.group(1) if m else None,
+                size_bytes=repo["size_bytes"],
+                params_total=total,
+                location=_display(repo["repo_path"]),
+                loaded=None,
+                blockers=[],
+                size_source="engine",
+                params_active=active,
+                revisions=len(repo["revisions"]),
+                nb_files=repo["nb_files"],
+                incomplete_files=interrupted,
+            )
+        )
+    rows.sort(key=lambda r: (r["provider"], r["artifact"].lower()))
+    return rows, error
+
+
+def _annotate_catalog_ids(rows: List[Dict[str, Any]]) -> None:
+    try:
+        from .model_catalog import catalog_id_for
+    except Exception:
+        return
+    for row in rows:
+        try:
+            row["catalog_id"] = catalog_id_for(row["provider"], row["artifact"])
+        except Exception:
+            row["catalog_id"] = None
+
+
+def list_installed(
+    provider: Optional[str] = None,
+    *,
+    base_urls: Optional[Dict[str, str]] = None,
+    include_loaded: bool = True,
+) -> Dict[str, Any]:
+    """Contract D (`models_installed_v1`): every installed model, with sizes.
+
+    One row per artifact an engine holds on this machine: Ollama tags
+    (`/api/tags`: `size`, `details.parameter_size`, `details.quantization_level`),
+    LM Studio models (`lms ls --json`: `sizeBytes`, `paramsString`,
+    `quantization.name`), and the Hugging Face cache split into `mlx` and
+    `huggingface` rows by `mlx_model_rules.is_mlx_model`. An engine that cannot
+    be read lands in `errors`, never as an empty "nothing installed".
+    """
+
+    from ..utils.host_profile import utc_now_iso
+
+    urls = {k.lower(): v for k, v in (base_urls or {}).items()}
+    pid = _provider_id(provider) if provider else ""
+    wanted = [pid] if pid else list(INSTALLED_PROVIDERS)
+    rows: List[Dict[str, Any]] = []
+    errors: Dict[str, str] = {}
+    probed: List[str] = []
+
+    with presence_sweep():
+        for name in wanted:
+            if name not in INSTALLED_PROVIDERS:
+                if _is_relay(name):
+                    errors[name] = "remote engine: models are served remotely, nothing is installed here"
+                else:
+                    errors[name] = (
+                        f"no installed-model listing for {name!r}; supported: " + ", ".join(INSTALLED_PROVIDERS)
+                    )
+                continue
+            if name in {"mlx", "huggingface"}:
+                if "mlx" in probed or "huggingface" in probed:
+                    continue
+                hf_wanted = [n for n in wanted if n in {"mlx", "huggingface"}]
+                got, err = _installed_hf(hf_wanted)
+                probed.extend(hf_wanted)
+                if err:
+                    for n in hf_wanted:
+                        errors[n] = err
+            elif name == "ollama":
+                got, err = _installed_ollama(urls.get("ollama"), include_loaded)
+                probed.append(name)
+                if err:
+                    errors[name] = err
+            else:
+                got, err = _installed_lmstudio(include_loaded)
+                probed.append(name)
+                if err:
+                    errors[name] = err
+            rows.extend(got)
+
+    _annotate_catalog_ids(rows)
+    return {
+        "schema": MODELS_INSTALLED_SCHEMA,
+        "rows": rows,
+        "engines_probed": probed,
+        "errors": errors,
+        "totals": {
+            "count": len(rows),
+            "size_bytes": sum(r["size_bytes"] for r in rows if isinstance(r.get("size_bytes"), int)),
+        },
+        "generated_at": utc_now_iso(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# delete_artifact(): the one delete verb
+# ---------------------------------------------------------------------------
+
+
+def _find_installed_row(provider: str, artifact: str, base_url: Optional[str]) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    payload = list_installed(provider, base_urls={provider: base_url} if base_url else None)
+    rows = payload["rows"]
+    error = payload["errors"].get(provider)
+    if provider == "ollama":
+        hit = next((r for r in rows if _ollama_tag_match(r["artifact"], artifact)), None)
+    elif provider == "lmstudio":
+        hit = next((r for r in rows if _norm(r["artifact"]) == _norm(artifact)), None)
+        if hit is None:
+            listing, _ = _lms_listing()
+            for item in listing or []:
+                if _lmstudio_row_matches(item, artifact):
+                    hit = next((r for r in rows if r["artifact"] == _lmstudio_row_artifact(item)), None)
+                    break
+    else:
+        repo_id, _quant, _patterns = hf_artifact_parts(artifact)
+        hit = next((r for r in rows if _norm(r["artifact"]) == _norm(repo_id)), None)
+    return hit, error
+
+
+def delete_blockers(provider: Any, artifact: Any, *, base_url: Optional[str] = None) -> Dict[str, Any]:
+    """What would stop a delete: `{found, row, delete_blockers, error}`.
+
+    Surfaces call this BEFORE starting a delete job so a refusal is an
+    immediate answer (HTTP 409 / exit 2) naming the blockers, not a job that
+    fails a second later.
+    """
+
+    pid = _provider_id(provider)
+    ref = str(artifact or "").strip()
+    if _is_relay(pid):
+        return {"found": False, "row": None, "delete_blockers": [_BLOCKER_REMOTE], "error": f"{pid} serves models remotely"}
+    lookup = pid
+    if pid in _HF_BACKED:
+        lookup = "__hf__"
+    if lookup == "__hf__":
+        payload = list_installed(None)
+        repo_id, _q, _p = hf_artifact_parts(ref)
+        rows = [r for r in payload["rows"] if r["provider"] in {"mlx", "huggingface"}]
+        row = next((r for r in rows if _norm(r["artifact"]) == _norm(repo_id)), None)
+        error = payload["errors"].get("huggingface") or payload["errors"].get("mlx")
+        if row is not None and row["provider"] != pid and pid in {"mlx", "huggingface"}:
+            row = dict(row)
+            row["delete_blockers"] = list(row["delete_blockers"]) + [_BLOCKER_SHARED]
+        elif row is not None and pid not in {"mlx", "huggingface"}:
+            # mlx-gen / diffusers / mlx-vlm read the same cache.
+            row = dict(row)
+            row["delete_blockers"] = list(row["delete_blockers"]) + [f"shared_cache:{pid},{row['provider']}"]
+    elif pid in {"ollama", "lmstudio"}:
+        row, error = _find_installed_row(pid, ref, base_url)
+    else:
+        return {"found": False, "row": None, "delete_blockers": [], "error": f"no delete verb for provider {pid!r}"}
+    return {
+        "found": row is not None,
+        "row": row,
+        "delete_blockers": list((row or {}).get("delete_blockers") or []),
+        "error": error,
+    }
+
+
+def _safe_remove(path: Path, roots: Iterable[Path]) -> Tuple[bool, str]:
+    """Remove a file or directory ONLY when it sits strictly inside a known root."""
+
+    target = Path(path)
+    try:
+        resolved = target.resolve()
+    except Exception as exc:
+        return False, f"cannot resolve {target}: {exc}"
+    inside = False
+    for root in roots:
+        try:
+            root_resolved = Path(root).resolve()
+        except Exception:
+            continue
+        if resolved != root_resolved and root_resolved in resolved.parents:
+            inside = True
+            break
+    if not inside:
+        return False, f"refusing to delete {target}: not inside a known model store"
+    try:
+        if target.is_symlink() or target.is_file():
+            target.unlink()
+        elif target.is_dir():
+            shutil.rmtree(target)
+        else:
+            return False, f"{target} does not exist"
+    except Exception as exc:
+        return False, f"could not delete {target}: {exc}"
+    return True, ""
+
+
+def _http_request(url: str, method: str, body: Dict[str, Any], timeout: float = 30.0) -> Tuple[Optional[int], str]:
+    data = json.dumps(body).encode("utf-8")
+    request = urllib.request.Request(url, data=data, method=method, headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:  # noqa: S310 - local engine daemon
+            return int(response.status), response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        try:
+            text = exc.read().decode("utf-8", errors="replace")
+        except Exception:
+            text = ""
+        return int(exc.code), text
+    except Exception as exc:
+        return None, str(exc)
+
+
+def delete_artifact(
+    provider: Any,
+    artifact: Any,
+    *,
+    dry_run: bool = False,
+    force: bool = False,
+    base_url: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Delete one installed artifact with the engine's own mechanism.
+
+      ollama       `DELETE /api/delete` (a loaded model is unloaded first with --force)
+      lmstudio     `lms unload` when loaded (--force), then remove the model's
+                   files under the LM Studio models root (+ its hub manifest)
+      mlx / huggingface   `scan_cache_dir().delete_revisions(...).execute()`
+
+    REFUSES (status `refused`, `delete_blockers` named) when the model is
+    loaded, lives on a remote engine, or sits in the shared Hugging Face cache
+    under another engine's classification -- unless `force`. Never removes a
+    path outside a known model store. `dry_run` reports what would go.
+    """
+
+    pid = _provider_id(provider)
+    ref = str(artifact or "").strip()
+    out: Dict[str, Any] = {
+        "provider": pid,
+        "artifact": ref,
+        "ok": False,
+        "status": "failed",
+        "message": "",
+        "freed_bytes": None,
+        "paths": [],
+        "command": [],
+        "delete_blockers": [],
+        "forced": bool(force),
+        "dry_run": bool(dry_run),
+    }
+    if not pid or not ref:
+        out["message"] = "a provider and an artifact are required"
+        return out
+    if _is_relay(pid):
+        out.update(status="not_applicable", message=f"{pid} serves models remotely; there is nothing to delete here")
+        return out
+
+    check = delete_blockers(pid, ref, base_url=base_url)
+    row = check.get("row")
+    if row is None:
+        detail = check.get("error")
+        out.update(
+            status="not_found",
+            message=f"{ref} is not installed for {pid}" + (f" ({detail})" if detail else ""),
+        )
+        return out
+    blockers = list(check.get("delete_blockers") or [])
+    out["delete_blockers"] = blockers
+    out["freed_bytes"] = row.get("size_bytes")
+    out["location"] = row.get("location")
+    hard = [b for b in blockers if b in {_BLOCKER_UNKNOWN_LOCATION, _BLOCKER_NOT_RUNNING}]
+    if hard:
+        out.update(status="refused", message=f"cannot delete {ref}: " + ", ".join(hard))
+        return out
+    if blockers and not force:
+        out.update(
+            status="refused",
+            message=f"refusing to delete {ref}: " + ", ".join(blockers) + " (pass force to override)",
+        )
+        return out
+
+    if pid == "ollama":
+        return _delete_ollama(row, out, base_url, dry_run)
+    if pid == "lmstudio":
+        return _delete_lmstudio(row, out, dry_run)
+    return _delete_hf(row, out, dry_run)
+
+
+def _delete_ollama(row: Dict[str, Any], out: Dict[str, Any], base_url: Optional[str], dry_run: bool) -> Dict[str, Any]:
+    host = _ollama_base_url(base_url)
+    name = row["artifact"]
+    out["command"] = ["DELETE", f"{host}/api/delete", name]
+    out["paths"] = [row.get("location")] if row.get("location") else []
+    if dry_run:
+        out.update(ok=True, status="planned", message=f"would delete {name} from Ollama at {host}")
+        return out
+    if row.get("loaded"):
+        # Unload first: `keep_alive: 0` is Ollama's documented unload.
+        _http_request(f"{host}/api/generate", "POST", {"model": name, "keep_alive": 0})
+    code, text = _http_request(f"{host}/api/delete", "DELETE", {"model": name, "name": name})
+    if code == 200:
+        out.update(ok=True, status="deleted", message=f"deleted {name} from Ollama")
+    elif code == 404:
+        out.update(status="not_found", message=f"Ollama has no model {name}: {text.strip()[:200]}")
+    else:
+        out.update(status="failed", message=f"Ollama DELETE /api/delete returned {code}: {text.strip()[:300]}")
+    return out
+
+
+def _delete_lmstudio(row: Dict[str, Any], out: Dict[str, Any], dry_run: bool) -> Dict[str, Any]:
+    listing, _error = _lms_listing()
+    item = next((i for i in listing or [] if _lmstudio_row_artifact(i) == row["artifact"]), None)
+    if item is None:
+        out.update(status="not_found", message=f"{row['artifact']} is no longer listed by `lms ls`")
+        return out
+    weights, extra = _lmstudio_locate(item)
+    if weights is None:
+        out.update(status="refused", message=f"cannot locate the files of {row['artifact']} under {_lmstudio_models_root()}")
+        return out
+    paths = [weights] + list(extra)
+    out["paths"] = [str(p) for p in paths]
+    cli = _lms_cli() or "lms"
+    model_key = str(item.get("modelKey") or row["artifact"])
+    commands: List[List[str]] = []
+    if row.get("loaded"):
+        commands.append([cli, "unload", model_key])
+    out["command"] = [c for cmd in commands for c in cmd] or ["rm", "-r", str(weights)]
+    if dry_run:
+        out.update(ok=True, status="planned", message=f"would remove {', '.join(out['paths'])}")
+        return out
+    for cmd in commands:
+        try:
+            subprocess.run(cmd, capture_output=True, text=True, timeout=60)  # noqa: S603 - fixed argv
+        except Exception as exc:
+            out.update(status="failed", message=f"`{' '.join(cmd)}` failed: {exc}")
+            return out
+    roots = [_lmstudio_models_root(), _lmstudio_hub_root()]
+    removed: List[str] = []
+    for path in paths:
+        ok, why = _safe_remove(path, roots)
+        if not ok:
+            out.update(status="failed", message=why, paths=removed or out["paths"])
+            return out
+        removed.append(str(path))
+        # A single-quant file removed from a multi-file repo dir: drop the dir
+        # only when nothing but OS litter is left.
+        parent = path.parent
+        try:
+            leftovers = [p for p in parent.iterdir() if p.name not in {".DS_Store"}]
+            if path.suffix == ".gguf" and not leftovers:
+                _safe_remove(parent, [_lmstudio_models_root()])
+        except Exception:
+            pass
+    out.update(ok=True, status="deleted", message=f"removed {row['artifact']} ({len(removed)} path(s))")
+    return out
+
+
+def _delete_hf(row: Dict[str, Any], out: Dict[str, Any], dry_run: bool) -> Dict[str, Any]:
+    repo_id = row["artifact"]
+    repos, _error = _hf_repos()
+    repo = next((r for r in repos if _norm(r["repo_id"]) == _norm(repo_id)), None)
+    if repo is None:
+        out.update(status="not_found", message=f"{repo_id} is not in the Hugging Face cache")
+        return out
+    out["paths"] = [str(repo["repo_path"])]
+    out["command"] = ["huggingface_hub.scan_cache_dir().delete_revisions", *repo["revisions"]]
+    try:
+        from huggingface_hub import scan_cache_dir  # type: ignore
+    except Exception:
+        scan_cache_dir = None  # type: ignore[assignment]
+    if scan_cache_dir is not None:
+        try:
+            info = scan_cache_dir(repo["cache_dir"])
+            strategy = info.delete_revisions(*repo["revisions"])
+            out["freed_bytes"] = int(getattr(strategy, "expected_freed_size", 0) or 0) or out.get("freed_bytes")
+        except Exception as exc:
+            out.update(status="failed", message=f"cannot plan the cache delete: {exc}")
+            return out
+        if dry_run:
+            out.update(ok=True, status="planned", message=f"would delete {repo_id} from {repo['cache_dir']}")
+            return out
+        try:
+            strategy.execute()
+        except Exception as exc:
+            out.update(status="failed", message=f"cache delete failed: {exc}")
+            return out
+        # The strategy deletes revisions; a repo whose revisions are all gone
+        # can keep `.incomplete` blobs -- remove the folder when that is all.
+        if Path(repo["repo_path"]).exists():
+            _safe_remove(Path(repo["repo_path"]), [repo["cache_dir"]])
+        out.update(ok=True, status="deleted", message=f"deleted {repo_id} from the Hugging Face cache")
+        return out
+    out["command"] = ["rm", "-r", str(repo["repo_path"])]
+    if dry_run:
+        out.update(ok=True, status="planned", message=f"would delete {repo['repo_path']}")
+        return out
+    ok, why = _safe_remove(Path(repo["repo_path"]), [repo["cache_dir"]])
+    out.update(ok=ok, status="deleted" if ok else "failed", message=why or f"deleted {repo_id}")
+    return out

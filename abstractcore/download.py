@@ -22,6 +22,7 @@ class DownloadStatus(Enum):
     VERIFYING = "verifying"
     COMPLETE = "complete"
     ERROR = "error"
+    CANCELLED = "cancelled"
 
 
 @dataclass
