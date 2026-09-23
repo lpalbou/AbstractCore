@@ -20,12 +20,20 @@ pub enum FieldKind {
     OptStr,
     Bool,
     /// Integer with an enforced range (inclusive).
-    Int { min: i64, max: i64 },
+    Int {
+        min: i64,
+        max: i64,
+    },
     /// Nullable integer with an enforced range.
-    OptInt { min: i64, max: i64 },
+    OptInt {
+        min: i64,
+        max: i64,
+    },
     /// Float with an enforced minimum (timeouts: 0 = unlimited,
     /// negatives rejected — manager.py:1738-1764).
-    Float { min: f64 },
+    Float {
+        min: f64,
+    },
     /// Float with no Python-side validation (don't invent ranges).
     FloatFree,
     /// Closed value set (canonical spellings).
@@ -45,7 +53,7 @@ pub enum FieldKind {
     Path,
     OptPath,
     /// Plaintext secret at rest — NEVER rendered; folded to
-    /// set/not-set + sha256[:8] fingerprint at parse time.
+    /// set/not-set + `sha256[:8]` fingerprint at parse time.
     Secret,
     /// An environment variable NAME (email password fields hold the
     /// var name, not the secret — manager.py:165-187).
@@ -259,7 +267,11 @@ const VIDEO_FIELDS: &[FieldSpec] = &[
         },
         Dv::I(8),
     ),
-    f("frame_format", FieldKind::Enum(&["jpg", "png"]), Dv::S("jpg")),
+    f(
+        "frame_format",
+        FieldKind::Enum(&["jpg", "png"]),
+        Dv::S("jpg"),
+    ),
     f(
         "sampling_strategy",
         FieldKind::Enum(&["uniform", "keyframes"]),
@@ -301,9 +313,17 @@ const DEFAULT_QWEN: Dv = Dv::S("unsloth/Qwen3-4B-Instruct-2507-GGUF");
 const APP_DEFAULTS_FIELDS: &[FieldSpec] = &[
     f("cli_provider", FieldKind::OptStr, Dv::S("huggingface")),
     f("cli_model", FieldKind::OptStr, DEFAULT_QWEN),
-    f("summarizer_provider", FieldKind::OptStr, Dv::S("huggingface")),
+    f(
+        "summarizer_provider",
+        FieldKind::OptStr,
+        Dv::S("huggingface"),
+    ),
     f("summarizer_model", FieldKind::OptStr, DEFAULT_QWEN),
-    f("extractor_provider", FieldKind::OptStr, Dv::S("huggingface")),
+    f(
+        "extractor_provider",
+        FieldKind::OptStr,
+        Dv::S("huggingface"),
+    ),
     f("extractor_model", FieldKind::OptStr, DEFAULT_QWEN),
     f("judge_provider", FieldKind::OptStr, Dv::S("huggingface")),
     f("judge_model", FieldKind::OptStr, DEFAULT_QWEN),
@@ -381,14 +401,7 @@ const SERVER_FIELDS: &[FieldSpec] = &[
         Dv::Null,
         "env HOST overrides config for server settings",
     ),
-    f(
-        "port",
-        FieldKind::OptInt {
-            min: 1,
-            max: 65535,
-        },
-        Dv::Null,
-    ),
+    f("port", FieldKind::OptInt { min: 1, max: 65535 }, Dv::Null),
 ];
 
 const CACHE_FIELDS: &[FieldSpec] = &[
@@ -481,10 +494,7 @@ const EMAIL_FIELDS: &[FieldSpec] = &[
     f("smtp_host", FieldKind::Str, Dv::S("")),
     f(
         "smtp_port",
-        FieldKind::Int {
-            min: 1,
-            max: 65535,
-        },
+        FieldKind::Int { min: 1, max: 65535 },
         Dv::I(587),
     ),
     f("smtp_username", FieldKind::Str, Dv::S("")),
@@ -500,10 +510,7 @@ const EMAIL_FIELDS: &[FieldSpec] = &[
     f("imap_host", FieldKind::Str, Dv::S("")),
     f(
         "imap_port",
-        FieldKind::Int {
-            min: 1,
-            max: 65535,
-        },
+        FieldKind::Int { min: 1, max: 65535 },
         Dv::I(993),
     ),
     f("imap_username", FieldKind::Str, Dv::S("")),
@@ -770,7 +777,10 @@ mod tests {
         assert!(validate(&port, &json!(null)).is_ok());
         assert!(validate(&port, &json!(8000)).is_ok());
         assert!(validate(&port, &json!(0)).is_err());
-        assert!(validate(&port, &json!("8000")).is_err(), "strings are not ints");
+        assert!(
+            validate(&port, &json!("8000")).is_err(),
+            "strings are not ints"
+        );
         // Float-typed integers are the same value to Python's untyped
         // load (review P3-3 — validate now agrees with Dv::matches).
         assert!(validate(&port, &json!(8000.0)).is_ok());

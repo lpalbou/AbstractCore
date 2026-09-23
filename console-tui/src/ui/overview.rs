@@ -40,7 +40,7 @@ pub fn view(_cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::Th
                     None => {
                         spans.push(span_bold("not found", t.warn));
                         spans.push(span(
-                            "  — file mirror works; derived views and writes need it ($ABSTRACTCORE_BIN)",
+                            "  — file mirror works; derived views and writes need it ($ABSTRACTCORE_CLI)",
                             t.text_muted,
                         ));
                     }

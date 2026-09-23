@@ -1,0 +1,265 @@
+{
+ "schema": "model_catalog_v1",
+ "host_profile": {
+  "schema": "host_profile_v1",
+  "os": "darwin",
+  "arch": "arm64",
+  "accelerator": "metal",
+  "gpu_name": "Apple M5 Max",
+  "unified_memory": true,
+  "ram_bytes": 137438953472,
+  "vram_bytes": null,
+  "ceiling_bytes": 103079215104,
+  "ceiling_source": "metal_wired_limit",
+  "free_now_bytes": 61000000000,
+  "disk": {
+   "hf_cache": {
+    "path": "~/.cache/huggingface/hub",
+    "free_bytes": 500000000000
+   },
+   "lmstudio": {
+    "path": "~/.lmstudio/models",
+    "free_bytes": 500000000000
+   },
+   "ollama": {
+    "path": "~/.ollama/models",
+    "free_bytes": 500000000000
+   }
+  },
+  "python": "3.12.13",
+  "generated_at": "2026-09-23T10:00:00Z"
+ },
+ "generated_at": "2026-09-23T10:00:00Z",
+ "rows": [
+  {
+   "id": "qwen3-8b",
+   "family": "qwen3",
+   "display_name": "Qwen3 8B",
+   "vendor": "Qwen",
+   "params_total": 8200000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities": {
+    "text": true,
+    "vision": false,
+    "audio": false,
+    "tools": "native",
+    "thinking": true,
+    "max_tokens": 32768,
+    "embedding": false
+   },
+   "source": "curated",
+   "tags": [
+    "chat",
+    "coding"
+   ],
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "qwen3:8b",
+     "quant": "q4_k_m",
+     "bits": 4.85,
+     "download_bytes": 5200000000,
+     "size_source": "catalog",
+     "presence": {
+      "status": "absent",
+      "location": null,
+      "evidence": "fixture"
+     },
+     "fit": {
+      "verdict": "fits",
+      "need_bytes": 6100000000,
+      "ceiling_bytes": 103079215104,
+      "free_now_bytes": 61000000000,
+      "fits_now": true,
+      "disk_ok": true,
+      "max_context": 32768,
+      "confidence": "estimated",
+      "notes": []
+     },
+     "downloadable": true,
+     "recommended": true
+    },
+    {
+     "provider": "lmstudio",
+     "artifact": "qwen/qwen3-8b@4bit",
+     "quant": "4bit",
+     "bits": 4.85,
+     "download_bytes": 4600000000,
+     "size_source": "catalog",
+     "presence": {
+      "status": "installed",
+      "location": "~/.lmstudio/models/qwen/qwen3-8b",
+      "evidence": "fixture"
+     },
+     "fit": {
+      "verdict": "fits",
+      "need_bytes": 5500000000,
+      "ceiling_bytes": 103079215104,
+      "free_now_bytes": 61000000000,
+      "fits_now": true,
+      "disk_ok": true,
+      "max_context": 32768,
+      "confidence": "estimated",
+      "notes": []
+     },
+     "downloadable": true,
+     "recommended": false
+    }
+   ]
+  },
+  {
+   "id": "gemma-3-27b",
+   "family": "gemma3",
+   "display_name": "Gemma 3 27B",
+   "vendor": "Google",
+   "params_total": 27000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities": {
+    "text": true,
+    "vision": false,
+    "audio": false,
+    "tools": "native",
+    "thinking": true,
+    "max_tokens": 32768,
+    "embedding": false
+   },
+   "source": "curated",
+   "tags": [
+    "chat",
+    "vision"
+   ],
+   "artifacts": [
+    {
+     "provider": "ollama",
+     "artifact": "gemma3:27b",
+     "quant": "q4_k_m",
+     "bits": 4.85,
+     "download_bytes": 17000000000,
+     "size_source": "catalog",
+     "presence": {
+      "status": "absent",
+      "location": null,
+      "evidence": "fixture"
+     },
+     "fit": {
+      "verdict": "tight",
+      "need_bytes": 90000000000,
+      "ceiling_bytes": 103079215104,
+      "free_now_bytes": 61000000000,
+      "fits_now": false,
+      "disk_ok": true,
+      "max_context": 32768,
+      "confidence": "estimated",
+      "notes": [
+       "leaves little room for context"
+      ]
+     },
+     "downloadable": true,
+     "recommended": false
+    }
+   ]
+  },
+  {
+   "id": "deepseek-r1-671b",
+   "family": "deepseek",
+   "display_name": "DeepSeek R1 671B",
+   "vendor": "DeepSeek",
+   "params_total": 671000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities": {
+    "text": true,
+    "vision": false,
+    "audio": false,
+    "tools": "native",
+    "thinking": true,
+    "max_tokens": 32768,
+    "embedding": false
+   },
+   "source": "curated",
+   "tags": [
+    "reasoning"
+   ],
+   "artifacts": [
+    {
+     "provider": "huggingface",
+     "artifact": "deepseek-ai/DeepSeek-R1",
+     "quant": "fp8",
+     "bits": 4.85,
+     "download_bytes": 700000000000,
+     "size_source": "catalog",
+     "presence": {
+      "status": "absent",
+      "location": null,
+      "evidence": "fixture"
+     },
+     "fit": {
+      "verdict": "too_large",
+      "need_bytes": 720000000000,
+      "ceiling_bytes": 103079215104,
+      "free_now_bytes": 61000000000,
+      "fits_now": false,
+      "disk_ok": false,
+      "max_context": 32768,
+      "confidence": "estimated",
+      "notes": []
+     },
+     "downloadable": true,
+     "recommended": false
+    }
+   ]
+  },
+  {
+   "id": "gpt-oss-20b",
+   "family": "gpt-oss",
+   "display_name": "GPT-OSS 20B",
+   "vendor": "OpenAI",
+   "params_total": 21000000000,
+   "params_active": null,
+   "license": "apache-2.0",
+   "capabilities": {
+    "text": true,
+    "vision": false,
+    "audio": false,
+    "tools": "native",
+    "thinking": true,
+    "max_tokens": 32768,
+    "embedding": false
+   },
+   "source": "curated",
+   "tags": [
+    "chat"
+   ],
+   "artifacts": [
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/gpt-oss-20b-4bit",
+     "quant": "4bit",
+     "bits": 4.85,
+     "download_bytes": 11000000000,
+     "size_source": "catalog",
+     "presence": {
+      "status": "installed",
+      "location": null,
+      "evidence": "fixture"
+     },
+     "fit": {
+      "verdict": "fits",
+      "need_bytes": 13000000000,
+      "ceiling_bytes": 103079215104,
+      "free_now_bytes": 61000000000,
+      "fits_now": true,
+      "disk_ok": true,
+      "max_context": 32768,
+      "confidence": "estimated",
+      "notes": []
+     },
+     "downloadable": true,
+     "recommended": false
+    }
+   ]
+  }
+ ]
+}

@@ -107,7 +107,9 @@ pub fn next(ctx: &Ctx) {
 pub fn back(ctx: &Ctx) {
     let i = ctx.ui.step.get_untracked();
     if i == 0 {
-        ctx.store.notice.set(Some("already on the first step".into()));
+        ctx.store
+            .notice
+            .set(Some("already on the first step".into()));
         return;
     }
     apply_step(ctx, i - 1);
@@ -118,6 +120,6 @@ pub fn finish(ctx: &Ctx) {
     ctx.ui.wizard.set(false);
     ctx.ui.focus_section.set(None);
     ctx.store.notice.set(Some(
-        "browse mode — 1-8 jump screens, Enter edits, q quits".into(),
+        "browse mode — 1-9,0 jump screens, Enter edits, q quits".into(),
     ));
 }

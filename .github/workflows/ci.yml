@@ -64,3 +64,45 @@ jobs:
           python -m pip install -e ".[docs]"
       - name: MkDocs build
         run: mkdocs build -q
+
+  # The terminal console crate (`abstractcore-console`, console-tui/): the
+  # gates its crates.io release runs, on every push/PR.
+  console-tui:
+    name: console-tui crate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: console-tui
+      - name: Format
+        working-directory: console-tui
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: console-tui
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test
+        working-directory: console-tui
+        run: cargo test --locked
+      - name: Package
+        working-directory: console-tui
+        run: cargo package --locked
+
+  console-tui-msrv:
+    name: console-tui MSRV (1.87)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Keep in step with `rust-version` in console-tui/Cargo.toml (the
+      # floor abstracttui 0.3.6 declares).
+      - uses: dtolnay/rust-toolchain@1.87
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: console-tui
+          key: msrv
+      - name: Build
+        working-directory: console-tui
+        run: cargo build --locked --all-targets

@@ -1,0 +1,28 @@
+{
+ "schema": "host_job_v1",
+ "job_id": "dl_7f3a",
+ "kind": "download",
+ "status": "running",
+ "provider": "ollama",
+ "artifact": "qwen3:8b",
+ "engine": null,
+ "percent": 42.0,
+ "downloaded_bytes": 2184000000,
+ "total_bytes": 5200000000,
+ "message": "pulling 3f2b\u2026",
+ "log_tail": [
+  "pulling manifest",
+  "pulling 3f2b\u2026"
+ ],
+ "command": [
+  "ollama",
+  "pull",
+  "qwen3:8b"
+ ],
+ "dry_run": false,
+ "started_at": "2026-09-23T10:00:00Z",
+ "finished_at": null,
+ "error": null,
+ "joined": 0,
+ "cli_equivalent": "abstractcore models download ollama qwen3:8b"
+}

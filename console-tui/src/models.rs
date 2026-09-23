@@ -106,7 +106,7 @@ mod tests {
             "huihui-ai_-_llama-3.2-3b-instruct-abliterated",
             "unsloth/Qwen3-4B-Instruct-2507-GGUF",
             "llava-v1.6-mistral-7b", // vision — still generative-class
-            "whisper-large-v3",     // audio — still generative-class
+            "whisper-large-v3",      // audio — still generative-class
         ] {
             assert!(!is_embedding_shaped(generative), "{generative}");
         }

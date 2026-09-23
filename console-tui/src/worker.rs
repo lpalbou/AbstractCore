@@ -155,7 +155,9 @@ fn handle(
                 "loading routes (config defaults --json)",
                 &["config", "defaults", "--json"],
                 |store, outcome| match outcome {
-                    Ok(v) => store.routes.set(Loadable::Ready(RoutesData::from_value(&v))),
+                    Ok(v) => store
+                        .routes
+                        .set(Loadable::Ready(RoutesData::from_value(&v))),
                     Err(e) => store.routes.set(Loadable::Failed(e)),
                 },
             );
@@ -280,7 +282,14 @@ fn handle_download(
                 .and_then(|s| s.as_str())
                 .unwrap_or_default();
             (
-                format!("{provider} {artifact}: {status}{}", if message.is_empty() { String::new() } else { format!(" — {message}") }),
+                format!(
+                    "{provider} {artifact}: {status}{}",
+                    if message.is_empty() {
+                        String::new()
+                    } else {
+                        format!(" — {message}")
+                    }
+                ),
                 Ok(status.to_string()),
             )
         }
@@ -321,7 +330,10 @@ fn handle_probe(
     let (verdict, detail) = match (&spec.kind, cli) {
         (_, None) => (Verdict::Failed, no_cli_error().to_string()),
         (ProbeKind::ListModels { target, reach }, Some(cli)) => {
-            match cli.run_json(&["config", "test-provider", target, "--json"], MODELS_TIMEOUT) {
+            match cli.run_json(
+                &["config", "test-provider", target, "--json"],
+                MODELS_TIMEOUT,
+            ) {
                 Err(e) => (Verdict::Failed, e.to_string()),
                 Ok(out) => {
                     // TCP evidence only on the ambiguous branch.
@@ -344,8 +356,10 @@ fn handle_probe(
                         && reach.is_none()
                         && crate::probes::KEYED_CLOUD_PROVIDERS.contains(&target.as_str())
                     {
-                        d.push_str("; for this keyed cloud provider it is also the answer when \
-                                    no API key resolves (config or env)");
+                        d.push_str(
+                            "; for this keyed cloud provider it is also the answer when \
+                                    no API key resolves (config or env)",
+                        );
                     }
                     (v, d)
                 }
@@ -419,11 +433,9 @@ fn handle_probe(
         // No cap here: the notice line fits itself to the terminal
         // (ui::mod's `ellipsize(&n, viewport.w - 6)`), so a second blind
         // 90-char cut only hid evidence a wide terminal had room for.
-        store.notice.set(Some(format!(
-            "{} {}: {detail}",
-            verdict.glyph(),
-            label,
-        )));
+        store
+            .notice
+            .set(Some(format!("{} {}: {detail}", verdict.glyph(), label,)));
     });
 }
 
@@ -618,7 +630,7 @@ fn probe_addr_list(addrs: &[std::net::SocketAddr], timeout: Duration) -> crate::
 fn no_cli_error() -> CliError {
     CliError::core(
         CliErrorKind::NotFound,
-        "no $ABSTRACTCORE_BIN, nothing on PATH, no venv fallback".into(),
+        "no $ABSTRACTCORE_CLI, nothing on PATH, ~/.local/bin or ./.venv".into(),
     )
 }
 
@@ -771,7 +783,9 @@ pub(crate) fn eval_derived_expect(
         } => {
             let row = routes
                 .and_then(|d| d.rows.iter().find(|r| &r.key == key))
-                .ok_or_else(|| format!("route {key} not found in the fresh view (CLI reload failed?)"))?;
+                .ok_or_else(|| {
+                    format!("route {key} not found in the fresh view (CLI reload failed?)")
+                })?;
             // A partial update verifies EXACTLY what it named. A field
             // the write left to the store is not evidence either way,
             // and an emptied field ("" was sent) must read as absent.
@@ -839,7 +853,7 @@ fn execute_write(
     let has_cli_verb = spec.verbs.iter().any(|v| matches!(v, WriteVerb::Cli(_)));
     if has_cli_verb && cli.is_none() {
         return Err(
-            "abstractcore CLI not found — this write needs it ($ABSTRACTCORE_BIN); \
+            "abstractcore CLI not found — this write needs it ($ABSTRACTCORE_CLI); \
              nothing was changed"
                 .into(),
         );
@@ -881,8 +895,7 @@ fn execute_write(
         FileState::Missing => {
             if spec.base_stamp.is_some() {
                 return Err(
-                    "the config file DISAPPEARED since you loaded it — press r to reload"
-                        .into(),
+                    "the config file DISAPPEARED since you loaded it — press r to reload".into(),
                 );
             }
         }
@@ -939,7 +952,8 @@ fn rmw_write(config_path: &ConfigPath, op: &crate::writes::RmwOp) -> Result<(), 
     op.apply(&mut raw)?;
 
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("cannot create {}: {e}", parent.display()))?;
     }
     let mut bytes = serde_json::to_vec_pretty(&raw).map_err(|e| e.to_string())?;
     bytes.push(b'\n'); // Python writes a trailing newline
@@ -1059,11 +1073,7 @@ mod tests {
             }
         }
         fn write(&self, v: &serde_json::Value) {
-            std::fs::write(
-                self.cfg_path().path,
-                serde_json::to_vec_pretty(v).unwrap(),
-            )
-            .unwrap();
+            std::fs::write(self.cfg_path().path, serde_json::to_vec_pretty(v).unwrap()).unwrap();
         }
         fn read(&self) -> serde_json::Value {
             serde_json::from_slice(&std::fs::read(self.cfg_path().path).unwrap()).unwrap()
@@ -1091,7 +1101,11 @@ mod tests {
         }
     }
 
-    fn spec_rmw(op: RmwOp, expects: Vec<Expect>, base: Option<crate::config::FileStamp>) -> WriteSpec {
+    fn spec_rmw(
+        op: RmwOp,
+        expects: Vec<Expect>,
+        base: Option<crate::config::FileStamp>,
+    ) -> WriteSpec {
         WriteSpec {
             label: "test rmw".into(),
             verbs: vec![WriteVerb::Rmw(op)],
@@ -1124,8 +1138,16 @@ mod tests {
         let proofs = execute_write(&s.cfg_path(), None, &spec).expect("write ok");
         assert!(proofs[0].contains("verbatim_enabled = false"), "{proofs:?}");
         let after = s.read();
-        assert_eq!(after["future_section"]["keep"], json!(1), "unknown section kept");
-        assert_eq!(after["logging"]["unknown_knob"], json!("x"), "unknown key kept");
+        assert_eq!(
+            after["future_section"]["keep"],
+            json!(1),
+            "unknown section kept"
+        );
+        assert_eq!(
+            after["logging"]["unknown_knob"],
+            json!("x"),
+            "unknown key kept"
+        );
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -1192,7 +1214,10 @@ mod tests {
         // incident. Refused.
         let cli_spec = WriteSpec {
             label: "cli write".into(),
-            verbs: vec![WriteVerb::Cli(vec![Arg::p("--set-video-strategy"), Arg::p("auto")])],
+            verbs: vec![WriteVerb::Cli(vec![
+                Arg::p("--set-video-strategy"),
+                Arg::p("auto"),
+            ])],
             expects: vec![],
             base_stamp: base,
             form_id: None,
@@ -1238,7 +1263,10 @@ mod tests {
         ));
         let spec = WriteSpec {
             label: "set video.max_frames = 9".into(),
-            verbs: vec![WriteVerb::Cli(vec![Arg::p("--set-video-max-frames"), Arg::p("9")])],
+            verbs: vec![WriteVerb::Cli(vec![
+                Arg::p("--set-video-max-frames"),
+                Arg::p("9"),
+            ])],
             expects: vec![Expect::Eq {
                 path: vec!["video".into(), "max_frames".into()],
                 value: json!(9),
@@ -1329,7 +1357,10 @@ mod tests {
         let spec = crate::writes::remove_vision_fallback(1, 2, s.stamp(), None);
         execute_write(&cfg, None, &spec).expect("remove verifies");
         let after = s.read();
-        assert_eq!(after["vision"]["fallback_chain"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            after["vision"]["fallback_chain"].as_array().unwrap().len(),
+            1
+        );
 
         // Vacuous-pass guard: expecting slot 0 cleared while it still
         // exists must error.
@@ -1484,7 +1515,8 @@ mod tests {
             model: None,
             reasoning: Some(want.into()),
         };
-        let ok = eval_derived_expect(&only_reasoning("high"), Some(&routes_reasoned), None).unwrap();
+        let ok =
+            eval_derived_expect(&only_reasoning("high"), Some(&routes_reasoned), None).unwrap();
         assert!(ok.contains("reasoning high"), "{ok}");
         assert!(
             eval_derived_expect(&only_reasoning("low"), Some(&routes_reasoned), None).is_err(),
@@ -1608,7 +1640,10 @@ mod tests {
         let honest = s.fake_chat("echo \"PONG from $2/$4\"");
         let (v, d) = probe_generation(&s.cfg_path(), &honest, None, None);
         assert_eq!(v, crate::probes::Verdict::Proven, "{d}");
-        assert!(d.starts_with("lmstudio/m1 — "), "label carries the route: {d}");
+        assert!(
+            d.starts_with("lmstudio/m1 — "),
+            "label carries the route: {d}"
+        );
         assert!(d.contains("PONG from lmstudio/m1"), "{d}");
 
         // Explicit pair overrides the file.

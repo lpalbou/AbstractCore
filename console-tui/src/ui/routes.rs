@@ -12,9 +12,7 @@ use crate::store::{Loadable, RouteRow, RoutesData};
 use crate::worker::{next_form_id, Cmd};
 use crate::writes;
 
-use super::forms::{
-    confirm_danger, install_write_done, message_slot, open_form_guarded,
-};
+use super::forms::{confirm_danger, install_write_done, message_slot, open_form_guarded};
 use super::util::{field, line, loadable_view, or_dash, span, span_bold};
 use super::widths;
 use super::Ctx;
@@ -40,7 +38,11 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
                     vec![span_bold(" read-only (config file refused?)", t.warn)]
                 };
                 spans.push(span(
-                    format!("  ·  {} of {} configured", d.configured_count(), d.rows.len()),
+                    format!(
+                        "  ·  {} of {} configured",
+                        d.configured_count(),
+                        d.rows.len()
+                    ),
                     t.text,
                 ));
                 // The other half of the weights banner below: that line
@@ -111,8 +113,10 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
                 } else {
                     format!("  ·  {routes}")
                 };
-                let mut spans =
-                    vec![span_bold(head.clone(), t.warn), span(routes.clone(), t.text)];
+                let mut spans = vec![
+                    span_bold(head.clone(), t.warn),
+                    span(routes.clone(), t.text),
+                ];
                 const LABEL: &str = "  ·  recommended: ";
                 const VERB: &str = "  ·  w downloads the selected route's weights";
                 let list = a
@@ -160,9 +164,10 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
     // fields that don't earn a column but answer "why is this row odd".
     let detail = dyn_view(LayoutStyle::line(1).shrink(0.0), move || {
         let t = theme.get().tokens;
-        let row: Option<RouteRow> = store
-            .routes
-            .with(|d| d.ready().and_then(|d| d.rows.get(ui.route_sel.get()).cloned()));
+        let row: Option<RouteRow> = store.routes.with(|d| {
+            d.ready()
+                .and_then(|d| d.rows.get(ui.route_sel.get()).cloned())
+        });
         match row {
             Some(r) => {
                 // The FULL key leads, always: the route column now shows a
@@ -182,7 +187,10 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
                     ));
                     if r.covered_by_tasks {
                         spans.push(span(
-                            format!("· all {} task rows below are set, so nothing reads it  ", r.task_keys.len()),
+                            format!(
+                                "· all {} task rows below are set, so nothing reads it  ",
+                                r.task_keys.len()
+                            ),
                             t.text_faint,
                         ));
                     }
@@ -221,7 +229,10 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
                     };
                     spans.push(span(format!("  weights {} ", wr.label()), tone));
                     if wr.status == "absent" && !wr.artifact.is_empty() {
-                        spans.push(span(format!("· w downloads {} ", wr.artifact), t.text_faint));
+                        spans.push(span(
+                            format!("· w downloads {} ", wr.artifact),
+                            t.text_faint,
+                        ));
                     } else if !wr.detail.is_empty() {
                         spans.push(span(format!("· {} ", wr.detail), t.text_faint));
                     }
@@ -332,11 +343,13 @@ fn download_selected(cx: Scope, ctx: &Ctx) {
         _ => {}
     }
     if !weights.downloadable {
-        ctx.store.notice.set(Some(if weights.instruction.is_empty() {
-            format!("{} has no download tool on this machine", weights.provider)
-        } else {
-            weights.instruction.clone()
-        }));
+        ctx.store
+            .notice
+            .set(Some(if weights.instruction.is_empty() {
+                format!("{} has no download tool on this machine", weights.provider)
+            } else {
+                weights.instruction.clone()
+            }));
         return;
     }
 
@@ -480,8 +493,7 @@ fn apply_recommended(cx: Scope, ctx: &Ctx) {
     let ctx_keep = ctx.clone();
     let ctx_force = ctx.clone();
     let prompt = abstracttui::app::ChoicePrompt::new(
-        "Apply the framework's recommended routes (text, voice, image)?"
-            .to_string(),
+        "Apply the framework's recommended routes (text, voice, image)?".to_string(),
     )
     .option("keep", "Apply — keep routes I configured")
     .option_with(
@@ -895,14 +907,20 @@ fn mtp_policy_index(options: Option<&serde_json::Value>) -> usize {
 }
 
 fn set_mtp_policy_option(options: &mut Vec<(String, String)>, index: usize) {
-    if index > 5 { return; }
+    if index > 5 {
+        return;
+    }
     options.retain(|(key, _)| key != "speculation");
     if index == 1 {
         options.push(("speculation".into(), "false".into()));
     } else if index >= 2 {
-        options.push(("speculation".into(), serde_json::json!({
-            "mode": "native_mtp", "num_draft_tokens": index, "require_acceleration": false,
-        }).to_string()));
+        options.push((
+            "speculation".into(),
+            serde_json::json!({
+                "mode": "native_mtp", "num_draft_tokens": index, "require_acceleration": false,
+            })
+            .to_string(),
+        ));
     }
 }
 
@@ -1123,7 +1141,7 @@ fn routes_table(
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_options, render_options, mtp_policy_index, set_mtp_policy_option};
+    use super::{mtp_policy_index, parse_options, render_options, set_mtp_policy_option};
     use serde_json::json;
 
     #[test]
@@ -1175,7 +1193,9 @@ mod tests {
         assert!(parsed
             .iter()
             .any(|(k, v)| k == "prompt" && v == "\"hello world\""));
-        assert!(parsed.iter().any(|(k, v)| k == "stringy" && v == "\"true\""));
+        assert!(parsed
+            .iter()
+            .any(|(k, v)| k == "stringy" && v == "\"true\""));
 
         assert!(parse_options("k=\"unterminated").is_err());
         let err = parse_options("novalue").unwrap_err();

@@ -3,7 +3,7 @@
 //! re-read fresh at write time — the model below is display currency).
 //!
 //! Redaction is structural: secrets are folded to set/not-set +
-//! sha256[:8] fingerprints AT PARSE TIME and the raw `Value` is dropped
+//! `sha256[:8]` fingerprints AT PARSE TIME and the raw `Value` is dropped
 //! — no signal ever holds key material. The fingerprint convention is
 //! the Python side's own (`provider_profiles.py:120-124`: sha256 of the
 //! trimmed value, hex, first 8), so both surfaces show one fingerprint
@@ -64,7 +64,10 @@ pub fn resolve_config_path(env: &dyn Fn(&str) -> Option<String>, home: &Path) ->
         };
     }
     ConfigPath {
-        path: home.join(".abstractcore").join("config").join("abstractcore.json"),
+        path: home
+            .join(".abstractcore")
+            .join("config")
+            .join("abstractcore.json"),
         source: PathSource::Default,
     }
 }
@@ -105,7 +108,9 @@ pub enum FileState {
         backups: Vec<String>,
     },
     /// I/O error other than not-found (permissions, etc.).
-    Unreadable { error: String },
+    Unreadable {
+        error: String,
+    },
 }
 
 /// File identity for the drift guard: mtime alone is NOT identity on
@@ -224,7 +229,7 @@ pub struct FieldView {
     pub list_len: Option<usize>,
 }
 
-/// sha256[:8] of the NORMALIZED value — Python's exact convention
+/// `sha256[:8]` of the NORMALIZED value — Python's exact convention
 /// (`normalize_api_key`, provider_profiles.py:80-84: trim, and any
 /// case variant of `EMPTY` canonicalizes to `"EMPTY"` before hashing).
 pub fn fingerprint(secret: &str) -> String {
@@ -253,9 +258,7 @@ pub fn load(path: &Path) -> FileState {
 pub fn load_with_raw(path: &Path) -> (FileState, Option<Value>) {
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return (FileState::Missing, None)
-        }
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return (FileState::Missing, None),
         Err(e) => {
             // A directory at the config path is a config mistake, not
             // a permissions problem — the hint must not send the
@@ -318,8 +321,7 @@ fn unix_mode(_m: &std::fs::Metadata) -> u32 {
 /// Recovery artifacts beside a corrupt file, newest first (timestamps
 /// in the names sort lexicographically).
 pub fn list_backups(path: &Path) -> Vec<String> {
-    let (Some(dir), Some(name)) = (path.parent(), path.file_name().and_then(|n| n.to_str()))
-    else {
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name().and_then(|n| n.to_str())) else {
         return Vec::new();
     };
     let mut out: Vec<String> = std::fs::read_dir(dir)
@@ -512,7 +514,9 @@ fn python_refusals(obj: &serde_json::Map<String, Value>) -> Vec<String> {
             let s = url.as_str().map(str::trim).unwrap_or("");
             let ok = s.is_empty() || s.starts_with("http://") || s.starts_with("https://");
             if !ok {
-                out.push(format!("{at}: base_url must start with http:// or https://"));
+                out.push(format!(
+                    "{at}: base_url must start with http:// or https://"
+                ));
             }
         }
         // normalize_api_key_env_var (provider_profiles.py:87-93).
@@ -602,7 +606,10 @@ fn fold_section(spec: &'static SectionSpec, body: Option<&Value>, explicit: bool
 
 fn fold_field(fs: &'static crate::schema::FieldSpec, val: Option<&Value>) -> FieldView {
     let (display, state) = match val {
-        None => (render_value(&fs.kind, &Value::Null, true), FieldState::Default),
+        None => (
+            render_value(&fs.kind, &Value::Null, true),
+            FieldState::Default,
+        ),
         Some(v) => match schema::validate(&fs.kind, v) {
             Err(reason) => (render_value(&fs.kind, v, false), FieldState::Broken(reason)),
             Ok(()) => {
@@ -758,7 +765,11 @@ mod tests {
         let p = resolve_config_path(&env_of(&[("ABSTRACTCORE_CONFIG_DIR", "~/cfg")]), home);
         assert_eq!(p.path, PathBuf::from("/home/u/cfg/abstractcore.json"));
         let p = resolve_config_path(&env_of(&[("ABSTRACTCORE_CONFIG_FILE", "   ")]), home);
-        assert_eq!(p.path, PathBuf::from("   "), "whitespace is a real path to Python");
+        assert_eq!(
+            p.path,
+            PathBuf::from("   "),
+            "whitespace is a real path to Python"
+        );
     }
 
     #[test]
@@ -824,9 +835,18 @@ mod tests {
             "i": {"id": "***"}
         }}});
         let r = refusals(&bad);
-        assert!(r.iter().any(|m| m.contains("\"s\": not an object")), "{r:?}");
-        assert!(r.iter().any(|m| m.contains("unsupported provider family")), "{r:?}");
-        assert!(r.iter().any(|m| m.contains("must start with http")), "{r:?}");
+        assert!(
+            r.iter().any(|m| m.contains("\"s\": not an object")),
+            "{r:?}"
+        );
+        assert!(
+            r.iter().any(|m| m.contains("unsupported provider family")),
+            "{r:?}"
+        );
+        assert!(
+            r.iter().any(|m| m.contains("must start with http")),
+            "{r:?}"
+        );
         assert!(r.iter().any(|m| m.contains("env var name")), "{r:?}");
         assert!(r.iter().any(|m| m.contains("invalid profile id")), "{r:?}");
 
@@ -860,7 +880,11 @@ mod tests {
         let raw = json!({"api_keys": {"openai": "", "vllm": "   "},
                           "server": {"auth_token": ""}});
         let snap = fold(&raw, 0, None, None);
-        let keys = snap.sections.iter().find(|s| s.spec.name == "api_keys").unwrap();
+        let keys = snap
+            .sections
+            .iter()
+            .find(|s| s.spec.name == "api_keys")
+            .unwrap();
         for k in ["openai", "vllm"] {
             let f = keys.fields.iter().find(|f| f.key == k).unwrap();
             assert_eq!(f.state, FieldState::Default, "{k} is not set");
@@ -874,8 +898,14 @@ mod tests {
     #[test]
     fn strategy_explicit_python_semantics() {
         let f = |v: Value| fold(&v, 0, None, None).audio_strategy_explicit;
-        assert!(f(json!({"audio_strategy_explicit": "false"})), "strings are truthy");
-        assert!(!f(json!({"audio_strategy_explicit": null})), "null is falsy");
+        assert!(
+            f(json!({"audio_strategy_explicit": "false"})),
+            "strings are truthy"
+        );
+        assert!(
+            !f(json!({"audio_strategy_explicit": null})),
+            "null is falsy"
+        );
         assert!(
             !f(json!({"audio_strategy_explicit": null,
                        "audio": {"strategy_explicit": true}})),
@@ -888,7 +918,7 @@ mod tests {
     /// Empty route objects drop as unconfigured on Python's load —
     /// the file-lane count must not claim them (review P3-5).
     #[test]
-    fn empty_route_objects_do_not_count()  {
+    fn empty_route_objects_do_not_count() {
         let raw = json!({"capability_defaults": {"routes": {
             "input.text": {"provider": "x"},
             "input.voice": {},
@@ -914,7 +944,11 @@ mod tests {
             .find(|s| s.spec.name == "api_keys")
             .unwrap();
         let openai = keys.fields.iter().find(|f| f.key == "openai").unwrap();
-        assert!(openai.display.starts_with("set · fp "), "{}", openai.display);
+        assert!(
+            openai.display.starts_with("set · fp "),
+            "{}",
+            openai.display
+        );
         assert_eq!(openai.state, FieldState::Set);
         let anthropic = keys.fields.iter().find(|f| f.key == "anthropic").unwrap();
         assert_eq!(anthropic.display, "not set");
@@ -941,8 +975,14 @@ mod tests {
         let by_key = |k: &str| video.fields.iter().find(|f| f.key == k).unwrap();
         assert_eq!(by_key("strategy").state, FieldState::Default);
         assert_eq!(by_key("max_frames").state, FieldState::Set);
-        assert!(matches!(by_key("frame_format").state, FieldState::Broken(_)));
-        assert!(matches!(by_key("max_frame_side").state, FieldState::Broken(_)));
+        assert!(matches!(
+            by_key("frame_format").state,
+            FieldState::Broken(_)
+        ));
+        assert!(matches!(
+            by_key("max_frame_side").state,
+            FieldState::Broken(_)
+        ));
         // Absent fields are defaults, absent sections wholly default.
         assert_eq!(by_key("max_frames_native").state, FieldState::Default);
         let audio = snap
@@ -1021,7 +1061,11 @@ mod tests {
         assert!(matches!(load(&file), FileState::Missing));
 
         std::fs::write(&file, b"{ not json").unwrap();
-        std::fs::write(dir.join("abstractcore.json.corrupt-20260101-000000.bak"), b"x").unwrap();
+        std::fs::write(
+            dir.join("abstractcore.json.corrupt-20260101-000000.bak"),
+            b"x",
+        )
+        .unwrap();
         std::fs::write(dir.join("abstractcore.json.bak-repair-101010"), b"x").unwrap();
         match load(&file) {
             FileState::Corrupt { backups, .. } => {

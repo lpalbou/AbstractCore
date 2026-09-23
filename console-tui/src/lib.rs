@@ -11,10 +11,18 @@ pub mod config;
 pub mod models;
 pub mod probes;
 pub mod schema;
+pub mod screens;
 pub mod store;
+pub mod transport;
 pub mod ui;
 pub mod worker;
 pub mod writes;
+
+pub use screens::{
+    catalog, engines, schedule_job_poll, spawn_worker, JobPoll, Remote, ScreenCmd, ScreensCtx,
+    ScreensOptions, ScreensStore,
+};
+pub use transport::{CliTransport, ConsoleTransport, TransportError, TransportErrorKind};
 
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -25,7 +33,7 @@ use abstracttui::prelude::*;
 use store::Store;
 use ui::{Ctx, UiState};
 
-pub const ENGINE_VERSION: &str = "0.3.0";
+pub const ENGINE_VERSION: &str = "0.3.6";
 
 const HELP: &str = "\
 abstractcore-console — configure AbstractCore from the terminal
@@ -35,7 +43,7 @@ USAGE:
 
 The console mirrors ~/.abstractcore/config/abstractcore.json (honoring
 ABSTRACTCORE_CONFIG_FILE / ABSTRACTCORE_CONFIG_DIR) and drives the
-abstractcore CLI ($ABSTRACTCORE_BIN, PATH, or the framework venv).
+abstractcore CLI ($ABSTRACTCORE_CLI, PATH, ~/.local/bin, or ./.venv).
 Writes go through the CLI setters (coupled fields) or a direct
 unknown-key-preserving rewrite (CLI-less fields), and every write is
 verified by re-reading.
@@ -48,11 +56,15 @@ OPTIONS:
   -h, --help     this help
   --version      print the version
 
-KEYS: 1-8 screens (browse) · Ctrl+N/P next/prev · Tab focus ·
+KEYS: 1-9, 0 screens (browse) · Ctrl+N/P next/prev · Tab focus ·
       Enter/e edit · x clear · k set key · w wizard · f finish wizard ·
       r reload · Ctrl+L repaint · q (browse) / Ctrl+C quit
       on Capability routes: a applies the recommended routes ·
       w downloads the selected route's weights
+      on Models (9): w download · d delete · / filter · f fits only ·
+      e engine · v installed/catalog · r refresh · c cancel the job
+      on Engines (0): i install (confirmed, shows the command) ·
+      o open the download page · r probe · c cancel the job
 
 MOUSE: click selects a row · DOUBLE-CLICK opens its editor, the same
        door Enter opens (and refuses for the same reasons).
@@ -119,9 +131,9 @@ pub fn run_cli(argv: &[String]) -> i32 {
     // Adaptive mode default: a machine with no config file gets the
     // wizard (the definition-of-done scenario); an existing config
     // opens in browse. Flags override.
-    let start_wizard = args.wizard.unwrap_or_else(|| {
-        matches!(config::load(&config_path.path), config::FileState::Missing)
-    });
+    let start_wizard = args
+        .wizard
+        .unwrap_or_else(|| matches!(config::load(&config_path.path), config::FileState::Missing));
 
     let mut app = App::new(Size::new(110, 32));
     let overlays = app.overlays();
@@ -146,6 +158,15 @@ pub fn run_cli(argv: &[String]) -> i32 {
 
     let tx_mount = tx.clone();
     let cli_for_store = cli_info.clone();
+    // The shared Models/Engines screens talk to the same abstractcore
+    // binary the rest of the console drives. A missing binary still gets
+    // a transport: its reads fail as "unavailable" with the spawn error,
+    // which is exactly what those screens should say.
+    let screens_bin = cli_info
+        .as_ref()
+        .map(|i| i.bin.clone())
+        .unwrap_or_else(|| std::path::PathBuf::from("abstractcore"));
+    let overlays_screens = overlays.clone();
     if let Err(e) = app.mount(move |cx| {
         let store = Store::create(cx);
         store.cli.set(cli_for_store.clone());
@@ -153,6 +174,17 @@ pub fn run_cli(argv: &[String]) -> i32 {
         let ui_state = UiState::create(cx);
         ui_state.wizard.set(start_wizard);
         *ui_out.borrow_mut() = Some(ui_state);
+        let transport: std::sync::Arc<dyn ConsoleTransport> =
+            std::sync::Arc::new(CliTransport::new(screens_bin.clone()));
+        let screens_ctx = ScreensCtx::new(
+            cx,
+            transport,
+            overlays_screens.clone(),
+            ScreensOptions {
+                notice: Some(store.notice),
+                ..ScreensOptions::default()
+            },
+        );
         let ctx = Ctx {
             tx: tx_mount.clone(),
             overlays: overlays.clone(),
@@ -160,6 +192,7 @@ pub fn run_cli(argv: &[String]) -> i32 {
             store,
             ui: ui_state,
             modal: Rc::new(RefCell::new(None)),
+            screens: screens_ctx,
         };
         if start_wizard {
             ui::wizard::apply_step(&ctx, 0);
