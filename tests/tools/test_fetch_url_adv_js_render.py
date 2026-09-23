@@ -1195,7 +1195,14 @@ def test_live_class_c_bot_mitigation_fails_loudly_and_accurately(url: str) -> No
         f"{url} returned success with {len(str(result.get('content') or ''))} chars: "
         f"{str(result.get('content'))[:160]!r}"
     )
-    assert result.get("error_class") in {"bot_challenge", "empty_content", "empty_body", "client_error"}
+    # The terminal classes (2026-09-22) are MORE precise than the old set: once a
+    # real browser has run the page and been refused, the result names the
+    # refusal (reddit's listing now answers `captcha_required`) instead of the
+    # generic `empty_content`.
+    assert result.get("error_class") in {
+        "bot_challenge", "empty_content", "empty_body", "client_error",
+        "captcha_required", "blocked_by_site", "login_required", "paywall",
+    }
     suggestions = " ".join(str(s) for s in (result.get("suggestions") or []))
     assert suggestions.strip(), f"{url} failed with no suggestions"
 

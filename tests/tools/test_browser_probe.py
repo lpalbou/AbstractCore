@@ -48,11 +48,13 @@ needs_browser = pytest.mark.skipif(
 # Ungated: dependency honesty + argument contract (no browser needed)
 # ---------------------------------------------------------------------------
 
-def test_missing_playwright_message_is_actionable(monkeypatch):
+def test_missing_playwright_message_is_actionable(monkeypatch, tmp_path):
     """Absent optional dep → BOTH install steps named (pip extra + browser
     binary), never a traceback or a bare ImportError."""
     monkeypatch.setattr(browser_tools, "_PLAYWRIGHT_AVAILABLE", False)
-    out = browser_probe("index.html")
+    page = tmp_path / "index.html"
+    page.write_text("<html><body>x</body></html>")
+    out = browser_probe(str(page))
     assert 'pip install "abstractcore[browser]"' in out
     assert "playwright install --only-shell chromium" in out
     assert "--with-deps" in out  # the one per-OS branch (Linux system libs)

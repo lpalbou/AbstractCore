@@ -96,6 +96,16 @@ _NONBLANK_JS = """
 }
 """
 _TEXT_INCLUDES_JS = "t => (((document.body && document.body.innerText) || '')).includes(t)"
+# True while the page is a JS interstitial that navigates away on its own
+# (Cloudflare managed challenge, DDoS-Guard, generic "checking your browser").
+_INTERSTITIAL_JS = """
+() => {
+  const t = ((document.title || '') + ' ' + ((document.body && document.body.innerText) || '').slice(0, 2000)).toLowerCase();
+  return ['just a moment', 'performing security verification', 'verification successful',
+          'checking your browser', 'checking if the site connection is secure',
+          'verifies you are not a bot', 'please wait while we verify'].some(s => t.includes(s));
+}
+"""
 
 
 def _cors_signature(text: str) -> bool:
@@ -230,6 +240,9 @@ def _parse_viewport(viewport: Any) -> Any:
 # well above any real article (the largest fixture in the corpus is 668 KB of
 # raw HTML) and well below a size that would stall the pipe.
 _MAX_CAPTURED_HTML_CHARS = 4_000_000
+# Visible-text capture (`cfg["capture_text"]`) crosses the same pipe. An
+# article's innerText is an order of magnitude smaller than its DOM.
+_MAX_CAPTURED_TEXT_CHARS = 1_000_000
 
 
 def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
@@ -271,6 +284,11 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "visible_text_len": None,
         "text_excerpt": None,
         "html": None,  # rendered DOM, only when cfg["capture_html"] is set
+        "text": None,  # full document.body.innerText, only when cfg["capture_text"]
+        # Which browser actually ran: "persistent:chromium" (full build + the
+        # operator's cookie profile) down to "fresh:headless-shell". Disclosed
+        # because the answer a site gives depends on it.
+        "browser_mode": None,
         "visual_elements": None,
         "frame_count": None,  # >1 ⇒ iframes present (nonblank sees TOP frame only)
         "screenshot": None,
@@ -337,17 +355,71 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
         return verdict
 
     with sync_playwright() as pw:
-        try:
-            browser = pw.chromium.launch(headless=True)
-        except PWError as e:
-            msg = str(e)
-            if "Executable doesn't exist" in msg or "playwright install" in msg:
-                return {"error": {"kind": "browser_missing", "message": msg[:400]}}
-            return {"error": {"kind": "launch_failed", "message": msg[:400]}}
+        # BROWSER PROFILE (opt-in, `cfg["browser_profile"]`). Three things a
+        # `chrome-headless-shell` + fresh-context launch does NOT have, and that
+        # a page a human can open DOES: the full Chromium build (the shell is
+        # recognisably not a browser and reddit serves it a block page), a
+        # persistent cookie/consent profile, and ordinary locale/viewport/UA.
+        # This is "behave like the browser the operator would have opened",
+        # never a spoofing kit: no TLS fingerprint games, no proxy rotation, no
+        # CAPTCHA solving. Every step degrades to today's behaviour on failure.
+        profile = cfg.get("browser_profile") or {}
+        want_channel = str(profile.get("channel") or "") or None
+        user_data_dir = str(profile.get("user_data_dir") or "") or None
+        ctx_opts: Dict[str, Any] = {"viewport": cfg["viewport"]}
+        for key in ("user_agent", "locale", "timezone_id", "extra_http_headers"):
+            if profile.get(key):
+                ctx_opts[key] = profile[key]
+        if profile.get("viewport"):
+            ctx_opts["viewport"] = profile["viewport"]
+
+        browser = None
+        context = None
+        launch_notes: List[str] = []
+        # Ladder: persistent full-Chromium profile → non-persistent full
+        # Chromium → today's headless shell. A locked profile directory (a
+        # SECOND fetch_url rendering concurrently — Chromium refuses to share a
+        # user-data-dir: "Failed to create a ProcessSingleton") must degrade to
+        # a private context, never fail the fetch.
+        attempts: List[tuple] = []
+        if user_data_dir:
+            attempts.append(("persistent", want_channel))
+        if want_channel:
+            attempts.append(("fresh", want_channel))
+        attempts.append(("fresh", None))
+        last_err = ""
+        for mode, channel in attempts:
+            try:
+                if mode == "persistent":
+                    kwargs = dict(ctx_opts)
+                    if channel:
+                        kwargs["channel"] = channel
+                    context = pw.chromium.launch_persistent_context(
+                        user_data_dir, headless=True, **kwargs
+                    )
+                    browser = None
+                else:
+                    kwargs = {"headless": True}
+                    if channel:
+                        kwargs["channel"] = channel
+                    browser = pw.chromium.launch(**kwargs)
+                    context = browser.new_context(**ctx_opts)
+                result["browser_mode"] = f"{mode}:{channel or 'headless-shell'}"
+                break
+            except PWError as e:
+                last_err = str(e)
+                launch_notes.append(f"{mode}:{channel or 'headless-shell'} failed: {last_err[:160]}")
+                context = None
+                browser = None
+        if context is None:
+            if "Executable doesn't exist" in last_err or "playwright install" in last_err:
+                return {"error": {"kind": "browser_missing", "message": last_err[:400]}}
+            return {"error": {"kind": "launch_failed", "message": last_err[:400]}}
+        if launch_notes:
+            result["browser_launch_notes"] = launch_notes[:4]
         # Start the page-behavior budget clock now that the browser is up.
         deadline = time.monotonic() + timeout_s
         try:
-            context = browser.new_context(viewport=cfg["viewport"])
             if cfg.get("guard_destinations"):
                 try:
                     context.route("**/*", _guarded_route)
@@ -509,6 +581,54 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
                         {"name": f"text {shown!r} present", "ok": False, "detail": f"check failed: {str(e)[:200]}", "elapsed_s": round(time.monotonic() - t0, 2)}
                     )
 
+            # SETTLE + ONE SCROLL (opt-in, bounded by the same deadline). A
+            # `domcontentloaded` snapshot of a client-rendered article is taken
+            # before the article exists; one short settle plus a single scroll
+            # to the bottom is what makes lazy/viewport-gated content render.
+            # Deliberately ONE scroll, not a scroll loop: this is "let the page
+            # finish", not "drive the site".
+            settle_ms = int(cfg.get("settle_ms") or 0)
+            if settle_ms > 0:
+                try:
+                    page.wait_for_timeout(min(settle_ms, max(0.0, remaining_ms(0.0))))
+                except Exception:
+                    pass
+            # LET A JS INTERSTITIAL FINISH (opt-in). A Cloudflare-style "Just a
+            # moment..." / "Performing security verification" page runs its own
+            # script and then navigates to the article by itself — exactly what
+            # it does in the operator's browser. Snapshotting mid-way returned
+            # "Verification successful. Waiting for medium.com to respond" as if
+            # it were the article (measured on medium.com, 2026-09-22). So:
+            # WAIT for the interstitial text to go away, bounded by the same
+            # deadline. Nothing is clicked, solved or spoofed; an interactive
+            # CAPTCHA never goes away on its own and simply runs out the wait.
+            challenge_wait_ms = int(cfg.get("challenge_wait_ms") or 0)
+            if challenge_wait_ms > 0:
+                try:
+                    pending = bool(page.evaluate(_INTERSTITIAL_JS))
+                except Exception:
+                    pending = False
+                if pending:
+                    result["interstitial_seen"] = True
+                    try:
+                        page.wait_for_function(
+                            f"() => !({_INTERSTITIAL_JS})()",
+                            timeout=min(float(challenge_wait_ms), max(250.0, remaining_ms(250.0) - 1500.0)),
+                        )
+                        result["interstitial_cleared"] = True
+                        # The article page has only just committed.
+                        page.wait_for_timeout(min(800.0, max(0.0, remaining_ms(0.0))))
+                    except Exception:
+                        result["interstitial_cleared"] = False
+            if cfg.get("scroll"):
+                try:
+                    page.evaluate(
+                        "() => { try { window.scrollTo(0, (document.body && document.body.scrollHeight) || 0); } catch (e) {} }"
+                    )
+                    page.wait_for_timeout(min(700.0, max(0.0, remaining_ms(0.0))))
+                except Exception:
+                    pass
+
             # Snapshot (each field independent — a crashed frame must not
             # void the rest of the report). On a blocked main thread these
             # CDP calls hang; the parent's process kill is the guarantee.
@@ -525,6 +645,16 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 result["visible_text_len"] = len(text)
                 excerpt = " ".join(text.split())[:_TEXT_EXCERPT_CHARS]
                 result["text_excerpt"] = excerpt
+                # FULL VISIBLE TEXT (opt-in). `page.content()` serialises the
+                # LIGHT DOM only: a page built from web components keeps its
+                # article inside closed/open shadow roots, so the captured HTML
+                # is a scaffold and the text is invisible to any HTML extractor.
+                # innerText is computed from LAYOUT and therefore sees it. This
+                # is the last-resort content source when HTML extraction of the
+                # rendered DOM comes back empty.
+                if cfg.get("capture_text"):
+                    result["text"] = text[:_MAX_CAPTURED_TEXT_CHARS]
+                    result["text_truncated"] = len(text) > _MAX_CAPTURED_TEXT_CHARS
             except Exception:
                 pass
             # RENDERED DOM CAPTURE. `fetch_url` escalates here when its static
@@ -575,10 +705,16 @@ def _run_probe(cfg: Dict[str, Any]) -> Dict[str, Any]:
                 except Exception as e:
                     result["screenshot"] = {"error": str(e)[:200]}
         finally:
-            try:
-                browser.close()
-            except Exception:
-                pass
+            # A PERSISTENT context owns its own browser process (there is no
+            # `browser` handle), so both must be closed for the no-leak promise
+            # to hold. The parent's process-tree kill is the backstop, not the
+            # plan.
+            for closeable in (context, browser):
+                try:
+                    if closeable is not None:
+                        closeable.close()
+                except Exception:
+                    pass
 
     result["total_s"] = round(time.monotonic() - proc_started, 2)
     return result
@@ -612,6 +748,18 @@ def _spawn_probe(cfg: Dict[str, Any], hard_budget_s: float) -> Dict[str, Any]:
     popen_kwargs: Dict[str, Any] = dict(
         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
     )
+    # NEUTRAL CWD. `python -c` puts the CURRENT DIRECTORY first on sys.path, so
+    # a working directory that merely CONTAINS a folder named `abstractcore`
+    # (the monorepo checkout does: `<root>/abstractcore/`) shadows the installed
+    # package and the child dies with an ImportError before it ever launches a
+    # browser — the whole render escalation silently degraded to
+    # "worker exited 1" for every agent whose cwd was the repo root. Every path
+    # in `cfg` is already absolute (`_normalize_target` resolves local files to
+    # a file:// URI in the PARENT), so the child needs nothing from cwd.
+    try:
+        popen_kwargs["cwd"] = tempfile.gettempdir()
+    except Exception:
+        pass
     if os.name == "posix":
         popen_kwargs["start_new_session"] = True  # own group + a stable ancestry root to walk
     proc = subprocess.Popen(cmd, **popen_kwargs)
@@ -657,9 +805,58 @@ def _spawn_probe(cfg: Dict[str, Any], hard_budget_s: float) -> Dict[str, Any]:
 RENDER_DEFAULT_TIMEOUT_S = 20.0
 _RENDER_LAUNCH_GRACE_S = 15.0
 
+# ORDINARY-BROWSER IDENTITY for the render escalation. This is not a spoofing
+# profile: it is what the browser the operator would have opened actually sends,
+# attached to a real Chromium that really runs the JavaScript. A browser UA on a
+# NON-browser stack is the incoherent fingerprint that draws challenges (which is
+# why the static fetch keeps its honest `AbstractCore-FetchTool/1.0` identity);
+# the same UA on a real browser is simply true.
+_RENDER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
+)
+_RENDER_VIEWPORT = {"width": 1440, "height": 900}
+# Post-navigation settle before the DOM snapshot, for pages that finish
+# rendering after `domcontentloaded`. Small: the escalation is already a second
+# attempt and every millisecond here is paid by an agent that is waiting.
+_RENDER_SETTLE_MS = 900
+# Upper bound on waiting for a self-clearing JS interstitial to navigate to the
+# page. Cloudflare's managed challenge measured 2-5s; a CAPTCHA never clears and
+# costs this much before being reported as the refusal it is.
+_RENDER_CHALLENGE_WAIT_MS = 10_000
 
-def render_url_html(url: str, *, timeout_s: float = RENDER_DEFAULT_TIMEOUT_S) -> Dict[str, Any]:
+
+def browser_profile_dir() -> str:
+    """Where the render escalation keeps its cookie/consent profile.
+
+    `~/.abstractcore/browser-profile` — the package's own state directory
+    convention (`~/.abstractcore/{config,models,blocs,…}`), NEVER a
+    model-controlled path and never the operator's real Chrome profile. It
+    holds cookies and consent choices so a second fetch of the same site is not
+    treated as a first-ever visit; it never holds credentials (no login is ever
+    performed) and deleting the directory is always safe.
+    """
+    return str(Path.home() / ".abstractcore" / "browser-profile")
+
+
+def render_url_html(
+    url: str,
+    *,
+    timeout_s: float = RENDER_DEFAULT_TIMEOUT_S,
+    thorough: bool = False,
+) -> Dict[str, Any]:
     """Return the DOM of `url` AFTER its JavaScript has run.
+
+    `thorough=True` renders the page the way a human's browser would: the FULL
+    Chromium build (not `chrome-headless-shell`, which sites recognise and serve
+    a block page to), a persistent cookie/consent profile under
+    `browser_profile_dir()`, ordinary viewport/locale/timezone/UA, a short
+    settle and one scroll, and `document.body.innerText` captured alongside the
+    DOM (a web-component page keeps its article in shadow roots, invisible to
+    `page.content()`). Every one of those degrades to the plain headless-shell
+    behaviour if it is unavailable — a missing full Chromium or a profile
+    directory already locked by a concurrent render is a fallback, not a
+    failure.
 
     The answer to "fetch_url came back empty on a client-rendered page". It
     reuses `browser_probe`'s worker-subprocess machinery verbatim, so it
@@ -675,9 +872,10 @@ def render_url_html(url: str, *, timeout_s: float = RENDER_DEFAULT_TIMEOUT_S) ->
       * DEGRADES WITH A HINT — a missing package or a missing browser binary
         returns an actionable install message, never a traceback.
 
-    Returns {"ok": True, "html": str, "final_url": str, "status": int|None,
-    "title": str, "elapsed_s": float} or {"ok": False, "error_class": str,
-    "message": str, "hint": str}. NEVER raises.
+    Returns {"ok": True, "html": str, "text": str, "final_url": str,
+    "status": int|None, "title": str, "browser_mode": str, "elapsed_s": float}
+    or {"ok": False, "error_class": str, "message": str, "hint": str}. NEVER
+    raises. (`text` is the empty string unless `thorough`.)
 
     SECURITY: rendering EXECUTES the page's JavaScript, and page JS can issue
     requests anywhere. Callers must screen the destination themselves (fetch_url
@@ -724,11 +922,41 @@ def render_url_html(url: str, *, timeout_s: float = RENDER_DEFAULT_TIMEOUT_S) ->
         "screenshot_dir": None,
         "screenshot_name": None,
         "capture_html": True,
+        "capture_text": bool(thorough),
+        "settle_ms": _RENDER_SETTLE_MS if thorough else 0,
+        "challenge_wait_ms": _RENDER_CHALLENGE_WAIT_MS if thorough else 0,
+        "scroll": bool(thorough),
+        "browser_profile": (
+            {
+                # The full Chromium build. Playwright ≥1.49 resolves a
+                # channel-less chromium launch to `chrome-headless-shell`,
+                # which several sites detect; `channel="chromium"` selects the
+                # real browser in new-headless mode. Falls back to the shell in
+                # the worker when only `--only-shell` was installed.
+                "channel": "chromium",
+                "user_data_dir": browser_profile_dir(),
+                "user_agent": _RENDER_USER_AGENT,
+                "locale": "en-US",
+                "timezone_id": "UTC",
+                "viewport": dict(_RENDER_VIEWPORT),
+                "extra_http_headers": {"Accept-Language": "en-US,en;q=0.9"},
+            }
+            if thorough
+            else None
+        ),
         # Every navigation and subresource is screened in the worker, so a page
         # cannot redirect or script its way to a destination the static path
         # refuses. See `_guarded_route`.
         "guard_destinations": True,
     }
+    if thorough:
+        # Created by the PARENT: a worker that cannot create it would fall all
+        # the way back to a fresh context and silently lose the cookie profile.
+        try:
+            Path(browser_profile_dir()).mkdir(parents=True, exist_ok=True)
+        except Exception:
+            cfg["browser_profile"] = dict(cfg["browser_profile"] or {})
+            cfg["browser_profile"]["user_data_dir"] = None
     started = time.monotonic()
     res = _spawn_probe(cfg, budget + _RENDER_LAUNCH_GRACE_S)
     elapsed = round(time.monotonic() - started, 2)
@@ -751,6 +979,7 @@ def render_url_html(url: str, *, timeout_s: float = RENDER_DEFAULT_TIMEOUT_S) ->
 
     guard_blocked = list(res.get("guard_blocked") or []) if isinstance(res, dict) else []
     html = res.get("html") if isinstance(res, dict) else None
+    visible_text = str(res.get("text") or "") if isinstance(res, dict) else ""
     if guard_blocked and (not isinstance(html, str) or len(html.strip()) < 200):
         # The guard aborted the navigation itself, so there is no document to
         # extract. Say THAT, rather than "the page produced no DOM" — the two
@@ -764,11 +993,32 @@ def render_url_html(url: str, *, timeout_s: float = RENDER_DEFAULT_TIMEOUT_S) ->
             "elapsed_s": elapsed,
         }
     if not isinstance(html, str) or not html.strip():
+        # SAY WHICH EMPTY IT WAS. "the rendered page produced no DOM" is the
+        # same sentence for three different situations with three different
+        # remedies, and it was the whole error an agent got. The worker already
+        # records which one happened.
+        nav = res.get("nav") if isinstance(res, dict) else None
+        nav = nav if isinstance(nav, dict) else {}
+        if nav.get("no_commit"):
+            why = (
+                "the browser connected but the server never sent a response body "
+                f"within {budget:.0f}s (navigation never committed)"
+            )
+        elif nav.get("error"):
+            why = f"navigation failed: {str(nav.get('error'))[:200]}"
+        elif res.get("html_error"):
+            why = f"the DOM could not be serialised: {str(res.get('html_error'))[:200]}"
+        elif nav.get("timed_out"):
+            why = f"the page did not reach domcontentloaded within {budget:.0f}s"
+        else:
+            why = "the rendered page produced no DOM"
         return {
             "ok": False,
             "error_class": "render_empty",
-            "message": str(res.get("html_error") or "the rendered page produced no DOM")[:400],
+            "message": why[:400],
             "hint": "",
+            "browser_mode": str(res.get("browser_mode") or ""),
+            "status": res.get("http_status"),
             "elapsed_s": elapsed,
         }
     # WHERE IT ACTUALLY LANDED. The route guard blocks a hop to a refused
@@ -798,12 +1048,18 @@ def render_url_html(url: str, *, timeout_s: float = RENDER_DEFAULT_TIMEOUT_S) ->
     return {
         "ok": True,
         "html": html,
+        # The LAYOUT text, which sees shadow-DOM content `html` cannot carry.
+        # Empty unless `thorough` — the caller must not mistake "not captured"
+        # for "the page had no text".
+        "text": visible_text,
+        "text_truncated": bool(res.get("text_truncated")),
         "guard_blocked": list(res.get("guard_blocked") or []),
         "html_truncated": bool(res.get("html_truncated")),
         "final_url": landed,
         "status": res.get("http_status"),
         "title": str(res.get("title") or ""),
         "visible_text_len": res.get("visible_text_len"),
+        "browser_mode": str(res.get("browser_mode") or ""),
         "elapsed_s": elapsed,
     }
 
@@ -1105,9 +1361,8 @@ def browser_probe(
         title, visible-text stats, per-check results, console errors,
         blocked network attempts (local targets), screenshot path, timing.
     """
-    if not _ensure_playwright():
-        return _install_message("package_missing")
-
+    # Argument errors are reported first: they need no browser, and a caller
+    # fixing a bad call should not be told to install Playwright.
     resolved = _resolve_target(target)
     if "error" in resolved:
         return f"❌ {resolved['error']}"
@@ -1135,6 +1390,9 @@ def browser_probe(
             f"❌ Invalid viewport '{viewport}' — give exactly two integers, width then height, "
             "each between 64 and 4096. Any separator works ('1280x720', '1280,720', '1280 720')."
         )
+
+    if not _ensure_playwright():
+        return _install_message("package_missing")
 
     screenshot_dir: Optional[str] = None
     screenshot_name: Optional[str] = None

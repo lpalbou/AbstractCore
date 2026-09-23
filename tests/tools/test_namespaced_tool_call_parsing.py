@@ -31,7 +31,7 @@ INCIDENT_PAYLOAD = (
     "<tool_call>\n"
     "<function=functions.browser_probe>\n"
     "<parameter=target>\n"
-    "file:///Users/albou/test-qwen38flash/test.html\n"
+    "file:///Users/example/test-qwen38flash/test.html\n"
     "</parameter>\n"
     "<parameter=expect_text>\n"
     "ALL TESTS PASSED\n"
@@ -71,7 +71,7 @@ def test_dotted_function_name_parses():
     assert len(calls) == 1
     assert calls[0].name == "functions.browser_probe"
     assert calls[0].arguments == {
-        "target": "file:///Users/albou/test-qwen38flash/test.html",
+        "target": "file:///Users/example/test-qwen38flash/test.html",
         "expect_text": "ALL TESTS PASSED",
         "timeout_s": "30",
     }

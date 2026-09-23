@@ -5421,6 +5421,19 @@ def skim_url(
                         f"Status: {status} {reason}".strip(),
                         f"Content-Type: {content_type or 'unknown'}",
                     ]
+                    # skim stays cheap (it never launches a browser), but a
+                    # challenge page is not the site's last word: say which
+                    # tool CAN read it instead of leaving a bare 403.
+                    try:
+                        err_body = str(response.text or "")[:200_000]
+                    except Exception:
+                        err_body = ""
+                    if _is_browser_clearable_block(status, err_body, dict(getattr(response, "headers", {}) or {})):
+                        parts.append(
+                            "Note: this is a JavaScript/anti-bot challenge page, not the site's content. "
+                            "skim_url never launches a browser; fetch_url(url) escalates to a real browser "
+                            "(and to the site's own feed) and usually reads it."
+                        )
                     return "\n".join([p for p in parts if p])
 
                 chunks: list[bytes] = []
@@ -5894,6 +5907,755 @@ _UNRENDERABLE_SIGNATURES = (
     "attention required",         # Cloudflare 1020 block page
     "please turn on javascript",
 )
+
+# --------------------------------------------------------------------------
+# WHAT THE PAGE ACTUALLY SAID — terminal refusals, named
+#
+# `_UNRENDERABLE_SIGNATURES` above answers "is this a shell?" (a question a
+# browser can fix). These answer the question AFTER a real browser has already
+# run the page and still came back without the article: WHY. The three have
+# different remedies and an agent that is told "no readable content" for all
+# three cannot act:
+#   captcha_required — a human-interaction challenge. OUT OF SCOPE BY DESIGN:
+#                      this tool does not solve CAPTCHAs, rotate proxies or
+#                      spoof TLS fingerprints. It says so and stops.
+#   paywall          — the publisher gates the body behind a subscription. The
+#                      title/standfirst are usually still legitimately readable.
+#   login_required   — the site gates the body behind an account.
+#   blocked_by_site  — a refusal with no further explanation, after a real
+#                      browser also failed. Terminal, unlike `bot_challenge`
+#                      (which means "a challenge was detected, a retry or a
+#                      render may clear it").
+# Matched against the page's VISIBLE TEXT, lowercased, never the raw markup: a
+# site's analytics blob mentions "subscribe" on every page it serves.
+# --------------------------------------------------------------------------
+_CAPTCHA_SIGNATURES = (
+    "prove your humanity",        # reddit
+    "complete the challenge below",
+    "verify you are human",
+    "verifying you are human",
+    "i'm not a robot",
+    "press and hold",             # PerimeterX
+    "solve this puzzle",
+)
+_SITE_BLOCK_SIGNATURES = (
+    "you've been blocked by network security",   # reddit / Fastly
+    "you have been blocked",
+    "access denied",
+    "attention required",                        # Cloudflare 1020
+    "sorry, you have been blocked",
+    "this request has been blocked",
+    "your request has been blocked",
+    "unusual traffic",
+    # A self-clearing JS interstitial that did NOT clear within the render's
+    # wait (browser_tools waits for it). Reached here it is a refusal, not
+    # content — medium.com's "Verification successful. Waiting for medium.com
+    # to respond" was returned as the article before this.
+    "performing security verification",
+    "verifies you are not a bot",
+    "checking your browser",
+    "checking if the site connection is secure",
+)
+_PAYWALL_SIGNATURES = (
+    "subscribe to continue reading",
+    "subscribe to read",
+    "this article is for subscribers",
+    "subscribers only",
+    "already a subscriber",
+    "to continue reading, subscribe",
+    "start your free trial to continue",
+    "you've reached your article limit",
+    "this content is available to subscribers",
+)
+_LOGIN_WALL_SIGNATURES = (
+    "log in to continue",
+    "sign in to continue",
+    "log in or sign up to view",
+    "you must log in to continue",
+    "please log in to view this",
+    "create an account to continue",
+)
+
+
+def _classify_page_refusal(
+    visible_text: str, *, headers: Optional[Dict[str, Any]] = None
+) -> Optional[tuple[str, list[str]]]:
+    """Name the refusal a page is expressing, or None if it is not refusing.
+
+    `visible_text` is the EXTRACTED text (static extraction, or the rendered
+    DOM's), never raw markup. Order matters: a CAPTCHA page also says "blocked",
+    and a paywall page also says "sign in".
+    """
+    low = " ".join(str(visible_text or "").split()).lower()
+    hdrs = {str(k).lower(): str(v) for k, v in dict(headers or {}).items()}
+    if not low and hdrs.get("cf-mitigated", "").lower() == "challenge":
+        # Cloudflare states it in a header, and the challenge page itself has no
+        # readable text at all. Free, exact, and it is the ONLY signal on a page
+        # whose body is pure script.
+        return "blocked_by_site", [
+            "Cloudflare answered with an interactive challenge (Cf-Mitigated: challenge) instead of the page",
+            "a real browser ran the page and the challenge did not clear on its own",
+            "this tool does not solve CAPTCHAs or interactive challenges — that is out of scope by design",
+            "try the site's RSS/Atom feed, its API, or an archived copy; or open the URL yourself and paste the text",
+        ]
+    if not low:
+        return None
+    for sig in _CAPTCHA_SIGNATURES:
+        if sig in low:
+            return "captcha_required", [
+                f"the site served a human-verification challenge ({sig!r}) instead of the page",
+                "this tool never solves CAPTCHAs, rotates proxies or spoofs TLS fingerprints — out of scope by design",
+                "the challenge is usually rate-based: waiting several minutes and retrying often clears it",
+                "meanwhile try the site's RSS/Atom feed, its public API, or an archived copy",
+            ]
+    for sig in _PAYWALL_SIGNATURES:
+        if sig in low:
+            return "paywall", [
+                f"the publisher gates the body of this article behind a subscription ({sig!r})",
+                "the title/standfirst above is what is legitimately readable without one",
+                "this tool does not bypass paywalls",
+                "try the site's RSS feed (publishers usually syndicate the title and standfirst) or an archived copy",
+            ]
+    for sig in _LOGIN_WALL_SIGNATURES:
+        if sig in low:
+            return "login_required", [
+                f"the site requires an account to read this page ({sig!r})",
+                "this tool holds no credentials and never logs in",
+                "try a public/embed view of the same content, the site's API, or an archived copy",
+            ]
+    for sig in _SITE_BLOCK_SIGNATURES:
+        if sig in low:
+            return "blocked_by_site", [
+                f"the site refused this client ({sig!r}) — a real browser was tried and refused too",
+                "this is usually rate-based: waiting several minutes and retrying often clears it",
+                "try the site's RSS/Atom feed, its public API, or an archived copy",
+            ]
+    return None
+
+
+# Body signatures that mean "this HTTP error is a CHALLENGE a real browser can
+# run", as opposed to a policy/geo refusal that no browser changes. Only these
+# buy a browser launch on a 4xx — a plain 403 that explains itself stays cheap.
+_CHALLENGE_BODY_SIGNATURES = (
+    "just a moment",
+    "checking your browser",
+    "cf-browser-verification",
+    "challenges.cloudflare.com",
+    "cf_chl_opt",
+    "enable javascript and cookies",
+    "please enable js",
+    "javascript is required",
+    "client challenge",
+    "captcha-delivery",
+    "px-captcha",
+    "_incapsula_resource",
+    "distil_r_captcha",
+)
+# HTTP statuses whose body may be a challenge page a real browser clears.
+# 401/404/5xx are NOT here: a browser carrying no credentials gets the same 401,
+# a 404 is a fact about the URL, and a 5xx is the server's own problem.
+_RENDERABLE_BLOCK_STATUSES = frozenset({403, 429, 451})
+
+
+def _is_browser_clearable_block(status: int, body: str, headers: Dict[str, Any]) -> bool:
+    """True when an HTTP error looks like a JS challenge rather than a policy
+    refusal — the ONLY case where a browser launch on a 4xx is worth its cost.
+
+    Measured (2026-09-22): aiuntethered.com answers `AbstractCore-FetchTool/1.0`
+    with HTTP 403 + Cloudflare's "Just a moment..." interstitial; the same URL in
+    a real Chromium runs the challenge JS and yields 6,642 characters of article.
+    The old rule ("a 403 is a request-level block, a browser is blocked too")
+    was measured against the headless SHELL carrying the same non-browser
+    identity, and is simply not true of a real browser running the page.
+    """
+    if int(status) not in _RENDERABLE_BLOCK_STATUSES:
+        return False
+    hdrs = {str(k).lower(): str(v) for k, v in dict(headers or {}).items()}
+    if hdrs.get("cf-mitigated", "").lower() == "challenge":
+        return True
+    low = str(body or "")[:20000].lower()
+    if any(sig in low for sig in _CHALLENGE_BODY_SIGNATURES):
+        return True
+    # An error page with essentially NO text is not explaining anything; it is a
+    # script-only interstitial. A 403 that says why it refused is left alone.
+    stripped = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", str(body or "")[:200000])
+    stripped = re.sub(r"<[^>]+>", " ", stripped)
+    return len(" ".join(stripped.split())) < 120
+
+
+# --------------------------------------------------------------------------
+# LAST RUNG: the site's own public feed
+#
+# When a publisher refuses the article to everything — the static fetch AND a
+# real browser — the honest answer is "blocked". But most publishers that do
+# this still SYNDICATE the headline and standfirst in an RSS/Atom feed they
+# publish for machines, unauthenticated and by design. Reading it is not a
+# bypass: it is the machine-readable view the site chose to offer.
+#
+# Verified 2026-09-22: economist.com answers the article URL with HTTP 403 +
+# `Cf-Mitigated: challenge` to every client including a real Chromium, while
+# https://www.economist.com/by-invitation/rss.xml answers 200 and carries the
+# exact title and standfirst of that article.
+#
+# Bounded on purpose: a handful of conventional paths, tried only after
+# everything else has already failed, each with a short timeout.
+# --------------------------------------------------------------------------
+_FEED_CANDIDATE_SUFFIXES = ("/rss.xml", "/feed", "/feed.xml", "/rss", "/atom.xml", "/index.xml")
+_FEED_RESCUE_TIMEOUT_S = 6.0
+_FEED_RESCUE_MAX_BYTES = 3_000_000
+
+
+def _feed_candidate_urls(target: str) -> list[str]:
+    """Conventional feed URLs for `target`: its section's, then the site's."""
+    try:
+        parsed = urlparse(str(target))
+    except Exception:
+        return []
+    if not parsed.scheme or not parsed.netloc:
+        return []
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    segments = [s for s in str(parsed.path or "").split("/") if s]
+    out: list[str] = []
+    if segments:
+        # The SECTION feed first: it is the one that actually carries a recent
+        # article, and it is a smaller download than a site-wide feed.
+        for suffix in _FEED_CANDIDATE_SUFFIXES[:3]:
+            out.append(f"{origin}/{segments[0]}{suffix}")
+    for suffix in _FEED_CANDIDATE_SUFFIXES:
+        out.append(f"{origin}{suffix}")
+    seen: set = set()
+    deduped = []
+    for candidate in out:
+        if candidate not in seen:
+            seen.add(candidate)
+            deduped.append(candidate)
+    return deduped[:6]
+
+
+def _feed_entry_for_url(feed_xml: str, target: str) -> Optional[Dict[str, str]]:
+    """Return {"title", "summary"} for the feed item whose link IS `target`."""
+    try:
+        target_path = urlparse(str(target)).path.rstrip("/").lower()
+    except Exception:
+        return None
+    if not target_path:
+        return None
+    text = str(feed_xml or "")
+    # Split on item/entry so a title can never be paired with another item's
+    # link — the bug a single global regex over the whole feed would ship.
+    chunks = re.split(r"(?i)<(?:item|entry)[\s>]", text)[1:]
+    for chunk in chunks:
+        chunk = re.split(r"(?i)</(?:item|entry)>", chunk)[0]
+        links = re.findall(r"(?is)<link[^>]*?href=[\"']([^\"']+)[\"']", chunk)
+        links += re.findall(r"(?is)<link>\s*(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?\s*</link>", chunk)
+        links += re.findall(r"(?is)<guid[^>]*>\s*(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?\s*</guid>", chunk)
+        matched = False
+        for link in links:
+            try:
+                if urlparse(link.strip()).path.rstrip("/").lower() == target_path:
+                    matched = True
+                    break
+            except Exception:
+                continue
+        if not matched:
+            continue
+
+        def _field(name: str) -> str:
+            m = re.search(rf"(?is)<{name}[^>]*>(.*?)</{name}>", chunk)
+            if not m:
+                return ""
+            raw = m.group(1)
+            raw = re.sub(r"(?is)<!\[CDATA\[(.*?)\]\]>", r"\1", raw)
+            raw = re.sub(r"<[^>]+>", " ", raw)
+            import html as _html_lib
+
+            return " ".join(_html_lib.unescape(raw).split())
+
+        title = _field("title")
+        summary = _field("description") or _field("summary") or _field("content")
+        if title or summary:
+            return {"title": title, "summary": summary}
+    return None
+
+
+def _feed_rescue(target: str, *, timeout_s: float = _FEED_RESCUE_TIMEOUT_S) -> Optional[Dict[str, str]]:
+    """The site's own feed entry for `target`, or None. NEVER raises."""
+    if not _ensure_requests():
+        return None
+    candidates = _feed_candidate_urls(target)
+    if not candidates:
+        return None
+    budget = max(1.0, float(timeout_s))
+    try:
+        with requests.Session() as session:
+            session.mount("http://", SSRFGuardAdapter())
+            session.mount("https://", SSRFGuardAdapter())
+            session.headers.update(
+                {
+                    "User-Agent": _FETCH_URL_DEFAULT_USER_AGENT,
+                    "Accept": "application/rss+xml, application/atom+xml, application/xml;q=0.9, */*;q=0.5",
+                }
+            )
+            for candidate in candidates:
+                if fetch_url_guard_destination(candidate) is not None:
+                    continue
+                try:
+                    resp = session.get(candidate, timeout=budget, allow_redirects=True)
+                except Exception:
+                    continue
+                if not resp.ok:
+                    continue
+                ctype = str(resp.headers.get("content-type", "")).lower()
+                # UTF-8 FIRST. `resp.encoding` is ISO-8859-1 whenever a text/*
+                # response carries no charset (RFC 2616 default), and feeds
+                # routinely do — decoding an XML-declared UTF-8 feed as latin-1
+                # turned every curly quote in the recovered standfirst into
+                # mojibake. Strict-decode as UTF-8 and only fall back when that
+                # genuinely fails.
+                blob = resp.content[:_FEED_RESCUE_MAX_BYTES]
+                try:
+                    body = blob.decode("utf-8")
+                except UnicodeDecodeError:
+                    body = blob.decode(resp.encoding or "utf-8", errors="replace")
+                if "xml" not in ctype and "<rss" not in body[:2000].lower() and "<feed" not in body[:2000].lower():
+                    continue
+                entry = _feed_entry_for_url(body, target)
+                if entry is not None:
+                    entry["feed_url"] = candidate
+                    return entry
+    except Exception:
+        return None
+    return None
+
+
+# --------------------------------------------------------------------------
+# SITE ADAPTERS — the machine-readable view a site publishes for itself
+#
+# Deliberately TINY, data-driven and documented. An adapter earns its place only
+# when a site offers a LEGITIMATE machine path to the same content that the
+# ordinary HTML path cannot reach: not a bypass, not an undocumented internal
+# API, and never a different identity — the adapter sends the same honest
+# `AbstractCore-FetchTool/1.0 (+url)` UA the rest of the tool uses, which is
+# exactly what Reddit's API guidelines ask a script to do.
+#
+# Adapters run AFTER the cheap static fetch has already failed and BEFORE the
+# browser: on a page they cover they save a browser launch (0.4s vs 3-5s) and,
+# more importantly, they do not have to win an anti-bot argument to succeed.
+#
+# reddit (verified 2026-09-22): the thread HTML is an 8.4 KB app shell with zero
+# text for any non-browser client; `old.reddit.com` 302s to `/login`; the
+# `.json` view answers 403. `<thread-url>.rss` answers 200 with an Atom document
+# carrying the post and every comment — 79 entries, 87 KB, 0.3s.
+# --------------------------------------------------------------------------
+_REDDIT_HOSTS = frozenset(
+    {"reddit.com", "www.reddit.com", "old.reddit.com", "new.reddit.com", "np.reddit.com"}
+)
+_REDDIT_THREAD_PATH = re.compile(r"^/r/[^/]+/comments/[^/]+")
+_REDDIT_ADAPTER_MAX_COMMENTS = 60
+_REDDIT_ADAPTER_MAX_CHARS = 60_000
+
+
+def _reddit_thread_via_atom(target: str, *, timeout_s: float = 10.0) -> Optional[Dict[str, Any]]:
+    """Render a Reddit thread from the Atom feed Reddit publishes for it.
+
+    Returns {"title", "content", "description", "source_url"} or None. NEVER
+    raises — a failed adapter must fall through to the next rung, not abort the
+    fetch.
+    """
+    if not _ensure_requests():
+        return None
+    try:
+        parsed = urlparse(str(target))
+        base = f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}"
+        feed_url = f"{base}/.rss"
+        if fetch_url_guard_destination(feed_url) is not None:
+            return None
+        with requests.Session() as session:
+            session.mount("http://", SSRFGuardAdapter())
+            session.mount("https://", SSRFGuardAdapter())
+            resp = session.get(
+                feed_url,
+                headers={
+                    "User-Agent": _FETCH_URL_DEFAULT_USER_AGENT,
+                    "Accept": "application/atom+xml, application/xml;q=0.9, */*;q=0.5",
+                },
+                timeout=max(2.0, float(timeout_s)),
+                allow_redirects=True,
+            )
+        if resp.status_code in (429, 503):
+            # SAY WHY IT DID NOT WORK. Reddit throttles repeated automated
+            # access hard, and a bare None here let the pipeline blame the page
+            # ("no readable content") for what is a stated, temporary refusal
+            # with an obvious remedy.
+            return {"adapter": "reddit-thread-atom", "rate_limited": True, "source_url": feed_url}
+        if not resp.ok:
+            return None
+        blob = resp.content[:_FEED_RESCUE_MAX_BYTES]
+        try:
+            xml = blob.decode("utf-8")
+        except UnicodeDecodeError:
+            xml = blob.decode(resp.encoding or "utf-8", errors="replace")
+        if "<entry" not in xml:
+            return None
+    except Exception:
+        return None
+
+    import html as _html_lib
+
+    def _tag(chunk: str, name: str) -> str:
+        m = re.search(rf"(?is)<{name}[^>]*>(.*?)</{name}>", chunk)
+        if not m:
+            return ""
+        raw = re.sub(r"(?is)<!\[CDATA\[(.*?)\]\]>", r"\1", m.group(1))
+        # Atom `<content type="html">` is entity-escaped markup: unescape ONCE
+        # to get the HTML, strip the tags, unescape again for the entities that
+        # were inside it. One pass leaves `&lt;a href=…&gt;` in the output.
+        text = _html_lib.unescape(raw)
+        # A LINK POST's content is its target: keep `[link]`'s href as text
+        # (the article being discussed), drop the `[comments]` self-link.
+        # A self post's `[link]` points back at the thread itself: noise, dropped.
+        thread_id = (parsed.path.split("/comments/", 1) + [""])[1].split("/", 1)[0]
+
+        def _link(m: "re.Match[str]") -> str:
+            href = m.group(1)
+            if thread_id and f"/comments/{thread_id}" in href:
+                return " "
+            return f"link: {href}"
+
+        text = re.sub(r'(?is)<a[^>]*href="([^"]+)"[^>]*>\s*\[link\]\s*</a>', _link, text)
+        text = re.sub(r"(?is)<a[^>]*>\s*\[comments\]\s*</a>", " ", text)
+        text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+        text = re.sub(r"(?is)</p\s*>", "\n\n", text)
+        text = re.sub(r"<[^>]+>", " ", text)
+        return re.sub(r"[ \t]+", " ", _html_lib.unescape(text)).strip()
+
+    entries = re.split(r"(?i)<entry[\s>]", xml)[1:]
+    if not entries:
+        return None
+    thread_title = ""
+    parts: list[str] = []
+    comments = 0
+    for chunk in entries:
+        chunk = re.split(r"(?i)</entry>", chunk)[0]
+        title = _tag(chunk, "title")
+        author = _tag(chunk, "name")
+        updated = _tag(chunk, "updated")[:10]
+        body = _tag(chunk, "content")
+        entry_id = _tag(chunk, "id")
+        if entry_id.startswith("t3_") or not parts:
+            # The submission itself is the feed's first entry.
+            thread_title = title or thread_title
+            header = f"# {thread_title}".strip()
+            meta = " · ".join(x for x in (f"posted by {author}" if author else "", updated) if x)
+            parts.append("\n\n".join(x for x in (header, meta, body) if x))
+            continue
+        if comments >= _REDDIT_ADAPTER_MAX_COMMENTS:
+            break
+        meta = " · ".join(x for x in (author, updated) if x)
+        parts.append("\n\n".join(x for x in (f"**{meta}**" if meta else "", body) if x))
+        comments += 1
+    if len(parts) > 1:
+        parts.insert(1, f"## Comments ({comments} of {max(0, len(entries) - 1)} shown)")
+    content = "\n\n---\n\n".join(parts)[:_REDDIT_ADAPTER_MAX_CHARS]
+    if len(content) < _MIN_REAL_CONTENT_CHARS:
+        return None
+    return {
+        "title": thread_title or None,
+        "description": None,
+        "content": content,
+        "source_url": feed_url,
+        "adapter": "reddit-thread-atom",
+    }
+
+
+_FETCH_URL_SITE_ADAPTERS: tuple = (
+    {
+        "name": "reddit-thread-atom",
+        "hosts": _REDDIT_HOSTS,
+        "path_re": _REDDIT_THREAD_PATH,
+        "handler": _reddit_thread_via_atom,
+        "why": "reddit serves a JS-only shell to every non-browser client; it publishes the same thread as Atom at <thread-url>/.rss",
+    },
+)
+
+
+def _select_site_adapter(target: str):
+    """The adapter that covers `target`, or None."""
+    try:
+        parsed = urlparse(str(target))
+    except Exception:
+        return None
+    host = str(parsed.hostname or "").lower()
+    path = str(parsed.path or "")
+    for adapter in _FETCH_URL_SITE_ADAPTERS:
+        if host in adapter["hosts"] and adapter["path_re"].search(path):
+            return adapter
+    return None
+
+
+def _escalated_content_preview(content: str, include_full_content: bool, source: str) -> str:
+    """The model-visible preview of content that came from an escalation rung.
+
+    Same contract as the static HTML path's "Markdown Content Preview": bounded,
+    with the full text pointed at rather than repeated (it ships in `content`).
+    """
+    text = str(content or "")
+    cap = _HTML_RENDER_PREVIEW_CHARS if include_full_content else 2000
+    body = text[:cap]
+    lines = [f"📄 Content Preview (from the {source}):", body]
+    if len(text) > cap:
+        lines[-1] = body + "\n\n... (truncated)"
+        lines.append(f"📊 Total length: {len(text):,} characters")
+        lines.append("↪ Full text (untruncated) is in this result's `content` field — not repeated here.")
+    else:
+        lines.append(f"📊 Total length: {len(text):,} characters")
+    return "\n".join(lines)
+
+
+def _fetch_url_rescue_blocked(
+    *,
+    url: str,
+    final_url: str,
+    status: int,
+    headers: Dict[str, Any],
+    body: str,
+    render_mode: str,
+    budget_s: float,
+    keep_links: bool,
+    fetch_timestamp: str,
+    attempts: int,
+    base_error_class: str,
+    base_suggestions: list,
+) -> Optional[Dict[str, Any]]:
+    """Try to turn a blocking HTTP error into readable content.
+
+    Ladder, in cost order, entered ONLY for a status whose body looks like a JS
+    challenge rather than a policy refusal:
+
+      1. real-browser render  — a Cloudflare-style interstitial answers 403 to a
+         non-browser and the article to a browser that runs its JavaScript;
+      2. the site's own public feed — the headline/standfirst the publisher
+         syndicates for machines, when the article itself stays refused;
+      3. nothing — a failure payload with a TERMINAL class naming what actually
+         refused, never the vague "HTTP Error 403".
+
+    Returns a complete fetch_url payload, or None to let the caller emit its
+    ordinary HTTP-error report (which is what happens when the block was never
+    challenge-shaped and no browser was ever launched).
+    """
+    if not _is_browser_clearable_block(int(status), body, headers):
+        return None
+
+    # ADAPTER BEFORE BROWSER — same order as the 200 path, same reason: it is
+    # cheaper and it does not have to win an anti-bot argument.
+    adapter = _select_site_adapter(str(final_url))
+    adapter_note = ""
+    if adapter is not None:
+        try:
+            via = adapter["handler"](str(final_url), timeout_s=min(float(budget_s or 15.0), 15.0))
+        except Exception:
+            via = None
+        if isinstance(via, dict) and via.get("rate_limited"):
+            adapter_note = (
+                f"{adapter['name']}: the site rate-limited this client "
+                f"(HTTP 429 from {via.get('source_url')}) — wait a minute and retry"
+            )
+        elif isinstance(via, dict) and via.get("content"):
+            content_text = str(via.get("content") or "")
+            note = (
+                f"content read from the machine-readable view this site publishes for it "
+                f"({adapter['name']}: {via.get('source_url')}) — {adapter['why']}"
+            )
+            return {
+                "success": True,
+                "error": None,
+                "url": str(url),
+                "final_url": str(final_url),
+                "timestamp": str(fetch_timestamp),
+                "status_code": int(status),
+                "attempts": int(attempts),
+                "content_type": "application/atom+xml",
+                "detected_as": "html",
+                "text_available": bool(content_text.strip()),
+                "title": str(via.get("title") or "") or None,
+                "description": str(via.get("description") or "") or None,
+                "content": content_text,
+                "content_chars": len(content_text),
+                "adapter_used": str(adapter["name"]),
+                "adapter_source_url": str(via.get("source_url") or ""),
+                "rendered_with_browser": False,
+                "render_note": None,
+                "static_status_blocked": int(status),
+                "rendered": "\n".join(
+                    [
+                        f"🌐 {url}",
+                        f"Status: HTTP {status} to the static fetch",
+                        f"Timestamp: {fetch_timestamp}",
+                        "",
+                        _escalated_content_preview(content_text, False, "site adapter"),
+                        f"🔗 {note}",
+                    ]
+                ),
+            }
+
+    render_note = ""
+    rendered_main: Optional[Dict[str, Any]] = None
+    render_detail: Dict[str, Any] = {}
+    if render_mode != "never":
+        rendered_main, render_note = _escalate_to_rendered_dom(
+            str(final_url),
+            "bot_challenge",
+            render_mode,
+            status_code=int(status),
+            budget_s=budget_s,
+            out=render_detail,
+            keep_links=bool(keep_links),
+        )
+
+    if rendered_main is not None:
+        content_text = str(rendered_main.get("content") or "")
+        dom = str(rendered_main.get("_html") or "")
+        landed = str(rendered_main.get("_final_url") or final_url)
+        normalized = _normalize_text_for_evidence(
+            raw_text=dom,
+            content_type_header=str(headers.get("content-type", "") or ""),
+            url=str(final_url),
+        )
+        title = str(rendered_main.get("title") or "") or None
+        description = str(rendered_main.get("description") or "") or None
+        rendered_lines = [
+            f"🌐 {url}",
+            f"Status: HTTP {status} to the static fetch, cleared by a headless browser",
+            f"Timestamp: {fetch_timestamp}",
+            "",
+            _escalated_content_preview(content_text, False, "rendered page"),
+            f"🖥️ Rendered with a headless browser: {render_note}",
+        ]
+        return {
+            "success": True,
+            "error": None,
+            "url": str(url),
+            "final_url": landed,
+            "timestamp": str(fetch_timestamp),
+            "status_code": int(status),
+            "attempts": int(attempts),
+            "reason": "",
+            "content_type": str(headers.get("content-type", "") or ""),
+            "detected_as": "html",
+            "text_available": bool(content_text.strip()),
+            "size_bytes": len(str(body or "").encode("utf-8", errors="replace")),
+            "title": title,
+            "description": description,
+            "content": content_text,
+            "content_chars": len(content_text),
+            "rendered_with_browser": True,
+            "rendered_dom": dom,
+            "render_note": render_note,
+            "extraction_error": None,
+            "link_dominant": bool(rendered_main.get("link_dominant")),
+            # The static answer WAS a block; a caller comparing `status_code`
+            # against `success` must be able to see which one it is holding.
+            "static_status_blocked": int(status),
+            "raw_text": None,
+            "normalized_text": normalized,
+            "rendered": "\n".join(rendered_lines),
+        }
+
+    # The browser was refused too (or was never available). Before calling it a
+    # dead end, read what the publisher syndicates for machines.
+    entry = _feed_rescue(str(final_url))
+    # What the RENDERED page said beats what the blocked HTTP response said:
+    # "Prove your humanity" in the browser is a CAPTCHA wall, not a generic 403.
+    if render_detail.get("refusal_class"):
+        err_class = str(render_detail["refusal_class"])
+        suggestions = list(render_detail.get("refusal_suggestions") or [])
+    else:
+        refusal = _classify_page_refusal("", headers=headers)
+        err_class = (
+            refusal[0] if refusal else ("blocked_by_site" if render_mode != "never" else base_error_class)
+        )
+        suggestions = list(refusal[1]) if refusal else list(base_suggestions)
+    if adapter_note:
+        suggestions.insert(0, adapter_note)
+    if render_note:
+        suggestions.append(render_note)
+
+    if entry is not None:
+        title = str(entry.get("title") or "").strip()
+        summary = str(entry.get("summary") or "").strip()
+        feed_url = str(entry.get("feed_url") or "")
+        degraded_reason = (
+            f"the article body is refused to every client (HTTP {status}, {err_class}); "
+            f"the title and standfirst below come from the site's own public feed {feed_url}"
+        )
+        content_text = "\n\n".join(x for x in (f"# {title}" if title else "", summary) if x)
+        rendered_lines = [
+            f"⚠️ Partial content only ({err_class})",
+            f"URL: {url}",
+            f"Status: {status}",
+            f"Recovered from: {feed_url}",
+            f"Timestamp: {fetch_timestamp}",
+            "",
+            "📄 Content Analysis:",
+            content_text,
+            "",
+            "Suggested actions:",
+        ]
+        rendered_lines.extend([f"  - {s}" for s in suggestions])
+        return {
+            "success": True,
+            "error": None,
+            "error_class": err_class,
+            "degraded": True,
+            "degraded_reason": degraded_reason,
+            "suggestions": suggestions,
+            "url": str(url),
+            "final_url": str(final_url),
+            "timestamp": str(fetch_timestamp),
+            "status_code": int(status),
+            "attempts": int(attempts),
+            "content_type": str(headers.get("content-type", "") or ""),
+            "detected_as": "html",
+            "text_available": bool(content_text.strip()),
+            "title": title or None,
+            "description": summary or None,
+            "content": content_text,
+            "content_chars": len(content_text),
+            "recovered_from_feed": feed_url,
+            "rendered_with_browser": bool(render_note),
+            "render_note": render_note or None,
+            "rendered": "\n".join(rendered_lines),
+        }
+
+    # Honest dead end — but a PRECISE one: which refusal, after which attempts.
+    rendered_lines = [
+        f"❌ {err_class}: the site refused this URL to every client tried (HTTP {status})",
+        f"URL: {url}",
+        f"Attempts: {attempts} static"
+        + (", 1 real-browser render" if render_mode != "never" else "")
+        + ", 1 public-feed lookup",
+        f"Timestamp: {fetch_timestamp}",
+        "Suggested actions:",
+    ]
+    rendered_lines.extend([f"  - {s}" for s in suggestions])
+    return {
+        "success": False,
+        "error": f"{err_class}: HTTP {status} from every client tried",
+        "error_class": err_class,
+        # A rate-based block clears on its own; a CAPTCHA does not clear by
+        # retrying the same way, and saying it does wastes the agent's turns.
+        "retryable": err_class in {"blocked_by_site", "rate_limited"},
+        "suggestions": suggestions,
+        "attempts": int(attempts),
+        "url": str(url),
+        "final_url": str(final_url),
+        "timestamp": str(fetch_timestamp),
+        "status_code": int(status),
+        "content_type": str(headers.get("content-type", "") or ""),
+        "rendered_with_browser": bool(render_note),
+        "render_note": render_note or None,
+        "rendered": "\n".join(rendered_lines),
+    }
 # Below this many chars of extracted body text, an HTML 200 is "no real
 # content" (a legitimate article always exceeds this; a challenge/JS shell
 # does not).
@@ -5905,19 +6667,30 @@ _MIN_REAL_CONTENT_CHARS = 200
 _ZERO_TEXT_FLOOR_CHARS = 25
 
 
-# Error classes that a headless render can actually fix. A BOT CHALLENGE is
-# deliberately excluded by default: the block is on the request, not on the
-# rendering, so a browser carrying the same honest identity is usually blocked
-# too — escalating there burns seconds to arrive at the same refusal and, worse,
-# reports a bot block as if it were a rendering problem.
-_RENDERABLE_ERROR_CLASSES = frozenset({"js_required", "empty_content", "thin_content"})
+# Error classes a real-browser render can actually fix.
+#
+# `bot_challenge` IS in this set (changed 2026-09-22). The old exclusion read
+# "the block is on the request, not on the rendering, so a browser carrying the
+# same honest identity is blocked too" — true of `chrome-headless-shell` sending
+# `AbstractCore-FetchTool/1.0`, and false of the real Chromium the escalation now
+# launches. Measured on aiuntethered.com: static fetch → HTTP 403 + Cloudflare's
+# "Just a moment..."; real Chromium → 6,642 characters of article, 2.4s. The
+# escalation is still never free and never silent: it runs only after the cheap
+# path has already failed, and a render that arrives at the same refusal now says
+# so with a TERMINAL class (`blocked_by_site` / `captcha_required`) rather than
+# reporting a block as a rendering problem.
+_RENDERABLE_ERROR_CLASSES = frozenset(
+    {"js_required", "empty_content", "thin_content", "bot_challenge"}
+)
 # A page that yielded almost no text from a LARGE document is a shell worth
 # rendering. Small pages are left alone: a short page that is genuinely short
 # must never cost a browser launch.
 _THIN_SHELL_MIN_RAW_CHARS = 50_000
-# A client-rendered page answers 200 (or 204). Anything else that still produced
-# a stub body is the server declining, and a browser does not change that.
-_RENDERABLE_STATUS_CODES = frozenset({200, 204})
+# Statuses whose stub body may still become content in a browser. 200/204 are
+# the client-rendered page; 403/429/451 are the challenge statuses, and they
+# reach the render ONLY through `_is_browser_clearable_block` (a policy refusal
+# that explains itself never pays for a browser launch).
+_RENDERABLE_STATUS_CODES = frozenset({200, 204}) | _RENDERABLE_BLOCK_STATUSES
 
 
 def _escalate_to_rendered_dom(
@@ -5926,6 +6699,8 @@ def _escalate_to_rendered_dom(
     mode: str,
     status_code: Optional[int] = None,
     budget_s: Optional[float] = None,
+    out: Optional[Dict[str, Any]] = None,
+    keep_links: bool = True,
 ) -> tuple[Optional[Dict[str, Any]], str]:
     """Re-fetch `final_url` in the headless browser and extract from the DOM.
 
@@ -5933,7 +6708,19 @@ def _escalate_to_rendered_dom(
     explaining why the escalation did not happen or did not help. The note is
     surfaced to the caller either way — an escalation that silently did nothing
     would be the silent-degradation failure this pipeline exists to avoid.
+
+    `out`, when given, is filled with structured detail the prose note cannot
+    carry without being parsed back: `out["refusal_class"]` is the TERMINAL
+    class (`captcha_required` / `paywall` / `login_required` / `blocked_by_site`)
+    when a real browser ran the page and the page refused, and
+    `out["refusal_suggestions"]` the matching advice. The caller uses it to
+    replace a generic `empty_content` with what actually happened; without it a
+    CAPTCHA wall and a client-rendered app are reported identically.
     """
+    def _record_refusal(refusal: Optional[tuple]) -> None:
+        if out is not None and refusal is not None:
+            out["refusal_class"] = refusal[0]
+            out["refusal_suggestions"] = list(refusal[1])
     if status_code is not None and status_code not in _RENDERABLE_STATUS_CODES and mode != "always":
         # A 202/203 with a stub body is bot mitigation answering the REQUEST;
         # rendering re-sends the same request from the same host and gets the
@@ -5980,7 +6767,11 @@ def _escalate_to_rendered_dom(
     # many tools in parallel), and that would escape as an exception from a
     # function whose contract is a (result, note) pair.
     try:
-        result = render_url_html(str(final_url), timeout_s=render_budget)
+        # THOROUGH: the full Chromium build, a persistent cookie/consent profile,
+        # ordinary viewport/locale/UA, a short settle, one scroll, and
+        # innerText captured beside the DOM. See `browser_tools.render_url_html`.
+        # Every part degrades on its own; none of it is a spoofing kit.
+        result = render_url_html(str(final_url), timeout_s=render_budget, thorough=True)
     except BaseException as exc:  # noqa: BLE001 - contract is "never raises"
         return None, (
             f"headless render could not be started ({type(exc).__name__}: {str(exc)[:160]}) — "
@@ -5996,8 +6787,25 @@ def _escalate_to_rendered_dom(
         return None, note
 
     html = str(result.get("html") or "")
-    main = _extract_main_content(html, str(final_url), keep_links=True)
+    # HONOUR keep_links ON THE RENDERED PATH TOO. It was hardcoded True here, so
+    # `fetch_url(..., keep_links=False)` — what the code UI actually calls —
+    # silently got a link-laden markdown blob back for every page that needed a
+    # render, and only for those.
+    main = _extract_main_content(html, str(final_url), keep_links=bool(keep_links))
     content = str(main.get("content") or "")
+    # SHADOW DOM. `page.content()` serialises the LIGHT tree only, so a page
+    # built from web components (reddit's `shreddit-*`, many design-system
+    # sites) hands the extractor a scaffold with the article nowhere in it.
+    # `innerText` is computed from layout and sees straight through. Used only
+    # when HTML extraction genuinely came back short, so a page that extracts
+    # properly keeps its structure-preserving markdown.
+    visible_text = str(result.get("text") or "")
+    if len(content) < _MIN_REAL_CONTENT_CHARS and len(visible_text) > len(content):
+        cleaned = _normalize_extracted_text(visible_text)
+        if len(cleaned) >= _MIN_REAL_CONTENT_CHARS:
+            main["content"] = cleaned
+            main["shadow_dom_text"] = True
+            content = cleaned
     # SAME FLOOR AS THE STATIC PATH. Accepting at the zero-text floor (25) while
     # the static path rejects below `_MIN_REAL_CONTENT_CHARS` (200) meant a
     # render could "succeed" on text the static path would have refused —
@@ -6006,6 +6814,17 @@ def _escalate_to_rendered_dom(
     # run to run. One floor, one meaning.
     if len(content) < _MIN_REAL_CONTENT_CHARS:
         status = result.get("status")
+        # NAME THE REFUSAL. A real browser has now run this page; "may need
+        # interaction, or be blocked" is the vague note that made every terminal
+        # refusal look like a transient rendering problem. The signatures live
+        # in `_classify_page_refusal` and are matched on the rendered text.
+        refusal = _classify_page_refusal(visible_text or content)
+        if refusal is not None:
+            _record_refusal(refusal)
+            return None, (
+                f"the page was rendered in a real browser and it answered with a refusal "
+                f"({refusal[0]}): {refusal[1][0]}"
+            )
         if isinstance(status, int) and status >= 400:
             # The browser got a hard HTTP error. That is a definite answer and
             # it was being discarded in favour of a vague "may be blocked".
@@ -6018,11 +6837,29 @@ def _escalate_to_rendered_dom(
             f"characters of text (below the {_MIN_REAL_CONTENT_CHARS}-char floor) — it may need "
             "interaction, or be blocked"
         )
+    # A LONG REFUSAL IS STILL A REFUSAL. A block/CAPTCHA/paywall page that ships
+    # a nav bar and a footer clears the 200-char floor, and the escalation used
+    # to hand it back as if it were the article — the exact silent-degradation
+    # this pipeline exists to refuse. Only the *whole* extracted text counts as
+    # a refusal, never a phrase inside a real article that happens to discuss
+    # paywalls, so the check is bounded to short pages.
+    if len(content) < 1200:
+        refusal = _classify_page_refusal(content)
+        if refusal is not None:
+            _record_refusal(refusal)
+            return None, (
+                f"the page was rendered in a real browser and it answered with a refusal "
+                f"({refusal[0]}): {refusal[1][0]}"
+            )
     main["_html"] = html
     main["_final_url"] = str(result.get("final_url") or final_url)
+    mode = str(result.get("browser_mode") or "")
     return main, (
         f"content extracted from the rendered DOM after JavaScript ran "
-        f"({result.get('elapsed_s')}s, {len(html):,} chars of DOM)"
+        f"({result.get('elapsed_s')}s, {len(html):,} chars of DOM"
+        + (f", {mode}" if mode else "")
+        + (", text read from the shadow DOM" if main.get("shadow_dom_text") else "")
+        + ")"
     )
 
 
@@ -6326,7 +7163,17 @@ def fetch_url(
                         fine. For a caller that knows the page needs JavaScript.
                         The static result is kept if the render does not help.
             Escalation NEVER fires for a page that extracted fine statically, so
-            an ordinary fetch costs no browser launch.
+            an ordinary fetch costs no browser launch. When it fires it uses a
+            real Chromium with a persistent cookie profile, and it also fires on a
+            403/429/451 whose body is a JavaScript challenge (Cloudflare "Just a
+            moment..."), not on a refusal that explains itself.
+            Before the browser, a SITE ADAPTER may answer from a machine-readable
+            view the site publishes (reddit threads -> the thread's Atom feed).
+            If every client is refused, the site's own RSS feed may still give
+            the title + standfirst: success=True, degraded=True, and error_class
+            names the refusal. Terminal classes: captcha_required, paywall,
+            login_required, blocked_by_site — this tool never solves CAPTCHAs,
+            bypasses paywalls or logs in.
         keep_links: Whether to preserve and extract links from HTML content (default: True)
         user_agent: User-Agent header to use (default: "AbstractCore-FetchTool/1.0")
         include_full_content: Whether to include full text/JSON/XML content (no preview truncation) (default: True)
@@ -6363,6 +7210,12 @@ def fetch_url(
         if render_js_norm not in {"auto", "never", "always"}:
             render_js_norm = "auto"
         render_applied: Optional[str] = None
+        # A SITE ADAPTER IS NOT A BROWSER. Kept separate from `render_applied`
+        # so `rendered_with_browser` never claims a render that did not happen
+        # and the caller can see exactly which machine-readable view was read.
+        adapter_applied: str = ""
+        adapter_source: str = ""
+        adapter_note: str = ""
         render_failure_note: str = ""
         extraction_error: Optional[str] = None
         rendered_dom: Optional[str] = None
@@ -6519,16 +7372,47 @@ def fetch_url(
                     error_class, suggestions = _classify_fetch_http_error(
                         status, dict(response.headers), host=_final_host
                     )
+                    error_body = ""
+                    try:
+                        error_body = response.text or ""
+                    except Exception:
+                        error_body = ""
                     body_excerpt = ""
                     try:
                         body_excerpt = preview_text(
                             _normalize_extracted_text(
-                                re.sub(r"<[^>]+>", " ", response.text or "")
+                                re.sub(r"<[^>]+>", " ", error_body)
                             ),
                             max_chars=400,
                         )
                     except Exception:
                         body_excerpt = ""
+
+                    # A 403 IS NOT THE END OF THE LADDER. A Cloudflare-style
+                    # interstitial answers 403 to a non-browser and 200 to a
+                    # browser that runs its JavaScript; the static path used to
+                    # return the 403 here and never try, so a plain blog that
+                    # opens fine for a human came back as "HTTP Error 403". Only
+                    # a body that LOOKS like a challenge buys the browser launch
+                    # (`_is_browser_clearable_block`), so a policy/geo refusal
+                    # that explains itself still costs nothing.
+                    blocked_rescue = _fetch_url_rescue_blocked(
+                        url=str(url),
+                        final_url=str(response.url),
+                        status=status,
+                        headers=dict(response.headers),
+                        body=error_body,
+                        render_mode=render_js_norm,
+                        budget_s=timeout_s,
+                        keep_links=bool(keep_links_norm),
+                        fetch_timestamp=str(fetch_timestamp),
+                        attempts=attempt + 1,
+                        base_error_class=error_class,
+                        base_suggestions=list(suggestions),
+                    )
+                    if blocked_rescue is not None:
+                        return _apply_fetch_url_payload_policy(blocked_rescue)
+
                     rendered_lines = [
                         f"❌ HTTP Error {status}: {response.reason} ({error_class})",
                         f"URL: {url}",
@@ -6840,6 +7724,42 @@ def fetch_url(
                                 and len(str(content_text or "")) < _MIN_REAL_CONTENT_CHARS
                                 and len(raw_text or "") > _THIN_SHELL_MIN_RAW_CHARS
                             )
+                            # SITE ADAPTER FIRST — it is CHEAPER than a browser
+                            # (one conditional GET against a feed the site
+                            # publishes for machines, ~0.3s vs 3-5s) and it does
+                            # not have to win an anti-bot argument to succeed.
+                            # Runs even under render_js="never": it launches no
+                            # browser. See `_FETCH_URL_SITE_ADAPTERS`.
+                            if unrenderable is not None or thin_shell:
+                                adapter = _select_site_adapter(str(response.url))
+                                if adapter is not None:
+                                    try:
+                                        via = adapter["handler"](
+                                            str(response.url), timeout_s=min(timeout_s, 15.0)
+                                        )
+                                    except Exception:
+                                        via = None
+                                    if isinstance(via, dict) and via.get("rate_limited"):
+                                        adapter_note = (
+                                            f"{adapter['name']}: the site rate-limited this client "
+                                            f"(HTTP 429 from {via.get('source_url')}) — wait a minute and retry"
+                                        )
+                                    elif isinstance(via, dict) and via.get("content"):
+                                        content_text = str(via.get("content") or "")
+                                        page_title = str(via.get("title") or "") or page_title
+                                        page_description = (
+                                            str(via.get("description") or "") or page_description
+                                        )
+                                        normalized_text = content_text
+                                        unrenderable = None
+                                        thin_shell = False
+                                        adapter_applied = str(adapter["name"])
+                                        adapter_source = str(via.get("source_url") or "")
+                                        adapter_note = (
+                                            f"content read from the machine-readable view this site "
+                                            f"publishes for it ({adapter_applied}: {adapter_source}) — "
+                                            f"{adapter['why']}"
+                                        )
                             # "always" means ALWAYS. It used to mean "whenever
                             # the static extraction came back empty", which is
                             # what "auto" already does — leaving a caller who
@@ -6856,13 +7776,28 @@ def fetch_url(
                                 # RENDERED DOM through the very same extraction
                                 # pipeline. Only here: a page that extracted fine
                                 # statically never pays for a browser launch.
+                                render_detail: Dict[str, Any] = {}
                                 rendered_main, render_note = _escalate_to_rendered_dom(
                                     str(response.url),
                                     err_class,
                                     render_js_norm,
                                     status_code=int(response.status_code),
                                     budget_s=timeout_s,
+                                    out=render_detail,
+                                    keep_links=bool(keep_links_norm),
                                 )
+                                if render_detail.get("refusal_class") and unrenderable is not None:
+                                    # A REAL BROWSER RAN THIS PAGE AND IT
+                                    # REFUSED. Keeping `empty_content` here is
+                                    # the dishonest outcome the operator saw:
+                                    # reddit's CAPTCHA wall and a client-rendered
+                                    # app were reported with the same class and
+                                    # the same "try a JavaScript-capable fetch"
+                                    # advice — advice that is already spent.
+                                    unrenderable = (
+                                        str(render_detail["refusal_class"]),
+                                        list(render_detail.get("refusal_suggestions") or []),
+                                    )
                                 if rendered_main is not None and len(
                                     str(rendered_main.get("content") or "")
                                 ) <= len(str(content_text or "")):
@@ -6914,8 +7849,69 @@ def fetch_url(
 
                             if unrenderable is not None:
                                 err_class, suggestions = unrenderable
+                                if adapter_note:
+                                    suggestions = [adapter_note] + list(suggestions)
                                 if render_failure_note:
                                     suggestions = list(suggestions) + [render_failure_note]
+                                # LAST RUNG, SAME AS THE BLOCKED-STATUS PATH: a
+                                # 200 that never yields an article to anything —
+                                # static fetch or real browser — may still be
+                                # syndicated by the site itself. Only reached
+                                # after both have failed, so it costs nothing on
+                                # any working page.
+                                feed_entry = (
+                                    _feed_rescue(str(response.url))
+                                    if err_class
+                                    in {"captcha_required", "blocked_by_site", "paywall", "login_required"}
+                                    else None
+                                )
+                                if feed_entry is not None:
+                                    feed_title = str(feed_entry.get("title") or "").strip()
+                                    feed_summary = str(feed_entry.get("summary") or "").strip()
+                                    feed_url = str(feed_entry.get("feed_url") or "")
+                                    feed_content = "\n\n".join(
+                                        x for x in (f"# {feed_title}" if feed_title else "", feed_summary) if x
+                                    )
+                                    degraded_reason = (
+                                        f"the page body is refused to every client ({err_class}); the title "
+                                        f"and summary below come from the site's own public feed {feed_url}"
+                                    )
+                                    rendered_lines = [
+                                        f"⚠️ Partial content only ({err_class})",
+                                        f"URL: {str(response.url)}",
+                                        f"Recovered from: {feed_url}",
+                                        "",
+                                        "📄 Content Analysis:",
+                                        feed_content,
+                                        "",
+                                        "Suggested actions:",
+                                    ]
+                                    rendered_lines.extend([f"  - {s}" for s in suggestions])
+                                    return _apply_fetch_url_payload_policy(
+                                        {
+                                            "success": True,
+                                            "error": None,
+                                            "error_class": err_class,
+                                            "degraded": True,
+                                            "degraded_reason": degraded_reason,
+                                            "suggestions": suggestions,
+                                            "url": str(url),
+                                            "final_url": str(response.url),
+                                            "timestamp": str(fetch_timestamp),
+                                            "status_code": int(response.status_code),
+                                            "content_type": str(content_type or ""),
+                                            "detected_as": "html",
+                                            "text_available": bool(feed_content.strip()),
+                                            "title": feed_title or page_title,
+                                            "description": feed_summary or page_description,
+                                            "content": feed_content,
+                                            "content_chars": len(feed_content),
+                                            "recovered_from_feed": feed_url,
+                                            "rendered_with_browser": bool(render_applied),
+                                            "render_note": render_applied or render_failure_note or None,
+                                            "rendered": "\n".join(rendered_lines),
+                                        }
+                                    )
                                 meta_bits = []
                                 if page_title:
                                     meta_bits.append(f"title={page_title!r}")
@@ -6934,7 +7930,10 @@ def fetch_url(
                                     "success": False,
                                     "error": f"No readable content extracted ({err_class})",
                                     "error_class": err_class,
-                                    "retryable": err_class == "bot_challenge",
+                                    # A CAPTCHA does not clear by retrying the
+                                    # same way; saying "retryable" there spends
+                                    # the agent's turns on a certainty.
+                                    "retryable": err_class in {"bot_challenge", "blocked_by_site"},
                                     "suggestions": suggestions,
                                     "url": str(url),
                                     "final_url": str(response.url),
@@ -6978,6 +7977,17 @@ def fetch_url(
                 # headless render can differ from what the server sent. This has
                 # to happen HERE, not where `rendered` is first joined — that
                 # runs before the escalation decides anything.
+                if adapter_note:
+                    rendered = f"{rendered}\n🔗 {adapter_note}"
+                if (adapter_applied or render_applied) and content_text:
+                    # THE CONTENT MUST REACH THE READER. `rendered` was composed
+                    # from the SERVER's bytes before any escalation ran, so on a
+                    # rendered/adapter page it described the empty shell
+                    # ("Title: Reddit") and the article existed only in
+                    # `content` — invisible to every consumer that shows the
+                    # model `rendered`. Same bounded-preview contract as the
+                    # static path.
+                    rendered = f"{rendered}\n{_escalated_content_preview(str(content_text), bool(include_full_content_norm), 'site adapter' if adapter_applied else 'rendered page')}"
                 if render_applied:
                     rendered = f"{rendered}\n🖥️ Rendered with a headless browser: {render_applied}"
                 elif render_failure_note:
@@ -7042,6 +8052,12 @@ def fetch_url(
                     # server's own bytes — they can differ, and the render costs
                     # seconds.
                     "rendered_with_browser": bool(render_applied),
+                    # WHICH MACHINE-READABLE VIEW WAS READ, when `content` did
+                    # not come from the requested document. Named, not implied:
+                    # a caller must be able to tell an article from a feed
+                    # rendering of the same thread.
+                    "adapter_used": adapter_applied or None,
+                    "adapter_source_url": adapter_source or None,
                     # The post-JavaScript DOM `content` was extracted from, kept
                     # separate from `raw_text` (the server's own bytes) and
                     # withheld above the same cap.

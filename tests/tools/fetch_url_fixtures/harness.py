@@ -409,6 +409,11 @@ def offline_envelope(gold_key: str, *, keep_links: bool = True) -> Dict[str, Any
         # fixtures are the SERVER's bytes, so no render ever happens here.
         "rendered_dom": None,
         "rendered_with_browser": False,
+        # Site adapter (a machine-readable view the site publishes, e.g. reddit's
+        # thread Atom feed). None on this offline rebuild: fixtures are served
+        # HTML, and an adapter only runs after the static extraction failed.
+        "adapter_used": None,
+        "adapter_source_url": None,
         "render_note": None,
         "extraction_error": None,
         "rendered": rendered,
