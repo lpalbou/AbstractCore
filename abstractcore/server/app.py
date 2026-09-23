@@ -358,7 +358,7 @@ def _request_is_auth_exempt(request: Request) -> bool:
     path = str(getattr(request.url, "path", "") or "")
     if request.method.upper() == "OPTIONS":
         return True
-    if path in {"/", "/favicon.ico", "/health"}:
+    if path in {"/", "/favicon.ico", "/health", "/console"} or path.startswith("/console/fragment/"):
         return True
     if not _server_protect_docs() and path in {"/docs", "/docs-lite", "/docs/oauth2-redirect", "/openapi.json", "/redoc"}:
         return True
@@ -1463,6 +1463,8 @@ try:
     logger.info("📷 Camera endpoints enabled at /v1/camera/*")
 except Exception as e:
     logger.debug(f"Camera endpoints not loaded: {e}")
+
+from .console_routes import router as _console_router; app.include_router(_console_router)  # web console: /console
 
 # ============================================================================
 # Enhanced Error Handling and Logging Middleware
@@ -5197,6 +5199,7 @@ async def server_root():
     <h1>AbstractCore Server</h1>
     <p>OpenAI-compatible API gateway is running.</p>
     <nav>
+      <a href="/console">Console</a>
       <a href="/docs">Swagger UI</a>
       <a href="/docs-lite">Docs Lite</a>
       <a href="/redoc">ReDoc</a>
