@@ -193,3 +193,23 @@ TODO.md
 untracked/
 test_results/
 release-artifacts/
+# ---------------------------------------------------------------------------
+# Agent harness and local tooling
+#
+# This repository is worked on with coding agents, and their configuration
+# embeds absolute local paths, hook commands, seat identities and empty API-key
+# slots. A `.claude/settings.json` in particular defines hooks that execute in
+# any contributor's session on clone. None of it belongs in a public repository,
+# and it was tracked once — this block is what stops that recurring.
+# ---------------------------------------------------------------------------
+.claude/
+.codex/
+.cursor/
+.agora/
+.abstractcode/
+.mcp.json
+CLAUDE.md
+/AGENTS.md
+abstractcode-export-*.md
+untracked/
+.venv/
