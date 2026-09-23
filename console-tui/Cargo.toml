@@ -1,12 +1,31 @@
 [package]
 name = "abstractcore-console"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
-# MSRV floor comes from the engine (abstracttui 0.3.0 declares 1.87).
+# MSRV floor comes from the engine (abstracttui 0.3.6 declares 1.87).
 rust-version = "1.87"
 license = "MIT"
-description = "An intuitive terminal console to configure AbstractCore — default models, providers & API keys, capability routes (vision/audio/video/embeddings), server and logging — rendered by AbstractTUI."
-publish = false
+description = "A terminal console for AbstractCore: configure models, providers and capability routes, browse, download and delete local models, and install local engines (Ollama, LM Studio, MLX, llama.cpp). Also a library of the shared Models/Engines screens, rendered by AbstractTUI."
+repository = "https://github.com/lpalbou/AbstractCore"
+homepage = "https://github.com/lpalbou/AbstractCore/tree/main/console-tui"
+documentation = "https://docs.rs/abstractcore-console"
+readme = "README.md"
+keywords = ["abstractcore", "tui", "terminal", "llm", "models"]
+categories = ["command-line-utilities"]
+# Published to crates.io from the AbstractCore repository's release
+# workflow (`cargo install abstractcore-console`); the gateway console
+# depends on it for the shared Models/Engines screens. Only the crate
+# sources, test fixtures, README and changelog ship; dev scripts,
+# captures and backlog notes stay in git.
+include = [
+    "src/**/*.rs",
+    "tests/**/*.rs",
+    "tests/fixtures/*.json",
+    "Cargo.toml",
+    "Cargo.lock",
+    "README.md",
+    "CHANGELOG.md",
+]
 
 [lib]
 name = "abstractcore_console"
@@ -30,6 +49,10 @@ path = "src/main.rs"
 # receive motion, and OUT of platform_clipboard in the headless harness
 # (tests must never shell out to pbcopy). 0.2.27 carried the same change
 # as a patch and was YANKED for it — never pin it.
+# 0.3.6 (2026-09-23): the version abstractgateway-console builds on. The
+# gateway crate mounts this crate's Models/Engines screens, so both must
+# resolve ONE abstracttui (one reactive runtime, one widget set); the
+# lockfile pins 0.3.6 exactly like the gateway's.
 abstracttui = "0.3.6"
 # JSON: the config file IS JSON, and `abstractcore config ... --json`
 # emits the derived views. Battle-tested parsing; unknown keys must be

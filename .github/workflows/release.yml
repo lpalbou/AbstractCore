@@ -230,6 +230,72 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/abstractcore-server:${{ needs.build.outputs.version }}
             ghcr.io/${{ github.repository_owner }}/abstractcore-server:latest
 
+  console-tui:
+    name: Test console-tui crate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: console-tui
+      - name: Format
+        working-directory: console-tui
+        run: cargo fmt --check
+      - name: Clippy
+        working-directory: console-tui
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: Test
+        working-directory: console-tui
+        run: cargo test --locked
+      - name: Package
+        working-directory: console-tui
+        run: cargo package --locked
+
+  # The terminal console ships as its own crate (`abstractcore-console`),
+  # versioned in console-tui/Cargo.toml independently of the Python package.
+  # abstractgateway-console depends on it, so it publishes with the core
+  # release (lower first). A crates.io version is permanent, so an
+  # already-published version is skipped instead of failing the release.
+  publish-console-crate:
+    name: Publish console-tui to crates.io
+    runs-on: ubuntu-latest
+    needs: [build, ensure-tag, console-tui]
+    environment: crates-io
+    permissions:
+      contents: read
+      # Trusted Publishing: crates.io mints a short-lived token from this
+      # workflow's OIDC identity; no long-lived secret lives in the repo.
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Is this version already published?
+        id: check
+        run: |
+          set -euo pipefail
+          VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' console-tui/Cargo.toml | head -1)"
+          CODE="$(curl -sS -o /dev/null -w '%{http_code}' \
+            -H 'User-Agent: abstractcore-release' \
+            "https://crates.io/api/v1/crates/abstractcore-console/${VERSION}")"
+          if [ "$CODE" = "200" ]; then
+            echo "abstractcore-console ${VERSION} is already on crates.io; skipping publish"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Authenticate to crates.io
+        if: steps.check.outputs.published == 'false'
+        uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+      - name: Publish
+        if: steps.check.outputs.published == 'false'
+        run: cargo publish --manifest-path console-tui/Cargo.toml --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
   github-release:
     name: Create GitHub Release
     runs-on: ubuntu-latest

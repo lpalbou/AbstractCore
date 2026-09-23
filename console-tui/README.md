@@ -6,6 +6,18 @@ A keyboard-first terminal console for configuring
 honest live state, and validation. Rendered by
 [AbstractTUI](https://crates.io/crates/abstracttui).
 
+It also browses, downloads and deletes local models and installs local
+engines (Ollama, LM Studio, MLX, llama.cpp), and it is a Rust library:
+the same **Models** and **Engines** screens run inside the
+[AbstractGateway console](https://crates.io/crates/abstractgateway-console).
+
+## Install
+
+```bash
+cargo install abstractcore-console     # Rust 1.87+
+abstractcore-console                   # needs the abstractcore CLI: pip install abstractcore
+```
+
 ## Run
 
 ```bash
@@ -23,7 +35,7 @@ names the file being shown and the CLI being used.
 
 ## What it does
 
-- **Browse** (digits 1-8): every section's honest state — set /
+- **Browse** (digits 1-9, then 0 for the tenth screen): every section's honest state — set /
   default / broken, secrets fingerprinted, unknown keys flagged.
 - **Providers** (3): ONE list, the AbstractGateway console's columns —
   `provider | family | base URL | API key | models | enabled | origin`
@@ -51,6 +63,24 @@ names the file being shown and the CLI being used.
   (`default_models.global_*` — the library's fallback route);
   `abstractcore-chat`'s own CLI default is `app_defaults.cli`, a
   different slot.
+- **Models** (9): the model catalog fitted to this machine (host
+  profile on top; fit `fits / tight / too large / partial offload /
+  unknown`; weights `installed / not downloaded / unknown / remote`).
+  `w` downloads the selected artifact with live progress, `d` deletes
+  after a confirm that names what blocks it (a loaded model, a cache
+  another engine shares — forcing is a separate answer), `/` filters,
+  `f` shows only what fits, `e` picks the engine, `v` flips between the
+  catalog and what is installed, `c` cancels the running job.
+- **Engines** (0): which engines are installed and running. `i` installs
+  the selected one after a confirm that shows the exact command, the
+  host it runs on and whether it needs sudo/UAC (or answers with a dry
+  run); `o` opens the vendor's download page (LM Studio is a desktop
+  app); `r` probes the local servers.
+
+Every Models/Engines action is an `abstractcore` CLI call you can run
+yourself — the job strip shows its CLI equivalent
+(`abstractcore models download ollama qwen3:8b`,
+`abstractcore engines install ollama`).
 
 ## Safety posture
 
@@ -69,6 +99,50 @@ names the file being shown and the CLI being used.
   provider's documented LOCAL default (ollama/lmstudio); never https,
   never cloud endpoints — those get CLI-only verdicts.
 
+## Use as a library
+
+The Models and Engines screens are backend-agnostic: they talk to a
+`ConsoleTransport`, which returns the JSON documents of the shared
+contracts (`host_profile_v1`, `engines_status_v1`, `model_catalog_v1`,
+`models_installed_v1`, `host_job_v1`). This binary uses `CliTransport`
+(`abstractcore … --json` subprocesses); the gateway console implements
+the trait over its HTTP client and mounts the same screens:
+
+```toml
+[dependencies]
+abstractcore-console = "0.2"
+abstracttui = "0.3.6"   # the same engine version: one reactive runtime
+```
+
+```rust
+use std::sync::Arc;
+use abstractcore_console::screens::{self, ScreensCtx, ScreensOptions};
+use abstractcore_console::transport::{ConsoleTransport, TransportError};
+use serde_json::Value;
+
+struct HttpTransport { /* your client */ }
+
+impl ConsoleTransport for HttpTransport {
+    fn host_profile(&self) -> Result<Value, TransportError> { /* GET …/host/profile */ todo!() }
+    // engines_status, models_catalog, models_installed, start_download,
+    // delete_model, engine_install, job, cancel_job — one route each;
+    // map 403/409 to TransportError::refused(msg, Some(body)).
+    fn host_label(&self) -> String { "gateway.example.lan".into() }
+}
+
+// In your mount closure (UI thread), once:
+let sctx = ScreensCtx::new(cx, Arc::new(HttpTransport { /* … */ }), overlays.clone(),
+    ScreensOptions { notice: Some(store.notice), ..ScreensOptions::default() });
+// …then as two more PageHost pages:
+//   .page("catalog", "Models",  move |pcx| screens::catalog(pcx, &sctx_a))
+//   .page("engines", "Engines", move |pcx| screens::engines(pcx, &sctx_b))
+```
+
+Each screen loads its data on first entry and binds its own keys
+(`w d / f e v r c` on Models, `i o r c` on Engines);
+`screens::catalog::HINTS` and `screens::engines::HINTS` are the footer
+pairs to show. Full API: <https://docs.rs/abstractcore-console>.
+
 ## Layout
 
 ```
@@ -81,16 +155,23 @@ src/
   worker.rs    ONE background thread owning all file/subprocess/socket I/O
   writes.rs    the write vocabulary: specs, verbs, verified expectations
   probes.rs    the test vocabulary: probe specs + pure verdict folds
+  transport.rs ConsoleTransport + TransportError (the Models/Engines seam)
+  transport/cli.rs  CliTransport: abstractcore … --json, child jobs
+  screens/     the shared Models/Engines screens (library): store, worker, confirms
   ui/          one module per screen over a PageHost shell
 tests/
-  headless_ui.rs   CaptureTerm+Driver harness; fixtures; the chrome matrix
+  headless_ui.rs    CaptureTerm+Driver harness; fixtures; the chrome matrix;
+                    Models/Engines over a MockTransport
+  cli_transport.rs  CliTransport against a fake `abstractcore` on PATH
+  fixtures/         contract A–E JSON documents
 ```
 
 ## Test
 
 ```bash
-cargo test            # headless: no network, no real config file touched
-cargo clippy --all-targets   # zero warnings is the bar
+cargo test --locked   # headless: no network, no real config file touched
+cargo clippy --all-targets -- -D warnings   # zero warnings is the bar
+cargo fmt --check
 python3 scripts/pty_smoke.py          # live: real CLI, scratch configs
 python3 scripts/definition_of_done.py # the chartered end-to-end walk
 ```

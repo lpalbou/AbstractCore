@@ -6,6 +6,60 @@ All notable changes, one entry per build wave, each with its gate line
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-09-23
+
+First crates.io release (`cargo install abstractcore-console`). The crate
+is now a LIBRARY too: the shared **Models** and **Engines** screens that
+the gateway console mounts over its own transport.
+
+### Models and Engines, one implementation for both consoles
+
+- **Library API (contract H).** `transport::ConsoleTransport` (host
+  profile, engines status, catalog, installed, download, delete, engine
+  install, job, cancel) returning the contract A–E JSON documents, with a
+  classified `TransportError` (`Refused` carries the backend's blockers).
+  `screens::catalog()` and `screens::engines()` are plain page builders
+  over `ScreensCtx` (store signals + the screens' own worker lane); the
+  job-poll helper `schedule_job_poll` re-sends `PollJob` from a timer
+  thread, the gateway console's `schedule_poll` pattern.
+- **`CliTransport`** drives `abstractcore … --json` on this machine. Exit
+  code 2 maps to *refused*. Downloads and real engine installs run as
+  child processes the transport owns (the job registry lives inside one
+  Python process, so a second CLI call could not poll it): NDJSON
+  `host_job_v1` lines update progress, stderr feeds the log tail, `c`
+  terminates the child. Ids starting with `-` are refused, never passed.
+- **Screen 9 — Models** (`catalog`): the catalog with host profile, fit
+  badges (`fits / tight / too large / partial offload / unknown`) and
+  weight labels (`installed / not downloaded / unknown / remote`). `w`
+  downloads (one key; a confirm only when the model is too large or the
+  disk is short), `d` deletes after a confirm that spells out blockers
+  (`loaded`, shared cache; force is a separate danger answer), `/`
+  filters, `f` fits-only, `e` cycles the engine, `v` flips to what is
+  installed, `c` cancels the running job.
+- **Screen 0 — Engines** (`engines`): Ollama, LM Studio, MLX, llama.cpp,
+  vLLM, Hugging Face — installed, version, server state, models. `i`
+  installs after a confirm showing the exact argv, the host it runs on
+  and the sudo/UAC notes, with a dry-run answer; `o` opens the vendor's
+  download page; `r` probes the local servers.
+- One job at a time, shown in a progress strip on both screens; its
+  outcome lands as a toast, and a finished download/delete/install
+  re-reads what it changed. `q` refuses while a job runs.
+
+### Platform
+
+- abstracttui 0.3.0 → **0.3.6**, the version abstractgateway-console
+  builds on (the two crates must share one engine). No API breakage.
+- `cargo fmt` applied across the crate; CI now gates fmt, clippy
+  `-D warnings`, `cargo test --locked` and the 1.87 MSRV build.
+- Screens 1–9 keep their digits; the tenth screen is `0`. The footer and
+  `--help` say `1-9, 0`.
+
+Gate: `cargo test --locked` 80 lib + 73 headless + 1 CLI-transport + 5
+doc tests green, `cargo clippy --all-targets -D warnings` clean,
+`cargo fmt --check` clean, `cargo publish --dry-run --locked` passes.
+
+### Earlier waves (0.1.x, never published)
+
 ### The weights banner stops warning a configured machine (2026-09-06, operator ruling)
 
 > "I do not like that it shows 'Recommended defaults — 2 of 3 models
