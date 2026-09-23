@@ -19,7 +19,7 @@ SOURCES = (
     "docs/tool-calling.md", "docs/tool-syntax-rewriting.md",
     "docs/structured-output.md", "docs/media-handling-system.md",
     "docs/vision-capabilities.md", "docs/embeddings.md",
-    "docs/centralized-config.md", "docs/server.md", "docs/endpoint.md",
+    "docs/centralized-config.md", "docs/models.md", "docs/engines.md", "docs/server.md", "docs/endpoint.md",
     "docs/troubleshooting.md", "docs/faq.md", "docs/architecture.md",
     "docs/native-mlx-runtime.md", "docs/native-mlx-benchmarks.md",
     "docs/speculative-decoding.md", "docs/generation-cancel.md",

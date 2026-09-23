@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Local model browser.** `abstractcore models catalog` and `models search` list downloadable
+  models (a curated catalog of 76 models across 46 families: chat, coding, vision, embedding)
+  with, for each engine artifact, whether it is installed, its download size, and a fit verdict
+  for this machine (`fits`, `tight`, `too_large`, `partial_offload`, `unknown`) with the
+  memory it needs, the largest context it allows, and a disk check. One artifact per model is
+  pre-selected for your hardware. `--hub` adds exact sizes and search results from Hugging Face
+  (cached 24 hours). See [Local Models](docs/models.md).
+- **Installed models with sizes, and delete.** `abstractcore models list` shows every model
+  installed in Ollama, LM Studio and the Hugging Face cache (split into MLX and transformers /
+  GGUF) with sizes, quantization and whether it is loaded. `abstractcore models delete` removes
+  one with the engine's own mechanism, refusing loaded, remote or shared-cache models unless
+  `--force`.
+- **Engine detection and installs.** `abstractcore engines status|install|open` detects Ollama,
+  LM Studio, MLX, llama.cpp, vLLM and transformers, shows the exact vendor install command for
+  your OS, and runs it after confirmation. See [Local Engines](docs/engines.md).
+- **`abstractcore host profile`**: accelerator, memory ceiling, free memory and free disk per
+  model store.
+- **Background jobs.** Downloads, deletes and engine installs run as jobs with progress and
+  cancel: `abstractcore models jobs`, `abstractcore models cancel`, and
+  `models download --detach`. With `--json`, `models download <provider> <artifact>` and
+  `engines install` stream one job object per line.
+- **Server routes**: `GET /acore/host/profile`, `GET /acore/models/catalog`,
+  `GET /acore/models/installed`, `POST /acore/models/download`, `POST /acore/models/delete`,
+  `GET /acore/engines`, `POST /acore/engines/{id}/install`, `GET /acore/jobs`,
+  `GET /acore/jobs/{id}`, `POST /acore/jobs/{id}/cancel`. Host-changing routes need a server
+  principal; engine installs are enabled by default only on a loopback-bound server
+  (`ABSTRACTCORE_ALLOW_ENGINE_INSTALL` overrides).
+- **GGUF quant selection**: a Hugging Face artifact `org/Repo-GGUF:Q4_K_M` downloads only that
+  quant's files, and a download that cannot fit on disk is refused before it starts.
+
 ## [2.13.42] - 2026-09-23
 
 ### Fixed

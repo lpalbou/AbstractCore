@@ -528,6 +528,18 @@ Token limits:
 - startup: `abstractcore-chat --max-tokens 8192 --max-output-tokens 1024 ...`
 - in-REPL: `/max-tokens 8192` and `/max-output-tokens 1024`
 
+Local models and engines (see [Local Models](docs/models.md) and [Local Engines](docs/engines.md)):
+
+```bash
+abstractcore host profile                        # accelerator, memory ceiling, free disk
+abstractcore models catalog --fits               # downloadable models that fit this machine
+abstractcore models download ollama qwen3:8b
+abstractcore models list                         # installed models per engine, with sizes
+abstractcore models delete ollama qwen3:8b --yes
+abstractcore engines status --probe              # Ollama / LM Studio / MLX / llama.cpp / ...
+abstractcore engines install ollama --dry-run    # the exact install command
+```
+
 ## Built-in CLI apps
 
 AbstractCore also ships with ready-to-use CLI apps:
@@ -557,6 +569,8 @@ Core features:
 - [Generation Parameters](docs/generation-parameters.md) — unified parameter vocabulary, default hierarchy, caller overrides, and provider quirks
 - [Session Management](docs/session.md) — conversation history, persistence, and compaction
 - [Embeddings](docs/embeddings.md) — embeddings API and RAG building blocks
+- [Local Models](docs/models.md) — model catalog with fit verdicts, installed models, download and delete
+- [Local Engines](docs/engines.md) — engine detection and one-command installs
 - [Async Guide](docs/async-guide.md) — async patterns, concurrency, best practices
 - [Centralized Config](docs/centralized-config.md) — `~/.abstractcore/config/abstractcore.json` + CLI config commands
 - [Capabilities](docs/capabilities.md) — supported features and current limitations
