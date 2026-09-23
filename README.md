@@ -512,6 +512,10 @@ print(resp.choices[0].message.content)
 
 See [Server](docs/server.md).
 
+The server also serves a web console at `http://localhost:8000/console`: see what this machine
+can run, browse and download models with fit badges, delete weights, and install engines such as
+Ollama with one confirmation. Every action shows its CLI equivalent. See [Web Console](docs/console.md).
+
 Single-model `/v1` endpoint (one provider/model per worker): see [Endpoint](docs/endpoint.md) (`abstractcore-endpoint`).
 
 ## CLI (optional)
@@ -568,6 +572,7 @@ Reference and internals:
 - [API (Python)](docs/api.md) — how to use the public API
 - [API Reference](docs/api-reference.md) — Python API (including events)
 - [Server](docs/server.md) — OpenAI-compatible gateway with tool/media support
+- [Web Console](docs/console.md) — `/console`: models, engines and providers in the browser; embeddable screens
 - [CLI Guide](docs/acore-cli.md) — interactive `abstractcore-chat` walkthrough
 
 Project:

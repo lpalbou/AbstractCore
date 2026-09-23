@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Web console at `/console`.** `abstractcore serve` now serves a browser console with four
+  tabs: Overview (host profile, engines summary, server health), Models (catalog search and
+  filters including "Fits this machine", weights status, fit badges with evidence, Download,
+  Delete with confirmation, job progress and Cancel), Engines (status, Install with a
+  confirmation that shows the exact command and the host it runs on, Open download page) and
+  Providers (read-only). Every action shows its CLI equivalent. When `ABSTRACTCORE_AUTH_TOKEN`
+  is set, the console asks for the token and keeps it in the tab's session storage. Themes
+  come from the AbstractFramework UI kit and follow the system light/dark preference. See
+  [Web Console](docs/console.md).
+- **Embeddable Models and Engines screens.** `abstractcore.console.web.fragment("models" |
+  "engines")` and `GET /console/fragment/{kind}` return `{html, js, css}` that a host console
+  mounts with `window.AbstractCoreConsole.mount(kind, rootEl, {apiBase, request, isAdmin,
+  onJob, hostName, cliPrefix})`, injecting its own request function for auth and CSRF.
+
 ## [2.13.42] - 2026-09-23
 
 ### Fixed

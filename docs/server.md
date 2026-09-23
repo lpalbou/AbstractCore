@@ -4,6 +4,12 @@ Transform AbstractCore into an OpenAI-compatible API server. One server, all mod
 
 If you want a dedicated **single-model** `/v1` server (one provider/model per worker), see [Endpoint](endpoint.md).
 
+## Web console
+
+Open `http://localhost:8000/console` for a browser console: host profile, model catalog with
+fit badges, download and delete, engine status and install, providers. Each action shows its
+CLI equivalent. See [Web Console](console.md).
+
 ## Interactive API docs (start here)
 
 Visit while the server is running:
@@ -187,6 +193,8 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Group | Method | Endpoint | Purpose | Main parameters |
 |---|---:|---|---|---|
 | Health | GET | `/health` | Liveness/version probe; never requires auth | none |
+| Console | GET | `/console` | Web console page; never requires auth (its API calls do) | none |
+| Console | GET | `/console/fragment/{kind}` | Embeddable Models/Engines screen as `{kind, html, js, css}`; never requires auth | path `kind`: `models` or `engines` |
 | Configuration | GET | `/v1/config/capability-defaults` | List explicit input/output/embedding/rerank route defaults | none |
 | Configuration | PUT | `/v1/config/capability-defaults/{kind}/{modality}` | Set one capability route default | path `kind`, `modality`; body `provider`, `model`, `base_url`, `options` |
 | Configuration | PUT | `/v1/config/capability-defaults/{kind}/{modality}/{task}` | Set one task-specific generated-media route default | path `kind`, `modality`, `task`; body `provider`, `model`, `base_url`, `options` |
