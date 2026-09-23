@@ -242,7 +242,11 @@ fn fields_table(
             .iter()
             .find(|s| s.spec.name == *section)
             .expect("section exists");
-        let fv = sv.fields.iter().find(|f| f.key == *key).expect("field exists");
+        let fv = sv
+            .fields
+            .iter()
+            .find(|f| f.key == *key)
+            .expect("field exists");
         let state = match &fv.state {
             FieldState::Default => "· default".to_string(),
             FieldState::Set => "● set".to_string(),
@@ -308,9 +312,9 @@ fn selected_pair(
         .filter(|_| ctx.ui.wizard.get_untracked());
     ctx.store.cfg.with_untracked(|c| {
         c.ready().and_then(|m| match &m.state {
-            FileState::Ready(snap) => {
-                page_rows(snap, section_names, focus).get(sel.get_untracked()).copied()
-            }
+            FileState::Ready(snap) => page_rows(snap, section_names, focus)
+                .get(sel.get_untracked())
+                .copied(),
             FileState::Missing => {
                 let snap = crate::config::fold(&json!({}), 0, None, None);
                 page_rows(&snap, section_names, focus)
@@ -398,8 +402,7 @@ fn clear_selected(
     }
     // Clear = reset to default. Only meaningful for fields that can
     // differ; pair/secret fields clear through their own editors.
-    let spec = crate::schema::section(section)
-        .and_then(|s| s.fields.iter().find(|f| f.key == key));
+    let spec = crate::schema::section(section).and_then(|s| s.fields.iter().find(|f| f.key == key));
     let Some(fs) = spec else { return };
     match writes::field_route(section, key) {
         writes::FieldRoute::Secret => {
@@ -427,7 +430,10 @@ fn clear_selected(
         _ => {
             let nullable = matches!(
                 fs.kind,
-                FieldKind::OptStr | FieldKind::OptPath | FieldKind::OptInt { .. } | FieldKind::OptEnum(_)
+                FieldKind::OptStr
+                    | FieldKind::OptPath
+                    | FieldKind::OptInt { .. }
+                    | FieldKind::OptEnum(_)
             );
             let ctx2 = ctx.clone();
             let label = if nullable {
@@ -439,38 +445,31 @@ fn clear_selected(
                 )
             };
             let default = fs.default;
-            super::forms::confirm_danger(
-                cx,
-                ctx.ui,
-                label,
-                "Reset it",
-                "Keep it",
-                move || {
-                    let spec = if nullable {
+            super::forms::confirm_danger(cx, ctx.ui, label, "Reset it", "Keep it", move || {
+                let spec = if nullable {
+                    writes::clear_scalar(section, key, ctx2.write_base(), None)
+                } else {
+                    // Non-nullable fields reset by WRITING the
+                    // default (absent ≡ default anyway, but the
+                    // CLI setter keeps coupled flags honest).
+                    let v = match default {
+                        crate::schema::Dv::S(s) => json!(s),
+                        crate::schema::Dv::B(b) => json!(b),
+                        crate::schema::Dv::I(i) => json!(i),
+                        crate::schema::Dv::F(f) => json!(f),
+                        _ => json!(null),
+                    };
+                    if v.is_null() {
                         writes::clear_scalar(section, key, ctx2.write_base(), None)
                     } else {
-                        // Non-nullable fields reset by WRITING the
-                        // default (absent ≡ default anyway, but the
-                        // CLI setter keeps coupled flags honest).
-                        let v = match default {
-                            crate::schema::Dv::S(s) => json!(s),
-                            crate::schema::Dv::B(b) => json!(b),
-                            crate::schema::Dv::I(i) => json!(i),
-                            crate::schema::Dv::F(f) => json!(f),
-                            _ => json!(null),
-                        };
-                        if v.is_null() {
-                            writes::clear_scalar(section, key, ctx2.write_base(), None)
-                        } else {
-                            writes::set_scalar(section, key, v, ctx2.write_base(), None)
-                        }
-                    };
-                    match spec {
-                        Ok(spec) => ctx2.send(Cmd::Write(Box::new(spec))),
-                        Err(e) => ctx2.store.notice.set(Some(e)),
+                        writes::set_scalar(section, key, v, ctx2.write_base(), None)
                     }
-                },
-            );
+                };
+                match spec {
+                    Ok(spec) => ctx2.send(Cmd::Write(Box::new(spec))),
+                    Err(e) => ctx2.store.notice.set(Some(e)),
+                }
+            });
         }
     }
 }
@@ -557,7 +556,10 @@ fn field_row(t: &TokenSet, fv: &crate::config::FieldView) -> View {
         FieldState::Broken(_) => t.error,
     };
     let mut spans = vec![
-        span(format!(" {}", super::util::pad_cells(fv.key, 22)), t.text_muted),
+        span(
+            format!(" {}", super::util::pad_cells(fv.key, 22)),
+            t.text_muted,
+        ),
         span(super::util::pad_cells(&fv.display, 28), value_ink),
         span(" ", t.text),
     ];

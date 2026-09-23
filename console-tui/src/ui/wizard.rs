@@ -107,7 +107,9 @@ pub fn next(ctx: &Ctx) {
 pub fn back(ctx: &Ctx) {
     let i = ctx.ui.step.get_untracked();
     if i == 0 {
-        ctx.store.notice.set(Some("already on the first step".into()));
+        ctx.store
+            .notice
+            .set(Some("already on the first step".into()));
         return;
     }
     apply_step(ctx, i - 1);

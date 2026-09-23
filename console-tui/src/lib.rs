@@ -119,9 +119,9 @@ pub fn run_cli(argv: &[String]) -> i32 {
     // Adaptive mode default: a machine with no config file gets the
     // wizard (the definition-of-done scenario); an existing config
     // opens in browse. Flags override.
-    let start_wizard = args.wizard.unwrap_or_else(|| {
-        matches!(config::load(&config_path.path), config::FileState::Missing)
-    });
+    let start_wizard = args
+        .wizard
+        .unwrap_or_else(|| matches!(config::load(&config_path.path), config::FileState::Missing));
 
     let mut app = App::new(Size::new(110, 32));
     let overlays = app.overlays();

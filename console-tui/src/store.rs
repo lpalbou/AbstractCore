@@ -278,7 +278,11 @@ impl RoutesData {
                 .and_then(Value::as_array)
                 .map(|a| {
                     a.iter()
-                        .map(|e| e.as_str().map(str::to_string).unwrap_or_else(|| e.to_string()))
+                        .map(|e| {
+                            e.as_str()
+                                .map(str::to_string)
+                                .unwrap_or_else(|| e.to_string())
+                        })
                         .collect()
                 })
                 .unwrap_or_default(),
@@ -351,7 +355,12 @@ pub struct AvailabilityData {
 impl AvailabilityData {
     pub fn from_value(v: &Value) -> AvailabilityData {
         let mut by_route = HashMap::new();
-        for row in v.get("routes").and_then(Value::as_array).into_iter().flatten() {
+        for row in v
+            .get("routes")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+        {
             let Some(key) = s(row, "key").filter(|k| !k.is_empty()) else {
                 continue;
             };
@@ -440,7 +449,12 @@ impl ProfileRow {
             allowed_models: v
                 .get("allowed_models")
                 .and_then(Value::as_array)
-                .map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect())
+                .map(|a| {
+                    a.iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                })
                 .unwrap_or_default(),
             enabled: b(v, "enabled").unwrap_or(true),
             id,
@@ -666,7 +680,10 @@ impl ConnectionRow {
                 "endpoint profile stored in this config".to_string()
             }
             Origin::Config if self.takes_key() => {
-                format!("key stored in this config (api_keys.{})", self.api_key_field)
+                format!(
+                    "key stored in this config (api_keys.{})",
+                    self.api_key_field
+                )
             }
             Origin::Config => "stored in this config".to_string(),
             Origin::Env => format!("resolved from the environment (${})", self.origin_env),
@@ -939,12 +956,12 @@ impl Store {
     /// sibling console's stale-domain P1 class, made structural).
     pub fn reset_domains(&self) {
         let Store {
-            cli: _,     // resolution survives: same process, same env
-            journal: _, // session audit
-            busy: _,    // transient op bookkeeping
-            tick: _,    // clock
-            notice: _,  // transient toast
-            tests: _,   // dated live-provider evidence, not file state
+            cli: _,        // resolution survives: same process, same env
+            journal: _,    // session audit
+            busy: _,       // transient op bookkeeping
+            tick: _,       // clock
+            notice: _,     // transient toast
+            tests: _,      // dated live-provider evidence, not file state
             probe_busy: _, // owned by the worker's probe lifecycle
             cfg,
             routes,
@@ -1048,7 +1065,11 @@ mod tests {
         let covered = parent(true);
         assert!(covered.is_task_parent());
         assert_eq!(covered.task_keys.len(), 3);
-        assert_eq!(covered.display_key(), "output.image", "the parent is not indented");
+        assert_eq!(
+            covered.display_key(),
+            "output.image",
+            "the parent is not indented"
+        );
         assert_eq!(
             covered.state_label(),
             "not needed",

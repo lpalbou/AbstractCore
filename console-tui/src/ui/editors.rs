@@ -27,11 +27,15 @@ use super::Ctx;
 /// screen and the wizard use — refusals name their reason.
 pub fn open_field_editor(cx: Scope, ctx: &Ctx, section: &'static str, key: &'static str) {
     let Some(spec) = schema::section(section) else {
-        ctx.store.notice.set(Some(format!("unknown section {section}")));
+        ctx.store
+            .notice
+            .set(Some(format!("unknown section {section}")));
         return;
     };
     let Some(fs) = spec.fields.iter().find(|f| f.key == key) else {
-        ctx.store.notice.set(Some(format!("unknown field {section}.{key}")));
+        ctx.store
+            .notice
+            .set(Some(format!("unknown field {section}.{key}")));
         return;
     };
     // The door matches the field's WRITE ROUTE: direct-write fields
@@ -152,9 +156,7 @@ fn open_scalar_editor(
                 } else {
                     match typed_value(&kind, &trimmed) {
                         Ok(v) => match schema::validate(&kind, &v) {
-                            Ok(()) => {
-                                writes::set_scalar(section, key, v, base, Some(form_id))
-                            }
+                            Ok(()) => writes::set_scalar(section, key, v, base, Some(form_id)),
                             Err(e) => Err(e),
                         },
                         Err(e) => Err(e),
@@ -350,11 +352,7 @@ fn open_enum_editor_vec(
             }
             let value = choices2[i - 1];
             let spec = if section == "audio" && key == "strategy" {
-                Ok(writes::set_audio_strategy(
-                    value,
-                    base,
-                    Some(form_id),
-                ))
+                Ok(writes::set_audio_strategy(value, base, Some(form_id)))
             } else {
                 writes::set_scalar(
                     section,
@@ -380,7 +378,11 @@ fn open_enum_editor_vec(
             .child(
                 Element::new()
                     .style(LayoutStyle::column().gap(1))
-                    .child(field(&t, "value", Select::new(options).value(picked).view(mcx)))
+                    .child(field(
+                        &t,
+                        "value",
+                        Select::new(options).value(picked).view(mcx),
+                    ))
                     .child(applies_now_line(theme, &ctx2, section, key))
                     .child(message_slot(theme, form_error, in_flight))
                     .child(
@@ -422,11 +424,9 @@ fn open_toggle(
     let unsafe_flag = note.map(|n| n.starts_with("UNSAFE")).unwrap_or(false);
     let ctx2 = ctx.clone();
     let base = ctx.write_base();
-    let submit = move || {
-        match writes::set_scalar(section, key, Value::Bool(target), base, None) {
-            Ok(spec) => ctx2.send(Cmd::Write(Box::new(spec))),
-            Err(e) => ctx2.store.notice.set(Some(e)),
-        }
+    let submit = move || match writes::set_scalar(section, key, Value::Bool(target), base, None) {
+        Ok(spec) => ctx2.send(Cmd::Write(Box::new(spec))),
+        Err(e) => ctx2.store.notice.set(Some(e)),
     };
     if unsafe_flag && target {
         super::forms::confirm_danger(
@@ -480,7 +480,13 @@ fn open_secret_editor(cx: Scope, ctx: &Ctx, section: &'static str, key: &'static
         let form_error: Signal<Option<String>> = mcx.signal(None);
         let in_flight = mcx.signal(false);
         let esc_armed = mcx.signal(false);
-        install_dirty_guard(mcx, &guard, vec![(value, String::new())], esc_armed, form_error);
+        install_dirty_guard(
+            mcx,
+            &guard,
+            vec![(value, String::new())],
+            esc_armed,
+            form_error,
+        );
         let form_id = next_form_id();
         install_write_done(mcx, &ctx2, form_id, in_flight, form_error, close.clone());
 
@@ -551,7 +557,9 @@ fn open_secret_editor(cx: Scope, ctx: &Ctx, section: &'static str, key: &'static
                     .child(field(
                         &t,
                         "",
-                        Checkbox::new("clear the stored secret").checked(clear).view(mcx),
+                        Checkbox::new("clear the stored secret")
+                            .checked(clear)
+                            .view(mcx),
                     ))
                     .child(message_slot(theme, form_error, in_flight))
                     .child(
@@ -608,11 +616,9 @@ impl PairKind {
                 "global_model".into(),
             ),
             PairKind::Embeddings => ("embeddings", "provider".into(), "model".into()),
-            PairKind::VisionCaption => (
-                "vision",
-                "caption_provider".into(),
-                "caption_model".into(),
-            ),
+            PairKind::VisionCaption => {
+                ("vision", "caption_provider".into(), "caption_model".into())
+            }
             PairKind::App(app) => (
                 "app_defaults",
                 format!("{app}_provider"),
@@ -639,7 +645,10 @@ impl PairKind {
                 .iter()
                 .map(|s| s.to_string())
                 .collect(),
-            _ => schema::STATIC_PROVIDERS.iter().map(|s| s.to_string()).collect(),
+            _ => schema::STATIC_PROVIDERS
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         };
         // endpoint:<id> profiles extend the registry at runtime.
         if !matches!(self, PairKind::Embeddings) {
@@ -674,7 +683,9 @@ pub fn open_pair_editor(cx: Scope, ctx: &Ctx, section: &'static str, key: &'stat
             }
         }
         _ => {
-            ctx.store.notice.set(Some(format!("{section}.{key} is not a pair field")));
+            ctx.store
+                .notice
+                .set(Some(format!("{section}.{key} is not a pair field")));
             return;
         }
     };
@@ -919,15 +930,13 @@ fn open_vision_strategy(cx: Scope, ctx: &Ctx) {
                             ),
                             "Disable and erase",
                             "Keep vision config",
-                            move || {
-                                match writes::set_vision_strategy(
-                                    "disabled",
-                                    ctx3.write_base(),
-                                    None,
-                                ) {
-                                    Ok(spec) => ctx3.send(Cmd::Write(Box::new(spec))),
-                                    Err(e) => ctx3.store.notice.set(Some(e)),
-                                }
+                            move || match writes::set_vision_strategy(
+                                "disabled",
+                                ctx3.write_base(),
+                                None,
+                            ) {
+                                Ok(spec) => ctx3.send(Cmd::Write(Box::new(spec))),
+                                Err(e) => ctx3.store.notice.set(Some(e)),
                             },
                         );
                     }
@@ -950,9 +959,9 @@ fn open_vision_strategy(cx: Scope, ctx: &Ctx) {
 
 fn open_chain_editor(cx: Scope, ctx: &Ctx, section: &'static str) {
     if section != "vision" {
-        ctx.store
-            .notice
-            .set(Some("audio.fallback_chain is reserved — nothing to edit yet".into()));
+        ctx.store.notice.set(Some(
+            "audio.fallback_chain is reserved — nothing to edit yet".into(),
+        ));
         return;
     }
     // The REAL entry count from the folded array — counting '/' in the
@@ -966,15 +975,13 @@ fn open_chain_editor(cx: Scope, ctx: &Ctx, section: &'static str) {
     open_prompt(
         cx,
         ctx.ui,
-        abstracttui::app::ChoicePrompt::new(format!(
-            "vision.fallback_chain ({chain_len} entries)"
-        ))
-        .option("add", "Add an entry (provider/model)")
-        .option_detail(
-            "remove",
-            "Remove the LAST entry",
-            "the CLI can only append; removal is a direct write",
-        ),
+        abstracttui::app::ChoicePrompt::new(format!("vision.fallback_chain ({chain_len} entries)"))
+            .option("add", "Add an entry (provider/model)")
+            .option_detail(
+                "remove",
+                "Remove the LAST entry",
+                "the CLI can only append; removal is a direct write",
+            ),
         move |outcome| {
             if let abstracttui::app::ChoiceOutcome::Answered(a) = outcome {
                 match a.selected.first().map(String::as_str) {
@@ -1025,13 +1032,8 @@ fn open_chain_add(cx: Scope, ctx: &Ctx, old_len: usize) {
                 form_error.set(Some("format: provider/model".into()));
                 return;
             };
-            let spec = writes::add_vision_fallback(
-                p.trim(),
-                m.trim(),
-                old_len + 1,
-                base,
-                Some(form_id),
-            );
+            let spec =
+                writes::add_vision_fallback(p.trim(), m.trim(), old_len + 1, base, Some(form_id));
             in_flight.set(true);
             ctx3.send(Cmd::Write(Box::new(spec)));
         };

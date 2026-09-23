@@ -73,9 +73,7 @@ pub enum RmwOp {
 impl RmwOp {
     /// Apply to a fresh raw config object. Errors name what refused.
     pub fn apply(&self, raw: &mut Value) -> Result<(), String> {
-        let obj = raw
-            .as_object_mut()
-            .ok_or("config root is not an object")?;
+        let obj = raw.as_object_mut().ok_or("config root is not an object")?;
         match self {
             RmwOp::SetField {
                 section,
@@ -147,11 +145,19 @@ pub enum WriteVerb {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Expect {
     /// `path` in the config file equals `value`.
-    Eq { path: Vec<String>, value: Value },
+    Eq {
+        path: Vec<String>,
+        value: Value,
+    },
     /// `path` is absent, null, or the empty string.
-    Cleared { path: Vec<String> },
+    Cleared {
+        path: Vec<String>,
+    },
     /// `path` is a string whose sha256[:8] matches.
-    SecretFp { path: Vec<String>, fp: String },
+    SecretFp {
+        path: Vec<String>,
+        fp: String,
+    },
     /// The derived routes view shows `key` configured with this pair.
     /// Each field is checked only when the write NAMED it — a partial
     /// update verifies what it sent, and says nothing about the fields
@@ -163,10 +169,16 @@ pub enum Expect {
         reasoning: Option<String>,
     },
     /// The derived routes view shows `key` unconfigured.
-    RouteCleared { key: String },
+    RouteCleared {
+        key: String,
+    },
     /// The derived profiles view contains `id`.
-    ProfileExists { id: String },
-    ProfileAbsent { id: String },
+    ProfileExists {
+        id: String,
+    },
+    ProfileAbsent {
+        id: String,
+    },
 }
 
 impl Expect {
@@ -174,7 +186,10 @@ impl Expect {
         matches!(self, Expect::RouteEq { .. } | Expect::RouteCleared { .. })
     }
     pub fn needs_profiles(&self) -> bool {
-        matches!(self, Expect::ProfileExists { .. } | Expect::ProfileAbsent { .. })
+        matches!(
+            self,
+            Expect::ProfileExists { .. } | Expect::ProfileAbsent { .. }
+        )
     }
 }
 
@@ -250,9 +265,7 @@ pub fn eval_file_expect(raw: &Value, expect: &Expect) -> Result<String, String> 
             Some(v) => Err(format!("{} still holds {}", dotted(path), redact_scalar(v))),
         },
         Expect::SecretFp { path, fp } => match get(path).and_then(Value::as_str) {
-            Some(s) if fingerprint(s) == *fp => {
-                Ok(format!("{} stored (fp {fp})", dotted(path)))
-            }
+            Some(s) if fingerprint(s) == *fp => Ok(format!("{} stored (fp {fp})", dotted(path))),
             Some(_) => Err(format!(
                 "{} holds a DIFFERENT value (fingerprint mismatch)",
                 dotted(path)
@@ -287,10 +300,7 @@ pub enum FieldRoute {
     /// Same, and `''` clears the field (probed: writes null).
     SetBlankClears(&'static str),
     /// Bool via two flags.
-    Toggle {
-        on: &'static str,
-        off: &'static str,
-    },
+    Toggle { on: &'static str, off: &'static str },
     /// No CLI setter — direct read-modify-write.
     Rmw,
     /// Provider/model pair coupling — a dedicated pair editor writes
@@ -429,7 +439,11 @@ pub fn set_scalar(
                 value,
             }],
         ),
-        other => return Err(format!("{section}.{key} routes to {other:?} — use its editor")),
+        other => {
+            return Err(format!(
+                "{section}.{key} routes to {other:?} — use its editor"
+            ))
+        }
     };
     Ok(WriteSpec {
         label,
@@ -457,7 +471,11 @@ pub fn clear_scalar(
             section: section.into(),
             key: key.into(),
         })],
-        other => return Err(format!("{section}.{key} routes to {other:?} — use its editor")),
+        other => {
+            return Err(format!(
+                "{section}.{key} routes to {other:?} — use its editor"
+            ))
+        }
     };
     Ok(WriteSpec {
         label,
@@ -515,7 +533,10 @@ pub fn set_global_default(
 /// reverse order could null the fields and then fail the route clear,
 /// desyncing status from runtime with an error that implies nothing
 /// happened.
-pub fn clear_global_default(base: Option<crate::config::FileStamp>, form_id: Option<u64>) -> WriteSpec {
+pub fn clear_global_default(
+    base: Option<crate::config::FileStamp>,
+    form_id: Option<u64>,
+) -> WriteSpec {
     WriteSpec {
         label: "clear global default (+ route input.text)".into(),
         verbs: vec![
@@ -707,7 +728,10 @@ pub fn set_vision_strategy(
 /// CLI setter would set `audio_strategy_explicit = true` — after which
 /// the smart default stops applying, which is NOT the default state
 /// (M2 review P2-4).
-pub fn reset_audio_strategy(base: Option<crate::config::FileStamp>, form_id: Option<u64>) -> WriteSpec {
+pub fn reset_audio_strategy(
+    base: Option<crate::config::FileStamp>,
+    form_id: Option<u64>,
+) -> WriteSpec {
     WriteSpec {
         label: "reset audio.strategy (clears the explicit flag — smart default applies again)"
             .into(),
@@ -1003,7 +1027,11 @@ pub fn apply_recommended(
     }
 }
 
-pub fn clear_route(key: &str, base: Option<crate::config::FileStamp>, form_id: Option<u64>) -> WriteSpec {
+pub fn clear_route(
+    key: &str,
+    base: Option<crate::config::FileStamp>,
+    form_id: Option<u64>,
+) -> WriteSpec {
     WriteSpec {
         label: format!("clear route {key}"),
         verbs: vec![WriteVerb::Cli(vec![
@@ -1069,7 +1097,11 @@ pub fn save_profile(
     }
 }
 
-pub fn delete_profile(id: &str, base: Option<crate::config::FileStamp>, form_id: Option<u64>) -> WriteSpec {
+pub fn delete_profile(
+    id: &str,
+    base: Option<crate::config::FileStamp>,
+    form_id: Option<u64>,
+) -> WriteSpec {
     WriteSpec {
         label: format!("delete provider profile {id}"),
         verbs: vec![WriteVerb::Cli(vec![
@@ -1172,11 +1204,19 @@ mod tests {
 
         assert_eq!(raw["logging"]["verbatim_enabled"], json!(false));
         assert_eq!(raw["logging"]["unknown_knob"], json!(7), "unknown key kept");
-        assert_eq!(raw["future_section"]["keep"], json!(true), "unknown section kept");
+        assert_eq!(
+            raw["future_section"]["keep"],
+            json!(true),
+            "unknown section kept"
+        );
         assert_eq!(raw["vision"]["fallback_chain"].as_array().unwrap().len(), 1);
         assert_eq!(raw["vision"]["fallback_chain"][0]["provider"], json!("b"));
         assert_eq!(raw["default_models"]["global_provider"], Value::Null);
-        assert_eq!(raw["offline"]["allow_network"], json!(true), "absent section created");
+        assert_eq!(
+            raw["offline"]["allow_network"],
+            json!(true),
+            "absent section created"
+        );
 
         // Refusals name their reason.
         let err = RmwOp::RemoveFallbackEntry {
@@ -1207,7 +1247,7 @@ mod tests {
             &raw,
             &Expect::Eq {
                 path: vec!["video".into(), "max_frames".into()],
-                value: json!(9)
+                value: json!(9),
             },
         )
         .unwrap_err();
@@ -1232,7 +1272,7 @@ mod tests {
         let err = eval_file_expect(
             &raw,
             &Expect::Cleared {
-                path: vec!["api_keys".into(), "openai".into()]
+                path: vec!["api_keys".into(), "openai".into()],
             },
         )
         .unwrap_err();
@@ -1275,7 +1315,10 @@ mod tests {
                 }
             }
         }
-        assert_eq!(field_route("default_models", "chat_model"), FieldRoute::Set("--set-chat-model"));
+        assert_eq!(
+            field_route("default_models", "chat_model"),
+            FieldRoute::Set("--set-chat-model")
+        );
         assert_eq!(field_route("offline", "allow_network"), FieldRoute::Rmw);
         assert_eq!(field_route("email", "smtp_host"), FieldRoute::Rmw);
     }
@@ -1305,7 +1348,12 @@ mod tests {
         assert!(eval_file_expect(
             &raw,
             &Expect::Eq {
-                path: vec!["vision".into(), "fallback_chain".into(), "9".into(), "provider".into()],
+                path: vec![
+                    "vision".into(),
+                    "fallback_chain".into(),
+                    "9".into(),
+                    "provider".into()
+                ],
                 value: json!("x"),
             },
         )
@@ -1315,7 +1363,12 @@ mod tests {
         assert!(eval_file_expect(
             &raw,
             &Expect::Cleared {
-                path: vec!["vision".into(), "fallback_chain".into(), "0".into(), "provider".into()],
+                path: vec![
+                    "vision".into(),
+                    "fallback_chain".into(),
+                    "0".into(),
+                    "provider".into()
+                ],
             },
         )
         .is_err());
@@ -1335,7 +1388,10 @@ mod tests {
         assert_eq!(raw["audio"]["stt_language"], json!("fr"), "siblings kept");
 
         let spec = reset_audio_strategy(None, None);
-        assert!(matches!(spec.verbs[0], WriteVerb::Rmw(RmwOp::ResetAudioStrategy)));
+        assert!(matches!(
+            spec.verbs[0],
+            WriteVerb::Rmw(RmwOp::ResetAudioStrategy)
+        ));
         assert!(spec
             .expects
             .iter()
@@ -1405,15 +1461,13 @@ mod tests {
         );
         assert_eq!(
             args(&only_reasoning),
-            vec![
-                "config",
-                "set-default",
-                "input.text",
-                "--reasoning",
-                "high"
-            ]
+            vec!["config", "set-default", "input.text", "--reasoning", "high"]
         );
-        assert!(only_reasoning.label.contains("reasoning"), "{}", only_reasoning.label);
+        assert!(
+            only_reasoning.label.contains("reasoning"),
+            "{}",
+            only_reasoning.label
+        );
         assert_eq!(
             only_reasoning.expects,
             vec![Expect::RouteEq {

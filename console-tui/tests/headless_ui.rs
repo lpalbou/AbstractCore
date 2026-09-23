@@ -524,19 +524,10 @@ fn boot_shows_loading_then_the_mirror() {
 
     h.load_fixtures();
     let s = h.turns(2);
-    assert!(
-        s.contains("AbstractCore Console"),
-        "header present:\n{s}"
-    );
+    assert!(s.contains("AbstractCore Console"), "header present:\n{s}");
     assert!(s.contains("loaded"), "file state in header:\n{s}");
-    assert!(
-        s.contains("abstractcore.json"),
-        "config path named:\n{s}"
-    );
-    assert!(
-        s.contains("default_models"),
-        "sections table renders:\n{s}"
-    );
+    assert!(s.contains("abstractcore.json"), "config path named:\n{s}");
+    assert!(s.contains("default_models"), "sections table renders:\n{s}");
 }
 
 #[test]
@@ -557,10 +548,7 @@ fn overview_states_set_default_broken() {
         "unknown sections surfaced:\n{s}"
     );
     // Python-agreement line (fixture echoes the same path).
-    assert!(
-        s.contains("reads the same file"),
-        "agreement line:\n{s}"
-    );
+    assert!(s.contains("reads the same file"), "agreement line:\n{s}");
 }
 
 #[test]
@@ -614,10 +602,7 @@ fn corrupt_file_is_a_hard_stop_with_backups() {
         s.contains("corrupt-20260725-080000"),
         "backups listed:\n{s}"
     );
-    assert!(
-        s.contains("expected `,`"),
-        "the parse error is shown:\n{s}"
-    );
+    assert!(s.contains("expected `,`"), "the parse error is shown:\n{s}");
 }
 
 #[test]
@@ -651,8 +636,7 @@ fn missing_file_shows_the_defaults_honestly() {
 fn python_refused_file_is_flagged_not_vouched_for() {
     let mut h = harness();
     let mut raw = config_fixture_value();
-    raw["provider_profiles"]["profiles"]["ovh-provider"]["future_field"] =
-        serde_json::json!(true);
+    raw["provider_profiles"]["profiles"]["ovh-provider"]["future_field"] = serde_json::json!(true);
     h.store.cfg.set(Loadable::Ready(mirror_of(raw)));
     let s = h.turns(2);
     assert!(
@@ -775,15 +759,20 @@ fn navigation_sends_no_commands() {
     let mut h = harness();
     h.load_fixtures();
     h.drain_cmds();
-    for key in [b"2" as &[u8], b"4", b"7", &[0x0e], &[0x10], b"\t", b"\x1b[B"] {
+    for key in [
+        b"2" as &[u8],
+        b"4",
+        b"7",
+        &[0x0e],
+        &[0x10],
+        b"\t",
+        b"\x1b[B",
+    ] {
         h.key(key);
         h.turns(2);
     }
     let cmds = h.drain_cmds();
-    assert!(
-        cmds.is_empty(),
-        "browsing must not trigger loads: {cmds:?}"
-    );
+    assert!(cmds.is_empty(), "browsing must not trigger loads: {cmds:?}");
 }
 
 #[test]
@@ -792,26 +781,20 @@ fn cli_missing_degrades_honestly() {
     h.store
         .cfg
         .set(Loadable::Ready(mirror_of(config_fixture_value())));
-    h.store.routes.set(Loadable::Failed(
-        abstractcore_console::cli::CliError::core(
+    h.store
+        .routes
+        .set(Loadable::Failed(abstractcore_console::cli::CliError::core(
             abstractcore_console::cli::CliErrorKind::NotFound,
             "no $ABSTRACTCORE_BIN, nothing on PATH, no venv fallback".into(),
-        ),
-    ));
+        )));
     let s = h.turns(2);
-    assert!(
-        s.contains("not found"),
-        "cli line says not found:\n{s}"
-    );
+    assert!(s.contains("not found"), "cli line says not found:\n{s}");
     let s = h.goto_screen(3);
     assert!(
         s.contains("abstractcore CLI not found"),
         "routes screen explains:\n{s}"
     );
-    assert!(
-        s.contains("ABSTRACTCORE_BIN"),
-        "and teaches the fix:\n{s}"
-    );
+    assert!(s.contains("ABSTRACTCORE_BIN"), "and teaches the fix:\n{s}");
 }
 
 // =======================================================================
@@ -884,10 +867,7 @@ fn routes_screen_speaks_the_shared_state_vocabulary() {
     h.load_fixtures();
     let s = h.goto_screen(3);
     assert!(s.contains("writable"), "the write door leads:\n{s}");
-    assert!(
-        s.contains("6 of 24 configured"),
-        "the banner counts:\n{s}"
-    );
+    assert!(s.contains("6 of 24 configured"), "the banner counts:\n{s}");
     assert!(s.contains("configured"), "configured state:\n{s}");
     assert!(
         s.contains("covered by input.text"),
@@ -914,7 +894,12 @@ fn routes_screen_groups_task_rows_under_their_modality_row() {
         s.contains("output.image") && s.contains("output.video"),
         "the parent rows are present and keep their full key:\n{s}"
     );
-    for task in ["text_to_image", "image_to_image", "image_upscale", "image_to_video"] {
+    for task in [
+        "text_to_image",
+        "image_to_image",
+        "image_upscale",
+        "image_to_video",
+    ] {
         assert!(
             s.contains(&format!("└ {task}")),
             "{task} indents under its modality row:\n{s}"
@@ -998,7 +983,10 @@ fn providers_screen_is_one_table_in_the_gateway_columns() {
     for column in [
         "provider", "family", "base URL", "API key", "models", "enabled", "origin",
     ] {
-        assert!(s.contains(column), "gateway column `{column}` is here:\n{s}");
+        assert!(
+            s.contains(column),
+            "gateway column `{column}` is here:\n{s}"
+        );
     }
     assert!(
         s.contains("Available providers (a adds a connection)"),
@@ -1010,8 +998,17 @@ fn providers_screen_is_one_table_in_the_gateway_columns() {
         "one list, not two:\n{s}"
     );
     // The old screen's vocabulary went with it.
-    for gone in ["local server", "local engine", "cloud API", "answering", "key / endpoint"] {
-        assert!(!s.contains(gone), "the old vocabulary `{gone}` is gone:\n{s}");
+    for gone in [
+        "local server",
+        "local engine",
+        "cloud API",
+        "answering",
+        "key / endpoint",
+    ] {
+        assert!(
+            !s.contains(gone),
+            "the old vocabulary `{gone}` is gone:\n{s}"
+        );
     }
 
     // A profile is a row like any other, saying which endpoint family
@@ -1058,7 +1055,11 @@ fn origin_column_says_where_each_row_comes_from() {
             .unwrap_or_default()
             .to_string()
     };
-    assert_eq!(origin_of(&s, "openai"), "config", "a key stored in this file");
+    assert_eq!(
+        origin_of(&s, "openai"),
+        "config",
+        "a key stored in this file"
+    );
     assert_eq!(
         origin_of(&s, "openrouter"),
         "env",
@@ -1223,7 +1224,10 @@ fn delete_connection_confirms_then_writes() {
         s.contains("endpoint:team-proxy"),
         "…and the consequence for anything routing through it:\n{s}"
     );
-    assert!(h.drain_cmds().is_empty(), "nothing written before the answer");
+    assert!(
+        h.drain_cmds().is_empty(),
+        "nothing written before the answer"
+    );
     // The danger confirm defaults to KEEP — Enter must not delete.
     h.key(b"\r");
     h.turns(2);
@@ -1402,10 +1406,7 @@ fn dirty_form_esc_warns_then_discards() {
     h.turn();
     h.press_escape();
     let s = h.turns(2);
-    assert!(
-        s.contains("Esc again to discard"),
-        "first Esc warns:\n{s}"
-    );
+    assert!(s.contains("Esc again to discard"), "first Esc warns:\n{s}");
     assert!(s.contains("Edit video.max_frames"), "form still open:\n{s}");
     h.press_escape();
     let s = h.turns(2);
@@ -1593,7 +1594,10 @@ fn route_editor_sends_only_the_field_the_operator_edited() {
         s.contains("Applies now: lmstudio / qwen3-0.6b"),
         "the editor states what applies now:\n{s}"
     );
-    assert!(s.contains("reasoning"), "the reasoning row is present:\n{s}");
+    assert!(
+        s.contains("reasoning"),
+        "the reasoning row is present:\n{s}"
+    );
     h.drain_cmds();
 
     // Saving an UNTOUCHED form refuses instead of rewriting the row
@@ -1605,7 +1609,10 @@ fn route_editor_sends_only_the_field_the_operator_edited() {
     }
     h.type_text("\r");
     let s = h.turns(2);
-    assert!(s.contains("nothing changed"), "untouched save refuses:\n{s}");
+    assert!(
+        s.contains("nothing changed"),
+        "untouched save refuses:\n{s}"
+    );
     assert!(
         h.drain_cmds().is_empty(),
         "an untouched form sends no write"
@@ -1694,8 +1701,7 @@ fn danger_confirm_defaults_to_keep() {
 fn refused_file_door_splits_cli_from_rmw() {
     let mut h = harness();
     let mut raw = config_fixture_value();
-    raw["provider_profiles"]["profiles"]["ovh-provider"]["future_field"] =
-        serde_json::json!(true);
+    raw["provider_profiles"]["profiles"]["ovh-provider"]["future_field"] = serde_json::json!(true);
     h.store.cfg.set(Loadable::Ready(mirror_of(raw)));
     h.store
         .routes
@@ -1750,10 +1756,7 @@ fn chain_editor_counts_real_entries_and_adds() {
     h.drain_cmds();
     h.key(b"e");
     let s = h.turns(2);
-    assert!(
-        s.contains("(1 entries)"),
-        "org/model id counts ONCE:\n{s}"
-    );
+    assert!(s.contains("(1 entries)"), "org/model id counts ONCE:\n{s}");
     // First option (Add) is highlighted; Enter commits it.
     h.key(b"\r");
     let s = h.turns(2);
@@ -2090,23 +2093,27 @@ fn route_test_resolves_endpoint_profile_reach() {
     use abstractcore_console::probes::ProbeKind;
     let mut h = harness();
     h.load_fixtures();
-    h.store.routes.set(Loadable::Ready(RoutesData::from_value(&json!({
-        "ok": true, "config_file": "/tmp/console-test/abstractcore.json",
-        "routes": [
-            {"key": "input.text", "kind": "input", "modality": "text",
-             "label": "Text Input", "provider": "endpoint:local-lab",
-             "model": "m1", "configured": true, "source": "configured"},
-        ]
-    }))));
-    h.store.profiles.set(Loadable::Ready(ProfilesData::from_value(&json!({
-        "ok": true, "config_file": "/tmp/console-test/abstractcore.json",
-        "profiles": [
-            {"id": "local-lab", "display_name": "Lab", "description": "",
-             "provider_family": "lmstudio", "base_url": "http://localhost:9999/v1",
-             "api_key_set": false, "api_key_fingerprint": null,
-             "api_key_env_var": "", "allowed_models": [], "enabled": true}
-        ]
-    }))));
+    h.store
+        .routes
+        .set(Loadable::Ready(RoutesData::from_value(&json!({
+            "ok": true, "config_file": "/tmp/console-test/abstractcore.json",
+            "routes": [
+                {"key": "input.text", "kind": "input", "modality": "text",
+                 "label": "Text Input", "provider": "endpoint:local-lab",
+                 "model": "m1", "configured": true, "source": "configured"},
+            ]
+        }))));
+    h.store
+        .profiles
+        .set(Loadable::Ready(ProfilesData::from_value(&json!({
+            "ok": true, "config_file": "/tmp/console-test/abstractcore.json",
+            "profiles": [
+                {"id": "local-lab", "display_name": "Lab", "description": "",
+                 "provider_family": "lmstudio", "base_url": "http://localhost:9999/v1",
+                 "api_key_set": false, "api_key_fingerprint": null,
+                 "api_key_env_var": "", "allowed_models": [], "enabled": true}
+            ]
+        }))));
     h.goto_screen(3);
     h.drain_cmds();
     h.key(b"t");
@@ -2122,7 +2129,9 @@ fn route_test_resolves_endpoint_profile_reach() {
         panic!("expected RouteCheck, got {spec:?}");
     };
     assert_eq!(provider, "endpoint:local-lab");
-    let hp = reach.as_ref().expect("profile base_url feeds the reach check");
+    let hp = reach
+        .as_ref()
+        .expect("profile base_url feeds the reach check");
     assert_eq!((hp.host.as_str(), hp.port), ("localhost", 9999));
 }
 
@@ -2284,7 +2293,10 @@ impl Harness {
 #[test]
 fn routes_rows_activate_by_enter_and_double_click() {
     for (label, activate) in [
-        ("enter", &(|h: &mut Harness| h.key(b"\r")) as &dyn Fn(&mut Harness)),
+        (
+            "enter",
+            &(|h: &mut Harness| h.key(b"\r")) as &dyn Fn(&mut Harness),
+        ),
         ("double-click", &|h: &mut Harness| {
             let s = h.turns(1);
             let (c, r) = find_row(&s, "input.text").expect("input.text row on screen");
@@ -2493,8 +2505,8 @@ fn section_field_rows_activate_into_the_field_editor() {
 fn a_form_opened_by_activation_survives_a_reload() {
     // Every screen whose activation opens a form, driven by Enter.
     let cases: [(usize, Option<usize>, &str); 3] = [
-        (2, None, "Secret — api_keys."),      // providers / api_keys
-        (3, Some(0), "Route — Text Input"),   // routes
+        (2, None, "Secret — api_keys."),        // providers / api_keys
+        (3, Some(0), "Route — Text Input"),     // routes
         (4, Some(12), "Edit video.max_frames"), // media / section field
     ];
     for (screen, sel, needle) in cases {
@@ -2544,7 +2556,8 @@ fn mint_captures() {
     for (screen, name) in [(0usize, "m1-overview"), (3, "m1-routes"), (6, "m1-server")] {
         h.goto_screen(screen);
         let shot = h.term.screen().screenshot();
-        shot.write_svg(dir.join(format!("{name}.svg"))).expect("svg");
+        shot.write_svg(dir.join(format!("{name}.svg")))
+            .expect("svg");
     }
     // The corrupt refusal — the state worth showing in every report.
     h.store.cfg.set(Loadable::Ready(ConfigMirror {
@@ -2566,7 +2579,8 @@ fn mint_captures() {
     h.key(&[0x0e]); // Ctrl+N → step 2: the default-model phase
     h.turns(3);
     let shot = h.term.screen().screenshot();
-    shot.write_svg(dir.join("m2-wizard-model.svg")).expect("svg");
+    shot.write_svg(dir.join("m2-wizard-model.svg"))
+        .expect("svg");
 
     let mut h = harness_sized(Size::new(110, 30));
     h.load_fixtures();
@@ -2619,7 +2633,8 @@ fn mint_captures() {
     h.goto_screen(7);
     h.turns(2);
     let shot = h.term.screen().screenshot();
-    shot.write_svg(dir.join("m3-review-evidence.svg")).expect("svg");
+    shot.write_svg(dir.join("m3-review-evidence.svg"))
+        .expect("svg");
 }
 
 // =======================================================================
@@ -2691,8 +2706,6 @@ fn chrome_survives_every_screen_at_every_size() {
     }
 }
 
-
-
 // =======================================================================
 // WEIGHTS: the `d` verb (model downloads)
 // =======================================================================
@@ -2715,8 +2728,14 @@ fn routes_screen_shows_weight_availability_and_no_banner_when_every_route_is_ans
         !s.contains("no model yet") && !s.contains("recommended:"),
         "a fully routed machine is never told it is short of a model:\n{s}"
     );
-    assert!(s.contains("not downloaded"), "absent weights read plainly:\n{s}");
-    assert!(s.contains("installed"), "present weights read plainly:\n{s}");
+    assert!(
+        s.contains("not downloaded"),
+        "absent weights read plainly:\n{s}"
+    );
+    assert!(
+        s.contains("installed"),
+        "present weights read plainly:\n{s}"
+    );
     assert!(s.contains("weights"), "the column is labelled:\n{s}");
     assert!(
         s.contains("download weights"),
@@ -2812,7 +2831,10 @@ fn w_refuses_with_a_reason_instead_of_guessing() {
     h.key(b"w");
     let s = h.turns(2);
     assert!(s.contains("already installed"), "installed refusal:\n{s}");
-    assert!(h.drain_cmds().is_empty(), "no download for an installed model");
+    assert!(
+        h.drain_cmds().is_empty(),
+        "no download for an installed model"
+    );
 
     h.ui.route_sel.set(5); // embedding.text — unknown
     h.key(b"w");
@@ -2821,7 +2843,10 @@ fn w_refuses_with_a_reason_instead_of_guessing() {
         s.contains("availability is unknown"),
         "unknown is never treated as absent:\n{s}"
     );
-    assert!(h.drain_cmds().is_empty(), "no download on an unknown answer");
+    assert!(
+        h.drain_cmds().is_empty(),
+        "no download on an unknown answer"
+    );
 
     h.ui.route_sel.set(2); // input.video — no weights row at all
     h.key(b"w");

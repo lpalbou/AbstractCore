@@ -100,9 +100,7 @@ pub fn model_field(
 
         // The filtered option set, when discovery is usable.
         let filtered = match &discovery {
-            Some(Loadable::Ready(models)) if !models.is_empty() => {
-                Some(filter_for(class, models))
-            }
+            Some(Loadable::Ready(models)) if !models.is_empty() => Some(filter_for(class, models)),
             _ => None,
         };
 
@@ -110,9 +108,7 @@ pub fn model_field(
         // value is one discovery does not list (a picker that cannot
         // display the real value would lie about it).
         let auto_custom = match (&filtered, current.trim()) {
-            (Some((options, _)), text) if !text.is_empty() => {
-                !options.iter().any(|m| m == text)
-            }
+            (Some((options, _)), text) if !text.is_empty() => !options.iter().any(|m| m == text),
             _ => false,
         };
         let custom_now = custom.get().unwrap_or(auto_custom);
@@ -200,9 +196,7 @@ pub fn model_field(
                     " models: choose a provider to discover",
                     t.text_faint,
                 )]),
-                (_, Some(Loadable::Loading)) => {
-                    line(vec![span(" models: ⟳ discovering…", t.info)])
-                }
+                (_, Some(Loadable::Loading)) => line(vec![span(" models: ⟳ discovering…", t.info)]),
                 (_, Some(Loadable::Failed(e))) => line(vec![span(
                     format!(
                         " models: discovery failed — {} (typing stays open)",

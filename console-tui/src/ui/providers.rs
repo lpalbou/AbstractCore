@@ -252,7 +252,10 @@ fn selection_hint(t: &TokenSet, data: &Loadable<ProfilesData>, sel: usize) -> Vi
     };
     line(vec![
         span_bold(format!(" {}", row.provider), t.accent),
-        span(format!(" — {} · {verbs}", row.origin_detail()), t.text_muted),
+        span(
+            format!(" — {} · {verbs}", row.origin_detail()),
+            t.text_muted,
+        ),
     ])
 }
 
@@ -556,8 +559,16 @@ pub fn open_profile_editor(cx: Scope, ctx: &Ctx, existing: Option<ProfileRow>) {
         let id = mcx.signal(p.as_ref().map(|p| p.id.clone()).unwrap_or_default());
         let family0 = p.as_ref().map(|p| p.family.clone()).unwrap_or_default();
         let base_url = mcx.signal(p.as_ref().map(|p| p.base_url.clone()).unwrap_or_default());
-        let name = mcx.signal(p.as_ref().map(|p| p.display_name.clone()).unwrap_or_default());
-        let desc = mcx.signal(p.as_ref().map(|p| p.description.clone()).unwrap_or_default());
+        let name = mcx.signal(
+            p.as_ref()
+                .map(|p| p.display_name.clone())
+                .unwrap_or_default(),
+        );
+        let desc = mcx.signal(
+            p.as_ref()
+                .map(|p| p.description.clone())
+                .unwrap_or_default(),
+        );
         let key_input = mcx.signal(String::new());
         let clear_key = mcx.signal(false);
         let enabled = mcx.signal(p.as_ref().map(|p| p.enabled).unwrap_or(true));

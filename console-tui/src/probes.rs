@@ -175,10 +175,7 @@ impl Reach {
 
 /// Fold a `test-provider --json` payload. `reach` is the worker's TCP
 /// evidence, gathered only when count==0 (the ambiguous branch).
-pub fn fold_list_models(
-    v: &Value,
-    reach: Option<(&HostPort, &Reach)>,
-) -> (Verdict, String) {
+pub fn fold_list_models(v: &Value, reach: Option<(&HostPort, &Reach)>) -> (Verdict, String) {
     let errors: Vec<String> = v
         .get("errors")
         .and_then(Value::as_array)
@@ -286,7 +283,11 @@ pub fn fold_generation(stdout: &str, elapsed_s: u64) -> (Verdict, String) {
         );
     }
     let head: String = reply.chars().take(60).collect();
-    let ellipsis = if reply.chars().count() > 60 { "…" } else { "" };
+    let ellipsis = if reply.chars().count() > 60 {
+        "…"
+    } else {
+        ""
+    };
     (
         Verdict::Proven,
         format!("replied in {elapsed_s}s: “{head}{ellipsis}”"),
@@ -410,8 +411,10 @@ mod tests {
             host: "localhost".into(),
             port: 11434,
         };
-        let (v, d) =
-            fold_list_models(&dead, Some((&hp, &Reach::Refused("connection refused".into()))));
+        let (v, d) = fold_list_models(
+            &dead,
+            Some((&hp, &Reach::Refused("connection refused".into()))),
+        );
         assert_eq!(v, Verdict::NotProven);
         assert!(d.contains("looks DOWN"), "{d}");
 
@@ -475,7 +478,10 @@ mod tests {
 
         let (v, d) = fold_generation("22:31:13 [ERROR] OllamaProvider: boom\nOK\n", 3);
         assert_eq!(v, Verdict::Proven);
-        assert!(d.contains("OK") && !d.contains("boom"), "log lines are noise: {d}");
+        assert!(
+            d.contains("OK") && !d.contains("boom"),
+            "log lines are noise: {d}"
+        );
 
         let (v, _) = fold_generation("   \n", 2);
         assert_eq!(v, Verdict::NotProven);

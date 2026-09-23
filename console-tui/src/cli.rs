@@ -213,7 +213,11 @@ impl CoreCli {
     /// verdict (reply vs `❌ Error:`) is the caller's fold
     /// (`probes::fold_generation`); this lane's argv never carries
     /// secrets (provider/model/prompt only).
-    pub fn run_chat(&self, args: &[&str], timeout: Duration) -> Result<(String, Vec<String>), CliError> {
+    pub fn run_chat(
+        &self,
+        args: &[&str],
+        timeout: Duration,
+    ) -> Result<(String, Vec<String>), CliError> {
         let chat = self.chat_bin.as_ref().ok_or_else(|| {
             CliError::chat(
                 CliErrorKind::NotFound,
@@ -221,8 +225,8 @@ impl CoreCli {
             )
         })?;
         let label = format!("abstractcore-chat {}", args.join(" "));
-        let (status, stdout, stderr) = run_raw_at(chat, args, &label, timeout)
-            .map_err(|mut e| {
+        let (status, stdout, stderr) =
+            run_raw_at(chat, args, &label, timeout).map_err(|mut e| {
                 e.program = "abstractcore-chat";
                 e
             })?;
@@ -256,7 +260,10 @@ impl CoreCli {
                 error_line(&stdout, &stderr),
             ));
         }
-        if let Some(l) = stdout.lines().find(|l| l.contains("❌") || l.contains("Error:")) {
+        if let Some(l) = stdout
+            .lines()
+            .find(|l| l.contains("❌") || l.contains("Error:"))
+        {
             return Err(CliError::core(
                 CliErrorKind::Exit(0),
                 format!("{} (the CLI still exited 0)", l.trim()),
@@ -283,10 +290,12 @@ impl CoreCli {
                 error_line(&stdout, &stderr),
             ));
         }
-        let value = serde_json::from_str(&stdout).map_err(|e| CliError::core(
-            CliErrorKind::BadJson,
-            format!("{e} — first bytes: {}", head(&stdout, 120)),
-        ))?;
+        let value = serde_json::from_str(&stdout).map_err(|e| {
+            CliError::core(
+                CliErrorKind::BadJson,
+                format!("{e} — first bytes: {}", head(&stdout, 120)),
+            )
+        })?;
         Ok(CliOutput {
             value,
             fallback_warnings: fallback_lines(&stderr),
@@ -318,10 +327,7 @@ fn run_raw_at(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|e| CliError::core(
-            CliErrorKind::Spawn,
-            format!("{}: {e}", bin.display()),
-        ))?;
+        .map_err(|e| CliError::core(CliErrorKind::Spawn, format!("{}: {e}", bin.display())))?;
 
     let stdout = child.stdout.take().expect("piped");
     let stderr = child.stderr.take().expect("piped");
@@ -346,12 +352,7 @@ fn run_raw_at(
                 }
                 std::thread::sleep(Duration::from_millis(25));
             }
-            Err(e) => {
-                return Err(CliError::core(
-                    CliErrorKind::Spawn,
-                    e.to_string(),
-                ))
-            }
+            Err(e) => return Err(CliError::core(CliErrorKind::Spawn, e.to_string())),
         }
     };
     let stdout = out_h.join().unwrap_or_default();
@@ -425,11 +426,9 @@ mod tests {
         assert_eq!(info.source, "PATH");
 
         // Venv fallback.
-        let info = resolve_bin(
-            &|_| None,
-            home,
-            &|p| p == Path::new("/home/u/tmp/abstractframework/.venv/bin/abstractcore"),
-        )
+        let info = resolve_bin(&|_| None, home, &|p| {
+            p == Path::new("/home/u/tmp/abstractframework/.venv/bin/abstractcore")
+        })
         .unwrap();
         assert_eq!(info.source, "framework venv fallback");
 
@@ -441,7 +440,10 @@ mod tests {
     fn error_line_prefers_the_cli_error() {
         let out = "some noise\n❌ Error: Unknown provider 'x'\nmore";
         assert_eq!(error_line(out, ""), "❌ Error: Unknown provider 'x'");
-        assert_eq!(error_line("", "Traceback...\nValueError: boom"), "ValueError: boom");
+        assert_eq!(
+            error_line("", "Traceback...\nValueError: boom"),
+            "ValueError: boom"
+        );
         assert_eq!(error_line("", ""), "(no output)");
     }
 

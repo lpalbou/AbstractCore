@@ -224,10 +224,10 @@ impl Ctx {
         let verdict = self.store.cfg.with_untracked(|c| match c {
             Loadable::Ready(m) => match &m.state {
                 FileState::Ready(_) | FileState::Missing => Ok(()),
-                FileState::Corrupt { .. } => {
-                    Err("the config file is corrupt — fix it first (Overview names the backups)"
-                        .to_string())
-                }
+                FileState::Corrupt { .. } => Err(
+                    "the config file is corrupt — fix it first (Overview names the backups)"
+                        .to_string(),
+                ),
                 FileState::Unreadable { error } => Err(format!("config unreadable: {error}")),
             },
             _ => Err("config not loaded yet — press r".to_string()),
@@ -480,7 +480,12 @@ pub fn root(cx: Scope, ctx: Ctx) -> View {
         let step = &wizard::STEPS[i];
         line(vec![
             span_bold(
-                format!(" Step {}/{} · {} — ", i + 1, wizard::STEPS.len(), step.title),
+                format!(
+                    " Step {}/{} · {} — ",
+                    i + 1,
+                    wizard::STEPS.len(),
+                    step.title
+                ),
                 t.accent,
             ),
             span(step.goal, t.text_muted),
@@ -506,7 +511,9 @@ fn nav_next(ctx: &Ctx) {
     } else if ctx.ui.screen.get_untracked() + 1 < SCREENS.len() {
         ctx.ui.screen.update(|s| *s += 1);
     } else {
-        ctx.store.notice.set(Some("already on the last screen".into()));
+        ctx.store
+            .notice
+            .set(Some("already on the last screen".into()));
     }
 }
 
@@ -516,7 +523,9 @@ fn nav_back(ctx: &Ctx) {
     } else if ctx.ui.screen.get_untracked() > 0 {
         ctx.ui.screen.update(|s| *s -= 1);
     } else {
-        ctx.store.notice.set(Some("already on the first screen".into()));
+        ctx.store
+            .notice
+            .set(Some("already on the first screen".into()));
     }
 }
 
@@ -804,7 +813,11 @@ pub fn config_identity_line(t: &TokenSet, store: &Store) -> Vec<util::SpanSpec> 
                     t.text_muted,
                 ));
                 if let Some(mode) = snap.mode {
-                    let ink = if mode & 0o077 != 0 { t.warn } else { t.text_muted };
+                    let ink = if mode & 0o077 != 0 {
+                        t.warn
+                    } else {
+                        t.text_muted
+                    };
                     spans.push(span(format!("  · mode {mode:03o}"), ink));
                     if mode & 0o077 != 0 {
                         spans.push(span("  (secrets readable by others!)", t.warn));

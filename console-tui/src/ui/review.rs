@@ -31,7 +31,9 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
         for (label, echo) in [
             (
                 "defaults",
-                store.routes.with(|r| r.ready().and_then(|d| d.config_file.clone())),
+                store
+                    .routes
+                    .with(|r| r.ready().and_then(|d| d.config_file.clone())),
             ),
             (
                 "providers",
@@ -90,8 +92,7 @@ pub fn view(cx: Scope, ctx: &Ctx, theme: Signal<&'static abstracttui::theme::The
                 // against the row it is drawn on, not a constant that cut
                 // it at 110 with ninety cells still free.
                 let when = format!(" {} ", r.when);
-                let verdict =
-                    format!("{} {:<11}", r.verdict.glyph(), r.verdict.word());
+                let verdict = format!("{} {:<11}", r.verdict.glyph(), r.verdict.word());
                 let label = format!("{} — ", r.label);
                 let detail = widths::head_fit(
                     &r.detail,

@@ -154,7 +154,10 @@ pub fn loadable_view<T>(
 pub fn error_panel(t: &TokenSet, e: &CliError) -> View {
     Element::new()
         .style(LayoutStyle::column())
-        .child(line(vec![span_bold(format!("✗ {}", e.headline()), t.error)]))
+        .child(line(vec![span_bold(
+            format!("✗ {}", e.headline()),
+            t.error,
+        )]))
         .child(line(vec![span(format!("  {}", e.message), t.text)]))
         .child(line(vec![span(format!("  {}", e.hint()), t.text_muted)]))
         .build()

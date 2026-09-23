@@ -459,7 +459,10 @@ mod tests {
         let a = middle_fit(t2v, 30);
         let b = middle_fit(i2v, 30);
         assert_eq!(cells(&a), 30, "fits exactly: {a:?}");
-        assert!(a.ends_with("t2v-a14b-diffusers-8bit"), "tail survives: {a:?}");
+        assert!(
+            a.ends_with("t2v-a14b-diffusers-8bit"),
+            "tail survives: {a:?}"
+        );
         assert!(a.starts_with("Abstr"), "family still readable: {a:?}");
         assert!(a.contains('…'), "the cut is marked: {a:?}");
         assert_ne!(
@@ -521,15 +524,25 @@ mod tests {
         let budget = elastic_budget(&[head, mid, verb], 120);
         assert_eq!(budget, 120 - cells(head) - cells(mid) - cells(verb));
         let list = middle_fit("lmstudio qwen/qwen3.5-9b@4bit", budget);
-        assert!(list.ends_with("@4bit"), "the artifact tag survives: {list:?}");
+        assert!(
+            list.ends_with("@4bit"),
+            "the artifact tag survives: {list:?}"
+        );
         let total = cells(head) + cells(mid) + cells(&list) + cells(verb);
         assert!(total <= 120, "the whole line fits: {total}");
-        assert_eq!(elastic_budget(&[head, mid, verb], 60), 0, "no room, no list");
+        assert_eq!(
+            elastic_budget(&[head, mid, verb], 60),
+            0,
+            "no room, no list"
+        );
 
         // `fits` is the cue for dropping an OPTIONAL segment whole
         // instead of letting the engine clip the actionable one.
         let count = "  ·  1 missing";
-        assert!(fits(&[head, count, verb], 100), "the short form fits at 100");
+        assert!(
+            fits(&[head, count, verb], 100),
+            "the short form fits at 100"
+        );
         assert!(
             !fits(&[head, count, verb], 90),
             "at 90 even the count has to go, or the verb loses its end"
