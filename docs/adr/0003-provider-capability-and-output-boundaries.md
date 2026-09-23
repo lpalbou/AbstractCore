@@ -33,6 +33,14 @@ The accepted boundaries are:
 - `abstractcore.core.output_specs` owns public output-selector normalization and dispatch semantics.
 - Server routes adapt over Core/provider/capability contracts instead of creating parallel sources
   of truth.
+- Core owns speculative-generation validation and execution-capability descriptions.
+  The persisted text default is `options.speculation` on the existing text route;
+  Gateway edits that authority through its existing local/remote/scoped config seam.
+  Runtime transports `_runtime.speculation` into per-call `speculation` without
+  inferring heads or backend support. Applications leave it absent to inherit;
+  explicit Off is distinct from absence. Backend adapters own draft/verify/cache
+  operations. Capability discovery is read-only and distinguishes configured
+  policy, loaded-instance readiness and per-response execution outcomes.
 
 ## Consequences
 

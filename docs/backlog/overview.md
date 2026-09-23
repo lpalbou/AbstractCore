@@ -9,11 +9,18 @@ Use this file as the entry point for planning status, recommended next work, and
 
 ## Counts
 
-- Planned: 22
+- Planned: 29
 - Proposed: 27
 - Completed: 30
 - Deprecated: 3
 - Recurrent: 0
+
+2026-09-20: added the [native inference track](planned/native_inference/README.md)
+(0848–0853): Flash sidecar, shared negotiation, Transformers and GGUF adapters,
+optional pressure eviction using existing locks, and capability-driven controls.
+Counts reconciled to disk (23 planned before additions; prior overview said 22).
+Immediate Runtime transport/scheduler repairs are abstractruntime-0846. The old
+MTP proposal below retains history but is not current implementation guidance.
 
 (2026-08-21: MLX vision investigation added `0840` and `0842` (planned), `0841` and `0843` (proposed).
 Root finding: `MLXProvider` loads via `mlx_lm`, whose `qwen3_5.Model.sanitize` discards every
@@ -116,6 +123,15 @@ completed/ in a hygiene pass.)
    Improve local text throughput and latency via continuous batching/scheduler safety for MLX.
 ## Planned ledger
 
+| Native inference item | Scope |
+| --- | --- |
+| [0848](planned/native_inference/0848_flash_external_mtp_head.md) | Separate matching Flash MTP head; embedded path retained. |
+| [0849](planned/native_inference/0849_shared_speculation_backend_contract.md) | Shared negotiation and honest unsupported outcomes. |
+| [0850](planned/native_inference/0850_transformers_native_mtp_adapter.md) | Native Transformers execution adapter. |
+| [0851](planned/native_inference/0851_gguf_native_mtp_adapter.md) | Native in-process GGUF driver/binding. |
+| [0852](planned/native_inference/0852_opt_in_model_pressure_eviction.md) | Off-by-default pressure eviction; reuse managed locks, no new TTL policy. |
+| [0853](planned/native_inference/0853_execution_capabilities_and_controls.md) | Instance-aware capabilities and Core/Gateway/application controls. |
+
 | Item | Notes |
 | --- | --- |
 | `planned/0847_shared_in_process_model_pool.md` | MLX model+prompt-cache sharing landed 2026-09-17 (one 15 GB model was resident 4x in one gateway); extend to the HuggingFace/GGUF lanes and decide the tenancy of a process-shared cache store. |
@@ -144,7 +160,7 @@ completed/ in a hygiene pass.)
 | `proposed/2026-05-06_docs-site-publishing-strategy.md` | Promote when docs deployment scope and ownership are committed. |
 | `proposed/2026-05-06_remote-prompt-cache-session-parity.md` | Promote when endpoint/session parity becomes blocking for runtime users. |
 | `proposed/2026-05-08_dual-server-docker-image-profiles.md` | Promote when packaging/deployment scope becomes active. |
-| `proposed/2026-05-18_native-mtp-and-speculative-decoding-support.md` | Promote when serving backends and benchmarks justify active implementation. |
+| `proposed/2026-05-18_native-mtp-and-speculative-decoding-support.md` | Historical umbrella; current remaining committed scope is split into planned 0848–0853. |
 | `proposed/2026-05-20_composable-prompt-cache-recipes-for-immutable-memory-clusters.md` | Keep proposed until real workloads show stable superbloc reuse beyond single-bloc caches and the work is narrowed to one deterministic exact-prefix recipe per target backend. |
 | `proposed/2026-05-20_audio-capability-matrix-consumption-from-abstractvoice.md` | Promote when Core needs truthful audio feature filtering, validation, or UI behavior beyond legacy `controls` booleans. |
 | `proposed/0792_hf_transformers_metal_quantization_on_apple.md` | Promote after `Qwen/Qwen3.5-4B` proves MPS `MetalConfig(bits=4)` load/generation/cache correctness with optional `kernels`, clear failure modes, and measured memory/performance deltas. |

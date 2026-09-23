@@ -11,6 +11,7 @@ Related pages:
 - [Architecture](architecture.md) — the provider lifecycle and the `unload_model()` contract
 - [API Reference](api-reference.md) — full method signatures
 - [Prompt Caching](prompt-caching.md#cache-residency-and-memory) — sizing KV caches and per-key cost
+- [Native MLX Runtime](native-mlx-runtime.md) — shared native weights, request-owner leases, bounded queues and RAM/SSD prefix storage
 - [Server](server.md) — the HTTP routes (`/acore/memory`, `/acore/models/loaded`, `/acore/prompt_cache/*`)
 
 ## Host memory snapshot
@@ -270,6 +271,12 @@ print(get_memory_snapshot()["device"]["allocated_bytes"])  # back to near zero
 
 Verify the unload through `device.allocated_bytes`, not process RSS (see
 [Reading the snapshot](#reading-the-snapshot-process-local-accelerator-heap-and-process-rss)).
+
+An unload first **stops the generations running on the instance** and waits for them; an
+in-process provider refuses the unload if one does not stop, rather than freeing memory under
+it. `load_model()` re-warms an ejected MLX or HuggingFace instance, and a generation on an
+ejected instance reloads it on demand (logged). See
+[Stopping a Generation and Ejecting a Model](generation-cancel.md#ejecting-a-model-unload_model-while-it-generates).
 
 To size and inspect the session caches themselves — per-key `token_count` and best-effort `bytes` —
 use `get_prompt_cache_stats()`; see

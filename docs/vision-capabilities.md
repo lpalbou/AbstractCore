@@ -51,6 +51,21 @@ abstractcore --set-video-sampling-strategy keyframes
 
 ## 1b) Native image input on the MLX provider (Apple silicon)
 
+Qwen3.8-Flash-Next (`qwen4_exp`) uses the full native MLX vision graph, including
+image input with embedded MTP and selectable draft depth. It requires MLX ≥0.32.2
+and mlx-vlm ≥0.7.1; see [native MTP setup](speculative-decoding.md#qwen38-flash-next-on-native-mlx).
+Its native path accepts multiple images and records measured expanded image
+tokens in `metadata["media_delivered"]`. Qwen3.8-27B also uses native vision when
+loaded with its separate MTP head or the scheduled native runtime. See
+[native MLX concurrency](native-mlx-runtime.md). The add-on limits below apply
+to the ordinary mlx-lm path, not these native VLM sessions.
+
+Both native checkpoints passed swapped-image checks with **MTP off and on**
+(depth 2), with actual draft/verify evidence for the enabled requests. See the
+[vision results](native-mlx-benchmarks.md#vision-and-functional-coverage) and
+[Python example](native-mlx-runtime.md#vision-with-mtp-off-or-on). MTP controls
+do not disable or replace the vision encoder.
+
 The MLX provider reads images natively for vision-capable MLX checkpoints. Nothing extra to
 install — `mlx-vlm` is part of the MLX provider's dependency set, so any profile that gives you
 `mlx-lm` also gives you image input. Pass `media=[...]` as usual:
@@ -72,10 +87,6 @@ llm = create_llm("mlx", model="mlx-community/Qwen3.5-4B-MLX-4bit")
 resp = llm.generate("Describe this image in one sentence.", media=["photo.png"])
 print(resp.content)
 ```
-
-The extra is separate from `abstractcore[mlx]` and `abstractcore[apple]` on purpose: it pulls a
-web framework, OpenCV, a datasets stack, and raises the `transformers` floor, none of which belong
-in a text-only local LLM install.
 
 ### Supported checkpoints
 

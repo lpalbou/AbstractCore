@@ -92,11 +92,50 @@ follow a citation without a second request. On a listing page — a news hub, a 
 *are* the content, so they are kept even at `keep_links=False`; `link_dominant` tells you when that
 happened.
 
+### The escalation ladder
+
+`fetch_url` tries the cheapest thing that can work first and only pays for more when it has to. A
+page that extracts fine statically costs one HTTP request, exactly as before.
+
+| Rung | Runs when | Typical cost |
+| --- | --- | --- |
+| 1. Static fetch, honest `AbstractCore-FetchTool/1.0` User-Agent | always | 0.3–1.2 s |
+| 2. Site adapter (the machine-readable view a site publishes for itself) | rung 1 produced no text and an adapter covers the URL | +0.3 s |
+| 3. Real-browser render | rung 1 produced a JS shell/no text, **or** answered 403/429/451 with a challenge page (Cloudflare "Just a moment…", `Cf-Mitigated: challenge`, a script-only body) | +2.5–5 s |
+| 4. The site's own RSS/Atom feed | the article was refused to every client, including the browser | +0.1–0.5 s |
+| 5. Classed failure | nothing above produced readable text | — |
+
+A 403 that explains itself (a geo or licensing refusal with real text) never launches a browser.
+`render_js="never"` disables rung 3 only; adapters and feeds launch no browser.
+
+**Site adapters** are deliberately few. Today there is one: a Reddit thread
+(`/r/<sub>/comments/<id>/…`) is read from the Atom feed Reddit publishes at `<thread-url>/.rss`
+(post, author, date and up to 60 comments), because Reddit serves every non-browser client an empty
+app shell, `old.reddit.com` redirects to a login page and the `.json` view answers 403. The result
+carries `adapter_used` and `adapter_source_url`.
+
+**Feed recovery** (rung 4) reads the section feed (`/<section>/rss.xml`, then `/rss.xml`, `/feed`,
+…) and returns the entry whose link *is* the requested URL. The result is `success=True` with
+`degraded=True`, a `degraded_reason`, `recovered_from_feed`, and an `error_class` naming the refusal
+— so an agent sees the headline and standfirst **and** that the body was not available.
+
 ### JavaScript rendering
 
-Some pages ship a shell and build their content in the browser. When the static fetch extracts
-nothing usable, `fetch_url` re-fetches the page in a headless browser and runs the *same* extraction
-pipeline over the rendered DOM.
+Some pages ship a shell and build their content in the browser; others answer a non-browser with a
+JavaScript challenge. `fetch_url` re-fetches such a page in a real browser and runs the *same*
+extraction pipeline over the rendered DOM.
+
+The escalation renders the page the way the operator's own browser would: the **full Chromium
+build** (not `chrome-headless-shell`, which several sites recognise and serve a block page),
+ordinary viewport, locale and User-Agent, a persistent cookie/consent profile, a short settle, one
+scroll, and a bounded wait (≤10 s) for a self-clearing JavaScript interstitial to navigate to the
+page. The layout text (`innerText`) is captured beside the DOM, so pages built from web components —
+whose article lives in shadow roots that a serialised DOM does not contain — still yield text.
+`render_note` names the browser that ran (`persistent:chromium`, `fresh:chromium`,
+`fresh:headless-shell`).
+
+It does **not** solve CAPTCHAs, rotate proxies, or spoof TLS fingerprints, and it never logs in. When
+a site refuses, the result says so with a precise class (below).
 
 ```python
 fetch_url(url=..., render_js="auto")    # render only when static extraction fails (default)
@@ -108,11 +147,19 @@ Rendering requires the optional browser extra:
 
 ```bash
 pip install "abstractcore[browser]"
-python -m playwright install --only-shell chromium
+python -m playwright install chromium            # full Chromium: what the fetch_url escalation prefers
+python -m playwright install --only-shell chromium  # smaller; used as a fallback if the full build is absent
 ```
 
 Without it, pages that need JavaScript return their normal actionable error with the install hint
-attached. A page that extracts fine statically never launches a browser.
+attached. A page that extracts fine statically never launches a browser. If only the headless shell
+is installed the escalation still runs on it, with a lower success rate on sites that detect it.
+
+**The browser profile** lives at `~/.abstractcore/browser-profile` — the package's own state
+directory, never a model-controlled path and never your real Chrome profile. It keeps cookies and
+consent choices so a second visit to a site is not a first-ever visit; it never holds credentials,
+because the tool never logs in. Deleting it is always safe. When two renders run at once, the second
+cannot share the profile (Chromium locks it) and falls back to a private context automatically.
 
 The render runs in a worker subprocess under one wall-clock budget taken from your `timeout`, with a
 process-tree kill, so it cannot hang or leave a browser behind. Every navigation and subresource is
@@ -133,7 +180,11 @@ A fetch that cannot produce content fails with a class, a `retryable` flag and c
 | `js_required` | The page needs JavaScript and no browser was available |
 | `empty_content` | A 2xx that yielded no extractable text |
 | `empty_body` | A 2xx with a zero-byte body, usually bot mitigation |
-| `bot_challenge` | An anti-bot challenge; retrying sometimes clears it |
+| `bot_challenge` | An anti-bot challenge was detected; a retry or a render may clear it |
+| `blocked_by_site` | A real browser was also refused (a challenge that did not clear, "you have been blocked"). Usually rate-based: waiting clears it. |
+| `captcha_required` | The site demanded human verification. Out of scope by design; `retryable=False`. |
+| `paywall` | The body is behind a subscription; the title/standfirst is what is legitimately readable |
+| `login_required` | The page requires an account; the tool holds no credentials |
 | `rate_limited` | Retry after the interval the server named |
 | `auth_required`, `not_found`, `gone`, `client_error`, `server_error` | HTTP outcomes |
 | `extraction_failed` | An internal extraction error, not a property of the page. Retryable. |
@@ -141,8 +192,14 @@ A fetch that cannot produce content fails with a class, a `retryable` flag and c
 | `blocked_encoded_url` | The URL carried a base64-encoded payload |
 
 Transient bot-challenge, rate-limit and 5xx statuses get a bounded retry with the same honest
-User-Agent, honouring `Retry-After`. AbstractCore does not impersonate a browser and does not solve
-CAPTCHAs.
+User-Agent, honouring `Retry-After`. The static fetch keeps that honest identity: a browser
+User-Agent on a non-browser HTTP stack is an incoherent fingerprint (measured: it turned
+economist.com's plain 403 into a full Cloudflare challenge and helped none of the tested sites). A
+browser identity is used only where a real browser is actually running — the render escalation.
+AbstractCore does not solve CAPTCHAs.
+
+`degraded=True` with an `error_class` on a `success=True` result means "partial content, and here
+is why" — currently only the feed-recovery rung produces it.
 
 Set `ABSTRACTCORE_DEBUG_EXTRACTION=1` to print the traceback behind an `extraction_failed`.
 

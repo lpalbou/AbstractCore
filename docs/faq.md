@@ -322,6 +322,19 @@ The HuggingFace provider respects AbstractCore’s offline-first settings. If yo
 
 Restart your Python process after changing this (the provider reads these settings at import time).
 
+## Does native MLX MTP support vision and continuous batching?
+
+Native image input works with MTP off or on for the documented Qwen3.8-27B
+and Flash-Next artifacts. MTP does not replace or bypass their vision encoder.
+The [vision comparison](native-mlx-benchmarks.md#vision-and-functional-coverage)
+uses swapped-image answers and actual draft/verify execution evidence.
+
+With `mlx_batching=True`, compatible greedy target-only requests use continuous
+admission. MTP requests form fixed same-depth cohorts; later arrivals wait.
+Sampled requests run exclusively. For concurrent or staggered clients, compare
+`speculation=False` against MTP rather than assuming speculation is faster.
+See [runtime policies](native-mlx-runtime.md#scheduling-and-request-controls).
+
 ## Is AbstractCore a full agent/RAG framework?
 
 AbstractCore focuses on provider abstraction + infrastructure (tools, structured output, media handling, tracing). It does not ship a full RAG pipeline or multi-step agent orchestration. See [Capabilities](capabilities.md).

@@ -1362,10 +1362,10 @@ handler = StructuredOutputHandler(retry_strategy=retry)
 
 ## Related Documentation
 
-- **Provider Registry**: `/Users/albou/projects/abstractcore/abstractcore/providers/README.md`
-- **Core Factory**: `/Users/albou/projects/abstractcore/abstractcore/core/README.md`
-- **Events System**: `/Users/albou/projects/abstractcore/abstractcore/events/README.md`
-- **Utils**: `/Users/albou/projects/abstractcore/abstractcore/utils/README.md`
+- **Provider Registry**: `abstractcore/providers/README.md`
+- **Core Factory**: `abstractcore/core/README.md`
+- **Events System**: `abstractcore/events/README.md`
+- **Utils**: `abstractcore/utils/README.md`
 
 ## Version Information
 

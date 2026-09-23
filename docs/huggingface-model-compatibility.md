@@ -21,7 +21,7 @@ install every optional Transformers quantization runtime, because those runtimes
 platform-specific and can carry dependency pins that conflict with the rest of the local stack.
 Fresh installs resolve the newest compatible Transformers release allowed by AbstractCore's
 dependency range. Very new architectures such as Gemma4 require a recent Transformers build.
-Audio/voice capability extras use `abstractvoice>=0.11.0` without installing
+Audio/voice capability extras use `abstractvoice>=0.11.2` without installing
 OmniVoice, torch, or torchaudio. Local OmniVoice engines are part of the
 explicit local aggregate profiles such as `abstractcore[all-apple]` and
 `abstractcore[all-gpu]`.
@@ -76,24 +76,61 @@ CUDA or XPU runtime for native FP8 execution. Apple Silicon should use Apple-nat
 paths instead: Qwen's own local-use guidance points Apple users to MLX models, while Transformers
 documents Metal quantization separately for MPS with 2/4/8-bit affine kernels.
 
-In local Apple/MPS validation, `Qwen/Qwen3.6-27B-FP8` downloaded and initialized through the
-Transformers fallback path, but produced incorrect answers for trivial prompts. AbstractCore
-therefore rejects that pairing before cache, tool, or structured-output validation. If upstream
-adds a real MPS FP8 path later, enable it only after model-load correctness and semantic smoke tests
-pass in CI or an explicit validation report.
+`Qwen/Qwen3.6-27B-FP8` is not supported through Transformers on Apple/MPS;
+AbstractCore rejects that pairing. A successful weight load alone does not
+establish correct execution for an unsupported quantization/runtime pair.
+Use an Apple-native MLX artifact or a compatible GGUF artifact instead.
 
 Use provider-native paths for those artifacts:
 
 - MLX quantized models: `create_llm("mlx", model="mlx-community/...")`
 - GGUF quantized models: `create_llm("huggingface", model="/path/to/model.gguf")`
-- Transformers-native quantized models: only when the required Transformers quantization runtime is
-  installed and a clean load plus semantic smoke test passes
+- Transformers-native quantized models: require a compatible installed
+  quantization runtime and correct generation, not only successful weight loading
 
 Gemma4 official HF transformers targets such as `google/gemma-4-E4B-it` are valid
 HuggingFace-provider targets when the local Transformers build recognizes `model_type=gemma4`.
 Dense Gemma4 E4B-it was validated on Apple/MPS in an isolated Transformers 5.9.0 environment.
 Durable bloc cache support depends on preserving dynamic sliding-window cache sequence lengths
 across save/load; AbstractCore records that in the transformers cache artifact metadata.
+
+## Which provider lists a local repository
+
+`mlx` and `huggingface` scan the same directories — the HuggingFace hub cache and the
+LM Studio store — so every local repo has to be assigned to exactly one of them. One
+rule decides, `abstractcore/providers/mlx_model_rules.py`, and both listings call it,
+so the two lists are complements: nothing appears in both pickers, nothing disappears
+from both. The same rule drives the `create_llm("huggingface", ...)` → `mlx` re-route
+and the MLX-artifact refusal in the Transformers loader.
+
+In order, first match wins:
+
+1. `ABSTRACTCORE_NON_MLX_MODEL_PATTERNS` — operator override, never MLX.
+2. `ABSTRACTCORE_MLX_MODEL_PATTERNS` — operator override, always MLX.
+3. A GGUF marker in the name — llama.cpp weights, which MLX cannot load.
+4. `mlx` anywhere in the name (`mlx-community/*`, `*-MLX-4bit`, …).
+5. A publisher that ships MLX by construction: `mlx-community`, `Jundot` (oMLX/oQ).
+6. An MLX-only quantizer tag: oMLX's `oQ<n>`, as in `Jundot/Qwen3.8-27B-oQ4e-mtp`.
+   The leading `o` is what keeps this off llama.cpp's `Q4_K_M` / `q8_0` GGUF tags.
+7. The on-disk signature: `library_name: mlx` in the model card, or an MLX
+   `quantization` block in `config.json` (`bits` + `group_size`, no `quant_method`).
+   A card naming a generation library (`mlx-gen`, `mflux`) is MLX format but belongs
+   to the media backends, so it is not offered as an LLM.
+
+Rules 4–6 read the name alone, which is what makes them work for a repo whose weights
+are not downloaded yet: a hub entry that was only resolved has `refs/` and no
+`config.json` to inspect. Rule 7 is authoritative whenever the weights are present.
+
+Both override variables take patterns separated by commas or `os.pathsep`. A pattern
+containing `*`, `?` or `[` is matched against the whole lowercased `org/model` handle
+with `fnmatch`; anything else is a plain substring test:
+
+```bash
+export ABSTRACTCORE_MLX_MODEL_PATTERNS="acme/*-mlxq,someorg/one-model"
+```
+
+Use these when a publisher ships MLX under a name no rule recognizes, rather than
+waiting for a new release of AbstractCore.
 
 ## AbstractCore Policy
 

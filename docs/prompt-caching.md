@@ -1,5 +1,10 @@
 # Prompt Caching (KV / Prefix Caches)
 
+For native Qwen3.8 MLX generation, see
+[native MLX prefix storage](native-mlx-runtime.md#bounded-ram-and-optional-ssd-prefix-reuse).
+Its complete-history automatic cache and optional SSD tier are separate from
+the durable append-cache APIs described below.
+
 AbstractCore supports **best-effort prompt caching** via `prompt_cache_key`. The exact behavior depends on the provider/backend:
 
 - Some providers treat it as a **hint** (server-managed caching).
@@ -995,6 +1000,40 @@ Five checks, in order. Each one rules out a different way a cache can look healt
    the cold arms are tight (see [How these numbers are taken](#how-these-numbers-are-taken)), and as
    a range otherwise. Token accounting has no such problem — quote reuse as a measurement and wall
    clock with its spread.
+
+## Watching the cache split live
+
+`metadata.prompt_cache` is a post-mortem: it arrives with the answer. A caller
+that needs to SHOW what the cache did while the call is running subscribes to
+phase events instead (MLX lanes only today — see
+[native MLX runtime](native-mlx-runtime.md#live-phase-feedback-prefill-vs-generation)):
+
+```python
+events = []
+llm.generate("", messages=messages, system_prompt=system, tools=tools,
+             prompt_cache_key="session:chat", on_progress=events.append)
+```
+
+Two turns on one key, measured on `mlx-community/Qwen3.5-4B-4bit`:
+
+```
+turn 1  outcome=cold        prefill  prompt_tokens=6886                            ttft 1.613s
+        (first token)       generate cached_tokens=0     fed_tokens=6886
+turn 2  outcome=hit_restore prefill  prompt_tokens=6908                            ttft 0.068s
+        (first token)       generate cached_tokens=6885  fed_tokens=23
+```
+
+The same `cached_tokens` / `fed_tokens` fields as `metadata.prompt_cache`, and
+the same caveat: use them, not `usage.input_tokens`. Note where they appear.
+The mlx-lm key-mode lane has measured the split before it feeds anything, so it
+rides on the `prefill` event; the native APC lane only learns it once prefill
+has run, so there the `prefill` event carries `prompt_tokens` alone and the
+split lands on the first-token event. Neither lane reports a zero it has not
+measured — an absent key means "not known yet", never "nothing was cached".
+
+Phase events are also a cheap way to answer check 3 above (*did the wall clock
+move?*) without a stopwatch: `ttft_s` on the first-token event IS the prefill
+cost, separated from decode, per call.
 
 ## Durable memory bloc artifacts
 

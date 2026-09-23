@@ -3,6 +3,26 @@
 **Status**: planned · **Priority**: P1 · **Created**: 2026-09-18
 **Package**: abstractcore · **Related**: abstractgateway 0846, abstractruntime 0845
 
+## Current code update — 2026-09-20
+
+The historical gaps below predate the two-model native MLX scheduler/session work.
+Native 27B/Flash now share loaded sessions with owner leases and isolated request
+facades; consult `providers/mlx_native_session.py`, `providers/mlx_runtime.py` and
+`docs/native-mlx-runtime.md` before treating item 5 below as wholly unimplemented.
+Runtime's instance-aware admission repair is tracked by abstractruntime-0846.
+
+One measured remaining boundary matters for application concurrency:
+`NativeRuntime._group_key` groups by draft depth AND APC manager identity.
+Different session/cache managers therefore cannot currently share a batch, even
+though requests reach the scheduler concurrently. A 2026-09-20 Runtime boundary
+probe saw separate keyed local requests at peak batch 1 and unkeyed requests at
+peak batch 4. This is not proof of an outer Runtime serialization defect.
+Any cross-key batching optimization must preserve tenant/cache isolation, ownership,
+prefix correctness and eviction honesty; benchmark separate-session application
+traffic, not only unkeyed calls, before claiming application-wide throughput gains.
+Do not merge keys or bypass isolation simply to improve the reported batch size.
+Related pressure eviction is separately scoped by planned native-inference 0852.
+
 ## Why
 
 A provider INSTANCE is a cheap facade (generation defaults, scoped config, a tracer). The

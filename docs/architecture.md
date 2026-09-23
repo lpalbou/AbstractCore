@@ -85,6 +85,72 @@ graph TD
 
 ## Core Components
 
+### Native MLX execution ownership
+
+The opt-in `mlx_batching=True` runtime serves the documented Qwen3.8-27B and
+Flash-Next checkpoints in one process. Ordinary MLX execution and its cache
+artifact format remain separate. No oMLX component is required.
+
+```mermaid
+flowchart TD
+    PY[Python sync / async / streaming callers] --> P[MLXProvider: request-local normalization]
+    HTTP[HTTP chat clients] --> API[AbstractCore server or single-model endpoint]
+    API --> P
+    CONTRACT[Shared speculation contract: controls and outcomes] -.-> P
+    P --> Q[Immutable requests / bounded admission queue]
+    Q --> W[One execution worker per shared native session]
+    SESSION[NativeSession: target, processor, MTP head, owner leases] --> W
+    W --> POLICY{Compatible request policy}
+    POLICY --> TARGET[Greedy target-only: continuous admission]
+    POLICY --> MTP[Greedy MTP: fixed same-depth cohort]
+    POLICY --> EXCLUSIVE[Sampled / incompatible controls: exclusive]
+    TARGET --> ENGINE[mlx-vlm / mlx-lm on MLX Metal]
+    MTP --> ENGINE
+    EXCLUSIVE --> ENGINE
+    ENGINE <--> CACHE[Bounded RAM prefix cache / optional private SSD]
+    ENGINE --> OUT[Per-request bounded output / usage / execution metadata]
+    OUT --> P
+    CONTROL[Load / cache / unload control plane] -. serialized operations .-> SESSION
+```
+
+Component responsibilities:
+
+| Component | Responsibility |
+| --- | --- |
+| `providers/speculation.py` | Backend-independent request validation and observed-outcome types; no tensor execution |
+| `MLXProvider` | Public API, request-local thinking/tool/sampling controls, media handling and response normalization |
+| `mlx_native_session.py` | Shared target/head/processor identity and provider leases; sibling-safe lifecycle |
+| `mlx_runtime.py` | One execution owner, admission policies, bounded queues, cancellation and truthful per-request accounting |
+| `mlx_native_cache.py` | Bounded native prefix reuse, cache identity, private single-writer SSD persistence and owned-entry clearing |
+| `mlx_qwen4.py` | Flash-Next loading, embedded head, PLE offload and architecture-specific cache compatibility |
+| Upstream MLX / mlx-lm / mlx-vlm | Model graphs, image processing, tensor kernels, draft verification and cache rollback |
+| HTTP adapters / async stream bridge | Concurrent generation admission, backpressure, disconnect propagation and owner-thread iterator cleanup |
+
+Request flow:
+
+1. Normalize the public request once, render its complete context and retain
+   request-local controls. Image requests carry actual pixels to the native
+   processor/vision encoder; MTP off does not disable vision.
+2. Bind the request to its shared session and enqueue immutable execution data.
+   The worker prepares text/image embeddings and looks up an eligible prefix.
+3. Select continuous target decoding, a fixed MTP cohort, or exclusive execution.
+   MTP retains target hidden state, drafts `num_draft_tokens` proposals, verifies
+   them with the target, accepts a prefix and reconciles rejected cache state.
+4. Stream accepted output through the request's bounded channel. Final usage
+   counts request tokens; shared cohort draft counters remain separate diagnostics.
+5. Cancel at a safe backend boundary, or finish and retain an eligible prefix.
+   Final-owner unload flushes storage and releases weights; an idle sibling can
+   release its lease without unloading another owner's model.
+
+The 27B checkpoint uses a matching separate trained MTP head; Flash-Next embeds
+its head. Their ordinary target weights are still the verifier. Model-level
+MTP support requires both trained head tensors and a backend that executes them;
+the shared contract alone does not supply HuggingFace/GGUF MTP.
+
+See [runtime configuration and boundaries](native-mlx-runtime.md),
+[speculative decoding](speculative-decoding.md), and
+[measured scheduling tradeoffs](native-mlx-benchmarks.md).
+
 ### 1. Factory Pattern (`create_llm`)
 
 The main entry point uses the factory pattern for clean provider instantiation:

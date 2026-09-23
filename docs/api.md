@@ -27,6 +27,21 @@ print(resp.content)
 
 Provider IDs (common): `openai`, `anthropic`, `openrouter`, `portkey`, `ollama`, `lmstudio`, `vllm`, `openai-compatible`, `huggingface`, `mlx`.
 
+### Native MLX scheduling and MTP
+
+For supported Qwen3.8 checkpoints, `create_llm("mlx", ..., mlx_batching=True)`
+selects the shared in-process native runtime. Set constructor defaults with
+`speculation={"mode": "native_mtp", "num_draft_tokens": 2}`; override depth
+per `generate()` / `agenerate()` call or pass `speculation=False`.
+Depth counts draft proposals, excluding the target seed. Use `media=[...]`
+for native image input with MTP off or on.
+
+Inspect `response.metadata["speculation"]["used"]` for actual MTP execution,
+`metadata["execution"]` for scheduling diagnostics, and `response.usage` for
+request token counts. Supported scheduling, cache and HTTP options are in
+[Native MLX Runtime](native-mlx-runtime.md). The shared speculation contract
+does not itself enable MTP execution in HuggingFace or GGUF providers.
+
 ### Gateway providers (OpenRouter, Portkey)
 
 ```python
@@ -124,6 +139,33 @@ Most calls return a `GenerateResponse` object (or an iterator of them for stream
 - `tool_calls`: structured tool calls (pass-through by default)
 - `usage`: token usage (provider-dependent)
 - `metadata`: provider/model specific fields (for example extracted reasoning text when configured)
+
+## Stopping a generation and progress events
+
+`generate()` accepts two host controls:
+
+- `cancel_event=`: a `threading.Event`. Providers that report `supports_generation_cancel()`
+  stop the running decode or sever the in-flight HTTP request when the event is set; the call
+  raises `abstractcore.exceptions.GenerationCancelledError`, which is never retried.
+  `unload_model()` cancels and drains in-flight calls before it frees memory.
+- `progress_callback=` (alias `on_progress=`): receives JSON-safe
+  `{"kind": "llm", "phase": "prefill" | "generate" | "complete", ...}` events with token counts
+  and throughput, on providers that report `supports_text_progress_events()` (MLX and
+  HuggingFace). Other providers never receive the callback.
+
+```python
+import threading
+from abstractcore.exceptions import GenerationCancelledError
+
+stop = threading.Event()
+try:
+    resp = llm.generate("Write a long story.", cancel_event=stop, progress_callback=print)
+except GenerationCancelledError:
+    print("stopped")
+```
+
+See [Stopping a generation and ejecting a model](generation-cancel.md) for the per-provider
+matrix.
 
 ## Model downloads (`download_model`, optional)
 

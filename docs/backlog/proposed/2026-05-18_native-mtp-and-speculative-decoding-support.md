@@ -1,5 +1,22 @@
 # Proposed: Native MTP and speculative decoding support
 
+## Update 2026-09-20 — current implementation and committed follow-ups
+
+This is a historical umbrella, not an executable current plan. The tested native
+MLX 27B and embedded-head Flash paths now include scheduler integration, images
+and prefix caching; see `docs/native-mlx-runtime.md` and its benchmark companion.
+Earlier paragraphs claiming the MTP lane always declines warm caches are stale.
+Generic draft-model failure below refers to the measured mlx-lm hybrid-cache
+implementation, not a fundamental impossibility of speculative algorithms.
+
+The ordinary Flash target plus separate native head is a valid packaging direction,
+but our Flash loader currently rejects external drafters. This and the remaining
+work are now standalone [planned items 0848–0853](../planned/native_inference/README.md).
+Shared controls are NOT implementations of HF/GGUF MTP; those adapters remain open.
+Runtime's local instance-lock and remote speculation/boolean-reasoning/metadata
+repairs are tracked as abstractruntime-0846. No new MLX provider was introduced.
+The original proposal and August update below are preserved as history.
+
 ## Metadata
 - Created: 2026-05-18
 - Status: Largely implemented 2026-08-29 — see `docs/speculative-decoding.md`

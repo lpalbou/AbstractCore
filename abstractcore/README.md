@@ -1157,7 +1157,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
 ### Documentation
 
 - **Module READMEs**: Detailed documentation for each module (linked above)
-- **Main README**: `/Users/albou/projects/abstractcore/README.md` - User-facing guide
+- **Main README**: `README.md` - User-facing guide
 - **API Reference**: `docs/api-reference.md` - Complete API documentation
 - **Examples**: `examples/` - Working code samples
 

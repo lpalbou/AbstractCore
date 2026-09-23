@@ -1660,7 +1660,7 @@ Planned improvements:
 
 ---
 
-For detailed implementation, see `/Users/albou/projects/abstractcore/abstractcore/server/app.py` (2000+ lines).
+For detailed implementation, see `abstractcore/server/app.py` (2000+ lines).
 
 ## Related Modules
 

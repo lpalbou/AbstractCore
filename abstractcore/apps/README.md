@@ -1279,7 +1279,7 @@ Planned improvements:
 
 ---
 
-For detailed implementation, see individual app files in `/Users/albou/projects/abstractcore/abstractcore/apps/`.
+For detailed implementation, see individual app files in `abstractcore/apps/`.
 
 ## Related Modules
 

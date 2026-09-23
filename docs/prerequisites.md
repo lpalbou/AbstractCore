@@ -786,19 +786,6 @@ Run the test:
 python test_setup.py
 ```
 
-### Live API smoke tests (opt-in)
-
-Some tests are intentionally **real network calls** and are disabled by default. To enable them, set:
-- `ABSTRACTCORE_RUN_LIVE_API_TESTS=1`
-
-Example (OpenRouter):
-```bash
-ABSTRACTCORE_RUN_LIVE_API_TESTS=1 OPENROUTER_API_KEY="$OPENROUTER_API_KEY" \
-  python -m pytest -q tests/test_graceful_fallback.py::test_openrouter_generation_smoke
-```
-
-Local provider smoke tests use `ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1` (and `ABSTRACTCORE_RUN_MLX_TESTS=1` for MLX).
-
 ## Security Notes
 
 ### API Keys

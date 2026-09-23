@@ -568,6 +568,29 @@ See [Server](server.md#agentic-cli-integration) for details and supported format
 
 ## Provider-Specific Issues
 
+### Native MLX concurrency and MTP
+
+**Requests overlap but do not batch:** enable `mlx_batching=True` when constructing
+the supported Qwen3.8 provider, or in `options` on `/acore/models/load` before
+sending chat requests. Inspect `metadata["execution"]["mode"]` and
+`peak_batch_size`; concurrent HTTP clients alone do not prove tensor batching.
+
+**A later request waits while MTP is running:** MTP cohorts cannot admit late
+arrivals. Use `speculation=False` for compatible greedy continuous admission.
+Sampled or incompatible controls run exclusively. Compare policies using your
+own prompts; see [measured concurrency tradeoffs](native-mlx-benchmarks.md).
+
+**Requested MTP is unavailable:** check the actual `speculation.used` outcome,
+trained head availability and dependency versions. Non-neutral logits penalties
+and logit bias require target decoding or explicit optional fallback; strict
+acceleration raises. The 27B head is a separate artifact; Flash-Next requires
+a checkpoint containing its trained head tensors.
+
+**Unload is refused or SSD storage is locked:** finish/cancel the owning
+provider's requests and close its streams before retrying unload. Give each
+independent process a private SSD cache path. Do not remove another running
+process's lock. See [native lifecycle and cache configuration](native-mlx-runtime.md).
+
 ### Ollama
 
 **Issue: Ollama not responding**
@@ -665,7 +688,7 @@ curl http://localhost:1234/v1/models
 #### Issue: Context Length Too Small (400 Bad Request, Truncated Responses)
 ```bash
 # Problem: LLM returns 400 Bad Request, truncated output, or errors with long inputs
-# Root Cause: Insufficient context length configured for the model or server
+# Check: configured context length for the model and server
 
 # Solution 1: Increase Default Context Length (RECOMMENDED)
 # This is the most robust way to ensure all models use maximum available context

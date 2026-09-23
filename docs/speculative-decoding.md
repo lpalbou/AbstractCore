@@ -1,13 +1,14 @@
 # Speculative decoding (native MTP)
 
 Multi-token prediction (MTP) makes a model draft several of its own next tokens
-and verify them in one pass. It is a pure speed trade: a drafted token is kept
-only when the target model would have produced it anyway, so the answer does not
-change — it just arrives sooner.
+and verify them with the target model in one pass. Speed depends on draft
+acceptance and verification cost. Compare outputs using the same loaded runtime:
+finite-precision kernels and changes of runtime can affect exact token choices.
 
-AbstractCore exposes this through one optional `speculation` block, and it will
-never pretend to have applied it. If a request cannot be honored you get a named
-reason, in the log and in `response.metadata["speculation"]`.
+The native MLX provider exposes this through an optional `speculation` block.
+It reports actual execution in `response.metadata["speculation"]`, with a named
+reason when acceleration is unavailable. The shared contract does not implement
+tensor execution or guarantee MTP support in other provider backends.
 
 ## Quick start
 
@@ -20,12 +21,102 @@ llm = create_llm(
     speculation={"mode": "native_mtp"},
 )
 
-r = llm.generate("Write an LRU cache in Python.", max_tokens=400, thinking=False)
+r = llm.generate("Write an LRU cache in Python.", max_output_tokens=400, thinking=False)
 print(r.metadata["speculation"])
 # {'requested': True, 'mode': 'native_mtp', 'used': True,
 #  'drafter': 'mlx-community/Qwen3.8-27B-MTP-4bit', 'num_draft_tokens': 3,
 #  'runtime': 'mlx_vlm', 'draft_kind': 'mtp'}
 ```
+
+## Qwen3.8-Flash-Next on native MLX
+
+Install `abstractcore[mlx]` with MLX ≥0.32.2 and mlx-vlm ≥0.7.1. The `mlx`
+provider executes locally in your Python process; no HTTP endpoint or oMLX
+installation is used.
+
+```python
+from abstractcore import create_llm
+
+llm = create_llm(
+    "mlx",
+    model="Jundot/Qwen3.8-Flash-Next-oQ4e-mtp",
+    speculation={"mode": "native_mtp", "num_draft_tokens": 3,
+                 "require_acceleration": True},
+)
+result = llm.generate("Write a small LRU cache.", thinking=False,
+                      temperature=0, max_output_tokens=256)
+print(result.content)
+print(result.metadata["speculation"])
+
+# Change depth for one request; the following request returns to depth 3.
+result = llm.generate("Explain cache expiry.", thinking=False,
+                      speculation={"num_draft_tokens": 5})
+baseline = llm.generate("Explain cache expiry.", thinking=False, speculation=False)
+llm.unload_model(llm.model)
+```
+
+`num_draft_tokens` counts proposed tokens, excluding the target seed token.
+Depth is fixed per request, not an adaptive ceiling. This is distinct from the
+checkpoint's **one trained MTP layer**, which can be reused recurrently.
+Direct-mode measurements cover depths 1, 3 and 5; the scheduled two-model
+comparison covers depths 1, 2 and 3. Larger depths are accepted but can cost more
+memory and run slower. Invalid depths raise immediately. Response metadata
+reports actual drafted/accepted counts, rounds and acceptance rate.
+
+The [Jundot Q4 MTP artifact](https://huggingface.co/Jundot/Qwen3.8-Flash-Next-oQ4e-mtp)
+occupies approximately 106.32 GB on disk. It uses mixed MLX affine quantization,
+not GGUF `IQ4_XS`. Its MTP tensors are embedded and checked during loading.
+The [mlx-community 4-bit artifact](https://huggingface.co/mlx-community/Qwen3.8-Flash-Next-4bit)
+does not include those tensors. An MTP-related config field alone does not
+establish that a quantization includes the trained head.
+
+In the direct-mode M5 Max/128-GiB profile, a 45-token coding prompt generating
+256 tokens at temperature 0 measured **59–61 decode tokens/s at depth 3** versus
+**37–38 tokens/s with MTP off** (two runs each, same loaded model). Depth 1
+measured 54 tokens/s and depth 5 measured 41–43 tokens/s. Outputs matched exactly
+across these runs. These are workload-specific measurements, not a guarantee
+that every prompt or depth is faster. Peak MLX allocation was approximately
+76 GB, excluding OS memory and filesystem cache. These are not measurements of
+scheduled-runtime or HTTP throughput. For those metrics and the oMLX comparison,
+use the [native MLX benchmark profile](native-mlx-benchmarks.md).
+
+`mlx_ple_offload=True` is the default: n-gram embedding rows are read from the
+existing safetensors files with a bounded row cache. No second checkpoint is
+written. Full residency is available with `mlx_ple_offload=False`, but needs
+approximately 30 GiB more weight memory and is not recommended on a busy
+128 GiB machine. Native model weights are shared between provider instances.
+Direct mode refuses overlapping calls. Set `mlx_batching=True` for the
+[native concurrent runtime](native-mlx-runtime.md): target-only continuous
+batching, MTP cohorts, cancellation and optional bounded SSD prefix caching.
+Finish or close active streams before unloading their owning provider.
+
+### Native prefix caching and sampling
+
+Pass complete conversation history with each cached request. Use `messages=[]`
+for a standalone prompt; an omitted history is rejected to avoid confusing
+prefix reuse with hidden-context append semantics.
+
+```python
+result = llm.generate(long_prompt, messages=history, prompt_cache_key="session-1",
+                      thinking=False, temperature=0)
+print(result.usage["cached_input_tokens"])
+llm.prompt_cache_clear()
+```
+
+Direct mode uses a memory-only cache bounded to 512 MiB with two recurrent-state
+checkpoints. Scheduled mode (`mlx_batching=True`) adds a configurable RAM budget
+and opt-in SSD persistence; see [native cache controls](native-mlx-runtime.md#bounded-ram-and-optional-ssd-prefix-reuse).
+Manual prefill, append, fork, save and load are unsupported. Clearing a specific
+key clears the shared native cache and emits an explicit warning.
+
+Temperature, top-p, top-k, min-p and seed are supported with MTP. Non-neutral
+presence/frequency/repetition penalties and logit bias require target-only
+decoding: use `speculation=False`. With optional acceleration, these controls
+produce an explicit unaccelerated outcome; with `require_acceleration=True`,
+they raise before generation. They are never silently ignored. Prompted Pydantic
+structured output is supported; the Outlines mlx-lm adapter is not used for
+Qwen4. Image input is handled by the native vision graph; audio/video containers
+must be converted to supported inputs (for video, image frames).
 
 ## From the CLI
 
@@ -212,6 +303,11 @@ has a registry entry yet.
 
 ## Measured results
 
+The following tables describe the legacy direct adapter and its original
+seed-inclusive backend block sizes, not the scheduled native runtime. Use a
+matched runtime/version when reproducing them; do not compare these decode
+figures directly with HTTP end-to-end throughput.
+
 M5 Max (128 GB), 4-bit, batch 1, greedy, 200 tokens, medians of 3 interleaved
 reps with nothing else resident.
 
@@ -279,7 +375,7 @@ The drafter's config declares a `block_size`, but that is an architecture
 property, not a tuned runtime value — and following it blindly can cost you the
 whole win. Measured sweeps (200 tokens, code prompt):
 
-| block size | Qwen3.5-4B | Qwen3.8-27B |
+| backend block size (seed included) | Qwen3.5-4B | Qwen3.8-27B |
 |---|---|---|
 | 1 | **0.14x** | — |
 | 2 | **1.16x** | 1.39x |
@@ -287,32 +383,18 @@ whole win. Measured sweeps (200 tokens, code prompt):
 | 4 | 0.98x *(its config's value)* | **1.57x** |
 | 5 | 0.89x | 1.49x |
 
-`num_draft_tokens=1` is pathological — a ~7x slowdown — and the provider warns
-if you ask for it. The registry ships the measured optimum per model (2 for the
-4B, 3 for the 27B); omit `num_draft_tokens` to take it.
+Backend block size 1 in that measurement has **zero proposals**. The public
+`num_draft_tokens=1` means one proposal and maps to backend block size 2; it is
+not that pathological setting. Registry defaults are starting points, not
+universal optima. Sweep proposal depth with your prompts and concurrency.
 
-## Limitations of the MLX lane
+## Native backend boundaries
 
-- **Text only.** Enabling speculation swaps the whole runtime to mlx-vlm, whose
-  speculative loop does not take the vision add-on's precomputed embeddings. An
-  image request under speculation raises rather than silently answering without
-  the picture. Build a second provider with `speculation={"mode": "off"}` for
-  media.
-- **No warm prompt-cache reuse.** The keyed snapshot cache is built from mlx-lm
-  cache objects; feeding one into the speculative loop risks a silent desync, so
-  the lane declines it and warns once. Prompts are prefilled fresh.
+- The Qwen3.8-27B separate-head native path and Flash-Next embedded-head path
+  both accept images and native automatic prefix reuse. Full histories remain
+  required. Native caches cannot consume ordinary mlx-lm durable append-cache
+  artifacts; see [native runtime caching](native-mlx-runtime.md).
 - **mlx-lm's own `draft_model` does not work here** and is deliberately not
   offered: Qwen3.5/3.8 are hybrids with linear-attention layers, and mlx-lm
   raises `Speculative decoding requires a trimmable prompt cache
   (got {'ArraysCache'})`.
-
-## Running the tests
-
-```bash
-# hermetic (no models, no network)
-python -m pytest -q tests/providers/test_mtp_adv_*.py
-
-# live, needs the 15 GB target and its drafter cached
-ABSTRACTCORE_RUN_MLX_TESTS=1 ABSTRACTCORE_RUN_MTP_TESTS=1 \
-  python -m pytest -q tests/providers/test_mtp_mlx_live.py
-```

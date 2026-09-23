@@ -327,6 +327,7 @@ abstractcore-chat --provider openai --model gpt-4o-mini
 
 ## Next steps
 
+- [Native MLX Runtime](native-mlx-runtime.md) — Qwen3.8 on Apple Silicon, vision, MTP and concurrent serving
 - [Prerequisites](prerequisites.md) — provider setup (keys, base URLs, hardware notes)
 - [FAQ](faq.md) — common questions and setup gotchas
 - [Examples](examples.md) — end-to-end patterns and recipes

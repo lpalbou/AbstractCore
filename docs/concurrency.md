@@ -12,12 +12,17 @@ For local providers (MLX/HuggingFace), concurrency is **compute bound** and naiv
 
 ## MLX in AbstractCore (what to expect)
 
-- `MLXProvider` loads one in-process model per provider instance (`abstractcore/providers/mlx_provider.py`).
-- `BaseProvider.agenerate()` provides async support for all providers, but for MLX it falls back to `asyncio.to_thread()` (`abstractcore/providers/base.py`). This keeps the event loop responsive, but it does **not** guarantee higher throughput, and can trigger MLX/Metal thread-safety issues if you truly run multiple generations concurrently in the same process.
+- Compatible MLX provider instances can share resident weights. Async entry points alone do not imply model batching or guarantee higher throughput.
+- For native Qwen3.8-27B and Flash-Next, `mlx_batching=True` connects provider requests to a shared execution owner. Compatible greedy target-only requests use continuous admission; MTP requests form fixed same-depth cohorts; sampled or incompatible requests run exclusively with their controls preserved. See [native MLX concurrency and prefix caching](native-mlx-runtime.md) for configuration, limits and HTTP serving.
+- Without that opt-in native scheduler, do not assume concurrent Python calls safely co-batch. Direct native execution refuses overlapping calls; ordinary MLX execution and caches retain their separate behavior.
 
-If your goal is **measuring throughput vs concurrency on a single MLX model**, use continuous batching via `mlx-lm` (next section).
+The benchmark below directly exercises upstream `mlx-lm` batching, not the AbstractCore provider or its HTTP request path. Its historical results demonstrate backend scaling, not current native-provider throughput.
 
-## MLX concurrency benchmark (recommended)
+For actual provider/server measurements on an M5 Max with Qwen3.8-27B and
+Flash-Next, including oMLX, MTP off/on, vision and staggered clients, use
+[Native MLX Benchmarks](native-mlx-benchmarks.md).
+
+## Direct backend concurrency benchmark
 
 Use `examples/performance/mlx_concurrency_benchmark.py` to run *many distinct prompts* through a single MLX model and produce:
 - realtime progress logs
