@@ -227,9 +227,10 @@ def test_evidence_is_kept_when_content_is_below_the_real_content_floor():
 # ---------------------------------------------------------------------------
 
 BIG_FIXTURES = ["ja_wikipedia", "wikipedia_bert", "do_pricing", "bbc_tech_hub", "supabase_pricing"]
-# Measured 2026-08-21: worst real fixture is wikipedia_bert at ~0.6s (487KB).
-# 3.0s leaves 5x headroom while still catching a pathology.
-MAX_EXTRACTION_SECONDS = 3.0
+# Measured 2026-08-21: worst real fixture is wikipedia_bert at ~0.6s (487KB) on
+# a developer machine; shared CI runners have taken 3.1s. 8.0s absorbs runner
+# noise while still catching a pathology (a quadratic pass costs minutes).
+MAX_EXTRACTION_SECONDS = 8.0
 
 
 @pytest.mark.parametrize("gold_key", BIG_FIXTURES)
