@@ -159,6 +159,18 @@ def _fake_home(monkeypatch, tmp_path):
     monkeypatch.setenv("HOME", str(tmp_path))
     hub = tmp_path / ".cache" / "huggingface" / "hub"
     hub.mkdir(parents=True)
+    # Pin every cache the listings read to this hub. huggingface_hub freezes
+    # HF_HUB_CACHE at its first import: a test that imported it under another
+    # (still existing) tmp cache would otherwise leak its repos into this one.
+    monkeypatch.setenv("HF_HUB_CACHE", str(hub))
+    for var in ("HF_HOME", "HUGGINGFACE_HUB_CACHE"):
+        monkeypatch.delenv(var, raising=False)
+    try:
+        import huggingface_hub.constants as hf_constants
+    except Exception:
+        hf_constants = None
+    if hf_constants is not None:
+        monkeypatch.setattr(hf_constants, "HF_HUB_CACHE", str(hub))
     return hub
 
 
