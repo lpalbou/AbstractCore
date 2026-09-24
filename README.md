@@ -27,8 +27,8 @@ or any OpenAI-compatible backend.
 The default install is intentionally lightweight; add providers and optional
 subsystems via explicit install extras. For local runtimes, AbstractCore is
 cache-first and offline-first: it will not silently download model weights; you
-pull or prefetch the models you want, then run without internet when your
-chosen provider and tools are local.
+download the models you want (`abstractcore models download ...`), then run
+without internet when your chosen provider and tools are local.
 
 First-class support for:
 - offline-capable local operation with explicit model setup (no silent downloads)
@@ -559,6 +559,7 @@ abstractcore host profile                        # accelerator, memory ceiling, 
 abstractcore models catalog --fits               # downloadable models that fit this machine
 abstractcore models download ollama qwen3:8b
 abstractcore models list                         # installed models per engine, with sizes
+abstractcore models verify qwen3:8b --provider ollama   # load it once and check the answer
 abstractcore models delete ollama qwen3:8b --yes
 abstractcore engines status --probe              # Ollama / LM Studio / MLX / llama.cpp / ...
 abstractcore engines install ollama --dry-run    # the exact install command

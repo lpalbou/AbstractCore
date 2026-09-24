@@ -1149,7 +1149,7 @@ Notes:
 - Caches are **model-locked**; loading a cache resets the transcript and uses the KV cache as the context source of truth.
 - `--q8` quantizes the cache before saving (smaller, lossy).
 
-Implementation note: the CLI now calls `provider.prompt_cache_save()` / `provider.prompt_cache_load()` instead of reaching into provider internals (`_prompt_cache_store`).
+The CLI uses the public `provider.prompt_cache_save()` / `provider.prompt_cache_load()` methods, which you can call from your own code as well.
 
 ## Sessions: `CachedSession`
 
@@ -1291,23 +1291,18 @@ key first.
 
 ### Every local lane feeds the planned cut
 
-*(2026-08-07.)* A plan is worth nothing if the lane ignores it. MLX has fed
-`bloc_token_ids` verbatim since the bloc work landed; the **HuggingFace
-transformers and GGUF lanes did not** — they re-rendered each module, and the
-transformers branch treated `tools is not None` as "rebuild", which reset the
-cache and re-prefilled the whole system+tools text. Both now feed the planned
-fragment. Measured on `Qwen3-4B-Instruct-2507` (bf16/MPS), a 702-token system
+The MLX, HuggingFace transformers and GGUF lanes all prefill the planned
+`bloc_token_ids` fragment verbatim, so a plan is honoured on every local lane.
+Measured on `Qwen3-4B-Instruct-2507` (bf16/MPS), a 702-token system
 bloc plus a 661-token tools bloc:
 
 | | cold build of `[system, tools]` | after editing ONE tool description |
 |---|---|---|
 | one merged `system+tools` bloc | 1363 tokens prefilled | 1367 tokens re-prefilled |
-| transformers, before this change | 2068 tokens prefilled | 1367 tokens re-prefilled |
-| transformers, after | 1363 tokens prefilled | **665** tokens re-prefilled |
+| separate `system` and `tools` blocs (planned cut) | 1363 tokens prefilled | **665** tokens re-prefilled |
 
-So the tools bloc used to cost 52 % *more* to build and save nothing on the edit
-it exists for. It now saves 51 % of the prefill on a one-tool change, and the
-same figure holds on the MLX lane. On the GGUF lane llama.cpp's own live-context
+The separate tools bloc costs nothing extra to build and saves 51 % of the
+prefill on a one-tool change; the same figure holds on the MLX lane. On the GGUF lane llama.cpp's own live-context
 prefix reuse already skips the shared prefix within a process, so the bloc cut
 matches it rather than beating it; the cut still matters there for keyed and
 durable reuse, where there is no live context to fall back on.
@@ -1503,7 +1498,7 @@ Example:
 ```python
 from abstractcore import CachedSession, create_llm
 
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 session = CachedSession(provider=llm, system_prompt="You are helpful.", prompt_cache_strategy="auto")
 
 session.attach_files(["README.md", "docs/prompt-caching.md"])

@@ -8,7 +8,8 @@ Python. AbstractGateway re-exposes the same payloads, so every console shows the
 Related pages: [Engines](engines.md) (installing Ollama, LM Studio, MLX, llama.cpp),
 [Centralized Config](centralized-config.md) (which model each capability uses and
 `abstractcore models status`), [Memory and model residency](memory-management.md)
-(what is loaded right now), [Server](server.md).
+(what is loaded right now), [Server](server.md), and
+[Troubleshooting](troubleshooting.md#local-model-downloads) for load and download failures.
 
 ## What this covers
 
@@ -21,6 +22,7 @@ Related pages: [Engines](engines.md) (installing Ollama, LM Studio, MLX, llama.c
 | Download | `abstractcore models download <provider> <artifact> [--dry-run] [--detach] [--json]` | `POST /acore/models/download` | `host_jobs.start_download_job(...)` / `model_materializer.download(...)` |
 | Delete | `abstractcore models delete <provider> <artifact> [--yes] [--dry-run] [--force] [--json]` | `POST /acore/models/delete` | `model_materializer.delete_artifact(...)` |
 | Follow background work | `abstractcore models jobs [<job_id>] [--kind K] [--status S] --json`, `abstractcore models cancel <job_id>` | `GET /acore/jobs`, `GET /acore/jobs/{id}`, `POST /acore/jobs/{id}/cancel` | `host_jobs.default_registry()` |
+| Check that an installed model answers | `abstractcore models verify <artifact> [--provider P] [--json]` | none | `abstractcore.config.model_verify.verify_inference(...)` |
 | Repair missing `refs/main` | `abstractcore models repair-refs [--dry-run] [--cache-dir DIR] [--json]` | none | `model_materializer.repair_hf_refs(apply=...)` |
 
 Exit codes for every verb: `0` success, `1` error, `2` refused (a policy, a delete blocker, or
@@ -162,8 +164,7 @@ When only effective bits are known, `[N, N+1)` bits is `Nbit` (4.5 bits is `4bit
 | `null` | No quant information at all: `quant_class` is `unknown`. |
 
 An assumption can be wrong for a given tag: the Ollama registry lists `qwen3.5:0.8b`,
-`qwen3.5:2b` and `qwen3-embedding:0.6b` as Q8_0 builds (checked 2026-09-24). `quant` and `bits`
-keep their meaning.
+`qwen3.5:2b` and `qwen3-embedding:0.6b` as Q8_0 builds. `quant` and `bits` keep their meaning.
 
 Filters: `q` (every word must start a word of the id, name, vendor, tags or artifacts),
 `--engine` (`ollama`, `lmstudio`, `mlx`, `huggingface`, or `llamacpp` for GGUF artifacts),
@@ -253,12 +254,11 @@ tag from a chat tag needs one `/api/show` call per model, which the listing does
 GGUF search, the ONNX probe of an embedding model, the capability probes) reads the same list
 of hub caches: the one `huggingface_hub` itself uses (so a cache you moved for
 `huggingface_hub` is honoured), then the `cache.huggingface_cache_dir` setting (`hub/` inside
-it). Before 2026-09-24 some of these looked only in `~/.cache/huggingface/hub` and reported a
-relocated model as missing.
+it), so a relocated cache is found wherever you moved it.
 
 **Where `abstractcore --download-vision-model` writes.** Into the `cache.local_models_cache_dir`
 setting (default `~/.abstractcore/models`), one folder per model. Move it with
-`abstractcore --set-local-models-cache-dir PATH`. It used to ignore the setting.
+`abstractcore --set-local-models-cache-dir PATH`.
 
 When the local Ollama server is not running, its tags are listed from the on-disk manifests
 (marked `engine_not_running`). An engine that cannot be read appears in `errors`, never as an
@@ -304,9 +304,8 @@ abstractcore models download lmstudio qwen/qwen3.5-9b@4bit --dry-run     # show 
 
 Several MLX models accelerate with a **separate** MTP head repo, the companion. The registry
 (`model_capabilities.json`, `speculation.runtimes.mlx.drafter`) names it, and it is the same
-entry the MLX provider loads the head from. Loading never downloads, so a model fetched
-without its companion used to run without MTP with no visible sign. Now the companion is part of
-the model:
+entry the MLX provider loads the head from. Loading never downloads, so AbstractCore treats
+the companion as part of the model:
 
 | Model | Companion |
 |---|---|
@@ -339,14 +338,16 @@ This loads ONE installed model through its provider with the default configurati
 downloads. It asks "What is the boiling point of water at sea level in degrees Celsius?" at
 temperature 0 and checks that the answer contains `100`. For a model with an MTP companion it
 also checks that `speculation.used` is `true`. It unloads the model afterwards, and the exit
-code is `0` only when every check passed. Mission W2 found a garbage-output failure that no
-unit test could see; this command catches that class of failure.
+code is `0` only when every check passed. Use it after a download to confirm that the model
+produces sensible output on this machine, not only that its files are present. `--provider`
+selects the provider (default `mlx`).
 
 ### Repairing `refs/main`
 
-Downloads made before that fix left repos with a complete snapshot and no `refs/main`. They
-load through AbstractCore (which resolves the snapshot directory itself) but not by id
-through other tools: "couldn't find them in the cached files". Write the missing refs once:
+A cached repo can hold a complete snapshot and no `refs/main`, for example one downloaded by
+an AbstractCore release before 2.15.0 (see the [CHANGELOG](https://github.com/lpalbou/AbstractCore/blob/main/CHANGELOG.md)). It loads through AbstractCore
+(which resolves the snapshot directory itself) but not by id through other tools, which report
+"couldn't find them in the cached files". Write the missing refs once:
 
 ```bash
 abstractcore models repair-refs --dry-run   # list what would be written
@@ -462,7 +463,8 @@ a file only when it is complete, so no progress would show. Set `ABSTRACTCORE_HF
 Xet anyway; progress then moves one whole file at a time.
 
 Every progress update is also appended to `<jobs dir>/<job_id>.events.jsonl`.
-- Job snapshots are written to `~/.abstractcore/config/jobs/` (override with
-  `ABSTRACTCORE_JOBS_DIR`; disable with `ABSTRACTCORE_JOBS_PERSIST=0`), so
-  `abstractcore models jobs` lists work started by `abstractcore serve` or by
-  `--detach`, and `abstractcore models cancel <job_id>` can stop it.
+
+Job snapshots are written to `~/.abstractcore/config/jobs/` (override with
+`ABSTRACTCORE_JOBS_DIR`; disable with `ABSTRACTCORE_JOBS_PERSIST=0`), so
+`abstractcore models jobs` lists work started by `abstractcore serve` or by
+`--detach`, and `abstractcore models cancel <job_id>` can stop it.

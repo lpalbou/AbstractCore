@@ -16,14 +16,10 @@ AbstractCore either loads that artifact or fails ([ADR 0009](adr/0009-model-hand
 Every fallback on this page changes *how* a request is served; none of them changes *what model
 serves it*.
 
-This was not always true. `HuggingFaceProvider` used to promote any handle to GGUF when a local
-LM Studio Hub manifest existed and any GGUF could be resolved from the caches — so
-`create_llm("huggingface", model="Qwen/Qwen3.6-27B")` silently loaded a 4-bit
-`lmstudio-community/Qwen3.6-27B-GGUF` file on llama.cpp instead of the requested bf16
-transformers weights. That promotion has been removed; the case now raises
-`ModelArtifactMismatchError`.
-
-If you were relying on it, say which artifact you want:
+For example, `create_llm("huggingface", model="Qwen/Qwen3.6-27B")` loads the transformers
+weights of that repo. When those weights are not cached but a local LM Studio Hub manifest maps
+the name to a GGUF conversion, the provider raises `ModelArtifactMismatchError` instead of
+loading that GGUF. To load a GGUF build, say which artifact you want:
 
 ```python
 # The GGUF that the LM Studio Hub alias points at:

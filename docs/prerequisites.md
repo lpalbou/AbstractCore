@@ -272,15 +272,19 @@ pip install "abstractcore[mlx]"
 
 AbstractCore is offline-first for local model weights. The MLX provider loads
 models from an explicit local path, the Hugging Face cache, or the LM Studio
-cache; it does not silently download weights during `create_llm(...)`. This is enforced per
-load (a cache miss raises `ModelNotFoundError`); it does not set `HF_HUB_OFFLINE` for the
-process, so explicit downloads keep working after a model is loaded.
+cache; it does not silently download weights during `create_llm(...)` (a cache miss raises
+`ModelNotFoundError`). See [Centralized Config](centralized-config.md#offline-section) for the
+offline settings.
 
-Download or prefetch a model first, for example:
+Download a model first, for example:
 
 ```bash
-huggingface-cli download mlx-community/Qwen3-4B
+abstractcore models download mlx mlx-community/Qwen3-4B-4bit
 ```
+
+`abstractcore models catalog --engine mlx --fits` lists MLX builds that fit this machine; see
+[Local Models](models.md). Any other download into the Hugging Face cache (for example
+`hf download <repo>`) works too.
 
 Then use the model ID, or pass a local model directory path:
 
@@ -288,7 +292,7 @@ Then use the model ID, or pass a local model directory path:
 from abstractcore import create_llm
 
 # Uses a cached Hugging Face snapshot or a local directory path.
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 # OR
 llm = create_llm("mlx", model="/path/to/local/mlx-model")
 ```
@@ -299,7 +303,7 @@ llm = create_llm("mlx", model="/path/to/local/mlx-model")
 from abstractcore import create_llm
 
 # Test with a model you already downloaded/prefetched
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 response = llm.generate("Explain machine learning briefly")
 print(response.content)
 ```

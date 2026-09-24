@@ -244,9 +244,9 @@ MLX drafter that gets auto-resolved:
 | model | MLX drafter (auto) | status |
 |---|---|---|
 | `qwen3.8-27b` | `mlx-community/Qwen3.8-27B-MTP-4bit` | tested end-to-end, **1.2–1.5x** |
-| `qwen3.6-27b` | `mlx-community/Qwen3.6-27B-MTP-4bit` | drafter config verified, not run here |
-| `qwen3.6-35b-a3b` | `mlx-community/Qwen3.6-35B-A3B-MTP-4bit` | drafter config verified, not run here |
-| `qwen3.5-9b` | `mlx-community/Qwen3.5-9B-MTP-4bit` | drafter config verified, not run here |
+| `qwen3.6-27b` | `mlx-community/Qwen3.6-27B-MTP-4bit` | drafter config verified, not benchmarked |
+| `qwen3.6-35b-a3b` | `mlx-community/Qwen3.6-35B-A3B-MTP-4bit` | drafter config verified, not benchmarked |
+| `qwen3.5-9b` | `mlx-community/Qwen3.5-9B-MTP-4bit` | drafter config verified, not benchmarked |
 | `qwen3.5-4b` | `mlx-community/Qwen3.5-4B-MTP-4bit` | tested; **too small to benefit** |
 | `gemma-4-26b-a4b-it` | `mlx-community/gemma-4-26B-A4B-it-qat-assistant-4bit` | tested, **1.12–1.48x**; not output-preserving |
 | `qwen3.6-27b-mtp-gguf` | — (GGUF only) | llama.cpp / LM Studio |
@@ -254,7 +254,7 @@ MLX drafter that gets auto-resolved:
 
 "drafter config verified" means the repo's `config.json` was fetched and reports
 `model_type: qwen3_5_mtp` with a `text_config.hidden_size` matching its target —
-artifact evidence, but not a timing measurement on this machine.
+artifact evidence, not a timing measurement.
 
 Any drafter can also be pointed at explicitly, whether or not it is registered:
 
@@ -279,27 +279,20 @@ the companion is missing, the model still loads and answers, without MTP. The re
 ### MTP-preserving checkpoints never load through mlx-lm
 
 Some MLX checkpoints keep the model's `mtp.*` tensors in their own weights, for example
-`mlx-works/Qwen3.5-9B-oQ4e-mtp`, `Jundot/Qwen3.8-27B-oQ4e-mtp` and Flash-Next. **mlx-lm
-0.31.3 and earlier corrupts them.** `mlx_lm/models/qwen3_5.py` `sanitize()` reads any `mtp.`
-tensor as the sign of a raw Hugging Face checkpoint and adds `+1.0` to every RMSNorm weight.
-These checkpoints are already converted, so their norms are shifted twice and the model
-generates garbage. There is no error. mlx-vlm strips `mtp.` before it makes that decision and
-loads the same files correctly.
+`mlx-works/Qwen3.5-9B-oQ4e-mtp`, `Jundot/Qwen3.8-27B-oQ4e-mtp` and Flash-Next. The MLX
+provider loads these checkpoints through **mlx-vlm in every lane**: with or without a drafter,
+`speculation` on, off or inherited, batching or not. It detects them from the checkpoint's
+`model.safetensors.index.json` `weight_map` (or, for a single file, its safetensors header), a
+local read of a few KB. If mlx-vlm cannot load such a checkpoint, the provider raises a
+`ProviderAPIError` that names the model and the reason; it never falls back to mlx-lm. The
+native lane is also the one that runs the MTP drafter and prefix caching.
 
-The MLX provider reads the checkpoint's `model.safetensors.index.json` `weight_map` (or, for a
-single file, its safetensors header), a local read of a few KB. When the checkpoint carries
-`mtp.` tensors, it loads through **mlx-vlm in every lane**: with or without a drafter,
-`speculation` on, off or inherited, batching or not. If mlx-vlm cannot load it, the provider
-raises a `ProviderAPIError` that names the model and the reason. It never falls back to mlx-lm.
-
-| mlx-lm | `qwen3_5` sanitize on MTP-preserving checkpoints |
-|---|---|
-| ≤ 0.31.3 (latest on PyPI, 2026-09-24) | **affected**: double norm shift, garbage output |
-| `main` since ml-explore/mlx-lm#1623 (commit `4eeaf20`, 2026-08-18) | fixed: the shift depends only on unsanitized conv1d weights |
-
-AbstractCore keeps routing these checkpoints through mlx-vlm even after an mlx-lm release
-carries the fix. The native lane is also the one that runs the MTP drafter and prefix caching,
-so nothing is lost.
+If you load these checkpoints outside AbstractCore, use mlx-vlm as well. The `qwen3_5` loader
+in released mlx-lm versions (0.31.3 and earlier) treats any `mtp.` tensor as a sign of an
+unconverted checkpoint and shifts the RMSNorm weights a second time, which produces meaningless
+output without an error (the loader on mlx-lm `main` is corrected by ml-explore/mlx-lm#1623).
+`abstractcore models verify <repo>` checks that an installed model answers sensibly (see
+[Checking a fresh install](models.md#checking-a-fresh-install-models-verify)).
 
 mlx-community also publishes drafters for `Qwen3.5-122B-A10B`,
 `DeepSeek-V4-Flash` (bf16 only) and `Hy3-preview`. Of these, mlx-vlm has a

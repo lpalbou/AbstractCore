@@ -436,7 +436,7 @@ for chunk in llm.generate(
 
 ## Advanced Features
 
-### Maximum Resolution Optimization (NEW)
+### Maximum Resolution Optimization
 
 AbstractCore automatically optimizes image resolution for each model's maximum capability, ensuring optimal vision results:
 

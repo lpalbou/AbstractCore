@@ -28,11 +28,11 @@ pip install "abstractcore[huggingface]" # Transformers / torch / llama-cpp-pytho
 
 ```bash
 # CLI flags
-abstractcore-endpoint --provider mlx --model mlx-community/Qwen3-4B --host 0.0.0.0 --port 8001
+abstractcore-endpoint --provider mlx --model mlx-community/Qwen3-4B-4bit --host 0.0.0.0 --port 8001
 
 # Or via env vars
 export ABSTRACTENDPOINT_PROVIDER=mlx
-export ABSTRACTENDPOINT_MODEL=mlx-community/Qwen3-4B
+export ABSTRACTENDPOINT_MODEL=mlx-community/Qwen3-4B-4bit
 export ABSTRACTENDPOINT_HOST=0.0.0.0
 export ABSTRACTENDPOINT_PORT=8001
 abstractcore-endpoint

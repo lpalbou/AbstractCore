@@ -143,7 +143,7 @@ switching the whole process offline. Fetched PDFs no longer leave the machine by
   `EmbeddingManager` pickled its whole in-memory cache over the on-disk file at exit,
   last writer wins: a process that loaded the cache while it was empty (a test run, a
   second app on the same model) and exited later replaced a populated cache with an
-  empty one (this emptied the operator's OVH embedding caches on 2026-09-24). Saves now
+  empty one. Saves now
   merge with the file as it is on disk (under a lock where the OS has one), are
   written to a temp file and renamed into place, never write an empty cache, and are
   skipped when the process added nothing.
@@ -158,12 +158,7 @@ switching the whole process offline. Fetched PDFs no longer leave the machine by
   fallback now share `utils.model_cache.hf_hub_cache_dirs()` (the cache
   `huggingface_hub` uses, then `cache.huggingface_cache_dir`), so a relocated cache is
   no longer reported as missing.
-- **`abstractcore --download-vision-model` honours `cache.local_models_cache_dir`.** It always wrote to `~/.abstractcore/models` (the 1.3 GB `git-base`
-  of 2026-09-24 landed there). See [docs/models.md](docs/models.md#installed-models).
-- **Embeddings tests follow the offline-first load.** The 21 mocked
-  `EmbeddingManager` tests assumed the repo id reached `SentenceTransformer` directly
-  and failed once loading resolved the cached snapshot first; they now run
-  against a fake cached snapshot (`tests/embeddings/conftest.py`).
+- **`abstractcore --download-vision-model` honours `cache.local_models_cache_dir`.** It always wrote to `~/.abstractcore/models`. See [docs/models.md](docs/models.md#installed-models).
 - **An MTP-preserving MLX checkpoint never loads through mlx-lm.** mlx-lm ≤ 0.31.3 `qwen3_5.Model.sanitize` treats any `mtp.` tensor as a raw Hugging
   Face checkpoint and adds +1.0 to every RMSNorm weight. So `mlx-works/Qwen3.5-9B-oQ4e-mtp`
   and `Jundot/Qwen3.8-27B-oQ4e-mtp` were shifted twice and generated garbage whenever the MTP
@@ -195,12 +190,6 @@ switching the whole process offline. Fetched PDFs no longer leave the machine by
   "Native Qwen4" for every model.
 - `abstractcore models download --help` lists every provider with a download verb, `mlx`
   included. The refusal text already told users to run `models download mlx …`.
-- `tests/config/test_model_catalog.py::test_mlx_artifacts_are_not_downloadable_off_apple_silicon`
-  failed whenever llama-cpp-python was importable: `engine_inventory()`
-  describes the running interpreter, so the synthetic CUDA host inherited an
-  installed `llamacpp` engine and the documented rule (an installed engine
-  outranks the provider order) picked the GGUF. The test now pins "no engine
-  installed"; a companion test pins the installed-engine rule.
 - The re-read upstream size of `mlx-community/Qwen3.8-27B-4bit` is
   16,054,541,349 bytes (the seed had 16,081,490,933 from an older revision).
 - **A pinned Hugging Face download now leaves `refs/main`.** The downloader
@@ -241,14 +230,10 @@ switching the whole process offline. Fetched PDFs no longer leave the machine by
   `AutoModelForImageTextToText`) gets the cached snapshot directory plus
   `local_files_only=True`. The vision loader also no longer writes
   `TRANSFORMERS_VERBOSITY` / `DISABLE_TQDM` into the environment.
-- **A fully cached Hugging Face model loads offline.** Loads failed with "We
+- **A fully cached Hugging Face model loads offline.** Loads could fail with "We
   couldn't connect to 'https://huggingface.co' ... couldn't find them in the
-  cached files" even though every file was on disk. Cause: AbstractCore's
-  downloader pins the commit it listed (`snapshot_download(revision=<sha>)`).
-  For a revision that is already a commit hash, huggingface_hub writes no
-  `refs/main`, and transformers needs `refs/main` to find a repo id offline.
-  Transformers also checked the Hub for `adapter_config.json` even with
-  `local_files_only=True`. The provider now finds the snapshot itself
+  cached files" even though every file was on disk, when the repo had no
+  `refs/main`. The provider now finds the snapshot itself
   (`utils.model_cache.resolve_hf_load_snapshot`: `refs/main`, else the newest
   snapshot that has a config) and passes transformers the directory, so no
   load makes a network call. A PEFT adapter (LoRA) whose base model is cached
@@ -276,14 +261,11 @@ switching the whole process offline. Fetched PDFs no longer leave the machine by
 - **Loading an MLX model no longer switches the whole process to Hugging Face
   offline mode.** With `offline_first` on (the default), each MLX load used to
   write `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE` and `HF_DATASETS_OFFLINE` = 1
-  into `os.environ` for the rest of the process. The write never affected the
-  loader: `huggingface_hub` reads the flag once, at its import, which mlx-lm
-  had already triggered. But every child process inherited it, so in the
-  gateway every download job started after the first MLX load failed with
-  `OfflineModeIsEnabled`. The write is removed. "No on-demand download while
-  loading" still holds: the load resolves to a local cache directory and
-  raises `ModelNotFoundError` on a miss. Tests cover both the unchanged
-  environment and a cache miss that makes no network call.
+  into `os.environ` for the rest of the process, and every child process
+  inherited it (in the gateway, download jobs started after the first MLX load
+  failed with `OfflineModeIsEnabled`). The write is removed. "No on-demand
+  download while loading" still holds: the load resolves to a local cache
+  directory and raises `ModelNotFoundError` on a miss.
 - **An explicit Hugging Face download always reaches the Hub.** Download jobs
   build the child's `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE` and
   `HF_DATASETS_OFFLINE` from the values the operator set before the process
@@ -312,11 +294,7 @@ switching the whole process offline. Fetched PDFs no longer leave the machine by
 ### Tests
 
 - **Tests never touch your home or the network.**
-  Two incidents on 2026-09-24: an unisolated test downloaded
-  `microsoft/git-base` into `~/.abstractcore/models` and rewrote
-  `abstractcore.json`; `test_endpoint_profile_can_back_embedding_manager`
-  rewrote the operator's `endpoint_ovh_provider_Qwen3_Embedding_8B` embedding
-  caches at interpreter exit. `tests/conftest.py` now moves `HOME`, `HF_HOME`
+  `tests/conftest.py` moves `HOME`, `HF_HOME`
   and `HF_HUB_CACHE` to tmp at import and per test, clears the exported
   `ABSTRACT*`/`HF_*` path settings and `XDG_*`, and fails loudly if
   `huggingface_hub` froze its cache path on the real home. A socket guard
@@ -324,11 +302,9 @@ switching the whole process offline. Fetched PDFs no longer leave the machine by
   (8080, 1234, 11434, 18850); every refused attempt fails its test and is listed
   with its host and port. `@pytest.mark.network("reason")` (skipped unless
   `pytest --allow-network`) and `@pytest.mark.real_home("reason")` are the
-  opt-outs; a bare marker is a collection error. Tests that reached live
-  services by accident now use fakes or dead ports (LM Studio base-URL tests,
-  the companion-delete tests, provider inventory probe, OpenAI construction
-  preflight, fetch_url DNS via the new `fake_public_dns` fixture, the PDF test
-  that uploaded to OpenAI); live-provider tests carry `network` markers. See
+  opt-outs; a bare marker is a collection error. Tests that need a public host
+  name use the new `fake_public_dns` fixture, and live-provider tests carry
+  `network` markers. See
   [CONTRIBUTING.md](CONTRIBUTING.md#tests-never-touch-your-home-or-the-network).
 
 ## [2.14.0] - 2026-09-23

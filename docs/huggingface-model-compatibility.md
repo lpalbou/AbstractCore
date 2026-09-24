@@ -141,12 +141,11 @@ that has a `config.json` or an `adapter_config.json`). It passes that directory,
 class. It never sets `HF_HUB_OFFLINE` or related variables, so child processes are not
 affected.
 
-Why a directory rather than the repo id: transformers finds a repo id offline through
-`refs/main`. AbstractCore's own downloads pin the commit they listed, and for a pinned
-commit huggingface_hub writes no `refs/main`. A load by id from such a snapshot failed
-with "couldn't connect to huggingface.co ... couldn't find them in the cached files",
-even though every file was present. Transformers also checks the Hub for
-`adapter_config.json` even with `local_files_only=True`. Neither happens with a directory.
+Loading from the snapshot directory rather than the repo id means a cached model loads even
+when its repo has no `refs/main` (transformers needs that ref to resolve a repo id offline),
+and transformers makes no Hub request for `adapter_config.json`. Other tools that load by repo
+id still need `refs/main`; `abstractcore models repair-refs` writes it (see
+[Repairing `refs/main`](models.md#repairing-refsmain)).
 
 What a snapshot can be loaded as depends on its files:
 

@@ -56,7 +56,7 @@ from abstractcore import create_llm, ensure_bloc_kv_artifact, load_bloc_kv_artif
 from abstractcore.core.file_blocs import FileBlocStore
 
 store = FileBlocStore()
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 
 record = store.upsert(
     file_meta={

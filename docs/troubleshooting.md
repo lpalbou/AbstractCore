@@ -8,6 +8,7 @@ Complete troubleshooting guide for AbstractCore core library and server, includi
 - [Quick Diagnosis](#quick-diagnosis)
 - [Installation Issues](#installation-issues)
 - [Core Library Issues](#core-library-issues)
+- [Local Model Downloads](#local-model-downloads)
 - [Server Issues](#server-issues)
 - [Provider-Specific Issues](#provider-specific-issues)
 - [Performance Issues](#performance-issues)
@@ -439,6 +440,85 @@ response = llm.generate(
 if hasattr(response, 'tool_calls') and response.tool_calls:
     print("Tools were called")
 ```
+
+---
+
+## Local Model Downloads
+
+These entries cover models loaded from local caches (MLX, HuggingFace, embeddings) and the
+`abstractcore models ...` download verbs. See [Local Models](models.md) for the full reference.
+
+### Issue: "download it first" when loading a local model
+
+**Symptoms:** `create_llm("mlx", ...)`, `create_llm("huggingface", ...)` or `EmbeddingManager(...)`
+raises `ModelNotFoundError` with `download it first: abstractcore models download huggingface <repo>`.
+
+**Cause:** with the default offline settings, loading reads the local caches only and never
+downloads. The model is not cached, or its snapshot is incomplete (a config without weights, a
+README only, or an adapter whose base model is missing).
+
+**Fix:**
+```bash
+abstractcore models download mlx mlx-community/Qwen3-4B-4bit      # MLX builds
+abstractcore models download huggingface <repo>                  # transformers / GGUF repos
+abstractcore models list --provider huggingface                  # confirm it is installed
+```
+
+To let loads fetch from the Hub instead, turn off `offline_first` and `force_local_files_only`
+(see [Centralized Config](centralized-config.md#offline-section)).
+
+### Issue: A download is refused because the Hub is offline
+
+**Symptoms:** `abstractcore models download ...` or a console download fails at once with a
+message naming `HF_HUB_OFFLINE` or `TRANSFORMERS_OFFLINE`.
+
+**Cause:** the variable was set in the environment before the process started. AbstractCore never
+lifts an offline flag you set yourself; `offline_first` alone never blocks an explicit download.
+
+**Fix:** unset the variable, restart the process (or the server), and download again.
+
+### Issue: A download is `stalled` or ends `failed`
+
+**Symptoms:** the job's `state` is `stalled` ("no data for N s"), or the job ends `failed`.
+
+**Checks:** `abstractcore models jobs <job_id> --json` shows `ended_reason` (one plain sentence:
+dropped connection, Hub error, full disk, owning process gone, failed MTP companion) and
+`log_tail`.
+
+**Fix:** a stalled download resumes by itself when bytes arrive again. For a failed one, fix the
+stated reason and run the same download again: files that finished are kept, and the file that was
+in progress starts over. Set `HF_TOKEN` for gated repositories.
+
+### Issue: Other tools cannot find a model AbstractCore downloaded
+
+**Symptoms:** `mlx_lm.load("<repo>")`, transformers with `local_files_only=True` or vLLM report
+"couldn't find them in the cached files", while AbstractCore loads the same model.
+
+**Cause:** the cached repo has a complete snapshot but no `refs/main`.
+
+**Fix:**
+```bash
+abstractcore models repair-refs --dry-run   # list what would be written
+abstractcore models repair-refs
+```
+
+See [Repairing `refs/main`](models.md#repairing-refsmain).
+
+### Issue: A model loads but answers nonsense, or MTP is not used
+
+**Checks:**
+```bash
+abstractcore models verify <repo>            # default provider: mlx
+abstractcore models verify qwen3:8b --provider ollama
+```
+
+The command loads the installed model, asks a fixed question and checks the answer. For a model
+with an MTP companion it also checks that `speculation.used` is `true`. When the companion is
+missing, the response's `speculation.message` names it and the command that downloads it (see
+[MTP companions](models.md#mtp-companions) and
+[Speculative Decoding](speculative-decoding.md#mtp-preserving-checkpoints-never-load-through-mlx-lm)).
+For quantized transformers checkpoints, see
+[the entry below](#issue-huggingface-quantized-transformers-model-loads-but-generates-nonsense).
 
 ---
 

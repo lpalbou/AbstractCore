@@ -13,6 +13,7 @@ Related docs (user-facing):
 - OpenAI-compatible gateway server: `docs/server.md`
 - Single-model OpenAI-compatible endpoint: `docs/endpoint.md`
 - Tool calling semantics (passthrough vs execution): `docs/tool-calling.md`
+- Local models, engines and download jobs: `docs/models.md`, `docs/engines.md`, `docs/console.md`
 
 ## System Overview
 
@@ -816,29 +817,32 @@ graph LR
 The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top of the core library:
 
 ```mermaid
-	graph TD
-	    A[HTTP Client] --> B[FastAPI Server]
-	    B --> C{Endpoint Router}
-	    
-	    C --> D[/v1/chat/completions]
-	    C --> E[/v1/embeddings]
-	    C --> F[/v1/models]
-	    C --> G[/providers]
-	    C --> Img[/v1/images/* (optional)]
-	    C --> Aud[/v1/audio/* (optional)]
-	    C --> Cache[/acore/prompt_cache/*]
-    
+graph TD
+    A[HTTP Client] --> B[FastAPI Server]
+    W[Browser] --> CON["/console web console"]
+    CON --> B
+    B --> C{Endpoint Router}
+
+    C --> D["/v1/chat/completions, /v1/responses"]
+    C --> E["/v1/embeddings"]
+    C --> F["/v1/models, /providers"]
+    C --> Img["/v1/images/*, /v1/audio/* (optional)"]
+    C --> Cache["/acore/prompt_cache/*, /acore/blocs/*"]
+    C --> Host["/acore/host, /acore/models/*, /acore/engines/*, /acore/jobs/*"]
+
     D --> H[Request Validation]
     E --> H
+    Img --> H
     F --> I[Provider Discovery]
-    G --> I
-    
+
     H --> J[AbstractCore Library]
     I --> J
-    
+    Cache --> J
+    Host --> LM[Local model management]
+
     J --> K[Provider Interface]
     K --> L[LLM Providers]
-    
+
     style B fill:#4caf50
     style J fill:#e1f5fe
     style K fill:#f3e5f5
@@ -879,8 +883,7 @@ sequenceDiagram
     Server->>Core: llm.generate(messages, tools)
     Core->>Provider: API call with retry logic
     Provider->>Core: Response
-    Core->>Core: Execute tools if needed
-    Core->>Server: GenerateResponse
+    Core->>Server: GenerateResponse (tool calls are returned, not executed)
     Server->>Server: Convert to OpenAI format
     Server->>Client: HTTP Response (streaming or complete)
 ```
@@ -893,6 +896,52 @@ sequenceDiagram
 - **Health Checks**: `/health` endpoint for monitoring
 - **Interactive Docs**: Auto-generated Swagger UI at `/docs`
 - **Multi-Worker Support**: Production deployment with multiple workers
+
+### 11. Local Model Management
+
+The CLI (`abstractcore host|models|engines ...`), the server's `/acore/host/profile`,
+`/acore/models/*`, `/acore/engines/*` and `/acore/jobs/*` routes, the web console at `/console`
+and the terminal console (`abstractcore-console`, which drives the CLI) all call the same Python
+modules, so every surface returns the same JSON payloads. AbstractGateway re-exposes those
+payloads.
+
+```mermaid
+graph TD
+    CLI["abstractcore host / models / engines"] --> CORE
+    TUI["abstractcore-console (terminal)"] --> CLI
+    WEB["/console (browser)"] --> HTTP
+    HTTP["/acore/host/profile, /acore/models/*, /acore/engines/*, /acore/jobs/*"] --> CORE
+
+    subgraph CORE[Shared modules]
+        HP["utils.host_profile: OS, accelerator, memory ceiling, free disk"]
+        FIT["utils.model_fit: fit verdict per artifact"]
+        CAT["config.model_catalog: curated seed, recommended_text_model()"]
+        MAT["config.model_materializer: installed models, download, delete, MTP companions"]
+        ENG["config.engines: engine detection and install plans"]
+        JOBS["config.host_jobs: host_job_v1 registry, progress, cancel"]
+    end
+
+    CAT --> HP
+    CAT --> FIT
+    CAT --> MAT
+    CAT --> REG["assets: model_downloads_catalog.json, model_capabilities.json"]
+    JOBS --> MAT
+    JOBS --> ENG
+    MAT --> STORES["Engine stores: Hugging Face cache, LM Studio models folder, Ollama"]
+    JOBS --> PERSIST["~/.abstractcore/config/jobs/: snapshots and events.jsonl"]
+```
+
+- **Reads never download.** The catalog, the installed-model listing and provider loads read
+  local evidence; only an explicit download (a CLI verb or a job) reaches the network. See
+  [Centralized Config](centralized-config.md#offline-section).
+- **Long work is a job.** Downloads, deletes and engine installs run as `host_job_v1` jobs with
+  progress, a plain end reason and cancellation. Hugging Face transfers run in a child process
+  that a cancel stops at once.
+- **One recommendation.** `model_catalog.recommended_text_model()` picks the recommended text
+  model for this machine on every surface.
+
+See [Local Models](models.md), [Local Engines](engines.md), [Web Console](console.md) and
+[Terminal Console](console-tui.md).
 
 ## Architecture Benefits
 

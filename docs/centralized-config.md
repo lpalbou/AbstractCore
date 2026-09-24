@@ -810,7 +810,8 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
   "offline": {
     "offline_first": true,
     "allow_network": false,
-    "force_local_files_only": true
+    "force_local_files_only": true,
+    "allow_remote_pdf_extraction": false
   },
   "streaming": {
     "cli_stream_default": false
@@ -916,12 +917,9 @@ the shape the embeddings commands and `--show-config` read.
   - *Hugging Face (transformers)*: the provider finds the model's cached snapshot directory
     and passes that directory, with `local_files_only=True`, to every transformers call
     (config, tokenizer or processor, model). A fully cached model therefore loads with no
-    network call, including a snapshot that has no `refs/main`. AbstractCore's downloads
-    made before 2026-09-24 left snapshots in that state because they pin a commit; current
-    downloads write `refs/main`, and `abstractcore models repair-refs` fixes older ones
-    for other tools that load by id (see [Repairing `refs/main`](models.md#repairing-refsmain)).
-    A PEFT adapter
-    (LoRA) loads its base model from the base's snapshot and attaches the adapter from its
+    network call, including a snapshot that has no `refs/main` (`abstractcore models
+    repair-refs` writes it for other tools that load by id; see
+    [Repairing `refs/main`](models.md#repairing-refsmain)). A PEFT adapter (LoRA) loads its base model from the base's snapshot and attaches the adapter from its
     own directory. If the model is not cached, or the snapshot is incomplete (a config with
     no weights, a README only, or an adapter whose base is missing), the load fails at once
     with `ModelNotFoundError`. The message names the model and says

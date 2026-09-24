@@ -93,12 +93,13 @@ embedder = EmbeddingManager(model="embeddinggemma")
 embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
 ```
 
-Loading never downloads: the model must already be in the local Hugging Face cache
+With the default offline settings, loading never downloads: the model must already be in the local Hugging Face cache
 (`abstractcore models download huggingface <repo>`), otherwise the manager raises
 `ModelNotFoundError` with that command. It looks in every hub cache AbstractCore reads (the
 one `huggingface_hub` uses, then the `cache.huggingface_cache_dir` setting) and loads the
 cached snapshot directory directly; a local model directory can be passed as `model`. It
-changes no process environment variable.
+changes no process environment variable. The `offline_first` and `force_local_files_only`
+settings control this; see [Centralized Config](centralized-config.md#offline-section).
 
 ### Ollama Provider
 
@@ -352,7 +353,7 @@ for ctx in contexts:
     print(f"- {ctx}")
 ```
 
-### Document Clustering (NEW)
+### Document Clustering
 
 ```python
 from abstractcore.embeddings import EmbeddingManager
@@ -430,15 +431,13 @@ embedding = embedder.embed("Test text")
 print(f"Truncated embedding dimension: {len(embedding)}")  # 256
 ```
 
-### Advanced Caching (NEW)
+### Advanced Caching
 
 The persistent caches (`<cache_dir>/<provider>_<model>_cache.pkl` and its `_normalized_`
 sibling; default `cache_dir` `~/.abstractcore/embeddings`) are safe to share between processes
 and apps using the same model: a save first re-reads the file and merges it with this process's
 entries, writes a temporary file and renames it over the cache, never writes an empty cache, and
-is skipped entirely when the process added nothing. Before 2026-09-24 every manager rewrote
-the whole file at interpreter exit, so a process that had embedded nothing could empty a
-populated cache.
+is skipped entirely when the process added nothing.
 
 ```python
 # Configure dual-layer caching system

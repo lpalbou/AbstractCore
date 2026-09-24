@@ -22,7 +22,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 4. **[Troubleshooting](troubleshooting.md)** — actionable fixes for common failures
 5. **[API (Python)](api.md)** — user-facing map of the public API
 6. **[API Reference](api-reference.md)** — complete function/class reference (including events)
-7. **[Architecture](architecture.md)** — component ownership, provider boundaries, request lifecycle and native MLX execution
+7. **[Architecture](architecture.md)** — component ownership, provider boundaries, request lifecycle, native MLX execution, server routes and local model management
 
 ## Core guides
 
@@ -46,7 +46,7 @@ AbstractCore is one of the core packages of the **AbstractFramework** ecosystem:
 - **[Stopping a Generation and Ejecting a Model](generation-cancel.md)** — host `cancel_event` per lane (MLX, transformers, GGUF, LM Studio, Ollama, llama.cpp server / OpenAI-compatible), severed HTTP requests, what cannot be interrupted, and eject safety (in-flight calls stopped first, `load_model`, reload on demand)
 - **[Memory and Model Residency](memory-management.md)** — host memory snapshot (`get_memory_snapshot`), host-wide resident-model sweep (`sweep_loaded_models`), per-provider loaded-model listings, what `unload_model()` frees (weights + session caches) and how to verify it, gateway model locks (`/acore/models/lock`), and context calibration/estimation (`estimate_context_fit`)
 - **Model/architecture registries (source of truth)** — `abstractcore/assets/model_capabilities.json`, `abstractcore/assets/model_capabilities.schema.json`, and `abstractcore/assets/architecture_formats.json` (see `abstractcore/assets/README.md`)
-- **[Local Models](models.md)** — browse the download catalog with fit verdicts for this machine (`abstractcore models catalog|search`), list installed models with sizes, download and delete weights, follow jobs
+- **[Local Models](models.md)** — browse the download catalog with fit verdicts for this machine (`abstractcore models catalog|search`), the recommended text model per machine, list installed models with sizes, download (with MTP companions and live progress) and delete weights, follow jobs, `models verify` and `models repair-refs`
 - **[Local Engines](engines.md)** — detect Ollama / LM Studio / MLX / llama.cpp / vLLM / transformers, the exact install command per OS, `abstractcore engines install`, and the install safety policy
 - **[Centralized Config](centralized-config.md)** — config file, config CLI (`abstractcore --config`), and capability route defaults (`input.*`, `output.*`, `embedding.*`, `rerank.*`)
 - **[Data-Home Registry](data-registry.md)** — machine-level registry of framework data directories (model/prompt caches, runs, sessions, logs, entity homes) with owner-declared safe-purge verbs

@@ -2,7 +2,7 @@
 
 > Expanded companion to `llms.txt`: setup, API and provider guidance, followed by canonical documentation pages. Use the linked source pages for authoritative documentation and the source code for behavior.
 
-Last updated: 2026-09-20
+Last updated: 2026-09-25
 Package version: 2.15.1
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
@@ -380,7 +380,7 @@ pip install "abstractcore[mlx]"
 ```python
 from abstractcore import create_llm
 
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 print(llm.generate("Summarize the CAP theorem.").content)
 ```
 
@@ -488,7 +488,7 @@ print(session.generate("Pick the best one and explain why.").content)
 ```python
 from abstractcore import CachedSession, create_llm
 
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")  # requires: abstractcore[mlx]
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")  # requires: abstractcore[mlx]
 session = CachedSession(llm, system_prompt="You are a helpful assistant.", prompt_cache_strategy="auto")
 
 # Attach local text/doc files as stable transcript "boxes" (1 file = 1 message).
@@ -710,7 +710,7 @@ Use:
 from abstractcore.embeddings import EmbeddingManager
 
 em = EmbeddingManager()
-vec = em.embed_text("hello world")
+vec = em.embed("hello world")
 print(len(vec))
 ```
 
@@ -724,10 +724,15 @@ AbstractCore stores persistent configuration at:
 
 ### Local models and engines
 
-`abstractcore host profile`, `abstractcore models catalog|search|list|download|delete|jobs|cancel`
+`abstractcore host profile`, `abstractcore models catalog|search|list|download|delete|jobs|cancel|verify|repair-refs|status`
 and `abstractcore engines status|install|open` browse downloadable models with fit verdicts for
 this machine, manage installed weights, and install engines with the vendor's command. Every verb
-takes `--json`; exit code `2` means refused. See `docs/models.md` and `docs/engines.md`.
+takes `--json`; exit code `2` means refused. On Apple silicon the recommended text model follows
+unified memory (`model_catalog.recommended_text_model()`), and an MLX model's MTP companion is
+downloaded in the same job. Local loads (MLX, HuggingFace, embeddings) read the local caches only
+and raise `ModelNotFoundError` with the `abstractcore models download ...` command on a miss
+(`offline.offline_first`, default on); explicit downloads always reach the Hub. See
+`docs/models.md`, `docs/engines.md` and `docs/centralized-config.md`.
 
 ### Most-used commands
 
@@ -897,7 +902,7 @@ If you want to host **one** provider+model as a dedicated OpenAI-compatible `/v1
 
 ```bash
 pip install "abstractcore[server]"
-abstractcore-endpoint --provider mlx --model mlx-community/Qwen3-4B --host 0.0.0.0 --port 8001
+abstractcore-endpoint --provider mlx --model mlx-community/Qwen3-4B-4bit --host 0.0.0.0 --port 8001
 ```
 
 Config via env vars (alternative):
@@ -1045,8 +1050,8 @@ or any OpenAI-compatible backend.
 The default install is intentionally lightweight; add providers and optional
 subsystems via explicit install extras. For local runtimes, AbstractCore is
 cache-first and offline-first: it will not silently download model weights; you
-pull or prefetch the models you want, then run without internet when your
-chosen provider and tools are local.
+download the models you want (`abstractcore models download ...`), then run
+without internet when your chosen provider and tools are local.
 
 First-class support for:
 - offline-capable local operation with explicit model setup (no silent downloads)
@@ -1577,6 +1582,7 @@ abstractcore host profile                        # accelerator, memory ceiling, 
 abstractcore models catalog --fits               # downloadable models that fit this machine
 abstractcore models download ollama qwen3:8b
 abstractcore models list                         # installed models per engine, with sizes
+abstractcore models verify qwen3:8b --provider ollama   # load it once and check the answer
 abstractcore models delete ollama qwen3:8b --yes
 abstractcore engines status --probe              # Ollama / LM Studio / MLX / llama.cpp / ...
 abstractcore engines install ollama --dry-run    # the exact install command
@@ -2259,15 +2265,19 @@ pip install "abstractcore[mlx]"
 
 AbstractCore is offline-first for local model weights. The MLX provider loads
 models from an explicit local path, the Hugging Face cache, or the LM Studio
-cache; it does not silently download weights during `create_llm(...)`. This is enforced per
-load (a cache miss raises `ModelNotFoundError`); it does not set `HF_HUB_OFFLINE` for the
-process, so explicit downloads keep working after a model is loaded.
+cache; it does not silently download weights during `create_llm(...)` (a cache miss raises
+`ModelNotFoundError`). See [Centralized Config](docs/centralized-config.md#offline-section) for the
+offline settings.
 
-Download or prefetch a model first, for example:
+Download a model first, for example:
 
 ```bash
-huggingface-cli download mlx-community/Qwen3-4B
+abstractcore models download mlx mlx-community/Qwen3-4B-4bit
 ```
+
+`abstractcore models catalog --engine mlx --fits` lists MLX builds that fit this machine; see
+[Local Models](docs/models.md). Any other download into the Hugging Face cache (for example
+`hf download <repo>`) works too.
 
 Then use the model ID, or pass a local model directory path:
 
@@ -2275,7 +2285,7 @@ Then use the model ID, or pass a local model directory path:
 from abstractcore import create_llm
 
 # Uses a cached Hugging Face snapshot or a local directory path.
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 # OR
 llm = create_llm("mlx", model="/path/to/local/mlx-model")
 ```
@@ -2286,7 +2296,7 @@ llm = create_llm("mlx", model="/path/to/local/mlx-model")
 from abstractcore import create_llm
 
 # Test with a model you already downloaded/prefetched
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 response = llm.generate("Explain machine learning briefly")
 print(response.content)
 ```
@@ -2877,7 +2887,7 @@ For prompt-cache-aware long chats (reuse stable prefixes like system/tools/files
 ```python
 from abstractcore import CachedSession, create_llm
 
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")  # requires: abstractcore[mlx]
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")  # requires: abstractcore[mlx]
 session = CachedSession(provider=llm, system_prompt="You are helpful.", prompt_cache_strategy="auto")
 session.attach_files(["/path/to/large_context.md"])
 print(session.generate("Summarize the attached file.").content)
@@ -6728,7 +6738,7 @@ for chunk in llm.generate(
 
 ## Advanced Features
 
-### Maximum Resolution Optimization (NEW)
+### Maximum Resolution Optimization
 
 AbstractCore automatically optimizes image resolution for each model's maximum capability, ensuring optimal vision results:
 
@@ -7536,12 +7546,13 @@ embedder = EmbeddingManager(model="embeddinggemma")
 embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
 ```
 
-Loading never downloads: the model must already be in the local Hugging Face cache
+With the default offline settings, loading never downloads: the model must already be in the local Hugging Face cache
 (`abstractcore models download huggingface <repo>`), otherwise the manager raises
 `ModelNotFoundError` with that command. It looks in every hub cache AbstractCore reads (the
 one `huggingface_hub` uses, then the `cache.huggingface_cache_dir` setting) and loads the
 cached snapshot directory directly; a local model directory can be passed as `model`. It
-changes no process environment variable.
+changes no process environment variable. The `offline_first` and `force_local_files_only`
+settings control this; see [Centralized Config](docs/centralized-config.md#offline-section).
 
 ### Ollama Provider
 
@@ -7795,7 +7806,7 @@ for ctx in contexts:
     print(f"- {ctx}")
 ```
 
-### Document Clustering (NEW)
+### Document Clustering
 
 ```python
 from abstractcore.embeddings import EmbeddingManager
@@ -7873,15 +7884,13 @@ embedding = embedder.embed("Test text")
 print(f"Truncated embedding dimension: {len(embedding)}")  # 256
 ```
 
-### Advanced Caching (NEW)
+### Advanced Caching
 
 The persistent caches (`<cache_dir>/<provider>_<model>_cache.pkl` and its `_normalized_`
 sibling; default `cache_dir` `~/.abstractcore/embeddings`) are safe to share between processes
 and apps using the same model: a save first re-reads the file and merges it with this process's
 entries, writes a temporary file and renames it over the cache, never writes an empty cache, and
-is skipped entirely when the process added nothing. Before 2026-09-24 every manager rewrote
-the whole file at interpreter exit, so a process that had embedded nothing could empty a
-populated cache.
+is skipped entirely when the process added nothing.
 
 ```python
 # Configure dual-layer caching system
@@ -8958,7 +8967,8 @@ The configuration is stored as JSON in `~/.abstractcore/config/abstractcore.json
   "offline": {
     "offline_first": true,
     "allow_network": false,
-    "force_local_files_only": true
+    "force_local_files_only": true,
+    "allow_remote_pdf_extraction": false
   },
   "streaming": {
     "cli_stream_default": false
@@ -9064,12 +9074,9 @@ the shape the embeddings commands and `--show-config` read.
   - *Hugging Face (transformers)*: the provider finds the model's cached snapshot directory
     and passes that directory, with `local_files_only=True`, to every transformers call
     (config, tokenizer or processor, model). A fully cached model therefore loads with no
-    network call, including a snapshot that has no `refs/main`. AbstractCore's downloads
-    made before 2026-09-24 left snapshots in that state because they pin a commit; current
-    downloads write `refs/main`, and `abstractcore models repair-refs` fixes older ones
-    for other tools that load by id (see [Repairing `refs/main`](docs/models.md#repairing-refsmain)).
-    A PEFT adapter
-    (LoRA) loads its base model from the base's snapshot and attaches the adapter from its
+    network call, including a snapshot that has no `refs/main` (`abstractcore models
+    repair-refs` writes it for other tools that load by id; see
+    [Repairing `refs/main`](docs/models.md#repairing-refsmain)). A PEFT adapter (LoRA) loads its base model from the base's snapshot and attaches the adapter from its
     own directory. If the model is not cached, or the snapshot is incomplete (a config with
     no weights, a README only, or an adapter whose base is missing), the load fails at once
     with `ModelNotFoundError`. The message names the model and says
@@ -9236,7 +9243,8 @@ Python. AbstractGateway re-exposes the same payloads, so every console shows the
 Related pages: [Engines](docs/engines.md) (installing Ollama, LM Studio, MLX, llama.cpp),
 [Centralized Config](docs/centralized-config.md) (which model each capability uses and
 `abstractcore models status`), [Memory and model residency](docs/memory-management.md)
-(what is loaded right now), [Server](docs/server.md).
+(what is loaded right now), [Server](docs/server.md), and
+[Troubleshooting](docs/troubleshooting.md#local-model-downloads) for load and download failures.
 
 ## What this covers
 
@@ -9249,6 +9257,7 @@ Related pages: [Engines](docs/engines.md) (installing Ollama, LM Studio, MLX, ll
 | Download | `abstractcore models download <provider> <artifact> [--dry-run] [--detach] [--json]` | `POST /acore/models/download` | `host_jobs.start_download_job(...)` / `model_materializer.download(...)` |
 | Delete | `abstractcore models delete <provider> <artifact> [--yes] [--dry-run] [--force] [--json]` | `POST /acore/models/delete` | `model_materializer.delete_artifact(...)` |
 | Follow background work | `abstractcore models jobs [<job_id>] [--kind K] [--status S] --json`, `abstractcore models cancel <job_id>` | `GET /acore/jobs`, `GET /acore/jobs/{id}`, `POST /acore/jobs/{id}/cancel` | `host_jobs.default_registry()` |
+| Check that an installed model answers | `abstractcore models verify <artifact> [--provider P] [--json]` | none | `abstractcore.config.model_verify.verify_inference(...)` |
 | Repair missing `refs/main` | `abstractcore models repair-refs [--dry-run] [--cache-dir DIR] [--json]` | none | `model_materializer.repair_hf_refs(apply=...)` |
 
 Exit codes for every verb: `0` success, `1` error, `2` refused (a policy, a delete blocker, or
@@ -9390,8 +9399,7 @@ When only effective bits are known, `[N, N+1)` bits is `Nbit` (4.5 bits is `4bit
 | `null` | No quant information at all: `quant_class` is `unknown`. |
 
 An assumption can be wrong for a given tag: the Ollama registry lists `qwen3.5:0.8b`,
-`qwen3.5:2b` and `qwen3-embedding:0.6b` as Q8_0 builds (checked 2026-09-24). `quant` and `bits`
-keep their meaning.
+`qwen3.5:2b` and `qwen3-embedding:0.6b` as Q8_0 builds. `quant` and `bits` keep their meaning.
 
 Filters: `q` (every word must start a word of the id, name, vendor, tags or artifacts),
 `--engine` (`ollama`, `lmstudio`, `mlx`, `huggingface`, or `llamacpp` for GGUF artifacts),
@@ -9481,12 +9489,11 @@ tag from a chat tag needs one `/api/show` call per model, which the listing does
 GGUF search, the ONNX probe of an embedding model, the capability probes) reads the same list
 of hub caches: the one `huggingface_hub` itself uses (so a cache you moved for
 `huggingface_hub` is honoured), then the `cache.huggingface_cache_dir` setting (`hub/` inside
-it). Before 2026-09-24 some of these looked only in `~/.cache/huggingface/hub` and reported a
-relocated model as missing.
+it), so a relocated cache is found wherever you moved it.
 
 **Where `abstractcore --download-vision-model` writes.** Into the `cache.local_models_cache_dir`
 setting (default `~/.abstractcore/models`), one folder per model. Move it with
-`abstractcore --set-local-models-cache-dir PATH`. It used to ignore the setting.
+`abstractcore --set-local-models-cache-dir PATH`.
 
 When the local Ollama server is not running, its tags are listed from the on-disk manifests
 (marked `engine_not_running`). An engine that cannot be read appears in `errors`, never as an
@@ -9532,9 +9539,8 @@ abstractcore models download lmstudio qwen/qwen3.5-9b@4bit --dry-run     # show 
 
 Several MLX models accelerate with a **separate** MTP head repo, the companion. The registry
 (`model_capabilities.json`, `speculation.runtimes.mlx.drafter`) names it, and it is the same
-entry the MLX provider loads the head from. Loading never downloads, so a model fetched
-without its companion used to run without MTP with no visible sign. Now the companion is part of
-the model:
+entry the MLX provider loads the head from. Loading never downloads, so AbstractCore treats
+the companion as part of the model:
 
 | Model | Companion |
 |---|---|
@@ -9567,14 +9573,16 @@ This loads ONE installed model through its provider with the default configurati
 downloads. It asks "What is the boiling point of water at sea level in degrees Celsius?" at
 temperature 0 and checks that the answer contains `100`. For a model with an MTP companion it
 also checks that `speculation.used` is `true`. It unloads the model afterwards, and the exit
-code is `0` only when every check passed. Mission W2 found a garbage-output failure that no
-unit test could see; this command catches that class of failure.
+code is `0` only when every check passed. Use it after a download to confirm that the model
+produces sensible output on this machine, not only that its files are present. `--provider`
+selects the provider (default `mlx`).
 
 ### Repairing `refs/main`
 
-Downloads made before that fix left repos with a complete snapshot and no `refs/main`. They
-load through AbstractCore (which resolves the snapshot directory itself) but not by id
-through other tools: "couldn't find them in the cached files". Write the missing refs once:
+A cached repo can hold a complete snapshot and no `refs/main`, for example one downloaded by
+an AbstractCore release before 2.15.0 (see the [CHANGELOG](https://github.com/lpalbou/AbstractCore/blob/main/CHANGELOG.md)). It loads through AbstractCore
+(which resolves the snapshot directory itself) but not by id through other tools, which report
+"couldn't find them in the cached files". Write the missing refs once:
 
 ```bash
 abstractcore models repair-refs --dry-run   # list what would be written
@@ -9690,10 +9698,11 @@ a file only when it is complete, so no progress would show. Set `ABSTRACTCORE_HF
 Xet anyway; progress then moves one whole file at a time.
 
 Every progress update is also appended to `<jobs dir>/<job_id>.events.jsonl`.
-- Job snapshots are written to `~/.abstractcore/config/jobs/` (override with
-  `ABSTRACTCORE_JOBS_DIR`; disable with `ABSTRACTCORE_JOBS_PERSIST=0`), so
-  `abstractcore models jobs` lists work started by `abstractcore serve` or by
-  `--detach`, and `abstractcore models cancel <job_id>` can stop it.
+
+Job snapshots are written to `~/.abstractcore/config/jobs/` (override with
+`ABSTRACTCORE_JOBS_DIR`; disable with `ABSTRACTCORE_JOBS_PERSIST=0`), so
+`abstractcore models jobs` lists work started by `abstractcore serve` or by
+`--detach`, and `abstractcore models cancel <job_id>` can stop it.
 
 ---
 
@@ -12550,11 +12559,11 @@ pip install "abstractcore[huggingface]" # Transformers / torch / llama-cpp-pytho
 
 ```bash
 # CLI flags
-abstractcore-endpoint --provider mlx --model mlx-community/Qwen3-4B --host 0.0.0.0 --port 8001
+abstractcore-endpoint --provider mlx --model mlx-community/Qwen3-4B-4bit --host 0.0.0.0 --port 8001
 
 # Or via env vars
 export ABSTRACTENDPOINT_PROVIDER=mlx
-export ABSTRACTENDPOINT_MODEL=mlx-community/Qwen3-4B
+export ABSTRACTENDPOINT_MODEL=mlx-community/Qwen3-4B-4bit
 export ABSTRACTENDPOINT_HOST=0.0.0.0
 export ABSTRACTENDPOINT_PORT=8001
 abstractcore-endpoint
@@ -12655,6 +12664,7 @@ Complete troubleshooting guide for AbstractCore core library and server, includi
 - [Quick Diagnosis](docs/troubleshooting.md#quick-diagnosis)
 - [Installation Issues](docs/troubleshooting.md#installation-issues)
 - [Core Library Issues](docs/troubleshooting.md#core-library-issues)
+- [Local Model Downloads](docs/troubleshooting.md#local-model-downloads)
 - [Server Issues](docs/troubleshooting.md#server-issues)
 - [Provider-Specific Issues](docs/troubleshooting.md#provider-specific-issues)
 - [Performance Issues](docs/troubleshooting.md#performance-issues)
@@ -13086,6 +13096,85 @@ response = llm.generate(
 if hasattr(response, 'tool_calls') and response.tool_calls:
     print("Tools were called")
 ```
+
+---
+
+## Local Model Downloads
+
+These entries cover models loaded from local caches (MLX, HuggingFace, embeddings) and the
+`abstractcore models ...` download verbs. See [Local Models](docs/models.md) for the full reference.
+
+### Issue: "download it first" when loading a local model
+
+**Symptoms:** `create_llm("mlx", ...)`, `create_llm("huggingface", ...)` or `EmbeddingManager(...)`
+raises `ModelNotFoundError` with `download it first: abstractcore models download huggingface <repo>`.
+
+**Cause:** with the default offline settings, loading reads the local caches only and never
+downloads. The model is not cached, or its snapshot is incomplete (a config without weights, a
+README only, or an adapter whose base model is missing).
+
+**Fix:**
+```bash
+abstractcore models download mlx mlx-community/Qwen3-4B-4bit      # MLX builds
+abstractcore models download huggingface <repo>                  # transformers / GGUF repos
+abstractcore models list --provider huggingface                  # confirm it is installed
+```
+
+To let loads fetch from the Hub instead, turn off `offline_first` and `force_local_files_only`
+(see [Centralized Config](docs/centralized-config.md#offline-section)).
+
+### Issue: A download is refused because the Hub is offline
+
+**Symptoms:** `abstractcore models download ...` or a console download fails at once with a
+message naming `HF_HUB_OFFLINE` or `TRANSFORMERS_OFFLINE`.
+
+**Cause:** the variable was set in the environment before the process started. AbstractCore never
+lifts an offline flag you set yourself; `offline_first` alone never blocks an explicit download.
+
+**Fix:** unset the variable, restart the process (or the server), and download again.
+
+### Issue: A download is `stalled` or ends `failed`
+
+**Symptoms:** the job's `state` is `stalled` ("no data for N s"), or the job ends `failed`.
+
+**Checks:** `abstractcore models jobs <job_id> --json` shows `ended_reason` (one plain sentence:
+dropped connection, Hub error, full disk, owning process gone, failed MTP companion) and
+`log_tail`.
+
+**Fix:** a stalled download resumes by itself when bytes arrive again. For a failed one, fix the
+stated reason and run the same download again: files that finished are kept, and the file that was
+in progress starts over. Set `HF_TOKEN` for gated repositories.
+
+### Issue: Other tools cannot find a model AbstractCore downloaded
+
+**Symptoms:** `mlx_lm.load("<repo>")`, transformers with `local_files_only=True` or vLLM report
+"couldn't find them in the cached files", while AbstractCore loads the same model.
+
+**Cause:** the cached repo has a complete snapshot but no `refs/main`.
+
+**Fix:**
+```bash
+abstractcore models repair-refs --dry-run   # list what would be written
+abstractcore models repair-refs
+```
+
+See [Repairing `refs/main`](docs/models.md#repairing-refsmain).
+
+### Issue: A model loads but answers nonsense, or MTP is not used
+
+**Checks:**
+```bash
+abstractcore models verify <repo>            # default provider: mlx
+abstractcore models verify qwen3:8b --provider ollama
+```
+
+The command loads the installed model, asks a fixed question and checks the answer. For a model
+with an MTP companion it also checks that `speculation.used` is `true`. When the companion is
+missing, the response's `speculation.message` names it and the command that downloads it (see
+[MTP companions](docs/models.md#mtp-companions) and
+[Speculative Decoding](docs/speculative-decoding.md#mtp-preserving-checkpoints-never-load-through-mlx-lm)).
+For quantized transformers checkpoints, see
+[the entry below](docs/troubleshooting.md#issue-huggingface-quantized-transformers-model-loads-but-generates-nonsense).
 
 ---
 
@@ -13973,6 +14062,7 @@ Related docs (user-facing):
 - OpenAI-compatible gateway server: `docs/server.md`
 - Single-model OpenAI-compatible endpoint: `docs/endpoint.md`
 - Tool calling semantics (passthrough vs execution): `docs/tool-calling.md`
+- Local models, engines and download jobs: `docs/models.md`, `docs/engines.md`, `docs/console.md`
 
 ## System Overview
 
@@ -14776,29 +14866,32 @@ graph LR
 The AbstractCore server provides OpenAI-compatible HTTP endpoints built on top of the core library:
 
 ```mermaid
-	graph TD
-	    A[HTTP Client] --> B[FastAPI Server]
-	    B --> C{Endpoint Router}
-	    
-	    C --> D[/v1/chat/completions]
-	    C --> E[/v1/embeddings]
-	    C --> F[/v1/models]
-	    C --> G[/providers]
-	    C --> Img[/v1/images/* (optional)]
-	    C --> Aud[/v1/audio/* (optional)]
-	    C --> Cache[/acore/prompt_cache/*]
-    
+graph TD
+    A[HTTP Client] --> B[FastAPI Server]
+    W[Browser] --> CON["/console web console"]
+    CON --> B
+    B --> C{Endpoint Router}
+
+    C --> D["/v1/chat/completions, /v1/responses"]
+    C --> E["/v1/embeddings"]
+    C --> F["/v1/models, /providers"]
+    C --> Img["/v1/images/*, /v1/audio/* (optional)"]
+    C --> Cache["/acore/prompt_cache/*, /acore/blocs/*"]
+    C --> Host["/acore/host, /acore/models/*, /acore/engines/*, /acore/jobs/*"]
+
     D --> H[Request Validation]
     E --> H
+    Img --> H
     F --> I[Provider Discovery]
-    G --> I
-    
+
     H --> J[AbstractCore Library]
     I --> J
-    
+    Cache --> J
+    Host --> LM[Local model management]
+
     J --> K[Provider Interface]
     K --> L[LLM Providers]
-    
+
     style B fill:#4caf50
     style J fill:#e1f5fe
     style K fill:#f3e5f5
@@ -14839,8 +14932,7 @@ sequenceDiagram
     Server->>Core: llm.generate(messages, tools)
     Core->>Provider: API call with retry logic
     Provider->>Core: Response
-    Core->>Core: Execute tools if needed
-    Core->>Server: GenerateResponse
+    Core->>Server: GenerateResponse (tool calls are returned, not executed)
     Server->>Server: Convert to OpenAI format
     Server->>Client: HTTP Response (streaming or complete)
 ```
@@ -14853,6 +14945,52 @@ sequenceDiagram
 - **Health Checks**: `/health` endpoint for monitoring
 - **Interactive Docs**: Auto-generated Swagger UI at `/docs`
 - **Multi-Worker Support**: Production deployment with multiple workers
+
+### 11. Local Model Management
+
+The CLI (`abstractcore host|models|engines ...`), the server's `/acore/host/profile`,
+`/acore/models/*`, `/acore/engines/*` and `/acore/jobs/*` routes, the web console at `/console`
+and the terminal console (`abstractcore-console`, which drives the CLI) all call the same Python
+modules, so every surface returns the same JSON payloads. AbstractGateway re-exposes those
+payloads.
+
+```mermaid
+graph TD
+    CLI["abstractcore host / models / engines"] --> CORE
+    TUI["abstractcore-console (terminal)"] --> CLI
+    WEB["/console (browser)"] --> HTTP
+    HTTP["/acore/host/profile, /acore/models/*, /acore/engines/*, /acore/jobs/*"] --> CORE
+
+    subgraph CORE[Shared modules]
+        HP["utils.host_profile: OS, accelerator, memory ceiling, free disk"]
+        FIT["utils.model_fit: fit verdict per artifact"]
+        CAT["config.model_catalog: curated seed, recommended_text_model()"]
+        MAT["config.model_materializer: installed models, download, delete, MTP companions"]
+        ENG["config.engines: engine detection and install plans"]
+        JOBS["config.host_jobs: host_job_v1 registry, progress, cancel"]
+    end
+
+    CAT --> HP
+    CAT --> FIT
+    CAT --> MAT
+    CAT --> REG["assets: model_downloads_catalog.json, model_capabilities.json"]
+    JOBS --> MAT
+    JOBS --> ENG
+    MAT --> STORES["Engine stores: Hugging Face cache, LM Studio models folder, Ollama"]
+    JOBS --> PERSIST["~/.abstractcore/config/jobs/: snapshots and events.jsonl"]
+```
+
+- **Reads never download.** The catalog, the installed-model listing and provider loads read
+  local evidence; only an explicit download (a CLI verb or a job) reaches the network. See
+  [Centralized Config](docs/centralized-config.md#offline-section).
+- **Long work is a job.** Downloads, deletes and engine installs run as `host_job_v1` jobs with
+  progress, a plain end reason and cancellation. Hugging Face transfers run in a child process
+  that a cancel stops at once.
+- **One recommendation.** `model_catalog.recommended_text_model()` picks the recommended text
+  model for this machine on every surface.
+
+See [Local Models](docs/models.md), [Local Engines](docs/engines.md), [Web Console](docs/console.md) and
+[Terminal Console](docs/console-tui.md).
 
 ## Architecture Benefits
 
@@ -15794,9 +15932,9 @@ MLX drafter that gets auto-resolved:
 | model | MLX drafter (auto) | status |
 |---|---|---|
 | `qwen3.8-27b` | `mlx-community/Qwen3.8-27B-MTP-4bit` | tested end-to-end, **1.2–1.5x** |
-| `qwen3.6-27b` | `mlx-community/Qwen3.6-27B-MTP-4bit` | drafter config verified, not run here |
-| `qwen3.6-35b-a3b` | `mlx-community/Qwen3.6-35B-A3B-MTP-4bit` | drafter config verified, not run here |
-| `qwen3.5-9b` | `mlx-community/Qwen3.5-9B-MTP-4bit` | drafter config verified, not run here |
+| `qwen3.6-27b` | `mlx-community/Qwen3.6-27B-MTP-4bit` | drafter config verified, not benchmarked |
+| `qwen3.6-35b-a3b` | `mlx-community/Qwen3.6-35B-A3B-MTP-4bit` | drafter config verified, not benchmarked |
+| `qwen3.5-9b` | `mlx-community/Qwen3.5-9B-MTP-4bit` | drafter config verified, not benchmarked |
 | `qwen3.5-4b` | `mlx-community/Qwen3.5-4B-MTP-4bit` | tested; **too small to benefit** |
 | `gemma-4-26b-a4b-it` | `mlx-community/gemma-4-26B-A4B-it-qat-assistant-4bit` | tested, **1.12–1.48x**; not output-preserving |
 | `qwen3.6-27b-mtp-gguf` | — (GGUF only) | llama.cpp / LM Studio |
@@ -15804,7 +15942,7 @@ MLX drafter that gets auto-resolved:
 
 "drafter config verified" means the repo's `config.json` was fetched and reports
 `model_type: qwen3_5_mtp` with a `text_config.hidden_size` matching its target —
-artifact evidence, but not a timing measurement on this machine.
+artifact evidence, not a timing measurement.
 
 Any drafter can also be pointed at explicitly, whether or not it is registered:
 
@@ -15829,27 +15967,20 @@ the companion is missing, the model still loads and answers, without MTP. The re
 ### MTP-preserving checkpoints never load through mlx-lm
 
 Some MLX checkpoints keep the model's `mtp.*` tensors in their own weights, for example
-`mlx-works/Qwen3.5-9B-oQ4e-mtp`, `Jundot/Qwen3.8-27B-oQ4e-mtp` and Flash-Next. **mlx-lm
-0.31.3 and earlier corrupts them.** `mlx_lm/models/qwen3_5.py` `sanitize()` reads any `mtp.`
-tensor as the sign of a raw Hugging Face checkpoint and adds `+1.0` to every RMSNorm weight.
-These checkpoints are already converted, so their norms are shifted twice and the model
-generates garbage. There is no error. mlx-vlm strips `mtp.` before it makes that decision and
-loads the same files correctly.
+`mlx-works/Qwen3.5-9B-oQ4e-mtp`, `Jundot/Qwen3.8-27B-oQ4e-mtp` and Flash-Next. The MLX
+provider loads these checkpoints through **mlx-vlm in every lane**: with or without a drafter,
+`speculation` on, off or inherited, batching or not. It detects them from the checkpoint's
+`model.safetensors.index.json` `weight_map` (or, for a single file, its safetensors header), a
+local read of a few KB. If mlx-vlm cannot load such a checkpoint, the provider raises a
+`ProviderAPIError` that names the model and the reason; it never falls back to mlx-lm. The
+native lane is also the one that runs the MTP drafter and prefix caching.
 
-The MLX provider reads the checkpoint's `model.safetensors.index.json` `weight_map` (or, for a
-single file, its safetensors header), a local read of a few KB. When the checkpoint carries
-`mtp.` tensors, it loads through **mlx-vlm in every lane**: with or without a drafter,
-`speculation` on, off or inherited, batching or not. If mlx-vlm cannot load it, the provider
-raises a `ProviderAPIError` that names the model and the reason. It never falls back to mlx-lm.
-
-| mlx-lm | `qwen3_5` sanitize on MTP-preserving checkpoints |
-|---|---|
-| ≤ 0.31.3 (latest on PyPI, 2026-09-24) | **affected**: double norm shift, garbage output |
-| `main` since ml-explore/mlx-lm#1623 (commit `4eeaf20`, 2026-08-18) | fixed: the shift depends only on unsanitized conv1d weights |
-
-AbstractCore keeps routing these checkpoints through mlx-vlm even after an mlx-lm release
-carries the fix. The native lane is also the one that runs the MTP drafter and prefix caching,
-so nothing is lost.
+If you load these checkpoints outside AbstractCore, use mlx-vlm as well. The `qwen3_5` loader
+in released mlx-lm versions (0.31.3 and earlier) treats any `mtp.` tensor as a sign of an
+unconverted checkpoint and shifts the RMSNorm weights a second time, which produces meaningless
+output without an error (the loader on mlx-lm `main` is corrected by ml-explore/mlx-lm#1623).
+`abstractcore models verify <repo>` checks that an installed model answers sensibly (see
+[Checking a fresh install](docs/models.md#checking-a-fresh-install-models-verify)).
 
 mlx-community also publishes drafters for `Qwen3.5-122B-A10B`,
 `DeepSeek-V4-Flash` (bf16 only) and `Hy3-preview`. Of these, mlx-vlm has a

@@ -75,7 +75,7 @@ For prompt-cache-aware long chats (reuse stable prefixes like system/tools/files
 ```python
 from abstractcore import CachedSession, create_llm
 
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")  # requires: abstractcore[mlx]
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")  # requires: abstractcore[mlx]
 session = CachedSession(provider=llm, system_prompt="You are helpful.", prompt_cache_strategy="auto")
 session.attach_files(["/path/to/large_context.md"])
 print(session.generate("Summarize the attached file.").content)
