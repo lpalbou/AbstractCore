@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-pytestmark = pytest.mark.basic
+# The fetch is faked; the SSRF check still resolves the host first. Answer that
+# from a fake resolver instead of real DNS (network guard finding, 2026-09-24).
+pytestmark = [pytest.mark.basic, pytest.mark.usefixtures("fake_public_dns")]
 
 
 class _FakeResponse:
@@ -105,6 +107,13 @@ startxref
         body=pdf,
     )
     monkeypatch.setattr(common_tools.requests, "Session", lambda: _FakeSession(fake))
+    # Before mission EE, OPENAI_API_KEY alone made PDF routing UPLOAD the
+    # document to OpenAI; the guard caught six calls to api.openai.com here
+    # (2026-09-24). Remote extraction is now an explicit opt-in (see
+    # tests/media_handling/test_pdf_routing_privacy.py, which keeps the key
+    # set); this test is about local sniffing and extraction.
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
     out = common_tools.fetch_url("https://example.com/doc.pdf", include_full_content=False)
 
@@ -187,3 +196,54 @@ def test_fetch_url_rejects_invalid_string_timeout() -> None:
 
     assert out.get("success") is False
     assert out.get("error") == "timeout must be a positive number"
+
+
+def _hello_pdf_bytes() -> bytes:
+    """The one-page "Hello PDF" document of test_fetch_url_sniffs_pdf_and_extracts_text."""
+    import inspect
+
+    src = inspect.getsource(test_fetch_url_sniffs_pdf_and_extracts_text)
+    start = src.index('b"""') + 4
+    end = src.index('"""', start)
+    return src[start:end].encode("latin-1")
+
+
+def test_fetch_url_pdf_never_leaves_the_machine_without_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """PRIVACY (mission EE): an API key in the environment is not consent.
+
+    OPENAI_API_KEY stays SET here and `offline.allow_remote_pdf_extraction` is
+    at its default (off). The PDF must be extracted locally, the result must
+    say which extractor ran, and no connection may be attempted -- the
+    conftest network guard fails this test on any attempt (api.openai.com
+    included), which is what the opt-in-check-removed mutant trips.
+    """
+    import abstractcore.tools.common_tools as common_tools
+    from abstractcore.config import get_config_manager
+
+    if not common_tools._ensure_requests():
+        pytest.skip('requests not available; install with: pip install "abstractcore[tools]"')
+
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test-not-a-real-key")
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
+    assert get_config_manager().is_remote_pdf_extraction_allowed() is False
+
+    pdf = _hello_pdf_bytes()
+    fake = _FakeResponse(
+        url="https://example.com/private.pdf",
+        headers={"content-type": "application/pdf", "content-length": str(len(pdf))},
+        body=pdf,
+    )
+    monkeypatch.setattr(common_tools.requests, "Session", lambda: _FakeSession(fake))
+
+    out = common_tools.fetch_url("https://example.com/private.pdf", include_full_content=False)
+
+    assert out.get("success") is True
+    assert "Hello PDF" in str(out.get("raw_text") or "")
+    assert out.get("pdf_text_backend") == "pypdf"
+    assert out.get("pdf_summary_backend") == "pypdf"
+    assert out.get("pdf_native_used") is False
+    assert out.get("pdf_remote_extraction_enabled") is False
+    attempts = out.get("pdf_backend_attempts") or []
+    assert {"backend": "native_llm", "status": "skipped", "reason": "remote_extraction_disabled"} in attempts
+    assert {"backend": "pypdf", "status": "used"} in attempts
+    assert "Text Backend: pypdf" in str(out.get("rendered") or "")

@@ -215,6 +215,14 @@ from abstractcore.media.pdf_routing import route_pdf_bytes
 route_pdf_bytes(pdf_bytes, preferred_backend="pymupdf4llm")
 ```
 
+**PDFs stay on this machine.** Extraction is local by default. `fetch_url` sends a fetched PDF
+to a remote LLM (the configured OpenAI-compatible endpoint, for a summary and a text preview of
+scanned pages) only after the operator opts in with `abstractcore --allow-remote-pdf-extraction`
+(config key `offline.allow_remote_pdf_extraction`); a configured API key alone never uploads a
+document. Every PDF result says which extractor ran: `pdf_text_backend`, `pdf_summary_backend`,
+`pdf_backend_attempts` (the remote route shows `"reason": "remote_extraction_disabled"` when it
+was not allowed) and `pdf_remote_extraction_enabled`.
+
 See [Media Handling](media-handling-system.md) for the wider document and image pipeline.
 
 ## `skim_url`

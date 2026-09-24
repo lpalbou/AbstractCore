@@ -272,7 +272,9 @@ pip install "abstractcore[mlx]"
 
 AbstractCore is offline-first for local model weights. The MLX provider loads
 models from an explicit local path, the Hugging Face cache, or the LM Studio
-cache; it does not silently download weights during `create_llm(...)`.
+cache; it does not silently download weights during `create_llm(...)`. This is enforced per
+load (a cache miss raises `ModelNotFoundError`); it does not set `HF_HUB_OFFLINE` for the
+process, so explicit downloads keep working after a model is loaded.
 
 Download or prefetch a model first, for example:
 

@@ -3,6 +3,13 @@ Shared PDF routing for byte-oriented callers such as web tools.
 
 This module keeps local PDF extraction ownership inside the media layer while
 allowing explicitly-authorized native LLM augmentation for small PDFs.
+
+PRIVACY (mission EE, 2026-09-24): "explicitly authorized" means the operator
+setting `offline.allow_remote_pdf_extraction` (`abstractcore
+--allow-remote-pdf-extraction`), and nothing else. Before, the mere presence of
+OPENAI_API_KEY uploaded every fetched PDF to OpenAI on the default `auto` route.
+Local extraction (pypdf by default) is the only default; the result's
+`backend_attempts` / `text_backend` / `summary_backend` say which extractor ran.
 """
 
 from __future__ import annotations
@@ -303,6 +310,21 @@ class NativePDFConfig:
     timeout_s: int
 
 
+def _remote_pdf_extraction_opted_in() -> bool:
+    """True only when the operator enabled `offline.allow_remote_pdf_extraction`.
+
+    Never inferred from credentials: an API key in the environment is not
+    consent to upload a user's documents. Any failure to read the config
+    answers False (local extraction).
+    """
+    try:
+        from ..config import get_config_manager
+
+        return bool(get_config_manager().is_remote_pdf_extraction_allowed())
+    except Exception:
+        return False
+
+
 def _native_pdf_config_from_env() -> Optional[NativePDFConfig]:
     model = str(os.getenv("ABSTRACTCORE_FETCH_URL_PDF_NATIVE_MODEL", "") or "").strip()
     if not model:
@@ -495,9 +517,20 @@ def route_pdf_bytes(
     warnings: list[str] = [str(item) for item in (metadata_probe.get("warnings") or []) if str(item or "").strip()]
     attempts: list[dict[str, Any]] = []
 
-    native_config = _native_pdf_config_from_env()
+    # Remote extraction is opt-in by an operator setting, checked FIRST: without
+    # it no remote client is even configured, whatever keys the environment holds.
+    remote_opted_in = _remote_pdf_extraction_opted_in()
+    native_config = _native_pdf_config_from_env() if remote_opted_in else None
     native_result: Optional[dict[str, Any]] = None
-    if requested_backend in {"auto", "native_llm"}:
+    if requested_backend in {"auto", "native_llm"} and not remote_opted_in:
+        attempts.append(
+            {
+                "backend": "native_llm",
+                "status": "skipped",
+                "reason": "remote_extraction_disabled",
+            }
+        )
+    elif requested_backend in {"auto", "native_llm"}:
         if native_config is None:
             attempts.append({"backend": "native_llm", "status": "skipped", "reason": "not_configured"})
         else:
@@ -652,6 +685,7 @@ def route_pdf_bytes(
         "backend_attempts": attempts,
         "warnings": warnings,
         "native_available": native_config is not None,
+        "remote_extraction_enabled": remote_opted_in,
         "native_used": native_result is not None,
         "native_model": str((native_result or {}).get("model") or ""),
         "native_transport": str((native_result or {}).get("transport") or ""),

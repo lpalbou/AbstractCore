@@ -9,7 +9,9 @@ import pytest
 pytestmark = pytest.mark.basic
 
 
-def test_native_pdf_config_uses_openai_env_without_enable_flag(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_native_pdf_config_reads_the_openai_env_once_opted_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The client config (key/model) still comes from the environment; whether it
+    is USED is the operator setting's call (see test_pdf_routing_privacy.py)."""
     import abstractcore.media.pdf_routing as pdf_routing
 
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
@@ -37,6 +39,8 @@ def test_route_pdf_bytes_auto_prefers_native_summary_and_local_text(monkeypatch:
 
     monkeypatch.setattr(pdf_routing, "_peek_pdf_metadata", lambda _b: {"page_count": 2, "title": "Quarterly Metrics", "warnings": []})
     monkeypatch.setattr(pdf_routing, "_native_pdf_config_from_env", lambda: config)
+    # Remote extraction is an explicit operator opt-in (offline.allow_remote_pdf_extraction).
+    monkeypatch.setattr(pdf_routing, "_remote_pdf_extraction_opted_in", lambda: True)
     monkeypatch.setattr(
         pdf_routing,
         "_call_native_pdf_model",
@@ -86,6 +90,8 @@ def test_route_pdf_bytes_uses_native_preview_when_local_text_is_empty(monkeypatc
 
     monkeypatch.setattr(pdf_routing, "_peek_pdf_metadata", lambda _b: {"page_count": 2, "title": "", "warnings": []})
     monkeypatch.setattr(pdf_routing, "_native_pdf_config_from_env", lambda: config)
+    # Remote extraction is an explicit operator opt-in (offline.allow_remote_pdf_extraction).
+    monkeypatch.setattr(pdf_routing, "_remote_pdf_extraction_opted_in", lambda: True)
     monkeypatch.setattr(
         pdf_routing,
         "_call_native_pdf_model",
@@ -134,6 +140,8 @@ def test_route_pdf_bytes_skips_native_when_pdf_is_too_large(monkeypatch: pytest.
 
     monkeypatch.setattr(pdf_routing, "_peek_pdf_metadata", lambda _b: {"page_count": 3, "title": "", "warnings": []})
     monkeypatch.setattr(pdf_routing, "_native_pdf_config_from_env", lambda: config)
+    # Remote extraction is an explicit operator opt-in (offline.allow_remote_pdf_extraction).
+    monkeypatch.setattr(pdf_routing, "_remote_pdf_extraction_opted_in", lambda: True)
     monkeypatch.setattr(pdf_routing, "_local_backend_available", lambda backend: backend == "pypdf")
     monkeypatch.setattr(
         pdf_routing,

@@ -8089,6 +8089,9 @@ def fetch_url(
                             "pdf_summary_backend": str(pdf_route.get("summary_backend") or ""),
                             "pdf_backend_attempts": list(pdf_route.get("backend_attempts") or []),
                             "pdf_native_available": bool(pdf_route.get("native_available")),
+                            # Operator opt-in `offline.allow_remote_pdf_extraction`;
+                            # False = the PDF never left this machine.
+                            "pdf_remote_extraction_enabled": bool(pdf_route.get("remote_extraction_enabled")),
                             "pdf_native_used": bool(pdf_route.get("native_used")),
                             "pdf_native_model": str(pdf_route.get("native_model") or ""),
                             "pdf_native_transport": str(pdf_route.get("native_transport") or ""),

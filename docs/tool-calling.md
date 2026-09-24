@@ -153,8 +153,9 @@ preview = skim_url("https://example.com/article")
 
 # Full web content fetching and parsing (HTML→Markdown, JSON/XML/text, feeds, PDFs)
 result = fetch_url("https://api.github.com/repos/python/cpython")
-# PDF routing is provenance-aware and follows native_llm > pymupdf > pypdf
-# when a native OpenAI-compatible client is configured. There is no separate enable flag.
+# PDFs are extracted locally (pypdf) by default; sending a PDF to a remote LLM is an
+# explicit opt-in (`abstractcore --allow-remote-pdf-extraction`). The result says which
+# extractor ran (`pdf_text_backend`, `pdf_backend_attempts`).
 
 # File system operations  
 files = search_files("def.*fetch", ".", file_pattern="*.py")
