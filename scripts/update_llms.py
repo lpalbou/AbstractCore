@@ -13,20 +13,39 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MARKER = "## Appendix A) Inlined canonical docs snapshot"
-SOURCES = (
-    "README.md", "docs/getting-started.md", "docs/prerequisites.md",
-    "docs/api.md", "docs/session.md", "docs/async-guide.md",
-    "docs/tool-calling.md", "docs/tool-syntax-rewriting.md",
-    "docs/structured-output.md", "docs/media-handling-system.md",
-    "docs/vision-capabilities.md", "docs/embeddings.md",
-    "docs/centralized-config.md", "docs/models.md", "docs/engines.md", "docs/server.md",
-    "docs/console.md", "docs/console-tui.md", "docs/endpoint.md",
-    "docs/troubleshooting.md", "docs/faq.md", "docs/architecture.md",
-    "docs/native-mlx-runtime.md", "docs/native-mlx-benchmarks.md",
-    "docs/speculative-decoding.md", "docs/generation-cancel.md",
-    "docs/examples.md", "docs/mcp.md",
-    "docs/structured-logging.md", "docs/api-reference.md",
-)
+INDEX = "docs/README.md"
+# Folders under docs/ that are not user documentation (planning, history,
+# engineering notes, ADRs); their pages never enter llms-full.txt.
+NON_USER_DIRS = ("adr", "archive", "backlog", "known_bugs", "reports", "research")
+
+
+def indexed_sources() -> tuple:
+    """README.md, then every docs page the docs index links to, in index order.
+
+    The index (`docs/README.md`) is the single list of user pages: a page it
+    links is inlined, a page it does not link is not. Every top-level
+    `docs/*.md` page must be linked, so a new page cannot be left out of
+    llms-full.txt silently.
+    """
+    index = (ROOT / INDEX).read_text(encoding="utf-8")
+    sources = ["README.md"]
+    for dest in re.findall(r"\]\(([^\s)#]+\.md)(?:#[^\s)]*)?\)", index):
+        path = posixpath.normpath(posixpath.join("docs", dest))
+        if not path.startswith("docs/") or path == INDEX:
+            continue
+        if path.split("/")[1] in NON_USER_DIRS:
+            continue
+        if not (ROOT / path).is_file():
+            raise ValueError("%s links to a missing page: %s" % (INDEX, dest))
+        if path not in sources:
+            sources.append(path)
+    unlisted = sorted(
+        "docs/" + page.name for page in (ROOT / "docs").glob("*.md")
+        if page.name != "README.md" and "docs/" + page.name not in sources
+    )
+    if unlisted:
+        raise ValueError("%s does not link these pages: %s" % (INDEX, ", ".join(unlisted)))
+    return tuple(sources)
 
 
 def rebase_links(body: str, source: str) -> str:
@@ -74,7 +93,7 @@ def render(current: str) -> str:
                       preamble, flags=re.MULTILINE)
     sections = [preamble, MARKER,
                 "The linked source pages are canonical. Fenced examples retain their source formatting."]
-    for source in SOURCES:
+    for source in indexed_sources():
         body = (ROOT / source).read_text(encoding="utf-8")
         sections.extend(["---", "### Inlined: `" + source + "`",
                          rebase_links(body, source).rstrip()])
@@ -88,13 +107,14 @@ def main():
     target = ROOT / "llms-full.txt"
     current = target.read_text(encoding="utf-8")
     expected = render(current)
+    count = len(indexed_sources())
     if args.check:
         if current != expected:
             raise SystemExit("llms-full.txt is stale; run python scripts/update_llms.py")
-        print("llms-full.txt matches all %d canonical source pages" % len(SOURCES))
+        print("llms-full.txt matches all %d canonical source pages" % count)
     else:
         target.write_text(expected, encoding="utf-8")
-        print("Updated llms-full.txt from %d canonical source pages" % len(SOURCES))
+        print("Updated llms-full.txt from %d canonical source pages" % count)
 
 
 if __name__ == "__main__":

@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mlx-community/Qwen3-4B`, which does not exist, so the first download failed. Examples in the
   package READMEs use the same id.
 
+### Documentation
+
+- `llms-full.txt` now includes every page the docs index links, including Web and Document Tools,
+  Prompt Caching, Hugging Face Model Compatibility, Fallbacks, Memory and Model Residency, Reasoning
+  Control and the CLI app guides, which it left out before. The page list comes from `docs/README.md`,
+  and a docs page the index does not link fails the check.
+
 ## [2.15.1] - 2026-09-24
 
 A download that stops on its own now ends `failed` with a plain reason, and `cancelled` only after
