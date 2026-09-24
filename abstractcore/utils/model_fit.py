@@ -13,6 +13,9 @@ the model geometry. The formulas are the ones fixed in the models exploration
     O    overhead          max(0.5 GiB, 5% of W)
     C    host ceiling      host_profile.ceiling_bytes
     Ceff C - max(2 GiB, 5% of C)            (the context estimator's reserve)
+                           returned as `usable_bytes` (and the reserve as
+                           `reserve_bytes`): the verdict compares `need_bytes`
+                           with THIS, never with the ceiling itself
 
     need = W + KV(n) + O
     fits       need <= 0.8 Ceff
@@ -310,6 +313,13 @@ def estimate_fit(
         "kv_bytes": KV,
         "context": n,
         "ceiling_bytes": ceiling,
+        # What the verdict actually compares `need_bytes` against: the ceiling
+        # minus the reserve kept for the system (`Ceff`), and the overhead
+        # inside `need_bytes`. A sentence that states the ceiling while the
+        # verdict used `usable_bytes` contradicts itself (mission KK).
+        "usable_bytes": None,
+        "reserve_bytes": None,
+        "overhead_bytes": None,
         "free_now_bytes": free_now,
         "fits_now": None,
         "disk_ok": None,
@@ -339,6 +349,9 @@ def estimate_fit(
     need = W + (KV or 0) + O
     c_eff = ceiling - max(2 * GIB, int(0.05 * ceiling))
     base["need_bytes"] = int(need)
+    base["usable_bytes"] = int(c_eff)
+    base["reserve_bytes"] = int(ceiling - c_eff)
+    base["overhead_bytes"] = int(O)
 
     if need <= 0.8 * c_eff:
         verdict = "fits"

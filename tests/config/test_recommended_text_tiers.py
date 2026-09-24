@@ -185,7 +185,11 @@ def test_the_operators_128_gib_mac_reads_the_real_numbers():
     pick = mc.recommended_text_model(host, mtp=False)
     assert pick["artifact"] == PLAIN["flash"]
     assert pick["fit"]["verdict"] == "too_large"
-    assert "about 109 GiB" in pick["warning"] and "about 108 GiB" in pick["warning"]
+    # The sentence states what the verdict compared: the TOTAL need against
+    # the USABLE memory (107.52 GiB ceiling minus the 5% system reserve).
+    assert "needs about 109.2 GiB in total" in pick["warning"]
+    assert "can give a model about 102.1 GiB" in pick["warning"]
+    assert "at most" not in pick["warning"] and "107.5 GiB" in pick["warning"]
 
 
 def test_a_tight_fit_is_said_as_tight():

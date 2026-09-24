@@ -331,7 +331,10 @@ _JS_TEMPLATE = r"""
   function fitTitle(fit) {
     const f = fit || {};
     const lines = [];
-    if (isNum(f.need_bytes) || isNum(f.ceiling_bytes)) lines.push(`Needs ${fmtBytes(f.need_bytes)} of ${fmtBytes(f.ceiling_bytes)} usable memory`);
+    // `usable_bytes` (ceiling minus the system reserve) is what the verdict
+    // compared `need_bytes` with; the raw ceiling is only the context.
+    if (isNum(f.need_bytes) && isNum(f.usable_bytes)) lines.push(`Needs ${fmtBytes(f.need_bytes)} of ${fmtBytes(f.usable_bytes)} usable memory${isNum(f.ceiling_bytes) ? ` (ceiling ${fmtBytes(f.ceiling_bytes)} minus the system reserve)` : ""}`);
+    else if (isNum(f.need_bytes) || isNum(f.ceiling_bytes)) lines.push(`Needs ${fmtBytes(f.need_bytes)}; model memory ceiling ${fmtBytes(f.ceiling_bytes)}`);
     if (isNum(f.free_now_bytes)) lines.push(`Free now ${fmtBytes(f.free_now_bytes)}${f.fits_now === true ? " (fits now)" : f.fits_now === false ? " (does not fit now)" : ""}`);
     if (f.disk_ok === false) lines.push("Not enough free disk for the download");
     if (isNum(f.max_context)) lines.push(`Max context ${f.max_context.toLocaleString()} tokens`);

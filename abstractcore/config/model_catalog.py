@@ -279,26 +279,80 @@ def recommended_text_model(
     return out
 
 
+def _gib(value: int, digits: int) -> float:
+    return round(value / 1024**3, digits)
+
+
+def _gib_digits(*pairs: Tuple[int, int]) -> int:
+    """Decimals (1 or 2) at which every `(a, b)` pair keeps its ORDER.
+
+    "needs 16 GiB, can give 16 GiB" under a `too_large` verdict reads as a
+    contradiction; one more decimal keeps the comparison the verdict made.
+    """
+
+    for digits in (1, 2):
+        if all((_gib(a, digits) > _gib(b, digits)) == (a > b) and (_gib(a, digits) < _gib(b, digits)) == (a < b) for a, b in pairs):
+            return digits
+    return 2
+
+
+def _fit_amounts(fit: Mapping[str, Any]) -> str:
+    """The numbers the verdict compared: the total need vs the usable memory.
+
+    Each is split into its parts (weights + working memory; the ceiling minus
+    the system reserve) and the parts are printed so they ADD UP on screen.
+    """
+
+    need = fit.get("need_bytes")
+    usable = fit.get("usable_bytes")
+    ceiling = fit.get("ceiling_bytes")
+    weights = fit.get("weight_bytes")
+    if not (isinstance(need, int) and isinstance(usable, int)):
+        return ""
+    d = _gib_digits((need, usable))
+    need_g, usable_g = _gib(need, d), _gib(usable, d)
+    split = ""
+    if isinstance(weights, int) and 0 < weights < need:
+        w_g = _gib(weights, d)
+        split = f" ({w_g:.{d}f} GiB of weights plus {need_g - w_g:.{d}f} GiB for its working memory and cache)"
+    reserve = ""
+    if isinstance(ceiling, int) and ceiling > usable:
+        c_g = _gib(ceiling, d)
+        reserve = (
+            f" (the most this computer lets a model use is {c_g:.{d}f} GiB, and {c_g - usable_g:.{d}f} GiB "
+            "of that is kept free for the system)"
+        )
+    return (
+        f" It needs about {need_g:.{d}f} GiB in total{split}; this computer can give a model about "
+        f"{usable_g:.{d}f} GiB{reserve}."
+    )
+
+
 def _fit_warning(row: Mapping[str, Any], fit: Mapping[str, Any]) -> Optional[str]:
     """One sentence per verdict that deserves one: `too_large` /
-    `partial_offload` (may not fit) and `tight` (fits, little headroom)."""
+    `partial_offload` (may not fit) and `tight` (fits, little headroom).
+
+    The amounts are EXACTLY the two the verdict compared (`estimate_fit`):
+    the total need (weights + KV cache + overhead) and the usable memory (the
+    ceiling minus the system reserve) -- never the weights alone against the
+    raw ceiling, which read "needs 16 GiB, can give 18 GiB: may not fit".
+    """
 
     verdict = fit.get("verdict")
     if verdict not in ("too_large", "partial_offload", "tight"):
         return None
     name = row.get("display_name") or row.get("id")
-    need = fit.get("need_bytes")
-    ceiling = fit.get("ceiling_bytes")
-    amounts = ""
-    if isinstance(need, int) and isinstance(ceiling, int):
-        amounts = (
-            f" It needs about {need / 1024**3:.0f} GiB; this computer can give a model about "
-            f"{ceiling / 1024**3:.0f} GiB."
-        )
+    amounts = _fit_amounts(fit)
     if verdict == "tight":
         return (
             f"{name} is the recommendation for this computer's memory and AbstractCore's estimate says it "
             f"fits, but tightly.{amounts} Close other models before loading it."
+        )
+    if verdict == "partial_offload":
+        return (
+            f"{name} is the recommendation for this computer's memory, but AbstractCore's estimate says it "
+            f"does not fit in the graphics memory and will run partly on the processor, slowly.{amounts} "
+            "A smaller model from the catalog is the safe choice."
         )
     return (
         f"{name} is the recommendation for this computer's memory, but AbstractCore's estimate says it "
