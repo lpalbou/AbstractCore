@@ -233,9 +233,9 @@ async def acore_job_cancel(job_id: str, request: Request) -> Dict[str, Any]:
 
     _require_host_principal(request)
     registry = host_jobs.default_registry()
-    job = registry.cancel(job_id)
+    job = registry.cancel(job_id, by="api")
     if job is None and registry.persist_dir is not None:
-        job = host_jobs.request_cancel(job_id, registry.persist_dir)
+        job = host_jobs.request_cancel(job_id, registry.persist_dir, by="api")
     if job is None:
         return _refusal(404, "not_found", f"no job {job_id}")
     return job

@@ -1600,7 +1600,13 @@ def _download_with_companions(
             ref,
             False,
             "cancelled",
-            message="cancelled; files already fetched stay in the cache and the next download resumes (model and MTP companion)",
+            # huggingface_hub >= 1.0 never resumes a file in a later run (its
+            # temp name is per process): whole files are kept, the one in
+            # flight starts over. Say exactly that (mission KK).
+            message=(
+                "cancelled; files that finished downloading stay in the cache (model and MTP companion) and are "
+                "not fetched again; the file that was in progress starts over on the next download"
+            ),
             command=command,
             location=location,
             companions=entries,
@@ -1614,7 +1620,7 @@ def _download_with_companions(
             message = (
                 f"{ref} is downloaded, but its MTP companion {bad['artifact']} failed: {why}. "
                 "The model is not reported installed until its companion is here; retry the same "
-                "download (files already fetched are kept)."
+                "download (files that finished are kept; the file that was in progress starts over)."
             )
         emit(DownloadProgress(status=DownloadStatus.ERROR, message=message))
         return DownloadOutcome(
@@ -2435,7 +2441,10 @@ def _download_huggingface(artifact: str, emit: ProgressCallback, base_url: Optio
             artifact,
             False,
             "cancelled",
-            message="cancelled; files already fetched stay in the cache and the next download resumes",
+            message=(
+                "cancelled; files that finished downloading stay in the cache and are not fetched again; "
+                "the file that was in progress starts over on the next download"
+            ),
             command=command,
             output=output,
         )
@@ -2443,6 +2452,15 @@ def _download_huggingface(artifact: str, emit: ProgressCallback, base_url: Optio
         watcher.mark_unfinished("failed")
         message = resolved or "snapshot_download failed"
         emit(DownloadProgress(status=DownloadStatus.ERROR, message=message))
+        # The instruction follows from WHAT failed (a dropped connection is
+        # not a licence problem); the verbatim error stays in `message`.
+        from .host_jobs import failure_reason
+
+        instruction = failure_reason(
+            message,
+            {"provider": "huggingface", "downloaded_bytes": watcher.bytes_done(), "total_bytes": total},
+            output=output,
+        )
         return DownloadOutcome(
             "huggingface",
             artifact,
@@ -2451,10 +2469,7 @@ def _download_huggingface(artifact: str, emit: ProgressCallback, base_url: Optio
             message=message,
             output=output or message,
             command=command,
-            instruction=(
-                f"If {repo_id} is gated, accept its licence on huggingface.co and export HF_TOKEN, "
-                "then retry (files already fetched are kept)."
-            ),
+            instruction=instruction,
         )
 
     watcher.scan()
@@ -2987,7 +3002,20 @@ def format_bytes(value: Any) -> str:
 
 
 _HF_CHILD = r"""
-import json, sys
+import json, os, sys, threading, time
+# The child runs in its own session (so a cancel can stop its whole group);
+# it must not OUTLIVE its owner: when the gateway/CLI that started it exits
+# (restart, crash), the job is reported failed, so the bytes must stop too --
+# an orphan kept downloading and held the blob lock a retry then waited on.
+# The owner passes its pid (argv[2]): reading getppid() here could already
+# see the re-parented value if the owner died during this interpreter's start.
+_owner = int(sys.argv[2]) if len(sys.argv) > 2 else os.getppid()
+def _watch_owner():
+    while True:
+        time.sleep(1.0)
+        if os.getppid() != _owner:
+            os._exit(75)  # no goodbye line: the owner's end of the pipe is gone
+threading.Thread(target=_watch_owner, daemon=True).start()
 from huggingface_hub import snapshot_download
 kwargs = json.loads(sys.argv[1])
 path = snapshot_download(**kwargs)
@@ -3030,7 +3058,7 @@ def _hf_transfer_subprocess(
         env["HF_HUB_DISABLE_XET"] = "1"
     try:
         proc = subprocess.Popen(  # noqa: S603 - fixed module code, JSON argv
-            [sys.executable, "-c", _HF_CHILD, json.dumps(child_kwargs)],
+            [sys.executable, "-c", _HF_CHILD, json.dumps(child_kwargs), str(os.getpid())],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,

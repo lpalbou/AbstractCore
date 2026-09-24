@@ -511,7 +511,7 @@ def _print_job(job: Dict[str, Any]) -> None:
 def _handle_cancel(args: argparse.Namespace) -> int:
     from . import host_jobs
 
-    job = host_jobs.default_registry().cancel(args.job_id) or host_jobs.request_cancel(args.job_id)
+    job = host_jobs.default_registry().cancel(args.job_id, by="cli") or host_jobs.request_cancel(args.job_id, by="cli")
     if job is None:
         _print_json({"ok": False, "message": f"no job {args.job_id}"}) if args.json else print(f"❌ no job {args.job_id}")
         return EXIT_ERROR
@@ -677,7 +677,7 @@ def _follow(job_id: str) -> Dict[str, Any]:
         try:
             time.sleep(0.2)
         except KeyboardInterrupt:
-            registry.cancel(job_id)
+            registry.cancel(job_id, by="cli")
 
 
 def _engines_open(args: argparse.Namespace) -> int:

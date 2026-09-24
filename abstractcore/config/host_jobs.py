@@ -64,6 +64,7 @@ from __future__ import annotations
 
 import contextvars
 import json
+import re
 import logging
 import os
 import subprocess
@@ -72,7 +73,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 __all__ = [
     "HOST_JOB_SCHEMA",
@@ -92,6 +93,9 @@ __all__ = [
     "read_persisted_jobs",
     "read_persisted_job",
     "request_cancel",
+    "cancel_reason",
+    "failure_reason",
+    "OWNER_EXITED",
     "start_download_job",
     "start_delete_job",
     "cli_equivalent_download",
@@ -164,6 +168,146 @@ def format_duration(seconds: Any) -> str:
         return f"{(s + 59) // 60} min"
     h, rest = divmod(s, 3600)
     return f"{h} h {rest // 60} min" if rest >= 60 else f"{h} h"
+
+
+# ---------------------------------------------------------------------------
+# Why a job ended, in plain words (mission KK)
+# ---------------------------------------------------------------------------
+#
+# A download that stops on its own must never read "Cancelled", and a failure
+# must say what happened in words a non-technical person can act on. These two
+# functions are the ONE place that turns a job's end into that sentence
+# (`ended_reason`); the provider's verbatim error stays in `error`/`result`.
+
+_HF_SOURCES = ("huggingface", "mlx", "mlx-gen", "mlx-vlm", "mflux", "vllm", "transformers", "diffusers", "supertonic", "llamacpp", "llama.cpp")
+
+
+def _source_name(provider: Any) -> str:
+    pid = str(provider or "").strip().lower()
+    if pid == "ollama":
+        return "Ollama"
+    if pid == "lmstudio":
+        return "LM Studio"
+    if pid in _HF_SOURCES or pid.startswith("mlx"):
+        return "Hugging Face"
+    return "the download source"
+
+
+def _kept_phrase(provider: Any) -> str:
+    """What a retry reuses -- only what is TRUE for that source.
+
+    Hugging Face (huggingface_hub >= 1.0) writes each file to a process-unique
+    temp name and never resumes it in a later run: whole files are kept and
+    skipped, the file that was in flight starts over. Ollama resumes layers.
+    LM Studio's own resume behaviour is not observable here: say nothing.
+    """
+
+    source = _source_name(provider)
+    if source == "Hugging Face":
+        return "the files that finished are kept, and the file that was in progress starts over"
+    if source == "Ollama":
+        return "Ollama keeps what it already fetched and continues from there"
+    return ""
+
+
+def _after(snap: Mapping[str, Any]) -> str:
+    done = snap.get("downloaded_bytes") if snap.get("downloaded_bytes") is not None else snap.get("bytes_done")
+    total = snap.get("total_bytes") if snap.get("total_bytes") is not None else snap.get("bytes_total")
+    if isinstance(done, (int, float)) and done > 0:
+        if isinstance(total, (int, float)) and total > 0:
+            return f" after {format_bytes(done)} of {format_bytes(total)}"
+        return f" after {format_bytes(done)}"
+    return ""
+
+
+def cancel_reason(by: Optional[str], user: Optional[str], snap: Mapping[str, Any]) -> str:
+    """`Cancelled` said with WHO asked (never inferred from anything else)."""
+
+    stamp = time.strftime("%H:%M")
+    after = _after(snap)
+    who = {
+        "console": f"Cancelled in the console by {user or 'a signed-in person'} at {stamp}{after}",
+        "api": f"Cancelled by a request to the API{' from ' + user if user else ''} at {stamp}{after}",
+        "cli": f"Cancelled from the command line (abstractcore models cancel, or Ctrl-C) at {stamp}{after}",
+        "other_process": f"Cancelled at {stamp}{after} by another program on this computer",
+    }.get(str(by or ""), f"Cancelled at {stamp}{after}; the request did not say who sent it")
+    kept = _kept_phrase(snap.get("provider"))
+    return f"{who}." + (f" To continue, download it again: {kept}." if kept else " Download it again any time.")
+
+
+_DISK = re.compile(r"No space left on device|Errno 28|not enough (free )?disk|disk is full", re.I)
+_GATED = re.compile(r"GatedRepoError|\b40[13] Client Error|\bUnauthorized\b|\bForbidden\b|is gated|gated repo|access to model .{0,80} is restricted", re.I)
+_LOCAL_MISS = re.compile(r"LocalEntryNotFoundError|cannot find the requested files|trying to locate the files? on the Hub", re.I)
+_NOT_FOUND = re.compile(r"RepositoryNotFoundError|RevisionNotFoundError|(?<!Local)EntryNotFoundError|\b404 Client Error|\bNot Found for url|model .{0,80} not found", re.I)
+_RANGE = re.compile(r"\b416 Client Error|Range Not Satisfiable", re.I)
+_SERVER = re.compile(r"\b5\d\d Server Error|Internal Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out|status(?: code)?:? 5\d\d\b", re.I)
+_DROP = re.compile(r"RemoteProtocolError|peer closed connection|Connection reset|ConnectionResetError|IncompleteRead|ChunkedEncodingError|ReadError|Connection aborted|Broken ?pipe|connection (was )?(closed|lost)", re.I)
+_TIMEOUT = re.compile(r"Timeout|timed out", re.I)
+_UNREACHABLE = re.compile(r"ConnectError|Name or service not known|nodename nor servname|name resolution|Network is unreachable|Connection refused|getaddrinfo|No route to host|Failed to establish", re.I)
+_OFFLINE = re.compile(r"HF_HUB_OFFLINE|TRANSFORMERS_OFFLINE|Hub is offline|OfflineModeIsEnabled", re.I)
+
+
+def failure_reason(message: str, snap: Mapping[str, Any], *, output: str = "") -> str:
+    """One plain sentence for a FAILED job: what happened, and what to do.
+
+    Classifies the provider's own error text (kept verbatim elsewhere); an
+    error it does not recognise is quoted, never guessed at.
+    """
+
+    # The error text and the EXCEPTION lines of the tool's output -- never the
+    # traceback frames ("line 401, in __get_result" is not an HTTP 401).
+    raised = [
+        line.strip()
+        for line in str(output or "").splitlines()
+        if line.strip() and not line.startswith((" ", "\t")) and not line.startswith(("Traceback", "File "))
+    ]
+    text = "\n".join([str(message or "")] + raised[-3:])
+    source = _source_name(snap.get("provider"))
+    kept = _kept_phrase(snap.get("provider"))
+    again = f"download it again; {kept}." if kept else "download it again."
+    after = _after(snap)
+    prefix = ""
+    if "MTP companion" in message and "is downloaded, but" in message:
+        m = re.search(r"MTP companion (\S+) failed", message)
+        prefix = (
+            "The model itself is already on this computer; the small add-on that makes it faster "
+            f"(its MTP companion{' ' + m.group(1) if m else ''}) did not finish. "
+        )
+    if OWNER_EXITED in text:
+        sentence = (
+            f"The download stopped{after} because the program running it (the gateway, or a command-line "
+            "download) stopped: it was restarted, closed or crashed. Nobody cancelled it. To continue, " + again
+        )
+    elif _DISK.search(text):
+        sentence = f"The disk is full{after}. Free some space, then " + again
+    elif _OFFLINE.search(text):
+        sentence = (
+            "Downloads from Hugging Face are switched off for this program (it was started in offline mode). "
+            "Start it again without offline mode, then download again."
+        )
+    elif _GATED.search(text):
+        sentence = (
+            f"{source} refused access to this model: it asks you to accept its licence on its web page and to "
+            "be signed in on this computer. Do that, then download again."
+        )
+    elif _LOCAL_MISS.search(text):
+        sentence = f"This computer could not reach {source}{after}. Check the network connection, then " + again
+    elif _NOT_FOUND.search(text):
+        sentence = f"{source} says this model (or one of its files) does not exist; it may have been renamed or removed."
+    elif _RANGE.search(text):
+        sentence = f"{source} refused to continue the unfinished file{after}. Download it again; that file starts over."
+    elif _SERVER.search(text):
+        sentence = f"{source} had a problem on its side{after} (a server error). Wait a few minutes, then " + again
+    elif _DROP.search(text):
+        sentence = f"The connection to {source} dropped{after}. Check the network connection, then " + again
+    elif _TIMEOUT.search(text):
+        sentence = f"{source} stopped answering{after} (the connection timed out). Check the network connection, then " + again
+    elif _UNREACHABLE.search(text):
+        sentence = f"This computer could not reach {source}{after}. Check the network connection, then " + again
+    else:
+        first = next((line.strip() for line in str(message or "").splitlines() if line.strip()), "") or "an unknown error"
+        sentence = f"The download stopped{after} with an error: {first.rstrip('.')}. " + (again[0].upper() + again[1:] if again else "")
+    return prefix + sentence
 
 
 class JobBusy(RuntimeError):
@@ -365,6 +509,16 @@ class _Job:
     samples: List[Any] = field(default_factory=list)
     progress_events: List[Dict[str, Any]] = field(default_factory=list)
     cancel_requested: bool = False
+    # WHO ended it and WHY, in plain words (mission KK). `cancelled_by` is set
+    # ONLY by an explicit cancel request -- `cli` (abstractcore models cancel,
+    # Ctrl-C on a foreground download), `api` (an HTTP cancel: the gateway or
+    # AbstractCore's server), `other_process` (a cancel marker written by
+    # another program) -- or a caller-supplied value (the gateway's console
+    # says `console`). A job that stopped on its own is `failed`, never
+    # `cancelled`, and says why in `ended_reason`.
+    cancelled_by: Optional[str] = None
+    cancelled_by_user: Optional[str] = None
+    ended_reason: Optional[str] = None
 
     def _size_unknown(self) -> bool:
         if self.size_unknown is not None:
@@ -419,6 +573,9 @@ class _Job:
             "transitions": [dict(t) for t in self.transitions],
             "progress_events_count": len(self.progress_events),
             "cancel_requested": bool(self.cancel_requested),
+            "cancelled_by": self.cancelled_by,
+            "cancelled_by_user": self.cancelled_by_user,
+            "ended_reason": self.ended_reason,
         }
 
 
@@ -614,8 +771,14 @@ class HostJobRegistry:
     def active(self, kind: Optional[str] = None) -> List[Dict[str, Any]]:
         return [j for j in self.list(kind) if j.get("status") in _ACTIVE]
 
-    def cancel(self, job_id: str) -> Optional[Dict[str, Any]]:
-        """Request cancellation. Returns the snapshot, or None when unknown here."""
+    def cancel(self, job_id: str, *, by: str = "api", user: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Request cancellation. Returns the snapshot, or None when unknown here.
+
+        `by` names who asked (`api`, `cli`, `console`, ...) and `user` the
+        signed-in account when one is known; both land on the job
+        (`cancelled_by`, `cancelled_by_user`) so its final state can say who
+        cancelled it. The first request wins.
+        """
 
         with self._lock:
             job = self._jobs.get(str(job_id or "").strip())
@@ -625,6 +788,9 @@ class HostJobRegistry:
                 return job.to_dict()
             control = job.control
             job.message = "cancelling"
+            if not job.cancel_requested:
+                job.cancelled_by = str(by or "api")
+                job.cancelled_by_user = str(user) if user else None
             job.cancel_requested = True
             job.updated_at = time.time()
             self._append_tail(job, "cancel requested")
@@ -654,7 +820,20 @@ class HostJobRegistry:
         if self._persist_dir is None:
             return None
         marker = self._persist_dir / f"{job_id}.cancel"
-        return marker.exists
+
+        def _probe() -> bool:
+            if not marker.exists():
+                return False
+            by, user = _read_cancel_marker(marker)
+            with self._lock:
+                job = self._jobs.get(job_id)
+                if job is not None and not job.cancel_requested:
+                    job.cancel_requested = True
+                    job.cancelled_by = by
+                    job.cancelled_by_user = user
+            return True
+
+        return _probe
 
     def _run(self, job_id: str, runner: Runner) -> None:
         with self._lock:
@@ -1009,6 +1188,17 @@ class HostJobRegistry:
             if status == "cancelled":
                 job.message = "cancelled"
                 self._append_tail(job, "cancelled")
+                if not job.cancelled_by:
+                    # A cancelled control with no recorded request: say so
+                    # rather than invent a person (every request path records).
+                    job.cancelled_by = "unknown"
+                job.ended_reason = cancel_reason(job.cancelled_by, job.cancelled_by_user, job.to_dict())
+            elif status == "failed":
+                job.ended_reason = failure_reason(
+                    str((result or {}).get("message") or error or ""),
+                    job.to_dict(),
+                    output=str((result or {}).get("output") or ""),
+                )
             if status == "completed" and not job.dry_run:
                 job.percent = 100.0
             self._finish_progress(job, status, result)
@@ -1141,12 +1331,25 @@ def _pid_alive(pid: Any) -> bool:
     return True
 
 
+OWNER_EXITED = "owner process exited before the job finished"
+
+
 def _normalize_persisted(snap: Dict[str, Any]) -> Dict[str, Any]:
+    """A job whose owning process is gone is FAILED (a restart), never cancelled."""
+
     if snap.get("status") in _ACTIVE and not _pid_alive(snap.get("pid")):
         snap = dict(snap)
         snap["status"] = "failed"
-        snap["error"] = "owner process exited before the job finished"
-        snap["message"] = snap["error"]
+        snap["state"] = "failed"
+        snap["error"] = OWNER_EXITED
+        snap["message"] = OWNER_EXITED
+        snap["bytes_per_second"] = None
+        snap["eta_s"] = None
+        snap["ended_reason"] = failure_reason(OWNER_EXITED, snap)
+        snap["files"] = [
+            dict(f, state="failed") if isinstance(f, dict) and f.get("state") in ("downloading", "pending", "stalled") else f
+            for f in (snap.get("files") or [])
+        ]
     return snap
 
 
@@ -1182,8 +1385,24 @@ def read_persisted_job(job_id: str, directory: Optional[Path] = None) -> Optiona
     return _normalize_persisted(snap) if isinstance(snap, dict) else None
 
 
-def request_cancel(job_id: str, directory: Optional[Path] = None) -> Optional[Dict[str, Any]]:
-    """Ask the owning process to cancel a persisted job (marker file)."""
+def _read_cancel_marker(marker: Path) -> Tuple[str, Optional[str]]:
+    """`(by, user)` from a cancel marker; an old bare-timestamp marker is `other_process`."""
+
+    try:
+        data = json.loads(marker.read_text(encoding="utf-8"))
+    except Exception:
+        return "other_process", None
+    if not isinstance(data, dict):
+        return "other_process", None
+    by = str(data.get("by") or "other_process")
+    user = data.get("user")
+    return by, (str(user) if user else None)
+
+
+def request_cancel(
+    job_id: str, directory: Optional[Path] = None, *, by: str = "other_process", user: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """Ask the owning process to cancel a persisted job (marker file naming who asked)."""
 
     root = Path(directory) if directory else default_jobs_dir()
     snap = read_persisted_job(job_id, root)
@@ -1191,7 +1410,9 @@ def request_cancel(job_id: str, directory: Optional[Path] = None) -> Optional[Di
         return None
     if snap.get("status") in _ACTIVE:
         try:
-            (root / f"{snap['job_id']}.cancel").write_text(str(time.time()), encoding="utf-8")
+            (root / f"{snap['job_id']}.cancel").write_text(
+                json.dumps({"at": time.time(), "by": str(by or "other_process"), "user": user}), encoding="utf-8"
+            )
         except Exception:
             pass
         snap = dict(snap)
