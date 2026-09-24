@@ -1123,6 +1123,51 @@ def _interrupted_presence(provider: str, artifact: str, repo_id: str, count: int
     )
 
 
+def _hf_broken_links(snapshot: Path) -> List[str]:
+    """Snapshot entries whose symlink points at a blob that is not there.
+
+    A cache copied without its `blobs/` folder (or with a blob deleted) keeps
+    `snapshots/<rev>/<file>` links to nothing: the snapshot LOOKS complete
+    (the names are all there) and no load can read it (mission KK).
+    """
+
+    broken: List[str] = []
+    try:
+        for path in snapshot.rglob("*"):
+            if path.is_symlink() and not path.exists():
+                broken.append(str(path.relative_to(snapshot)))
+    except Exception:
+        return broken
+    return sorted(broken)
+
+
+def _hf_unlinked_blobs(repo_id: str) -> Tuple[int, Optional[Path]]:
+    """`(blob_bytes, repo_dir)` for a repo whose blobs are here but whose snapshot has no files.
+
+    What `rsync -r` (without `-l`/`-a`) leaves: it skips symbolic links, so
+    every `snapshots/<rev>/<file>` link is missing while `blobs/` holds all
+    the data. A download repairs it without fetching the bytes again
+    (huggingface_hub links a blob that is already whole).
+    """
+
+    folder = "models--" + repo_id.replace("/", "--")
+    for base in _hf_cache_dirs():
+        repo_dir = base / folder
+        blobs = repo_dir / "blobs"
+        snaps = repo_dir / "snapshots"
+        try:
+            if not blobs.is_dir() or not snaps.is_dir():
+                continue
+            if any(p.is_file() or p.is_symlink() for p in snaps.rglob("*")):
+                continue
+            size = sum(p.stat().st_size for p in blobs.iterdir() if p.is_file() and not p.name.endswith(".incomplete"))
+        except Exception:
+            continue
+        if size:
+            return size, repo_dir
+    return 0, None
+
+
 def _probe_huggingface(provider: str, artifact: str) -> ModelPresence:
     repo_id, quant, patterns = hf_artifact_parts(artifact)
     if "/" not in repo_id:
@@ -1143,6 +1188,22 @@ def _probe_huggingface(provider: str, artifact: str) -> ModelPresence:
         # same download resumes exactly where it stopped.
         if interrupted:
             return _interrupted_presence(provider, artifact, repo_id, interrupted, interrupted_bytes, blobs_dir)
+        broken = _hf_broken_links(snapshot)
+        if broken:
+            return ModelPresence(
+                provider,
+                artifact,
+                PRESENCE_ABSENT,
+                evidence="hf cache scan (missing data)",
+                detail=(
+                    f"{repo_id} is only partly on this computer: {len(broken)} of its files "
+                    f"({', '.join(broken[:3])}{', ...' if len(broken) > 3 else ''}) point to data that is not "
+                    "there (the cache was probably copied without its blobs folder). Download it again to repair it."
+                ),
+                location=str(snapshot),
+                instruction=f"abstractcore models download {provider} {artifact}",
+                downloadable=True,
+            )
         if patterns and not _snapshot_has_matching_file(snapshot, patterns):
             # A multi-quant GGUF repo is cached, but not THIS quant: the
             # artifact names one file set, and that set is not here.
@@ -1166,6 +1227,22 @@ def _probe_huggingface(provider: str, artifact: str) -> ModelPresence:
         )
     if interrupted:
         return _interrupted_presence(provider, artifact, repo_id, interrupted, interrupted_bytes, blobs_dir)
+    unlinked, repo_dir = _hf_unlinked_blobs(repo_id)
+    if unlinked:
+        return ModelPresence(
+            provider,
+            artifact,
+            PRESENCE_ABSENT,
+            evidence="hf cache scan (links missing)",
+            detail=(
+                f"{repo_id}'s data is on this computer ({format_bytes(unlinked)}), but the file links that name it "
+                "are missing (the cache was probably copied without symbolic links, e.g. rsync without -a). "
+                "Download it again: the data already here is reused, not fetched again."
+            ),
+            location=str(repo_dir) if repo_dir else None,
+            instruction=f"abstractcore models download {provider} {artifact}",
+            downloadable=True,
+        )
     dirs = _hf_cache_dirs()
     if not dirs:
         return ModelPresence(

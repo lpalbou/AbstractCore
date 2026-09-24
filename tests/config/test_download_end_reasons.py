@@ -228,3 +228,42 @@ def test_the_hf_child_exits_when_its_owner_dies(tmp_path):
     if alive:
         os.kill(child, 9)
     assert not alive, "the download child kept running after its owner exited"
+
+
+# ---------------------------------------------------------------------------
+# A copied cache: missing or dangling snapshot links are never "installed"
+# ---------------------------------------------------------------------------
+
+
+def _cache_repo(root: Path, repo: str, *, links: str) -> Path:
+    repo_dir = root / ("models--" + repo.replace("/", "--"))
+    rev = "a" * 40
+    snap = repo_dir / "snapshots" / rev
+    snap.mkdir(parents=True)
+    (repo_dir / "refs").mkdir()
+    (repo_dir / "refs" / "main").write_text(rev)
+    blobs = repo_dir / "blobs"
+    blobs.mkdir()
+    for name, etag in (("config.json", "c1"), ("model.safetensors", "w1")):
+        if links != "dangling":
+            (blobs / etag).write_bytes(b"x" * 1000)
+        if links in ("ok", "dangling"):
+            (snap / name).symlink_to(Path("..") / ".." / "blobs" / etag)
+    return repo_dir
+
+
+@pytest.mark.parametrize(
+    "links,status,says",
+    [
+        ("ok", "installed", None),  # rsync -a: links kept
+        ("none", "absent", "the file links that name it are missing"),  # rsync -r: links skipped
+        ("dangling", "absent", "point to data that is not there"),  # blobs not copied
+    ],
+)
+def test_a_copied_cache_is_installed_only_when_its_links_resolve(host, links, status, says):
+    hub = Path(os.environ["HF_HUB_CACHE"])
+    _cache_repo(hub, "org/Model-4bit", links=links)
+    presence = mm._probe_huggingface("mlx", "org/Model-4bit")
+    assert presence.status == status, presence
+    if says:
+        assert says in presence.detail
