@@ -341,7 +341,7 @@ enabled profiles' virtual ids, `registry.py:328-342`):
 | anthropic | no | yes | `claude-haiku-4-5` | `ANTHROPIC_BASE_URL` | `ANTHROPIC_API_KEY` (`anthropic_provider.py:45-50`) |
 | ollama | yes | no | `qwen3:4b-instruct-2507-q4_K_M` | `OLLAMA_BASE_URL` then `OLLAMA_HOST` (`http://localhost:11434`) (`ollama_provider.py:41-42`) | — |
 | lmstudio | yes | no | `qwen/qwen3-4b-2507` | `LMSTUDIO_BASE_URL` (`http://localhost:1234/v1`) (`lmstudio_provider.py:153-155`) | none |
-| mlx | yes | no | `mlx-community/Qwen3-4B` | — (in-process) | — |
+| mlx | yes | no | `mlx-community/Qwen3-4B-4bit` | — (in-process) | — |
 | huggingface | yes | optional | `unsloth/Qwen3-4B-Instruct-2507-GGUF` | — (in-process) | — |
 | vllm | yes | optional | `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `VLLM_BASE_URL` (`http://localhost:8000/v1`) (`vllm_provider.py:28-30`) | `VLLM_API_KEY` |
 | openai-compatible | yes | optional | `default` | `OPENAI_BASE_URL` (`http://localhost:1234/v1`) (`openai_compatible_provider.py:156-158`) | `OPENAI_API_KEY` |

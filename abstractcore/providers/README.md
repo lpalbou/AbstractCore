@@ -528,7 +528,7 @@ huggingface-cli download mlx-community/Mistral-7B-Instruct-v0.3-4bit
 
 **Usage**:
 ```python
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 response = llm.generate("Explain machine learning")
 
 # Streaming
@@ -536,7 +536,7 @@ for chunk in llm.generate("Write a poem", stream=True):
     print(chunk.content, end="")
 
 # Structured output with Outlines (optional)
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B", structured_output_method="native_outlines")
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit", structured_output_method="native_outlines")
 class Summary(BaseModel):
     title: str
     points: List[str]
@@ -764,7 +764,7 @@ llm = create_llm("lmstudio", model="qwen3-4b-2507")  # UI-based model management
 llm = create_llm("huggingface", model="unsloth/Qwen3-4B-GGUF")  # Maximum flexibility
 
 # MLX: Best for Apple Silicon, optimized performance
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")  # M1/M2/M3/M4 optimized
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")  # M1/M2/M3/M4 optimized
 ```
 
 ### API Key Management
@@ -816,7 +816,7 @@ except ProviderAPIError as e:
 
 ```python
 # Local models (HuggingFace, MLX)
-llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 response = llm.generate("Hello")
 llm.unload_model(llm.model)  # Free model from memory immediately
 del llm       # Remove reference

@@ -492,8 +492,8 @@ The factory intelligently routes models to the correct provider:
 
 ```python
 # MLX models → MLX provider
-llm = create_llm("huggingface", "mlx-community/Qwen3-4B")
-# Auto-routed to: create_llm("mlx", "mlx-community/Qwen3-4B")
+llm = create_llm("huggingface", "mlx-community/Qwen3-4B-4bit")
+# Auto-routed to: create_llm("mlx", "mlx-community/Qwen3-4B-4bit")
 
 # GGUF models → HuggingFace GGUF backend
 llm = create_llm("mlx", "unsloth/Qwen3-4B-GGUF")

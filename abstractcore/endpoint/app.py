@@ -1164,7 +1164,7 @@ def _env(name: str, default: Optional[str] = None) -> Optional[str]:
 def _parse_args(argv: Optional[List[str]] = None) -> EndpointConfig:
     parser = argparse.ArgumentParser(description="AbstractEndpoint: single-model /v1 server")
     parser.add_argument("--provider", default=_env("ABSTRACTENDPOINT_PROVIDER", "mlx"))
-    parser.add_argument("--model", default=_env("ABSTRACTENDPOINT_MODEL", "mlx-community/Qwen3-4B"))
+    parser.add_argument("--model", default=_env("ABSTRACTENDPOINT_MODEL", "mlx-community/Qwen3-4B-4bit"))
     parser.add_argument("--host", default=_env("ABSTRACTENDPOINT_HOST", "0.0.0.0"))
     parser.add_argument("--port", type=int, default=int(_env("ABSTRACTENDPOINT_PORT", "8001") or 8001))
     args = parser.parse_args(argv)

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The default MLX model is now `mlx-community/Qwen3-4B-4bit`, a repo that exists on Hugging Face.
+  `create_llm("mlx")` without a model and `abstractcore-endpoint` without `--model` asked for
+  `mlx-community/Qwen3-4B`, which does not exist, so the first download failed. Examples in the
+  package READMEs use the same id.
+
 ## [2.15.1] - 2026-09-24
 
 A download that stops on its own now ends `failed` with a plain reason, and `cancelled` only after

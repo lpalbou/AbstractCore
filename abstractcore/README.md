@@ -408,7 +408,7 @@ print(f"Total models: {sum(p['model_count'] for p in providers)}")
 # Create provider instances
 openai_llm = create_llm("openai", model="gpt-4o-mini")
 local_llm = create_llm("ollama", model="qwen3:4b")
-mlx_llm = create_llm("mlx", model="mlx-community/Qwen3-4B")
+mlx_llm = create_llm("mlx", model="mlx-community/Qwen3-4B-4bit")
 
 # Same interface for all
 for llm in [openai_llm, local_llm, mlx_llm]:

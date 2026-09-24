@@ -527,7 +527,7 @@ class _Repl:
         print(
             "\nCommands:\n"
             "  /help\n"
-            "  /model <provider:model>         (examples: mlx:mlx-community/Qwen3-4B, huggingface:sshleifer/tiny-gpt2)\n"
+            "  /model <provider:model>         (examples: mlx:mlx-community/Qwen3-4B-4bit, huggingface:sshleifer/tiny-gpt2)\n"
             "  /cache on|off|clear|stats [json]\n"
             "  /status                         (high-level session + cache summary)\n"
             "  /boxes                          (system/tools/files/history box details)\n"

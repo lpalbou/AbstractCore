@@ -219,7 +219,7 @@ class ProviderRegistry:
             display_name="MLX",
             provider_class=None,
             description="Apple Silicon optimized local inference",
-            default_model="mlx-community/Qwen3-4B",
+            default_model="mlx-community/Qwen3-4B-4bit",
             supported_features=["chat", "completion", "prompted_tools", "streaming", "structured_output", "apple_silicon"],
             authentication_required=False,
             local_provider=True,

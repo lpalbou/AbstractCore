@@ -98,10 +98,10 @@ class TestFactoryRegistryIntegration:
         mock_create_provider.return_value = mock_instance
 
         # Test MLX model detection when provider is huggingface
-        result = create_llm("huggingface", model="mlx-community/Qwen3-4B")
+        result = create_llm("huggingface", model="mlx-community/Qwen3-4B-4bit")
 
         # Should have changed provider to mlx due to model name
-        mock_create_provider.assert_called_once_with("mlx", "mlx-community/Qwen3-4B")
+        mock_create_provider.assert_called_once_with("mlx", "mlx-community/Qwen3-4B-4bit")
         assert result == mock_instance
 
     @patch('abstractcore.providers.registry.create_provider')
