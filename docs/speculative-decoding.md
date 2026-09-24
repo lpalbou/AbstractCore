@@ -263,6 +263,44 @@ create_llm("mlx", model="<target>",
            speculation={"mode": "native_mtp", "drafter": "<drafter repo>"})
 ```
 
+The MLX drafter is a **companion** of the model: `abstractcore models download mlx <model>`
+(and the Gateway's model downloads) fetch it in the same job, and the model counts as
+installed only when both are there (see [MTP companions](models.md#mtp-companions)). When
+the companion is missing, the model still loads and answers, without MTP. The response's
+`speculation` block then says so in words, and the Gateway consoles show that text:
+
+```text
+{'used': False, 'reason': 'mtp_head_not_cached',
+ 'message': 'MTP acceleration off: companion mlx-community/Qwen3.5-9B-MTP-4bit (the MTP head
+             for mlx-works/Qwen3.5-9B-oQ4e-mtp) is not downloaded; download it with
+             `abstractcore models download mlx mlx-community/Qwen3.5-9B-MTP-4bit` ...'}
+```
+
+### MTP-preserving checkpoints never load through mlx-lm
+
+Some MLX checkpoints keep the model's `mtp.*` tensors in their own weights, for example
+`mlx-works/Qwen3.5-9B-oQ4e-mtp`, `Jundot/Qwen3.8-27B-oQ4e-mtp` and Flash-Next. **mlx-lm
+0.31.3 and earlier corrupts them.** `mlx_lm/models/qwen3_5.py` `sanitize()` reads any `mtp.`
+tensor as the sign of a raw Hugging Face checkpoint and adds `+1.0` to every RMSNorm weight.
+These checkpoints are already converted, so their norms are shifted twice and the model
+generates garbage. There is no error. mlx-vlm strips `mtp.` before it makes that decision and
+loads the same files correctly.
+
+The MLX provider reads the checkpoint's `model.safetensors.index.json` `weight_map` (or, for a
+single file, its safetensors header), a local read of a few KB. When the checkpoint carries
+`mtp.` tensors, it loads through **mlx-vlm in every lane**: with or without a drafter,
+`speculation` on, off or inherited, batching or not. If mlx-vlm cannot load it, the provider
+raises a `ProviderAPIError` that names the model and the reason. It never falls back to mlx-lm.
+
+| mlx-lm | `qwen3_5` sanitize on MTP-preserving checkpoints |
+|---|---|
+| ≤ 0.31.3 (latest on PyPI, 2026-09-24) | **affected**: double norm shift, garbage output |
+| `main` since ml-explore/mlx-lm#1623 (commit `4eeaf20`, 2026-08-18) | fixed: the shift depends only on unsanitized conv1d weights |
+
+AbstractCore keeps routing these checkpoints through mlx-vlm even after an mlx-lm release
+carries the fix. The native lane is also the one that runs the MTP drafter and prefix caching,
+so nothing is lost.
+
 mlx-community also publishes drafters for `Qwen3.5-122B-A10B`,
 `DeepSeek-V4-Flash` (bf16 only) and `Hy3-preview`. Of these, mlx-vlm has a
 drafter implementation for DeepSeek-V4 (`deepseek_v4_mtp`) but **not** for Hy3,

@@ -263,8 +263,8 @@ def configured_speculation_default(*, config_file: Any = None, capability_defaul
     try:
         stamp = path.stat()
     except FileNotFoundError:
-        from ..config.capability_defaults import RECOMMENDED_CAPABILITY_DEFAULT_ROUTES
-        return normalize_speculation_value(RECOMMENDED_CAPABILITY_DEFAULT_ROUTES["input.text"].options.get("speculation"))
+        from ..config.capability_defaults import recommended_capability_default_routes
+        return normalize_speculation_value(recommended_capability_default_routes()["input.text"].options.get("speculation"))
     return normalize_speculation_value(_read_configured_speculation(str(path), stamp.st_mtime_ns, stamp.st_ctime_ns, stamp.st_size))
 
 
@@ -299,6 +299,49 @@ def mlx_speculation_artifact(model: str) -> Optional[Dict[str, Any]]:
     return capability_speculation(get_model_capabilities(identity), "mlx")
 
 
+def mlx_registry_drafters() -> frozenset:
+    """Every MLX drafter repo the registry names (lower-cased), for "is this a companion?"."""
+    from ..architectures import detection
+
+    if detection._model_capabilities is None:
+        detection._load_json_assets()
+    models = (detection._model_capabilities or {}).get("models") or {}
+    out = set()
+    for entry in models.values():
+        spec = entry.get("speculation") if isinstance(entry, Mapping) else None
+        runtimes = spec.get("runtimes") if isinstance(spec, Mapping) else None
+        block = runtimes.get("mlx") if isinstance(runtimes, Mapping) else None
+        if isinstance(block, Mapping) and block.get("drafter"):
+            out.add(str(block["drafter"]).strip().lower())
+    return frozenset(out)
+
+
+def mlx_companion_repos(model: str) -> list:
+    """The COMPANION repos an MLX model needs beside its own weights: its MTP drafter.
+
+    Source: the registry's `speculation.runtimes.mlx.drafter` (model_capabilities.json),
+    the same entry the provider loads the drafter from -- so what a download
+    fetches is exactly what a load will look for. Empty when:
+      - the registry knows no drafter for the model;
+      - the head is BUILT IN (`mode: embedded`, e.g. Qwen3.8 Flash-Next): nothing
+        separate to fetch;
+      - the model IS a drafter (the registry's name match would otherwise make a
+        drafter its own companion).
+    """
+    repo = str(model or "").strip()
+    if not repo:
+        return []
+    if repo.lower() in mlx_registry_drafters():
+        return []
+    block = mlx_speculation_artifact(repo)
+    if not block or str(block.get("mode") or "drafter_repo") == "embedded":
+        return []
+    drafter = str(block.get("drafter") or "").strip()
+    if not drafter or drafter.lower() == repo.lower():
+        return []
+    return [drafter]
+
+
 def describe_speculation_capabilities(model: str, provider: str, instance: Any = None) -> Dict[str, Any]:
     """Describe artifact + adapter + instance facts; never download or load a model.
 
@@ -314,6 +357,7 @@ def describe_speculation_capabilities(model: str, provider: str, instance: Any =
     supported = provider == "mlx" and bool(block or active)
     reason = None if supported else "native_mtp_backend_unavailable" if provider != "mlx" else "mtp_artifact_unverified"
     head_present = None
+    companion = str(block["drafter"]) if block and block.get("drafter") else None
     local = _local_model_directory(model) if provider == "mlx" else None
     if local is not None:
         from .mlx_qwen4 import is_qwen4_checkpoint, embedded_mtp_keys
@@ -344,10 +388,20 @@ def describe_speculation_capabilities(model: str, provider: str, instance: Any =
                 "num_draft_tokens": request.num_draft_tokens or getattr(instance, "_mtp_block_size", None),
                 "require_acceleration": request.require_acceleration,
             }
+    # The slug is for code; `message` is for people. A missing companion is the
+    # one state a user fixes themselves, so it is said in words with the fix.
+    message = None
+    if reason == "mtp_head_not_cached" and companion:
+        message = (
+            f"MTP acceleration off: companion {companion} not downloaded; download it with "
+            f"`abstractcore models download mlx {companion}`"
+        )
     return {
         "supported": supported,
         "ready": ready,
         "reason": reason,
+        "message": message,
+        "companion": companion,
         # Choices implemented by the native MLX verifier, not a universal model
         # vocabulary. Other adapters must declare their own choices when added.
         "supported_depths": [2, 3, 4, 5] if supported else [],

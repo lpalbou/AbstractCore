@@ -201,11 +201,68 @@ class NativeSession:
         return self.apc
 
 
+def mtp_weight_keys(path) -> list:
+    """The `mtp.` tensor names a local MLX checkpoint carries (empty: none).
+
+    A cheap, LOCAL read -- the safetensors index's `weight_map`, or, for a
+    single-file checkpoint, each safetensors file's JSON header (8-byte length
+    + header; no tensor is read). Never the model name, never
+    `mtp_num_hidden_layers` (present in configs whose weights hold no head).
+
+    Why it matters: mlx-lm <= 0.31.3 `qwen3_5.Model.sanitize` reads ANY `mtp.`
+    tensor as "raw Hugging Face checkpoint" and adds +1.0 to every RMSNorm
+    weight, so an MTP-PRESERVING checkpoint that is already MLX-converted gets
+    its norms shifted twice and generates garbage (fixed upstream on mlx-lm
+    main by ml-explore/mlx-lm#1623, not released as of 0.31.3). mlx-vlm strips
+    `mtp.` BEFORE that decision and loads the same files correctly. The MLX
+    provider therefore never hands such a checkpoint to mlx-lm.
+
+    The substring test (`"mtp." in key`) is mlx-lm's own, so this answers
+    exactly the question mlx-lm's sanitize asks. An unreadable INDEX raises:
+    a sharded checkpoint whose weights cannot be classified must not silently
+    take the lane that corrupts it.
+    """
+    import json as _json
+    import struct
+
+    root = Path(path)
+    index = root / "model.safetensors.index.json"
+    if index.is_file():
+        document = _json.loads(index.read_text(encoding="utf-8"))
+        weight_map = document.get("weight_map") if isinstance(document, dict) else None
+        if not isinstance(weight_map, dict):
+            raise ValueError(f"Invalid safetensors index {index}: weight_map must be an object")
+        return sorted(k for k in weight_map if "mtp." in str(k))
+    keys = []
+    for shard in sorted(root.glob("*.safetensors")):
+        # A file that is not valid safetensors cannot be loaded by EITHER
+        # loader, so it cannot be mis-routed; skipping it lets the loader
+        # report its own, precise error instead of this probe guessing one.
+        try:
+            with open(shard, "rb") as fh:
+                raw = fh.read(8)
+                if len(raw) != 8:
+                    continue
+                (size,) = struct.unpack("<Q", raw)
+                if size <= 0 or size > 100 * 1024 * 1024:
+                    continue
+                header = _json.loads(fh.read(size).decode("utf-8"))
+        except (OSError, ValueError, UnicodeDecodeError):
+            continue
+        if isinstance(header, dict):
+            keys.extend(k for k in header if k != "__metadata__" and "mtp." in k)
+    return sorted(keys)
+
+
 def resolve_native_drafter_path(path_or_repo: str) -> str:
     """Resolve aliases before sharing weights or deriving persistent identity.
 
-    Prefer the existing cache without network access. On an uncached explicit
-    head, the upstream resolver retains its normal/offline download policy.
+    Cache first, never the network for a cached head. An explicitly named head
+    that is NOT cached (mission U, 2026-09-24):
+      * offline_first on (the default): refused with ModelNotFoundError naming
+        the head and the download command -- loading never downloads, and a
+        drafter is a model like any other;
+      * offline_first off: downloaded through mlx-vlm's resolver, and logged.
     """
     path = Path(path_or_repo).expanduser()
     if path.is_dir():
@@ -213,8 +270,23 @@ def resolve_native_drafter_path(path_or_repo: str) -> str:
     from ..utils.model_cache import resolve_hf_snapshot_dir
     snapshot = resolve_hf_snapshot_dir(str(path_or_repo))
     if snapshot is None:
+        from ..config.manager import get_config_manager
+        name = str(path_or_repo)
+        if get_config_manager().is_offline_first():
+            from ..exceptions import ModelNotFoundError
+            raise ModelNotFoundError(
+                f"MLX drafter {name!r} is not in the local Hugging Face cache, and offline_first "
+                f"is on, so loading never downloads it. Download it first: "
+                f"`abstractcore models download mlx {name}` (or turn `offline.offline_first` off "
+                "in the AbstractCore config to allow on-demand downloads)."
+            )
+        import logging
+        logging.getLogger("abstractcore.providers.mlx").warning(
+            "MLX drafter %r is not cached; offline_first is off, so it is being downloaded "
+            "from the Hugging Face Hub now", name,
+        )
         from mlx_vlm.utils import get_model_path
-        snapshot = get_model_path(str(path_or_repo))
+        snapshot = get_model_path(name)
     resolved = Path(snapshot).expanduser().resolve()
     if not resolved.is_dir():
         raise FileNotFoundError(f"Native MLX drafter directory is missing: {resolved}")

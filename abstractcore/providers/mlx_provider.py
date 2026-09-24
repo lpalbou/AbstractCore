@@ -695,8 +695,9 @@ class MLXProvider(BaseProvider):
     def _prompt_cache_backend_create(self) -> Optional[Any]:
         if getattr(self, "_mtp_processor", None) is not None:
             raise ProviderAPIError(
-                "Native Qwen4 uses automatic prefix caching: pass prompt_cache_key and "
-                "complete messages to generate(); manual prefill/append/fork is unsupported."
+                f"Native MLX lane for {self._native_family_label()} uses automatic prefix caching: "
+                "pass prompt_cache_key and complete messages to generate(); manual "
+                "prefill/append/fork is unsupported."
             )
         try:
             from mlx_lm.models.cache import make_prompt_cache
@@ -2885,8 +2886,7 @@ class MLXProvider(BaseProvider):
             if cached_head is None or not any(cached_head.glob("*.safetensors")):
                 self._mtp_outcome_at_load = speculation_unavailable(
                     request, "mtp_head_not_cached",
-                    "The default MTP policy needs a matching head that is not cached. "
-                    "Provision it explicitly in model management; defaults never download weights.",
+                    self._companion_missing_message(str(drafter_id)),
                     logger=self.logger,
                 )
                 return None
@@ -2896,13 +2896,46 @@ class MLXProvider(BaseProvider):
             plan["drafter_id"] = request.drafter or (block or {}).get("drafter")
         return plan
 
+    def _companion_missing_message(self, drafter_id: str) -> str:
+        """The words a user sees when the model's MTP companion is not on disk."""
+        from pathlib import Path as _Path
+
+        model = str(self.model)
+        # A model loaded from a local directory has no repo id to re-download by.
+        also = (
+            ""
+            if _Path(model).expanduser().is_dir()
+            else f" (downloading the model with `abstractcore models download mlx {model}` or from "
+            "the gateway's Models tab fetches it too)"
+        )
+        return (
+            f"MTP acceleration off: companion {drafter_id} (the MTP head for {model}) "
+            f"is not downloaded; download it with `abstractcore models download mlx {drafter_id}`"
+            f"{also}. The model runs without MTP until then."
+        )
+
+    def _native_family_label(self) -> str:
+        """`<model> (model_type <t>)` for native-lane error text -- never a guessed family."""
+        model_type = getattr(self, "_native_model_type", None)
+        if model_type is None:
+            session = getattr(self, "_native_qwen4", None)
+            model_type = "qwen4_exp" if session is not None else None
+        label = str(getattr(self, "model", "") or "this model")
+        return f"{label} (model_type {model_type})" if model_type else label
+
     def _enter_mtp_lane(self, load_target, plan: Dict[str, Any]) -> bool:
         """Load target + drafter through mlx-vlm. True when the lane is live.
 
-        On any failure this returns False and the caller falls back to the
-        ordinary mlx-lm load, so a broken drafter costs a warning rather than an
-        unusable provider -- unless the caller demanded acceleration, in which
+        On any failure this returns False and the caller falls back -- to the
+        drafter-less mlx-vlm lane for an MTP-preserving checkpoint, else to the
+        ordinary mlx-lm load -- so a broken drafter costs a warning rather than
+        an unusable provider, unless the caller demanded acceleration, in which
         case `speculation_unavailable` raises.
+
+        `plan["drafter"] is None` is the DRAFTER-LESS native lane (batching, or
+        an MTP-preserving checkpoint mlx-lm would corrupt). It has no fallback:
+        a failure raises ProviderAPIError naming the model and the reason
+        (`plan["why"]`), never a silent mlx-lm load.
         """
         import os
         from contextlib import redirect_stdout, redirect_stderr
@@ -2929,10 +2962,21 @@ class MLXProvider(BaseProvider):
                     drafter, kind = session.drafter, session.draft_kind
                     model, processor = session.model, session.processor
         except Exception as exc:
+            if drafter_id is None:
+                why = plan.get("why") or "this lane loads through mlx-vlm"
+                raise ProviderAPIError(
+                    f"MLX model '{self.model}' could not be loaded: {why}, and the mlx-vlm "
+                    f"load of '{load_target}' raised {type(exc).__name__}: {exc}. It is not "
+                    "loaded through mlx-lm instead."
+                ) from exc
+            if isinstance(exc, ModelNotFoundError):
+                message = self._companion_missing_message(str(drafter_id))
+            else:
+                message = f"could not load MLX MTP drafter '{drafter_id}': {exc}"
             self._mtp_outcome_at_load = speculation_unavailable(
                 request,
                 "mtp_drafter_load_failed",
-                f"could not load MLX MTP drafter '{drafter_id}': {exc}",
+                message,
                 logger=self.logger,
             )
             return False
@@ -3379,17 +3423,25 @@ class MLXProvider(BaseProvider):
             from contextlib import redirect_stdout, redirect_stderr
             from pathlib import Path
 
-            # Respect AbstractCore's offline-first defaults: never download model files on-demand.
-            try:
-                from ..config.manager import get_config_manager
-
-                _cfg = get_config_manager()
-                if _cfg.is_offline_first():
-                    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-                    os.environ.setdefault("HF_DATASETS_OFFLINE", "1")
-                    os.environ.setdefault("HF_HUB_OFFLINE", "1")
-            except Exception:
-                pass
+            # OFFLINE-FIRST = NO ON-DEMAND DOWNLOAD WHILE LOADING, and it is
+            # enforced by CONSTRUCTION below, never by process environment:
+            # the model is resolved to a local directory from the LM Studio /
+            # Hugging Face caches (`resolve_*`, `_has_weights`), a miss raises
+            # ModelNotFoundError before mlx-lm is called, and mlx-lm is only
+            # ever handed that directory (its `_download` skips
+            # `snapshot_download` for an existing path). The MTP drafter is
+            # cache-only the same way (`_plan_mtp_lane`).
+            #
+            # This block used to `os.environ.setdefault` HF_HUB_OFFLINE /
+            # TRANSFORMERS_OFFLINE / HF_DATASETS_OFFLINE = 1. That never did
+            # what it said: `huggingface_hub` snapshots HF_HUB_OFFLINE into
+            # `constants.HF_HUB_OFFLINE` at ITS import, `from mlx_lm import
+            # load` above has already imported it, and transformers >= 5 asks
+            # that same constant -- so the in-process loader saw no change.
+            # What it DID do was poison the process for good: every child
+            # process inherits `os.environ`, so after the first MLX load each
+            # explicit download job (a `snapshot_download` child) died with
+            # OfflineModeIsEnabled. Do not reintroduce a process-wide write.
 
             from ..utils.model_cache import (
                 default_hf_hub_cache_dirs,
@@ -3540,6 +3592,13 @@ class MLXProvider(BaseProvider):
 
             load_target = str(load_dir)
             self._resolved_model_id = load_target
+            # The architecture NAME for native-lane error text (the checkpoint's
+            # own `model_type`), so a Qwen3.5 model is never told it is "Qwen4".
+            try:
+                _cfg = json.loads((Path(load_target) / "config.json").read_text(encoding="utf-8"))
+                self._native_model_type = str(_cfg.get("model_type") or "") or None if isinstance(_cfg, dict) else None
+            except Exception:
+                self._native_model_type = None
             from .speculation import mlx_speculation_artifact
             self._speculation_artifact = mlx_speculation_artifact(self.model)
             if getattr(self, "_speculation_inherits_config", False):
@@ -3622,12 +3681,41 @@ class MLXProvider(BaseProvider):
             # retrofit: mlx-vlm and mlx-lm each hold their own copy of the
             # weights, and this model is 15 GB at 4-bit, so loading one and then
             # discovering we wanted the other costs a second 15 GB.
+            #
+            # An MTP-PRESERVING checkpoint (`mtp.` tensors in its weights) NEVER
+            # goes to mlx-lm: mlx-lm <= 0.31.3 shifts its already-converted norm
+            # weights a second time and it generates garbage (see
+            # `mlx_native_session.mtp_weight_keys`). Decided from the local
+            # index BEFORE any lane is chosen, so every lane -- drafter
+            # present or missing, speculation on/off/inherited, batching or
+            # not -- lands on mlx-vlm, or fails loudly.
+            from .mlx_native_session import mtp_weight_keys
+
+            try:
+                mtp_keys = mtp_weight_keys(load_target)
+            except Exception as exc:
+                raise ProviderAPIError(
+                    f"MLX model '{self.model}': cannot read the weight index of '{load_target}' "
+                    f"to tell whether it carries MTP tensors ({type(exc).__name__}: {exc}); "
+                    "refusing to guess the loader."
+                ) from exc
+            self._mtp_preserving_checkpoint = bool(mtp_keys)
             mtp_plan = self._plan_mtp_lane(load_target)
             if mtp_plan is not None and self._enter_mtp_lane(load_target, mtp_plan):
                 return
-            if self._mlx_batching:
-                if not self._enter_mtp_lane(load_target, {"drafter": None, "block_size": None}):
-                    raise ProviderAPIError("Native MLX batching could not load this model through mlx-vlm")
+            if self._mlx_batching or mtp_keys:
+                why = (
+                    f"its weights carry {len(mtp_keys)} MTP tensor(s) (`mtp.` keys), and mlx-lm "
+                    "mis-converts such checkpoints (garbage output), so it loads only through mlx-vlm"
+                    if mtp_keys
+                    else "native MLX batching (mlx_batching=True) runs through mlx-vlm"
+                )
+                self._enter_mtp_lane(load_target, {"drafter": None, "block_size": None, "why": why})
+                if mtp_keys:
+                    self.logger.info(
+                        f"mlx: {self.model} is MTP-preserving; loaded through mlx-vlm "
+                        f"({'with' if self._mtp_active else 'without'} an MTP drafter)"
+                    )
                 return
 
             # Silence the "Fetching" progress bar by redirecting stdout/stderr
@@ -3701,6 +3789,11 @@ class MLXProvider(BaseProvider):
             # slow". Re-flattening it into a generic "Failed to load MLX model"
             # below would destroy both the type and the machine-readable reason
             # the caller asked for.
+            raise
+        except ProviderAPIError:
+            # Already names the model and the reason (e.g. an MTP-preserving
+            # checkpoint whose mlx-vlm load failed). The generic handler below
+            # would re-read "not found" in it as a missing model.
             raise
         except Exception as e:
             # Check if it's a model not found error
@@ -4124,16 +4217,17 @@ class MLXProvider(BaseProvider):
                         "(messages=[] for a standalone prompt); hidden-context append fragments are unsupported",
                         code="invalid_request")
                 raise ProviderAPIError(
-                    "Native Qwen4 prompt_cache_key requires messages containing the complete "
-                    "conversation (messages=[] for a standalone prompt). Hidden-context "
-                    "append fragments are not supported by the native prefix cache."
+                    f"Native MLX lane for {self._native_family_label()}: prompt_cache_key requires "
+                    "messages containing the complete conversation (messages=[] for a standalone "
+                    "prompt). Hidden-context append fragments are not supported by the native "
+                    "prefix cache."
                 )
             if response_model and self.structured_output_method == "native_outlines":
                 if getattr(self, "_native_runtime", None) is not None:
                     from .mlx_runtime import NativeRuntimeError
                     raise NativeRuntimeError("Native MLX does not support Outlines' mlx-lm adapter; use structured_output_method='prompted'",
                                              code="invalid_controls")
-                raise ProviderAPIError("Native Qwen4 does not support Outlines' mlx-lm adapter; use structured_output_method='prompted'")
+                raise ProviderAPIError(f"Native MLX lane for {self._native_family_label()} does not support Outlines' mlx-lm adapter; use structured_output_method='prompted'")
 
         report = MediaReport.for_request(media, provider="mlx", model=self.model)
         out = self._generate_core(
@@ -4379,7 +4473,7 @@ class MLXProvider(BaseProvider):
             report.note_images(len(native_images))
             media = [part for part in media if not self._is_image_part(part)]
             if any(str(getattr(getattr(part, "media_type", None), "value", "")) in ("video", "audio") for part in media):
-                raise ProviderAPIError("Native Qwen4 accepts image frames, not audio/video containers; supply extracted images")
+                raise ProviderAPIError(f"Native MLX lane for {self._native_family_label()} accepts image frames, not audio/video containers; supply extracted images")
         if media:
             # Native sight first. Fills `report.delivered` and returns embeddings;
             # on ANY failure it records a named reason and returns None, and we
@@ -5615,7 +5709,7 @@ class MLXProvider(BaseProvider):
         List available MLX models from local caches.
 
         This scans:
-        - the HuggingFace hub cache (~/.cache/huggingface/hub)
+        - every HuggingFace hub cache (`utils.model_cache.hf_hub_cache_dirs`)
         - the LM Studio store (~/.lmstudio/models)
 
         and keeps the repos `mlx_model_rules.is_mlx_model` classifies as MLX.
@@ -5638,8 +5732,11 @@ class MLXProvider(BaseProvider):
         try:
             model_set = set()
 
-            hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
-            if hf_cache.exists():
+            # Every hub cache a load reads (HF_HUB_CACHE / HF_HOME / the
+            # configured cache dir), never only `~/.cache/huggingface/hub`.
+            from ..utils.model_cache import hf_hub_cache_dirs
+
+            for hf_cache in hf_hub_cache_dirs():
                 for item in hf_cache.iterdir():
                     if item.is_dir() and item.name.startswith("models--"):
                         # Convert models--mlx-community--Qwen3-Coder-30B-A3B-Instruct-4bit to mlx-community/Qwen3-Coder-30B-A3B-Instruct-4bit
