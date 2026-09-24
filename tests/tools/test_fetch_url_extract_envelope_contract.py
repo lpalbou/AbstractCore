@@ -29,6 +29,10 @@ from harness import GOLD  # noqa: E402
 
 import abstractcore.tools.common_tools as ct  # noqa: E402
 
+# The fetch is faked; the SSRF check still resolves the host first. Answer that
+# from a fake resolver instead of real DNS (network guard finding, 2026-09-24).
+pytestmark = pytest.mark.usefixtures("fake_public_dns")
+
 # Amplification bar: what a caller pays, in JSON characters, per character of
 # extracted content. Before the payload policy a 29k article cost 222k of JSON.
 MAX_ENVELOPE_AMPLIFICATION = 2.0

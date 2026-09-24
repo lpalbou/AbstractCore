@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import pytest
 import sys
 import os
 import requests
@@ -9,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+@pytest.mark.network("downloads a remote image and asks a live vision model")
 def test_current_vision_accuracy():
     """Test the current vision model accuracy with the Arc de Triomphe image"""
 

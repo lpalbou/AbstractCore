@@ -65,6 +65,10 @@ from abstractcore.tools.fetch_url_ssrf import (  # noqa: E402
     reset_fetch_url_allowlist_cache,
 )
 
+# The fetch is faked; the SSRF check still resolves the host first. Answer that
+# from a fake resolver instead of real DNS (network guard finding, 2026-09-24).
+pytestmark = pytest.mark.usefixtures("fake_public_dns")
+
 LIVE = os.getenv("ABSTRACT_E2E_FETCH_URL") == "1"
 live_only = pytest.mark.skipif(
     not LIVE, reason="Set ABSTRACT_E2E_FETCH_URL=1 to run the live render tests."

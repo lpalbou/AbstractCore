@@ -25,6 +25,7 @@ def _is_connectivity_error(err: Exception) -> bool:
     )
 
 
+@pytest.mark.network("live async calls to OpenAI, Anthropic and Ollama")
 class TestAsyncProviders:
     """Test async generation for all 6 providers."""
 
@@ -141,6 +142,7 @@ class TestAsyncConcurrent:
         assert all(r.content for r in responses)
 
 
+@pytest.mark.network("live async streaming from OpenAI and Ollama")
 class TestAsyncStreaming:
     """Test async streaming."""
 

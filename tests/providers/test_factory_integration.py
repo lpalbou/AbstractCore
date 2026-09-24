@@ -183,6 +183,7 @@ class TestFactoryBackwardCompatibility:
             create_llm("openai", "gpt-4")
 
 
+@pytest.mark.network("real OpenAI provider construction and generation")
 class TestFactoryWithRealProviders:
     """Test factory integration using real providers."""
 

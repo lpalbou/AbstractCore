@@ -96,7 +96,12 @@ def _discover_server() -> tuple[str | None, str | None]:
     return None, None
 
 
-_TEST_BASE_URL, _TEST_MODEL = _discover_server()
+# Discovery queries the default local servers (the operator's LIVE LM Studio
+# :1234 and Ollama :11434) at IMPORT, so it only runs when this opt-in module
+# is enabled (network guard finding, 2026-09-24).
+_TEST_BASE_URL, _TEST_MODEL = (
+    _discover_server() if os.getenv("ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS") == "1" else (None, None)
+)
 
 
 def server_available() -> bool:
@@ -108,14 +113,17 @@ def server_available() -> bool:
     return bool(_TEST_BASE_URL and _TEST_MODEL)
 
 
-pytestmark = pytest.mark.skipif(
-    not server_available(),
-    reason=(
-        "OpenAI-compatible integration tests disabled by default. Set "
-        "ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1 and configure OPENAI_BASE_URL "
-        "(or run LM Studio on :1234 or Ollama OpenAI API on :11434)."
+pytestmark = [
+    pytest.mark.network("live OpenAI-compatible server (LM Studio / Ollama)"),
+    pytest.mark.skipif(
+        not server_available(),
+        reason=(
+            "OpenAI-compatible integration tests disabled by default. Set "
+            "ABSTRACTCORE_RUN_LOCAL_PROVIDER_TESTS=1 and configure OPENAI_BASE_URL "
+            "(or run LM Studio on :1234 or Ollama OpenAI API on :11434)."
+        ),
     ),
-)
+]
 
 
 @pytest.fixture(scope="session")

@@ -82,8 +82,13 @@ class TestNativeStructuredOutput:
         except Exception as e:
             pytest.skip(f"Ollama not available: {_short_error(e)}")
 
-    def test_lmstudio_native_support_detection(self):
+    def test_lmstudio_native_support_detection(self, monkeypatch):
         """Test that LMStudio provider is correctly detected as having native support."""
+        # Detection needs no server; construction would probe the live LM
+        # Studio on :1234 (network guard finding, 2026-09-24).
+        from abstractcore.providers.lmstudio_provider import LMStudioProvider
+
+        monkeypatch.setattr(LMStudioProvider, "_validate_model", lambda self: None)
         try:
             llm = create_llm("lmstudio", model="qwen3-4b-2507")
             handler = StructuredOutputHandler()
@@ -93,6 +98,7 @@ class TestNativeStructuredOutput:
         except Exception as e:
             pytest.skip(f"LMStudio not available: {_short_error(e)}")
 
+    @pytest.mark.network("native structured output against live Ollama / LM Studio")
     def test_ollama_simple_structured_output(self):
         """Test Ollama with simple structured output (PersonInfo)."""
         try:
@@ -118,6 +124,7 @@ class TestNativeStructuredOutput:
         except Exception as e:
             pytest.skip(f"Ollama test skipped: {_short_error(e)}")
 
+    @pytest.mark.network("native structured output against live Ollama / LM Studio")
     def test_ollama_complex_structured_output_with_enums(self):
         """Test Ollama with complex nested structure and enums."""
         try:
@@ -150,6 +157,7 @@ class TestNativeStructuredOutput:
         except Exception as e:
             pytest.skip(f"Ollama complex test skipped: {_short_error(e)}")
 
+    @pytest.mark.network("native structured output against live Ollama / LM Studio")
     def test_lmstudio_simple_structured_output(self):
         """Test LMStudio with simple structured output (PersonInfo)."""
         try:
@@ -175,6 +183,7 @@ class TestNativeStructuredOutput:
         except Exception as e:
             pytest.skip(f"LMStudio test skipped: {_short_error(e)}")
 
+    @pytest.mark.network("native structured output against live Ollama / LM Studio")
     def test_lmstudio_complex_structured_output_with_enums(self):
         """Test LMStudio with complex nested structure and enums."""
         try:
@@ -221,8 +230,13 @@ class TestNativeStructuredOutput:
         except Exception as e:
             pytest.skip(f"Ollama schema test skipped: {_short_error(e)}")
 
-    def test_schema_generation_for_lmstudio(self):
+    def test_schema_generation_for_lmstudio(self, monkeypatch):
         """Verify that LMStudio uses response_format parameter correctly."""
+        # Detection needs no server; construction would probe the live LM
+        # Studio on :1234 (network guard finding, 2026-09-24).
+        from abstractcore.providers.lmstudio_provider import LMStudioProvider
+
+        monkeypatch.setattr(LMStudioProvider, "_validate_model", lambda self: None)
         try:
             llm = create_llm("lmstudio", model="qwen3-4b-2507")
 

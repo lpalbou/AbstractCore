@@ -55,6 +55,7 @@ class TestWrongModelFallback:
         # Should contain some known OpenAI models
         assert any(model in error_msg for model in ["gpt-5-mini", "gpt-4o", "gpt-4o-mini", "gpt-4"])
 
+    @pytest.mark.network("lists the real models of live Ollama")
     def test_ollama_wrong_model_shows_real_api_models(self):
         """Test Ollama provider shows real models from API when model is wrong."""
         try:
@@ -79,6 +80,7 @@ class TestWrongModelFallback:
             else:
                 raise
 
+    @pytest.mark.network("lists the real models of live LM Studio")
     def test_lmstudio_wrong_model_shows_real_api_models(self):
         """Test LMStudio provider shows real models from API when model is wrong."""
         try:
@@ -155,6 +157,7 @@ class TestWrongModelFallback:
             else:
                 raise
 
+    @pytest.mark.network("compares error messages built from live Ollama and LM Studio model lists")
     def test_error_message_format_consistency(self):
         """Test that all error messages follow consistent format."""
         # Test with Ollama (most likely to be available)
@@ -185,6 +188,7 @@ class TestWrongModelFallback:
             else:
                 raise
 
+    @pytest.mark.network("checks error messages built from the live Ollama model list")
     def test_no_hardcoded_models_in_error_messages(self):
         """Test that error messages don't contain hardcoded/deprecated model names."""
         # This test ensures we're not showing old hardcoded lists

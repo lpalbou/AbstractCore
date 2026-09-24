@@ -379,6 +379,9 @@ def test_sensitive_values_are_redacted_from_structured_log_fields() -> None:
     }
 
 
+# The allowlist resolves example.com; a fake resolver answers instead of real
+# DNS (network guard finding, 2026-09-24).
+@pytest.mark.usefixtures("fake_public_dns")
 def test_server_blocks_non_loopback_base_url_by_default(monkeypatch) -> None:
     server_app = importlib.import_module("abstractcore.server.app")
     monkeypatch.setenv("ABSTRACTCORE_SERVER_ALLOW_UNAUTHENTICATED", "1")

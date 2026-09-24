@@ -143,8 +143,13 @@ def test_endpoint_profiles_ride_the_same_list_with_their_own_key(tmp_path) -> No
     assert "sk-profile-key" not in json.dumps(rows)
 
 
-def test_probe_is_opt_in_and_never_guesses(tmp_path) -> None:
+def test_probe_is_opt_in_and_never_guesses(tmp_path, monkeypatch) -> None:
     """`None` (not probed) and `False` (probed, silent) are different answers."""
+    # The default local servers answer on the operator's LIVE :1234 / :11434;
+    # a probe here must meet a dead loopback port instead (network guard
+    # finding, 2026-09-24). Port 9 (discard) has no listener.
+    monkeypatch.setenv("LMSTUDIO_BASE_URL", "http://127.0.0.1:9/v1")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:9")
     _, unprobed = _inventory(tmp_path)
     assert unprobed["lmstudio"]["reachable"] is None
     assert unprobed["lmstudio"]["reachability"] == ""

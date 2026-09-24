@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import pytest
 
+# The fetch is faked; the SSRF check still resolves the host first. Answer that
+# from a fake resolver instead of real DNS (network guard finding, 2026-09-24).
+pytestmark = pytest.mark.usefixtures("fake_public_dns")
+
 
 class _FakeResponse:
     def __init__(self, *, url: str, headers: dict[str, str], body: bytes, status_code: int = 200, reason: str = "OK"):

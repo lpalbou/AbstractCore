@@ -98,6 +98,7 @@ class DeepUser(BaseModel):
     clearance_level: str
 
 
+@pytest.mark.network("live structured output against OpenAI and Anthropic")
 def test_provider_complexity():
     """Test progressive complexity across available providers."""
 

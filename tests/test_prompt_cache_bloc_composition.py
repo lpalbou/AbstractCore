@@ -84,15 +84,23 @@ CHAINS = {
 # --------------------------------------------------------------------------
 
 
+# The whitelisted tokenizers are INSTALLED models in the operator's real home,
+# read at collection (local_files_only, never downloads). The test conftest
+# moves HOME and HF_HOME to tmp, so the real home arrives as the read-only
+# ABSTRACT_TEST_REAL_HOME pointer, which this marker declares.
+pytestmark = pytest.mark.real_home("reads whitelisted installed tokenizers (HF cache, LM Studio) read-only")
+_REAL_HOME = os.environ["ABSTRACT_TEST_REAL_HOME"]
+
+
 def _local_model_dir(repo: str) -> Optional[str]:
     """Directory of an ALREADY-INSTALLED local model. Never downloads."""
-    home = os.environ.get("HF_HOME") or os.path.expanduser("~/.cache/huggingface")
+    home = os.path.join(_REAL_HOME, ".cache", "huggingface")
     hits = sorted(
         glob.glob(os.path.join(home, "hub", f"models--{repo.replace('/', '--')}", "snapshots", "*", "tokenizer.json"))
     )
     if hits:
         return os.path.dirname(hits[0])
-    lms = os.path.expanduser(f"~/.lmstudio/models/{repo}")
+    lms = os.path.join(_REAL_HOME, ".lmstudio", "models", repo)
     if os.path.isfile(os.path.join(lms, "tokenizer.json")):
         return lms
     return None

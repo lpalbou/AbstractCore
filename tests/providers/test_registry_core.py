@@ -25,6 +25,16 @@ from abstractcore.providers.registry import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_openai_model_preflight(monkeypatch):
+    # OpenAIProvider construction preflights the model against the LIVE OpenAI
+    # API with whatever key the environment holds; these tests are about
+    # construction and plumbing (network guard finding, 2026-09-24).
+    from abstractcore.providers.openai_provider import OpenAIProvider
+
+    monkeypatch.setattr(OpenAIProvider, "_validate_model_exists", lambda self: None)
+
+
 def _skip_without_provider_key(env_var: str, provider: str) -> None:
     if not os.getenv(env_var):
         pytest.skip(f"{provider} API key not set; real provider construction test")
@@ -150,6 +160,7 @@ class TestProviderRegistry:
         with pytest.raises(ValueError, match="Unknown provider: nonexistent"):
             registry.get_provider_class("nonexistent")
 
+    @pytest.mark.network("lists models from the live OpenAI API")
     def test_get_available_models(self):
         """Test getting available models for a provider using OpenAI provider."""
         registry = ProviderRegistry()
@@ -194,6 +205,7 @@ class TestProviderRegistry:
 
         assert models == ["my-vllm-model"]
 
+    @pytest.mark.network("reads provider status from the live OpenAI API")
     def test_get_provider_status_success(self):
         """Test getting provider status when provider is working."""
         registry = ProviderRegistry()

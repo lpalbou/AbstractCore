@@ -38,6 +38,7 @@ class TestModelUnloading:
         del llm
         gc.collect()
 
+    @pytest.mark.network("loads and unloads a model on live Ollama")
     def test_ollama_unload(self):
         """Test Ollama model unloading"""
         try:
@@ -86,6 +87,7 @@ class TestModelUnloading:
                 pytest.skip("MLX model not found")
             raise
 
+    @pytest.mark.network("loads and unloads a model on live LM Studio")
     def test_lmstudio_unload(self):
         """Test LMStudio model unloading"""
         try:

@@ -42,6 +42,7 @@ def _skip_if_ollama_unavailable(exc: Exception) -> None:
         pytest.skip(f"Ollama/model not available: {exc}")
 
 
+@pytest.mark.network("live Ollama tool calling")
 @pytest.mark.integration
 def test_ollama_tool_calling_with_core_tool_decorator(tmp_path: Path) -> None:
     model = os.getenv("ABSTRACTCORE_OLLAMA_TOOL_MODEL", "qwen3:4b-instruct")

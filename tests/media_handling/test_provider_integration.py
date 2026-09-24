@@ -13,6 +13,7 @@ from abstractcore import create_llm
 from abstractcore.core.types import GenerateResponse
 
 
+@pytest.mark.network("real media calls to live Ollama and OpenAI")
 class TestRealMediaIntegration:
     """Test media integration with REAL implementations - NO MOCKS."""
 
@@ -141,6 +142,7 @@ class TestRealMediaIntegration:
             pytest.skip(f"Ollama not available: {e}")
 
 
+@pytest.mark.network("real streaming media calls to live Ollama")
 class TestRealStreamingMedia:
     """Test streaming with media - REAL implementation."""
 

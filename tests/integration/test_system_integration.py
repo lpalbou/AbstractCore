@@ -223,6 +223,7 @@ class TestLoggingTelemetrySystem:
                 assert 'qwen' in log_content.lower() or 'debug' in log_content.lower()
 
 
+@pytest.mark.network("live Ollama connection and tool execution")
 class TestRealProviderIntegration:
     """Test real provider integrations (requires services)."""
 

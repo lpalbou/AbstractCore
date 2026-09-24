@@ -21,6 +21,7 @@ def _ollama_is_available() -> bool:
         return False
 
 
+@pytest.mark.network("pulls models from live Ollama")
 class TestOllamaDownload:
     """Test Ollama model downloads via /api/pull endpoint."""
 

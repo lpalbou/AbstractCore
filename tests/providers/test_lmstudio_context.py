@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import pytest
 import sys
 import os
 import tempfile
@@ -9,6 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
+@pytest.mark.network("media processing against live LM Studio")
 def test_lmstudio_provider_media_processing():
     """Test the exact scenario that's failing in LMStudioProvider"""
 

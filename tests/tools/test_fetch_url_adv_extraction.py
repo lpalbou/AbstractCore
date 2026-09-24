@@ -45,6 +45,10 @@ from abstractcore.tools.common_tools import (  # noqa: E402
     _extract_main_content,
 )
 
+# The fetch is faked; the SSRF check still resolves the host first. Answer that
+# from a fake resolver instead of real DNS (network guard finding, 2026-09-24).
+pytestmark = pytest.mark.usefixtures("fake_public_dns")
+
 # The maintainer bar for how much a caller should pay, in characters of JSON,
 # per character of real extracted content. Today `raw_text` (the entire raw
 # HTML, <script>/<style> included) dominates the envelope; see group D.

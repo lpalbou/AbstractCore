@@ -121,6 +121,36 @@ the suite can take a long time; during development, run the focused test file or
 marker first, then a broader pass before release. See
 `tests/README_VISION_TESTING.md` and `tests/README_SEED_TESTING.md`.
 
+#### Tests never touch your home or the network
+
+`tests/conftest.py` makes every run hermetic, whatever your shell exports:
+
+- **Home and caches.** `HOME` (and `USERPROFILE` on Windows) points at a
+  temporary directory for the whole session and a fresh one for each test, so
+  everything the code derives from the home directory lands there: the
+  AbstractCore config, models, embeddings and blocs under `~/.abstractcore`,
+  the Hugging Face cache (`HF_HOME`, `HF_HUB_CACHE`), the data registry and the context calibration store.
+  Path settings exported in your shell (the `ABSTRACT*`/`HF_*` directory, file
+  and cache variables, `XDG_*`) are cleared for the run. This happens when the
+  conftest is imported, before any package or `huggingface_hub` loads; a test
+  fails loudly if `huggingface_hub` froze its cache path on your real home.
+- **Network guard.** Sockets refuse any non-loopback destination and name
+  lookup, and also the live local services on loopback: the gateway (8080), LM
+  Studio (1234), Ollama (11434) and 18850. Any other loopback port stays open,
+  so `TestClient`, fake servers and scratch-port fixtures work. A refused
+  attempt fails the test and is listed under "network guard" at the end of the
+  run with the host and port it tried to reach. Point such a test at a fake or
+  a scratch port; the `fake_public_dns` fixture answers name lookups for code
+  that resolves a host before a faked fetch.
+- **Opting out, with a reason.** `@pytest.mark.network("reason")` marks a test
+  that genuinely needs the network (a Hub lookup, a real download, a live
+  provider). Such tests are skipped unless you run `pytest --allow-network`.
+  `@pytest.mark.real_home("reason")` marks a test that READS your real home
+  (for example installed tokenizers); `HOME` still stays temporary, and the
+  test gets the real path as `ABSTRACT_TEST_REAL_HOME`. A marker without its
+  reason is a collection error, as is a test module that reads the real-home
+  path without the marker. `pytest --markers` lists both.
+
 ## Documentation
 
 If a change affects user-facing behavior, update the docs entry points:

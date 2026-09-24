@@ -12,6 +12,8 @@ from abstractcore import create_llm
 from abstractcore.core.session import BasicSession
 from abstractcore.processing import BasicJudge
 
+pytestmark = pytest.mark.network("real Ollama judge (NO MOCKING by design)")
+
 
 @pytest.fixture
 def ollama_llm():

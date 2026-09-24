@@ -9,6 +9,7 @@ This test validates all the providers and models mentioned in the specifications
 - anthropic claude-haiku-4-5
 """
 
+import pytest
 import os
 from pydantic import BaseModel
 from typing import List, Optional
@@ -33,6 +34,7 @@ class CodeReview(BaseModel):
     overall_quality: str  # excellent, good, fair, poor
 
 
+@pytest.mark.network("live calls to every specified provider (OpenAI, Anthropic, Ollama)")
 def test_provider_model():
     """Test all available provider/model combinations"""
 

@@ -6,7 +6,9 @@ import types
 
 import pytest
 
-pytestmark = pytest.mark.basic
+# The fetch is faked; the SSRF check still resolves the host first. Answer that
+# from a fake resolver instead of real DNS (network guard finding, 2026-09-24).
+pytestmark = [pytest.mark.basic, pytest.mark.usefixtures("fake_public_dns")]
 
 
 class _FakeResponse:

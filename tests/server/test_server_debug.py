@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import pytest
 import sys
 import os
 import requests
@@ -74,6 +75,7 @@ def test_server_request_debug():
         print(f"   ❌ Request error: {e}")
         return False
 
+@pytest.mark.network("media processing against live LM Studio")
 def test_provider_direct():
     """Test the provider directly to see if media processing works"""
 

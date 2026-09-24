@@ -43,9 +43,16 @@ def _clear_server_auth_env(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
-def _use_deterministic_model_discovery(monkeypatch):
-    """Use hermetic model discovery only for CI jobs without provider infrastructure."""
-    if os.getenv("ABSTRACTCORE_TEST_HERMETIC_MODEL_DISCOVERY") != "1":
+def _use_deterministic_model_discovery(monkeypatch, request):
+    """Hermetic model discovery unless the run opts into the network.
+
+    Live discovery probes every provider -- the operator's LM Studio (:1234),
+    Ollama (:11434) and remote APIs -- which the test network guard refuses
+    (finding, 2026-09-24). `pytest --allow-network` keeps the live variant,
+    and the CI lane's hermetic switch still forces the fakes.
+    """
+    live = bool(request.config.getoption("--allow-network", default=False))
+    if live and os.getenv("ABSTRACTCORE_TEST_HERMETIC_MODEL_DISCOVERY") != "1":
         return
 
     from abstractcore.server import app as server_app

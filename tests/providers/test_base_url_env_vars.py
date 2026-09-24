@@ -48,6 +48,14 @@ class TestOllamaBaseUrlEnvVar:
 class TestLMStudioBaseUrlEnvVar:
     """Test environment variable support for LMStudio provider."""
 
+    @pytest.fixture(autouse=True)
+    def _no_model_probe(self, monkeypatch):
+        # Construction validates the model against `<base_url>/models`. These
+        # tests only check base-URL resolution; unstubbed, the default-URL case
+        # queried the operator's LIVE LM Studio on :1234 (2026-09-24) and the
+        # others resolved made-up hosts. The network guard now refuses both.
+        monkeypatch.setattr(LMStudioProvider, "_validate_model", lambda self: None)
+
     def test_respects_lmstudio_base_url_env(self, monkeypatch):
         """Test that LMStudio provider respects LMSTUDIO_BASE_URL."""
         monkeypatch.setenv("LMSTUDIO_BASE_URL", "http://custom:1235/v1")

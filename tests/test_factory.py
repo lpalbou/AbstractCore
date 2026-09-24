@@ -9,6 +9,16 @@ from abstractcore.providers.openai_provider import OpenAIProvider
 from abstractcore.providers.anthropic_provider import AnthropicProvider
 
 
+@pytest.fixture(autouse=True)
+def _no_openai_model_preflight(monkeypatch):
+    # OpenAIProvider construction preflights the model against the LIVE OpenAI
+    # API with whatever key the environment holds; these tests are about
+    # construction and plumbing (network guard finding, 2026-09-24).
+    from abstractcore.providers.openai_provider import OpenAIProvider
+
+    monkeypatch.setattr(OpenAIProvider, "_validate_model_exists", lambda self: None)
+
+
 class TestFactory:
     """Test create_llm factory function"""
 
