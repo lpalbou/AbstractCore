@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.15.2] - 2026-09-25
+
+The default MLX model now names a repo that exists, so a first MLX download works, and
+`llms-full.txt` covers every page the docs index links.
+
 ### Fixed
 
 - The default MLX model is now `mlx-community/Qwen3-4B-4bit`, a repo that exists on Hugging Face.
