@@ -87,6 +87,91 @@ def _suppress_onnx_warnings():
         yield
 
 
+def _hf_download_cache_folder() -> Optional[str]:
+    """The hub cache a load that MAY download writes to: huggingface_hub's own
+    resolution (HF_HUB_CACHE / HF_HOME / its default), passed per call as
+    `cache_folder=` -- the same directory the offline resolver reads."""
+    try:
+        from huggingface_hub import constants as _hf_constants  # type: ignore
+
+        return str(_hf_constants.HF_HUB_CACHE)
+    except Exception:
+        return None
+
+
+def _merge_save_pickle_cache(path: Path, in_memory: Dict[str, Any], added: set, *, label: str) -> bool:
+    """Persist a pickled embeddings cache without ever losing on-disk entries.
+
+    Why (incident 2026-09-24): every EmbeddingManager saved its WHOLE in-memory
+    cache over the file at interpreter exit, last writer wins. A process that
+    loaded nothing (a test run, a second app on the same model) and exited
+    later replaced the operator's populated cache with an empty one.
+
+    The rules, in order:
+    1. Nothing was added in this process (`added` empty) -> no write at all.
+    2. Merge on save: under an advisory lock (POSIX), re-read the file as it
+       is NOW and union it with the in-memory entries, so entries another
+       process wrote since our load survive.
+    3. Never write an empty mapping (an empty write can only lose data).
+    4. Atomic publish: unique temp file in the same directory + os.replace,
+       so a reader never sees a half-written pickle.
+    Returns True when the file was written.
+    """
+    if not added:
+        return False
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_fh = None
+    try:
+        try:
+            import fcntl  # POSIX only; best-effort elsewhere
+
+            lock_fh = builtins.open(str(path) + ".lock", "a+b")
+            fcntl.flock(lock_fh.fileno(), fcntl.LOCK_EX)
+        except Exception:
+            lock_fh = None
+
+        on_disk: Dict[str, Any] = {}
+        if path.exists():
+            try:
+                with builtins.open(path, "rb") as f:
+                    loaded = pickle.load(f)
+                if isinstance(loaded, dict):
+                    on_disk = loaded
+            except Exception as e:
+                logger.warning(f"Existing {label} cache {path} is unreadable ({e}); writing this process's entries")
+
+        merged: Dict[str, Any] = dict(on_disk)
+        merged.update(in_memory)
+        if not merged:
+            return False
+
+        import tempfile
+
+        fd, tmp_name = tempfile.mkstemp(prefix=path.name + ".", suffix=".tmp", dir=str(path.parent))
+        try:
+            with os.fdopen(fd, "wb") as f:
+                pickle.dump(merged, f)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_name, path)
+        except BaseException:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
+        added.clear()
+        logger.debug(f"Saved {len(merged)} {label} to {path} ({len(on_disk)} already on disk)")
+        return True
+    finally:
+        if lock_fh is not None:
+            try:
+                lock_fh.close()
+            except Exception:
+                pass
+
+
 def _get_optimal_onnx_model() -> Optional[str]:
     """Select optimal ONNX model using conservative strategy.
 
@@ -405,12 +490,19 @@ class EmbeddingManager:
                     "Install with: pip install \"abstractcore[embeddings]\""
                 )
 
-            # Set HuggingFace cache directory (sentence-transformers uses this automatically)
-            import os
-            hf_cache_dir = os.path.expanduser("~/.cache/huggingface/")
-            os.environ.setdefault("HF_HOME", hf_cache_dir)
-            os.environ.setdefault("TRANSFORMERS_CACHE", hf_cache_dir)
-            os.environ.setdefault("HF_DATASETS_CACHE", hf_cache_dir)
+            # No process-wide environment writes (mission EE): this used to
+            # `os.environ.setdefault` HF_HOME, TRANSFORMERS_CACHE and
+            # HF_DATASETS_CACHE (the last one to the wrong layout) for the
+            # WHOLE process and every child it spawns. Where to read or write
+            # is now a per-call argument: the resolved snapshot directory, or
+            # `cache_folder=` on a load that may download.
+
+            # Offline-first is enforced HERE, per call (mission V): resolve the
+            # cached snapshot directory and pass `local_files_only=True`, or
+            # fail with a plain "download it first". This load used to stay
+            # offline only when the HF provider had already written
+            # HF_HUB_OFFLINE=1 into the process; that write is gone.
+            source, load_kwargs = self._sentence_transformers_source()
 
             # Determine best backend
             backend = self._select_backend()
@@ -424,10 +516,11 @@ class EmbeddingManager:
                         model_kwargs = {"file_name": optimal_onnx} if optimal_onnx else {}
 
                         self.model = sentence_transformers.SentenceTransformer(
-                            self.model_id,
+                            source,
                             backend="onnx",
                             model_kwargs=model_kwargs,
-                            trust_remote_code=self.trust_remote_code
+                            trust_remote_code=self.trust_remote_code,
+                            **load_kwargs,
                         )
                         onnx_model = optimal_onnx or "model.onnx"
                         logger.info(f"Loaded {self.model_id} with ONNX backend ({onnx_model})")
@@ -437,22 +530,25 @@ class EmbeddingManager:
                         try:
                             # Fallback to basic ONNX
                             self.model = sentence_transformers.SentenceTransformer(
-                                self.model_id,
+                                source,
                                 backend="onnx",
-                                trust_remote_code=self.trust_remote_code
+                                trust_remote_code=self.trust_remote_code,
+                                **load_kwargs,
                             )
                             logger.info(f"Loaded {self.model_id} with basic ONNX backend")
                         except Exception as e2:
                             logger.warning(f"All ONNX variants failed: {e2}. Falling back to PyTorch.")
                             self.model = sentence_transformers.SentenceTransformer(
-                                self.model_id,
-                                trust_remote_code=self.trust_remote_code
+                                source,
+                                trust_remote_code=self.trust_remote_code,
+                                **load_kwargs,
                             )
                             logger.info(f"Loaded {self.model_id} with PyTorch backend")
                 else:
                     self.model = sentence_transformers.SentenceTransformer(
-                        self.model_id,
-                        trust_remote_code=self.trust_remote_code
+                        source,
+                        trust_remote_code=self.trust_remote_code,
+                        **load_kwargs,
                     )
                     logger.info(f"Loaded {self.model_id} with PyTorch backend")
 
@@ -465,6 +561,55 @@ class EmbeddingManager:
         except Exception as e:
             logger.error(f"Failed to load embedding model {self.model_id}: {e}")
             raise
+
+    def _sentence_transformers_source(self) -> "tuple[str, Dict[str, Any]]":
+        """`(name_or_path, extra_kwargs)` for `SentenceTransformer(...)`.
+
+        Local-only (`offline.offline_first`, or `force_local_files_only`, both
+        default on -- the same rule as the HF provider): the model id resolves
+        to its cached snapshot DIRECTORY (`resolve_hf_load_snapshot`: refs/main,
+        else the newest usable snapshot), loaded with `local_files_only=True`,
+        so nothing asks the Hub -- not even for a `refs/main` a pinned download
+        may lack. A bare legacy name (`all-MiniLM-L6-v2`) is also looked up as
+        `sentence-transformers/<name>`, as sentence-transformers itself does.
+        Not cached -> ModelNotFoundError with the plain "download it first".
+        Otherwise the id is passed through and may download on first use.
+        """
+        try:
+            from ..config import get_config_manager
+
+            cfg = get_config_manager()
+            local_only = bool(cfg.is_offline_first() or cfg.should_force_local_files_only())
+        except Exception:
+            local_only = True
+        name = str(self.model_id or "").strip()
+        if not local_only:
+            # May download on first use: say WHERE per call (the hub cache
+            # huggingface_hub resolves), never through os.environ.
+            return name, {"cache_folder": _hf_download_cache_folder()}
+        candidate = Path(name).expanduser()
+        if candidate.is_dir():
+            return str(candidate), {"local_files_only": True}
+
+        from ..utils.model_cache import hf_hub_cache_dirs, resolve_hf_load_snapshot
+
+        cache_dirs = hf_hub_cache_dirs()
+        names = [name] if "/" in name else [f"sentence-transformers/{name}"]
+        for repo_id in names:
+            snapshot = resolve_hf_load_snapshot(repo_id, cache_dirs=cache_dirs)
+            if snapshot is not None:
+                logger.debug(f"Embedding model {name} resolved to cached snapshot {snapshot}")
+                return str(snapshot), {"local_files_only": True}
+
+        from ..config.manager import hf_download_first_hint
+        from ..exceptions import ModelNotFoundError
+
+        looked_in = ", ".join(str(d) for d in cache_dirs) or "no cache directory found"
+        raise ModelNotFoundError(
+            f"Embedding model {names[0]!r} is not in the local Hugging Face cache (looked in: {looked_in}); "
+            + hf_download_first_hint(names[0])
+            + "."
+        )
 
     def _select_backend(self) -> EmbeddingBackend:
         """Select the optimal backend automatically with intelligent model compatibility checking."""
@@ -502,28 +647,24 @@ class EmbeddingManager:
     def _has_preexported_onnx(self) -> bool:
         """Check if the model has pre-exported ONNX files in HuggingFace cache."""
         try:
-            import os
-            from pathlib import Path
-
-            # Get HuggingFace cache directory
-            hf_cache_dir = Path.home() / ".cache" / "huggingface" / "hub"
+            from ..utils.model_cache import hf_hub_cache_dirs
 
             # Convert model ID to cache directory format (org--model)
             cache_dir_name = f"models--{self.model_id.replace('/', '--')}"
-            model_cache_dir = hf_cache_dir / cache_dir_name
+            onnx_patterns = ["model.onnx", "onnx/model.onnx", "onnx/model_O*.onnx"]
 
-            if not model_cache_dir.exists():
-                return False
-
-            # Look for ONNX files in snapshots
-            for snapshot_dir in model_cache_dir.glob("snapshots/*"):
-                if snapshot_dir.is_dir():
-                    # Check for common ONNX file patterns
-                    onnx_patterns = ["model.onnx", "onnx/model.onnx", "onnx/model_O*.onnx"]
-                    for pattern in onnx_patterns:
-                        if list(snapshot_dir.glob(pattern)):
-                            logger.debug(f"Found pre-exported ONNX files for {self.model_id}")
-                            return True
+            # Every hub cache a load reads (HF_HUB_CACHE / HF_HOME / the
+            # configured cache dir), never only `~/.cache/huggingface/hub`.
+            for hf_cache_dir in hf_hub_cache_dirs():
+                model_cache_dir = hf_cache_dir / cache_dir_name
+                if not model_cache_dir.exists():
+                    continue
+                for snapshot_dir in model_cache_dir.glob("snapshots/*"):
+                    if snapshot_dir.is_dir():
+                        for pattern in onnx_patterns:
+                            if list(snapshot_dir.glob(pattern)):
+                                logger.debug(f"Found pre-exported ONNX files for {self.model_id}")
+                                return True
 
             return False
 
@@ -603,18 +744,22 @@ class EmbeddingManager:
             logger.warning(f"Failed to load normalized cache: {e}")
         return {}
 
+    def _note_added(self, which: str, key: str) -> None:
+        """Record that THIS process added `key` to cache `which` (so a save has work to do)."""
+        self.__dict__.setdefault(f"_{which}_added", set()).add(key)
+
     def _save_persistent_cache(self):
-        """Save persistent cache to disk."""
+        """Save persistent cache to disk (merge-on-save, atomic, never shrinks the file)."""
         try:
             # Check if cache file attributes exist (may not if initialization failed)
             if not hasattr(self, 'cache_file') or not hasattr(self, '_persistent_cache'):
                 return
-
-            # Ensure directory exists
-            self.cache_file.parent.mkdir(parents=True, exist_ok=True)
-            with builtins.open(self.cache_file, 'wb') as f:
-                pickle.dump(self._persistent_cache, f)
-            logger.debug(f"Saved {len(self._persistent_cache)} embeddings to persistent cache")
+            _merge_save_pickle_cache(
+                self.cache_file,
+                self._persistent_cache,
+                self.__dict__.setdefault("_persistent_added", set()),
+                label="embeddings",
+            )
         except Exception as e:
             logger.warning(f"Failed to save persistent cache: {e}")
 
@@ -631,17 +776,17 @@ class EmbeddingManager:
             pass
 
     def _save_normalized_cache(self):
-        """Save normalized embeddings cache to disk."""
+        """Save normalized embeddings cache to disk (merge-on-save, atomic, never shrinks the file)."""
         try:
             # Check if cache file attributes exist (may not if initialization failed)
             if not hasattr(self, 'normalized_cache_file') or not hasattr(self, '_normalized_cache'):
                 return
-
-            # Ensure directory exists
-            self.normalized_cache_file.parent.mkdir(parents=True, exist_ok=True)
-            with builtins.open(self.normalized_cache_file, 'wb') as f:
-                pickle.dump(self._normalized_cache, f)
-            logger.debug(f"Saved {len(self._normalized_cache)} normalized embeddings to cache")
+            _merge_save_pickle_cache(
+                self.normalized_cache_file,
+                self._normalized_cache,
+                self.__dict__.setdefault("_normalized_added", set()),
+                label="normalized embeddings",
+            )
         except Exception as e:
             logger.warning(f"Failed to save normalized cache: {e}")
 
@@ -749,6 +894,7 @@ class EmbeddingManager:
 
             # Store in normalized cache
             self._normalized_cache[text_hash] = normalized_embedding
+            self._note_added("normalized", text_hash)
 
             # Periodically save normalized cache
             if len(self._normalized_cache) % 10 == 0:
@@ -826,6 +972,7 @@ class EmbeddingManager:
 
             # Store in persistent cache
             self._persistent_cache[text_hash] = embedding
+            self._note_added("persistent", text_hash)
 
             # Periodically save cache
             if len(self._persistent_cache) % 10 == 0:
@@ -905,6 +1052,7 @@ class EmbeddingManager:
 
                         text_hash = self._text_hash(text)
                         self._persistent_cache[text_hash] = embedding_list
+                        self._note_added("persistent", text_hash)
                         cached_embeddings[idx] = embedding_list
 
                     logger.debug(f"Generated {len(batch_embeddings)} embeddings in batch (HuggingFace)")
@@ -928,6 +1076,7 @@ class EmbeddingManager:
 
                             text_hash = self._text_hash(text)
                             self._persistent_cache[text_hash] = embedding
+                            self._note_added("persistent", text_hash)
                             cached_embeddings[idx] = embedding
 
                         logger.debug(f"Generated {len(result['data'])} embeddings in batch ({self.provider})")
@@ -1436,6 +1585,8 @@ class EmbeddingManager:
         self.embed.cache_clear()
         self._persistent_cache.clear()
         self._normalized_cache.clear()
+        self.__dict__.setdefault("_persistent_added", set()).clear()
+        self.__dict__.setdefault("_normalized_added", set()).clear()
         if self.cache_file.exists():
             self.cache_file.unlink()
         if self.normalized_cache_file.exists():

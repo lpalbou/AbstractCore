@@ -20,6 +20,10 @@ from abstractcore.embeddings.models import (
 )
 from abstractcore.embeddings.manager import EmbeddingManager
 
+# Offline-first loading (mission V): the model must be in the local HF cache
+# even though `sentence_transformers` is mocked -- see conftest.py.
+pytestmark = pytest.mark.usefixtures("fake_embedding_snapshots")
+
 
 class TestEmbeddingModels:
     """Test embedding model configurations."""
