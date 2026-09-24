@@ -358,10 +358,10 @@ class TimeoutConfig:
 
 # The Hugging Face offline switches as the OPERATOR left them when this process
 # imported AbstractCore (the package imports this module first, so any
-# in-process writer runs later). AbstractCore itself no longer writes them:
-# the MLX provider's load-time write (mission S) and the HF provider's
-# import-time write (mission U) are gone, and every AbstractCore loader enforces
-# offline-first PER CALL (cache resolution + `local_files_only=True`). Writers
+# in-process writer runs later). AbstractCore never writes them: a flag written
+# into os.environ is inherited by every child process and turns an explicit
+# download into an offline error, so every AbstractCore loader enforces
+# offline-first PER CALL instead (cache resolution + `local_files_only=True`). Writers
 # that remain are outside AbstractCore -- abstractvoice sets HF_HUB_OFFLINE=1
 # briefly around some loads and restores it; a third-party library may not.
 # `offline_first` means "never download on-demand while LOADING a model"; it is
@@ -460,12 +460,11 @@ class OfflineConfig:
     offline_first: bool = True  # AbstractCore is designed offline-first for open source LLMs
     allow_network: bool = False  # Allow network access when offline_first is True (for API providers)
     force_local_files_only: bool = True  # Force local_files_only for HuggingFace transformers
-    # Privacy (mission EE, 2026-09-24): may `fetch_url` / the PDF router send a
-    # fetched PDF to a remote LLM (the OpenAI-compatible endpoint behind
-    # OPENAI_API_KEY / OPENAI_BASE_URL) for extraction and a summary? Off by
-    # default: PDFs are extracted locally (pypdf) and a configured API key
-    # alone never uploads a document. Turn on with
-    # `abstractcore --allow-remote-pdf-extraction`.
+    # Privacy: whether `fetch_url` / the PDF router may send a fetched PDF to a
+    # remote LLM (the OpenAI-compatible endpoint behind OPENAI_API_KEY /
+    # OPENAI_BASE_URL) for extraction and a summary. Off by default: PDFs are
+    # extracted locally (pypdf) and a configured API key alone never uploads a
+    # document. Turn on with `abstractcore --allow-remote-pdf-extraction`.
     allow_remote_pdf_extraction: bool = False
 
 
