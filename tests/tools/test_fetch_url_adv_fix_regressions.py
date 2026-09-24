@@ -254,7 +254,10 @@ def test_deeply_nested_markup_does_not_blow_up_the_cost():
     start = time.perf_counter()
     _extract_main_content(html, "https://example.com/x", keep_links=True)
     elapsed = time.perf_counter() - start
-    assert elapsed < 2.0, f"2000 nested divs ({len(html)//1024}KB) took {elapsed:.2f}s"
+    # ~0.25s on a developer machine; a shared CI runner (Python 3.9) took 2.05s
+    # on 2026-09-24. 5.0s absorbs runner noise and still catches the old
+    # quadratic cost (~5.7s on a developer machine, far more on a runner).
+    assert elapsed < 5.0, f"2000 nested divs ({len(html)//1024}KB) took {elapsed:.2f}s"
 
 
 MALFORMED = {
