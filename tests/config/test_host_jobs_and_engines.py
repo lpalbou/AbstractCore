@@ -410,3 +410,39 @@ def test_cancel_kills_the_whole_process_tree_not_just_the_child(host):
                 break
         time.sleep(0.1)
     assert not alive, "the grandchild survived the cancel"
+
+
+# ---------------------------------------------------------------------------
+# Apps placed in ~/Applications (user-level installs, no admin rights)
+# ---------------------------------------------------------------------------
+
+
+def _fake_mac_app(folder, name: str, version: str, cli: str = ""):
+    app = folder / name
+    (app / "Contents" / "Resources").mkdir(parents=True)
+    (app / "Contents" / "Info.plist").write_bytes(
+        b'<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>CFBundleShortVersionString</key><string>'
+        + version.encode() + b"</string></dict></plist>"
+    )
+    if cli:
+        tool = app / "Contents" / "Resources" / cli
+        tool.write_text("#!/bin/sh\necho 'ollama version is " + version + "'\n")
+        tool.chmod(0o755)
+    return app
+
+
+def test_mac_apps_in_the_users_applications_folder_are_detected(tmp_path, monkeypatch) -> None:
+    from pathlib import Path
+
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    user_apps = tmp_path / "Applications"
+    app = _fake_mac_app(user_apps, "ZZ Engine Test.app", "1.2.3")
+    assert engines._mac_app("ZZ Engine Test.app") == app
+    assert engines._mac_app("ZZ Missing.app") is None
+
+    ollama = _fake_mac_app(user_apps, "Ollama.app", "0.34.3", cli="ollama")
+    monkeypatch.setattr(engines, "_mac_app", lambda name: ollama if name == "Ollama.app" else None)
+    monkeypatch.setattr(engines.shutil, "which", lambda name: None)
+    engines._reset_caches_for_tests()
+    got = engines._detect_ollama("darwin")
+    assert got == {"installed": True, "install_location": str(ollama), "version": "0.34.3"}

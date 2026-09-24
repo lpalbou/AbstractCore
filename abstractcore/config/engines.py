@@ -493,15 +493,29 @@ def _find_spec(name: str) -> bool:
         return False
 
 
+def _mac_app(name: str) -> Optional[Path]:
+    """`/Applications/<name>`, else `~/Applications/<name>` (a user-level install, no admin rights)."""
+
+    for folder in (Path("/Applications"), Path.home() / "Applications"):
+        candidate = folder / name
+        if candidate.exists():
+            return candidate
+    return None
+
+
 def _detect_ollama(os_id: str) -> Dict[str, Any]:
     cli = shutil.which("ollama")
     location = cli
     app: Optional[Path] = None
     if os_id == "darwin":
-        candidate = Path("/Applications/Ollama.app")
-        if candidate.exists():
-            app = candidate
-            location = location or str(candidate)
+        app = _mac_app("Ollama.app")
+        if app is not None:
+            location = location or str(app)
+            # The app ships its CLI inside the bundle; /usr/local/bin/ollama is only a link
+            # the app offers to create (admin), so an install without it is still complete.
+            bundled = app / "Contents" / "Resources" / "ollama"
+            if cli is None and bundled.exists():
+                cli = str(bundled)
     elif os_id == "windows":
         local = os.getenv("LOCALAPPDATA") or ""
         candidate = Path(local) / "Programs" / "Ollama" / "ollama.exe" if local else None
@@ -526,9 +540,7 @@ def _detect_lmstudio(os_id: str) -> Dict[str, Any]:
     version: Optional[str] = None
     app: Optional[Path] = None
     if os_id == "darwin":
-        candidate = Path("/Applications/LM Studio.app")
-        if candidate.exists():
-            app = candidate
+        app = _mac_app("LM Studio.app")
     elif os_id == "windows":
         local = os.getenv("LOCALAPPDATA") or ""
         candidate = Path(local) / "Programs" / "LM Studio" if local else None
