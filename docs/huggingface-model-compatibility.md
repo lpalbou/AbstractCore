@@ -132,6 +132,46 @@ export ABSTRACTCORE_MLX_MODEL_PATTERNS="acme/*-mlxq,someorg/one-model"
 Use these when a publisher ships MLX under a name no rule recognizes, rather than
 waiting for a new release of AbstractCore.
 
+## Loading from the local cache (offline-first)
+
+With `offline_first` on (the default), a transformers load never downloads. The provider
+finds the model's cached snapshot directory itself (`refs/main`, else the newest snapshot
+that has a `config.json` or an `adapter_config.json`). It passes that directory, with
+`local_files_only=True`, to `AutoConfig`, `AutoTokenizer` / `AutoProcessor` and the model
+class. It never sets `HF_HUB_OFFLINE` or related variables, so child processes are not
+affected.
+
+Why a directory rather than the repo id: transformers finds a repo id offline through
+`refs/main`. AbstractCore's own downloads pin the commit they listed, and for a pinned
+commit huggingface_hub writes no `refs/main`. A load by id from such a snapshot failed
+with "couldn't connect to huggingface.co ... couldn't find them in the cached files",
+even though every file was present. Transformers also checks the Hub for
+`adapter_config.json` even with `local_files_only=True`. Neither happens with a directory.
+
+What a snapshot can be loaded as depends on its files:
+
+| Cached snapshot holds | Result |
+|---|---|
+| `config.json` + weights | loads, no network |
+| `adapter_config.json` (PEFT / LoRA) with a cached base model | the base loads from its snapshot and the adapter is attached from its own directory (needs `peft`) |
+| `adapter_config.json` whose base is not cached | `ModelNotFoundError` naming the base and its download command |
+| `config.json` without weights | `ModelNotFoundError`: the download did not finish |
+| no config at all (for example a README-only diffusion LoRA) | `ModelNotFoundError`: not a transformers model |
+| nothing | `ModelNotFoundError`: `download it first: abstractcore models download huggingface <repo>` |
+
+**Adapters need a `peft` that matches your transformers.** AbstractCore does not pin `peft` in
+any extra. The minimum is set by transformers itself (`transformers.integrations.peft.MIN_PEFT_VERSION`):
+`peft>=0.18.2` for transformers 5.8, and `peft>=0.19.1` for transformers 5.17. With transformers
+5.17, peft 0.18.x fails inside `load_adapter` with
+`cannot import name '_maybe_shard_state_dict_for_tp'`. The provider checks the installed pair
+before it loads the base model. If `peft` is missing, too old, or cannot be imported, the load
+raises `ProviderError`, and no raw `ImportError` gets through. For example:
+`adapter support needs peft >= 0.19.1 compatible with transformers 5.17.0; installed: peft 0.18.1, transformers 5.17.0. Fix: pip install -U "peft>=0.19.1".`
+
+With `offline_first` and `force_local_files_only` both off, a model that is not fully
+cached is passed to transformers by repo id, which may download it. The provider logs
+this.
+
 ## AbstractCore Policy
 
 AbstractCore should improve compatibility without making the default install fragile:

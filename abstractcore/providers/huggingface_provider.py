@@ -27,23 +27,30 @@ from typing import List, Dict, Any, Optional, Sequence, Union, Iterator, Type, T
 # Import config manager to respect offline-first settings
 from ..config.manager import get_config_manager
 
-# Get config instance and set offline environment variables if needed
 _config = get_config_manager()
 
-# Did the CALLER ask for offline, or did we? `offline_first` defaults to True,
-# so the three variables below are almost always ours. That distinction is
-# load-bearing exactly once — see `_resolve_bnb_mps_fused_kernel`, which may
-# lift OUR flag for a single accelerator-kernel resolution but must never
-# override an offline setting the user made deliberately.
+# OFFLINE-FIRST IS PER LOAD CALL, NEVER PER PROCESS (mission U, 2026-09-24).
+#
+# This module used to write TRANSFORMERS_OFFLINE / HF_DATASETS_OFFLINE /
+# HF_HUB_OFFLINE = 1 into `os.environ` at IMPORT whenever `offline_first` was
+# on. That poisoned the whole process and everything it spawned: every child
+# (engine installs, app launches, the tray, tools, download jobs) inherited the
+# flags, and in-process the write was a coin toss -- huggingface_hub snapshots
+# the flag into `constants.HF_HUB_OFFLINE` at ITS import, so it only took effect
+# when this module happened to be imported first. Do not reintroduce it.
+#
+# The load path now enforces offline-first by construction instead
+# (`_resolve_transformers_load_source`): the model is resolved to its cached
+# snapshot DIRECTORY and transformers is handed that path plus
+# `local_files_only=True` on every call, so no load reaches the Hub; a model
+# that is not cached fails fast with a plain "download it first" message.
+#
+# The Hub offline variables as the operator set them before this module was
+# imported. Only these ever mean "the user asked for offline".
 _USER_SET_HF_OFFLINE = {
     name: os.environ.get(name)
     for name in ("TRANSFORMERS_OFFLINE", "HF_DATASETS_OFFLINE", "HF_HUB_OFFLINE")
 }
-
-if _config.is_offline_first():
-    os.environ["TRANSFORMERS_OFFLINE"] = "1"
-    os.environ["HF_DATASETS_OFFLINE"] = "1"
-    os.environ["HF_HUB_OFFLINE"] = "1"
 
 def _module_available(name: str) -> bool:
     try:
@@ -70,6 +77,7 @@ from ..exceptions import (
     InvalidRequestError,
     ModelArtifactMismatchError,
     ModelNotFoundError,
+    ProviderError,
     format_model_error,
 )
 from .generation_cancel import CANCEL_KWARG, as_cancel_event, cancelled_error, raise_if_cancelled
@@ -343,63 +351,47 @@ def _warn_if_mps_sdpa_defective(device, model) -> bool:
 # it would run, at model-load time, and say so out loud when it fails.
 _BNB_MPS_FUSED_KERNEL_REPO = "kernels-community/bitsandbytes-mps"
 
-# Serialises the brief offline-flag lift below. The lift mutates process-wide
-# state, so no two loads may overlap inside it.
+# Serialises the one kernel resolution per process below.
 _BNB_KERNEL_RESOLVE_LOCK = threading.Lock()
 
-# The lift is attempted at most ONCE per process. On a genuinely disconnected
-# machine it costs 7.2 s before huggingface_hub's own connect timeout gives up
-# (measured against a black-hole endpoint; bounded, and the flags are restored)
-# — acceptable once against a permanent x4 decode penalty, not acceptable on
-# every subsequent model load. bitsandbytes' own latch cannot serve as this
-# memo: it is only set when ITS `_get_kernel()` runs, and a failed lift never
-# reaches that call.
-_BNB_KERNEL_LIFT_ATTEMPTED = False
+# The resolution is attempted at most ONCE per process. On a genuinely
+# disconnected machine it costs ~7.2 s before huggingface_hub's own connect
+# timeout gives up (measured against a black-hole endpoint) -- acceptable once
+# against a permanent x4 decode penalty, not on every subsequent model load.
+# bitsandbytes' own latch cannot serve as this memo: it is only set when ITS
+# `_get_kernel()` runs, and a failed resolution never reaches that call.
+_BNB_KERNEL_RESOLVE_ATTEMPTED = False
+_BNB_KERNEL_RESOLVE_ERROR: Optional[BaseException] = None
 
 
 def _resolve_bnb_mps_fused_kernel():
-    """Resolve the fused Metal 4-bit kernel, lifting OUR offline flag if needed.
+    """Resolve the fused Metal 4-bit kernel once per process, then prime bitsandbytes.
 
-    THE PRODUCT BUG THIS FIXES (measured 2026-08-06, in-process, one variable):
-    `offline_first` (default True) sets `HF_HUB_OFFLINE=1` at the top of this
-    module, and `kernels.get_kernel` verifies the kernel repo's publisher over
-    the Hub API — a check with no offline path. Through the product path the
-    resolution therefore fails in 0.008 s, bitsandbytes latches the failure for
-    the life of the process, and every `Linear4bit` forward silently falls back
-    to `dequantize -> F.linear` at about x4 the cost. A benchmark harness that
-    happened to import bitsandbytes BEFORE abstractcore got the fused kernel and
-    kept it (`kernels.get_kernel` memoises), which is how a warm NF4 figure of
-    0.0681 s came to be published against a product-path reality of 0.2696 s.
+    HISTORY (measured 2026-08-06): `kernels.get_kernel` verifies the kernel
+    repo's publisher over the Hub API -- a check with no offline path. While
+    this module wrote HF_HUB_OFFLINE=1 at import, that check failed in 0.008 s,
+    bitsandbytes latched the failure for the life of the process, and every
+    `Linear4bit` forward fell back to `dequantize -> F.linear` at about x4 the
+    cost; this function then lifted that self-inflicted flag for one retry. The
+    import-time write is gone (mission U), so there is nothing of ours to lift:
+    the resolution simply runs, once.
 
-    `offline_first` exists to keep model WEIGHTS off the network. It was never
-    meant to disable an accelerator. So: try the shipped offline path first; if
-    that fails, retry ONCE with our own flag lifted, then put it back.
+    `offline_first` keeps model WEIGHTS off the network; it was never meant to
+    disable an accelerator, so this one Hub check is allowed at a 4-bit MPS
+    load (it runs only for a bitsandbytes 4-bit checkpoint on MPS).
 
-    Clearing the environment variable is NOT sufficient and that is not an
-    oversight — `huggingface_hub` snapshots `HF_HUB_OFFLINE` into
-    `constants.HF_HUB_OFFLINE` at ITS import, so the constant must be patched
-    too (env-only: still fails in 0.000 s; env + constant: succeeds in 0.608 s).
-    Both are restored in `finally`, whatever happens.
+    Never overrides an offline setting the USER made: `_USER_SET_HF_OFFLINE`
+    records the variables as found before this module was imported; when one
+    of them is set the failure is reported as 'declined-user-offline' and those
+    callers get the warning instead.
 
-    Never lifts a flag the USER set: `_USER_SET_HF_OFFLINE` records the values
-    that existed before this module touched them, and a user-set offline flag is
-    left exactly as found — those callers get the warning instead.
-
-    The lifted window must cover BITSANDBYTES' OWN `_get_kernel()`, not just
-    ours, and that is not belt-and-braces. `kernels.get_kernel` memoises the
-    build it returns but re-runs `_check_trust_remote_code` on EVERY call, so a
-    resolution we complete and then hand back to a re-armed offline flag buys
-    bitsandbytes nothing — measured: our call succeeds via the lift, bitsandbytes'
-    next call still returns None and latches. Priming its module-global `_kernel`
-    inside the window is what makes the fused path reachable, and once that
-    global is set bitsandbytes never calls `get_kernel` again.
-
-    Ordering is load-bearing too: bitsandbytes' `_get_kernel()` is NEVER called
+    Ordering is load-bearing: bitsandbytes' `_get_kernel()` is NEVER called
     before a plain `get_kernel` has succeeded, because its `except` arm latches
-    `_kernel_load_failed = True` permanently and every later attempt — lifted or
-    not — short-circuits on that latch.
+    `_kernel_load_failed = True` permanently. Priming its module-global
+    `_kernel` right after our success is what makes the fused path reachable;
+    once that global is set bitsandbytes never calls `get_kernel` again.
 
-    Returns (kernel_or_None, how) where `how` is 'offline', 'network-lift',
+    Returns (kernel_or_None, how) where `how` is 'resolved', 'already-resolved',
     'declined-user-offline' or 'failed'.
     """
     try:
@@ -410,8 +402,8 @@ def _resolve_bnb_mps_fused_kernel():
 
     def _prime_bnb():
         """Populate bitsandbytes' module-global `_kernel`. Only ever called
-        after a plain `get_kernel` has already succeeded under the same
-        conditions, so its latching `except` arm cannot be reached."""
+        after a plain `get_kernel` has already succeeded, so its latching
+        `except` arm cannot be reached."""
         try:
             return bnb_ops._get_kernel()
         except Exception:  # noqa: BLE001 - bitsandbytes swallows internally
@@ -424,55 +416,22 @@ def _resolve_bnb_mps_fused_kernel():
     if existing is not None and not getattr(bnb_ops, "_kernel_load_failed", False):
         return existing, "already-resolved"
 
-    try:
-        get_kernel(_BNB_MPS_FUSED_KERNEL_REPO, version=1)
-        primed = _prime_bnb()
-        if primed is not None:
-            return primed, "offline"
-    except Exception:
-        pass
-
-    # The user asked for offline explicitly — respect it and do not retry.
-    if any(str(v or "").strip() not in ("", "0")
-           for v in _USER_SET_HF_OFFLINE.values()):
-        return None, "declined-user-offline"
-
-    if not _config.is_offline_first():
-        return None, "failed"  # nothing of ours to lift; the failure is real
-
-    global _BNB_KERNEL_LIFT_ATTEMPTED
-    names = ("TRANSFORMERS_OFFLINE", "HF_DATASETS_OFFLINE", "HF_HUB_OFFLINE")
+    global _BNB_KERNEL_RESOLVE_ATTEMPTED, _BNB_KERNEL_RESOLVE_ERROR
     with _BNB_KERNEL_RESOLVE_LOCK:
-        if _BNB_KERNEL_LIFT_ATTEMPTED:
-            return None, "failed"  # already tried this process; do not re-stall
-        _BNB_KERNEL_LIFT_ATTEMPTED = True
-        saved_env = {n: os.environ.get(n) for n in names}
-        hub_constants = None
-        saved_constant = None
-        try:
-            import huggingface_hub.constants as hub_constants  # type: ignore
+        if not _BNB_KERNEL_RESOLVE_ATTEMPTED:
+            _BNB_KERNEL_RESOLVE_ATTEMPTED = True
+            try:
+                get_kernel(_BNB_MPS_FUSED_KERNEL_REPO, version=1)
+                primed = _prime_bnb()
+                if primed is not None:
+                    return primed, "resolved"
+                _BNB_KERNEL_RESOLVE_ERROR = RuntimeError("bitsandbytes' own _get_kernel() returned None")
+            except Exception as exc:  # noqa: BLE001 - kept to name it in the probe
+                _BNB_KERNEL_RESOLVE_ERROR = exc
 
-            saved_constant = getattr(hub_constants, "HF_HUB_OFFLINE", None)
-        except Exception:
-            hub_constants = None
-        try:
-            for n in names:
-                os.environ.pop(n, None)
-            if hub_constants is not None:
-                hub_constants.HF_HUB_OFFLINE = False
-            get_kernel(_BNB_MPS_FUSED_KERNEL_REPO, version=1)
-            primed = _prime_bnb()
-            return (primed, "network-lift") if primed is not None else (None, "failed")
-        except Exception:
-            return None, "failed"
-        finally:
-            for n, v in saved_env.items():
-                if v is None:
-                    os.environ.pop(n, None)
-                else:
-                    os.environ[n] = v
-            if hub_constants is not None and saved_constant is not None:
-                hub_constants.HF_HUB_OFFLINE = saved_constant
+    if any(str(v or "").strip() not in ("", "0") for v in _USER_SET_HF_OFFLINE.values()):
+        return None, "declined-user-offline"
+    return None, "failed"
 
 
 def _probe_bnb_mps_fused_kernel() -> Dict[str, Any]:
@@ -544,27 +503,22 @@ def _probe_bnb_mps_fused_kernel() -> Dict[str, Any]:
         )
         return record
 
-    # Run the real resolution, lifting our own offline flag if that is what is
-    # in the way (see `_resolve_bnb_mps_fused_kernel`). `kernels.get_kernel`
-    # memoises, so this is the work the first Linear4bit forward would have
-    # done, moved to load time — not extra work.
+    # Run the real resolution once (see `_resolve_bnb_mps_fused_kernel`).
+    # `kernels.get_kernel` memoises, so this is the work the first Linear4bit
+    # forward would have done, moved to load time — not extra work.
     kernel, how = _resolve_bnb_mps_fused_kernel()
     record["resolved_via"] = how
     if kernel is None:
-        try:
-            from kernels import get_kernel  # type: ignore
-
-            get_kernel(_BNB_MPS_FUSED_KERNEL_REPO, version=1)
-            e = RuntimeError("resolution failed under the offline flag")
-        except Exception as exc:  # noqa: BLE001 - captured only to name it
-            e = exc
+        e = _BNB_KERNEL_RESOLVE_ERROR or RuntimeError("resolution already failed earlier in this process")
         record["reason"] = f"{_BNB_MPS_FUSED_KERNEL_REPO} did not resolve"
         record["error"] = f"{type(e).__name__}: {e}"
         # `kernels` verifies the publisher over the Hub API and has no offline
-        # path, so abstractcore's own offline-first env (HF_HUB_OFFLINE=1, set
-        # at import) fails the check even when the kernel is already in the
-        # local cache. Isolated A/B on 2026-08-06: HF_HUB_OFFLINE=1 alone, with
-        # nothing else changed, turns a LOADED kernel into None and latches it.
+        # path, so an offline flag in this process's environment fails the
+        # check even when the kernel is already in the local cache. Isolated A/B
+        # on 2026-08-06: HF_HUB_OFFLINE=1 alone, with nothing else changed,
+        # turns a LOADED kernel into None and latches it. AbstractCore no longer
+        # writes these flags itself, so a flag seen here was set by the
+        # operator or inherited from a parent process.
         if "trust status" in str(e) and record["offline_flags_set"]:
             flags = ", ".join(record["offline_flags_set"])
             record["reason"] = (
@@ -575,11 +529,11 @@ def _probe_bnb_mps_fused_kernel() -> Dict[str, Any]:
                 "TRANSFORMERS_OFFLINE=1 alone, each turn a loading kernel into None"
             )
             record["remedy"] = (
-                "this is abstractcore's own offline-first env, not a packaging "
-                "fault: the Hub publisher check has no offline path in `kernels`. "
-                "Either allow that one Hub call at load (clear the offline flags "
-                "for the load), or accept the fallback and use the MLX/GGUF lane "
-                "for fast 4-bit"
+                "the offline flag comes from this process's environment (set by "
+                "the operator or inherited from a parent), not from AbstractCore: "
+                "the Hub publisher check has no offline path in `kernels`. Either "
+                "start the process without that flag, or accept the fallback and "
+                "use the MLX/GGUF lane for fast 4-bit"
             )
         else:
             record["remedy"] = kernels_pin_note
@@ -620,24 +574,206 @@ def _probe_bnb_mps_fused_kernel() -> Dict[str, Any]:
 # huggingface_hub not required for basic operation
 
 
+def _hf_load_cache_dirs() -> List[Path]:
+    """Hub cache directories a load may read, in priority order (no network).
+
+    huggingface_hub's own resolution first (HF_HUB_CACHE / HF_HOME / its
+    constant -- the cache transformers itself would read), then the
+    `cache.huggingface_cache_dir` config key, which older setups pointed at a
+    non-default location.
+    """
+    from ..utils.model_cache import hf_hub_cache_dirs
+
+    return hf_hub_cache_dirs()
+
+
 def _get_local_model_path(model_name: str) -> Optional[str]:
-    """Get local cache path for a HuggingFace model if it exists."""
-    # Use centralized configuration for cache directory
-    config = _config
-    hf_cache_dir = Path(config.config.cache.huggingface_cache_dir).expanduser()
+    """Cached snapshot directory for a HuggingFace repo id, or None (no network).
 
-    model_cache_name = f"models--{model_name.replace('/', '--')}"
-    model_cache_path = hf_cache_dir / "hub" / model_cache_name / "snapshots"
+    Same resolution as a load (`resolve_hf_load_snapshot`): `refs/main` first,
+    else the newest snapshot holding a config. The previous version read only
+    the `cache.huggingface_cache_dir` config key, so a process whose HF_HOME /
+    HF_HUB_CACHE pointed elsewhere looked in a different cache than transformers.
+    """
+    from ..utils.model_cache import resolve_hf_load_snapshot
 
-    if model_cache_path.exists():
-        snapshot_dirs = [d for d in model_cache_path.iterdir() if d.is_dir()]
-        if snapshot_dirs:
-            # Deterministic pick, matching `_find_gguf_in_cache`: `iterdir()` order is
-            # filesystem-dependent, so the previous `[0]` could hand back a different
-            # cached revision run to run. Same repository either way (never a
-            # substitution), but the choice must at least be reproducible.
-            return str(max(snapshot_dirs, key=lambda d: d.stat().st_mtime))
+    snapshot = resolve_hf_load_snapshot(model_name, cache_dirs=_hf_load_cache_dirs())
+    return str(snapshot) if snapshot is not None else None
+
+
+def _hf_load_is_local_only() -> bool:
+    """True when a transformers load must read the local cache only.
+
+    `offline_first` (default on) or the transformers-specific
+    `force_local_files_only` key (default on; kept for configs that turned
+    offline_first off but still want cache-only transformers loads).
+    """
+    try:
+        return bool(_config.is_offline_first() or _config.should_force_local_files_only())
+    except Exception:
+        return True
+
+
+def _hf_download_hint(model: str) -> str:
+    return (
+        f"download it first: `abstractcore models download huggingface {model}` "
+        "(or from the gateway console's Models page). Loading never downloads while "
+        "`offline.offline_first` is on; turn it off in the AbstractCore config to allow "
+        "on-demand downloads"
+    )
+
+
+def _peft_adapter_support_problem() -> Optional[str]:
+    """Why a PEFT adapter cannot be attached in this environment, or None.
+
+    The compatible peft range is set by TRANSFORMERS, not by AbstractCore:
+    `transformers.integrations.peft.MIN_PEFT_VERSION` (0.18.2 for transformers
+    5.8, 0.19.1 for 5.17). transformers 5.17's `load_adapter` imports
+    `peft.utils.save_and_load._maybe_shard_state_dict_for_tp`, which peft 0.18.x
+    lacks, and fails with a raw ImportError. AbstractCore does not pin peft in
+    any extra, so the pair is whatever the environment holds; this reads the
+    authoritative minimum at run time and names both installed versions.
+    """
+    import importlib.metadata as _md
+
+    def _installed(dist: str) -> str:
+        try:
+            return _md.version(dist)
+        except Exception:
+            return "not installed"
+
+    transformers_version = _installed("transformers")
+    min_peft: Optional[str] = None
+    try:
+        from transformers.integrations import peft as _tf_peft  # type: ignore
+
+        min_peft = str(getattr(_tf_peft, "MIN_PEFT_VERSION", "") or "") or None
+    except Exception:
+        min_peft = None
+    need = f"peft >= {min_peft}" if min_peft else "peft"
+    prefix = (
+        f"adapter support needs {need} compatible with transformers {transformers_version}; "
+        f"installed: peft {_installed('peft')}, transformers {transformers_version}"
+    )
+    fix = f" Fix: pip install -U \"{need.replace(' ', '')}\"."
+    try:
+        import peft  # type: ignore  # noqa: F401
+    except Exception as exc:  # noqa: BLE001 - reported, not swallowed
+        return f"{prefix} (importing peft failed: {type(exc).__name__}: {exc}).{fix}"
+    if min_peft:
+        try:
+            from packaging.version import Version
+
+            if Version(_installed("peft")) < Version(min_peft):
+                return f"{prefix}.{fix}"
+        except Exception:
+            pass
     return None
+
+
+@dataclass(frozen=True)
+class _TransformersLoadSource:
+    """What each transformers call of one load receives.
+
+    `model` / `tokenizer` are cached snapshot DIRECTORIES when the load is
+    local-only (so transformers never resolves `refs/main` or asks the Hub
+    anything), or the repo id when on-demand downloads are allowed and the model
+    is not fully cached. `adapter` is a PEFT adapter directory to attach to the
+    base model after it loads.
+    """
+
+    model: str
+    tokenizer: str
+    adapter: Optional[str] = None
+    local_only: bool = True
+    snapshot: Optional[str] = None
+
+
+def _resolve_transformers_load_source(model: str, *, local_only: bool, _depth: int = 0) -> _TransformersLoadSource:
+    """Resolve `model` for a transformers load. Local-only: cache or a plain error.
+
+    Raises ModelNotFoundError (never a network timeout) when a local-only load
+    cannot be served from disk: the repo is not cached, the snapshot has a
+    config but no weights, it holds neither config (a README-only partial
+    download, or a repository for another runtime such as a diffusion LoRA),
+    or it is a PEFT adapter whose base model is not cached.
+    """
+    from ..utils.model_cache import describe_hf_snapshot
+
+    name = str(model or "").strip()
+    candidate = Path(name).expanduser()
+    is_local_dir = candidate.is_dir()
+    snapshot = candidate if is_local_dir else (
+        Path(p) if (p := _get_local_model_path(name)) else None
+    )
+
+    def _online() -> _TransformersLoadSource:
+        _artifact_logger().info(
+            "huggingface: %r is not fully cached; offline_first is off, so transformers "
+            "may download it from the Hub during this load",
+            name,
+        )
+        return _TransformersLoadSource(model=name, tokenizer=name, local_only=False)
+
+    if snapshot is None:
+        if not local_only:
+            return _online()
+        raise ModelNotFoundError(
+            f"HuggingFace model {name!r} is not in the local Hugging Face cache "
+            f"(looked in: {', '.join(str(d) for d in _hf_load_cache_dirs()) or 'no cache directory found'}); "
+            + _hf_download_hint(name)
+            + "."
+        )
+
+    info = describe_hf_snapshot(snapshot)
+    kind = info["kind"]
+    shown_files = ", ".join(info["files"][:8]) + (" ..." if len(info["files"]) > 8 else "")
+
+    if kind == "model":
+        path = str(snapshot)
+        return _TransformersLoadSource(model=path, tokenizer=path, local_only=local_only, snapshot=path)
+
+    if kind == "adapter":
+        base = info.get("base_model")
+        if not base:
+            raise ModelNotFoundError(
+                f"HuggingFace model {name!r} is a PEFT adapter whose adapter_config.json names no "
+                "`base_model_name_or_path`, so there is no base model to attach it to."
+            )
+        if _depth > 0:
+            raise ModelNotFoundError(
+                f"HuggingFace adapter {name!r} names another adapter ({base!r}) as its base model; "
+                "only an adapter over a full model can be loaded."
+            )
+        try:
+            base_source = _resolve_transformers_load_source(base, local_only=local_only, _depth=_depth + 1)
+        except ModelNotFoundError as exc:
+            raise ModelNotFoundError(
+                f"HuggingFace model {name!r} is a PEFT adapter (LoRA) over base model {base!r}, "
+                f"which cannot be loaded: {exc}"
+            ) from exc
+        tokenizer = str(snapshot) if info.get("has_tokenizer") else base_source.tokenizer
+        return _TransformersLoadSource(
+            model=base_source.model,
+            tokenizer=tokenizer,
+            adapter=str(snapshot),
+            local_only=local_only,
+            snapshot=str(snapshot),
+        )
+
+    if not local_only and not is_local_dir:
+        return _online()
+    if kind == "config_only":
+        raise ModelNotFoundError(
+            f"HuggingFace model {name!r} is only partly on disk: {snapshot} has config.json but no "
+            f"weight file ({shown_files}). The download did not finish; " + _hf_download_hint(name) + "."
+        )
+    raise ModelNotFoundError(
+        f"HuggingFace model {name!r} is not a transformers model on this disk: {snapshot} holds "
+        f"{shown_files or 'no files'} with no config.json and no adapter_config.json. Either the "
+        "download did not finish, or the repository is for another runtime (a diffusion LoRA, "
+        "a GGUF-only or MLX-only repository) and cannot be loaded as a text model here."
+    )
 
 
 # `model-00001-of-00003.gguf` — llama.cpp's split naming. `model_path` names only
@@ -3954,7 +4090,8 @@ class HuggingFaceProvider(BaseProvider):
 
         Timing is the whole point and it was learned the hard way: loading a
         bnb-quantized checkpoint QUANTIZES as it loads, which calls
-        `bitsandbytes...ops._get_kernel()` — under the offline flag — and latches
+        `bitsandbytes...ops._get_kernel()` — then under the offline flag this
+        module wrote at import (removed, mission U) — and latches
         `_kernel_load_failed = True` before any post-load hook can run. A probe
         placed after `from_pretrained` therefore always finds a dead latch and
         can only report it. Measured exactly that way before this hook existed:
@@ -5844,9 +5981,34 @@ class HuggingFaceProvider(BaseProvider):
 
     def _transformers_config_kwargs(self) -> Dict[str, Any]:
         kwargs = {k: v for k, v in self.transformers_kwargs.items() if k in ["trust_remote_code"]}
-        if _config.should_force_local_files_only():
+        if _hf_load_is_local_only():
             kwargs["local_files_only"] = True
         return kwargs
+
+    def _transformers_load_source(self) -> "_TransformersLoadSource":
+        """Resolve (once per load) what every transformers call receives; see
+        `_resolve_transformers_load_source`. Raises ModelNotFoundError with a
+        plain "download it first" message when a local-only load has no cache."""
+        source = _resolve_transformers_load_source(self.model, local_only=_hf_load_is_local_only())
+        self._transformers_source = source
+        if source.adapter:
+            # Before the base model's weights are read: an adapter that cannot be
+            # attached must not cost a full base load first.
+            problem = _peft_adapter_support_problem()
+            if problem:
+                raise ProviderError(f"Cannot load {self.model!r}, a PEFT adapter (LoRA): {problem}")
+        return source
+
+    def _attach_transformers_adapter(self, source: "_TransformersLoadSource") -> None:
+        """Attach the PEFT adapter of `source` (a directory) to the loaded base model.
+
+        `_transformers_load_source` has already checked the peft / transformers
+        pair (`_peft_adapter_support_problem`)."""
+        if not source.adapter:
+            return
+        # A directory: transformers/peft read it from disk and never ask the Hub.
+        self.model_instance.load_adapter(source.adapter)
+        self.logger.info(f"Attached PEFT adapter {self.model} ({source.adapter}) to base model {source.model}")
 
     @staticmethod
     def _build_transformers_quantization_config(kwargs: Dict[str, Any]) -> Any:
@@ -6124,10 +6286,16 @@ class HuggingFaceProvider(BaseProvider):
             if self._is_vision_model(self.model):
                 return self._load_vision_model()
 
+            # Offline-first, per call: every from_pretrained below receives the
+            # cached snapshot DIRECTORY plus local_files_only=True (see
+            # `_resolve_transformers_load_source`); nothing in the process
+            # environment changes.
+            source = self._transformers_load_source()
+
             quantization_config: Dict[str, Any] = {}
             config = None
             try:
-                config = AutoConfig.from_pretrained(self.model, **self._transformers_config_kwargs())
+                config = AutoConfig.from_pretrained(source.model, **self._transformers_config_kwargs())
             except Exception:
                 config = None
             if config is not None:
@@ -6136,7 +6304,7 @@ class HuggingFaceProvider(BaseProvider):
 
             # Load tokenizer with transformers-specific parameters
             tokenizer_kwargs = self._transformers_config_kwargs()
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model, **tokenizer_kwargs)
+            self.tokenizer = AutoTokenizer.from_pretrained(source.tokenizer, **tokenizer_kwargs)
 
             # Load model with all transformers-specific parameters
             # Try AutoModelForCausalLM first, fall back to AutoModel for custom models
@@ -6150,8 +6318,8 @@ class HuggingFaceProvider(BaseProvider):
                 if isinstance(forced, str) and forced.strip():
                     model_kwargs['attn_implementation'] = forced.strip()
 
-            # Respect offline-first configuration
-            if _config.should_force_local_files_only():
+            # Respect offline-first configuration (per call, never via os.environ)
+            if _hf_load_is_local_only():
                 model_kwargs['local_files_only'] = True
             if quantization_config:
                 model_kwargs["output_loading_info"] = True
@@ -6173,11 +6341,11 @@ class HuggingFaceProvider(BaseProvider):
 
             def _load_with(kwargs: Dict[str, Any]):
                 try:
-                    obj = AutoModelForCausalLM.from_pretrained(self.model, **kwargs)
+                    obj = AutoModelForCausalLM.from_pretrained(source.model, **kwargs)
                 except ValueError as e:
                     if "Unrecognized configuration class" in str(e) or "glm4v" in str(e).lower():
                         # Fall back to AutoModel for custom models like DeepSeek-OCR
-                        obj = AutoModel.from_pretrained(self.model, **kwargs)
+                        obj = AutoModel.from_pretrained(source.model, **kwargs)
                     else:
                         raise
                 inst, info = self._unpack_transformers_load_result(obj)
@@ -6190,6 +6358,7 @@ class HuggingFaceProvider(BaseProvider):
             self._prepare_bnb_mps_fused_kernel(quantization_config)
 
             self.model_instance = _load_with(model_kwargs)
+            self._attach_transformers_adapter(source)
 
             # Move to device (only if not using device_map)
             if self.device in ["cuda", "mps"] and 'device_map' not in self.transformers_kwargs:
@@ -6228,6 +6397,10 @@ class HuggingFaceProvider(BaseProvider):
                 else:
                     raise
 
+        except ProviderError:
+            # Already plain and actionable (`_resolve_transformers_load_source`,
+            # the peft preflight): never re-wrap it into a generic load failure.
+            raise
         except Exception as e:
             error_str = str(e).lower()
             if ('not found' in error_str or 'does not exist' in error_str or
@@ -6247,40 +6420,35 @@ class HuggingFaceProvider(BaseProvider):
             import os
             from transformers.utils import logging as transformers_logging
 
-            if not self.debug:
-                # Disable transformers progress bars
-                os.environ['TRANSFORMERS_VERBOSITY'] = 'error'
+            # Quiet loading, in-process only: this used to write
+            # TRANSFORMERS_VERBOSITY / DISABLE_TQDM into os.environ, which every
+            # child process inherited (and DISABLE_TQDM is read by nothing).
+            quiet = not self.debug
+            if quiet:
                 transformers_logging.set_verbosity_error()
-                # Disable tqdm progress bars
-                os.environ['DISABLE_TQDM'] = '1'
+                transformers_logging.disable_progress_bar()
+
+            # Offline-first, per call: the processor and the model both receive
+            # the cached snapshot DIRECTORY plus local_files_only=True (see
+            # `_resolve_transformers_load_source`); a model that is not cached
+            # fails here with a plain "download it first" message.
+            source = self._transformers_load_source()
+            local_only = _hf_load_is_local_only()
 
             # Load processor for vision models (handles both text and images)
-            processor_kwargs = {k: v for k, v in self.transformers_kwargs.items() 
+            processor_kwargs = {k: v for k, v in self.transformers_kwargs.items()
                               if k in ['trust_remote_code']}
             # Enable trust_remote_code for custom architectures like GLM4V
             processor_kwargs['trust_remote_code'] = True
             # Set use_fast=True to avoid the slow processor warning
             processor_kwargs['use_fast'] = True
-            # Respect offline-first configuration
-            if _config.should_force_local_files_only():
+            if local_only:
                 processor_kwargs['local_files_only'] = True
-
-            # Use local cache path if offline mode is enabled and model is cached
-            model_path = self.model
-            if _config.should_force_local_files_only():
-                local_path = _get_local_model_path(self.model)
-                if local_path:
-                    model_path = local_path
-                    processor_kwargs.pop('local_files_only', None)  # Remove since we're using local path
-                    self.logger.debug(f"Loading processor from local cache: {local_path}")
-
-            self.processor = AutoProcessor.from_pretrained(model_path, **processor_kwargs)
 
             # Load vision model using AutoModelForImageTextToText with trust_remote_code
             vision_kwargs = self.transformers_kwargs.copy()
             vision_kwargs['trust_remote_code'] = True
-            # Respect offline-first configuration
-            if _config.should_force_local_files_only():
+            if local_only:
                 vision_kwargs['local_files_only'] = True
 
             # Safer defaults on GPU backends: float16 unless caller provided torch_dtype.
@@ -6292,25 +6460,15 @@ class HuggingFaceProvider(BaseProvider):
             except Exception:
                 pass
 
-            # Use local cache path if offline mode is enabled and model is cached
-            model_path = self.model
-            if _config.should_force_local_files_only():
-                local_path = _get_local_model_path(self.model)
-                if local_path:
-                    model_path = local_path
-                    vision_kwargs.pop('local_files_only', None)  # Remove since we're using local path
-                    self.logger.debug(f"Loading model from local cache: {local_path}")
-
-            self.model_instance = AutoModelForImageTextToText.from_pretrained(model_path, **vision_kwargs)
+            try:
+                self.processor = AutoProcessor.from_pretrained(source.tokenizer, **processor_kwargs)
+                self.model_instance = AutoModelForImageTextToText.from_pretrained(source.model, **vision_kwargs)
+                self._attach_transformers_adapter(source)
+            finally:
+                if quiet:
+                    transformers_logging.set_verbosity_warning()
+                    transformers_logging.enable_progress_bar()
             self._apply_loaded_generation_config_defaults()
-
-            # Restore logging levels if they were suppressed
-            if not self.debug:
-                # Restore transformers logging
-                transformers_logging.set_verbosity_warning()
-                # Remove tqdm suppression
-                if 'DISABLE_TQDM' in os.environ:
-                    del os.environ['DISABLE_TQDM']
 
             # Move to device (only if not using device_map)
             if self.device in ["cuda", "mps"] and 'device_map' not in self.transformers_kwargs:
@@ -6326,6 +6484,8 @@ class HuggingFaceProvider(BaseProvider):
 
             self.logger.info(f"Successfully loaded vision model {self.model} using AutoModelForImageTextToText")
 
+        except ProviderError:
+            raise
         except Exception as e:
             error_str = str(e).lower()
 
@@ -6486,11 +6646,13 @@ class HuggingFaceProvider(BaseProvider):
         # Convert "unsloth/model" or "unsloth--model" to "models--unsloth--model"
         cache_name = self._normalize_to_cache_format(model_name)
 
-        cache_base = Path.home() / ".cache" / "huggingface" / "hub"
-        model_cache_dir = cache_base / cache_name
-
-        if not model_cache_dir.exists():
-            model_cache_dir = None
+        # Every hub cache a load reads (HF_HUB_CACHE / HF_HOME / the configured
+        # cache dir), never only `~/.cache/huggingface/hub`.
+        model_cache_dir = None
+        for cache_base in _hf_load_cache_dirs():
+            if (cache_base / cache_name).exists():
+                model_cache_dir = cache_base / cache_name
+                break
 
         # Look for GGUF files in HuggingFace snapshots
         if model_cache_dir is not None:
@@ -7086,8 +7248,7 @@ class HuggingFaceProvider(BaseProvider):
         """Find similar GGUF models in cache"""
         similar: set[str] = set()
 
-        cache_base = Path.home() / ".cache" / "huggingface" / "hub"
-        if cache_base.exists():
+        for cache_base in _hf_load_cache_dirs():
             try:
                 for cache_dir in cache_base.iterdir():
                     if cache_dir.is_dir() and 'gguf' in cache_dir.name.lower():
@@ -10160,25 +10321,23 @@ class HuggingFaceProvider(BaseProvider):
             from .model_capabilities import filter_models_by_capabilities
             from .mlx_model_rules import is_mlx_model
 
-            hf_cache = Path.home() / ".cache" / "huggingface" / "hub"
-            if not hf_cache.exists():
-                return []
+            # Every hub cache a load reads, not only `~/.cache/huggingface/hub`.
+            model_set = set()
+            for hf_cache in _hf_load_cache_dirs():
+                for item in hf_cache.iterdir():
+                    if item.is_dir() and item.name.startswith("models--"):
+                        # Convert models--microsoft--DialoGPT-medium to microsoft/DialoGPT-medium
+                        model_name = item.name.replace("models--", "").replace("--", "/")
 
-            models = []
-            for item in hf_cache.iterdir():
-                if item.is_dir() and item.name.startswith("models--"):
-                    # Convert models--microsoft--DialoGPT-medium to microsoft/DialoGPT-medium
-                    model_name = item.name.replace("models--", "").replace("--", "/")
+                        # CRITICAL: an MLX repo belongs to the MLX provider, never
+                        # here -- transformers cannot load MLX safetensors, so
+                        # offering one in this list is offering a load that fails.
+                        # `is_mlx_model` is the shared rule MLXProvider uses to
+                        # INCLUDE the very same repos; see providers/mlx_model_rules.py.
+                        if not is_mlx_model(model_name, local_path=item):
+                            model_set.add(model_name)
 
-                    # CRITICAL: an MLX repo belongs to the MLX provider, never
-                    # here -- transformers cannot load MLX safetensors, so
-                    # offering one in this list is offering a load that fails.
-                    # `is_mlx_model` is the shared rule MLXProvider uses to
-                    # INCLUDE the very same repos; see providers/mlx_model_rules.py.
-                    if not is_mlx_model(model_name, local_path=item):
-                        models.append(model_name)
-
-            models = sorted(models)
+            models = sorted(model_set)
 
             # Apply new capability filtering if provided
             input_capabilities = kwargs.get('input_capabilities')

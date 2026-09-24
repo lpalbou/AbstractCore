@@ -56,6 +56,34 @@ def default_hf_hub_cache_dirs() -> list[Path]:
     return _dedupe_existing_dirs(candidates)
 
 
+def hf_hub_cache_dirs() -> list[Path]:
+    """Every Hugging Face hub cache a LOOKUP must read (no network), in priority order.
+
+    huggingface_hub's own resolution first (`default_hf_hub_cache_dirs`:
+    HF_HUB_CACHE / HF_HOME / its constant -- the cache transformers,
+    sentence-transformers and `snapshot_download` read and write), then the
+    `cache.huggingface_cache_dir` config key (+ `/hub`), which older setups
+    pointed at a non-default location. Existing directories only.
+
+    THE shared answer to "where are the cached models" for every scan and
+    resolve in AbstractCore (mission EE, 2026-09-24): sites that hard-coded
+    `~/.cache/huggingface/hub` ignored a relocated cache and reported a model
+    that was right there as missing.
+    """
+    dirs = list(default_hf_hub_cache_dirs())
+    try:
+        from ..config import get_config_manager
+
+        configured_raw = str(get_config_manager().config.cache.huggingface_cache_dir or "").strip()
+        if configured_raw:
+            configured = Path(configured_raw).expanduser() / "hub"
+            if configured.is_dir() and all(str(configured) != str(d) for d in dirs):
+                dirs.append(configured)
+    except Exception:
+        pass
+    return dirs
+
+
 def _read_text(path: Path) -> str:
     try:
         return path.read_text(encoding="utf-8", errors="ignore")
@@ -122,6 +150,108 @@ def resolve_hf_snapshot_dir(
                 best = d
 
     return best
+
+
+# Weight files a transformers / PEFT snapshot can carry.
+HF_WEIGHT_PATTERNS = ("*.safetensors", "*.bin", "*.pt", "*.pth", "*.msgpack", "*.h5")
+
+
+def _has_loadable_marker(snapshot: Path) -> bool:
+    return (snapshot / "config.json").is_file() or (snapshot / "adapter_config.json").is_file()
+
+
+def resolve_hf_load_snapshot(
+    repo_id: str,
+    *,
+    cache_dirs: Optional[Sequence[Path]] = None,
+) -> Optional[Path]:
+    """The cached snapshot directory a LOAD of `repo_id` should read (cache-only).
+
+    Why this exists (mission U, 2026-09-24): transformers resolves a repo id
+    offline (`local_files_only=True`) through `refs/main` -> `snapshots/<sha>`.
+    AbstractCore's own downloader pins the listed commit
+    (`snapshot_download(revision=<sha>)`), and huggingface_hub writes no
+    `refs/main` for a revision that already IS a commit hash. Such a snapshot is
+    complete on disk yet unreachable by name offline: transformers reports
+    "couldn't connect to huggingface.co ... couldn't find them in the cached
+    files". Handing the loader this DIRECTORY instead of the id removes the
+    `refs` lookup (and every other Hub round trip) from the load.
+
+    Order, per cache directory (see `default_hf_hub_cache_dirs`): the snapshot
+    `refs/main` (or `refs/master`) names; else the newest snapshot that holds
+    a `config.json` or an `adapter_config.json` (a snapshot holding only a
+    README is not a load target). None when nothing usable is cached.
+    """
+    s = str(repo_id or "").strip().strip("/")
+    if "/" not in s:
+        return None
+    folder = "models--" + s.replace("/", "--")
+    bases = list(cache_dirs) if cache_dirs is not None else default_hf_hub_cache_dirs()
+
+    fallback: Optional[Path] = None
+    fallback_rank: tuple = (-1, -1.0)
+    for base in bases:
+        model_dir = Path(base) / folder
+        snaps_dir = model_dir / "snapshots"
+        if not snaps_dir.is_dir():
+            continue
+        for ref in ("main", "master"):
+            rev = _read_text(model_dir / "refs" / ref).strip()
+            if rev and (snaps_dir / rev).is_dir():
+                return snaps_dir / rev
+        try:
+            snapshot_dirs = [d for d in snaps_dir.iterdir() if d.is_dir()]
+        except Exception:
+            snapshot_dirs = []
+        for d in snapshot_dirs:
+            try:
+                m = float(d.stat().st_mtime)
+            except Exception:
+                continue
+            # A usable snapshot always beats a README-only one; newest wins within a class.
+            rank = (1 if _has_loadable_marker(d) else 0, m)
+            if rank > fallback_rank:
+                fallback, fallback_rank = d, rank
+    return fallback
+
+
+def describe_hf_snapshot(snapshot: Path) -> dict:
+    """What a cached snapshot can be loaded as, from its files alone (no network).
+
+    `kind` is "model" (config.json + weights), "adapter" (adapter_config.json,
+    no full model), "config_only" (config.json, no weight file) or "unknown"
+    (neither config: a partial download, or a repository for another runtime).
+    """
+    snapshot = Path(snapshot)
+    try:
+        files = sorted(p.name for p in snapshot.iterdir())
+    except Exception:
+        files = []
+    has_config = (snapshot / "config.json").is_file()
+    has_weights = any(any(snapshot.glob(pattern)) for pattern in HF_WEIGHT_PATTERNS)
+    adapter_config = snapshot / "adapter_config.json"
+    base_model: Optional[str] = None
+    if adapter_config.is_file():
+        try:
+            import json
+
+            base_model = str(json.loads(_read_text(adapter_config)).get("base_model_name_or_path") or "").strip() or None
+        except Exception:
+            base_model = None
+    if has_config and has_weights:
+        kind = "model"
+    elif adapter_config.is_file():
+        kind = "adapter"
+    elif has_config:
+        kind = "config_only"
+    else:
+        kind = "unknown"
+    return {
+        "kind": kind,
+        "files": files,
+        "base_model": base_model,
+        "has_tokenizer": (snapshot / "tokenizer_config.json").is_file() or (snapshot / "tokenizer.json").is_file(),
+    }
 
 
 def default_lmstudio_model_dirs() -> list[Path]:

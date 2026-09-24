@@ -356,12 +356,117 @@ class TimeoutConfig:
     tool_timeout: float = 7200.0    # 2 hours (ADR-0014 §2), matches default_timeout
 
 
+# The Hugging Face offline switches as the OPERATOR left them when this process
+# imported AbstractCore (the package imports this module first, so any
+# in-process writer runs later). AbstractCore itself no longer writes them:
+# the MLX provider's load-time write (mission S) and the HF provider's
+# import-time write (mission U) are gone, and every AbstractCore loader enforces
+# offline-first PER CALL (cache resolution + `local_files_only=True`). Writers
+# that remain are outside AbstractCore -- abstractvoice sets HF_HUB_OFFLINE=1
+# briefly around some loads and restores it; a third-party library may not.
+# `offline_first` means "never download on-demand while LOADING a model"; it is
+# not a process-wide offline switch. An EXPLICIT download builds its child's
+# environment from this snapshot (`explicit_download_hf_env`), so an offline
+# flag written in-process never leaks into it, while one the operator set before
+# start is honoured. Detached job processes (`host_jobs.spawn_detached`) are
+# started with this environment for the same reason, and so is a gateway
+# restart (`abstractgateway.host_control.relaunch_env`). Limitation: any OTHER
+# process that inherited a flag from a parent that wrote it in-process sees that
+# flag as the operator's.
+HF_OFFLINE_ENV_NAMES = ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE", "HF_DATASETS_OFFLINE")
+_OPERATOR_HF_OFFLINE_ENV: Dict[str, Optional[str]] = {name: os.environ.get(name) for name in HF_OFFLINE_ENV_NAMES}
+
+
+def operator_hf_offline_env() -> Dict[str, Optional[str]]:
+    """The three HF offline variables as set before this process imported AbstractCore (None = unset)."""
+    return dict(_OPERATOR_HF_OFFLINE_ENV)
+
+
+def operator_forces_hf_offline() -> Optional[str]:
+    """Name of the operator-set variable that puts the Hub offline, or None.
+
+    Mirrors `huggingface_hub.constants`: the Hub is offline when HF_HUB_OFFLINE
+    or TRANSFORMERS_OFFLINE is one of 1/ON/YES/TRUE (HF_DATASETS_OFFLINE only
+    affects `datasets`).
+    """
+    for name in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"):
+        value = _OPERATOR_HF_OFFLINE_ENV.get(name)
+        if value is not None and value.strip().upper() in ("1", "ON", "YES", "TRUE"):
+            return name
+    return None
+
+
+def explicit_download_hf_env(base: Optional[Dict[str, str]] = None) -> Tuple[Dict[str, str], Dict[str, str]]:
+    """Environment for an EXPLICIT download child: `base` (default `os.environ`)
+    with the three HF offline variables reset to the operator's values.
+
+    Returns `(env, dropped)` where `dropped` maps each variable whose live value
+    differed from the operator's (written in-process after start) to that live
+    value -- the caller logs it. `offline_first` never applies here: an explicit
+    download is the operator asking for the network.
+    """
+    env = dict(os.environ if base is None else base)
+    dropped: Dict[str, str] = {}
+    for name in HF_OFFLINE_ENV_NAMES:
+        live = env.pop(name, None)
+        operator_value = _OPERATOR_HF_OFFLINE_ENV.get(name)
+        if operator_value is not None:
+            env[name] = operator_value
+        if live is not None and live != operator_value:
+            dropped[name] = live
+    return env, dropped
+
+
+def hf_download_first_hint(model: str) -> str:
+    """The plain "download it first" instruction for an uncached HF model.
+
+    Same wording as the HF provider's local-only load error, so every loader
+    that refuses to download on-demand says the same thing.
+    """
+    return (
+        f"download it first: `abstractcore models download huggingface {model}` "
+        "(or from the gateway console's Models page). Loading never downloads while "
+        "`offline.offline_first` is on; turn it off in the AbstractCore config to allow "
+        "on-demand downloads"
+    )
+
+
+def operator_hf_offline_refusal(what: str) -> Optional[str]:
+    """For an EXPLICIT download: a plain refusal when the operator set the Hub
+    offline before start (`operator_forces_hf_offline`), else None.
+
+    `what` names the thing that cannot be downloaded. Explicit downloads are
+    never blocked by `offline_first`; only an operator-set variable stops them,
+    and it is named instead of surfacing as a bare OfflineModeIsEnabled.
+    """
+    forced = operator_forces_hf_offline()
+    if not forced:
+        return None
+    return (
+        f"{forced}={_OPERATOR_HF_OFFLINE_ENV.get(forced)} was set in the environment before this process started, "
+        f"so the Hugging Face Hub is offline and {what} cannot be downloaded. Unset {forced} and retry."
+    )
+
+
 @dataclass
 class OfflineConfig:
-    """Offline-first configuration settings."""
+    """Offline-first configuration settings.
+
+    `offline_first`: loading a model never downloads it on-demand (providers
+    resolve local caches only). It does NOT make the process offline and never
+    blocks an explicit download (`abstractcore models download`, the gateway's
+    download jobs).
+    """
     offline_first: bool = True  # AbstractCore is designed offline-first for open source LLMs
     allow_network: bool = False  # Allow network access when offline_first is True (for API providers)
     force_local_files_only: bool = True  # Force local_files_only for HuggingFace transformers
+    # Privacy (mission EE, 2026-09-24): may `fetch_url` / the PDF router send a
+    # fetched PDF to a remote LLM (the OpenAI-compatible endpoint behind
+    # OPENAI_API_KEY / OPENAI_BASE_URL) for extraction and a summary? Off by
+    # default: PDFs are extracted locally (pypdf) and a configured API key
+    # alone never uploads a document. Turn on with
+    # `abstractcore --allow-remote-pdf-extraction`.
+    allow_remote_pdf_extraction: bool = False
 
 
 @dataclass
@@ -2352,8 +2457,28 @@ class ConfigurationManager:
             return False
 
     def is_offline_first(self) -> bool:
-        """Check if offline-first mode is enabled."""
+        """Check if offline-first mode is enabled.
+
+        Scope: model LOADING resolves local caches only and never downloads
+        on-demand. Callers must enforce it per call (cache resolution,
+        `local_files_only=True`), never by writing HF_HUB_OFFLINE & co. into
+        `os.environ` -- that outlives the call and is inherited by every child
+        process, including explicit download jobs.
+        """
         return self.config.offline.offline_first
+
+    def set_allow_remote_pdf_extraction(self, enabled: bool) -> bool:
+        """Allow (or forbid) sending fetched PDFs to a remote LLM for extraction."""
+        try:
+            self.config.offline.allow_remote_pdf_extraction = bool(enabled)
+            self._save_config()
+            return True
+        except Exception:
+            return False
+
+    def is_remote_pdf_extraction_allowed(self) -> bool:
+        """True only when the operator opted in (`offline.allow_remote_pdf_extraction`)."""
+        return bool(getattr(self.config.offline, "allow_remote_pdf_extraction", False))
 
     def is_network_allowed(self) -> bool:
         """Check if network access is allowed."""

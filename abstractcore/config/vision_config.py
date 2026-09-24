@@ -244,6 +244,17 @@ def handle_download_vision_model(handler: 'VisionFallbackHandler', model_name: s
         print("🎯 Vision fallback enabled with local model")
         return True
 
+    # An EXPLICIT download (`--download-vision-model`): `offline_first` governs
+    # LOADING only, so the `from_pretrained` calls below deliberately carry no
+    # `local_files_only`. Only a Hub-offline flag the operator set before start
+    # stops it -- named here, not surfaced as a bare OfflineModeIsEnabled.
+    from .manager import operator_hf_offline_refusal
+
+    refusal = operator_hf_offline_refusal(model_info['url'])
+    if refusal:
+        print(f"❌ {refusal}")
+        return True
+
     try:
         print("🔄 Downloading model...")
         models_dir.mkdir(parents=True, exist_ok=True)
