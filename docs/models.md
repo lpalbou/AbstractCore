@@ -200,7 +200,9 @@ need = W + KV + O          (n = min(8192, context window))
 | `too_large` | does not fit |
 | `unknown` | no size and no parameter count, or no measurable ceiling |
 
-The block also reports `need_bytes`, `ceiling_bytes`, `free_now_bytes`, `fits_now` (whether it
+The block also reports `need_bytes` (W + KV + O), `usable_bytes` (Ceff, the amount the verdict
+compares `need_bytes` with), `reserve_bytes` (ceiling minus Ceff), `overhead_bytes` (O),
+`ceiling_bytes`, `free_now_bytes`, `fits_now` (whether it
 fits in memory that is free right now), `disk_ok` (download size plus 5 GiB headroom against
 free disk), `max_context` (largest context beside the weights, capped at the model window),
 `confidence` (`exact`, `estimated`, `rough`, `unknown`) and human `notes`. Mixture-of-experts
@@ -402,6 +404,12 @@ lines), `command`, `dry_run`, `started_at`, `finished_at`, `error`, `joined`,
 `cli_equivalent`, and `result` (the verb's own outcome).
 
 - A second request for the same download joins the running job (`joined` counts them).
+- `cancelled` follows only a cancel request. `cancelled_by` says who made it (`console`, `api`,
+  `cli`, `other_process`) and `cancelled_by_user` the account when known. A job that stopped on
+  its own (dropped connection, timeout, Hub error, full disk, failed MTP companion, owning
+  process gone) is `failed`. Either way `ended_reason` says why in one plain sentence.
+- A stopped Hugging Face download keeps the files that finished; the file that was in progress
+  starts over on the next download.
 - At most 40 finished jobs are kept per process.
 
 ### Download progress

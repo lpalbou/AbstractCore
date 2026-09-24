@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.15.1] - 2026-09-24
+
+A download that stops on its own now ends `failed` with a plain reason, and `cancelled` only after
+a real cancel request, which records who made it. The fit warning states the two numbers its
+verdict compared, and a copied Hugging Face cache with missing links reads absent.
+
+### Fixed
+
+- A model's "may not fit" warning now states the two numbers its verdict compared: the total need
+  (weights plus working memory and cache) against the memory a model can use (the ceiling minus the
+  part kept free for the system). A 24 GiB Mac read "needs about 16 GiB; can give about 18 GiB: may
+  not fit"; it now reads "needs about 16.4 GiB in total (15.2 GiB of weights plus 1.2 GiB ...); this
+  computer can give a model about 16.0 GiB (... 18.0 GiB, and 2.0 GiB of that is kept free ...)".
+  The fit block adds `usable_bytes`, `reserve_bytes` and `overhead_bytes`.
+- A download that stops on its own is never reported "cancelled". Host jobs record who asked for a
+  cancel (`cancelled_by`: `console`, `api`, `cli`, `other_process`; `cancelled_by_user`) and say
+  why a job ended in one plain sentence (`ended_reason`): a dropped connection, a Hub error, a full
+  disk, the owning process restarting, a failed MTP companion. A job whose owner exited reads
+  `failed` in every field (its `state` said `downloading`).
+- The Hugging Face download child stops when the process that started it exits (it kept
+  downloading after a gateway restart and held the file lock a retry then waited on).
+- Download messages no longer promise a resume huggingface_hub does not do: files that finished are
+  kept; the file that was in progress starts over. A failed download's instruction follows from what
+  failed (it always talked about gated models and an environment variable).
+- A Hugging Face cache copied without its symbolic links (rsync without `-a`) or without its blobs is
+  no longer reported installed; the model reads "absent" with a plain reason, and a download repairs
+  the missing links without fetching the data again.
+
 ## [2.15.0] - 2026-09-24
 
 On a Mac the recommended local model now follows the computer's memory, downloads report real
