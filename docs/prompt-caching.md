@@ -809,14 +809,12 @@ AbstractCore resolves the kernel for you and tells you when it cannot:
 
 - **Resolution runs before the weights load**, because loading a bnb-quantized checkpoint quantizes
   as it loads and would otherwise latch the failure before any later hook could help.
-- **`offline_first` does not block it.** `offline_first` (default `True`) sets `HF_HUB_OFFLINE=1` to
-  keep model *weights* off the network, and the kernel's publisher check has no offline path. For a
-  4-bit MPS load only, AbstractCore retries once with its own offline flags lifted and restores them
-  immediately, patching `huggingface_hub.constants.HF_HUB_OFFLINE` for the same window because the
-  environment variable alone is snapshotted at that library's import.
-- **An offline flag you set yourself is never lifted.** The values present before AbstractCore
-  touched them are recorded at import; if the flag is yours, the resolution declines and you get the
-  warning instead.
+- **`offline_first` does not block it.** `offline_first` (default `True`) keeps model *weights* off
+  the network. It is applied per load call and sets no `HF_HUB_OFFLINE` in the process. The
+  kernel's publisher check has no offline path, so on a 4-bit MPS load it runs once against the Hub.
+- **An offline flag you set yourself is never lifted.** If `HF_HUB_OFFLINE` or
+  `TRANSFORMERS_OFFLINE` is in the process environment (set by you, or inherited from a parent
+  process), the check fails and you get the warning instead.
 - **When the kernel is unavailable, a one-time `#FALLBACK` warning names it**, counts the affected
   `Linear4bit` modules, states the measured cost, and gives the remedy. It never raises.
 

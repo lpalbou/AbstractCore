@@ -885,7 +885,8 @@ the shape the embeddings commands and `--show-config` read.
 ### Cache Section
 - **default_cache_dir**: General cache directory for AbstractCore (`~/.cache/abstractcore`)
 - **huggingface_cache_dir**: HuggingFace models cache (`~/.cache/huggingface`)
-- **local_models_cache_dir**: Local models storage (`~/.abstractcore/models`)
+- **local_models_cache_dir**: Local models storage (`~/.abstractcore/models`); where
+  `abstractcore --download-vision-model` writes
 - **glyph_cache_dir**: Glyph cache directory (`~/.abstractcore/glyph_cache`)
 
 ### Logging Section
@@ -905,9 +906,52 @@ the shape the embeddings commands and `--show-config` read.
 - **tool_timeout**: Default tool execution timeout (seconds)
 
 ### Offline Section
-- **offline_first**: Default to offline-first behavior
+- **offline_first**: Loading a local model never downloads it on demand. Providers look in the
+  local caches only and fail with a "not found locally" error on a miss. The setting only covers
+  loading: it does not switch the process offline and never blocks an explicit download
+  (`abstractcore models download`, the gateway's download jobs). The MLX and Hugging Face
+  providers and the embeddings manager apply it to each load call. None of them sets
+  `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE` or `HF_DATASETS_OFFLINE`, so neither the process
+  nor its child processes are switched offline. See [Downloading](models.md#downloading).
+  - *Hugging Face (transformers)*: the provider finds the model's cached snapshot directory
+    and passes that directory, with `local_files_only=True`, to every transformers call
+    (config, tokenizer or processor, model). A fully cached model therefore loads with no
+    network call, including a snapshot that has no `refs/main`. AbstractCore's downloads
+    made before 2026-09-24 left snapshots in that state because they pin a commit; current
+    downloads write `refs/main`, and `abstractcore models repair-refs` fixes older ones
+    for other tools that load by id (see [Repairing `refs/main`](models.md#repairing-refsmain)).
+    A PEFT adapter
+    (LoRA) loads its base model from the base's snapshot and attaches the adapter from its
+    own directory. If the model is not cached, or the snapshot is incomplete (a config with
+    no weights, a README only, or an adapter whose base is missing), the load fails at once
+    with `ModelNotFoundError`. The message names the model and says
+    `download it first: abstractcore models download huggingface <repo>`.
+  - *MLX drafter*: a drafter named explicitly that is not cached is refused with the same
+    kind of message (`abstractcore models download mlx <repo>`). With `offline_first` off,
+    it is downloaded and a warning is logged.
+  - *Embeddings (sentence-transformers)*: `EmbeddingManager` resolves the model id to its
+    cached snapshot directory (a bare legacy name such as `all-MiniLM-L6-v2` is also looked
+    up as `sentence-transformers/<name>`) and loads it with `local_files_only=True`. An
+    uncached model fails with `ModelNotFoundError` and the same "download it first" message.
+    With both `offline_first` and `force_local_files_only` off, the id is passed through and
+    may download on first use.
+  - *Explicit downloads outside `models download`*: `abstractcore --download-vision-model`
+    and the config wizard's "download embeddings model now" are downloads, not loads, so
+    `offline_first` does not apply to them.
+  - Variables the operator set before the process started are left exactly as they were.
+    They are the only thing that stops an explicit download, which then fails with a
+    message naming the variable. A gateway restart from the tray or console passes the
+    variables' start-up values to the new process, not values written in-process during
+    the run.
 - **allow_network**: Allow network access when offline-first is enabled (for API providers)
-- **force_local_files_only**: Force HuggingFace `local_files_only` mode
+- **force_local_files_only**: Loads with transformers read the local cache only, even when
+  `offline_first` is off (default `true`). A Hugging Face load reads the cache only when
+  either key is on.
+- **allow_remote_pdf_extraction**: May `fetch_url` send a fetched PDF to the configured
+  OpenAI-compatible LLM for extraction and a summary (default `false`). Off, PDFs are
+  extracted locally (pypdf) and never leave the machine, whatever API keys are configured.
+  Turn it on with `abstractcore --allow-remote-pdf-extraction`, off with
+  `abstractcore --disallow-remote-pdf-extraction`.
 
 ## Common Configuration Tasks
 
