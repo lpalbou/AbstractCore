@@ -94,7 +94,7 @@ def isolate_host(tmp_path: Path, monkeypatch: Any) -> Dict[str, Path]:
 
 
 def synthetic_host(kind: str, *, disk_free: int = 500 * 10**9) -> Dict[str, Any]:
-    """host_profile_v1 dicts for the three reference machines."""
+    """host_profile_v1 dicts for the reference machines (+ any `metal<GiB>`)."""
 
     GiB = 1024**3
     disk = {
@@ -152,6 +152,38 @@ def synthetic_host(kind: str, *, disk_free: int = 500 * 10**9) -> Dict[str, Any]
             ceiling_bytes=12 * GiB,
             ceiling_source="ram_75pct",
             free_now_bytes=8 * GiB,
+        )
+    if kind.startswith("metal"):
+        # Any Apple silicon size: `metal24`, `metal23.9`, `metal192` (GiB of
+        # unified memory). Ceiling = 75% (the host probe's fallback basis),
+        # free now = half.
+        ram = int(float(kind[len("metal"):]) * GiB)
+        return dict(
+            base,
+            os="darwin",
+            arch="arm64",
+            accelerator="metal",
+            gpu_name="Apple M-series",
+            unified_memory=True,
+            ram_bytes=ram,
+            vram_bytes=None,
+            ceiling_bytes=int(0.75 * ram),
+            ceiling_source="ram_75pct",
+            free_now_bytes=ram // 2,
+        )
+    if kind == "rocm32":
+        return dict(
+            base,
+            os="linux",
+            arch="x86_64",
+            accelerator="rocm",
+            gpu_name=None,
+            unified_memory=False,
+            ram_bytes=32 * GiB,
+            vram_bytes=None,
+            ceiling_bytes=24 * GiB,
+            ceiling_source="ram_75pct",
+            free_now_bytes=16 * GiB,
         )
     raise ValueError(kind)
 

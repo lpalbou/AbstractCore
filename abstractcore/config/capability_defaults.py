@@ -301,6 +301,8 @@ RECOMMENDED_SEED_VERSION = "recommended-v1"
 # Ordinary rows once written: fully visible in every grid, overridable and
 # clearable from either entry point, and always beaten by request pins.
 # Text stores at input.text (the canonical storage key; output.text derives).
+# PORTABLE: on Apple silicon the text row is replaced by the unified-memory
+# tier -- read `recommended_capability_default_routes()`, never this table.
 RECOMMENDED_CAPABILITY_DEFAULT_ROUTES: Dict[str, CapabilityRouteDefault] = {
     # Text: the 4-BIT quantized build (operator ruling 2026-08-01). The ROUTE
     # stores the bare LM Studio id because that is what the server serves when
@@ -319,11 +321,51 @@ RECOMMENDED_CAPABILITY_DEFAULT_ROUTES: Dict[str, CapabilityRouteDefault] = {
 # download surface resolves these, never the route's served id. Quantization
 # intent lives here (`@4bit`), because served ids drop the suffix when only
 # one quant is installed while download refs must name the exact artifact.
+# PORTABLE, like the routes above: read `recommended_model_downloads()`.
 RECOMMENDED_MODEL_DOWNLOADS: Dict[str, Dict[str, str]] = {
     "input.text": {"provider": "lmstudio", "artifact": "qwen/qwen3.5-9b@4bit"},
     "output.voice": {"provider": "supertonic", "artifact": "supertonic-3"},
     "output.image": {"provider": "mlx-gen", "artifact": "AbstractFramework/flux.2-klein-4b-8bit"},
 }
+
+
+# HOST-AWARE VIEWS. The two tables above are the PORTABLE recommendation (any
+# host that is not Apple silicon). On Apple silicon the text row is chosen by
+# unified memory (operator ruling 2026-09-24) -- and that choice has ONE
+# owner, `model_catalog.recommended_text_model()`. Every writer and every
+# download surface reads these two functions, never the tables directly, so a
+# Mac seeds, applies, downloads and displays the same pick.
+
+
+def recommended_capability_default_routes(
+    host: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, CapabilityRouteDefault]:
+    """`RECOMMENDED_CAPABILITY_DEFAULT_ROUTES` for this host (default: this machine)."""
+
+    from .model_catalog import recommended_text_model
+
+    routes = {
+        key: CapabilityRouteDefault(
+            provider=r.provider, model=r.model, base_url=r.base_url, reasoning=r.reasoning, options=dict(r.options)
+        )
+        for key, r in RECOMMENDED_CAPABILITY_DEFAULT_ROUTES.items()
+    }
+    pick = recommended_text_model(host, fit=False)
+    routes["input.text"] = CapabilityRouteDefault(
+        provider=pick["provider"], model=pick["model"], options=dict(pick.get("options") or {})
+    )
+    return routes
+
+
+def recommended_model_downloads(host: Optional[Mapping[str, Any]] = None) -> Dict[str, Dict[str, str]]:
+    """`RECOMMENDED_MODEL_DOWNLOADS` for this host (default: this machine)."""
+
+    from .model_catalog import recommended_text_model
+
+    downloads = {key: dict(spec) for key, spec in RECOMMENDED_MODEL_DOWNLOADS.items()}
+    pick = recommended_text_model(host, fit=False)
+    downloads["input.text"] = {"provider": pick["provider"], "artifact": pick["artifact"]}
+    return downloads
 
 
 # The `--only` vocabulary: the words the operator says ("text", "voice",
@@ -350,8 +392,12 @@ def plan_recommended_capability_defaults(
     *,
     only: Optional[Iterable[str]] = None,
     force: bool = False,
+    host: Optional[Mapping[str, Any]] = None,
 ) -> Tuple[Dict[str, Any], ...]:
     """What `apply-recommended` WOULD do to `routes`, one entry per route.
+
+    The recommendation is this host's (`recommended_capability_default_routes`):
+    on Apple silicon the text route follows the unified-memory tiers.
 
     THE SEED WILL NOT DO THIS. `seed_recommended_capability_defaults` runs only
     when the store file has never existed, deliberately: an operator who
@@ -388,8 +434,10 @@ def plan_recommended_capability_defaults(
                 )
             wanted.add(key)
 
+    recommended_routes = recommended_capability_default_routes(host)
+    recommended_downloads = recommended_model_downloads(host)
     plan: list = []
-    for key, recommended in RECOMMENDED_CAPABILITY_DEFAULT_ROUTES.items():
+    for key, recommended in recommended_routes.items():
         if wanted is not None and key not in wanted:
             continue
         current = routes.get(key)
@@ -422,20 +470,23 @@ def plan_recommended_capability_defaults(
                 "recommended": recommended.to_dict(),
                 "before": before,
                 "after": after,
-                "download": dict(RECOMMENDED_MODEL_DOWNLOADS.get(key, {})),
+                "download": dict(recommended_downloads.get(key, {})),
             }
         )
     return tuple(plan)
 
 
-def seed_recommended_capability_defaults(config: CapabilityDefaultsConfig) -> CapabilityDefaultsConfig:
+def seed_recommended_capability_defaults(
+    config: CapabilityDefaultsConfig, *, host: Optional[Mapping[str, Any]] = None
+) -> CapabilityDefaultsConfig:
     """Apply the fresh-install recommendation to an empty defaults config.
 
     Only fills routes that are not already configured (defensive — the caller
     gates on file absence, so in practice all three are empty) and stamps the
-    provenance marker so surfaces can label the values as recommended.
+    provenance marker so surfaces can label the values as recommended. The
+    recommendation is this host's (Apple silicon: the unified-memory tier).
     """
-    for key, route in RECOMMENDED_CAPABILITY_DEFAULT_ROUTES.items():
+    for key, route in recommended_capability_default_routes(host).items():
         existing = config.routes.get(key)
         if existing is None or not existing.configured():
             config.routes[key] = CapabilityRouteDefault(

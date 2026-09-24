@@ -355,14 +355,58 @@ def _build_profile() -> Dict[str, Any]:
     }
 
 
-def host_profile(*, refresh: bool = False, builder: Optional[Callable[[], Dict[str, Any]]] = None) -> Dict[str, Any]:
+def _build_light_profile() -> Dict[str, Any]:
+    """os / arch / Apple-silicon accelerator / RAM only: no GPU tool, no torch,
+    no mlx. What the recommended-model TIER needs (it reads accelerator ==
+    metal and unified memory), cheap enough for import-time config seeding."""
+
+    os_id = normalize_os()
+    arch = normalize_arch()
+    ram_total, _available = _ram_total_and_available()
+    metal = os_id == "darwin" and arch == "arm64"
+    return {
+        "schema": HOST_PROFILE_SCHEMA,
+        "os": os_id,
+        "arch": arch,
+        # Only Apple silicon is detected in the light reading; CUDA/ROCm need
+        # the full probe and read as "none" here (the tier treats every
+        # non-metal host alike).
+        "accelerator": "metal" if metal else "none",
+        "unified_memory": metal,
+        "ram_bytes": ram_total,
+        "light": True,
+        "generated_at": utc_now_iso(),
+    }
+
+
+def host_profile(
+    *,
+    refresh: bool = False,
+    builder: Optional[Callable[[], Dict[str, Any]]] = None,
+    light: bool = False,
+) -> Dict[str, Any]:
     """Contract A: the `host_profile_v1` dict. Never raises.
 
     Cached for a few seconds so one catalog payload (dozens of fit verdicts)
     measures the machine once; `refresh=True` forces a new reading.
+
+    `light=True` returns the cached full profile when there is one, otherwise
+    a light reading (`_build_light_profile`: no GPU tools, no torch, no mlx)
+    that is never cached. Importing AbstractCore seeds a fresh config store,
+    and that must not load an engine.
     """
 
     now = time.monotonic()
+    if light and builder is None and not refresh:
+        with _cache_lock:
+            cached = _cache.get("value")
+            if cached is not None and now - float(_cache.get("at") or 0.0) < _CACHE_TTL_S:
+                return dict(cached)
+        try:
+            return _build_light_profile()
+        except Exception:  # pragma: no cover - defensive: a profile never raises
+            return {"schema": HOST_PROFILE_SCHEMA, "os": normalize_os(), "arch": normalize_arch(),
+                    "accelerator": "none", "ram_bytes": None, "light": True}
     with _cache_lock:
         cached = _cache.get("value")
         if not refresh and builder is None and cached is not None and now - float(_cache.get("at") or 0.0) < _CACHE_TTL_S:

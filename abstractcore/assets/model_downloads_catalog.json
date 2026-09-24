@@ -1,8 +1,58 @@
 {
  "$schema": "./model_downloads_catalog.schema.json",
  "schema": "model_downloads_catalog_v1",
- "version": "2026-09-23",
- "notes": "Curated download catalog. Sizes are bytes observed in real engine stores/caches (size_source=catalog) or null (unknown). verified=true means the artifact id was seen on a real engine or cache when the seed was built; other ids follow each engine's naming convention and are checked by presence probes and by the post-download verification in model_materializer.",
+ "version": "2026-09-24",
+ "notes": "Curated download catalog. Sizes are bytes observed in real engine stores/caches (size_source=catalog) or null (unknown). verified=true means the artifact id was seen on a real engine or cache when the seed was built; other ids follow each engine's naming convention and are checked by presence probes and by the post-download verification in model_materializer. upstream={method, checked, revision?} records an id verified to exist upstream on that date (hf_api: HfApi.model_info(files_metadata=True), download_bytes = the weight files; ollama_registry: the registry manifest, download_bytes = the sum of its layers); such an artifact must carry its verified size. options carries route options the recommendation copies (the MTP builds: speculation).",
+ "companion_sizes": {
+  "mlx-community/Qwen3.5-4B-MTP-4bit": {
+   "download_bytes": 67859512,
+   "upstream": {
+    "method": "hf_api",
+    "checked": "2026-09-24",
+    "revision": "ab6f59bc6627196c611ab8851638651078170485"
+   }
+  },
+  "mlx-community/Qwen3.5-9B-MTP-4bit": {
+   "download_bytes": 136884332,
+   "upstream": {
+    "method": "hf_api",
+    "checked": "2026-09-24",
+    "revision": "222dfd2c23fc9518d7b817e4f8e0cb0571787489"
+   }
+  },
+  "mlx-community/Qwen3.6-27B-MTP-4bit": {
+   "download_bytes": 238934137,
+   "upstream": {
+    "method": "hf_api",
+    "checked": "2026-09-24",
+    "revision": "83795d546e9d328160e593fb0bf10b2bf2fe637e"
+   }
+  },
+  "mlx-community/Qwen3.6-35B-A3B-MTP-4bit": {
+   "download_bytes": 475130833,
+   "upstream": {
+    "method": "hf_api",
+    "checked": "2026-09-24",
+    "revision": "0295b81421bf4d0fccca9a7c0fcfb1418dda3516"
+   }
+  },
+  "mlx-community/Qwen3.8-27B-MTP-4bit": {
+   "download_bytes": 238934137,
+   "upstream": {
+    "method": "hf_api",
+    "checked": "2026-09-24",
+    "revision": "b643c01b6d3b094e325edb6ebd832e16c486c575"
+   }
+  },
+  "mlx-community/gemma-4-26B-A4B-it-qat-assistant-4bit": {
+   "download_bytes": 236124704,
+   "upstream": {
+    "method": "hf_api",
+    "checked": "2026-09-24",
+    "revision": "bb94eae1b70a80dac16cbf959bb4b7d56bd1fb8c"
+   }
+  }
+ },
  "rows": [
   {
    "id": "qwen3-0.6b",
@@ -29,6 +79,18 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "qwen3:0.6b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 832291421,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "mlx",
      "artifact": "mlx-community/Qwen3-0.6B-4bit",
      "quant": "4bit",
@@ -37,12 +99,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-0.6B-8bit",
+     "quant": "8bit",
+     "download_bytes": 633442994,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "11de96878523501bcaa86104e3c186de07ff9068"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "unsloth/Qwen3-0.6B-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-0.6B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 639447744,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "50968a4468ef4233ed78cd7c3de230dd1d61a56b"
+     }
     }
    ]
   },
@@ -71,6 +159,18 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "qwen3:1.7b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 2220102173,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "mlx",
      "artifact": "mlx-community/Qwen3-1.7B-4bit",
      "quant": "4bit",
@@ -79,12 +179,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-1.7B-8bit",
+     "quant": "8bit",
+     "download_bytes": 1828306541,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "8c24f6782a91421513803ce527a27dcc560ab904"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "unsloth/Qwen3-1.7B-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-1.7B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 1834426944,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "d7f544eead698dbd1f15126ef60b45a1e1933222"
+     }
     }
    ]
   },
@@ -120,12 +246,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-4B-8bit",
+     "quant": "8bit",
+     "download_bytes": 4274158987,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "0348ad770d2ae658ca47b0579b2d2c37b20bbcac"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "unsloth/Qwen3-4B-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": 2497281312,
      "size_source": "catalog",
      "verified": true
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-4B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 4280405792,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "22c9fc8a8c7700b76a1789366280a6a5a1ad1120"
+     }
     }
    ]
   },
@@ -161,12 +313,38 @@
      "verified": true
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-4B-Instruct-2507-8bit",
+     "quant": "8bit",
+     "download_bytes": 4274158989,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "0e42af58449718de7931ee04f28191fbe6c43a56"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": 2497281120,
      "size_source": "catalog",
      "verified": true
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-4B-Instruct-2507-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 4280405600,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "a06e946bb6b655725eafa393f4a9745d460374c9"
+     }
     }
    ]
   },
@@ -195,6 +373,18 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "qwen3:8b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 8851089053,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "mlx",
      "artifact": "mlx-community/Qwen3-8B-4bit",
      "quant": "4bit",
@@ -203,12 +393,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-8B-8bit",
+     "quant": "8bit",
+     "download_bytes": 8703048996,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "48a0b75b1ae72503e21e1558d040bc227510ff06"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "unsloth/Qwen3-8B-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-8B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 8709519168,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "a6adef130ffb23ddaf1a62fec9dced968c9bc482"
+     }
     }
    ]
   },
@@ -237,6 +453,18 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "qwen3:14b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 15895154877,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "mlx",
      "artifact": "mlx-community/Qwen3-14B-4bit",
      "quant": "4bit",
@@ -245,12 +473,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-14B-8bit",
+     "quant": "8bit",
+     "download_bytes": 15691839954,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "da33cf28f06636847fd9e93e0a03d819b84cb55e"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "unsloth/Qwen3-14B-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-14B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 15698534784,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "a04a82c4739b3ef5fa6da7d10261db2c67dd1985"
+     }
     }
    ]
   },
@@ -280,6 +534,18 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "qwen3:32b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 35132304861,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "mlx",
      "artifact": "mlx-community/Qwen3-32B-4bit",
      "quant": "4bit",
@@ -288,12 +554,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-32B-8bit",
+     "quant": "8bit",
+     "download_bytes": 34810574466,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "916c25b033bc96694567ad50c60ab4759a21bad2"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "unsloth/Qwen3-32B-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-32B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 34817719968,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "931c84066f88693a02ab8de820cfcd066d913241"
+     }
     }
    ]
   },
@@ -338,12 +630,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-30B-A3B-Instruct-2507-8bit",
+     "quant": "8bit",
+     "download_bytes": 32440736503,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "cc56d334b04419b9178729f2ced9e4003f18073b"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-30B-A3B-Instruct-2507-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 32483932576,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "eea7b2be5805a5f151f8847ede8e5f9a9284bf77"
+     }
     }
    ]
   },
@@ -380,12 +698,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-Coder-30B-A3B-Instruct-8bit",
+     "quant": "8bit",
+     "download_bytes": 32440736503,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "7c6ee1bbb5ee3051c4b3bc6553f24bdc2d01393a"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 32483935392,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "b17cb02dd882d5b6ab62fc777ad2995f19668350"
+     }
     }
    ]
   },
@@ -427,6 +771,19 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-VL-4B-Instruct-8bit",
+     "quant": "8bit",
+     "download_bytes": 5104903807,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "0943db6e15185b86be368d3cf0704aec740b142b"
+     }
     }
    ]
   },
@@ -468,6 +825,19 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-VL-8B-Instruct-8bit",
+     "quant": "8bit",
+     "download_bytes": 9855879013,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "a0093b9b5fda6f76ddd4a462c6830ae7c4fe47ec"
+     }
     }
    ]
   },
@@ -510,6 +880,19 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3-VL-30B-A3B-Instruct-8bit",
+     "quant": "8bit",
+     "download_bytes": 33518059631,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "8794b4f0bce099a0ca7c40980ba7081527321e59"
+     }
     }
    ]
   },
@@ -584,6 +967,19 @@
      "download_bytes": 1280835840,
      "size_source": "catalog",
      "verified": true
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3.5-2B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 2012012800,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "f6d5376be1edb4d416d56da11e5397a961aca8ae"
+     }
     }
    ]
   },
@@ -619,6 +1015,18 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "qwen3.5:4b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 5279293980,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "mlx",
      "artifact": "mlx-community/Qwen3.5-4B-4bit",
      "quant": "4bit",
@@ -627,12 +1035,38 @@
      "verified": true
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3.5-4B-8bit",
+     "quant": "8bit",
+     "download_bytes": 5136696107,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "1704583a86670ba531b7f2c92530a2f725cfd45b"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "unsloth/Qwen3.5-4B-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": 2740937888,
      "size_source": "catalog",
      "verified": true
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3.5-4B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 4482403488,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "e87f176479d0855a907a41277aca2f8ee7a09523"
+     }
     }
    ]
   },
@@ -664,11 +1098,63 @@
     },
     {
      "provider": "mlx",
+     "artifact": "mlx-community/Qwen3.5-9B-MLX-4bit",
+     "quant": "4bit",
+     "download_bytes": 5950221072,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "938d8919941c6e7efd3c7150eff7fe9d12afa631"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3.5-9B-MLX-8bit",
+     "quant": "8bit",
+     "download_bytes": 10426592423,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "84f7c2deea248d8df56240f88102def51c7ed5d6"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-works/Qwen3.5-9B-oQ4e-mtp",
+     "quant": "oq4e",
+     "download_bytes": 6230856276,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "cc2320b3bed463089a05dffac3fe5902ae296b22"
+     },
+     "options": {
+      "speculation": {
+       "mode": "native_mtp",
+       "num_draft_tokens": 2,
+       "require_acceleration": false
+      }
+     },
+     "note": "oMLX oQ4e mixed-precision build for native MTP decoding. Its MTP drafter comes from the MLX drafter registry (payload `companions`) and downloads with it."
+    },
+    {
+     "provider": "mlx",
      "artifact": "mlx-community/Qwen3.5-9B-4bit",
      "quant": "4bit",
-     "download_bytes": null,
-     "size_source": "unknown",
-     "verified": false
+     "download_bytes": 5950221072,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "8b2b98c00a6b4d291155e4890773ca8f769aee53"
+     }
     },
     {
      "provider": "ollama",
@@ -677,9 +1163,27 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "qwen3.5:9b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 10699927804,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
     }
    ],
-   "notes": "The AbstractFramework fresh-install text/vision default (RECOMMENDED_MODEL_DOWNLOADS input.text)."
+   "notes": "The portable fresh-install text/vision default (RECOMMENDED_MODEL_DOWNLOADS input.text) and the Apple silicon tier below 24 GiB of unified memory (model_catalog.APPLE_TEXT_TIERS). mlx-community/Qwen3.5-9B-4bit and -MLX-4bit hold byte-identical weights upstream (checked 2026-09-24); the tier names -MLX-4bit.",
+   "kv_geometry": {
+    "n_layers": 8,
+    "n_kv_heads": 4,
+    "head_dim": 256,
+    "source": "config.json text_config of mlx-community/Qwen3.5-9B-MLX-4bit@938d8919941c: 8 of 32 layers are full_attention (layer_types); the rest are linear attention with a fixed-size state"
+   }
   },
   {
    "id": "qwen3.5-27b",
@@ -712,6 +1216,18 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "qwen3.5:27b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 29970391932,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
     }
    ]
   },
@@ -774,6 +1290,19 @@
      "verified": true
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3.6-27B-8bit",
+     "quant": "8bit",
+     "download_bytes": 29501218261,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "c5a593c1475a746e43a543b0a02bd2b357e5745f"
+     }
+    },
+    {
      "provider": "ollama",
      "artifact": "qwen3.6:27b",
      "quant": null,
@@ -824,6 +1353,19 @@
      "verified": true
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3.6-35B-A3B-8bit",
+     "quant": "8bit",
+     "download_bytes": 37721403002,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "e06a74e6236a60c8367e1a3214e83d8b61b637b0"
+     }
+    },
+    {
      "provider": "ollama",
      "artifact": "qwen3.6:35b",
      "quant": null,
@@ -862,9 +1404,48 @@
      "provider": "mlx",
      "artifact": "mlx-community/Qwen3.8-27B-4bit",
      "quant": "4bit",
-     "download_bytes": 16081490933,
+     "download_bytes": 16054541349,
      "size_source": "catalog",
-     "verified": true
+     "verified": true,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "10c35caafbb80f7dc6a7a432cdd11af10a6d4818"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3.8-27B-8bit",
+     "quant": "8bit",
+     "download_bytes": 29501218479,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "815b83c0df8ffd1d1b5244cf75fd6ef14fca9ef9"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "Jundot/Qwen3.8-27B-oQ4e-mtp",
+     "quant": "oq4e",
+     "download_bytes": 16971681558,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "04dc5509edd8670fc78cc8c2f74bf9b77b1f2acc"
+     },
+     "options": {
+      "speculation": {
+       "mode": "native_mtp",
+       "num_draft_tokens": 2,
+       "require_acceleration": false
+      }
+     },
+     "note": "oMLX oQ4e mixed-precision build for native MTP decoding. Its MTP drafter comes from the MLX drafter registry (payload `companions`) and downloads with it."
     },
     {
      "provider": "ollama",
@@ -875,14 +1456,108 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "qwen3.8:27b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 29978241837,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "unsloth/Qwen3.8-27B-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/Qwen3.8-27B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 29047086048,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "4ca720788d1e01f1bff70c033e0d0028fd02e502"
+     }
     }
-   ]
+   ],
+   "notes": "The Apple silicon text tier for 24 GiB <= unified memory < 128 GiB (model_catalog.APPLE_TEXT_TIERS).",
+   "kv_geometry": {
+    "n_layers": 16,
+    "n_kv_heads": 4,
+    "head_dim": 256,
+    "source": "config.json text_config of mlx-community/Qwen3.8-27B-4bit@10c35caafbb8: 16 of 64 layers are full_attention (layer_types); the rest are linear attention with a fixed-size state"
+   }
+  },
+  {
+   "id": "qwen3.8-flash-next",
+   "family": "qwen3.8",
+   "display_name": "Qwen3.8 Flash-Next",
+   "vendor": "Qwen",
+   "params_total": 179999981459,
+   "params_active": 6000000000,
+   "license": "qwen-community-1.0",
+   "capabilities_key": "qwen3.8-flash-next",
+   "tags": [
+    "chat",
+    "vision",
+    "tools",
+    "thinking",
+    "moe",
+    "large"
+   ],
+   "starter": false,
+   "artifacts": [
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen3.8-Flash-Next-4bit",
+     "quant": "4bit",
+     "download_bytes": 111519423247,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "07b5dc6c54600a359b87f1e53e7adf6351c72a2c"
+     }
+    },
+    {
+     "provider": "mlx",
+     "artifact": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp",
+     "quant": "oq4e",
+     "download_bytes": 106294664646,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "2615fc0e976e65c2f3b55daca3a948f1cdc5b9f8"
+     },
+     "options": {
+      "speculation": {
+       "mode": "native_mtp",
+       "num_draft_tokens": 2,
+       "require_acceleration": false
+      }
+     },
+     "note": "Carries its MTP weights (76 embedded mtp tensors, model_capabilities.json); no companion drafter."
+    }
+   ],
+   "notes": "The Apple silicon text tier for 128 GiB of unified memory and more (model_catalog.APPLE_TEXT_TIERS). MoE preview: 125B total / 6B active parameters plus a 51B n-gram embedding (params_total is the Hugging Face safetensors total of Qwen/Qwen3.8-Flash-Next). MLX builds only: GGUF needs llama.cpp qwen4exp support that no released engine ships (see model_capabilities.json).",
+   "kv_geometry": {
+    "n_layers": 12,
+    "n_kv_heads": 2,
+    "head_dim": 256,
+    "source": "config.json text_config of mlx-community/Qwen3.8-Flash-Next-4bit@07b5dc6c5460: 12 of 48 layers are full_attention (layer_types); the rest are linear attention with a fixed-size state"
+   }
   },
   {
    "id": "llama-3.2-1b",
@@ -916,12 +1591,38 @@
      "verified": true
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Llama-3.2-1B-Instruct-8bit",
+     "quant": "8bit",
+     "download_bytes": 1313157436,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "d48cdf0a4ea22d893b7c63a99d6a693e24822795"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "bartowski/Llama-3.2-1B-Instruct-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "bartowski/Llama-3.2-1B-Instruct-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 1321083008,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "067b946cf014b7c697f3654f621d577a3e3afd1c"
+     }
     }
    ]
   },
@@ -949,6 +1650,18 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "llama3.2:3b-instruct-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 3421914228,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "mlx",
      "artifact": "mlx-community/Llama-3.2-3B-Instruct-4bit",
      "quant": "4bit",
@@ -957,12 +1670,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Llama-3.2-3B-Instruct-8bit",
+     "quant": "8bit",
+     "download_bytes": 3413784042,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "ff054899609078569493def2823f9acd2780c0c9"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "bartowski/Llama-3.2-3B-Instruct-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "bartowski/Llama-3.2-3B-Instruct-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 3421899296,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "5ab33fa94d1d04e903623ae72c95d1696f09f9e8"
+     }
     }
    ]
   },
@@ -990,6 +1729,18 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "llama3.1:8b-instruct-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 8540789449,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "mlx",
      "artifact": "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit",
      "quant": "4bit",
@@ -998,12 +1749,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Meta-Llama-3.1-8B-Instruct-8bit",
+     "quant": "8bit",
+     "download_bytes": 8532486713,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "142d428004044c37c441272c91316251d9aecc58"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "bartowski/Meta-Llama-3.1-8B-Instruct-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 8540775840,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "bf5b95e96dac0462e2a09145ec66cae9a3f12067"
+     }
     }
    ]
   },
@@ -1031,12 +1808,37 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "llama3.3:70b-instruct-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 74975069354,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "mlx",
      "artifact": "mlx-community/Llama-3.3-70B-Instruct-4bit",
      "quant": "4bit",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Llama-3.3-70B-Instruct-8bit",
+     "quant": "8bit",
+     "download_bytes": 74964761365,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "c5bfd839cd4cda0e5a39a97e00218d9c56e468af"
+     }
     }
    ]
   },
@@ -1072,6 +1874,19 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Llama-4-Scout-17B-16E-Instruct-8bit",
+     "quant": "8bit",
+     "download_bytes": 115434854619,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "71083c312662cf2c4665cc72702e0d7f59dc1a35"
+     }
     }
    ]
   },
@@ -1099,6 +1914,18 @@
      "verified": true
     },
     {
+     "provider": "ollama",
+     "artifact": "gemma3:1b-it-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 1078567427,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "lmstudio",
      "artifact": "google/gemma-3-1b@4bit",
      "quant": "4bit",
@@ -1113,6 +1940,19 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/gemma-3-1b-it-qat-8bit",
+     "quant": "8bit",
+     "download_bytes": 1383448829,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "21864e21e7b1130657eb082f68bf1ebd22dc402e"
+     }
     }
    ]
   },
@@ -1140,6 +1980,18 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "gemma3:4b-it-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 4979945635,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "lmstudio",
      "artifact": "google/gemma-3-4b",
      "quant": null,
@@ -1154,6 +2006,19 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/gemma-3-4b-it-qat-8bit",
+     "quant": "8bit",
+     "download_bytes": 5676142171,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "566828691bf4c43f8336b62eb9d6bd9a09d74042"
+     }
     }
    ]
   },
@@ -1181,6 +2046,18 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "gemma3:12b-it-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 13362619523,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "lmstudio",
      "artifact": "google/gemma-3-12b",
      "quant": null,
@@ -1195,6 +2072,19 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/gemma-3-12b-it-qat-8bit",
+     "quant": "8bit",
+     "download_bytes": 14414748818,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "ffc426b1a214ba5d11f4b580464d42c544b47948"
+     }
     }
    ]
   },
@@ -1223,6 +2113,18 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "gemma3:27b-it-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 29563813635,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "lmstudio",
      "artifact": "google/gemma-3-27b",
      "quant": null,
@@ -1237,6 +2139,19 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/gemma-3-27b-it-qat-8bit",
+     "quant": "8bit",
+     "download_bytes": 31042832182,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "c408904bc9a0b7e996173d3cbe1bfe30e04e678d"
+     }
     }
    ]
   },
@@ -1263,6 +2178,18 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "gemma3n:e4b-it-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 9515462844,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
     },
     {
      "provider": "lmstudio",
@@ -1298,6 +2225,19 @@
      "download_bytes": 4977164416,
      "size_source": "catalog",
      "verified": true
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "unsloth/gemma-4-E4B-it-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 8291606720,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "bfc15c382204943c3a8fff0c750b94ae2364d7a3"
+     }
     }
    ]
   },
@@ -1324,6 +2264,19 @@
      "download_bytes": 15641239295,
      "size_source": "catalog",
      "verified": true
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/gemma-4-26B-A4B-it-qat-8bit",
+     "quant": "8bit",
+     "download_bytes": 27953641181,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "bedc5c51905d796b192de24567f358b0b1653d2e"
+     }
     }
    ]
   },
@@ -1358,12 +2311,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Mistral-7B-Instruct-v0.3-8bit",
+     "quant": "8bit",
+     "download_bytes": 7701359025,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "c282bcd11a64be44ac3f130f0b819d48ecc1846d"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "bartowski/Mistral-7B-Instruct-v0.3-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "bartowski/Mistral-7B-Instruct-v0.3-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 7702565088,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "61fd4167fff3ab01ee1cfe0da183fa27a944db48"
+     }
     }
    ]
   },
@@ -1398,6 +2377,19 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Mistral-Small-3.2-24B-Instruct-2506-8bit",
+     "quant": "8bit",
+     "download_bytes": 25046187345,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "1db835463eb0f953019af1048077b90403b70424"
+     }
     }
    ]
   },
@@ -1500,6 +2492,19 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/DeepSeek-R1-Distill-Qwen-1.5B-8bit",
+     "quant": "8bit",
+     "download_bytes": 1888373967,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "5605fbb7f1f514acf386453211831d5151db8210"
+     }
     }
    ]
   },
@@ -1535,12 +2540,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/DeepSeek-R1-Distill-Qwen-7B-8bit",
+     "quant": "8bit",
+     "download_bytes": 8091987725,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "e16f33910798366569bd763abb4edf246fba4922"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 8098525152,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "361004151d4f4f6b446dc5e6d46fbf4422a80d5f"
+     }
     }
    ]
   },
@@ -1582,6 +2613,19 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/DeepSeek-R1-0528-Qwen3-8B-8bit",
+     "quant": "8bit",
+     "download_bytes": 8703048996,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "301d65149e35d8f5b2772d84d53ede3adb62c894"
+     }
     }
    ]
   },
@@ -1615,6 +2659,19 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/DeepSeek-R1-Distill-Qwen-14B-8bit",
+     "quant": "8bit",
+     "download_bytes": 15694091111,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "2fbbaeaa759a51ea55b6baba8574e340a0a71200"
+     }
     }
    ]
   },
@@ -1764,6 +2821,18 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "phi4:14b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 15580501505,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "mlx",
      "artifact": "mlx-community/phi-4-4bit",
      "quant": "4bit",
@@ -1772,12 +2841,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/phi-4-8bit",
+     "quant": "8bit",
+     "download_bytes": 15576180399,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "7a40ce2189ec31997a0f9bb949d60206f90527c8"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "bartowski/phi-4-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "bartowski/phi-4-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 15580500416,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "19cd65f97c2f1712a81c506611d3f9c94b16a1e1"
+     }
     }
    ]
   },
@@ -1805,12 +2900,37 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "phi4-mini:3.8b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 4084613131,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "mlx",
      "artifact": "mlx-community/Phi-4-mini-instruct-4bit",
      "quant": "4bit",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/Phi-4-mini-instruct-8bit",
+     "quant": "8bit",
+     "download_bytes": 4076012072,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "93b273a5497a4fcdcfb7ac00143565506b4f72e4"
+     }
     }
    ]
   },
@@ -1905,12 +3025,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/SmolLM3-3B-8bit",
+     "quant": "8bit",
+     "download_bytes": 3267527051,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "316f091e34982bc6eaf7f6cc1db82bdb77ac2103"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "ggml-org/SmolLM3-3B-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "ggml-org/SmolLM3-3B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 3275574624,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "4965cb60b150737b68a0408c36aeefb65078f894"
+     }
     }
    ]
   },
@@ -2053,6 +3199,19 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "nomic-ai/nomic-embed-text-v1.5-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 146146432,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "0188c9bf409793f810680a5a431e7b899c46104c"
+     }
     }
    ],
    "capabilities_override": {
@@ -2166,6 +3325,19 @@
      "verified": true
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/all-MiniLM-L6-v2-8bit",
+     "quant": "8bit",
+     "download_bytes": 24181829,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "b8fa083f70e4f4327673a9c20d584aab81d38d86"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "sentence-transformers/all-MiniLM-L6-v2",
      "quant": null,
@@ -2248,6 +3420,18 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "qwen3-embedding:4b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 4279660224,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "lmstudio",
      "artifact": "text-embedding-qwen3-embedding-4b",
      "quant": "q4_k_m",
@@ -2262,6 +3446,19 @@
      "download_bytes": 2496703776,
      "size_source": "catalog",
      "verified": true
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "Qwen/Qwen3-Embedding-4B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 4279660224,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "f4602530db1d980e16da9d7d3a70294cf5c190be"
+     }
     }
    ],
    "capabilities_override": {
@@ -2293,12 +3490,37 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "qwen3-embedding:8b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 8047105824,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "Qwen/Qwen3-Embedding-8B-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "Qwen/Qwen3-Embedding-8B-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 8047105824,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "69d0e58a13e463cd99a9b83e3f5fee7c10265fab"
+     }
     }
    ],
    "capabilities_override": {
@@ -2366,6 +3588,18 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "qwen2.5-coder:7b-instruct-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 8098538722,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "mlx",
      "artifact": "mlx-community/Qwen2.5-Coder-7B-Instruct-4bit",
      "quant": "4bit",
@@ -2374,12 +3608,38 @@
      "verified": false
     },
     {
+     "provider": "mlx",
+     "artifact": "mlx-community/Qwen2.5-Coder-7B-Instruct-8bit",
+     "quant": "8bit",
+     "download_bytes": 8091987725,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "b292f3cb59a1dea859013fad96af2640ce15ba9e"
+     }
+    },
+    {
      "provider": "huggingface",
      "artifact": "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF:Q4_K_M",
      "quant": "q4_k_m",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "huggingface",
+     "artifact": "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF:Q8_0",
+     "quant": "q8_0",
+     "download_bytes": 8098525984,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "1f629da0c8bed16b9e50cee91c70693650e66c35"
+     }
     }
    ]
   },
@@ -2408,12 +3668,37 @@
      "verified": false
     },
     {
+     "provider": "ollama",
+     "artifact": "qwq:32b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 34820897969,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
+    },
+    {
      "provider": "mlx",
      "artifact": "mlx-community/QwQ-32B-4bit",
      "quant": "4bit",
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "mlx",
+     "artifact": "mlx-community/QwQ-32B-8bit",
+     "quant": "8bit",
+     "download_bytes": 34812857379,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "hf_api",
+      "checked": "2026-09-24",
+      "revision": "9a877259e77a2bee9b71dbed3fb0745b94396187"
+     }
     }
    ]
   },
@@ -2439,6 +3724,18 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "granite4.1:8b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 9345628600,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
     }
    ]
   },
@@ -2525,6 +3822,18 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "starcoder2:3b-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 3224569415,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
     }
    ]
   },
@@ -2598,6 +3907,18 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "falcon3:7b-instruct-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 7926795514,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
     }
    ]
   },
@@ -2649,6 +3970,18 @@
      "download_bytes": null,
      "size_source": "unknown",
      "verified": false
+    },
+    {
+     "provider": "ollama",
+     "artifact": "exaone3.5:7.8b-instruct-q8_0",
+     "quant": "q8_0",
+     "download_bytes": 8312098662,
+     "size_source": "catalog",
+     "verified": false,
+     "upstream": {
+      "method": "ollama_registry",
+      "checked": "2026-09-24"
+     }
     }
    ]
   },

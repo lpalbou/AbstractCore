@@ -22,6 +22,18 @@ from abstractcore.config.capability_defaults import (
 from abstractcore.config.manager import ConfigurationManager
 
 
+@pytest.fixture(autouse=True)
+def _portable_host(monkeypatch):
+    """These tests pin the PORTABLE recommendation (a non-Apple host). On a
+    Mac the text row follows the unified-memory tiers instead; that is
+    covered by tests/config/test_recommended_text_tiers.py."""
+
+    from abstractcore.utils import host_profile as hp
+    from tests.models_engines_fakes import synthetic_host
+
+    monkeypatch.setattr(hp, "host_profile", lambda **_k: synthetic_host("cuda24"))
+
+
 @pytest.fixture()
 def fresh_config(tmp_path: Path) -> Path:
     return tmp_path / "abstractcore.json"

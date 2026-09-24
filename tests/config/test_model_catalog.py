@@ -104,7 +104,7 @@ def test_catalog_id_lookup_is_tolerant_like_presence():
 # ---------------------------------------------------------------------------
 
 _ROW_KEYS = {"id", "family", "display_name", "vendor", "params_total", "params_active", "license", "capabilities", "source", "tags", "artifacts"}
-_ART_KEYS = {"provider", "artifact", "quant", "bits", "download_bytes", "size_source", "presence", "fit", "downloadable", "recommended"}
+_ART_KEYS = {"provider", "artifact", "quant", "bits", "quant_class", "quant_class_source", "companions", "companion_bytes", "note", "options", "download_bytes", "size_source", "presence", "fit", "downloadable", "recommended"}
 _FIT_KEYS = {"verdict", "need_bytes", "ceiling_bytes", "free_now_bytes", "fits_now", "disk_ok", "max_context", "confidence", "notes"}
 
 
@@ -125,6 +125,7 @@ def test_catalog_payload_follows_contract_c(host):
             assert art["presence"]["status"] in {"installed", "absent", "unknown", "not_applicable"}
             assert art["fit"]["verdict"] in {"fits", "tight", "too_large", "partial_offload", "unknown"}
             assert art["size_source"] in {"hf_api", "catalog", "engine", "estimate", "unknown"}
+            assert art["quant_class"] in mc.QUANT_CLASSES
 
 
 def test_capabilities_are_joined_from_the_registry(host):
@@ -138,18 +139,69 @@ def test_capabilities_are_joined_from_the_registry(host):
 
 
 def test_the_starter_text_model_is_preselected_on_apple_silicon(host):
-    row = next(r for r in mc.catalog(host=synthetic_host("metal128"))["rows"] if r["id"] == "qwen3.5-9b")
-    picked = [a for a in row["artifacts"] if a["recommended"]]
-    assert [a["artifact"] for a in picked] == ["qwen/qwen3.5-9b@4bit"]
+    """On a Mac the MLX lane is pre-selected and the starter is the memory tier."""
+
+    rows = {r["id"]: r for r in mc.catalog(host=synthetic_host("metal128"))["rows"]}
+    nine = rows["qwen3.5-9b"]
+    assert [a["artifact"] for a in nine["artifacts"] if a["recommended"]] == [mc._tier_artifact(mc.APPLE_TEXT_TIERS[0])]
+    assert nine["starter"] is False  # 128 GiB is the Flash-Next tier
+    assert rows["qwen3.8-flash-next"]["starter"] is True
+    assert [r["id"] for r in rows.values() if r["starter"] and "chat" in r["tags"]] == ["qwen3.8-flash-next"]
+    # LM Studio / Ollama builds stay listed and downloadable, just not pre-selected.
+    lms = next(a for a in nine["artifacts"] if a["provider"] == "lmstudio")
+    assert lms["recommended"] is False and lms["supported_on_host"] is True
+
+
+def test_the_portable_starter_is_preselected_off_apple_silicon(host):
+    row = next(r for r in mc.catalog(host=synthetic_host("cuda24"))["rows"] if r["id"] == "qwen3.5-9b")
+    assert [a["artifact"] for a in row["artifacts"] if a["recommended"]] == ["qwen/qwen3.5-9b@4bit"]
     assert row["starter"] is True
 
 
-def test_mlx_artifacts_are_not_downloadable_off_apple_silicon(host):
+def _no_local_engines(monkeypatch):
+    """engine_inventory() reads THIS interpreter (llama-cpp-python, mlx and
+    transformers importable in the dev venv): a synthetic host must not
+    inherit it."""
+
+    from abstractcore.config import engines
+
+    real = engines.engine_inventory
+
+    def inventory(*args, **kwargs):
+        out = real(*args, **kwargs)
+        for e in out["engines"]:
+            e["installed"] = False
+        return out
+
+    monkeypatch.setattr(engines, "engine_inventory", inventory)
+
+
+def test_mlx_artifacts_are_not_downloadable_off_apple_silicon(host, monkeypatch):
+    _no_local_engines(monkeypatch)
     rows = mc.catalog(host=synthetic_host("cuda24"))["rows"]
     mlx = [a for r in rows for a in r["artifacts"] if a["provider"] == "mlx"]
     assert mlx and all(not a["downloadable"] and not a["supported_on_host"] for a in mlx)
     qwen8 = next(r for r in rows if r["id"] == "qwen3-8b")
     assert next(a for a in qwen8["artifacts"] if a["recommended"])["provider"] == "ollama"
+
+
+def test_an_installed_engine_outranks_the_provider_order(host, monkeypatch):
+    """The documented rule that made the test above environment-dependent:
+    with llama-cpp-python importable, the GGUF (llamacpp engine) wins."""
+
+    from abstractcore.config import engines
+
+    real = engines.engine_inventory
+
+    def inventory(*args, **kwargs):
+        out = real(*args, **kwargs)
+        for e in out["engines"]:
+            e["installed"] = e["id"] == "llamacpp"
+        return out
+
+    monkeypatch.setattr(engines, "engine_inventory", inventory)
+    qwen8 = next(r for r in mc.catalog(host=synthetic_host("cuda24"))["rows"] if r["id"] == "qwen3-8b")
+    assert next(a for a in qwen8["artifacts"] if a["recommended"])["engine"] == "llamacpp"
 
 
 def test_presence_reflects_the_hf_cache(host):

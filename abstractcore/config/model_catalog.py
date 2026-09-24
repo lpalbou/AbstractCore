@@ -32,12 +32,17 @@ from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 __all__ = [
     "MODEL_CATALOG_SCHEMA",
     "SEED_SCHEMA",
+    "QUANT_CLASSES",
+    "MTP_RECOMMENDED",
+    "APPLE_TEXT_TIERS",
     "load_seed",
     "validate_catalog",
     "catalog",
     "search",
     "catalog_id_for",
     "hub_cache_path",
+    "quant_class",
+    "recommended_text_model",
 ]
 
 MODEL_CATALOG_SCHEMA = "model_catalog_v1"
@@ -62,13 +67,327 @@ _PROVIDER_ENGINE = {
 # The build an engine fetches when the reference names no quant.
 _ENGINE_DEFAULT_QUANT = {"ollama": "q4_k_m", "lmstudio": "4bit"}
 
-# Pre-selection order per accelerator (principle 3: fewest clicks).
+# Pre-selection order per accelerator (principle 3: fewest clicks). On Apple
+# silicon MLX is the recommended lane (operator ruling 2026-09-24); LM Studio
+# and Ollama artifacts stay listed and downloadable, just not pre-selected.
 _HOST_PREFERENCE = {
-    "metal": ("lmstudio", "mlx", "ollama", "huggingface", "mlx-gen", "supertonic"),
+    "metal": ("mlx", "lmstudio", "ollama", "huggingface", "mlx-gen", "supertonic"),
     "cuda": ("ollama", "lmstudio", "huggingface", "supertonic"),
     "rocm": ("ollama", "lmstudio", "huggingface", "supertonic"),
     "none": ("ollama", "lmstudio", "huggingface", "supertonic"),
 }
+
+
+# ---------------------------------------------------------------------------
+# The recommended text model: ONE function, every surface
+# ---------------------------------------------------------------------------
+#
+# Operator ruling 2026-09-24. On Apple silicon (accelerator `metal`) the
+# recommended text artifact is chosen by unified memory, in GiB as the host
+# probe reports it (`ram_bytes / 2**30`):
+#
+#     memory <  24          -> Qwen3.5 9B        (qwen3.5-9b)
+#     24 <= memory < 128    -> Qwen3.8 27B       (qwen3.8-27b)
+#     memory >= 128         -> Qwen3.8 Flash-Next (qwen3.8-flash-next)
+#
+# Every other host keeps the portable default (`RECOMMENDED_MODEL_DOWNLOADS`
+# in capability_defaults). The catalog's `recommended`/`starter` flags, the
+# fresh-install seed, `apply-recommended`, `models download --recommended` and
+# the Gateway's guide tiles all read `recommended_text_model()`; nothing else
+# may hold a tier table.
+
+# Whether each tier recommends its MTP (native multi-token prediction) build
+# instead of the plain 4-bit one. W2 2026-09-24: NO-GO until the companion
+# download and the mlx-lm fallback are fixed (mission CC).
+MTP_RECOMMENDED = False
+
+# The MTP builds carry their route options in the seed (artifact `options`:
+# `speculation = {mode: native_mtp, num_draft_tokens: 2, require_acceleration:
+# false}`, the keys providers/speculation.py accepts); the pick copies them.
+
+# (upper bound in GiB, exclusive; None = no bound), catalog row, plain, MTP.
+# Every artifact named here must be a seed artifact of that row carrying an
+# `upstream` verification record (enforced by tests/config/test_model_catalog.py).
+APPLE_TEXT_TIERS: Tuple[Dict[str, Any], ...] = (
+    {"below_gib": 24, "row": "qwen3.5-9b",
+     "plain": "mlx-community/Qwen3.5-9B-MLX-4bit", "mtp": "mlx-works/Qwen3.5-9B-oQ4e-mtp"},
+    {"below_gib": 128, "row": "qwen3.8-27b",
+     "plain": "mlx-community/Qwen3.8-27B-4bit", "mtp": "Jundot/Qwen3.8-27B-oQ4e-mtp"},
+    {"below_gib": None, "row": "qwen3.8-flash-next",
+     "plain": "mlx-community/Qwen3.8-Flash-Next-4bit", "mtp": "Jundot/Qwen3.8-Flash-Next-oQ4e-mtp"},
+)
+_TIER_PROVIDER = "mlx"
+
+
+def _tier_artifact(tier: Mapping[str, Any], mtp: Optional[bool] = None) -> str:
+    use_mtp = MTP_RECOMMENDED if mtp is None else bool(mtp)
+    return str(tier["mtp"] if use_mtp else tier["plain"])
+
+
+def _memory_gib(host: Mapping[str, Any]) -> Optional[float]:
+    ram = host.get("ram_bytes")
+    if isinstance(ram, bool) or not isinstance(ram, (int, float)) or ram <= 0:
+        return None
+    return float(ram) / float(1024**3)
+
+
+def _apple_tier(memory_gib: Optional[float]) -> Tuple[Dict[str, Any], str]:
+    """The tier for this much unified memory, and the rule that chose it."""
+
+    if memory_gib is None:
+        # No memory reading: the smallest tier, said out loud (never a guess
+        # dressed up as a measurement).
+        return APPLE_TEXT_TIERS[0], "unified memory unknown: smallest Apple silicon tier"
+    lower = 0
+    for tier in APPLE_TEXT_TIERS:
+        bound = tier["below_gib"]
+        if bound is None or memory_gib < bound:
+            rule = f"{lower} <= memory < {bound} GiB" if bound is not None else f"memory >= {lower} GiB"
+            return tier, rule
+        lower = bound
+    raise AssertionError("APPLE_TEXT_TIERS must end with an unbounded tier")
+
+
+def _seed_row_and_artifact(row_id: str, provider: str, artifact: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """The seed row + artifact a recommendation names. Raises when absent:
+    a recommendation the catalog cannot show is a broken seed, not a fallback."""
+
+    for row in _load_seed_cached().get("rows") or []:
+        if row.get("id") != row_id:
+            continue
+        for art in row.get("artifacts") or []:
+            if art.get("provider") == provider and art.get("artifact") == artifact:
+                return row, art
+    raise LookupError(f"recommended artifact {provider}:{artifact} is not in catalog row {row_id!r}")
+
+
+def _portable_text_row_id() -> str:
+    portable = _portable_text_default()
+    row_id = catalog_id_for(portable["provider"], portable["artifact"])
+    if row_id is None:
+        raise LookupError(f"portable text default {portable['provider']}:{portable['artifact']} is not in the catalog")
+    return row_id
+
+
+def _portable_text_default() -> Dict[str, Any]:
+    from .capability_defaults import RECOMMENDED_CAPABILITY_DEFAULT_ROUTES, RECOMMENDED_MODEL_DOWNLOADS
+
+    route = RECOMMENDED_CAPABILITY_DEFAULT_ROUTES["input.text"]
+    download = RECOMMENDED_MODEL_DOWNLOADS["input.text"]
+    return {
+        "provider": download["provider"],
+        "artifact": download["artifact"],
+        "model": route.model,
+        "options": json.loads(json.dumps(route.options or {})),
+    }
+
+
+def _fit_for_seed_artifact(row: Mapping[str, Any], art: Mapping[str, Any], host: Mapping[str, Any]) -> Dict[str, Any]:
+    """The catalog's own fit verdict for a not-yet-installed seed artifact."""
+
+    from ..utils.model_fit import bits_for_quant, estimate_fit
+
+    caps = _capabilities(row.get("capabilities_key"), row.get("capabilities_override"), row.get("tags") or [])
+    text_like = bool(caps.get("text")) or caps.get("text") is None
+    size = art.get("download_bytes") if isinstance(art.get("download_bytes"), int) else None
+    _repos, companion_bytes = _companions(str(art.get("provider")), str(art.get("artifact")))
+    if isinstance(size, int) and isinstance(companion_bytes, int):
+        size += companion_bytes  # the drafter downloads with it and stays resident
+    quant = art.get("quant")
+    if bits_for_quant(quant) is None and not quant and art.get("provider") in _ENGINE_DEFAULT_QUANT:
+        quant = _ENGINE_DEFAULT_QUANT[str(art.get("provider"))]
+    return estimate_fit(
+        host=host,
+        params_total=row.get("params_total"),
+        params_source="catalog",
+        quant=quant,
+        weight_bytes=size,
+        download_bytes=size,
+        geometry=_seed_geometry(row),
+        context=512 if caps.get("embedding") else (None if text_like else 1),
+        max_tokens=caps.get("max_tokens"),
+        disk_free_bytes=_disk_free_for(str(art.get("provider")), host),
+    )
+
+
+def recommended_text_model(
+    host: Optional[Mapping[str, Any]] = None, *, mtp: Optional[bool] = None, fit: bool = True
+) -> Dict[str, Any]:
+    """THE recommended text model for a host (default: this machine).
+
+    Returns `{provider, artifact, model, options, catalog_id, basis, tier,
+    memory_gib, mtp, fit, fits, warning}`:
+
+      artifact   the exact download reference (what `models download` fetches)
+      model      the id the route stores (the served id; for MLX the repo id)
+      options    route options: the portable route's MTP policy
+                 (`speculation`), overlaid with the artifact's own options
+      basis      `apple_silicon_tiers` or `portable_default`
+      tier       the memory rule that chose it (`24 <= memory < 128 GiB`)
+      fit        the catalog's fit block for this artifact on this host
+      companions repos that must be downloaded with the artifact (an MTP
+                 build's drafter), `[]` for most
+
+    A TIER THAT DOES NOT FIT IS STILL THE TIER. When the catalog's fit logic
+    says the tier's model is `too_large` (or only `partial_offload`s) on this
+    host, the pick does not silently fall to a smaller tier: it stays, with
+    `fits: False` and a plain-language `warning` every surface shows. The
+    memory rule is the operator's; the estimate is advice about it.
+    """
+
+    from ..utils.host_profile import host_profile
+
+    # `fit=False` (the route/download tables, the import-time config seed)
+    # needs only accelerator + memory: the LIGHT host reading, which never
+    # loads mlx/torch or runs a GPU tool. The fit block needs the full probe.
+    profile = dict(host) if host is not None else host_profile(light=not fit)
+    accelerator = str(profile.get("accelerator") or "none")
+    memory = _memory_gib(profile)
+    use_mtp = MTP_RECOMMENDED if mtp is None else bool(mtp)
+    if accelerator == "metal":
+        tier, rule = _apple_tier(memory)
+        provider, artifact = _TIER_PROVIDER, _tier_artifact(tier, use_mtp)
+        row, art = _seed_row_and_artifact(str(tier["row"]), provider, artifact)
+        out: Dict[str, Any] = {
+            "provider": provider,
+            "artifact": artifact,
+            "model": artifact,  # an MLX route serves the repo id it downloads
+            # The route's MTP POLICY (`speculation`) is host-wide and the same
+            # as the portable route's: it asks for MTP wherever the loaded
+            # artifact can do it. An MTP build's own options overlay it.
+            "options": dict(_portable_text_default()["options"], **json.loads(json.dumps(art.get("options") or {}))),
+            "catalog_id": row["id"],
+            "basis": "apple_silicon_tiers",
+            "tier": rule,
+            "mtp": use_mtp,
+        }
+    else:
+        portable = _portable_text_default()
+        row_id = _portable_text_row_id()
+        row, art = _seed_row_and_artifact(row_id, portable["provider"], portable["artifact"])
+        out = dict(portable, catalog_id=row_id, basis="portable_default", tier=None, mtp=False)
+    out["memory_gib"] = round(memory, 2) if memory is not None else None
+    if not fit:
+        out.update(fit=None, fits=None, companions=None, companion_bytes=None, warning=None)
+        return out
+    fit = _fit_for_seed_artifact(row, art, profile)
+    out["fit"] = fit
+    verdict = fit.get("verdict")
+    out["fits"] = verdict in ("fits", "tight") if verdict != "unknown" else None
+    out["companions"], out["companion_bytes"] = _companions(str(out["provider"]), str(out["artifact"]))
+    out["warning"] = _fit_warning(row, fit)
+    return out
+
+
+def _fit_warning(row: Mapping[str, Any], fit: Mapping[str, Any]) -> Optional[str]:
+    """One sentence per verdict that deserves one: `too_large` /
+    `partial_offload` (may not fit) and `tight` (fits, little headroom)."""
+
+    verdict = fit.get("verdict")
+    if verdict not in ("too_large", "partial_offload", "tight"):
+        return None
+    name = row.get("display_name") or row.get("id")
+    need = fit.get("need_bytes")
+    ceiling = fit.get("ceiling_bytes")
+    amounts = ""
+    if isinstance(need, int) and isinstance(ceiling, int):
+        amounts = (
+            f" It needs about {need / 1024**3:.0f} GiB; this computer can give a model about "
+            f"{ceiling / 1024**3:.0f} GiB."
+        )
+    if verdict == "tight":
+        return (
+            f"{name} is the recommendation for this computer's memory and AbstractCore's estimate says it "
+            f"fits, but tightly.{amounts} Close other models before loading it."
+        )
+    return (
+        f"{name} is the recommendation for this computer's memory, but AbstractCore's estimate says it "
+        f"may not fit.{amounts} It can fail to load or run slowly; a smaller model from the catalog is the "
+        "safe choice."
+    )
+
+
+# ---------------------------------------------------------------------------
+# quant_class: one normalized quantization family per artifact
+# ---------------------------------------------------------------------------
+
+QUANT_CLASSES = ("2bit", "3bit", "4bit", "5bit", "6bit", "8bit", "16bit", "full", "unknown")
+
+# Label -> class, checked in order against the lowercased quant label
+# (`-`/space -> `_`). The label is authoritative; `bits` is consulted only when
+# the label came from the artifact itself (never the engine-default ASSUMPTION
+# the fit logic makes for an Ollama tag with no quant), and anything else is
+# `unknown` -- never a silent guess.
+#   N bit / Nbit / N_bit (MLX)        -> Nbit        (4bit, 8bit, 4bit_dwq)
+#   [ud_][i]qN... (GGUF)              -> Nbit        (q4_k_m, q4_0, iq4_xs, q8_0)
+#   oqN... (oMLX oQ mixed precision)  -> Nbit        (oq4e: base bits 4)
+#   mxfp4 / nvfp4 / int4              -> 4bit
+#   fp8 / f8 / int8                   -> 8bit
+#   f16 / fp16 / bf16                 -> 16bit
+#   f32 / fp32                        -> full
+_QUANT_CLASS_PATTERNS: Tuple[Tuple[str, Optional[str]], ...] = (
+    (r"^(\d+)_?bits?(?:_.*)?$", None),
+    (r"^(?:ud_)?i?q(\d)(?:_.*)?$", None),
+    (r"^oq(\d)[a-z0-9_]*$", None),
+    (r"^(?:mxfp4|nvfp4|int4)$", "4bit"),
+    (r"^(?:fp8|f8|int8)$", "8bit"),
+    (r"^(?:f16|fp16|bf16)$", "16bit"),
+    (r"^(?:f32|fp32)$", "full"),
+)
+
+
+def quant_class(quant: Any, bits: Any = None) -> str:
+    """`q4_k_m` -> `4bit`, `Q8_0` -> `8bit`, `bf16` -> `16bit`, None -> `unknown`.
+
+    `bits` (effective bits/weight) is a fallback for a label this table does
+    not parse but the caller measured: [N, N+1) -> Nbit for N in 2..6,
+    [8, 9) -> 8bit, [16, 17) -> 16bit, >= 32 -> full; else `unknown`.
+    """
+
+    import re as _re
+
+    raw = str(quant or "").strip().lower().replace("-", "_").replace(" ", "")
+    if raw:
+        for pattern, fixed in _QUANT_CLASS_PATTERNS:
+            m = _re.match(pattern, raw)
+            if not m:
+                continue
+            if fixed is not None:
+                return fixed
+            n = int(m.group(1))
+            if n >= 32:
+                return "full"
+            return f"{n}bit" if f"{n}bit" in QUANT_CLASSES else "unknown"
+    if isinstance(bits, bool) or not isinstance(bits, (int, float)) or bits <= 0:
+        return "unknown"
+    b = float(bits)
+    for n in (2, 3, 4, 5, 6, 8, 16):
+        if n <= b < n + 1:
+            return f"{n}bit"
+    return "full" if b >= 32 else "unknown"
+
+
+def quant_class_for(provider: Any, quant: Any) -> Tuple[str, Optional[str]]:
+    """`(quant_class, quant_class_source)` for one catalog artifact.
+
+      stated   the reference names its quant (`q4_k_m`, `@4bit`, `-8bit` repo)
+      assumed  a bare Ollama tag / LM Studio id: the class of the build the
+               engine fetches by default (`_ENGINE_DEFAULT_QUANT`), which the
+               fit estimate assumes too -- a console labels it "assumed"
+      None     no quant information at all -> `unknown`
+    """
+
+    from ..utils.model_fit import bits_for_quant
+
+    if str(quant or "").strip():
+        cls = quant_class(quant, bits_for_quant(quant))
+        return cls, ("stated" if cls != "unknown" else None)
+    default = _ENGINE_DEFAULT_QUANT.get(str(provider or ""))
+    if default:
+        cls = quant_class(default, bits_for_quant(default))
+        if cls != "unknown":
+            return cls, "assumed"
+    return "unknown", None
 
 
 # ---------------------------------------------------------------------------
@@ -107,14 +426,29 @@ def validate_catalog(data: Any) -> List[str]:
         errors.append(f"schema must be {SEED_SCHEMA!r}")
     if not isinstance(data.get("version"), str):
         errors.append("version must be a YYYY-MM-DD string")
+    sizes = data.get("companion_sizes")
+    if sizes is not None:
+        if not isinstance(sizes, dict):
+            errors.append("companion_sizes must be an object")
+        else:
+            for repo, entry in sizes.items():
+                cw = f"companion_sizes[{repo!r}]"
+                if not isinstance(repo, str) or repo.count("/") != 1:
+                    errors.append(f"{cw}: the key must be a repo id")
+                if not isinstance(entry, dict) or set(entry) - {"download_bytes", "upstream"}:
+                    errors.append(f"{cw} must be {{download_bytes, upstream}}")
+                    continue
+                errors.extend(
+                    _validate_upstream(cw, dict(entry, provider="mlx", size_source="catalog"), entry.get("download_bytes"))
+                )
     rows = data.get("rows")
     if not isinstance(rows, list) or not rows:
         return errors + ["rows must be a non-empty list"]
     required_row = ("id", "family", "display_name", "vendor", "params_total", "params_active", "license",
                     "capabilities_key", "tags", "starter", "artifacts")
     required_art = ("provider", "artifact", "quant", "download_bytes", "size_source", "verified")
-    allowed_row = set(required_row) | {"notes", "capabilities_override"}
-    allowed_art = set(required_art) | {"recommended"}
+    allowed_row = set(required_row) | {"notes", "capabilities_override", "kv_geometry"}
+    allowed_art = set(required_art) | {"recommended", "options", "upstream", "note"}
     seen: set = set()
     for i, row in enumerate(rows):
         where = f"rows[{i}]"
@@ -141,6 +475,8 @@ def validate_catalog(data: Any) -> List[str]:
             errors.append(f"{where}.tags must be a list")
         if not isinstance(row.get("starter"), bool):
             errors.append(f"{where}.starter must be a boolean")
+        if "kv_geometry" in row:
+            errors.extend(_validate_kv_geometry(where, row.get("kv_geometry")))
         arts = row.get("artifacts")
         if not isinstance(arts, list) or not arts:
             errors.append(f"{where}.artifacts must be a non-empty list")
@@ -169,6 +505,108 @@ def validate_catalog(data: Any) -> List[str]:
                 errors.append(f"{aw}: size_source must be 'unknown' exactly when download_bytes is null")
             if not isinstance(art.get("verified"), bool):
                 errors.append(f"{aw}.verified must be a boolean")
+            if "options" in art:
+                errors.extend(_validate_artifact_options(aw, art.get("options")))
+            if "upstream" in art:
+                errors.extend(_validate_upstream(aw, art, size))
+            if "note" in art and (not isinstance(art.get("note"), str) or not art.get("note")):
+                errors.append(f"{aw}.note must be a non-empty string")
+    return errors
+
+
+def _validate_kv_geometry(where: str, geo: Any) -> List[str]:
+    """`{n_layers, n_kv_heads, head_dim, source}`: the KV-CACHED attention
+    geometry (a hybrid model counts only its full-attention layers)."""
+
+    if not isinstance(geo, dict):
+        return [f"{where}.kv_geometry must be an object"]
+    errors: List[str] = []
+    for key in geo:
+        if key not in ("n_layers", "n_kv_heads", "head_dim", "source"):
+            errors.append(f"{where}.kv_geometry has unknown field {key!r}")
+    for key in ("n_layers", "n_kv_heads", "head_dim"):
+        value = geo.get(key)
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            errors.append(f"{where}.kv_geometry.{key} must be a positive integer")
+    if not isinstance(geo.get("source"), str) or not geo.get("source"):
+        errors.append(f"{where}.kv_geometry.source must say where the geometry was read")
+    return errors
+
+
+def _companions(provider: str, artifact: str) -> Tuple[List[str], Optional[int]]:
+    """`(repos, bytes)`: the companion repos an artifact downloads with it --
+    FROM THE MLX DRAFTER REGISTRY (`model_materializer.companion_artifacts`
+    -> `speculation.mlx_companion_repos`), never a hand-typed list -- and their
+    total verified size from the seed's `companion_sizes` (None when any
+    companion's size is not recorded: never a guess)."""
+
+    from . import model_materializer as mm
+
+    repos = list(mm.companion_artifacts(provider, artifact))
+    if not repos:
+        return [], None
+    table = _load_seed_cached().get("companion_sizes") or {}
+    sizes = [((table.get(r) or {}).get("download_bytes")) for r in repos]
+    if all(isinstance(x, int) and x > 0 for x in sizes):
+        return repos, int(sum(sizes))
+    return repos, None
+
+
+def _seed_geometry(row: Mapping[str, Any]) -> Optional[Dict[str, int]]:
+    geo = row.get("kv_geometry")
+    if not isinstance(geo, Mapping):
+        return None
+    return {k: int(geo[k]) for k in ("n_layers", "n_kv_heads", "head_dim")}
+
+
+# How an `upstream` record proves an id exists and how big it is:
+#   hf_api           HfApi().model_info(files_metadata=True); bytes = the weight
+#                    files (*.safetensors, or the repo:QUANT *.gguf files)
+#   ollama_registry  GET registry.ollama.ai/v2/library/<name>/manifests/<tag>;
+#                    bytes = sum of the manifest layers
+_UPSTREAM_METHODS = ("hf_api", "ollama_registry")
+
+
+def _validate_upstream(aw: str, art: Mapping[str, Any], size: Any) -> List[str]:
+    """An artifact that claims upstream verification must carry the size the
+    verification read: a row without a verifiable size is rejected."""
+
+    import re as _re
+
+    up = art.get("upstream")
+    if not isinstance(up, dict):
+        return [f"{aw}.upstream must be an object"]
+    errors: List[str] = []
+    for key in up:
+        if key not in ("method", "checked", "revision"):
+            errors.append(f"{aw}.upstream has unknown field {key!r}")
+    if up.get("method") not in _UPSTREAM_METHODS:
+        errors.append(f"{aw}.upstream.method must be one of {', '.join(_UPSTREAM_METHODS)}")
+    if not isinstance(up.get("checked"), str) or not _re.fullmatch(r"\d{4}-\d{2}-\d{2}", up.get("checked") or ""):
+        errors.append(f"{aw}.upstream.checked must be a YYYY-MM-DD string")
+    if up.get("method") == "hf_api" and art.get("provider") not in _HF_REPO_PROVIDERS:
+        errors.append(f"{aw}.upstream.method hf_api needs a Hugging Face provider")
+    if up.get("method") == "ollama_registry" and art.get("provider") != "ollama":
+        errors.append(f"{aw}.upstream.method ollama_registry needs provider ollama")
+    if not isinstance(size, int) or isinstance(size, bool) or size <= 0 or art.get("size_source") != "catalog":
+        errors.append(f"{aw}: an upstream-verified artifact must carry the verified download_bytes (size_source 'catalog')")
+    return errors
+
+
+def _validate_artifact_options(aw: str, options: Any) -> List[str]:
+    if not isinstance(options, dict):
+        return [f"{aw}.options must be an object"]
+    errors: List[str] = []
+    for key in options:
+        if key != "speculation":
+            errors.append(f"{aw}.options has unknown field {key!r}")
+    if "speculation" in options:
+        from ..providers.speculation import normalize_speculation_request
+
+        try:
+            normalize_speculation_request(options["speculation"])
+        except ValueError as exc:
+            errors.append(f"{aw}.options.speculation: {exc}")
     return errors
 
 
@@ -491,6 +929,16 @@ def _build_artifact(
             if params is None and isinstance(facts.get("params_total"), int):
                 params, params_source = facts["params_total"], "hf_api"
 
+    # COMPANIONS (an MLX build's MTP drafter, from the registry): they download
+    # with the artifact and stay resident while it decodes, so a catalog-sized
+    # artifact's `download_bytes` (and the fit's weights) include them;
+    # `companion_bytes` is that part. An engine-reported size is left as the
+    # engine reports it.
+    companions, companion_bytes = _companions(provider, artifact)
+    if companions and isinstance(size, int) and size_source in ("catalog", "hf_api"):
+        if isinstance(companion_bytes, int):
+            size += companion_bytes
+
     if params is None:
         from ..utils.model_fit import parse_params_from_name
 
@@ -499,6 +947,10 @@ def _build_artifact(
             params, params_source = guessed, "name"
 
     bits = bits_for_quant(quant)
+    # quant_class: the artifact's OWN label when it states one (`stated`);
+    # else the build the engine fetches for a bare reference (`assumed`, the
+    # same assumption the fit estimate makes below); else `unknown`.
+    qclass, qclass_source = quant_class_for(provider, quant)
     fit_quant = quant
     assumed_note: Optional[str] = None
     if bits is None and not quant and provider in _ENGINE_DEFAULT_QUANT:
@@ -526,13 +978,21 @@ def _build_artifact(
         quant=fit_quant,
         weight_bytes=size if size_source in _EXACT_SIZE_SOURCES else None,
         download_bytes=size if isinstance(size, int) else None,
-        geometry=_local_geometry(provider, artifact) if presence.status == mm.PRESENCE_INSTALLED else None,
+        # The seed's KV geometry (hybrid models: full-attention layers only)
+        # beats a local config read, which counts every layer as KV-cached.
+        geometry=_seed_geometry(row) or (_local_geometry(provider, artifact) if presence.status == mm.PRESENCE_INSTALLED else None),
         context=context,
         max_tokens=caps.get("max_tokens"),
         disk_free_bytes=_disk_free_for(provider, host),
     )
     if assumed_note:
         fit["notes"] = [assumed_note] + list(fit.get("notes") or [])
+    if companions and companion_bytes is None:
+        fit["notes"] = list(fit.get("notes") or []) + [
+            f"companion size not recorded ({', '.join(companions)}): not included in download_bytes"
+        ]
+    elif companions:
+        fit["notes"] = list(fit.get("notes") or []) + [f"includes the MTP companion {', '.join(companions)}"]
     if presence.status == mm.PRESENCE_INSTALLED:
         fit["disk_ok"] = True
         fit["notes"] = list(fit.get("notes") or []) + ["already installed"]
@@ -549,6 +1009,12 @@ def _build_artifact(
         "engine": engine,
         "quant": _norm(quant) or None,
         "bits": bits,
+        "quant_class": qclass,
+        "quant_class_source": qclass_source,
+        "companions": companions,
+        "companion_bytes": companion_bytes,
+        "note": art.get("note"),
+        "options": json.loads(json.dumps(art.get("options") or {})),
         "download_bytes": size if isinstance(size, int) else None,
         "size_source": size_source,
         "presence": {
@@ -565,16 +1031,32 @@ def _build_artifact(
     }
 
 
-def _pick_recommended(row: Dict[str, Any], accelerator: str, installed_engines: Mapping[str, bool]) -> None:
+def _pick_recommended(
+    row: Dict[str, Any],
+    accelerator: str,
+    installed_engines: Mapping[str, bool],
+    tier_artifact: Optional[Tuple[str, str]] = None,
+) -> None:
     """Exactly one artifact per row gets `recommended: true`: the pre-selection.
 
-    A curated recommendation (the fresh-install starter) wins when this host
-    can run it; otherwise the host's preferred engine order decides, with an
-    installed engine and a `fits` verdict preferred over the rest.
+    On Apple silicon a row that is one of the text tiers pre-selects its tier
+    artifact (`tier_artifact`, from `APPLE_TEXT_TIERS` + `MTP_RECOMMENDED`).
+    Otherwise a curated recommendation (the portable fresh-install starter)
+    wins when this host can run it -- except on Apple silicon when the row has
+    an MLX artifact (MLX is the recommended lane there); then the host's
+    preferred engine order decides, with
+    an installed engine and a `fits` verdict preferred over the rest.
     """
 
     arts = row["artifacts"]
     curated = [a for a in arts if a.get("recommended") and a.get("supported_on_host")]
+    if accelerator == "metal" and any(a["provider"] == "mlx" and a.get("supported_on_host") for a in arts):
+        curated = []  # the MLX lane beats a curated LM Studio/Ollama pick on a Mac
+    if tier_artifact is not None:
+        forced = [a for a in arts if (a["provider"], a["artifact"]) == tier_artifact]
+        if not forced:
+            raise LookupError(f"tier artifact {tier_artifact} missing from catalog row {row.get('id')!r}")
+        curated = forced
     for a in arts:
         a["recommended"] = False
     if curated:
@@ -652,6 +1134,12 @@ def catalog(
     want_tags = [_norm(t) for t in (tags or []) if _norm(t)]
     seed = load_seed()
     support = _engine_support(profile)
+    # THE recommended text model for this host: drives the tier rows'
+    # pre-selection and which text row is the `starter` (one function, see
+    # `recommended_text_model`).
+    text_pick = recommended_text_model(profile)
+    text_rows = {str(t["row"]) for t in APPLE_TEXT_TIERS} | {text_pick["catalog_id"], _portable_text_row_id()}
+    tier_by_row = {str(t["row"]): t for t in APPLE_TEXT_TIERS}
 
     seed_rows = [r for r in seed["rows"] if _matches_query(r, query)]
     if want_tags:
@@ -739,12 +1227,16 @@ def catalog(
                 "capabilities": caps,
                 "source": "curated",
                 "tags": list(seed_row.get("tags") or []),
-                "starter": bool(seed_row.get("starter")),
+                "starter": (seed_row["id"] == text_pick["catalog_id"]) if seed_row["id"] in text_rows else bool(seed_row.get("starter")),
                 "notes": seed_row.get("notes"),
                 "artifacts": arts,
             }
             if arts:
-                _pick_recommended(row, accelerator, installed_engines)
+                tier = tier_by_row.get(seed_row["id"]) if accelerator == "metal" else None
+                forced = (_TIER_PROVIDER, _tier_artifact(tier)) if tier is not None else None
+                if forced is not None and not any((a["provider"], a["artifact"]) == forced for a in arts):
+                    forced = None  # an engine filter (`engine=ollama`) removed the tier artifact
+                _pick_recommended(row, accelerator, installed_engines, forced)
             rows_out.append(row)
 
         seen_repos = {
