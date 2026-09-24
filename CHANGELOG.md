@@ -7,6 +7,302 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.15.0] - 2026-09-24
+
+On a Mac the recommended local model now follows the computer's memory, downloads report real
+progress and bring a model's MTP companion along, and loading a model stays offline without
+switching the whole process offline. Fetched PDFs no longer leave the machine by default.
+
+### Added
+
+- **On a Mac the recommended text model follows the computer's memory.** One function,
+  `model_catalog.recommended_text_model()`, decides it for every surface: the
+  catalog's `recommended`/`starter` flags, the fresh-install defaults,
+  `config apply-recommended`, `models download --recommended` and, through the
+  runtime facade, the Gateway's guide. On Apple silicon it is an MLX build by
+  unified memory: below 24 GiB `mlx-community/Qwen3.5-9B-MLX-4bit`, 24 GiB to
+  below 128 GiB `mlx-community/Qwen3.8-27B-4bit`, 128 GiB and above
+  `mlx-community/Qwen3.8-Flash-Next-4bit` (new catalog row
+  `qwen3.8-flash-next`). MLX now leads the Apple-silicon provider order; LM
+  Studio and Ollama builds stay listed and downloadable. Other hosts keep LM
+  Studio `qwen/qwen3.5-9b@4bit`. Each tier also lists its MTP build
+  (`mlx-works/Qwen3.5-9B-oQ4e-mtp`, `Jundot/Qwen3.8-27B-oQ4e-mtp`,
+  `Jundot/Qwen3.8-Flash-Next-oQ4e-mtp`, with the `speculation` options);
+  `MTP_RECOMMENDED` (off) switches the recommendation to them. A tier the fit
+  estimate says will not fit is still the tier, with `fits: false` and a
+  one-sentence `warning`; `recommended_plan()` carries both on the text row.
+  New `capability_defaults.recommended_capability_default_routes()` /
+  `recommended_model_downloads()` are the host-aware views of the portable
+  tables. See [docs/models.md](docs/models.md#the-recommended-text-model).
+- **8-bit builds in the catalog, every id verified upstream.** 95 artifacts
+  added: 39 MLX `-8bit` repos (plus the 5 tier builds), 24 GGUF `Q8_0` files
+  in the repos the catalog already used for `Q4_K_M`, and 27 Ollama `-q8_0`
+  tags whose registry config matches the tag the catalog already lists. Each
+  carries `upstream: {method, checked, revision?}` and the size read upstream;
+  the seed validator (and schema) reject an `upstream` artifact without that
+  size. LM Studio `@8bit` ids are not added: they cannot be verified upstream
+  without running `lms`.
+- **`quant_class` and `quant_class_source` on every catalog artifact**:
+  `2bit`, `3bit`, `4bit`, `5bit`, `6bit`, `8bit`, `16bit`, `full` or
+  `unknown`, `stated` when the reference names its quant, `assumed` for a bare
+  Ollama tag or LM Studio id (the engine's default build, as the fit estimate
+  assumes), `null` with `unknown`. Artifacts also carry `options`, `note`,
+  `companions` (an MLX build's MTP drafter, read from the MLX drafter
+  registry, `speculation.mlx_companion_repos`, never hand-typed) and
+  `companion_bytes` (the drafter's verified size, recorded in the seed's new
+  `companion_sizes`); a catalog-sized `download_bytes` includes the
+  companion, and so does the fit estimate. `quant` and `bits` are unchanged. See
+  [docs/models.md](docs/models.md#quant_class).
+- **Fit estimates for the hybrid Qwen3.5/3.8 tier rows use their real KV
+  geometry.** The rows carry `kv_geometry` read from the upstream
+  `config.json` (full-attention layers only: 8 of 32, 16 of 64, 12 of 48),
+  used before and after install. Qwen3.8 Flash-Next 4-bit went from an
+  estimated ~199 GiB (a KV cache guessed from 180B parameters) to ~109 GiB
+  (103.9 GiB of upstream weights + 0.2 GiB KV + 5.2 GiB overhead). A `tight`
+  pick now says it fits tightly.
+- **Download jobs report real progress from the first second, for every
+  source.** A `host_job_v1` download now carries `state` (queued, resolving,
+  downloading, verifying, installing, done, failed, cancelled, stalled),
+  `bytes_done`/`bytes_total`, `size_unknown` + `size_note`, `percent`,
+  `bytes_per_second` (last 5 s; falls to 0 when bytes stop), `eta_s`,
+  `updated_at` (at least every 0.5 s), `files` and `current_file`, a
+  one-sentence `message` ("Downloading model.safetensors (2 of 5) · 1.2 GB of
+  4.8 GB · 38 MB/s · 1 min left"), the tool's own line in `detail`, and
+  `transitions`. A download with no bytes for 15 s turns `stalled`, says so,
+  is logged, and recovers by itself (`ABSTRACTCORE_DOWNLOAD_STALL_S`). Every
+  update is appended to `<jobs dir>/<job_id>.events.jsonl`, never capped.
+  Hugging Face / MLX / mlx-gen: file list and sizes before the first byte,
+  per-file bytes from the cache. Ollama: layers added up into one total (the
+  bar used to restart at 0 % for each layer). LM Studio: the bytes, total and
+  speed `lms get` prints (its bar reached the job only as raw text, so no
+  bytes or percent were ever set), or the bytes landing in the models folder
+  when it prints none. Supertonic:
+  per-file bytes, sizes read first. See [docs/models.md](docs/models.md#download-progress).
+- **Installed-model rows say what each artifact is and can do.**
+  `models_installed_v1` rows gain `kind` (`model` | `adapter` | `encoder` |
+  `embedding`, or `null`), `tasks` (for example `text_generation`,
+  `image_to_text`, `text_embedding`, `speech_to_text`, `text_to_image`) and
+  `tasks_source`. The values come from local evidence only: the cached model
+  card's `pipeline_tag`, `config.json` architectures, `adapter_config.json`,
+  sentence-transformers files, and `lms ls --json` `type`/`vision`. No card
+  is fetched. A LoRA is now visibly an adapter, not a model to load. Ollama
+  rows stay unknown (`null`/`[]`). See
+  [docs/models.md](docs/models.md#installed-models).
+- **`abstractcore models repair-refs [--dry-run] [--cache-dir DIR] [--json]`.**
+  Writes the missing `refs/main` of cached Hugging Face repos left by earlier
+  pinned downloads, so they load by repo id offline again. A repo is repaired
+  only when it has no `refs/main` and exactly one complete snapshot (no
+  `.incomplete` blob or unfinished download marker, no dangling file, every
+  shard of a `*.index.json` present, a config or weight file). Repos with
+  several complete snapshots are reported as `ambiguous` and left alone; an
+  existing `refs/main` is never changed (one naming a missing snapshot is
+  reported as `dangling_ref`); quarantined caches are not scanned. See
+  [docs/models.md](docs/models.md#repairing-refsmain).
+
+### Fixed
+
+- **`fetch_url` no longer sends fetched PDFs to OpenAI because an API key is set.** On the default `auto` route the PDF router uploaded every
+  small fetched PDF to the OpenAI-compatible endpoint whenever `OPENAI_API_KEY` was
+  present, with no enable flag. Local extraction (`pypdf`, then `pymupdf` when
+  installed) is now the only default; remote extraction is an explicit operator
+  opt-in, the new config key `offline.allow_remote_pdf_extraction` (default `false`;
+  `abstractcore --allow-remote-pdf-extraction` / `--disallow-remote-pdf-extraction`).
+  It gates `preferred_backend="native_llm"` too. Results say which extractor ran:
+  `pdf_text_backend`, `pdf_summary_backend`, `pdf_backend_attempts` (the remote route
+  is listed as skipped with `remote_extraction_disabled`) and the new
+  `pdf_remote_extraction_enabled`. See [docs/web-tools.md](docs/web-tools.md#documents).
+- **Embedding caches are no longer emptied at interpreter exit.** Every
+  `EmbeddingManager` pickled its whole in-memory cache over the on-disk file at exit,
+  last writer wins: a process that loaded the cache while it was empty (a test run, a
+  second app on the same model) and exited later replaced a populated cache with an
+  empty one (this emptied the operator's OVH embedding caches on 2026-09-24). Saves now
+  merge with the file as it is on disk (under a lock where the OS has one), are
+  written to a temp file and renamed into place, never write an empty cache, and are
+  skipped when the process added nothing.
+- **`EmbeddingManager` no longer writes `HF_HOME`, `TRANSFORMERS_CACHE` and
+  `HF_DATASETS_CACHE` into the process environment.** Those writes leaked
+  into every later import and child process (`HF_DATASETS_CACHE` with the wrong
+  layout). The load location is now per call: the resolved snapshot directory, or
+  `cache_folder=` when a download is allowed.
+- **Model lookups read every Hugging Face cache, not only `~/.cache/huggingface/hub`.** The GGUF search, the similar-GGUF suggestions and
+  `list_available_models` of the HuggingFace provider, the MLX provider's
+  `list_available_models`, the embeddings ONNX probe and the model materializer's
+  fallback now share `utils.model_cache.hf_hub_cache_dirs()` (the cache
+  `huggingface_hub` uses, then `cache.huggingface_cache_dir`), so a relocated cache is
+  no longer reported as missing.
+- **`abstractcore --download-vision-model` honours `cache.local_models_cache_dir`.** It always wrote to `~/.abstractcore/models` (the 1.3 GB `git-base`
+  of 2026-09-24 landed there). See [docs/models.md](docs/models.md#installed-models).
+- **Embeddings tests follow the offline-first load.** The 21 mocked
+  `EmbeddingManager` tests assumed the repo id reached `SentenceTransformer` directly
+  and failed once loading resolved the cached snapshot first; they now run
+  against a fake cached snapshot (`tests/embeddings/conftest.py`).
+- **An MTP-preserving MLX checkpoint never loads through mlx-lm.** mlx-lm ≤ 0.31.3 `qwen3_5.Model.sanitize` treats any `mtp.` tensor as a raw Hugging
+  Face checkpoint and adds +1.0 to every RMSNorm weight. So `mlx-works/Qwen3.5-9B-oQ4e-mtp`
+  and `Jundot/Qwen3.8-27B-oQ4e-mtp` were shifted twice and generated garbage whenever the MTP
+  lane was not entered: companion missing (always the case on a fresh install),
+  `speculation=False`, or no drafter. The provider now reads the local index `weight_map`
+  (`mlx_native_session.mtp_weight_keys`) and loads such checkpoints through mlx-vlm in every
+  lane. A failed mlx-vlm load raises `ProviderAPIError` naming the model and the reason,
+  never an mlx-lm fallback. Fixed upstream on mlx-lm `main` (ml-explore/mlx-lm#1623), not
+  released. See [docs/speculative-decoding.md](docs/speculative-decoding.md#mtp-preserving-checkpoints-never-load-through-mlx-lm).
+- **A model's MTP companion is downloaded, listed and deleted with it.**
+  `abstractcore models download mlx <model>`, the Gateway's download jobs and `--recommended`
+  fetch the registry's MLX drafter (`speculation.runtimes.mlx.drafter`) in the same job. It
+  appears as child file rows (`role: "mtp_companion"`), its size is in `bytes_total` from the
+  start, cancel covers it, and the job is `done` (and the model `installed`) only when both
+  are whole. `models list` shows the companion under its model (`companions`). `models
+  delete` offers to remove it (`--with-companion` / `--keep-companion`, `companion_offer`
+  in JSON) and keeps it while another installed model uses it. Flash-Next (built-in head)
+  has no companion. New `providers.speculation.mlx_companion_repos()` and
+  `model_materializer.companion_artifacts()`.
+- **A missing companion is said in words.** The response's `speculation.message` and the
+  discovery capabilities' `message` read: "MTP acceleration off: companion … is not
+  downloaded; download it with `abstractcore models download mlx …`". The Gateway's web
+  and terminal consoles show that text instead of the bare `mtp_head_not_cached` slug.
+- **`abstractcore models verify <repo>`**: a fresh-install inference check. It loads an
+  installed model with the default configuration (never downloads), checks the answer to
+  a fixed question and, for a model with a companion, checks `speculation.used`. The same
+  check runs as the opt-in slow test `tests/providers/test_mlx_fresh_install_inference_slow.py`.
+- Native MLX error texts name the checkpoint (`<model> (model_type qwen3_5)`) instead of
+  "Native Qwen4" for every model.
+- `abstractcore models download --help` lists every provider with a download verb, `mlx`
+  included. The refusal text already told users to run `models download mlx …`.
+- `tests/config/test_model_catalog.py::test_mlx_artifacts_are_not_downloadable_off_apple_silicon`
+  failed whenever llama-cpp-python was importable: `engine_inventory()`
+  describes the running interpreter, so the synthetic CUDA host inherited an
+  installed `llamacpp` engine and the documented rule (an installed engine
+  outranks the provider order) picked the GGUF. The test now pins "no engine
+  installed"; a companion test pins the installed-engine rule.
+- The re-read upstream size of `mlx-community/Qwen3.8-27B-4bit` is
+  16,054,541,349 bytes (the seed had 16,081,490,933 from an older revision).
+- **A pinned Hugging Face download now leaves `refs/main`.** The downloader
+  pins the commit it listed (`snapshot_download(revision=<sha>)`), and
+  huggingface_hub writes no `refs/main` for a commit-hash revision, so every
+  loader that resolves a repo by id offline (transformers with
+  `local_files_only`, `mlx_lm.load("<id>")`, vLLM, your own scripts) failed
+  with "couldn't find them in the cached files". After every planned file is
+  verified whole, the download writes `<repo>/refs/main` = that sha when the
+  repo has no `refs/main` yet. An existing `refs/main` naming another commit
+  is never overwritten; the completion message then says which commit loading
+  by name resolves. Existing caches: run `abstractcore models repair-refs`.
+- **Embedding models apply offline-first on each load.** `EmbeddingManager`
+  called `SentenceTransformer(model_id)` with no `local_files_only`; it stayed
+  offline only when the Hugging Face provider had already written
+  `HF_HUB_OFFLINE=1` into the process, a write that is now gone. With
+  offline-first on (or `force_local_files_only`), the model id resolves to its
+  cached snapshot directory (`resolve_hf_load_snapshot`; a bare legacy name is
+  also looked up as `sentence-transformers/<name>`) and loads with
+  `local_files_only=True`, making no network call. An uncached model raises
+  `ModelNotFoundError` with the same "download it first" message as the
+  Hugging Face provider.
+- **`--download-vision-model` and the config wizard's "download embeddings
+  now" say why they cannot download.** These are explicit downloads, so
+  `offline_first` does not apply and they carry no `local_files_only`. When
+  the operator set `HF_HUB_OFFLINE` or `TRANSFORMERS_OFFLINE` before start,
+  they now stop with a message naming the variable instead of a bare
+  `OfflineModeIsEnabled`. The wizard no longer says an uncached embedding
+  model "will download on first use", which is false under offline-first.
+- **Importing the Hugging Face provider no longer switches the whole process to
+  Hugging Face offline mode.** With `offline_first` on (the default), importing
+  `abstractcore.providers.huggingface_provider` wrote `TRANSFORMERS_OFFLINE`,
+  `HF_DATASETS_OFFLINE` and `HF_HUB_OFFLINE` = 1 into `os.environ`. Every child
+  process inherited them: engine installs, app launches, the tray and tools ran
+  offline. The write is removed. Offline-first is now applied on each load
+  call: every transformers call (`AutoConfig`, `AutoTokenizer`,
+  `AutoModelForCausalLM` / `AutoModel`, `AutoProcessor`,
+  `AutoModelForImageTextToText`) gets the cached snapshot directory plus
+  `local_files_only=True`. The vision loader also no longer writes
+  `TRANSFORMERS_VERBOSITY` / `DISABLE_TQDM` into the environment.
+- **A fully cached Hugging Face model loads offline.** Loads failed with "We
+  couldn't connect to 'https://huggingface.co' ... couldn't find them in the
+  cached files" even though every file was on disk. Cause: AbstractCore's
+  downloader pins the commit it listed (`snapshot_download(revision=<sha>)`).
+  For a revision that is already a commit hash, huggingface_hub writes no
+  `refs/main`, and transformers needs `refs/main` to find a repo id offline.
+  Transformers also checked the Hub for `adapter_config.json` even with
+  `local_files_only=True`. The provider now finds the snapshot itself
+  (`utils.model_cache.resolve_hf_load_snapshot`: `refs/main`, else the newest
+  snapshot that has a config) and passes transformers the directory, so no
+  load makes a network call. A PEFT adapter (LoRA) whose base model is cached
+  loads the same way: the base comes from its snapshot and the adapter is
+  attached from its own directory. Before the base loads, the provider checks
+  that the installed `peft` meets transformers' own `MIN_PEFT_VERSION` (0.19.1
+  for transformers 5.17). If `peft` is missing, too old or cannot be imported,
+  the load raises a plain `ProviderError` naming both installed versions and the
+  `pip install -U "peft>=…"` fix. It no longer surfaces as an `ImportError`
+  wrapped in `RuntimeError`.
+- **An uncached or incomplete Hugging Face model fails at once with a plain
+  message.** With offline-first on, the load raises `ModelNotFoundError`
+  instead of a network timeout. The message names the model and the fix
+  (`abstractcore models download huggingface <repo>`). It also covers a
+  snapshot with a config but no weights, a snapshot with only a README (for
+  example a diffusion LoRA loaded as text), and an adapter whose base model is
+  not cached.
+- **An explicitly named MLX drafter that is not cached is no longer downloaded
+  silently.** With offline-first on, `resolve_native_drafter_path` refuses it
+  with the same plain message (`abstractcore models download mlx <repo>`).
+  With offline-first off, it downloads the drafter and logs a warning.
+- **The bitsandbytes fused-kernel check no longer lifts an offline flag.**
+  AbstractCore no longer sets that flag. The check runs once per process, and
+  any failure is reported without a second network attempt.
+- **Loading an MLX model no longer switches the whole process to Hugging Face
+  offline mode.** With `offline_first` on (the default), each MLX load used to
+  write `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE` and `HF_DATASETS_OFFLINE` = 1
+  into `os.environ` for the rest of the process. The write never affected the
+  loader: `huggingface_hub` reads the flag once, at its import, which mlx-lm
+  had already triggered. But every child process inherited it, so in the
+  gateway every download job started after the first MLX load failed with
+  `OfflineModeIsEnabled`. The write is removed. "No on-demand download while
+  loading" still holds: the load resolves to a local cache directory and
+  raises `ModelNotFoundError` on a miss. Tests cover both the unchanged
+  environment and a cache miss that makes no network call.
+- **An explicit Hugging Face download always reaches the Hub.** Download jobs
+  build the child's `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE` and
+  `HF_DATASETS_OFFLINE` from the values the operator set before the process
+  started (new `config.manager.explicit_download_hf_env()`). Values written
+  later in-process are not passed on, for example by the Hugging Face
+  provider's import. Detached job processes are started with the same values.
+  The job log says which ones were withheld. An offline
+  flag the operator set before start makes the download fail at once, with a
+  message naming the variable. See
+  [docs/models.md](docs/models.md#downloading).
+- **Cancelling a download stops it within a second and leaves nothing that
+  reads as installed.** A Hugging Face download from a job runs in a child
+  process that is stopped at once (it used to run on in a thread until the
+  hub library's next progress callback); its temporary files
+  are removed, and a marker keeps a download cancelled between two files from
+  reading as installed. A quiet Ollama pull is stopped by closing the
+  connection instead of waiting for the next line. `lms get` is stopped the way
+  its own Ctrl-C does, answering No to "continue in the background?", so LM
+  Studio stops downloading too. Supertonic removes the partial file.
+- **Engine detection finds Ollama and LM Studio installed for one user.** A
+  Mac app placed in `~/Applications` (a user-level install, no administrator
+  rights; what AbstractGateway's Install does on a standard account) is now
+  reported as installed, like one in `/Applications`. Ollama's CLI is found
+  inside the app bundle when `/usr/local/bin/ollama` was never linked.
+
+### Tests
+
+- **Tests never touch your home or the network.**
+  Two incidents on 2026-09-24: an unisolated test downloaded
+  `microsoft/git-base` into `~/.abstractcore/models` and rewrote
+  `abstractcore.json`; `test_endpoint_profile_can_back_embedding_manager`
+  rewrote the operator's `endpoint_ovh_provider_Qwen3_Embedding_8B` embedding
+  caches at interpreter exit. `tests/conftest.py` now moves `HOME`, `HF_HOME`
+  and `HF_HUB_CACHE` to tmp at import and per test, clears the exported
+  `ABSTRACT*`/`HF_*` path settings and `XDG_*`, and fails loudly if
+  `huggingface_hub` froze its cache path on the real home. A socket guard
+  refuses non-loopback destinations and the live local services on loopback
+  (8080, 1234, 11434, 18850); every refused attempt fails its test and is listed
+  with its host and port. `@pytest.mark.network("reason")` (skipped unless
+  `pytest --allow-network`) and `@pytest.mark.real_home("reason")` are the
+  opt-outs; a bare marker is a collection error. Tests that reached live
+  services by accident now use fakes or dead ports (LM Studio base-URL tests,
+  the companion-delete tests, provider inventory probe, OpenAI construction
+  preflight, fetch_url DNS via the new `fake_public_dns` fixture, the PDF test
+  that uploaded to OpenAI); live-provider tests carry `network` markers. See
+  [CONTRIBUTING.md](CONTRIBUTING.md#tests-never-touch-your-home-or-the-network).
+
 ## [2.14.0] - 2026-09-23
 
 Browse, download and delete local models and install local engines from one place: the

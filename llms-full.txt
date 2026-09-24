@@ -3,7 +3,7 @@
 > Expanded companion to `llms.txt`: setup, API and provider guidance, followed by canonical documentation pages. Use the linked source pages for authoritative documentation and the source code for behavior.
 
 Last updated: 2026-09-20
-Package version: 2.14.0
+Package version: 2.15.0
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -2259,7 +2259,9 @@ pip install "abstractcore[mlx]"
 
 AbstractCore is offline-first for local model weights. The MLX provider loads
 models from an explicit local path, the Hugging Face cache, or the LM Studio
-cache; it does not silently download weights during `create_llm(...)`.
+cache; it does not silently download weights during `create_llm(...)`. This is enforced per
+load (a cache miss raises `ModelNotFoundError`); it does not set `HF_HUB_OFFLINE` for the
+process, so explicit downloads keep working after a model is loaded.
 
 Download or prefetch a model first, for example:
 
@@ -4278,8 +4280,9 @@ preview = skim_url("https://example.com/article")
 
 # Full web content fetching and parsing (HTML→Markdown, JSON/XML/text, feeds, PDFs)
 result = fetch_url("https://api.github.com/repos/python/cpython")
-# PDF routing is provenance-aware and follows native_llm > pymupdf > pypdf
-# when a native OpenAI-compatible client is configured. There is no separate enable flag.
+# PDFs are extracted locally (pypdf) by default; sending a PDF to a remote LLM is an
+# explicit opt-in (`abstractcore --allow-remote-pdf-extraction`). The result says which
+# extractor ran (`pdf_text_backend`, `pdf_backend_attempts`).
 
 # File system operations  
 files = search_files("def.*fetch", ".", file_pattern="*.py")
@@ -7533,6 +7536,13 @@ embedder = EmbeddingManager(model="embeddinggemma")
 embedder = EmbeddingManager(model="sentence-transformers/all-MiniLM-L6-v2")
 ```
 
+Loading never downloads: the model must already be in the local Hugging Face cache
+(`abstractcore models download huggingface <repo>`), otherwise the manager raises
+`ModelNotFoundError` with that command. It looks in every hub cache AbstractCore reads (the
+one `huggingface_hub` uses, then the `cache.huggingface_cache_dir` setting) and loads the
+cached snapshot directory directly; a local model directory can be passed as `model`. It
+changes no process environment variable.
+
 ### Ollama Provider
 
 Local embedding models via Ollama API. Requires Ollama running locally.
@@ -7864,6 +7874,14 @@ print(f"Truncated embedding dimension: {len(embedding)}")  # 256
 ```
 
 ### Advanced Caching (NEW)
+
+The persistent caches (`<cache_dir>/<provider>_<model>_cache.pkl` and its `_normalized_`
+sibling; default `cache_dir` `~/.abstractcore/embeddings`) are safe to share between processes
+and apps using the same model: a save first re-reads the file and merges it with this process's
+entries, writes a temporary file and renames it over the cache, never writes an empty cache, and
+is skipped entirely when the process added nothing. Before 2026-09-24 every manager rewrote
+the whole file at interpreter exit, so a process that had embedded nothing could empty a
+populated cache.
 
 ```python
 # Configure dual-layer caching system
@@ -9015,7 +9033,8 @@ the shape the embeddings commands and `--show-config` read.
 ### Cache Section
 - **default_cache_dir**: General cache directory for AbstractCore (`~/.cache/abstractcore`)
 - **huggingface_cache_dir**: HuggingFace models cache (`~/.cache/huggingface`)
-- **local_models_cache_dir**: Local models storage (`~/.abstractcore/models`)
+- **local_models_cache_dir**: Local models storage (`~/.abstractcore/models`); where
+  `abstractcore --download-vision-model` writes
 - **glyph_cache_dir**: Glyph cache directory (`~/.abstractcore/glyph_cache`)
 
 ### Logging Section
@@ -9035,9 +9054,52 @@ the shape the embeddings commands and `--show-config` read.
 - **tool_timeout**: Default tool execution timeout (seconds)
 
 ### Offline Section
-- **offline_first**: Default to offline-first behavior
+- **offline_first**: Loading a local model never downloads it on demand. Providers look in the
+  local caches only and fail with a "not found locally" error on a miss. The setting only covers
+  loading: it does not switch the process offline and never blocks an explicit download
+  (`abstractcore models download`, the gateway's download jobs). The MLX and Hugging Face
+  providers and the embeddings manager apply it to each load call. None of them sets
+  `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE` or `HF_DATASETS_OFFLINE`, so neither the process
+  nor its child processes are switched offline. See [Downloading](docs/models.md#downloading).
+  - *Hugging Face (transformers)*: the provider finds the model's cached snapshot directory
+    and passes that directory, with `local_files_only=True`, to every transformers call
+    (config, tokenizer or processor, model). A fully cached model therefore loads with no
+    network call, including a snapshot that has no `refs/main`. AbstractCore's downloads
+    made before 2026-09-24 left snapshots in that state because they pin a commit; current
+    downloads write `refs/main`, and `abstractcore models repair-refs` fixes older ones
+    for other tools that load by id (see [Repairing `refs/main`](docs/models.md#repairing-refsmain)).
+    A PEFT adapter
+    (LoRA) loads its base model from the base's snapshot and attaches the adapter from its
+    own directory. If the model is not cached, or the snapshot is incomplete (a config with
+    no weights, a README only, or an adapter whose base is missing), the load fails at once
+    with `ModelNotFoundError`. The message names the model and says
+    `download it first: abstractcore models download huggingface <repo>`.
+  - *MLX drafter*: a drafter named explicitly that is not cached is refused with the same
+    kind of message (`abstractcore models download mlx <repo>`). With `offline_first` off,
+    it is downloaded and a warning is logged.
+  - *Embeddings (sentence-transformers)*: `EmbeddingManager` resolves the model id to its
+    cached snapshot directory (a bare legacy name such as `all-MiniLM-L6-v2` is also looked
+    up as `sentence-transformers/<name>`) and loads it with `local_files_only=True`. An
+    uncached model fails with `ModelNotFoundError` and the same "download it first" message.
+    With both `offline_first` and `force_local_files_only` off, the id is passed through and
+    may download on first use.
+  - *Explicit downloads outside `models download`*: `abstractcore --download-vision-model`
+    and the config wizard's "download embeddings model now" are downloads, not loads, so
+    `offline_first` does not apply to them.
+  - Variables the operator set before the process started are left exactly as they were.
+    They are the only thing that stops an explicit download, which then fails with a
+    message naming the variable. A gateway restart from the tray or console passes the
+    variables' start-up values to the new process, not values written in-process during
+    the run.
 - **allow_network**: Allow network access when offline-first is enabled (for API providers)
-- **force_local_files_only**: Force HuggingFace `local_files_only` mode
+- **force_local_files_only**: Loads with transformers read the local cache only, even when
+  `offline_first` is off (default `true`). A Hugging Face load reads the cache only when
+  either key is on.
+- **allow_remote_pdf_extraction**: May `fetch_url` send a fetched PDF to the configured
+  OpenAI-compatible LLM for extraction and a summary (default `false`). Off, PDFs are
+  extracted locally (pypdf) and never leave the machine, whatever API keys are configured.
+  Turn it on with `abstractcore --allow-remote-pdf-extraction`, off with
+  `abstractcore --disallow-remote-pdf-extraction`.
 
 ## Common Configuration Tasks
 
@@ -9187,6 +9249,7 @@ Related pages: [Engines](docs/engines.md) (installing Ollama, LM Studio, MLX, ll
 | Download | `abstractcore models download <provider> <artifact> [--dry-run] [--detach] [--json]` | `POST /acore/models/download` | `host_jobs.start_download_job(...)` / `model_materializer.download(...)` |
 | Delete | `abstractcore models delete <provider> <artifact> [--yes] [--dry-run] [--force] [--json]` | `POST /acore/models/delete` | `model_materializer.delete_artifact(...)` |
 | Follow background work | `abstractcore models jobs [<job_id>] [--kind K] [--status S] --json`, `abstractcore models cancel <job_id>` | `GET /acore/jobs`, `GET /acore/jobs/{id}`, `POST /acore/jobs/{id}/cancel` | `host_jobs.default_registry()` |
+| Repair missing `refs/main` | `abstractcore models repair-refs [--dry-run] [--cache-dir DIR] [--json]` | none | `model_materializer.repair_hf_refs(apply=...)` |
 
 Exit codes for every verb: `0` success, `1` error, `2` refused (a policy, a delete blocker, or
 a destructive action without `--yes`). A refusal still prints its JSON (`status`, `reason`,
@@ -9226,21 +9289,109 @@ per model. The curated seed ships with AbstractCore
 (`abstractcore/assets/model_downloads_catalog.json`, schema alongside) and covers chat, coding,
 vision and embedding models across Qwen, Llama, Gemma, Mistral, DeepSeek, GPT-OSS, Phi,
 SmolLM, Granite, GLM and common embedding families, plus the recommended fresh-install set
-(`qwen/qwen3.5-9b@4bit`, FLUX.2 klein 4B, Supertonic 3).
+(the recommended text model below, FLUX.2 klein 4B, Supertonic 3). Where an 8-bit build exists
+upstream, a row lists it next to the 4-bit one: MLX `-8bit` repos, GGUF `Q8_0` files in the same
+repos as the `Q4_K_M` ones, and Ollama `-q8_0` tags.
 
 Each row carries `capabilities` (text, vision, audio, tools, thinking, max_tokens, embedding)
 joined from AbstractCore's model capability registry, and one entry per artifact with:
 
 - `presence.status`: `installed`, `absent`, `unknown` (the engine could not be asked), or
   `not_applicable` (remote providers);
-- `download_bytes` and `size_source`: `catalog` (observed on a real engine store), `engine`
+- `quant` (the artifact's own quantization label, lowercased, or `null`), `bits` (effective bits
+  per weight used by the fit estimate), `quant_class` and `quant_class_source` (see below);
+- `options`: route options a recommendation copies with this artifact (the MTP builds carry
+  `speculation`); `{}` for most artifacts;
+- `companions`: repos downloaded together with this artifact (`[]` for most): an MLX build's MTP
+  drafter, as the MLX drafter registry names it (`speculation.mlx_companion_repos`, the same
+  answer the download job and the provider use; the seed holds no list of its own). For example
+  both `mlx-community/Qwen3.8-27B-4bit` and `Jundot/Qwen3.8-27B-oQ4e-mtp` list
+  `mlx-community/Qwen3.8-27B-MTP-4bit`; Qwen3.8 Flash-Next has its MTP head built in and lists
+  none. `companion_bytes` is their verified size (the seed's `companion_sizes`, read from the
+  Hugging Face file listing), and a catalog-sized `download_bytes` INCLUDES it, because the
+  download fetches both and the drafter stays in memory while the model decodes. `null` means
+  no companion, or a companion whose size is not recorded (then it is not included and the fit
+  notes say so). An engine-reported size is shown as the engine reports it;
+- `note`: one sentence about this build, when there is something to say (the MTP builds);
+- `download_bytes` and `size_source`: `catalog` (observed on a real engine store, or read from
+  the upstream file listing when the seed records an `upstream` check), `engine`
   (reported by the installed engine), `hf_api` (Hugging Face file listing), `estimate`
   (parameters x bits), or `unknown`;
 - `fit` (see below), `downloadable`, `supported_on_host`, and the `cli_download` command;
-- `recommended`: exactly one artifact per row is pre-selected for this machine. The curated
-  starter wins when the host can run it; otherwise the order is LM Studio, MLX, Ollama,
-  Hugging Face on Apple silicon and Ollama, LM Studio, Hugging Face elsewhere, preferring
-  artifacts that fit and engines that are installed.
+- `recommended`: exactly one artifact per row is pre-selected for this machine. On Apple silicon
+  the three text-tier rows pre-select their tier build (below), and otherwise the order is MLX,
+  LM Studio, Ollama, Hugging Face. Elsewhere the curated starter wins when the host can run it,
+  then the order is Ollama, LM Studio, Hugging Face. Both prefer artifacts that fit and engines
+  that are installed. LM Studio and Ollama builds stay listed and downloadable on a Mac;
+- `starter` (per row): part of this machine's recommended fresh-install set. Exactly one text
+  row is the starter: the row of the recommended text model.
+
+### The recommended text model
+
+One function decides it for every surface (the catalog flags, the fresh-install defaults,
+`abstractcore config apply-recommended`, `abstractcore models download --recommended`, and the
+Gateway's first-run guide): `abstractcore.config.model_catalog.recommended_text_model()`.
+
+On Apple silicon it is an MLX build chosen by the computer's unified memory, as the host profile
+reports it (`ram_bytes`, in GiB):
+
+| Unified memory | Row | Recommended build |
+|---|---|---|
+| below 24 GiB | `qwen3.5-9b` | `mlx-community/Qwen3.5-9B-MLX-4bit` |
+| 24 GiB to below 128 GiB | `qwen3.8-27b` | `mlx-community/Qwen3.8-27B-4bit` |
+| 128 GiB and above | `qwen3.8-flash-next` | `mlx-community/Qwen3.8-Flash-Next-4bit` |
+
+A Mac whose memory cannot be read gets the smallest tier, and the pick says so in `tier`. Every
+other computer keeps the portable default, LM Studio `qwen/qwen3.5-9b@4bit`.
+
+Each tier also lists an MTP build (native multi-token prediction: `mlx-works/Qwen3.5-9B-oQ4e-mtp`,
+`Jundot/Qwen3.8-27B-oQ4e-mtp`, `Jundot/Qwen3.8-Flash-Next-oQ4e-mtp`). The module switch
+`MTP_RECOMMENDED` (off) decides whether the tier recommends the MTP build instead of the plain
+one. Either way the text route keeps the recommendation's MTP policy
+(`speculation = {mode: native_mtp, num_draft_tokens: 2, require_acceleration: false}`).
+
+The pick carries the catalog's fit verdict for this machine (`fit`, `fits`). A tier the estimate
+says will not fit stays the recommendation: `fits` is `false` and `warning` says so in one
+sentence, which the Gateway's guide shows on the **Chat and text** card. A `tight` verdict fits
+(`fits` is `true`) and `warning` says it fits tightly. The pick never moves to another tier on
+its own. The pick also carries `companions` and `companion_bytes`, and its fit counts the
+drafter's bytes.
+
+The three tier rows carry `kv_geometry`, read from each repo's upstream `config.json`: these
+models are hybrids where only one layer in four keeps a per-token KV cache (the others are linear
+attention with a fixed-size state), so the estimate counts only the full-attention layers. With
+the upstream weight size, a Qwen3.8 Flash-Next 4-bit build needs about 109 GiB (103.9 GiB of
+weights, 0.2 GiB of KV cache for 8,192 tokens, 5.2 GiB runtime overhead).
+
+### `quant_class`
+
+A normalized quantization family for filtering, derived from the artifact's own `quant` label:
+
+| `quant` label | `quant_class` |
+|---|---|
+| `2bit`, `q2_k`, `iq2_*` | `2bit` |
+| `3bit`, `q3_k_*`, `iq3_*` | `3bit` |
+| `4bit`, `q4_k_m`, `q4_0`, `iq4_xs`, `ud-q4_k_xl`, `mxfp4`, `nvfp4`, `int4`, `oq4e` | `4bit` |
+| `5bit`, `q5_*` | `5bit` |
+| `6bit`, `q6_k` | `6bit` |
+| `8bit`, `q8_0`, `fp8`, `int8` | `8bit` |
+| `bf16`, `f16`, `fp16` | `16bit` |
+| `f32`, `fp32` | `full` |
+| no label, or one the table does not know (`iq1_s`) | `unknown` |
+
+When only effective bits are known, `[N, N+1)` bits is `Nbit` (4.5 bits is `4bit`).
+
+`quant_class_source` says where the class came from:
+
+| `quant_class_source` | Meaning |
+|---|---|
+| `stated` | The reference names its quant (`q4_k_m`, `@4bit`, a `-8bit` repo). |
+| `assumed` | A bare Ollama tag (`qwen3.5:9b`) or LM Studio id (`qwen/qwen3.5-9b`): the class of the build the engine fetches by default (Ollama Q4_K_M, LM Studio 4-bit), the same assumption the fit estimate makes. A console labels it "assumed". |
+| `null` | No quant information at all: `quant_class` is `unknown`. |
+
+An assumption can be wrong for a given tag: the Ollama registry lists `qwen3.5:0.8b`,
+`qwen3.5:2b` and `qwen3-embedding:0.6b` as Q8_0 builds (checked 2026-09-24). `quant` and `bits`
+keep their meaning.
 
 Filters: `q` (every word must start a word of the id, name, vendor, tags or artifacts),
 `--engine` (`ollama`, `lmstudio`, `mlx`, `huggingface`, or `llamacpp` for GGUF artifacts),
@@ -9301,15 +9452,49 @@ artifact with `provider`, `artifact`, `quant`, `size_bytes`, `params_total`, `lo
 `loaded`, `catalog_id`, `deletable` and `delete_blockers`, plus `engines_probed`, per-engine
 `errors` and `totals`.
 
+Each row also says what the artifact is and what it can do, read from local evidence only
+(no model-card fetch):
+
+- `kind`: `model`, `adapter` (a LoRA or PEFT adapter, which cannot be loaded on its own),
+  `encoder` or `embedding`; `null` when the local files cannot tell.
+- `tasks`: AbstractCore task names such as `text_generation`, `image_to_text`,
+  `text_embedding`, `speech_to_text`, `text_to_image`, `image_to_image`; `[]` when unknown.
+- `tasks_source`: where the answer came from: `model_card` (the cached `README.md`
+  `pipeline_tag`, or a pipeline name among its tags), `config` (`config.json` architectures),
+  `adapter_config`, `files` (sentence-transformers files), `engine` (`lms ls --json` `type` and
+  `vision`), or `null`.
+
+The Hugging Face cache holds the model card only when the full repository was downloaded
+(mlx-lm's own fetch skips `README.md`), so a repository with no card and no recognisable
+`config.json` stays `null`/`[]`. Ollama rows are always `null`/`[]`: telling an embedding
+tag from a chat tag needs one `/api/show` call per model, which the listing does not make.
+
 | Engine | Source | Size fields |
 |---|---|---|
 | Ollama | `GET /api/tags` (`/api/ps` for `loaded`) | `size`, `details.parameter_size`, `details.quantization_level` |
 | LM Studio | `lms ls --json` (`lms ps --json` for `loaded`) | `sizeBytes`, `paramsString`, `quantization.name`, `maxContextLength` |
 | MLX / Hugging Face | the Hugging Face cache (`scan_cache_dir()`) | repo size on disk; rows split into `mlx` and `huggingface` by AbstractCore's MLX detection |
 
+**Which Hugging Face caches are read.** Every lookup (a load, the provider model lists, the
+GGUF search, the ONNX probe of an embedding model, the capability probes) reads the same list
+of hub caches: the one `huggingface_hub` itself uses (so a cache you moved for
+`huggingface_hub` is honoured), then the `cache.huggingface_cache_dir` setting (`hub/` inside
+it). Before 2026-09-24 some of these looked only in `~/.cache/huggingface/hub` and reported a
+relocated model as missing.
+
+**Where `abstractcore --download-vision-model` writes.** Into the `cache.local_models_cache_dir`
+setting (default `~/.abstractcore/models`), one folder per model. Move it with
+`abstractcore --set-local-models-cache-dir PATH`. It used to ignore the setting.
+
 When the local Ollama server is not running, its tags are listed from the on-disk manifests
 (marked `engine_not_running`). An engine that cannot be read appears in `errors`, never as an
 empty list.
+
+An MLX row whose model has an MTP companion (see [MTP companions](docs/models.md#mtp-companions)) carries
+`companions: [{artifact, role: "mtp_companion", installed, size_bytes, location, companion_of}]`.
+A cached companion is listed under its model, not as a row of its own; `totals.size_bytes`
+counts it once. A companion whose models are all deleted stays a row, with
+`role: "mtp_companion"` and `companion_of: []`, so it can still be found and deleted.
 
 ## Downloading
 
@@ -9320,16 +9505,97 @@ abstractcore models download huggingface unsloth/Qwen3-8B-GGUF:Q4_K_M
 abstractcore models download lmstudio qwen/qwen3.5-9b@4bit --dry-run     # show the command only
 ```
 
-- Ollama downloads use `POST /api/pull` with real byte progress; LM Studio uses
-  `lms get <artifact> --yes` and verifies afterwards that the requested model landed;
-  Hugging Face uses `snapshot_download` (narrowed by `:QUANT`), with a byte total read from the
-  hub first.
+- Every source reports real progress (bytes, total, percent, speed, time left, per file) from
+  the first second; see [Download progress](docs/models.md#download-progress).
+- Ollama downloads use `POST /api/pull`; LM Studio uses `lms get <artifact> --yes` and verifies
+  afterwards that the requested model landed; Hugging Face (and MLX, mlx-gen) uses
+  `snapshot_download` (narrowed by `:QUANT`) with the file list and sizes read from the hub
+  first; Supertonic voice files are fetched file by file from the revision AbstractVoice pins.
 - A download that cannot fit on disk with 5 GiB to spare is refused before it starts (Hugging
   Face computes the size itself; `expected_bytes` arms the check for other engines).
 - `--json` streams one `host_job_v1` object per line while the download runs and ends with the
   final job. SIGTERM or Ctrl-C cancels the download, stops the engine tool, and the last line
   reports `cancelled`. `--detach` starts the download in the background and prints the job;
   follow it with `abstractcore models jobs <job_id> --json`.
+- A Hugging Face download is pinned to the commit the hub listed
+  (`snapshot_download(revision=<sha>)`), so the files watched are the files fetched.
+  huggingface_hub writes no `refs/main` for a commit-hash revision, so once every planned
+  file is verified whole, AbstractCore writes `<repo>/refs/main` = that commit itself. Any
+  loader that resolves the repo by id offline (transformers with `local_files_only`,
+  `mlx_lm.load("<id>")`, vLLM, your own scripts) then finds it. An existing `refs/main`
+  naming another commit is never overwritten; the completion message says which commit
+  loading by name resolves.
+
+### MTP companions
+
+Several MLX models accelerate with a **separate** MTP head repo, the companion. The registry
+(`model_capabilities.json`, `speculation.runtimes.mlx.drafter`) names it, and it is the same
+entry the MLX provider loads the head from. Loading never downloads, so a model fetched
+without its companion used to run without MTP with no visible sign. Now the companion is part of
+the model:
+
+| Model | Companion |
+|---|---|
+| `mlx-works/Qwen3.5-9B-oQ4e-mtp`, `mlx-community/Qwen3.5-9B-MLX-4bit` | `mlx-community/Qwen3.5-9B-MTP-4bit` (164 MB) |
+| `Jundot/Qwen3.8-27B-oQ4e-mtp`, `mlx-community/Qwen3.8-27B-4bit` | `mlx-community/Qwen3.8-27B-MTP-4bit` (270 MB) |
+| `Jundot/Qwen3.8-Flash-Next-oQ4e-mtp` | none: the head is built into the model's own weights |
+
+- `abstractcore models download mlx <model>`, the Gateway's model downloads and
+  `--recommended` fetch the companion in the **same job**, after the model. The job's
+  `bytes_total` includes it from the start. Its files are rows of the job's `files`, named
+  `<companion repo>/<file>` with `role: "mtp_companion"`, and the result lists it under
+  `companions`. A cancel stops both.
+- The job ends `done` only when both are whole. When the companion fails, the job fails with
+  a message naming it, and `models status` / the probe report the model `absent` with the
+  reason until the same download is retried. A retry fetches only what is missing.
+- `--dry-run` names the companion and its size.
+- `models delete mlx <model>` asks whether to delete the companion too, unless another installed
+  model uses it. `--with-companion` deletes it without asking and `--keep-companion` keeps it.
+  JSON and Gateway results carry `companion_offer` with the exact delete command. A companion
+  can also be deleted by its own name.
+
+### Checking a fresh install: `models verify`
+
+```bash
+abstractcore models verify mlx-works/Qwen3.5-9B-oQ4e-mtp
+abstractcore models verify mlx-community/Qwen3.8-27B-4bit --json
+```
+
+This loads ONE installed model through its provider with the default configuration. It never
+downloads. It asks "What is the boiling point of water at sea level in degrees Celsius?" at
+temperature 0 and checks that the answer contains `100`. For a model with an MTP companion it
+also checks that `speculation.used` is `true`. It unloads the model afterwards, and the exit
+code is `0` only when every check passed. Mission W2 found a garbage-output failure that no
+unit test could see; this command catches that class of failure.
+
+### Repairing `refs/main`
+
+Downloads made before that fix left repos with a complete snapshot and no `refs/main`. They
+load through AbstractCore (which resolves the snapshot directory itself) but not by id
+through other tools: "couldn't find them in the cached files". Write the missing refs once:
+
+```bash
+abstractcore models repair-refs --dry-run   # list what would be written
+abstractcore models repair-refs             # write it
+abstractcore models repair-refs --cache-dir ~/.cache/huggingface/hub --json
+```
+
+It scans every Hugging Face cache AbstractCore reads (or only `--cache-dir`, repeatable) and
+writes `refs/main` only for a repo with **no** `refs/main` and **exactly one complete**
+snapshot. Complete means: no `.incomplete` blob and no unfinished download marker in the repo,
+no dangling file in the snapshot, every shard a `*.index.json` names present, and at least a
+config or a weight file. Each repo that is not already healthy is listed with a status:
+
+| Status | Meaning | Written? |
+|---|---|---|
+| `repairable` / `repaired` | one complete snapshot; `refs/main` names it | only without `--dry-run` |
+| `ambiguous` | several complete snapshots; which one was `main` cannot be known offline | never |
+| `no_complete_snapshot` | every snapshot is partial, README-only, or missing a shard (the reason is listed) | never |
+| `dangling_ref` | `refs/main` names a snapshot that is not on disk | never (left as found) |
+| `error` | the cache or the ref could not be read or written | exit code `1` |
+
+Healthy repos are counted as `ok`. Quarantined caches (`runtime/model-quarantine/*`) are not
+scanned. The command is idempotent.
 
 ## Deleting
 
@@ -9365,6 +9631,57 @@ lines), `command`, `dry_run`, `started_at`, `finished_at`, `error`, `joined`,
 
 - A second request for the same download joins the running job (`joined` counts them).
 - At most 40 finished jobs are kept per process.
+
+### Download progress
+
+A download job also carries these fields (the web consoles and `--json` read them):
+
+| Field | Meaning |
+|---|---|
+| `state` | `queued`, `resolving`, `downloading`, `verifying`, `installing`, `done`, `failed`, `cancelled`, `stalled` |
+| `bytes_done`, `bytes_total` | bytes on disk so far and the total (same values as `downloaded_bytes`, `total_bytes`) |
+| `size_unknown`, `size_note` | `true` only when the source cannot say how big the download is, with the reason |
+| `percent` | `bytes_done / bytes_total`, 100 when done |
+| `bytes_per_second`, `eta_s` | speed over the last 5 seconds (it falls to 0 when bytes stop) and seconds left |
+| `files` | `[{name, bytes_done, bytes_total, state}]`; `current_file` is the file arriving now |
+| `message` | one sentence, e.g. `Downloading model.safetensors (2 of 5) · 1.2 GB of 4.8 GB · 38 MB/s · 1 min left` |
+| `detail` | the engine tool's own last line, unchanged |
+| `updated_at` | refreshed at least every 0.5 s while the job runs |
+| `transitions` | every state change with its time and reason |
+| `stall_after_s`, `stalled_for_s` | the stall threshold and how long the current stall has lasted |
+
+A download that receives no bytes for 15 seconds turns `stalled` and says so
+(`Stalled: no data for 23 s · 1.2 GB of 4.8 GB · still trying…`), is logged, and turns back
+to `downloading` by itself when bytes arrive again. Set the threshold with
+`ABSTRACTCORE_DOWNLOAD_STALL_S`. `verifying` and `installing` never count as stalls.
+
+What each source reports:
+
+| Source | Progress | Cancel |
+|---|---|---|
+| Hugging Face, MLX, mlx-gen | file list and sizes from the hub before the first byte; per-file bytes from the files being written in the cache | the transfer runs in a child process that is stopped at once; files already complete are kept and reused by the next download; a download that did not finish never reads as installed |
+| Ollama | the layers of `/api/pull`, added up into one total | the connection is closed at once; Ollama keeps the layers it has |
+| LM Studio | the bytes, total and speed `lms get` prints | answers `lms get`'s own "continue in the background?" question with No, so LM Studio stops too |
+| Supertonic (voice) | per-file bytes, sizes read first | stops at once; the partial file is removed |
+
+When `lms get` prints no progress, the job reports the bytes landing in the LM Studio models
+folder instead ("LM Studio reports no progress; 850 MB on disk so far").
+
+An explicit download always reaches the Hub. `offline_first` stops on-demand downloads while
+a model is *loading*; it never blocks `abstractcore models download` or a download job. The
+download runs in a child process whose `HF_HUB_OFFLINE`, `TRANSFORMERS_OFFLINE` and
+`HF_DATASETS_OFFLINE` are the values set before the process started. A value written later
+inside the process (by a provider or a library during a load) is not passed on, and the job
+log says so ("explicit download: Hub offline flags set in this process after start are not
+passed to the download ..."). If you set `HF_HUB_OFFLINE=1` (or `TRANSFORMERS_OFFLINE=1`)
+yourself before starting the process, the download is refused at once with a message naming
+the variable. Unset it and restart to download.
+
+Hugging Face downloads started from a job use plain HTTP rather than Xet, because Xet writes
+a file only when it is complete, so no progress would show. Set `ABSTRACTCORE_HF_XET=1` to use
+Xet anyway; progress then moves one whole file at a time.
+
+Every progress update is also appended to `<jobs dir>/<job_id>.events.jsonl`.
 - Job snapshots are written to `~/.abstractcore/config/jobs/` (override with
   `ABSTRACTCORE_JOBS_DIR`; disable with `ABSTRACTCORE_JOBS_PERSIST=0`), so
   `abstractcore models jobs` lists work started by `abstractcore serve` or by
@@ -13421,7 +13738,7 @@ pip install "abstractcore[tools]"
 - `web_search`: fuller DuckDuckGo result set (good when you want breadth or more options). It normalizes JSON-style numeric `num_results` values such as `"5"` before calling `ddgs`, and invalid values fail explicitly instead of silently changing the request.
 - `skim_websearch`: compact/filtered search results (good default for agents to keep prompts smaller). Defaults to 5 results, truncates long snippets, accepts string-like numeric `num_results`, and surfaces its compact cap when a caller asks for more than 15 results.
 - `skim_url`: fast URL triage (fetches only a prefix and extracts lightweight metadata + a short preview). It can also summarize RSS/Atom/XML feeds and PDF content when those assets are detectable from headers or content bytes. Defaults: `max_bytes=200_000`, `max_preview_chars=1200`, `max_headings=8`.
-- `fetch_url`: full fetch + parsing for HTML, JSON, XML/RSS/Atom, plain text, and PDFs. PDF routing now follows `native_llm > pymupdf > pypdf` whenever a native OpenAI-compatible client is configured; otherwise it falls back to `pymupdf` and then `pypdf`. There is no separate enable flag. Native PDF calls try `file_id` first and then `data_url` when an OpenAI-compatible endpoint rejects uploaded PDF files. Results expose PDF backend provenance, including native transport. It downloads up to 10MB by default; use `include_full_content=False` for smaller outputs.
+- `fetch_url`: full fetch + parsing for HTML, JSON, XML/RSS/Atom, plain text, and PDFs. PDFs are extracted locally (`pypdf`, then `pymupdf` when installed) and never leave the machine by default, whatever API keys are configured. Sending a fetched PDF to the configured OpenAI-compatible LLM for extraction and a summary is an explicit opt-in: `abstractcore --allow-remote-pdf-extraction` (config key `offline.allow_remote_pdf_extraction`). Once enabled, native PDF calls try `file_id` first and then `data_url` when an OpenAI-compatible endpoint rejects uploaded PDF files. Results expose PDF backend provenance, including native transport. It downloads up to 10MB by default; use `include_full_content=False` for smaller outputs.
 
 Recommended workflow: `skim_websearch` → `skim_url` → `fetch_url` (use `include_full_content=False` when you want a smaller `fetch_url` output).
 
@@ -13605,12 +13922,12 @@ See [Troubleshooting](docs/troubleshooting.md) and [Centralized Config](docs/cen
 
 ## HuggingFace won’t download models — why?
 
-The HuggingFace provider respects AbstractCore’s offline-first settings. If you want HuggingFace to fetch from the Hub, update `~/.abstractcore/config/abstractcore.json`:
+The HuggingFace provider respects AbstractCore’s offline-first settings. A load reads the local cache only, and a model that is not cached fails at once with `download it first: abstractcore models download huggingface <repo>`. Downloading it that way is the recommended fix. If you want loads themselves to fetch from the Hub, update `~/.abstractcore/config/abstractcore.json`:
 
 - set `"offline_first": false`
 - set `"force_local_files_only": false`
 
-Restart your Python process after changing this (the provider reads these settings at import time).
+Restart your Python process after editing the file (the configuration is loaded once per process). Neither setting touches `HF_HUB_OFFLINE` in the process. See [Centralized Config](docs/centralized-config.md#offline-section).
 
 ## Does native MLX MTP support vision and continuous batching?
 
@@ -15487,6 +15804,44 @@ Any drafter can also be pointed at explicitly, whether or not it is registered:
 create_llm("mlx", model="<target>",
            speculation={"mode": "native_mtp", "drafter": "<drafter repo>"})
 ```
+
+The MLX drafter is a **companion** of the model: `abstractcore models download mlx <model>`
+(and the Gateway's model downloads) fetch it in the same job, and the model counts as
+installed only when both are there (see [MTP companions](docs/models.md#mtp-companions)). When
+the companion is missing, the model still loads and answers, without MTP. The response's
+`speculation` block then says so in words, and the Gateway consoles show that text:
+
+```text
+{'used': False, 'reason': 'mtp_head_not_cached',
+ 'message': 'MTP acceleration off: companion mlx-community/Qwen3.5-9B-MTP-4bit (the MTP head
+             for mlx-works/Qwen3.5-9B-oQ4e-mtp) is not downloaded; download it with
+             `abstractcore models download mlx mlx-community/Qwen3.5-9B-MTP-4bit` ...'}
+```
+
+### MTP-preserving checkpoints never load through mlx-lm
+
+Some MLX checkpoints keep the model's `mtp.*` tensors in their own weights, for example
+`mlx-works/Qwen3.5-9B-oQ4e-mtp`, `Jundot/Qwen3.8-27B-oQ4e-mtp` and Flash-Next. **mlx-lm
+0.31.3 and earlier corrupts them.** `mlx_lm/models/qwen3_5.py` `sanitize()` reads any `mtp.`
+tensor as the sign of a raw Hugging Face checkpoint and adds `+1.0` to every RMSNorm weight.
+These checkpoints are already converted, so their norms are shifted twice and the model
+generates garbage. There is no error. mlx-vlm strips `mtp.` before it makes that decision and
+loads the same files correctly.
+
+The MLX provider reads the checkpoint's `model.safetensors.index.json` `weight_map` (or, for a
+single file, its safetensors header), a local read of a few KB. When the checkpoint carries
+`mtp.` tensors, it loads through **mlx-vlm in every lane**: with or without a drafter,
+`speculation` on, off or inherited, batching or not. If mlx-vlm cannot load it, the provider
+raises a `ProviderAPIError` that names the model and the reason. It never falls back to mlx-lm.
+
+| mlx-lm | `qwen3_5` sanitize on MTP-preserving checkpoints |
+|---|---|
+| ≤ 0.31.3 (latest on PyPI, 2026-09-24) | **affected**: double norm shift, garbage output |
+| `main` since ml-explore/mlx-lm#1623 (commit `4eeaf20`, 2026-08-18) | fixed: the shift depends only on unsanitized conv1d weights |
+
+AbstractCore keeps routing these checkpoints through mlx-vlm even after an mlx-lm release
+carries the fix. The native lane is also the one that runs the MTP drafter and prefix caching,
+so nothing is lost.
 
 mlx-community also publishes drafters for `Qwen3.5-122B-A10B`,
 `DeepSeek-V4-Flash` (bf16 only) and `Hy3-preview`. Of these, mlx-vlm has a
