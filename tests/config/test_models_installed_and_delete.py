@@ -296,17 +296,27 @@ def test_hf_download_passes_allow_patterns_and_refuses_when_disk_is_short(host, 
 
     def fake_snapshot_download(**kwargs):
         calls.update(kwargs)
+        # Land the planned blob the way huggingface_hub does, so the
+        # post-download "every planned file is whole" check has evidence.
+        from pathlib import Path
+
+        blobs = Path(kwargs["cache_dir"]) / "models--unsloth--Qwen3-8B-GGUF" / "blobs"
+        blobs.mkdir(parents=True, exist_ok=True)
+        (blobs / "abc").write_bytes(b"q" * 40)
         return str(host["hf"] / "snap")
 
     fake_hub = types.SimpleNamespace(snapshot_download=fake_snapshot_download)
     monkeypatch.setitem(__import__("sys").modules, "huggingface_hub", fake_hub)
-    monkeypatch.setattr(mm, "_hf_remote_total", lambda repo, patterns, token: (4_000_000, ""))
+    plan = [{"name": "Qwen3-8B-Q4_K_M.gguf", "size": 40, "etag": "abc"}]
+    monkeypatch.setattr(mm, "_hf_file_plan", lambda repo, patterns, token: (plan, "rev1", ""))
     out = mm.download("huggingface", "unsloth/Qwen3-8B-GGUF:Q4_K_M")
     assert out.status == "completed", out
     assert calls["allow_patterns"][0] == "*Q4_K_M*.gguf"
     assert calls["repo_id"] == "unsloth/Qwen3-8B-GGUF"
+    assert calls["revision"] == "rev1", "the watched files and the fetched files are the same revision"
 
-    monkeypatch.setattr(mm, "_hf_remote_total", lambda repo, patterns, token: (10**18, ""))
+    big = [{"name": "Qwen3-8B-Q5_K_M.gguf", "size": 10**18, "etag": "def"}]
+    monkeypatch.setattr(mm, "_hf_file_plan", lambda repo, patterns, token: (big, "rev1", ""))
     calls.clear()
     short = mm.download("huggingface", "unsloth/Qwen3-8B-GGUF:Q5_K_M")
     assert short.status == "failed" and "not enough disk" in short.message

@@ -1,7 +1,7 @@
 """CLI verbs for the models & engines contracts (A-F).
 
     abstractcore host profile [--json]
-    abstractcore models list|catalog|search|delete|jobs|cancel ...
+    abstractcore models list|catalog|search|delete|jobs|cancel|repair-refs ...
     abstractcore engines status|install|open ...
 
 Wired from `config/main.py`. Every verb has `--json` and the same exit
@@ -40,7 +40,7 @@ def _print_json(payload: Any) -> None:
 # NDJSON job streaming (the terminal console's CLI transport reads this)
 # ---------------------------------------------------------------------------
 
-_STREAM_KEYS = ("status", "percent", "downloaded_bytes", "total_bytes", "message")
+_STREAM_KEYS = ("status", "state", "percent", "downloaded_bytes", "total_bytes", "message")
 _CANCEL_GRACE_S = 10.0
 
 
@@ -196,7 +196,38 @@ def add_models_subparsers(sub: Any) -> None:
     delete.add_argument("--dry-run", action="store_true", help="Show what would be deleted")
     delete.add_argument("--force", action="store_true", help="Delete even when loaded / shared (unloads first)")
     delete.add_argument("--json", action="store_true", help="Emit the host_job_v1 JSON")
+    companion = delete.add_mutually_exclusive_group()
+    companion.add_argument(
+        "--with-companion",
+        dest="with_companion",
+        action="store_const",
+        const=True,
+        default=None,
+        help="Also delete the model's MTP companion (skipped when another installed model uses it)",
+    )
+    companion.add_argument(
+        "--keep-companion",
+        dest="with_companion",
+        action="store_const",
+        const=False,
+        help="Keep the model's MTP companion without asking",
+    )
     delete.set_defaults(func=_handle_delete)
+
+    verify = sub.add_parser(
+        "verify",
+        help="Load an installed model the way a fresh install does and check it answers sensibly",
+        description=(
+            "Fresh-install inference check. Loads ONE installed model through its provider with the "
+            "default configuration (never downloads), asks a fixed question at temperature 0 and checks "
+            "the answer. For a model with an MTP companion it also checks that MTP acceleration actually "
+            "ran (speculation.used). The model is unloaded afterwards."
+        ),
+    )
+    verify.add_argument("artifact", help="The installed artifact, e.g. mlx-works/Qwen3.5-9B-oQ4e-mtp")
+    verify.add_argument("--provider", default="mlx", help="Provider (default: mlx)")
+    verify.add_argument("--json", action="store_true", help="Emit JSON")
+    verify.set_defaults(func=_handle_verify)
 
     jobs = sub.add_parser("jobs", help="List download/delete/engine-install jobs (or show one)")
     jobs.add_argument("job_id", nargs="?", default=None, help="Show one job")
@@ -209,6 +240,57 @@ def add_models_subparsers(sub: Any) -> None:
     cancel.add_argument("job_id")
     cancel.add_argument("--json", action="store_true", help="Emit JSON")
     cancel.set_defaults(func=_handle_cancel)
+
+    repair = sub.add_parser(
+        "repair-refs",
+        help="Write the missing refs/main of cached Hugging Face repos that have exactly one complete snapshot",
+        description=(
+            "A download pinned to a commit (what `models download` does) used to leave no refs/main, so loaders that "
+            "resolve a repo by name offline (transformers, mlx_lm.load, vLLM) could not find it. This writes refs/main "
+            "for each repo with no ref and exactly ONE complete snapshot. Repos with several complete snapshots are "
+            "reported as ambiguous and left alone; an existing refs/main is never changed."
+        ),
+    )
+    repair.add_argument("--dry-run", action="store_true", help="Only report what would be written")
+    repair.add_argument(
+        "--cache-dir",
+        action="append",
+        default=None,
+        help="Scan this hub cache directory only (repeatable; default: every cache AbstractCore reads)",
+    )
+    repair.add_argument("--json", action="store_true", help="Emit JSON")
+    repair.set_defaults(func=_handle_repair_refs)
+
+
+def _handle_repair_refs(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from .model_materializer import repair_hf_refs
+
+    cache_dirs = [Path(d).expanduser() for d in args.cache_dir] if args.cache_dir else None
+    payload = repair_hf_refs(apply=not args.dry_run, cache_dirs=cache_dirs)
+    errors = payload["counts"].get("error", 0)
+    if args.json:
+        _print_json(payload)
+        return EXIT_ERROR if errors else EXIT_OK
+    counts = payload["counts"]
+    mode = "dry run, nothing written" if args.dry_run else "applied"
+    print(f"refs/main repair ({mode}) -- scanned: {', '.join(payload['cache_dirs']) or 'no cache directory found'}")
+    order = ("repaired", "repairable", "ambiguous", "dangling_ref", "error", "no_complete_snapshot")
+    for status in order:
+        rows = [r for r in payload["rows"] if r["status"] == status]
+        if not rows:
+            continue
+        print(f"\n{status} ({len(rows)})")
+        for row in rows:
+            print(f"  {row['repo_id'] or row['repo_path']}")
+            if row.get("reason"):
+                print(f"      {row['reason']}")
+    summary = ", ".join(f"{counts.get(k, 0)} {k}" for k in ("ok", *order) if counts.get(k))
+    print(f"\n{summary or 'no model repo found'}")
+    if args.dry_run and counts.get("repairable"):
+        print("Run without --dry-run to write the repairable refs.")
+    return EXIT_ERROR if errors else EXIT_OK
 
 
 def _catalog_args(parser: argparse.ArgumentParser) -> None:
@@ -234,10 +316,15 @@ def _handle_list(args: argparse.Namespace) -> int:
             flags.append("loaded")
         if row.get("delete_blockers"):
             flags.append("blocked:" + ",".join(row["delete_blockers"]))
+        if row.get("role") == "mtp_companion":
+            flags.append("MTP companion (no installed model uses it)")
         print(
             f"  {row['provider']:<11} {row['artifact']:<58} {str(row.get('quant') or '-'):<8} "
             f"{_gb(row.get('size_bytes')):>9}  {' '.join(flags)}"
         )
+        for comp in row.get("companions") or []:
+            state = _gb(comp.get("size_bytes")) if comp.get("installed") else "not downloaded"
+            print(f"  {'':<11}   + MTP companion {comp['artifact']:<39} {'':<8} {state:>9}")
     for name, error in (payload.get("errors") or {}).items():
         print(f"  ! {name}: {error}")
     return EXIT_OK
@@ -322,8 +409,22 @@ def _handle_delete(args: argparse.Namespace) -> int:
             }
             _print_json(payload) if args.json else print(f"⛔ {payload['message']}")
             return EXIT_REFUSED
+    with_companion = getattr(args, "with_companion", None)
+    own = [
+        c
+        for c in (row.get("companions") or [])
+        if c.get("installed") and not [m for m in (c.get("companion_of") or []) if m.lower() != str(row.get("artifact") or "").lower()]
+    ]
+    if own and with_companion is None and not args.json and not args.yes:
+        names = ", ".join(f"{c['artifact']} ({_gb(c.get('size_bytes'))})" for c in own)
+        with_companion = _confirm(f"Also delete its MTP companion {names}? No other installed model uses it.")
     job = host_jobs.start_delete_job(
-        args.provider, args.artifact, dry_run=bool(args.dry_run), force=bool(args.force), run_inline=True
+        args.provider,
+        args.artifact,
+        dry_run=bool(args.dry_run),
+        force=bool(args.force),
+        run_inline=True,
+        with_companions=with_companion,
     )
     result = job.get("result") or {}
     if args.json:
@@ -335,9 +436,31 @@ def _handle_delete(args: argparse.Namespace) -> int:
             print(f"   {path}")
         if result.get("freed_bytes"):
             print(f"   {'would free' if args.dry_run else 'freed'} {_gb(result['freed_bytes'])}")
+        if not result.get("companions_deleted"):
+            kept = "would keep" if args.dry_run else "kept"
+            for offer in result.get("companion_offer") or []:
+                if offer.get("shared_with"):
+                    print(f"   {kept} its MTP companion {offer['artifact']}: still used by {', '.join(offer['shared_with'])}")
+                else:
+                    print(f"   {kept} its MTP companion {offer['artifact']} ({_gb(offer.get('size_bytes'))}); remove it with: {offer['command']}")
     if result.get("status") == "refused":
         return EXIT_REFUSED
     return EXIT_OK if job["status"] == "completed" else EXIT_ERROR
+
+
+def _handle_verify(args: argparse.Namespace) -> int:
+    from .model_verify import verify_inference
+
+    report = verify_inference(args.provider, args.artifact)
+    if args.json:
+        _print_json(report)
+    else:
+        print(f"{'✅' if report['ok'] else '❌'} {report['provider']} {report['artifact']}: {report['summary']}")
+        for check in report.get("checks") or []:
+            print(f"   {'ok ' if check['ok'] else 'FAIL'} {check['name']}: {check['detail']}")
+        if report.get("content") is not None:
+            print(f"   answer: {report['content']!r}")
+    return EXIT_OK if report["ok"] else EXIT_ERROR
 
 
 def _all_jobs() -> List[Dict[str, Any]]:

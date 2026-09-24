@@ -69,6 +69,23 @@ except ImportError:
     CONFIG_AVAILABLE = False
     get_config_manager = None
 
+def local_models_cache_dir() -> Path:
+    """Where `--download-vision-model` writes: `cache.local_models_cache_dir`, expanded.
+
+    Falls back to the documented default (~/.abstractcore/models) only when the
+    config system itself is unavailable or the key is blank.
+    """
+    from pathlib import Path as _Path
+
+    raw = ""
+    if CONFIG_AVAILABLE and get_config_manager is not None:
+        try:
+            raw = str(get_config_manager().config.cache.local_models_cache_dir or "").strip()
+        except Exception:
+            raw = ""
+    return _Path(raw or "~/.abstractcore/models").expanduser()
+
+
 def download_vision_model(model_name: str = "blip-base-caption") -> bool:
     """Download a vision model for local use."""
     AVAILABLE_MODELS = {
@@ -102,6 +119,18 @@ def download_vision_model(model_name: str = "blip-base-caption") -> bool:
     model_info = AVAILABLE_MODELS[model_name]
     print(f"📋 Model: {model_info['description']} ({model_info['size']})")
 
+    # An EXPLICIT download: `offline_first` (which governs LOADING) never
+    # applies, so the `from_pretrained` calls below deliberately carry no
+    # `local_files_only`. Only a Hub-offline flag the operator set before
+    # start stops it, and it is named here rather than surfacing as a bare
+    # OfflineModeIsEnabled from transformers.
+    from .manager import operator_hf_offline_refusal
+
+    refusal = operator_hf_offline_refusal(model_info["hf_id"])
+    if refusal:
+        print(f"❌ {refusal}")
+        return False
+
     try:
         # Check if transformers is available
         try:
@@ -123,16 +152,20 @@ def download_vision_model(model_name: str = "blip-base-caption") -> bool:
             from transformers import VisionEncoderDecoderModel, ViTImageProcessor, AutoTokenizer
             from transformers import GitProcessor, GitForCausalLM
 
-        # Create models directory
+        # Create models directory: the configured `cache.local_models_cache_dir`
+        # (default ~/.abstractcore/models). This used to be hard-coded to the
+        # default and ignored the setting (1.3 GB `git-base` landed there on
+        # 2026-09-24 on a host that had moved it).
         from pathlib import Path
-        models_dir = Path.home() / ".abstractcore" / "models" / model_name
+        models_root = local_models_cache_dir()
+        models_dir = models_root / model_name
         models_dir.mkdir(parents=True, exist_ok=True)
 
         # Register-at-first-write: locally downloaded vision models live here.
         from ..utils.data_registry import ensure_data_home_registered
         ensure_data_home_registered(
             "abstractcore-local-models",
-            path=str(Path.home() / ".abstractcore" / "models"),
+            path=str(models_root),
             kind="model-cache",
             owner="abstractcore",
             safe_to_purge=True,
@@ -275,6 +308,11 @@ def add_arguments(parser: argparse.ArgumentParser):
 
     # Media processing group
     media_group = parser.add_argument_group('Media & Vision Configuration')
+    media_group.add_argument("--allow-remote-pdf-extraction", action="store_true",
+                            help="Let fetch_url send fetched PDFs to the configured OpenAI-compatible LLM "
+                                 "for extraction and a summary (off by default: PDFs are extracted locally)")
+    media_group.add_argument("--disallow-remote-pdf-extraction", action="store_true",
+                            help="Extract fetched PDFs locally only (the default)")
     media_group.add_argument("--set-vision-provider", nargs=2, metavar=("PROVIDER", "MODEL"),
                             help="Set vision model for image analysis with text-only models")
     media_group.add_argument("--add-vision-fallback", nargs=2, metavar=("PROVIDER", "MODEL"),
@@ -1178,9 +1216,19 @@ def install_check(auto_accept: bool = False) -> None:
             if model_cached:
                 _pass("Embeddings model", f"{emb_provider}/{emb_model} (cached)")
             else:
-                _warn("Embeddings model", f"{emb_provider}/{emb_model} (not cached — will download on first use)")
+                _warn(
+                    "Embeddings model",
+                    f"{emb_provider}/{emb_model} (not cached — loading never downloads it while offline_first is on)",
+                )
                 if _ask_yes("     Download embeddings model now?", auto_accept):
                     try:
+                        # EXPLICIT download: no `local_files_only` here on purpose;
+                        # only an operator-set Hub-offline flag stops it, by name.
+                        from .manager import operator_hf_offline_refusal
+
+                        refusal = operator_hf_offline_refusal(emb_model)
+                        if refusal:
+                            raise RuntimeError(refusal)
                         print(f"     ⏳ Downloading {emb_model}...")
                         from sentence_transformers import SentenceTransformer
                         SentenceTransformer(emb_model)
@@ -1202,6 +1250,11 @@ def install_check(auto_accept: bool = False) -> None:
                     # Now try to download the model too
                     if _ask_yes(f"     Download embeddings model ({emb_model}) now?", auto_accept):
                         try:
+                            from .manager import operator_hf_offline_refusal
+
+                            refusal = operator_hf_offline_refusal(emb_model)
+                            if refusal:
+                                raise RuntimeError(refusal)
                             print(f"     ⏳ Downloading {emb_model}...")
                             from sentence_transformers import SentenceTransformer
                             SentenceTransformer(emb_model)
@@ -2529,10 +2582,16 @@ def _handle_models_subcommand(argv: List[str]) -> int:
             "Run the provider's own download tool once, streaming its progress. The "
             "ARTIFACT is the exact weights reference (quantization included, e.g. "
             "qwen/qwen3.5-9b@4bit) -- not the served model id, which drops the "
-            "quantization suffix."
+            "quantization suffix. An MLX model with an MTP companion (a separate "
+            "drafter repo) is fetched together with it, in the same job."
         ),
     )
-    download.add_argument("provider", nargs="?", default=None, help="Provider id: lmstudio, ollama, mlx-gen, supertonic, huggingface")
+    download.add_argument(
+        "provider",
+        nargs="?",
+        default=None,
+        help="Provider id: " + ", ".join(sorted(p for p, v in _models_materializer().supported_providers().items() if v.get("download"))),
+    )
     download.add_argument("artifact", nargs="?", default=None, help="Exact artifact reference, quantization included")
     download.add_argument(
         "--recommended",
@@ -2856,6 +2915,17 @@ def handle_commands(args) -> bool:
     if getattr(args, "disallow_server_local_files", False):
         config_manager.set_server_allow_local_files(False)
         print("✅ Disabled unrestricted local file paths for HTTP server requests")
+        handled = True
+
+    if getattr(args, "allow_remote_pdf_extraction", False):
+        config_manager.set_allow_remote_pdf_extraction(True)
+        print("⚠️  Enabled remote PDF extraction: fetch_url may send fetched PDFs to the configured "
+              "OpenAI-compatible LLM")
+        handled = True
+
+    if getattr(args, "disallow_remote_pdf_extraction", False):
+        config_manager.set_allow_remote_pdf_extraction(False)
+        print("✅ Disabled remote PDF extraction: fetched PDFs are extracted locally only")
         handled = True
 
     if getattr(args, "set_server_host", None) is not None:

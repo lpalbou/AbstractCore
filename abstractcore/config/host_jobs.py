@@ -31,12 +31,40 @@ reported `failed` ("owner process exited"), never left `running` forever.
 Field names stay compatible with the gateway's `model_downloads.py` job dict
 (`job`, `events`, `elapsed_s`, `result` are emitted as aliases), so the
 gateway can delegate to this registry without breaking its pollers.
+
+PROGRESS YOU CAN SEE (download jobs). `status` is the coarse lifecycle
+(queued|running|completed|failed|cancelled) every existing poller reads. On
+top of it a download job carries the fine-grained progress contract:
+
+- `state`: queued | resolving | downloading | verifying | installing | done |
+  failed | cancelled | stalled.
+- `bytes_done` / `bytes_total` (aliases of `downloaded_bytes`/`total_bytes`),
+  `percent`, `size_unknown` + `size_note` when the source cannot say.
+- `bytes_per_second` over a recent window (it DECAYS to 0 when bytes stop --
+  a frozen speed is a lie), `eta_s`, `updated_at`.
+- `files`: `[{name, bytes_done, bytes_total, state}]`, `current_file`.
+- `message`: one plain sentence ("Downloading model.safetensors (2 of 5) ·
+  1.2 GB of 4.8 GB · 38 MB/s · 1 min left"); the provider's own last line is
+  kept verbatim in `detail`.
+- STALL: a job that receives no bytes for `stall_after_s` (default 15 s,
+  `ABSTRACTCORE_DOWNLOAD_STALL_S`) turns `stalled`, says so in `message`,
+  logs it (logger + `log_tail` + `transitions`), and turns back to
+  `downloading` by itself the moment bytes move again.
+
+ONE registry TICKER thread (every 0.5 s, alive only while a job is active)
+recomputes speed/ETA/stall and persists the
+snapshot, so a poller sees fresh numbers even when the provider is silent.
+Every tick that changed something is also appended to `progress_events`
+(in memory, uncapped, read with `HostJobRegistry.events()`) and, with a
+`persist_dir`, to `<job_id>.events.jsonl` -- never rate-limited by count
+(ADR-0026).
 """
 
 from __future__ import annotations
 
 import contextvars
 import json
+import logging
 import os
 import subprocess
 import threading
@@ -50,6 +78,10 @@ __all__ = [
     "HOST_JOB_SCHEMA",
     "JOB_KINDS",
     "JOB_STATUSES",
+    "DOWNLOAD_STATES",
+    "default_stall_after_s",
+    "format_bytes",
+    "format_duration",
     "JobBusy",
     "JobCancelled",
     "JobControl",
@@ -70,11 +102,68 @@ __all__ = [
 HOST_JOB_SCHEMA = "host_job_v1"
 JOB_KINDS = ("download", "delete", "engine_install")
 JOB_STATUSES = ("queued", "running", "completed", "failed", "cancelled")
+DOWNLOAD_STATES = (
+    "queued",
+    "resolving",
+    "downloading",
+    "verifying",
+    "installing",
+    "done",
+    "failed",
+    "cancelled",
+    "stalled",
+)
 _ACTIVE = ("queued", "running")
 _MAX_TAIL = 60
 _MAX_JOBS = 40
 _PERSIST_MIN_INTERVAL_S = 0.5
 _KIND_PREFIX = {"download": "dl", "delete": "rm", "engine_install": "eng"}
+_TICK_S = 0.5
+_SPEED_WINDOW_S = 5.0
+_DEFAULT_STALL_S = 15.0
+# States in which "no bytes arrived" means something is wrong. Verifying and
+# installing legitimately move no bytes (hashing a 5 GB blob takes a while).
+_STALLABLE = ("resolving", "downloading", "stalled")
+_PHASES = ("resolving", "downloading", "verifying", "installing")
+
+logger = logging.getLogger("abstractcore.host_jobs")
+
+
+def default_stall_after_s() -> float:
+    """`$ABSTRACTCORE_DOWNLOAD_STALL_S` (seconds without bytes), default 15."""
+
+    raw = str(os.getenv("ABSTRACTCORE_DOWNLOAD_STALL_S") or "").strip()
+    try:
+        value = float(raw) if raw else _DEFAULT_STALL_S
+    except ValueError:
+        value = _DEFAULT_STALL_S
+    return value if value > 0 else _DEFAULT_STALL_S
+
+
+def format_bytes(value: Any) -> str:
+    """Decimal units, the way disks and hubs count: `1.2 GB`, `38 MB`, `512 KB`."""
+
+    if not isinstance(value, (int, float)) or value < 0:
+        return "?"
+    for unit, scale in (("GB", 1e9), ("MB", 1e6), ("KB", 1e3)):
+        if value >= scale:
+            n = value / scale
+            return f"{n:.1f} {unit}" if n < 10 or unit == "GB" else f"{n:.0f} {unit}"
+    return f"{int(value)} B"
+
+
+def format_duration(seconds: Any) -> str:
+    """`45 s`, `3 min`, `1 h 20 min` -- rounded up, never `0 s` for work left."""
+
+    if not isinstance(seconds, (int, float)) or seconds < 0:
+        return "?"
+    s = int(seconds + 0.999)
+    if s < 60:
+        return f"{max(1, s)} s"
+    if s < 3600:
+        return f"{(s + 59) // 60} min"
+    h, rest = divmod(s, 3600)
+    return f"{h} h {rest // 60} min" if rest >= 60 else f"{h} h"
 
 
 class JobBusy(RuntimeError):
@@ -95,6 +184,17 @@ def _now_iso(ts: Optional[float] = None) -> Optional[str]:
     import datetime as _dt
 
     return _dt.datetime.fromtimestamp(ts, _dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _now_iso_ms(ts: Optional[float]) -> Optional[str]:
+    """ISO-8601 UTC with milliseconds: `updated_at` moves every 0.5 s."""
+
+    if ts is None:
+        return None
+    import datetime as _dt
+
+    stamp = _dt.datetime.fromtimestamp(ts, _dt.timezone.utc)
+    return stamp.strftime("%Y-%m-%dT%H:%M:%S.") + f"{stamp.microsecond // 1000:03d}Z"
 
 
 def default_jobs_dir() -> Path:
@@ -121,11 +221,32 @@ class JobControl:
         self._event = threading.Event()
         self._lock = threading.Lock()
         self._procs: List[subprocess.Popen] = []
+        self._callbacks: List[Callable[[], None]] = []
         self._probe = on_cancel_probe
 
     @property
     def event(self) -> threading.Event:
         return self._event
+
+    def on_cancel(self, callback: Callable[[], None]) -> None:
+        """Run `callback` when the job is cancelled (at once if it already is).
+
+        For transfers that BLOCK in a read -- an HTTP stream that went quiet
+        cannot notice a flag -- closing the socket is the only way to stop
+        within a second.
+        """
+
+        with self._lock:
+            self._callbacks.append(callback)
+        if self._event.is_set():
+            self._fire(callback)
+
+    @staticmethod
+    def _fire(callback: Callable[[], None]) -> None:
+        try:
+            callback()
+        except Exception:
+            pass
 
     def is_cancelled(self) -> bool:
         if not self._event.is_set() and self._probe is not None:
@@ -152,8 +273,11 @@ class JobControl:
         self._event.set()
         with self._lock:
             procs = list(self._procs)
+            callbacks = list(self._callbacks)
         for proc in procs:
             self._terminate(proc)
+        for callback in callbacks:
+            self._fire(callback)
 
     @staticmethod
     def _terminate(proc: subprocess.Popen) -> None:
@@ -224,9 +348,34 @@ class _Job:
     result: Optional[Dict[str, Any]] = None
     pid: int = field(default_factory=os.getpid)
     control: Optional[JobControl] = None
+    # --- the progress contract (see the module docstring) -------------------
+    state: str = "queued"
+    updated_at: float = field(default_factory=time.time)
+    detail: str = ""
+    files: List[Dict[str, Any]] = field(default_factory=list)
+    current_file: Optional[str] = None
+    size_unknown: Optional[bool] = None
+    size_note: Optional[str] = None
+    bytes_per_second: Optional[float] = None
+    eta_s: Optional[int] = None
+    stall_after_s: float = _DEFAULT_STALL_S
+    last_bytes_at: Optional[float] = None
+    stalled_since: Optional[float] = None
+    transitions: List[Dict[str, Any]] = field(default_factory=list)
+    samples: List[Any] = field(default_factory=list)
+    progress_events: List[Dict[str, Any]] = field(default_factory=list)
+    cancel_requested: bool = False
+
+    def _size_unknown(self) -> bool:
+        if self.size_unknown is not None:
+            return bool(self.size_unknown)
+        return bool(self.state in ("downloading", "stalled") and not self.total_bytes and self.downloaded_bytes)
 
     def to_dict(self) -> Dict[str, Any]:
         end = self.finished_at or time.time()
+        stalled_for = None
+        if self.state == "stalled" and self.stalled_since is not None:
+            stalled_for = round(time.time() - self.stalled_since, 1)
         return {
             "schema": HOST_JOB_SCHEMA,
             "job_id": self.job_id,
@@ -253,6 +402,23 @@ class _Job:
             "job": self.job_id,
             "events": list(self.log_tail),
             "elapsed_s": round(end - self.started_at, 1),
+            # The progress contract.
+            "state": self.state,
+            "bytes_done": self.downloaded_bytes,
+            "bytes_total": self.total_bytes,
+            "size_unknown": self._size_unknown(),
+            "size_note": self.size_note,
+            "bytes_per_second": self.bytes_per_second,
+            "eta_s": self.eta_s,
+            "updated_at": _now_iso_ms(self.updated_at),
+            "detail": self.detail,
+            "files": [dict(f) for f in self.files],
+            "current_file": self.current_file,
+            "stall_after_s": self.stall_after_s,
+            "stalled_for_s": stalled_for,
+            "transitions": [dict(t) for t in self.transitions],
+            "progress_events_count": len(self.progress_events),
+            "cancel_requested": bool(self.cancel_requested),
         }
 
 
@@ -262,6 +428,18 @@ class _Job:
 
 
 Runner = Callable[["JobContext"], Dict[str, Any]]
+
+# `DownloadStatus` value -> contract phase. COMPLETE/ERROR/CANCELLED are not
+# phases: the job's END (the runner's result) decides done/failed/cancelled.
+_STATUS_PHASE = {"starting": "resolving", "downloading": "downloading", "verifying": "verifying"}
+
+
+def _phase_of(phase: Any, status: Any) -> Optional[str]:
+    explicit = str(phase or "").strip().lower()
+    if explicit in _PHASES:
+        return explicit
+    raw = getattr(status, "value", status)
+    return _STATUS_PHASE.get(str(raw or "").strip().lower())
 
 
 class JobContext:
@@ -282,6 +460,11 @@ class JobContext:
             percent=get("percent"),
             downloaded_bytes=get("downloaded_bytes"),
             total_bytes=get("total_bytes"),
+            phase=_phase_of(get("phase"), get("status")),
+            files=get("files"),
+            current_file=get("current_file"),
+            size_unknown=get("size_unknown"),
+            size_note=get("size_note"),
         )
 
     def log(self, line: str) -> None:
@@ -294,13 +477,52 @@ class JobContext:
 class HostJobRegistry:
     """In-process registry of host jobs. Thread-safe; one per process is normal."""
 
-    def __init__(self, *, max_jobs: int = _MAX_JOBS, persist_dir: Optional[Path] = None):
+    def __init__(
+        self,
+        *,
+        max_jobs: int = _MAX_JOBS,
+        persist_dir: Optional[Path] = None,
+        tick_s: float = _TICK_S,
+        stall_after_s: Optional[float] = None,
+        speed_window_s: float = _SPEED_WINDOW_S,
+    ):
         self._lock = threading.RLock()
         self._jobs: Dict[str, _Job] = {}
         self._by_key: Dict[str, str] = {}
         self._max_jobs = int(max_jobs)
         self._persist_dir = Path(persist_dir).expanduser() if persist_dir else None
         self._last_persist: Dict[str, float] = {}
+        self._tick_s = float(tick_s) if tick_s and tick_s > 0 else _TICK_S
+        self._stall_after_s = float(stall_after_s) if stall_after_s and stall_after_s > 0 else None
+        self._speed_window_s = float(speed_window_s) if speed_window_s and speed_window_s > 0 else _SPEED_WINDOW_S
+        self._listeners: List[Callable[[Dict[str, Any]], None]] = []
+        self._ticker: Optional[threading.Thread] = None
+
+    def add_listener(self, callback: Callable[[Dict[str, Any]], None]) -> Callable[[], None]:
+        """Call `callback(snapshot)` on every progress change (for push streams).
+
+        Returns a function that removes the listener. Callbacks run on the
+        job's thread and must not block.
+        """
+
+        with self._lock:
+            self._listeners.append(callback)
+
+        def _remove() -> None:
+            with self._lock:
+                try:
+                    self._listeners.remove(callback)
+                except ValueError:
+                    pass
+
+        return _remove
+
+    def events(self, job_id: str) -> Optional[List[Dict[str, Any]]]:
+        """Every progress event of a job in this process (uncapped), or None."""
+
+        with self._lock:
+            job = self._jobs.get(str(job_id or "").strip())
+            return [dict(e) for e in job.progress_events] if job is not None else None
 
     # --- public API -----------------------------------------------------------
 
@@ -353,13 +575,16 @@ class HostJobRegistry:
                 dry_run=bool(dry_run),
                 cli_equivalent=cli_equivalent,
                 message="queued",
+                stall_after_s=self._stall_after_s or default_stall_after_s(),
             )
+            self._transition(job, "queued", "queued")
             job.control = JobControl(jid, on_cancel_probe=self._cancel_marker_probe(jid))
             self._jobs[jid] = job
             self._by_key[key] = jid
             self._prune_locked()
             self._persist(job, force=True)
 
+        self._ensure_ticker()
         if run_inline:
             self._run(jid, runner)
             return self.get(jid) or job.to_dict()
@@ -400,6 +625,8 @@ class HostJobRegistry:
                 return job.to_dict()
             control = job.control
             job.message = "cancelling"
+            job.cancel_requested = True
+            job.updated_at = time.time()
             self._append_tail(job, "cancel requested")
             self._persist(job, force=True)
         if control is not None:
@@ -437,19 +664,21 @@ class HostJobRegistry:
             control = job.control or JobControl(job_id)
             job.status = "running"
             job.message = job.message if job.message and job.message != "queued" else "running"
+            now = time.time()
+            job.last_bytes_at = now
+            if job.kind == "download":
+                self._transition(job, "resolving", "preparing the download")
+                job.message = "Preparing the download"
+            else:
+                self._transition(job, "running", "running")
             self._persist(job, force=True)
         ctx = JobContext(self, job_id, control)
 
-        # A background watcher turns an on-disk cancel marker into a real
-        # cancel even while the runner is blocked in a subprocess read.
+        # The registry's TICKER (one thread for all active jobs) turns an
+        # on-disk cancel marker into a real cancel even while the runner is
+        # blocked in a subprocess read, and keeps speed/ETA/stall honest while
+        # the provider is silent. It is started by `start()`.
         stop_watch = threading.Event()
-        if self._persist_dir is not None:
-            def _watch() -> None:
-                while not stop_watch.wait(0.5):
-                    if control.is_cancelled():
-                        return
-
-            threading.Thread(target=_watch, daemon=True).start()
 
         token = _current_control.set(control)
         try:
@@ -491,23 +720,53 @@ class HostJobRegistry:
         downloaded_bytes: Any = None,
         total_bytes: Any = None,
         command: Optional[List[str]] = None,
+        phase: Optional[str] = None,
+        files: Any = None,
+        current_file: Any = None,
+        size_unknown: Any = None,
+        size_note: Any = None,
     ) -> None:
         with self._lock:
             job = self._jobs.get(job_id)
             if job is None:
                 return
+            now = time.time()
+            job.updated_at = now
+            is_download = job.kind == "download"
             if message:
+                if is_download:
+                    job.detail = message
                 job.message = message
             if isinstance(percent, (int, float)):
                 job.percent = round(float(percent), 2)
-            if isinstance(downloaded_bytes, int):
+            moved = False
+            if isinstance(downloaded_bytes, int) and not isinstance(downloaded_bytes, bool):
+                previous = job.downloaded_bytes
                 job.downloaded_bytes = int(downloaded_bytes)
+                if previous is None or downloaded_bytes > previous:
+                    moved = bool(downloaded_bytes > (previous or 0))
+                if previous is not None and downloaded_bytes < previous:
+                    job.samples.clear()  # a source that re-based its count
+                job.samples.append((now, int(downloaded_bytes)))
             if isinstance(total_bytes, int) and total_bytes > 0:
                 job.total_bytes = int(total_bytes)
             if not isinstance(percent, (int, float)) and isinstance(downloaded_bytes, int) and job.total_bytes:
                 job.percent = round(min(100.0, downloaded_bytes / job.total_bytes * 100.0), 2)
             if command is not None:
                 job.command = list(command)
+            if isinstance(files, list):
+                job.files = [dict(f) for f in files if isinstance(f, dict)]
+            if current_file is not None:
+                job.current_file = str(current_file) or None
+            if size_unknown is not None:
+                job.size_unknown = bool(size_unknown)
+            if size_note:
+                job.size_note = str(size_note)
+            if moved:
+                job.last_bytes_at = now
+            if is_download:
+                self._apply_phase(job, phase, moved, now)
+                self._recompute(job, now)
             # Only STATE changes earn a tail line: a byte counter that ticks
             # thousands of times must not become thousands of rows.
             if message and percent is None and downloaded_bytes is None:
@@ -515,6 +774,213 @@ class HostJobRegistry:
             elif message and not job.log_tail:
                 self._append_tail(job, message)
             self._persist(job)
+            self._record(job, now)
+
+    # --- the progress contract ---------------------------------------------------
+
+    def _transition(self, job: _Job, state: str, why: str) -> None:
+        if job.state == state and job.transitions:
+            return
+        job.state = state
+        job.transitions.append({"at": _now_iso_ms(time.time()), "state": state, "why": why})
+
+    def _apply_phase(self, job: _Job, phase: Optional[str], moved: bool, now: float) -> None:
+        if job.status not in _ACTIVE:
+            return
+        if job.state == "stalled":
+            if moved:
+                stalled_for = now - (job.stalled_since or now)
+                job.stalled_since = None
+                why = f"resumed: bytes are moving again after {format_duration(stalled_for)} without data"
+                logger.info("download %s %s", job.job_id, why)
+                self._append_tail(job, why)
+                self._transition(job, "downloading", why)
+            elif phase in ("verifying", "installing"):
+                job.stalled_since = None
+                self._transition(job, phase, job.detail or phase)
+            return
+        if phase and phase != job.state:
+            if phase == "downloading" or phase in ("verifying", "installing") or job.state in ("queued", "resolving"):
+                if phase in ("resolving", "downloading") and job.state in ("resolving", "queued"):
+                    job.last_bytes_at = now  # the no-bytes clock starts with the phase
+                self._transition(job, phase, job.detail or phase)
+        elif moved and job.state in ("queued", "resolving"):
+            self._transition(job, "downloading", "first bytes arrived")
+
+    def _speed(self, job: _Job, now: float) -> Optional[float]:
+        samples = job.samples
+        if not samples:
+            return None
+        window = self._speed_window_s
+        horizon = now - window * 1.6
+        while len(samples) > 2 and samples[1][0] < horizon:
+            samples.pop(0)
+        anchor = samples[0]
+        for sample in samples:
+            if sample[0] <= now - window:
+                anchor = sample
+            else:
+                break
+        latest = samples[-1]
+        span = now - anchor[0]
+        if span < 0.4:
+            return None
+        return max(0.0, (latest[1] - anchor[1]) / span)
+
+    def _recompute(self, job: _Job, now: float) -> None:
+        """Speed, ETA, stall and the plain-language message of an active download."""
+
+        if job.status not in _ACTIVE:
+            return
+        speed = self._speed(job, now)
+        job.bytes_per_second = round(speed, 1) if speed is not None else None
+        remaining = None
+        if job.total_bytes and job.downloaded_bytes is not None:
+            remaining = max(0, job.total_bytes - job.downloaded_bytes)
+        if remaining is not None and speed and speed > 0 and job.state in ("downloading",):
+            job.eta_s = int(remaining / speed + 0.999)
+        elif remaining == 0:
+            job.eta_s = 0
+        else:
+            job.eta_s = None
+
+        quiet = now - (job.last_bytes_at or now)
+        if job.state in _STALLABLE and job.state != "stalled" and quiet >= job.stall_after_s and not job.cancel_requested:
+            job.stalled_since = job.last_bytes_at or now
+            where = (
+                f" at {format_bytes(job.downloaded_bytes)}" + (f" of {format_bytes(job.total_bytes)}" if job.total_bytes else "")
+                if job.downloaded_bytes
+                else ""
+            )
+            why = f"stalled: no bytes received for {format_duration(quiet)}{where}"
+            logger.warning("download %s (%s %s) %s", job.job_id, job.provider, job.artifact, why)
+            self._append_tail(job, why)
+            self._transition(job, "stalled", why)
+        job.message = self._compose(job, now)
+
+    def _compose(self, job: _Job, now: float) -> str:
+        if job.cancel_requested:
+            return "Cancelling…"
+        done, total = job.downloaded_bytes, job.total_bytes
+        amount = ""
+        if isinstance(done, int) and total:
+            amount = f"{format_bytes(done)} of {format_bytes(total)}"
+        elif isinstance(done, int) and done > 0:
+            amount = f"{format_bytes(done)} so far"
+        elif total:
+            amount = f"{format_bytes(total)} to fetch"
+        if job.state == "stalled":
+            quiet = now - (job.stalled_since or now)
+            parts = [f"Stalled: no data for {format_duration(quiet)}"]
+            if amount:
+                parts.append(amount)
+            parts.append("still trying, it resumes by itself when data flows again")
+            return " · ".join(parts)
+        if job.state == "downloading":
+            head = "Downloading"
+            if job.current_file:
+                names = [str(f.get("name")) for f in job.files]
+                if job.current_file in names and len(names) > 1:
+                    head = f"Downloading {job.current_file} ({names.index(job.current_file) + 1} of {len(names)})"
+                else:
+                    head = f"Downloading {job.current_file}"
+            parts = [head]
+            if amount:
+                parts.append(amount)
+            if job.bytes_per_second is not None:
+                parts.append(f"{format_bytes(job.bytes_per_second)}/s")
+            if job.eta_s is not None and job.eta_s > 0:
+                parts.append(f"{format_duration(job.eta_s)} left")
+            elif total is None and job._size_unknown():
+                parts.append("total size unknown" + (f" ({job.size_note})" if job.size_note else ""))
+            return " · ".join(parts)
+        label = {"resolving": "Preparing", "verifying": "Verifying", "installing": "Installing"}.get(job.state)
+        if label:
+            parts = [label]
+            if job.detail and job.detail.lower() not in (label.lower(), "preparing the download"):
+                parts.append(job.detail)
+            if amount and job.state != "resolving":
+                parts.append(amount)
+            elif total and job.state == "resolving":
+                parts.append(amount)
+            return " · ".join(parts)
+        return job.message
+
+    def _record(self, job: _Job, now: float) -> None:
+        """Append a progress event when something a human would see changed."""
+
+        if job.kind != "download":
+            return
+        event = {
+            "t": _now_iso_ms(now),
+            "state": job.state,
+            "bytes_done": job.downloaded_bytes,
+            "bytes_total": job.total_bytes,
+            "percent": job.percent,
+            "bytes_per_second": job.bytes_per_second,
+            "eta_s": job.eta_s,
+            "current_file": job.current_file,
+            "message": job.message,
+        }
+        last = job.progress_events[-1] if job.progress_events else None
+        if last is not None and all(last.get(k) == event[k] for k in event if k != "t"):
+            return
+        job.progress_events.append(event)
+        if self._persist_dir is not None:
+            try:
+                self._persist_dir.mkdir(parents=True, exist_ok=True)
+                with open(self._persist_dir / f"{job.job_id}.events.jsonl", "a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(event, sort_keys=True) + "\n")
+            except Exception:
+                pass
+        if self._listeners:
+            snap = job.to_dict()
+            for listener in list(self._listeners):
+                try:
+                    listener(snap)
+                except Exception:
+                    pass
+
+    def _ensure_ticker(self) -> None:
+        with self._lock:
+            if getattr(self, "_ticker", None) is not None:
+                return
+            self._ticker = threading.Thread(target=self._tick_loop, name="host-jobs-ticker", daemon=True)
+            ticker = self._ticker
+        try:
+            ticker.start()
+        except Exception as exc:
+            # No ticker is degraded (no stall detection, speed only on
+            # provider updates), never fatal: the job itself still runs.
+            logger.warning("host jobs: could not start the progress ticker: %s", exc)
+            with self._lock:
+                if self._ticker is ticker:
+                    self._ticker = None
+
+    def _tick_loop(self) -> None:
+        while True:
+            time.sleep(self._tick_s)
+            with self._lock:
+                active = [(j.job_id, j.control) for j in self._jobs.values() if j.status in _ACTIVE]
+                if not active:
+                    self._ticker = None
+                    return
+            for job_id, control in active:
+                if self._persist_dir is not None and control is not None and not control.event.is_set():
+                    control.is_cancelled()
+                self._tick(job_id)
+
+    def _tick(self, job_id: str) -> None:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.status not in _ACTIVE:
+                return
+            now = time.time()
+            if job.kind == "download":
+                self._recompute(job, now)
+                job.updated_at = now
+            self._persist(job)
+            self._record(job, now)
 
     def _finish(
         self,
@@ -545,6 +1011,7 @@ class HostJobRegistry:
                 self._append_tail(job, "cancelled")
             if status == "completed" and not job.dry_run:
                 job.percent = 100.0
+            self._finish_progress(job, status, result)
             # Free the single-flight slot: a failed pull is worth retrying.
             if self._by_key.get(job.key) == job.job_id:
                 self._by_key.pop(job.key, None)
@@ -552,6 +1019,69 @@ class HostJobRegistry:
             if self._persist_dir is not None:
                 try:
                     (self._persist_dir / f"{job_id}.cancel").unlink()
+                except Exception:
+                    pass
+
+    def _finish_progress(self, job: _Job, status: str, result: Optional[Dict[str, Any]]) -> None:
+        """The contract's terminal state, with numbers that agree with it."""
+
+        now = job.finished_at or time.time()
+        job.updated_at = now
+        job.bytes_per_second = None
+        job.stalled_since = None
+        final = {"completed": "done", "failed": "failed", "cancelled": "cancelled"}.get(status, status)
+        why = str((result or {}).get("message") or status)
+        if job.kind != "download":
+            self._transition(job, final, why)
+            return
+        if status == "completed":
+            job.eta_s = 0
+            outcome = str((result or {}).get("status") or "")
+            if job.total_bytes and not job.dry_run and outcome not in ("already_installed", "planned"):
+                job.downloaded_bytes = job.total_bytes
+            for entry in job.files:
+                if entry.get("state") not in ("done", "skipped"):
+                    entry["state"] = "done"
+                    if entry.get("bytes_total"):
+                        entry["bytes_done"] = entry["bytes_total"]
+            job.current_file = None
+            if outcome == "completed" and job.downloaded_bytes:
+                took = max(0.0, now - job.started_at)
+                job.message = f"Downloaded {format_bytes(job.downloaded_bytes)} in {format_duration(took)}"
+        else:
+            job.eta_s = None
+            for entry in job.files:
+                if entry.get("state") in ("downloading", "pending", "stalled"):
+                    entry["state"] = final
+        job.size_unknown = False if status == "completed" else job.size_unknown
+        self._transition(job, final, why)
+        self._append_tail(job, f"{final}: {why}" if final != why else final)
+        # The terminal event is always recorded, even if the tick just wrote one.
+        job.progress_events.append(
+            {
+                "t": _now_iso_ms(now),
+                "state": final,
+                "bytes_done": job.downloaded_bytes,
+                "bytes_total": job.total_bytes,
+                "percent": job.percent,
+                "bytes_per_second": None,
+                "eta_s": job.eta_s,
+                "current_file": None,
+                "message": job.message,
+                "error": job.error,
+            }
+        )
+        if self._persist_dir is not None:
+            try:
+                with open(self._persist_dir / f"{job.job_id}.events.jsonl", "a", encoding="utf-8") as fh:
+                    fh.write(json.dumps(job.progress_events[-1], sort_keys=True) + "\n")
+            except Exception:
+                pass
+        if self._listeners:
+            snap = job.to_dict()
+            for listener in list(self._listeners):
+                try:
+                    listener(snap)
                 except Exception:
                     pass
 
@@ -676,10 +1206,11 @@ def _prune_persisted(directory: Path, keep: int) -> None:
         return
     finished = [s for s in snaps if s.get("status") not in _ACTIVE]
     for snap in finished[keep:]:
-        try:
-            (directory / f"{snap['job_id']}.json").unlink()
-        except Exception:
-            pass
+        for suffix in (".json", ".events.jsonl"):
+            try:
+                (directory / f"{snap['job_id']}{suffix}").unlink()
+            except Exception:
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -785,8 +1316,12 @@ def start_delete_job(
     base_url: Optional[str] = None,
     registry: Optional[HostJobRegistry] = None,
     run_inline: bool = False,
+    with_companions: Optional[bool] = None,
 ) -> Dict[str, Any]:
     """Run `model_materializer.delete_artifact` as a job.
+
+    `with_companions=True` also removes the model's MTP companion(s) no other
+    installed model uses; otherwise the result carries `companion_offer`.
 
     Callers that must REFUSE on blockers (loaded model, shared cache) check
     `model_materializer.delete_blockers()` first; the job itself also refuses
@@ -803,7 +1338,7 @@ def start_delete_job(
 
     def runner(ctx: JobContext) -> Dict[str, Any]:
         ctx.log(f"deleting {pid} {ref}" + (" (dry run)" if dry_run else ""))
-        result = mm.delete_artifact(pid, ref, dry_run=dry_run, force=force, base_url=base_url)
+        result = mm.delete_artifact(pid, ref, dry_run=dry_run, force=force, base_url=base_url, with_companions=with_companions)
         if result.get("command"):
             ctx.set_command([str(c) for c in result["command"]])
         return result
@@ -853,6 +1388,13 @@ def spawn_detached(spec: Dict[str, Any]) -> Dict[str, Any]:
         kwargs["creationflags"] = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     else:
         kwargs["start_new_session"] = True
+    # The child snapshots the HF offline flags at ITS import as "what the
+    # operator set" (`config.manager`); hand it the operator's values, not an
+    # offline flag written in THIS process after start, or its explicit
+    # download would refuse in the operator's name.
+    from .manager import explicit_download_hf_env
+
+    kwargs["env"] = explicit_download_hf_env()[0]
     with open(log_path, "ab") as log:
         proc = subprocess.Popen(  # noqa: S603 - argv, fixed module entry point
             [sys.executable, "-m", "abstractcore.config.host_jobs", "run", spec_path],
@@ -886,6 +1428,24 @@ def spawn_detached(spec: Dict[str, Any]) -> Dict[str, Any]:
         "result": None,
         "pid": proc.pid,
         "elapsed_s": 0.0,
+        # The progress contract, so a poller that races the child's start
+        # reads the same shape it will read a moment later.
+        "state": "queued",
+        "bytes_done": None,
+        "bytes_total": None,
+        "size_unknown": False,
+        "size_note": None,
+        "bytes_per_second": None,
+        "eta_s": None,
+        "updated_at": _now_iso_ms(time.time()),
+        "detail": "",
+        "files": [],
+        "current_file": None,
+        "stall_after_s": default_stall_after_s(),
+        "stalled_for_s": None,
+        "transitions": [{"at": _now_iso_ms(time.time()), "state": "queued", "why": "queued (detached)"}],
+        "progress_events_count": 0,
+        "cancel_requested": False,
     }
     # Write the queued snapshot now so a poll that races the child's start
     # finds the job instead of a 404.

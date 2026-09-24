@@ -186,6 +186,12 @@ def test_probe_never_raises_and_never_returns_a_bogus_state(monkeypatch):
 def test_probing_the_recommended_set_runs_no_download_tool(monkeypatch):
     """A grid render must be free. No subprocess that fetches, no hub call."""
 
+    # The default local servers answer on the operator's LIVE :1234 / :11434;
+    # a probe here must meet a dead loopback port instead (network guard
+    # finding, 2026-09-24). Port 9 (discard) has no listener.
+    monkeypatch.setenv("LMSTUDIO_BASE_URL", "http://127.0.0.1:9/v1")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://127.0.0.1:9")
+
     spawned = []
     real_popen = subprocess.Popen
     fetch_verbs = {"get", "pull", "download", "fetch"}
@@ -656,7 +662,7 @@ def test_lms_get_is_verified_because_it_searches_rather_than_fetches(monkeypatch
     monkeypatch.setattr(
         mm,
         "_run_streaming",
-        lambda cmd, provider, artifact, emit: mm.DownloadOutcome(
+        lambda cmd, provider, artifact, emit, **_kw: mm.DownloadOutcome(
             provider, artifact, True, "completed", message="downloaded", output="Downloaded some-other-model"
         ),
     )
@@ -700,7 +706,7 @@ def test_a_download_never_answers_from_a_sweep_taken_before_it(monkeypatch):
     monkeypatch.setattr(
         mm,
         "_run_streaming",
-        lambda cmd, provider, artifact, emit: mm.DownloadOutcome(
+        lambda cmd, provider, artifact, emit, **_kw: mm.DownloadOutcome(
             provider, artifact, True, "completed", message="downloaded"
         ),
     )

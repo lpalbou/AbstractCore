@@ -9,7 +9,7 @@ import json
 import asyncio
 from dataclasses import dataclass
 from enum import Enum
-from typing import AsyncIterator, Optional
+from typing import Any, AsyncIterator, Dict, List, Optional
 
 import httpx
 
@@ -34,6 +34,20 @@ class DownloadProgress:
     percent: Optional[float] = None  # 0-100
     downloaded_bytes: Optional[int] = None
     total_bytes: Optional[int] = None
+    # Optional detail for the host-job progress contract (`host_job_v1`
+    # `state`/`files`/`size_unknown`); every existing caller may ignore them.
+    #   phase: resolving | downloading | verifying | installing -- overrides the
+    #          state `status` implies (e.g. Ollama's "writing manifest" is
+    #          `installing` although the event is a DOWNLOADING one).
+    #   files: [{name, bytes_done, bytes_total, state}] for the whole artifact.
+    #   current_file: the file bytes are arriving for right now.
+    #   size_unknown/size_note: the source cannot say how big the download is,
+    #          and the plain-language reason why.
+    phase: Optional[str] = None
+    files: Optional[List[Dict[str, Any]]] = None
+    current_file: Optional[str] = None
+    size_unknown: Optional[bool] = None
+    size_note: Optional[str] = None
 
 
 async def download_model(
