@@ -37,9 +37,14 @@ Shape:
   "process": {"rss_bytes": 53182464, "footprint_bytes": 61341696},
   "device": {"backend": "metal", "allocated_bytes": 0, "total_bytes": 137438953472, "free_bytes": null,
              "host_in_use_bytes": 9911418880, "wired_limit_bytes": 115343360000,
-             "mlx_active_bytes": 0, "mlx_cache_bytes": 0, "mlx_peak_bytes": 0, "mlx_held_bytes": 0},
+             "mlx_active_bytes": 0, "mlx_cache_bytes": 0, "mlx_peak_bytes": 0, "mlx_held_bytes": 0,
+             "torch_mps_allocated_bytes": null, "torch_mps_driver_bytes": null, "llama_cpp_bytes": 0,
+             "metal_process_allocated_bytes": null, "process_held_bytes": 0,
+             "process_held_basis": "sum:mlx_held_bytes+llama_cpp_bytes"},
   "held": {"backend": "mlx", "active_bytes": 0, "cache_bytes": 0, "peak_bytes": 0, "held_bytes": 0,
            "resident_models": 0, "holders": 0, "models": []},
+  "resident": {"backends": {"mlx": {...}, "huggingface": {...}, "embeddings": null},
+               "models": [], "resident_models": 0, "holders": 0, "total_held_bytes": 0},
   "host": {"host_id": "a1b2c3d4e5f6", "host_name": "studio.local", "kind": "local"}
 }
 ```
@@ -63,6 +68,32 @@ Shape:
   how many provider instances hold it, with per-model weight, cache and held bytes — including
   holders no runtime pool reaches (a boot-time summarizer, an old client). A listing that says "no
   models loaded" while `held.held_bytes` is large is wrong; this block is the check.
+- `device.process_held_bytes` is the **one figure to show for "what this process holds on the
+  accelerator"**, across every in-process backend. `device.process_held_basis` says how it was
+  obtained:
+  - `"metal_device_counter"` — when torch is loaded in the process, the figure is the Metal
+    device's own allocation count for this process (`device.metal_process_allocated_bytes`, read
+    through `torch.mps.driver_allocated_memory()`). It is a measurement and it covers everything:
+    MLX weights and MLX's allocator cache, torch tensors (transformers, embeddings, voice) and
+    llama.cpp (GGUF) buffers. Measured on an M5 Max: a 2 GiB MLX array moved it by exactly
+    2 GiB, and a Qwen3.5-4B Q4_K_M GGUF on Metal with an 8K context moved it by 3.59 GB, all of
+    which was returned when the model was closed.
+  - `"sum:..."` — without torch nothing else can allocate on the device, so the figure is the sum
+    of the fields named: `mlx_held_bytes` (measured) and `llama_cpp_bytes`, which is the GGUF
+    weights plus an **estimate** of the KV cache computed from the model's geometry at f16. That
+    estimate can overstate hybrid models (3.80 GB estimated versus 3.59 GB measured for the model
+    above).
+
+  The per-backend fields (`mlx_held_bytes`, `torch_mps_allocated_bytes`, `llama_cpp_bytes`)
+  attribute that total; do not add them on top of it. CPU-side memory (tokenizers, Python objects)
+  is never in it; `process.footprint_bytes` covers that.
+- `resident` lists every model whose weights are alive in this process across backends — MLX,
+  the HuggingFace provider (transformers and GGUF) and in-process embedding models — one row per
+  model with `backend`, `holders`, `weights_bytes`, `cache_bytes`, `held_bytes` and
+  `shared_weights`. HuggingFace and embedding instances do not share weights, so each holder is a
+  full copy (`shared_weights: false`). A GGUF row whose cache figure includes the f16 KV estimate
+  carries `kv_bytes_estimated: true`. Reading the snapshot never loads a backend that the process
+  has not loaded already.
 - `device.host_in_use_bytes` (Metal only, else `null`) is the **accelerator heap across
   processes**: driver-allocated Metal buffers, read from IORegistry
   (`ioreg -r -c IOAccelerator -l`, the `"In use system memory"` PerformanceStatistics figure).
@@ -293,11 +324,24 @@ it. `load_model()` re-warms an ejected MLX or HuggingFace instance, and a genera
 ejected instance reloads it on demand (logged). See
 [Stopping a Generation and Ejecting a Model](generation-cancel.md#ejecting-a-model-unload_model-while-it-generates).
 
-### Ejecting a model (MLX)
+### Ejecting a model from the whole process
 
 On MLX, several provider instances in one process can share the same weights, and
-`unload_model()` releases only the calling instance's hold. To free a model completely, use
-`eject_model()`:
+`unload_model()` releases only the calling instance's hold. With the HuggingFace provider and
+embedding models it is the other way round: each instance has its own full copy, so another
+instance (a summarizer, an older client) keeps its copy after yours is unloaded. To free a model
+completely, eject it from the whole process. One call covers every in-process backend:
+
+```python
+from abstractcore.providers.process_residency import eject, resident_rows
+
+print(resident_rows())                         # every model alive in this process, all backends
+report = eject("mlx", "mlx-community/Qwen3-4B-4bit")
+report = eject("huggingface", "unsloth/Qwen3.5-4B-GGUF")
+report = eject("embeddings", "sentence-transformers/all-MiniLM-L6-v2")
+```
+
+The backend-specific functions are also available. For MLX, use `eject_model()`:
 
 ```python
 from abstractcore.providers.mlx_residency import eject_model
@@ -314,6 +358,19 @@ not stop a generation, with its error), MLX counters `before` and `after`, `free
 model remains resident. A plain `unload_model()` also clears MLX's allocator cache every time, and
 a residency record for an instance that released its hold while others still keep the weights reads
 `provider_state: "resident_via_other_holders"` with the `held_bytes` still in memory.
+
+The HuggingFace provider has the same function in `abstractcore.providers.hf_residency`
+(`eject_model()`, `resident_models()`): it unloads every transformers or GGUF instance holding the
+model, collects garbage and returns torch's MPS memory pool to the system. For embedding models,
+`abstractcore.embeddings.manager.eject_embedding_models()` does the same for every
+`EmbeddingManager` holding the model, and `EmbeddingManager.unload()` frees a single one. An
+embedder stays usable after an eject: its next embedding loads the model again. Embedders served by
+Ollama, LM Studio or another server hold nothing in this process, so `unload()` leaves them
+untouched and says so (`in_process: false`).
+
+MLX has no idle or time-based unload. `load_model()` on MLX does not apply `ttl_s` or
+`keep_alive`; the response lists them under `unsupported_options` with a warning, and the model
+stays loaded until it is ejected.
 
 To size and inspect the session caches themselves — per-key `token_count` and best-effort `bytes` —
 use `get_prompt_cache_stats()`; see

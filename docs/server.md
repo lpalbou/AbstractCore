@@ -311,8 +311,8 @@ discovery endpoints accept an `api_key` query parameter for tooling/Swagger UI c
 | Camera | POST | `/v1/camera/detection/stop` | Disarm detection | optional `camera` |
 | Camera | GET | `/v1/camera/events` | Camera event log (cursor-paginated) | optional `camera`, cursor params |
 | Runtime | POST | `/acore/models/load` | Load and keep warm a task-specific model runtime | optional `task` (`text_generation` default, `image_generation`, `video_generation`, `text_to_video`, `image_to_video`, `tts`, `stt`), `provider`, `model`, `options`, `pin`, `lock`, `base_url`, `timeout_s` |
-| Runtime | GET | `/acore/models/loaded` | List task-aware loaded runtimes, merged with a host sweep of local model servers (Ollama/LM Studio) | optional `task`, `provider`, `model` |
-| Runtime | POST | `/acore/models/unload` | Unload a task-specific runtime; a locked runtime returns `409` unless `force` | `runtime_id` or `provider` + `model`, optional `task`, `base_url`, `force`, `options` |
+| Runtime | GET | `/acore/models/loaded` | List task-aware loaded runtimes, merged with a host sweep of local model servers (Ollama/LM Studio) and with every model held in the server process (MLX, HuggingFace, embeddings) | optional `task` (including `embedding`), `provider`, `model` |
+| Runtime | POST | `/acore/models/unload` | Unload a task-specific runtime and eject the model from every holder in the server process; a locked runtime returns `409` unless `force` | `runtime_id` or `provider` + `model`, optional `task`, `base_url`, `force`, `options` |
 | Runtime | POST | `/acore/models/lock` | Lock a resident text runtime against unloading, adopting a sweep-resident model when no runtime is managed for it (`409 model_not_resident` otherwise) | `runtime_id` or `provider` + `model`, optional `base_url` |
 | Runtime | POST | `/acore/models/unlock` | Clear a text runtime's lock (works even after eviction) | `runtime_id` or `provider` + `model`, optional `base_url` |
 | Runtime | GET | `/acore/models/context_estimate` | Analytical context-fit estimate for a provider/model on this host | `provider`, `model`, optional `context_length` |
@@ -1748,6 +1748,22 @@ exposes a real loaded-state signal.
 For capability-backed tasks it is true only when the backend reports or clearly
 implies that this request transitioned the model from not loaded to loaded.
 Already-loaded models should return `loaded_new=false`.
+
+#### Models held in the server process
+
+A model can be held in the server process by something other than a managed runtime: a
+per-request provider, an instance that shares MLX weights with it, or an embedding model loaded
+by `/v1/embeddings`. `GET /acore/models/loaded` lists these too, with `runtime_id`
+`process:<task>:<provider>:<model>` (`task` is `text_generation` or `embedding`),
+`provider_state: "resident_via_other_holders"`, `process_holders`, `held_bytes` and
+`lockable: false`. Managed rows get `process_holders` when other instances hold the same model.
+
+`POST /acore/models/unload` frees a model from every holder in the process, not just the managed
+runtime's instance, once no other managed runtime serves that provider and model. The response
+includes a `process_eject` report. When weights remain in memory, `ok` is `false` and `error`
+names what is still held. A `process:` row can be unloaded by its `runtime_id`, or by `provider`
+plus `model`. An embedding model can be unloaded with `task: "embedding"` and its `model`.
+Requests with `unload_after` use the same process-wide eject.
 
 #### Host model-server sweep in `/acore/models/loaded`
 

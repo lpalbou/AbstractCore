@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Ejecting a model now frees it from the whole process for every in-process backend (MLX,
+HuggingFace transformers and GGUF, embedding models), and the memory report gives one figure for
+what the process holds on the accelerator.
+
+### Fixed
+
+- `POST /acore/models/unload` and `unload_after` now free the model from every holder in the server
+  process, not only from the server's own runtime, once no other managed runtime serves it. The
+  response includes a `process_eject` report and is `ok: false` when weights remain in memory.
+  Before, a model shared with another instance, or a HuggingFace copy held elsewhere, stayed in
+  memory while the unload reported success.
+- An embedding model could never leave memory: every `EmbeddingManager` stayed referenced for the
+  life of the process. It is now freed when dropped, `EmbeddingManager.unload()` frees it on
+  request, and the next embedding after an unload loads the model again. `unload()` leaves embedders
+  served by Ollama, LM Studio or another server untouched (`in_process: false`).
+- `MLXProvider.load_model()` accepted `ttl_s` and `keep_alive` and ignored them without saying so.
+  MLX has no idle or time-based unload; the response now lists them under `unsupported_options`
+  with a warning.
+
+### Added
+
+- `GET /acore/models/loaded` lists models the server process holds outside its managed runtimes,
+  including embedding models (`runtime_id` `process:<task>:<provider>:<model>`), and such rows can
+  be unloaded. `task: "embedding"` is accepted by the listing and the unload.
+- `abstractcore.providers.process_residency`: `resident_rows()` and `eject()` for the MLX,
+  HuggingFace and embeddings backends in one place; `abstractcore.providers.hf_residency` and
+  `abstractcore.embeddings.manager.eject_embedding_models()` for each backend.
+- The memory snapshot reports `device.process_held_bytes`, the accelerator memory this process
+  holds across MLX, torch and llama.cpp, with `device.process_held_basis` saying how it was obtained
+  (the Metal device counter when torch is loaded, else a sum), plus
+  `torch_mps_allocated_bytes`, `torch_mps_driver_bytes`, `llama_cpp_bytes`,
+  `metal_process_allocated_bytes`, and a `resident` block listing every in-process model across
+  backends. GGUF rows whose cache figure includes the f16 KV-cache estimate carry
+  `kv_bytes_estimated: true`.
+
 ## [2.15.3] - 2026-09-25
 
 Ejecting an MLX model now frees all the memory it held, and the memory snapshot shows what MLX
