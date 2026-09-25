@@ -3813,8 +3813,26 @@ class MLXProvider(BaseProvider):
 
         Runs the constructor's own `_load_model()` (weights, tokenizer, native
         session when configured). One instance serves ONE model; the MTP
-        drafter is loaded again on the first speculative call, as at start."""
-        _ = kwargs
+        drafter is loaded again on the first speculative call, as at start.
+
+        MLX has no idle/TTL unload: `ttl_s`, `keep_alive` (and any other load
+        option) are NOT applied, and the response says so in `warnings` and
+        `unsupported_options` instead of accepting them silently. `pin` is the
+        caller's own residency lock and is not a provider option."""
+        unsupported = sorted(k for k, v in kwargs.items() if k != "pin" and v is not None)
+        warnings: List[str] = []
+        if unsupported:
+            timed = [k for k in unsupported if k in ("ttl_s", "keep_alive")]
+            other = [k for k in unsupported if k not in ("ttl_s", "keep_alive")]
+            if timed:
+                warnings.append(
+                    f"MLX has no idle/TTL unload: {', '.join(timed)} not applied; "
+                    "the model stays resident until it is ejected"
+                )
+            if other:
+                warnings.append(f"MLX load does not support option(s) {', '.join(other)}; not applied")
+            self.logger.warning(f"MLX load of {self.model}: {'; '.join(warnings)}")
+        extras: Dict[str, Any] = {"warnings": warnings, "unsupported_options": unsupported} if unsupported else {}
         target = str(model_name or self.model or "").strip()
         if target and target != str(self.model):
             raise ValueError(
@@ -3823,11 +3841,12 @@ class MLXProvider(BaseProvider):
             )
         if self.llm is not None and self.tokenizer is not None:
             return {"supported": True, "operation": "load", "provider": "mlx", "model": self.model,
-                    "action": "already_loaded", "source": "abstractcore.provider.mlx"}
+                    "action": "already_loaded", "source": "abstractcore.provider.mlx", **extras}
         t0 = time.time()
         self._load_model()
         return {"supported": True, "operation": "load", "provider": "mlx", "model": self.model,
-                "action": "loaded", "load_s": round(time.time() - t0, 3), "source": "abstractcore.provider.mlx"}
+                "action": "loaded", "load_s": round(time.time() - t0, 3), "source": "abstractcore.provider.mlx",
+                **extras}
 
     def unload_model(self, model_name: str) -> None:
         # Stop what is running on this instance first (host-cancellable calls:
