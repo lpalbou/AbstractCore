@@ -3,7 +3,7 @@
 > Expanded companion to `llms.txt`: setup, API and provider guidance, followed by canonical documentation pages. Use the linked source pages for authoritative documentation and the source code for behavior.
 
 Last updated: 2026-09-25
-Package version: 2.15.2
+Package version: 2.15.3
 Supported Python: 3.9+; GitHub CI tests 3.9, 3.10, 3.11, 3.12, and 3.13.
 
 ## How to use this file (agents)
@@ -14388,20 +14388,35 @@ Shape:
 {
   "ts": 1700000000.0,
   "ram": {"total_bytes": 137438953472, "available_bytes": 33013366784, "used_bytes": 95548260352, "percent": 76.0},
-  "process": {"rss_bytes": 53182464},
+  "process": {"rss_bytes": 53182464, "footprint_bytes": 61341696},
   "device": {"backend": "metal", "allocated_bytes": 0, "total_bytes": 137438953472, "free_bytes": null,
-             "host_in_use_bytes": 9911418880, "wired_limit_bytes": 115343360000},
+             "host_in_use_bytes": 9911418880, "wired_limit_bytes": 115343360000,
+             "mlx_active_bytes": 0, "mlx_cache_bytes": 0, "mlx_peak_bytes": 0, "mlx_held_bytes": 0},
+  "held": {"backend": "mlx", "active_bytes": 0, "cache_bytes": 0, "peak_bytes": 0, "held_bytes": 0,
+           "resident_models": 0, "holders": 0, "models": []},
   "host": {"host_id": "a1b2c3d4e5f6", "host_name": "studio.local", "kind": "local"}
 }
 ```
 
 - `ram` comes from `psutil` when available.
 - `process.rss_bytes` is this process's resident set size.
+- `process.footprint_bytes` (macOS only, else `null`) is this process's physical footprint, the
+  figure Activity Monitor's "Memory" column shows. Unlike RSS it **includes Metal buffers**, so MLX
+  weights and KV caches count in it.
 - `device` probes MLX first (`backend: "metal"`), then `torch.cuda` (`"cuda"`), then `torch.mps`
   (`"mps"`); with none available, `backend` is `null`.
 - `device.allocated_bytes` is **this process's** accelerator memory (mlx active memory on Metal).
   It is truthful per-process but blind to other processes: a model resident inside LM Studio's or
   Ollama's process reads `0` here.
+- `device.mlx_active_bytes`, `mlx_cache_bytes`, `mlx_peak_bytes` and `mlx_held_bytes` (Metal only,
+  else `null`) are MLX's allocator counters for this process: live buffers, freed buffers MLX keeps
+  cached for reuse, the high-water mark, and `held` = active + cache — the memory the process
+  actually keeps. A process can read `mlx_active_bytes: 0` and still hold gigabytes in the cache;
+  `mlx_held_bytes` is the figure to show.
+- `held` (MLX only, else `null`) lists every MLX model whose weights are alive in this process and
+  how many provider instances hold it, with per-model weight, cache and held bytes — including
+  holders no runtime pool reaches (a boot-time summarizer, an old client). A listing that says "no
+  models loaded" while `held.held_bytes` is large is wrong; this block is the check.
 - `device.host_in_use_bytes` (Metal only, else `null`) is the **accelerator heap across
   processes**: driver-allocated Metal buffers, read from IORegistry
   (`ioreg -r -c IOAccelerator -l`, the `"In use system memory"` PerformanceStatistics figure).
@@ -14631,6 +14646,28 @@ in-process provider refuses the unload if one does not stop, rather than freeing
 it. `load_model()` re-warms an ejected MLX or HuggingFace instance, and a generation on an
 ejected instance reloads it on demand (logged). See
 [Stopping a Generation and Ejecting a Model](docs/generation-cancel.md#ejecting-a-model-unload_model-while-it-generates).
+
+### Ejecting a model (MLX)
+
+On MLX, several provider instances in one process can share the same weights, and
+`unload_model()` releases only the calling instance's hold. To free a model completely, use
+`eject_model()`:
+
+```python
+from abstractcore.providers.mlx_residency import eject_model
+
+report = eject_model("mlx-community/Qwen3-4B-4bit")   # eject_model() with no model: every MLX model
+print(report["ok"], report["freed_bytes"], report["residual"])
+```
+
+It unloads **every** holder of the model in the process — weights, prompt and KV caches and the
+speculative drafter — then collects garbage and clears MLX's allocator cache. The report says what
+happened instead of assuming success: `holders_unloaded`, `holders_refused` (a holder that could
+not stop a generation, with its error), MLX counters `before` and `after`, `freed_bytes`, and
+`residual` — the model's row if its weights are still alive. `ok` is `true` only when nothing of the
+model remains resident. A plain `unload_model()` also clears MLX's allocator cache every time, and
+a residency record for an instance that released its hold while others still keep the weights reads
+`provider_state: "resident_via_other_holders"` with the `held_bytes` still in memory.
 
 To size and inspect the session caches themselves — per-key `token_count` and best-effort `bytes` —
 use `get_prompt_cache_stats()`; see

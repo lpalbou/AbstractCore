@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.15.3] - 2026-09-25
+
+Ejecting an MLX model now frees all the memory it held, and the memory snapshot shows what MLX
+still keeps.
+
+### Fixed
+
+- Ejecting an MLX model now frees everything it held: the weights, its prompt and KV caches and the
+  drafter, from every holder in the process, and MLX's allocator cache is cleared. The eject
+  (`abstractcore.providers.mlx_residency.eject_model`) reports what it freed and any residual
+  instead of claiming success. Who is affected: anyone who ejects models to reclaim memory —
+  previously a gateway could hold tens of GB of Metal buffers with no model listed. On a 27B model
+  the process footprint now drops from 22 GB to 0.65 GB after the eject; before, it stayed at 22 GB.
+- A residency record for an MLX instance that released its hold while another instance in the
+  process still keeps the weights now reads loaded, with `provider_state:
+  "resident_via_other_holders"` and the `held_bytes` still in memory, instead of "not loaded".
+
+### Added
+
+- The memory snapshot (`get_memory_snapshot()`, `GET /acore/memory`) reports MLX active, cache,
+  peak and held bytes (`device.mlx_*_bytes`), the MLX models alive in the process and their holders
+  (`held`), and, on macOS, the process's physical footprint (`process.footprint_bytes`), which
+  includes Metal memory that RSS leaves out.
+
 ## [2.15.2] - 2026-09-25
 
 The default MLX model now names a repo that exists, so a first MLX download works, and
