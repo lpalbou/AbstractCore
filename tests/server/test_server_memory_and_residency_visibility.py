@@ -101,7 +101,10 @@ def test_acore_memory_reports_snapshot() -> None:
         "wired_limit_bytes",
     }
     _mlx = {"mlx_active_bytes", "mlx_cache_bytes", "mlx_peak_bytes", "mlx_held_bytes"}
-    assert _base <= set(body["device"].keys()) <= _base | _mlx
+    # Every in-process allocator, one process figure (always present; null when unknown).
+    _process = {"torch_mps_allocated_bytes", "torch_mps_driver_bytes", "llama_cpp_bytes",
+                "metal_process_allocated_bytes", "process_held_bytes", "process_held_basis"}
+    assert _base | _process <= set(body["device"].keys()) <= _base | _mlx | _process
     assert isinstance(body["ts"], float)
 
 

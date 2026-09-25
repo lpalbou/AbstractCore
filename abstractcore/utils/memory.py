@@ -30,6 +30,7 @@ resident-model total legitimately exceeds it. Use `ram` for the system picture.
 from __future__ import annotations
 
 import re
+import sys
 import time
 from typing import Any, Dict, Optional
 
@@ -205,7 +206,7 @@ def _ioreg_accelerator_in_use_bytes(timeout_s: float = 1.0) -> Optional[int]:
         return None
 
 
-def _device_snapshot() -> Dict[str, Any]:
+def _device_snapshot_backend() -> Dict[str, Any]:
     out: Dict[str, Any] = {
         "backend": None,
         "allocated_bytes": None,
@@ -316,6 +317,146 @@ def _device_snapshot() -> Dict[str, Any]:
     return out
 
 
+def _device_snapshot() -> Dict[str, Any]:
+    """The backend figure (`_device_snapshot_backend`) plus what EVERY
+    in-process allocator pins, so the tray/console can show ONE truthful
+    process figure (mission MEM2, 2026-09-25):
+
+    - `torch_mps_allocated_bytes` / `torch_mps_driver_bytes`: torch's MPS
+      allocator (transformers text models, embeddings, voice/vision on torch).
+      The driver figure INCLUDES torch's freed-but-pooled buffers -- what the
+      process still pins after a model is dropped without `empty_cache()`.
+    - `llama_cpp_bytes`: weights + context state of every live llama.cpp
+      engine (GGUF), from the residency rows. Memory-mapped weights are
+      file-backed (see the module docstring) but still count against what the
+      process holds resident.
+    - `metal_process_allocated_bytes`: the Metal device's allocation for THIS
+      process (`torch.mps.driver_allocated_memory()` = `MTLDevice.
+      currentAllocatedSize`). MLX, llama.cpp and torch all allocate from that
+      one device, so this counter is the UNION. Verified 2026-09-25 (M5 Max,
+      torch 2.x + MLX + llama-cpp-python 0.3.35, one process): a 2 GiB MLX
+      array moved it by exactly 2,147,483,648 bytes (MLX's freed-but-cached
+      buffers stay inside it until `mx.clear_cache()`); a 1 GiB torch tensor
+      by 1 GiB more; a Qwen3.5-4B Q4_K_M GGUF on Metal (n_ctx 8192) by
+      3.59 GB, all of it returned on close. Known only while torch is
+      imported (reading it never imports torch).
+    - `process_held_bytes`: the one number to show as "this process pins
+      on the accelerator": the Metal device counter when known (a
+      measurement), else the sum of the per-backend figures -- MLX held
+      (measured: active + cache) + `llama_cpp_bytes` (llama.cpp weights plus
+      an f16 KV ESTIMATE from the GGUF geometry, which overstates hybrid
+      models: 3.80 GB estimated vs 3.59 GB measured in the probe above).
+      Without torch nothing else can allocate on the device, so those are
+      the only addends. CPU-side heap (tokenizers, Python objects) is never
+      in it -- `process.rss_bytes` / the footprint cover that. The
+      per-backend figures are ATTRIBUTIONS of this total, never added on
+      top of it.
+
+    Backends are read from `sys.modules` only: a report must never import
+    torch (hundreds of MB, and it breaks the GGUF Metal import-order guard).
+    """
+    out = _device_snapshot_backend()
+    out.setdefault("torch_mps_allocated_bytes", None)
+    out.setdefault("torch_mps_driver_bytes", None)
+    out.setdefault("llama_cpp_bytes", None)
+    out.setdefault("metal_process_allocated_bytes", None)
+    out.setdefault("process_held_bytes", None)
+    out.setdefault("process_held_basis", None)
+    try:
+        from ..providers.hf_residency import hf_memory_report
+
+        hf = hf_memory_report()
+        out["torch_mps_allocated_bytes"] = hf.get("torch_mps_allocated_bytes")
+        out["torch_mps_driver_bytes"] = hf.get("torch_mps_driver_bytes")
+        out["llama_cpp_bytes"] = int(hf.get("llama_cpp_bytes") or 0)
+    except Exception:
+        pass
+    driver = out.get("torch_mps_driver_bytes")
+    if isinstance(driver, int) and not isinstance(driver, bool):
+        # torch is imported: its driver counter is the device's allocation
+        # for this process, MLX and llama.cpp buffers included.
+        out["metal_process_allocated_bytes"] = int(driver)
+        out["process_held_bytes"] = int(driver)
+        out["process_held_basis"] = "metal_device_counter"
+        return out
+    total = 0
+    parts = []
+    for key in ("mlx_held_bytes", "llama_cpp_bytes"):
+        value = out.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            total += value
+            parts.append(key)
+    if not parts and isinstance(out.get("allocated_bytes"), int):
+        total, parts = int(out["allocated_bytes"]), ["allocated_bytes"]
+    out["process_held_bytes"] = int(total) if parts else None
+    # Which figures were summed; `llama_cpp_bytes` carries an f16 KV estimate.
+    out["process_held_basis"] = ("sum:" + "+".join(parts)) if parts else None
+    return out
+
+
+def _resident_snapshot() -> Dict[str, Any]:
+    """Every in-process model whose weights are alive, whoever holds them,
+    across backends: MLX (`mlx_residency`), the HuggingFace provider
+    (`hf_residency`: transformers + GGUF), in-process embeddings. Rows share
+    one shape (`lane`, `models`, `holders`, `weights_bytes`, `cache_bytes`,
+    `held_bytes`, `weights_alive`, `backend`). Never raises; a failing backend
+    is reported as `error` in its block, never dropped silently."""
+    backends: Dict[str, Any] = {}
+    rows: list = []
+    try:
+        import mlx.core  # noqa: F401
+    except Exception:
+        backends["mlx"] = None
+    else:
+        try:
+            from ..providers.mlx_residency import mlx_memory_report
+
+            report = mlx_memory_report()
+            for row in report.get("models") or []:
+                row.pop("holder_rows", None)
+                row.setdefault("backend", "mlx")
+            backends["mlx"] = report
+        except Exception as exc:  # noqa: BLE001
+            backends["mlx"] = {"backend": "mlx", "error": f"{type(exc).__name__}: {exc}"}
+    try:
+        from ..providers.hf_residency import hf_memory_report
+
+        report = hf_memory_report()
+        for row in report.get("models") or []:
+            row.pop("holder_rows", None)
+        backends["huggingface"] = report
+    except Exception as exc:  # noqa: BLE001
+        backends["huggingface"] = {"backend": "huggingface", "error": f"{type(exc).__name__}: {exc}"}
+    # The manager module imports sentence-transformers (and torch) eagerly;
+    # a process that never built an EmbeddingManager cannot hold one, so read
+    # the module only when it is already imported -- never import it here.
+    manager_mod = sys.modules.get("abstractcore.embeddings.manager")
+    if manager_mod is None:
+        backends["embeddings"] = None
+    else:
+        try:
+            report = manager_mod.embeddings_memory_report()
+            for row in report.get("models") or []:
+                row.pop("holder_rows", None)
+            backends["embeddings"] = report
+        except Exception as exc:  # noqa: BLE001
+            backends["embeddings"] = {"backend": "embeddings", "error": f"{type(exc).__name__}: {exc}"}
+    total = 0
+    for report in backends.values():
+        if isinstance(report, dict):
+            rows.extend(r for r in (report.get("models") or []) if isinstance(r, dict))
+            value = report.get("held_bytes")
+            if isinstance(value, int) and not isinstance(value, bool):
+                total += value
+    return {
+        "backends": backends,
+        "models": rows,
+        "resident_models": len(rows),
+        "holders": int(sum(int(r.get("holders") or 0) for r in rows)),
+        "total_held_bytes": int(total),
+    }
+
+
 def _host_snapshot() -> Dict[str, Any]:
     try:
         from .hostinfo import get_host_identity
@@ -383,7 +524,21 @@ def get_memory_snapshot() -> Dict[str, Any]:
                     "mlx_active_bytes": int|None,   # metal: MLX live buffers (this process)
                     "mlx_cache_bytes": int|None,    # metal: MLX freed-but-cached buffers (this process)
                     "mlx_peak_bytes": int|None,
-                    "mlx_held_bytes": int|None},    # active + cache: what the process pins
+                    "mlx_held_bytes": int|None,     # active + cache: what MLX pins
+                    "torch_mps_allocated_bytes": int|None,  # torch live tensors on MPS (this process)
+                    "torch_mps_driver_bytes": int|None,     # torch MPS driver incl. its pool (this process)
+                    "llama_cpp_bytes": int|None,    # GGUF weights + KV allocation (est.) of live llama.cpp engines
+                    "metal_process_allocated_bytes": int|None,  # the Metal device's allocation for this process (torch present)
+                    "process_held_basis": str|None,  # "metal_device_counter" or "sum:<the fields summed>"
+                    "process_held_bytes": int|None},  # accelerator memory this process pins: the Metal device counter (measured) when torch is imported, else MLX held + llama.cpp (KV estimated)
+         "resident": {"backends": {"mlx": <held block>|None,
+                                   "huggingface": {"backend", "held_bytes", "models", "holders",
+                                                   "torch_mps_allocated_bytes", "torch_mps_driver_bytes",
+                                                   "llama_cpp_bytes", ...},
+                                   "embeddings": {"backend", "held_bytes", "models", "holders", ...}},
+                      "models": [every row across backends, each with "backend"],
+                      "resident_models": int, "holders": int,
+                      "total_held_bytes": int},     # what the process pins through model holders
          "held": {"backend": "mlx", "active_bytes", "cache_bytes", "peak_bytes", "held_bytes",
                   "resident_models": int, "holders": int,
                   "models": [{"lane", "model_path", "models", "holders", "weights_bytes",
@@ -410,6 +565,7 @@ def get_memory_snapshot() -> Dict[str, Any]:
         "process": _process_snapshot(),
         "device": _device_snapshot(),
         "held": _held_snapshot(),
+        "resident": _resident_snapshot(),
         "host": _host_snapshot(),
     }
 

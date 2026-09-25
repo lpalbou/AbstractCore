@@ -16,7 +16,7 @@ from abstractcore.utils import memory as memory_mod
 def test_memory_snapshot_shape() -> None:
     snap = memory_mod.get_memory_snapshot()
 
-    assert set(snap.keys()) == {"ts", "ram", "process", "device", "held", "host"}
+    assert set(snap.keys()) == {"ts", "ram", "process", "device", "held", "resident", "host"}
     assert isinstance(snap["ts"], float)
     assert set(snap["ram"].keys()) == {"total_bytes", "available_bytes", "used_bytes", "percent"}
     assert set(snap["process"].keys()) == {"rss_bytes", "footprint_bytes"}
@@ -31,6 +31,13 @@ def test_memory_snapshot_shape() -> None:
         "mlx_cache_bytes",
         "mlx_peak_bytes",
         "mlx_held_bytes",
+        # MEM2 (2026-09-25): every in-process allocator, one process figure.
+        "torch_mps_allocated_bytes",
+        "torch_mps_driver_bytes",
+        "llama_cpp_bytes",
+        "metal_process_allocated_bytes",
+        "process_held_bytes",
+        "process_held_basis",
     }
     # `held` is the process-level MLX residency block (None without MLX).
     held = snap["held"]
@@ -93,6 +100,14 @@ def test_memory_snapshot_never_raises_without_device_backends(monkeypatch) -> No
         "mlx_cache_bytes": None,
         "mlx_peak_bytes": None,
         "mlx_held_bytes": None,
+        # MEM2: no torch -> unknown; no llama.cpp engine -> a KNOWN 0; the
+        # process figure is then a known 0 too (nothing can be held).
+        "torch_mps_allocated_bytes": None,
+        "torch_mps_driver_bytes": None,
+        "llama_cpp_bytes": 0,
+        "metal_process_allocated_bytes": None,
+        "process_held_bytes": 0,
+        "process_held_basis": "sum:llama_cpp_bytes",
     }
     assert snap["held"] is None
 
@@ -250,3 +265,86 @@ def test_prompt_cache_store_bytes_unknown_stays_none() -> None:
     assert memory_mod.prompt_cache_store_bytes({}) is None
     # Bools are not byte counts.
     assert memory_mod.prompt_cache_store_bytes({"keys": ["a"], "meta_by_key": {"a": {"bytes": True}}}) is None
+
+
+# ---------------------------------------------------------------------------
+# Mission MEM2 (2026-09-25): one process figure across every backend, and a
+# report that never imports a backend.
+# ---------------------------------------------------------------------------
+def test_process_held_bytes_sums_every_in_process_allocator(monkeypatch) -> None:
+    from abstractcore.providers import hf_residency
+
+    monkeypatch.setattr(memory_mod, "_device_snapshot_backend", lambda: {
+        "backend": "metal", "allocated_bytes": 7, "total_bytes": None, "free_bytes": None,
+        "host_in_use_bytes": None, "wired_limit_bytes": None, "mlx_active_bytes": 7,
+        "mlx_cache_bytes": 3, "mlx_peak_bytes": 10, "mlx_held_bytes": 10,
+    })
+    monkeypatch.setattr(hf_residency, "hf_memory_report", lambda: {
+        "backend": "huggingface", "torch_mps_allocated_bytes": 40, "torch_mps_driver_bytes": 100,
+        "llama_cpp_bytes": 50, "held_bytes": 90, "models": [], "holders": 0, "resident_models": 0,
+    })
+    dev = memory_mod._device_snapshot()
+    assert dev["torch_mps_allocated_bytes"] == 40 and dev["torch_mps_driver_bytes"] == 100
+    assert dev["llama_cpp_bytes"] == 50
+    # torch present: its driver counter is the device's allocation for the
+    # process -- MLX and llama.cpp buffers are INSIDE it (measured 2026-09-25),
+    # so the per-backend figures attribute it and are never added on top.
+    assert dev["metal_process_allocated_bytes"] == 100
+    assert dev["process_held_bytes"] == 100, "the device counter, not a sum that double-counts"
+    assert dev["process_held_basis"] == "metal_device_counter"
+
+    # torch absent: nothing else can allocate on the device, so the
+    # per-backend figures ARE addends.
+    monkeypatch.setattr(hf_residency, "hf_memory_report", lambda: {
+        "backend": "huggingface", "torch_mps_allocated_bytes": None, "torch_mps_driver_bytes": None,
+        "llama_cpp_bytes": 50, "held_bytes": 50, "models": [], "holders": 0, "resident_models": 0,
+    })
+    dev = memory_mod._device_snapshot()
+    assert dev["metal_process_allocated_bytes"] is None
+    assert dev["process_held_bytes"] == 10 + 50, "MLX held + llama.cpp when torch is absent"
+    assert dev["process_held_basis"] == "sum:mlx_held_bytes+llama_cpp_bytes"
+
+
+def test_resident_block_folds_every_backend_and_sums_bytes(monkeypatch) -> None:
+    import types
+
+    from abstractcore.providers import hf_residency, mlx_residency
+
+    monkeypatch.setattr(mlx_residency, "mlx_memory_report", lambda: {
+        "backend": "mlx", "active_bytes": 7, "cache_bytes": 0, "peak_bytes": 7, "held_bytes": 7,
+        "models": [{"lane": "mlx_lm", "models": ["a/mlx"], "holders": 1, "held_bytes": 7, "weights_alive": True, "holder_rows": [{"id": 1}]}],
+        "holders": 1, "resident_models": 1,
+    })
+    monkeypatch.setattr(hf_residency, "hf_memory_report", lambda: {
+        "backend": "huggingface", "torch_mps_allocated_bytes": None, "torch_mps_driver_bytes": None,
+        "llama_cpp_bytes": 0, "held_bytes": 5,
+        "models": [{"lane": "transformers", "backend": "huggingface", "models": ["b/hf"], "holders": 2, "held_bytes": 5, "weights_alive": True, "holder_rows": [{"id": 2}]}],
+        "holders": 2, "resident_models": 1,
+    })
+    fake_manager = types.ModuleType("abstractcore.embeddings.manager")
+    fake_manager.embeddings_memory_report = lambda: {
+        "backend": "embeddings", "held_bytes": 3,
+        "models": [{"lane": "embeddings", "backend": "embeddings", "models": ["c/emb"], "holders": 1, "held_bytes": 3, "weights_alive": True}],
+        "holders": 1, "resident_models": 1,
+    }
+    monkeypatch.setitem(sys.modules, "abstractcore.embeddings.manager", fake_manager)
+    # make MLX "importable" for this test regardless of the host
+    monkeypatch.setitem(sys.modules, "mlx", types.SimpleNamespace(core=types.ModuleType("mlx.core")))
+    monkeypatch.setitem(sys.modules, "mlx.core", types.ModuleType("mlx.core"))
+
+    resident = memory_mod._resident_snapshot()
+    assert set(resident["backends"]) == {"mlx", "huggingface", "embeddings"}
+    assert [r["models"][0] for r in resident["models"]] == ["a/mlx", "b/hf", "c/emb"]
+    assert all("holder_rows" not in r for r in resident["models"]), "object ids stay out of the JSON"
+    assert resident["models"][0]["backend"] == "mlx"
+    assert resident["total_held_bytes"] == 7 + 5 + 3
+    assert resident["holders"] == 4 and resident["resident_models"] == 3
+
+
+def test_report_never_imports_the_embeddings_backend(monkeypatch) -> None:
+    """The manager module imports sentence-transformers (and torch) eagerly; a
+    memory report must read it only when it is already loaded."""
+    monkeypatch.setitem(sys.modules, "abstractcore.embeddings.manager", None)  # absent -> import would raise
+    resident = memory_mod._resident_snapshot()
+    assert resident["backends"]["embeddings"] is None
+    assert sys.modules.get("abstractcore.embeddings.manager") is None
