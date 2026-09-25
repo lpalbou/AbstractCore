@@ -73,18 +73,21 @@ def known_app_ids() -> Tuple[str, ...]:
 
 
 def installed_version(distribution: str) -> str:
-    """The installed version of a distribution, or ``"unknown"``."""
-    try:
-        return metadata.version(distribution)
-    except metadata.PackageNotFoundError:
-        return "unknown"
+    """The installed version of a distribution.
+
+    Raises ``importlib.metadata.PackageNotFoundError`` when the distribution is
+    not installed: an About screen never shows a made-up version.
+    """
+    return metadata.version(distribution)
 
 
 def app_identity(app_id: str, version: Optional[str] = None) -> AppIdentity:
     """Identity of one application.
 
     ``app_id`` is the distribution name in lower case (``"abstractassistant"``).
-    ``version`` defaults to the installed distribution version.
+    ``version`` defaults to the installed distribution version and raises
+    ``importlib.metadata.PackageNotFoundError`` when there is none: a caller
+    passes the version it knows or gets an error, never a silent "unknown".
     Raises ``KeyError`` for an application the descriptor does not know:
     a caller must not invent identity facts.
     """
@@ -131,6 +134,45 @@ def about_lines(identity: AppIdentity, extra: Optional[Mapping[str, str]] = None
     return [f"{label}: {value}" for label, value in about_fields(identity, extra)]
 
 
+GatewayAboutPayload = Mapping[str, object]
+
+
+def gateway_version_rows(payload: Optional[GatewayAboutPayload], error: Optional[str] = None) -> List[Tuple[str, str]]:
+    """Rows describing the gateway an application talks to.
+
+    Mirrors ``gatewayVersionRows`` in ``@abstractframework/ui-kit`` so every
+    About screen prints the same lines from ``GET /api/gateway/about``
+    (``{abstractframework, abstractgateway, packages}``):
+
+    * ``Gateway`` → ``AbstractGateway <version>``
+    * ``Gateway framework`` → ``AbstractFramework <version>`` or
+      ``not installed on the gateway host``
+    * ``Gateway package <name>`` → ``<version>`` for every other package, sorted
+
+    On an error, or a payload without a gateway version, exactly one row:
+    ``Gateway`` → ``unavailable (<reason>)``.
+    """
+    if error:
+        return [("Gateway", f"unavailable ({error})")]
+    gateway = str((payload or {}).get("abstractgateway") or "").strip()
+    if not gateway:
+        return [("Gateway", "unavailable (response has no abstractgateway version)")]
+    rows: List[Tuple[str, str]] = [("Gateway", f"AbstractGateway {gateway}")]
+    framework = (payload or {}).get("abstractframework")
+    framework_text = str(framework).strip() if framework else ""
+    rows.append(("Gateway framework", f"AbstractFramework {framework_text}" if framework_text else "not installed on the gateway host"))
+    packages = (payload or {}).get("packages")
+    if isinstance(packages, Mapping):
+        for name in sorted(packages):
+            if name in ("abstractgateway", "abstractframework"):
+                continue
+            version = packages[name]
+            text = str(version).strip() if version else ""
+            if text:
+                rows.append((f"Gateway package {name}", text))
+    return rows
+
+
 def _escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace('"', "&quot;")
 
@@ -157,6 +199,7 @@ __all__ = [
     "about_lines",
     "app_identity",
     "framework_identity",
+    "gateway_version_rows",
     "installed_version",
     "known_app_ids",
 ]

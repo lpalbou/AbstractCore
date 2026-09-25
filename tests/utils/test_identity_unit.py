@@ -29,6 +29,31 @@ def test_every_known_app_has_every_link(app_id):
     assert app.repo.startswith("https://github.com/lpalbou/")
 
 
+def test_missing_distribution_is_an_error_not_unknown():
+    import importlib.metadata as md
+
+    with pytest.raises(md.PackageNotFoundError):
+        identity.app_identity("abstractflow")  # a TypeScript app: never a Python distribution
+
+
+def test_gateway_version_rows_match_the_ui_kit_contract():
+    rows = identity.gateway_version_rows(
+        {"abstractgateway": "0.5.0", "abstractframework": "0.4.0", "packages": {"abstractruntime": "0.5.0", "abstractcore": "2.16.0", "abstractgateway": "0.5.0", "abstractvoice": None}}
+    )
+    assert rows == [
+        ("Gateway", "AbstractGateway 0.5.0"),
+        ("Gateway framework", "AbstractFramework 0.4.0"),
+        ("Gateway package abstractcore", "2.16.0"),
+        ("Gateway package abstractruntime", "0.5.0"),
+    ]
+    assert identity.gateway_version_rows({"abstractgateway": "0.5.0"}) == [
+        ("Gateway", "AbstractGateway 0.5.0"),
+        ("Gateway framework", "not installed on the gateway host"),
+    ]
+    assert identity.gateway_version_rows(None, error="HTTP 404") == [("Gateway", "unavailable (HTTP 404)")]
+    assert identity.gateway_version_rows({"packages": {}}) == [("Gateway", "unavailable (response has no abstractgateway version)")]
+
+
 def test_unknown_app_is_refused():
     with pytest.raises(KeyError):
         identity.app_identity("not-an-app")
