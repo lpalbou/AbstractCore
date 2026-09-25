@@ -3951,10 +3951,28 @@ class MLXProvider(BaseProvider):
             self._mtp_last_result = None
             self._native_qwen4 = None
             gc.collect()
+            # ALWAYS release MLX's cache of freed buffers, whether or not a
+            # sibling still uses the weights. `clear_cache` only returns
+            # buffers nobody references any more; it cannot touch a live
+            # tensor, so it is harmless for the siblings -- and skipping it
+            # is a measured leak: on 2026-09-25 (hermetic replay of the
+            # operator's day) the sibling that made `shared_still_used` True
+            # was itself collected by the `gc.collect()` above, its 15.5 GB
+            # of weights + 2.6 GB of prefix cache went into the allocator
+            # cache, and the guarded clear never ran: the process kept 21 GB
+            # with `mx.get_active_memory()` at 0 and the report at "nothing
+            # loaded". The process-level truth lives in `mlx_residency`.
             try:
-                import mlx.core as mx
-                if not shared_still_used:
-                    mx.clear_cache()
+                from .mlx_residency import clear_mx_cache, mx_memory_stats
+
+                clear_mx_cache()
+                if shared_still_used:
+                    stats = mx_memory_stats()
+                    self.logger.info(
+                        "MLX unload of %s: weights stay resident for other holders; "
+                        "mlx active=%s bytes after this instance released its references",
+                        model_name, stats.get("active_bytes"),
+                    )
             except Exception:
                 pass
         except Exception as e:
@@ -5606,10 +5624,46 @@ class MLXProvider(BaseProvider):
             "state": "loaded" if loaded else "not_loaded",
             "source": "abstractcore.provider.mlx",
         }
+        # PROCESS truth on top of instance truth. The weights are shared
+        # between provider instances (`_SharedMLXModel` / `NativeSession`) and
+        # stay in Metal memory while ANY instance holds them. An instance that
+        # answered "not_loaded" after its own unload while a sibling (a boot-
+        # time summarizer, an override client, an old runtime) still held the
+        # model is how a gateway came to say "No models loaded" over 92 GB of
+        # live MLX buffers (2026-09-25). So: `loaded`/`resident` mean "these
+        # weights are in this process's memory"; `provider_state` says whether
+        # THIS instance holds them or only others do.
+        try:
+            from .mlx_residency import process_residency_for
+
+            row = process_residency_for(model_s or None, getattr(self, "_resolved_model_id", None))
+        except Exception:
+            row = None
         if loaded:
             est_weights = self._est_weights_bytes()
             if est_weights is not None:
                 claim["est_weights_bytes"] = est_weights
+            claim["provider_state"] = "loaded"
+            if row is not None:
+                claim["process_holders"] = int(row.get("holders") or 0)
+                claim["held_bytes"] = int(row.get("held_bytes") or 0)
+                claim["cache_bytes"] = int(row.get("cache_bytes") or 0)
+                claim["process_lane"] = row.get("lane")
+        elif row is not None:
+            claim.update({
+                "provider_resident": True,
+                "loaded": True,
+                "state": "loaded",
+                "provider_state": "resident_via_other_holders",
+                "process_holders": int(row.get("holders") or 0),
+                "held_bytes": int(row.get("held_bytes") or 0),
+                "cache_bytes": int(row.get("cache_bytes") or 0),
+                "process_lane": row.get("lane"),
+            })
+            if isinstance(row.get("weights_bytes"), int):
+                claim["est_weights_bytes"] = int(row["weights_bytes"])
+        else:
+            claim["provider_state"] = "not_loaded"
         return claim
 
     def validate_config(self) -> bool:

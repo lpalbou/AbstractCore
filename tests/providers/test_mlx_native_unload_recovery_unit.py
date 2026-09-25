@@ -119,14 +119,24 @@ def test_sibling_release_does_not_flush_or_destroy_shared_model(allocator):
     del session
     first.unload_model(first.model)
     assert_detached(first)
-    assert closed == [] and state["flushes"] == [] and state["active"] == 2
+    # The shared weights are NOT destroyed while `second` still holds them
+    # (active stays 2), and the final-owner close hook has NOT run (closed==[]).
+    # `mx.clear_cache()` DOES run now on every unload, harmlessly: it returns
+    # only unreferenced buffers, so with the weights still live it frees
+    # nothing (flush recorded (active=2, cached=0)). This is the 2026-09-25
+    # fix: the old guard skipped the clear whenever a sibling remained, and
+    # when that sibling was then GC'd its freed buffers stayed in MLX's
+    # allocator cache with no later clear -- the process held gigabytes while
+    # `get_active_memory()` read 0.
+    assert closed == [] and state["flushes"] == [(2, 0)] and state["active"] == 2
     assert session_ref().runtime.stats()["owners"] == 1
     assert list(session_ref().holders) == [second]
     with pytest.raises(NativeRuntimeError, match="final owner flush failed"):
         second.unload_model(second.model)
     assert_detached(second)
     assert closed == [True] and not worker.is_alive()
-    assert session_ref() is None and state["flushes"] == [(0, 2)]
+    # Final owner: weights freed (active 2->0, cached +2), then cleared.
+    assert session_ref() is None and state["flushes"] == [(2, 0), (0, 2)]
 
 
 def test_live_worker_close_timeout_retains_provider_and_same_owner_can_retry(allocator):
