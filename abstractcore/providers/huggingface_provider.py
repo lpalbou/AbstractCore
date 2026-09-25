@@ -939,6 +939,14 @@ class HuggingFaceProvider(BaseProvider):
         self.provider = "huggingface"
         self._user_provided_max_tokens = bool(user_provided_max_tokens)
 
+        # Process-level residency (mission MEM2, 2026-09-25): every instance is
+        # visible to `hf_residency`, so a listing can name holders no runtime
+        # pool owns (a boot summarizer, an override client, an old runtime --
+        # each a FULL COPY of the weights here) and an eject can free them all.
+        from .hf_residency import register_provider as _register_hf_provider
+
+        _register_hf_provider(self)
+
         # Register-at-first-write: HF model loads write into the HF hub cache.
         from ..utils.data_registry import ensure_core_data_homes
         ensure_core_data_homes()

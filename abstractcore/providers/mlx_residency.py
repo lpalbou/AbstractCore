@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import gc
 import logging
+import sys
 import threading
 import time
 from pathlib import Path
@@ -190,17 +191,19 @@ def prompt_cache_store_bytes(store: Any) -> int:
 # ---------------------------------------------------------------------------
 def _native_session_entries() -> Iterable[Tuple[str, str, Any]]:
     """(lane, model_path, session) for every live native session."""
+    # Registries live in modules; a module that was never imported holds
+    # nothing, and importing it here would pull mlx-vlm into a process that
+    # merely asked for a memory report (MEM2 discipline: reports never import
+    # a backend).
     try:
-        from . import mlx_native_session as ns
-
-        for key, session in list(ns._SESSIONS.items()):
+        ns = sys.modules.get("abstractcore.providers.mlx_native_session")
+        for key, session in (list(ns._SESSIONS.items()) if ns is not None else []):
             yield "mlx_vlm", str(key[0]) if isinstance(key, tuple) and key else str(key), session
     except Exception:
         pass
     try:
-        from . import mlx_qwen4 as q4
-
-        for key, session in list(q4._SESSIONS.items()):
+        q4 = sys.modules.get("abstractcore.providers.mlx_qwen4")
+        for key, session in (list(q4._SESSIONS.items()) if q4 is not None else []):
             yield "mlx_vlm_qwen4", str(key[0]) if isinstance(key, tuple) and key else str(key), session
     except Exception:
         pass
@@ -208,9 +211,8 @@ def _native_session_entries() -> Iterable[Tuple[str, str, Any]]:
 
 def _shared_model_entries() -> Iterable[Tuple[str, str, Any]]:
     try:
-        from . import mlx_provider as mp
-
-        for key, shared in list(mp._SHARED_MLX_MODELS.items()):
+        mp = sys.modules.get("abstractcore.providers.mlx_provider")
+        for key, shared in (list(mp._SHARED_MLX_MODELS.items()) if mp is not None else []):
             yield "mlx_lm", str(key), shared
     except Exception:
         pass

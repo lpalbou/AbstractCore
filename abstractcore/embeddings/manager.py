@@ -8,7 +8,10 @@ Production-ready embedding generation with SOTA models and efficient serving.
 import hashlib
 import pickle
 import atexit
+import gc
 import os
+import threading
+import weakref
 import sys
 import builtins
 import warnings
@@ -181,6 +184,138 @@ def _get_optimal_onnx_model() -> Optional[str]:
     # Conservative strategy: try O3 optimization (good performance, widely supported)
     # If it fails, sentence-transformers will fallback to model.onnx automatically
     return "onnx/model_O3.onnx"
+
+
+# ---------------------------------------------------------------------------
+# Process-level residency for in-process embedding models (mission MEM2).
+#
+# Before 2026-09-25 an EmbeddingManager could NEVER leave memory: `__init__`
+# registered two BOUND METHODS with `atexit` (a strong reference for the life
+# of the process) and `embed` was a class-level `@lru_cache` whose keys carry
+# `self`. A gateway that rebuilt its embedder kept every previous
+# SentenceTransformer on MPS, with no listing naming it and no eject reaching
+# it. Registration is weak, the cache is per instance, and `unload()` is the
+# eject. `resident_embedding_models()` / `eject_embedding_models()` are the
+# process-wide truth the memory report and the runtime fold in.
+# ---------------------------------------------------------------------------
+_EMBEDDING_MANAGERS: "weakref.WeakSet[Any]" = weakref.WeakSet()
+
+
+def _atexit_save_caches(ref: "weakref.ReferenceType") -> None:
+    manager = ref()
+    if manager is None:
+        return
+    try:
+        manager._safe_save_persistent_cache()
+    except Exception:
+        pass
+    try:
+        manager._safe_save_normalized_cache()
+    except Exception:
+        pass
+
+
+def registered_embedding_managers() -> List["EmbeddingManager"]:
+    return [m for m in list(_EMBEDDING_MANAGERS)]
+
+
+def resident_embedding_models() -> List[Dict[str, Any]]:
+    """Every in-process embedding model whose weights are alive, one row per
+    model id (holders = managers, each its own copy), in the residency row
+    shape shared with `mlx_residency` / `hf_residency`."""
+    by_model: Dict[str, Dict[str, Any]] = {}
+    for manager in registered_embedding_managers():
+        try:
+            claim = manager.get_residency()
+        except Exception:
+            continue
+        if not claim.get("loaded"):
+            continue
+        name = str(claim.get("model") or "")
+        row = by_model.get(name)
+        if row is None:
+            row = by_model[name] = {
+                "lane": "embeddings",
+                "backend": "embeddings",
+                "model_path": claim.get("model_path"),
+                "models": [name],
+                "holders": 0,
+                "holder_rows": [],
+                "weights_bytes": None,
+                "cache_bytes": 0,
+                "held_bytes": 0,
+                "weights_alive": True,
+                "shared_weights": False,
+                "copies": 0,
+                "device": claim.get("device"),
+            }
+        row["holders"] += 1
+        row["copies"] += 1
+        row["holder_rows"].append({"id": id(manager), "model": name, "type": type(manager).__name__,
+                                   "instance_loaded": True, "device": claim.get("device"),
+                                   "weights_bytes": claim.get("weights_bytes")})
+        if isinstance(claim.get("weights_bytes"), int):
+            row["weights_bytes"] = int(row["weights_bytes"] or 0) + int(claim["weights_bytes"])
+        row["held_bytes"] = int(row["weights_bytes"] or 0)
+    return list(by_model.values())
+
+
+def eject_embedding_models(model: Optional[str] = None, *, reason: str = "eject") -> Dict[str, Any]:
+    """Unload EVERY manager holding `model` (None: all), collect, and return
+    torch's MPS pool. `ok` is True only when nothing of that model remains."""
+    from ..providers.hf_residency import release_torch_mps_cache, torch_mps_stats
+
+    model_s = str(model or "").strip().lower()
+    before = torch_mps_stats()
+    unloaded: List[Dict[str, Any]] = []
+    errors: List[Dict[str, Any]] = []
+    for manager in registered_embedding_managers():
+        try:
+            claim = manager.get_residency()
+        except Exception:
+            continue
+        if not claim.get("loaded"):
+            continue
+        name = str(claim.get("model") or "")
+        if model_s and name.strip().lower() != model_s:
+            continue
+        row = {"id": id(manager), "model": name, "type": type(manager).__name__}
+        try:
+            manager.unload()
+            unloaded.append(row)
+        except Exception as exc:  # noqa: BLE001 - one refusing holder must not hide the others
+            row["error"] = f"{type(exc).__name__}: {exc}"
+            errors.append(row)
+    collected = gc.collect()
+    released = release_torch_mps_cache()
+    after = torch_mps_stats()
+    remaining = [r for r in resident_embedding_models() if not model_s or str(r["models"][0]).strip().lower() == model_s]
+    residual = remaining[0] if remaining else None
+    return {
+        "ok": residual is None and not errors,
+        "reason": reason,
+        "model": model,
+        "holders_found": len(unloaded) + len(errors),
+        "holders_unloaded": unloaded,
+        "holders_refused": errors,
+        "gc_collected": collected,
+        "cache_cleared": released,
+        "before": before,
+        "after": after,
+        "residual": residual,
+        "ts": time.time(),
+    }
+
+
+def embeddings_memory_report() -> Dict[str, Any]:
+    rows = resident_embedding_models()
+    return {
+        "backend": "embeddings",
+        "held_bytes": int(sum(int(r.get("held_bytes") or 0) for r in rows)),
+        "models": rows,
+        "holders": int(sum(int(r.get("holders") or 0) for r in rows)),
+        "resident_models": len(rows),
+    }
 
 
 class EmbeddingManager:
@@ -376,6 +511,8 @@ class EmbeddingManager:
 
         # Initialize model (HuggingFace only)
         self.model = None
+        # Serializes the lazy reload after `unload()` (see `_ensure_local_model`).
+        self._load_lock = threading.RLock()
         if self.provider == "huggingface":
             self._load_model()
 
@@ -404,10 +541,14 @@ class EmbeddingManager:
         self.served_model: Optional[str] = None
         self._served_model_mismatch_warned: set = set()
 
-        # Register cleanup functions to save cache before Python shutdown
-        # Use atexit instead of __del__ for reliable cleanup
-        atexit.register(self._safe_save_persistent_cache)
-        atexit.register(self._safe_save_normalized_cache)
+        # Save the caches at interpreter shutdown -- through a WEAK reference.
+        # `atexit.register(self._method)` pinned the manager (and its
+        # SentenceTransformer on MPS) for the life of the process.
+        atexit.register(_atexit_save_caches, weakref.ref(self))
+        # Per-instance memo (a class-level `@lru_cache` keyed on `self` was
+        # the other pin); `self.embed.cache_info()` / `.cache_clear()` keep working.
+        self.embed = lru_cache(maxsize=1000)(self._embed_uncached)
+        _EMBEDDING_MANAGERS.add(self)
 
         # Configure events if available
         if EventType is not None and emit_global is not None:
@@ -561,6 +702,18 @@ class EmbeddingManager:
         except Exception as e:
             logger.error(f"Failed to load embedding model {self.model_id}: {e}")
             raise
+
+    def _ensure_local_model(self) -> None:
+        """Reload the in-process model after `unload()`: the next embedding
+        after an eject loads the weights again, transparently. A no-op for
+        server-backed providers (nothing lives in this process) and when the
+        model is already loaded."""
+        if self.provider != "huggingface" or self.model is not None:
+            return
+        with self._load_lock:
+            if self.model is None:
+                logger.info(f"embedding model {self.model_id} was unloaded; loading it again for this request")
+                self._load_model()
 
     def _sentence_transformers_source(self) -> "tuple[str, Dict[str, Any]]":
         """`(name_or_path, extra_kwargs)` for `SentenceTransformer(...)`.
@@ -907,9 +1060,9 @@ class EmbeddingManager:
             # Fallback to regular embedding
             return self.embed(text)
 
-    @lru_cache(maxsize=1000)
-    def embed(self, text: str) -> List[float]:
-        """Embed a single text with caching and optimization.
+    def _embed_uncached(self, text: str) -> List[float]:
+        """Embed a single text with caching and optimization (memoized per
+        instance as `self.embed`, see `__init__`).
 
         Args:
             text: Text to embed
@@ -942,6 +1095,7 @@ class EmbeddingManager:
             # Generate embedding based on provider
             if self.provider == "huggingface":
                 # HuggingFace: Use sentence-transformers model
+                self._ensure_local_model()
                 embedding = self.model.encode(
                     text,
                     show_progress_bar=False,
@@ -1036,6 +1190,7 @@ class EmbeddingManager:
             try:
                 if self.provider == "huggingface":
                     # HuggingFace: Use sentence-transformers batch encoding
+                    self._ensure_local_model()
                     batch_embeddings = self.model.encode(
                         uncached_texts,
                         show_progress_bar=False,
@@ -1117,6 +1272,7 @@ class EmbeddingManager:
             return self.output_dims
 
         if self.provider == "huggingface":
+            self._ensure_local_model()
             return self.model.get_sentence_embedding_dimension()
         else:
             # For Ollama/LMStudio, we need to generate a test embedding to get dimension
@@ -1579,6 +1735,110 @@ class EmbeddingManager:
             "normalized_cache_file": str(self.normalized_cache_file),
             "output_dims": self.output_dims
         }
+
+    def get_residency(self) -> Dict[str, Any]:
+        """Core-owned in-process residency truth for this manager: whether the
+        embedding weights are alive, on which device, and their bytes."""
+        model = getattr(self, "model", None)
+        loaded = model is not None
+        claim: Dict[str, Any] = {
+            "task": "embedding",
+            "provider": str(self.provider),
+            "model": str(self.model_id),
+            "loaded": loaded,
+            "state": "loaded" if loaded else "not_loaded",
+            "source": "abstractcore.embeddings",
+            "device": None,
+            "weights_bytes": None,
+            "model_path": None,
+        }
+        if not loaded:
+            return claim
+        try:
+            from ..providers.hf_residency import module_bytes
+
+            claim["weights_bytes"] = module_bytes(model)
+        except Exception:
+            pass
+        try:
+            claim["device"] = str(getattr(model, "device", None) or next(model.parameters()).device)
+        except Exception:
+            pass
+        try:
+            claim["model_path"] = str(getattr(model, "model_name_or_path", None) or "") or None
+        except Exception:
+            pass
+        return claim
+
+    def unload(self) -> Dict[str, Any]:
+        """Free the in-process embedding model: drop the SentenceTransformer,
+        clear the memo, save the persistent caches, collect, and return torch's
+        MPS pool to the OS. Idempotent. The manager stays usable: the next
+        embedding loads the model again (`_ensure_local_model`).
+
+        Server-backed providers (Ollama, LM Studio, OpenAI-compatible...) hold
+        no weights in this process: their client is kept, nothing is dropped,
+        and the report says so (`in_process: False`)."""
+        from ..providers.hf_residency import release_torch_mps_cache, torch_mps_stats
+
+        if self.provider != "huggingface":
+            return {
+                "unloaded": False,
+                "in_process": False,
+                "model": str(self.model_id),
+                "provider": str(self.provider),
+                "loaded": False,
+                "freed_weights_bytes": 0,
+                "residual_weights_alive": False,
+                "residual_weights_bytes": 0,
+                "reason": f"{self.provider} serves this embedding model from its own server; nothing is held in this process",
+            }
+
+        before = self.get_residency()
+        try:
+            self._safe_save_persistent_cache()
+            self._safe_save_normalized_cache()
+        except Exception:
+            pass
+        weights_ref = None
+        try:
+            weights_ref = weakref.ref(self.model) if self.model is not None else None
+        except TypeError:
+            weights_ref = None
+        with self._load_lock:
+            self.model = None
+        try:
+            self.embed.cache_clear()
+        except Exception:
+            pass
+        gc.collect()
+        released = release_torch_mps_cache()
+        after = self.get_residency()
+        # An eject never claims success over retained memory: when another
+        # reference keeps the SentenceTransformer alive, say so.
+        residual_alive = bool(weights_ref is not None and weights_ref() is not None)
+        report = {
+            "unloaded": bool(before.get("loaded")) and not residual_alive,
+            "in_process": True,
+            "model": str(self.model_id),
+            "provider": str(self.provider),
+            "loaded": bool(after.get("loaded")),
+            "freed_weights_bytes": None if residual_alive else before.get("weights_bytes"),
+            "residual_weights_alive": residual_alive,
+            "residual_weights_bytes": before.get("weights_bytes") if residual_alive else 0,
+            "torch_mps": torch_mps_stats(),
+            "cache_cleared": released,
+        }
+        if residual_alive:
+            report["warnings"] = [
+                f"the embedding weights of {self.model_id} are still referenced elsewhere in this process; "
+                "nothing was freed for them"
+            ]
+        logger.info(
+            f"embedding model {self.model_id} unloaded ({before.get('weights_bytes')} bytes of weights released, "
+            f"mps pool released={released})"
+        )
+        return report
 
     def clear_cache(self):
         """Clear both memory and persistent caches."""
