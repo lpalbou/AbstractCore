@@ -1,0 +1,95 @@
+{
+  "schema": "abstractframework.identity.v1",
+  "framework": {
+    "name": "AbstractFramework",
+    "website": "https://abstractframework.ai",
+    "github_org": "https://github.com/lpalbou",
+    "author": "Laurent-Philippe Albou, PhD",
+    "years": "2023-2026",
+    "license": "MIT",
+    "copyright": "© 2023-2026 Laurent-Philippe Albou, PhD. Released under the MIT License.",
+    "contact_email": "contact@abstractframework.ai"
+  },
+  "apps": {
+    "abstractframework": {
+      "name": "AbstractFramework",
+      "website": "https://abstractframework.ai",
+      "repo": "https://github.com/lpalbou/AbstractFramework",
+      "docs": "https://github.com/lpalbou/AbstractFramework/tree/main/docs",
+      "issues": "https://github.com/lpalbou/AbstractFramework/issues",
+      "feedback": "https://github.com/lpalbou/AbstractFramework/issues/new?labels=feedback"
+    },
+    "abstractgateway": {
+      "name": "AbstractGateway",
+      "website": "https://abstractframework.ai/gateway",
+      "repo": "https://github.com/lpalbou/AbstractGateway",
+      "docs": "https://www.lpalbou.info/AbstractGateway/",
+      "issues": "https://github.com/lpalbou/AbstractGateway/issues",
+      "feedback": "https://github.com/lpalbou/AbstractGateway/issues/new?labels=feedback"
+    },
+    "abstractcode": {
+      "name": "AbstractCode",
+      "website": "https://abstractframework.ai/code",
+      "repo": "https://github.com/lpalbou/AbstractCode",
+      "docs": "https://github.com/lpalbou/AbstractCode/tree/main/docs",
+      "issues": "https://github.com/lpalbou/AbstractCode/issues",
+      "feedback": "https://github.com/lpalbou/AbstractCode/issues/new?labels=feedback"
+    },
+    "abstractassistant": {
+      "name": "AbstractAssistant",
+      "website": "https://abstractframework.ai/assistant",
+      "repo": "https://github.com/lpalbou/AbstractAssistant",
+      "docs": "https://github.com/lpalbou/AbstractAssistant/blob/main/docs/README.md",
+      "issues": "https://github.com/lpalbou/AbstractAssistant/issues",
+      "feedback": "https://github.com/lpalbou/AbstractAssistant/issues/new?labels=feedback"
+    },
+    "abstractflow": {
+      "name": "AbstractFlow",
+      "website": "https://abstractframework.ai/flow",
+      "repo": "https://github.com/lpalbou/AbstractFlow",
+      "docs": "https://github.com/lpalbou/AbstractFlow#readme",
+      "issues": "https://github.com/lpalbou/AbstractFlow/issues",
+      "feedback": "https://github.com/lpalbou/AbstractFlow/issues/new?labels=feedback"
+    },
+    "abstractcontinuum": {
+      "name": "AbstractContinuum",
+      "website": "https://abstractframework.ai",
+      "repo": "https://github.com/lpalbou/AbstractContinuum",
+      "docs": "https://github.com/lpalbou/AbstractContinuum/tree/main/docs",
+      "issues": "https://github.com/lpalbou/AbstractContinuum/issues",
+      "feedback": "https://github.com/lpalbou/AbstractContinuum/issues/new?labels=feedback"
+    },
+    "abstractentity": {
+      "name": "AbstractEntity",
+      "website": "https://abstractframework.ai",
+      "repo": "https://github.com/lpalbou/AbstractEntity",
+      "docs": "https://github.com/lpalbou/AbstractEntity/tree/main/docs",
+      "issues": "https://github.com/lpalbou/AbstractEntity/issues",
+      "feedback": "https://github.com/lpalbou/AbstractEntity/issues/new?labels=feedback"
+    },
+    "abstractobserver": {
+      "name": "AbstractObserver",
+      "website": "https://abstractframework.ai/observer",
+      "repo": "https://github.com/lpalbou/AbstractObserver",
+      "docs": "https://github.com/lpalbou/AbstractObserver#readme",
+      "issues": "https://github.com/lpalbou/AbstractObserver/issues",
+      "feedback": "https://github.com/lpalbou/AbstractObserver/issues/new?labels=feedback"
+    },
+    "abstractcore": {
+      "name": "AbstractCore",
+      "website": "https://www.abstractcore.ai",
+      "repo": "https://github.com/lpalbou/AbstractCore",
+      "docs": "https://github.com/lpalbou/AbstractCore/tree/main/docs",
+      "issues": "https://github.com/lpalbou/AbstractCore/issues",
+      "feedback": "https://github.com/lpalbou/AbstractCore/issues/new?labels=feedback"
+    },
+    "abstractuic": {
+      "name": "AbstractUIC",
+      "website": "https://abstractframework.ai",
+      "repo": "https://github.com/lpalbou/AbstractUIC",
+      "docs": "https://github.com/lpalbou/AbstractUIC/tree/main/docs",
+      "issues": "https://github.com/lpalbou/AbstractUIC/issues",
+      "feedback": "https://github.com/lpalbou/AbstractUIC/issues/new?labels=feedback"
+    }
+  }
+}
